@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -18,7 +18,6 @@ enum class GenerationStatus {
     IGNORED = 2, // Status set when generation run into out-of-memory condition and could not be continued
     CANCEL = 3, // Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
     STOP = 4, // Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
-    DROPPED_BY_HANDLE OPENVINO_ENUM_DEPRECATED("Please, use `STOP` instead of `DROPPED_BY_HANDLE`.") = GenerationStatus::STOP // Status set when generation handle is dropped.
 };
 
 
@@ -53,7 +52,7 @@ enum class GenerationFinishReason {
 
 struct GenerationResult {
     // request ID - obsolete when handle API is approved as handle will connect results with prompts.
-    uint64_t m_request_id;
+    uint64_t m_request_id = 0;
 
     // in a generic case we have multiple generation results per initial prompt
     // depending on sampling parameters (e.g. beam search or parallel sampling)
@@ -77,8 +76,8 @@ struct GenerationResult {
 struct GenerationOutput {
     std::vector<int64_t> generated_ids;
     std::vector<float> generated_log_probs;
-    float score;
-    GenerationFinishReason finish_reason;
+    float score = 0;
+    GenerationFinishReason finish_reason = GenerationFinishReason::NONE;
 };
 
 using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;
@@ -104,15 +103,9 @@ public:
 
     bool can_read();
 
-    OPENVINO_DEPRECATED("Please, use `stop()` instead of `drop()`. Support will be removed in 2026.0.0 release.")
-    bool is_dropped();
-
     bool is_stopped();
 
     bool is_cancelled();
-
-    OPENVINO_DEPRECATED("Please, use `stop()` instead of `drop()`. Support will be removed in 2026.0.0 release.")
-    void drop();
 
     void stop();
 

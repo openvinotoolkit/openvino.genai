@@ -1,5 +1,6 @@
 type TextRerankModelType = {
   architecture: string;
+  optimumIntelTask: string;
   models: Array<{
     links: string[];
   }>;
@@ -8,6 +9,7 @@ type TextRerankModelType = {
 export const TEXT_RERANK_MODELS: TextRerankModelType[] = [
   {
     architecture: 'BertForSequenceClassification',
+    optimumIntelTask: 'text-classification',
     models: [
       {
         links: [
@@ -23,6 +25,7 @@ export const TEXT_RERANK_MODELS: TextRerankModelType[] = [
   },
   {
     architecture: 'XLMRobertaForSequenceClassification',
+    optimumIntelTask: 'text-classification',
     models: [
       {
         links: [
@@ -33,12 +36,26 @@ export const TEXT_RERANK_MODELS: TextRerankModelType[] = [
   },
   {
     architecture: 'ModernBertForSequenceClassification',
+    optimumIntelTask: 'text-classification',
     models: [
       {
         links: [
           'https://huggingface.co/tomaarsen/reranker-ModernBERT-base-gooaq-bce',
           'https://huggingface.co/tomaarsen/reranker-ModernBERT-large-gooaq-bce',
           'https://huggingface.co/Alibaba-NLP/gte-reranker-modernbert-base',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'Qwen3ForCausalLM',
+    optimumIntelTask: 'text-generation-with-past',
+    models: [
+      {
+        links: [
+          'https://huggingface.co/Qwen/Qwen3-Reranker-0.6B',
+          'https://huggingface.co/Qwen/Qwen3-Reranker-4B',
+          'https://huggingface.co/Qwen/Qwen3-Reranker-8B'
         ],
       },
     ],

@@ -5,10 +5,12 @@ import Heading from '@theme/Heading';
 import Link from '@docusaurus/Link';
 import { ImageGeneration } from './components/image-generation';
 import { ImageProcessing } from './components/image-processing';
+import { SpeechGeneration } from './components/speech-generation';
 import { SpeechRecognition } from './components/speech-recognition';
 import { TextGeneration } from './components/text-generation';
 import { TextRerank } from './components/text-rerank';
 import { TextEmbedding } from './components/text-embedding';
+import { VideoGeneration } from './components/video-generation';
 
 export const UseCasesSection = () => (
   <section className={styles.useCasesSection}>
@@ -17,9 +19,11 @@ export const UseCasesSection = () => (
     </Heading>
     <div className={styles.sectionContent}>
       <TextGeneration />
-      <ImageGeneration />
-      <SpeechRecognition />
       <ImageProcessing />
+      <ImageGeneration />
+      <VideoGeneration />
+      <SpeechRecognition />
+      <SpeechGeneration />
       <TextEmbedding />
       <TextRerank />
     </div>

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
@@ -9,49 +9,47 @@ import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
 import llm_bench_utils.model_utils as model_utils
 import numpy as np
-import openvino as ov
 import hashlib
-import llm_bench_utils.metrics_print as metrics_print
 from transformers import set_seed
-from transformers.image_utils import load_image
 import llm_bench_utils.output_file
+import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
-import llm_bench_utils.parse_json_data as parse_json_data
-from pathlib import Path
+from llm_bench_utils.prompt_utils import extract_prompt_data
+from llm_bench_utils.prompt_utils import get_vlm_prompt
 
-
-FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
+FW_UTILS = {
+    'pt': llm_bench_utils.pt_utils,
+    'ov': llm_bench_utils.ov_utils
+}
 
 
 def run_visual_language_generation_optimum(
-    inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index, bench_hook, model_precision, proc_id, mem_consumption
-):
+        inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index,
+        bench_hook, model_precision, proc_id, mem_consumption):
     from optimum.intel.utils.import_utils import is_transformers_version
     set_seed(args['seed'])
     if args['batch_size'] != 1:
         log.warning("Only batch size 1 available for benchmarking")
         args["batch_size"] = 1
-    images = []
-    prompts = []
-    inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
-    for input_data in inputs:
-        if input_data.get("media", None):
-            entry = Path(input_data["media"])
-            if entry.is_dir():
-                for file in sorted(entry.iterdir()):
-                    images.append(load_image(str(file)))
-            else:
-                images.append(load_image(input_data["media"]))
-        prompts.append(input_data["prompt"])
-    prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-    log.info(f'{prefix}[P{prompt_index}] Input image nums:{len(images)}')
+
+    decim_frames = args["video_frames"]
+    prompts, images, videos = extract_prompt_data(inputs, decim_frames, False)
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
-            llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
+            llm_bench_utils.output_file.output_input_text(
+                in_text, args, model_precision,
+                prompt_index, bs_index, proc_id)
     tok_encode_start = time.perf_counter()
-    input_data = model.preprocess_inputs(text=prompts[0], image=images[0] if images else None, **processor)
+
+    prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+    log.info(f'{prefix}[P{prompt_index}] Input image nums: {len(images)}')
+    log.info(f'{prefix}[P{prompt_index}] Input video nums: {len(videos)}')
+    input_data = model.preprocess_inputs(image=images[0] if images else None,
+                                         video=videos[0] if videos else None,
+                                         text=prompts[0], **processor)
+
     tok_encode_end = time.perf_counter()
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
     # Remove `token_type_ids` from inputs
@@ -65,10 +63,6 @@ def run_visual_language_generation_optimum(
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
 
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
@@ -99,8 +93,10 @@ def run_visual_language_generation_optimum(
         )
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
+        memory_metrics = mem_consumption.get_data(dict_format=True)
+    else:
+        memory_metrics = {}
 
     generation_time = end - start
     tok_decode_start = time.perf_counter()
@@ -149,13 +145,10 @@ def run_visual_language_generation_optimum(
         gen_time=generation_time,
         latency=per_token_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
         tokenization_time=(tok_encode_time, tok_decode_time),
-        mm_embeddings_preparation_time=tm_mm_embeddings
+        mm_embeddings_preparation_time=tm_mm_embeddings,
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -182,37 +175,21 @@ def run_visual_language_generation_optimum(
         bench_hook.clear_mm_embeddins_time_list()
 
 
-def load_image_genai(image_path):
-    pil_image = load_image(image_path)
-    image_data = np.array(pil_image)[None]
-    return ov.Tensor(image_data)
-
-
 def run_visual_language_generation_genai(
-    inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index, streamer, model_precision, proc_id, mem_consumption
-):
+        inputs, num, model, processor, args, iter_data_list, md5_list,
+        prompt_index, streamer, model_precision, proc_id, mem_consumption):
     if args['batch_size'] != 1:
         log.warning("Only batch size 1 available for benchmarking")
         args["batch_size"] = 1
-    images = []
-    prompts = []
-    inputs = [inputs] if not isinstance(inputs, (list, tuple)) else inputs
-    for input_data in inputs:
-        if input_data.get("media", None):
-            entry = Path(input_data["media"])
-            if entry.is_dir():
-                for file in sorted(entry.iterdir()):
-                    images.append(load_image_genai(str(file)))
-            else:
-                images.append(load_image_genai(input_data["media"]))
-        prompts.append(input_data["prompt"])
+
+    decim_frames = args["video_frames"]
+    prompts, images, videos = extract_prompt_data(inputs, decim_frames, True)
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
-            llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
+            llm_bench_utils.output_file.output_input_text(
+                in_text, args, model_precision,
+                prompt_index, bs_index, proc_id)
+
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
@@ -221,19 +198,30 @@ def run_visual_language_generation_genai(
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
     gen_config.ignore_eos = True
+    if args["pruning_ratio"] is not None:
+        gen_config.pruning_ratio = args["pruning_ratio"]
+    if args["relevance_weight"] is not None:
+        gen_config.relevance_weight = args["relevance_weight"]
     kwargs = {}
-    if len(images) >= 1:
-        kwargs["images"] = images
     prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-    log.info(f'{prefix}[P{prompt_index}] Input image nums:{len(images)}')
+    log.info(f'{prefix}[P{prompt_index}] Input image nums: {len(images)}')
+    log.info(f'{prefix}[P{prompt_index}] Input video nums: {len(videos)}')
+
+    if images:
+        kwargs["images"] = images
+    if videos:
+        kwargs["videos"] = videos
+
     start = time.perf_counter()
     generation_result = model.generate(prompts[0], generation_config=gen_config, **kwargs)
     end = time.perf_counter()
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
+        memory_metrics = mem_consumption.get_data(dict_format=True)
+    else:
+        memory_metrics = {}
 
     generation_time = end - start
     result_md5_list = []
@@ -274,13 +262,10 @@ def run_visual_language_generation_genai(
         gen_time=generation_time,
         latency=per_token_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
         tokenization_time=tokenization_time,
-        mm_embeddings_preparation_time=perf_metrics.get_prepare_embeddings_duration().mean
+        mm_embeddings_preparation_time=perf_metrics.get_prepare_embeddings_duration().mean,
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     inference_durations = np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000
@@ -305,11 +290,12 @@ def run_visual_language_generation_genai(
 
 
 def run_visual_language_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    model, processor, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_image_text_gen_model(model_path, device, mem_consumption, **args)
+    outs = FW_UTILS[framework].create_image_text_gen_model(model_path, device, mem_consumption, **args)
+    model, processor, pretrain_time, bench_hook, use_genai = outs
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}
-    input_image_text_list = get_image_text_prompt(args)
+    input_image_text_list = get_vlm_prompt(args)
     if args['prompt_index'] is None:
         prompt_idx_list = list(range(0, len(input_image_text_list)))
         image_text_list = input_image_text_list
@@ -325,10 +311,10 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
     log.info(f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
              f'prompt nums: {len(image_text_list)}, prompt idx: {prompt_idx_list}')
 
-    if not use_genai:
-        gen_fn = run_visual_language_generation_optimum
-    else:
+    if use_genai:
         gen_fn = run_visual_language_generation_genai
+    else:
+        gen_fn = run_visual_language_generation_optimum
 
     proc_id = os.getpid()
     iter_timestamp = model_utils.init_timestamp(num_iters, image_text_list, prompt_idx_list)
@@ -337,42 +323,29 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
             for idx, input_text in enumerate(image_text_list):
                 p_idx = prompt_idx_list[idx]
                 if num == 0:
-                    log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
+                    prefix = f'[warm-up][P{p_idx}] Input text: {input_text}'
+                    metrics_print.print_unicode(prefix, max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 gen_fn(
                     input_text, num, model, processor, args, iter_data_list, md5_list,
                     p_idx, bench_hook, model_precision, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
+                prefix = f"[warm-up][P{p_idx}]" if num == 0 else f"[{num}][P{p_idx}]"
+                log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
     else:
         for idx, input_text in enumerate(image_text_list):
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
                 if num == 0:
-                    log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
+                    prefix = f'[warm-up][P{p_idx}] Input text: {input_text}'
+                    metrics_print.print_unicode(prefix, max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 gen_fn(
                     input_text, num, model, processor, args, iter_data_list, md5_list,
                     prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
+                prefix = f"[warm-up][P{p_idx}]" if num == 0 else f"[{num}][P{p_idx}]"
+                log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time, iter_timestamp
-
-
-def get_image_text_prompt(args):
-    vlm_file_list = []
-    output_data_list, is_json_data = model_utils.get_param_from_file(args, ['media', "prompt"])
-    if is_json_data:
-        vlm_param_list = parse_json_data.parse_vlm_json_data(output_data_list)
-        if len(vlm_param_list) > 0:
-            for vlm_file in vlm_param_list:
-                if args['prompt_file'] is not None and len(args['prompt_file']) > 0:
-                    vlm_file['media'] = model_utils.resolve_media_file_path(vlm_file.get("media"), args['prompt_file'][0])
-                vlm_file_list.append(vlm_file)
-    else:
-        vlm_file_list.append(output_data_list)
-    return vlm_file_list

@@ -1,5 +1,6 @@
 from typing import Any, Union
 
+import itertools
 import os
 import torch
 import numpy as np
@@ -66,7 +67,8 @@ class EmbeddingsEvaluator(BaseEvaluator):
         gen_embeds_fn=None,
         pooling_type=None,
         normalize=None,
-        padding_side=None
+        padding_side=None,
+        batch_size=None
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -80,9 +82,12 @@ class EmbeddingsEvaluator(BaseEvaluator):
         self.normalize = normalize or False
         self.padding_side = padding_side or 'right'
         self.gt_dir = os.path.dirname(gt_data)
+        self.batch_size = batch_size
 
         if base_model:
-            self.gt_data = self._generate_data(base_model, gen_embeds_fn)
+            self.gt_data = self._generate_data(
+                base_model, gen_embeds_fn, os.path.join(self.gt_dir, "reference")
+            )
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
@@ -172,12 +177,23 @@ class EmbeddingsEvaluator(BaseEvaluator):
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
 
-        for i, data in tqdm(enumerate(inputs), desc="Evaluate pipeline"):
+        for i, data in tqdm(enumerate(inputs), total=len(inputs), desc="Evaluate pipeline"):
             kwargs = {'padding_side': self.padding_side,
                       'pooling_type': self.pooling_type,
                       'normalize': self.normalize}
-            result = gen_answer_fn(model, self.tokenizer, data[0], **kwargs)
-            passages.append(data[0])
+
+            batch_size = self.batch_size or len(data[0])
+            data_len = len(data[0])
+
+            if batch_size <= data_len:
+                data_input = data[0][:batch_size]
+            else:
+                # Duplicate data to reach batch_size
+                data_input = list(itertools.islice(itertools.cycle(data[0]), batch_size))
+
+            result = gen_answer_fn(model, self.tokenizer, data_input, **kwargs)
+
+            passages.append(data_input)
             result_path = os.path.join(result_dir, f"embeds_{i}.npy")
             with open(result_path, 'wb') as f:
                 np.save(f, result)

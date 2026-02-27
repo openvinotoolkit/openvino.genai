@@ -21,11 +21,11 @@ class TestBenchmarkVLM:
     def test_sample_benchmark_vlm(self, convert_model, download_test_content):
         num_iter = "3"
         # Run C++ benchmark sample
-        benchmark_sample = os.path.join(SAMPLES_CPP_DIR, 'benchmark_vlm')
+        benchmark_sample = SAMPLES_CPP_DIR / 'benchmark_vlm'
         benchmark_cpp_command = [benchmark_sample, "-m" , convert_model, "-i", download_test_content, "-n", num_iter]
         run_sample(benchmark_cpp_command)
         
         # Run Python benchmark sample
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'visual_language_chat/benchmark_vlm.py')
+        benchmark_script = SAMPLES_PY_DIR / 'visual_language_chat/benchmark_vlm.py'
         benchmark_py_command = [sys.executable, benchmark_script, "-m" , convert_model, "-i", download_test_content, "-n", num_iter]
         run_sample(benchmark_py_command)

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
@@ -69,7 +69,7 @@ SD3Transformer2DModel SD3Transformer2DModel::clone() {
     
     if (m_model) {
         cloned.m_model = m_model->clone();
-    } else {
+    } else if (m_impl) {
         cloned.m_impl = m_impl->clone();
     }
 

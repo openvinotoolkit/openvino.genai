@@ -84,7 +84,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     utils::KVCacheState& kv_cache_state,
     EmbeddingsModel::Ptr m_embedding,
     std::optional<int64_t> rope_delta,
-    const size_t max_kv_cache_size
+    const size_t max_kv_cache_size,
+    const bool use_intermediate_remote_tensor
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -153,12 +154,11 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
     const auto infer_start = std::chrono::steady_clock::now();
     m_llm.infer();
+
     const auto infer_end = std::chrono::steady_clock::now();
     const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
     raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
     raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
-    raw_perf_counters.m_new_token_times.emplace_back(infer_end);
-    raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
     auto logits = m_llm.get_tensor("logits");
 
@@ -174,6 +174,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
     SamplerOutput sampler_output = sampler.sample(sequence_groups, logits);
     free_non_running_requests(); // handle sampler output
+
+    raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+    raw_perf_counters.m_batch_sizes.emplace_back(sampler_output.num_generated_tokens);
 
     // "Generation" phase
 
@@ -226,10 +229,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         }
 
         if (m_embedding) {
-            constexpr bool return_remote_tensor = true;
             CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
             EmbeddingsRequest& req = embeddings_request_guard.get();
-            const ov::Tensor& embed_prompt_tensor = m_embedding->infer(req, new_input_ids, return_remote_tensor);
+            const ov::Tensor& embed_prompt_tensor = m_embedding->infer(req, new_input_ids, use_intermediate_remote_tensor);
             m_llm.set_tensor("inputs_embeds", embed_prompt_tensor);
             if (token_type_ids.has_value()) {
                 ov::Tensor new_token_type_ids(ov::element::i64, {total_num_tokens, 1});
@@ -271,11 +273,12 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
         raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
-        raw_perf_counters.m_new_token_times.emplace_back(infer_end);
-        raw_perf_counters.m_batch_sizes.emplace_back(current_batch_size);
 
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
         free_non_running_requests(); // handle sampler output
+
+        raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+        raw_perf_counters.m_batch_sizes.emplace_back(sampler_output.num_generated_tokens);
     }
 
     stream_generated_tokens();

@@ -1,9 +1,12 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
 #include <cstddef>
+#include <unordered_map>
+#include <sstream>
+#include <set>
 
 #include "openvino/core/except.hpp"
 
@@ -15,8 +18,11 @@ namespace ov::genai {
 */
 enum class AggregationMode {
     SUM,     /**< In this mode the importance scores of each token will be summed after each step of generation */
-    NORM_SUM /**< Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated)
+    NORM_SUM, /**< Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated)
                 * of a given token in cache */
+    ADAPTIVE_RKV /** Switches the cache eviction algorithm to use Adaptive R-KV algorithm. The scores are aggregated within
+                   a configurable window size of the latest generated tokens. May not be used together with the KVCrush
+                   algorithm. */
 };
 
 /**
@@ -28,7 +34,11 @@ enum class KVCrushAnchorPointMode {
     ONES,   /**<In this mode the anchor point is a vector of 1s */
     MEAN, /**<In this mode the anchor point is a random binary vector of 0s and 1s, where individual values are decided
              based on majority value */
-    ALTERNATE /**In this mode the anchor point is a vector of alternate 0s and 1s */
+    ALTERNATING, /**In this mode the anchor point is a vector of alternate 0s and 1s */
+#ifndef _WIN32
+    // KVCrushAnchorPointMode::ALTERNATE is conflicting with definitions in windows.h in MSVC versions (https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-getpolyfillmode)
+    ALTERNATE OPENVINO_ENUM_DEPRECATED("Please, use `KVCrushAnchorPointMode::ALTERNATING` instead of `KVCrushAnchorPointMode::ALTERNATE`.") = ALTERNATING /**In this mode the anchor point is a vector of alternate 0s and 1s */
+#endif
 };
 
 class KVCrushConfig {
@@ -66,11 +76,37 @@ public:
     std::size_t get_budget() const {
         return budget;
     }
+
+    std::string to_string() const {
+        static const std::unordered_map<KVCrushAnchorPointMode, std::string> kv_crush_anchor_point_mode_to_string = {
+            {KVCrushAnchorPointMode::RANDOM, "RANDOM"},
+            {KVCrushAnchorPointMode::ZEROS, "ZEROS"},
+            {KVCrushAnchorPointMode::ONES, "ONES"},
+            {KVCrushAnchorPointMode::MEAN, "MEAN"},
+            {KVCrushAnchorPointMode::ALTERNATING, "ALTERNATING"},
+        };
+
+        std::ostringstream oss;
+        oss << "KVCrushConfig { " << "\n";
+        oss << "  budget: " << budget << "\n";
+        oss << "  rng_seed: " << rng_seed << "\n";
+        if (kv_crush_anchor_point_mode_to_string.count(anchor_point_mode) > 0) {
+            oss << "  anchor_point_mode: " << kv_crush_anchor_point_mode_to_string.at(anchor_point_mode) << "\n";
+        }
+        oss << " }";
+        return oss.str();
+    }
 };
 
-/**
-* @brief Configuration struct for the cache eviction algorithm.
-*/
+struct AdaptiveRKVConfig {
+    AdaptiveRKVConfig() = default;
+    AdaptiveRKVConfig(double attention_mass_, size_t window_size_) : attention_mass(attention_mass_), window_size(window_size_) {};
+
+    double attention_mass = 0.9;
+    size_t window_size = 8;
+};
+
+
 class CacheEvictionConfig {
 public:
     CacheEvictionConfig() = default;
@@ -81,14 +117,16 @@ public:
                         AggregationMode aggregation_mode_,
                         bool apply_rotation_ = false,
                         size_t snapkv_window_size_ = 8,
-                        const KVCrushConfig& kvcrush_config_ = KVCrushConfig(0, KVCrushAnchorPointMode::RANDOM))
+                        const KVCrushConfig& kvcrush_config_ = KVCrushConfig(0, KVCrushAnchorPointMode::RANDOM),
+                        const AdaptiveRKVConfig& adaptive_rkv_config_ = AdaptiveRKVConfig())
         : aggregation_mode(aggregation_mode_),
           apply_rotation(apply_rotation_),
           snapkv_window_size(snapkv_window_size_),
+          kvcrush_config(kvcrush_config_),
+          adaptive_rkv_config(adaptive_rkv_config_),
           m_start_size(start_size),
           m_recent_size(recent_size),
-          m_max_cache_size(max_cache_size),
-          kvcrush_config(kvcrush_config_) {
+          m_max_cache_size(max_cache_size) {
         OPENVINO_ASSERT(start_size, "CacheEvictionConfig.start_size must be non-zero");
         OPENVINO_ASSERT(recent_size, "CacheEvictionConfig.recent_size must be non-zero");
         OPENVINO_ASSERT(max_cache_size, "CacheEvictionConfig.max_cache_size must be non-zero");
@@ -122,6 +160,28 @@ public:
         return m_evictable_size;
     }
 
+    std::string to_string() const {
+        static const std::unordered_map<AggregationMode, std::string> aggregation_mode_to_string = {
+            {AggregationMode::SUM, "SUM"},
+            {AggregationMode::NORM_SUM, "NORM_SUM"},
+        };
+
+        std::ostringstream oss;
+        oss << "CacheEvictionConfig { " << "\n";
+        oss << "  start_size: " << m_start_size << "\n";
+        oss << "  recent_size: " << m_recent_size << "\n";
+        oss << "  max_cache_size: " << m_max_cache_size << "\n";
+        oss << "  evictable_size: " << m_evictable_size << "\n";
+        if (aggregation_mode_to_string.count(aggregation_mode) > 0) {
+            oss << "  aggregation_mode: " << aggregation_mode_to_string.at(aggregation_mode) << "\n";
+        }
+        oss << "  apply_rotation: " << std::boolalpha << apply_rotation << "\n";
+        oss << "  snapkv_window_size: " << snapkv_window_size << "\n";
+        oss << kvcrush_config.to_string() << "\n";
+        oss << " }";
+        return oss.str();
+    }
+
     /** The mode used to compute the importance of tokens for eviction */
     AggregationMode aggregation_mode = AggregationMode::NORM_SUM;
 
@@ -141,6 +201,8 @@ public:
      * KVCrush is an additional mechanism that allows to retain some tokens in the cache
      * even if they are not among the most important ones.*/
     KVCrushConfig kvcrush_config;
+
+    AdaptiveRKVConfig adaptive_rkv_config;
 
 private:
     /** Number of tokens in the *beginning* of KV cache that should be retained
@@ -164,4 +226,3 @@ private:
 };
 
 } // namespace ov::genai
-

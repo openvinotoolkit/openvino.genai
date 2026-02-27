@@ -1,5 +1,6 @@
 import pytest
 from transformers import AutoTokenizer
+from huggingface_hub import snapshot_download
 from openvino_genai import Tokenizer, TextStreamer
 from utils.hugging_face import convert_and_save_tokenizer
 from utils.network import retry_request
@@ -13,7 +14,6 @@ tokenizer_model_ids = [
     "openbmb/MiniCPM-o-2_6",
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
     "NousResearch/Meta-Llama-3-8B-Instruct", # Open analog for gated "meta-llama/Meta-Llama-3-8B-Instruct",
-    # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
 ]
 
 # Check that fix for CVS-157216 works.
@@ -52,7 +52,6 @@ unicode_prompts = [*map(lambda x: str.encode(x, 'unicode_escape'), [
 ])]
 
 @pytest.mark.parametrize("model_id", tokenizer_model_ids)
-@pytest.mark.precommit
 @pytest.mark.parametrize("prompt", [*eng_prompts, *unicode_prompts])
 def test_text_prompts(tmp_path, prompt, model_id):
     prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
@@ -62,7 +61,10 @@ def test_text_prompts(tmp_path, prompt, model_id):
     
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
 
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params, trust_remote_code=True))
+    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    hf_tokenizer = retry_request(
+        lambda: AutoTokenizer.from_pretrained(model_cached, **hf_tok_load_params, trust_remote_code=True)
+    )
     convert_and_save_tokenizer(hf_tokenizer, tmp_path)
     ov_tokenizer = Tokenizer(tmp_path)
     tokens = ov_tokenizer.encode(prompt=prompt).input_ids.data[0].tolist()
@@ -88,17 +90,20 @@ encoded_prompts = [
 
     # '\n\n# 利用re.sub()方法，�' with UTF8 invalid for "microsoft/phi-1_5"
     [198, 198, 2, 10263, 230, 102, 18796, 101, 260, 13],
-
-    # '룅튜룅튜�' causes error on "openbmb/MiniCPM-o-2_6" / "katuni4ka/tiny-random-minicpmv-2_6"
-    [167, 96, 227, 169, 232, 250, 167, 96, 227, 169, 232, 250, 167]
+    # '룅튜룅튜�' causes error on "openbmb/MiniCPM-o-2_6" / "optimum-intel-internal-testing/tiny-random-minicpmv-2_6"
+    [167, 96, 227, 169, 232, 250, 167, 96, 227, 169, 232, 250, 167],
 ]
+
+
 @pytest.mark.parametrize("model_id", tokenizer_model_ids)
-@pytest.mark.precommit
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 def test_encoded_prompts(tmp_path, encoded_prompt, model_id):
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})
 
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, **hf_tok_load_params, trust_remote_code=True))
+    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    hf_tokenizer = retry_request(
+        lambda: AutoTokenizer.from_pretrained(model_cached, **hf_tok_load_params, trust_remote_code=True)
+    )
     convert_and_save_tokenizer(hf_tokenizer, tmp_path)
     ov_tokenizer = Tokenizer(tmp_path)
 

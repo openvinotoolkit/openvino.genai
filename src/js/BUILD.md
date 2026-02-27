@@ -122,3 +122,45 @@ your `package.json`:
 ```sh
 node -e "const { LLMPipeline } = require('openvino-genai-node'); console.log(LLMPipeline);"
 ```
+
+## Running Tests
+
+### Set Up the Python Environment
+
+To run the JavaScript tests, you need Python 3.10+ and the following Python packages:
+
+- `openvino-genai`
+- `optimum-intel` — for model conversion
+
+Install the required Python dependencies:
+```sh
+python -m pip install openvino-genai optimum-intel
+```
+
+### Running the Tests
+
+Run the following npm script to prepare models and run all JavaScript tests:
+```sh
+npm test
+```
+
+## Running Tests Manually
+
+If you don't want to set up the Python environment, or you would like to run the JavaScript tests manually, follow these steps:
+
+1. Obtain a model (for example, export a model to the OpenVINO IR format from Hugging Face). See the
+   [Model Preparation Guide](https://openvinotoolkit.github.io/openvino.genai/docs/category/model-preparation) for more details.
+
+2. Set the environment variables with paths to the converted models.
+
+**Test Environment Variables**
+
+- `LLM_PATH` - Path to the LLM model
+- `VLM_PATH` - Path to the vision-language model
+- `EMBEDDING_MODEL_PATH` - Path to the text embedding model
+- `RERANK_MODEL_PATH` - Path to the reranking model
+
+3. Run the tests:
+```sh
+node --test ./tests/*.test.js
+```

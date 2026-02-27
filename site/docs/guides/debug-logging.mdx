@@ -1,19 +1,19 @@
 ---
-sidebar_position: 7
+sidebar_position: 8
 ---
 
 # Debug Logging
 
-There are six log levels, which can be called explicitly or set via the `OPENVINO_LOG_LEVEL` environment variable:
+There are six log levels, which can be called explicitly or set via the `OPENVINO_LOG_LEVEL` environment variable: https://github.com/openvinotoolkit/openvino/blob/f35beb7f1355cb3f7f73b0d431933afbb6a8d3c6/src/inference/include/openvino/runtime/properties.hpp#L640
 
-- 0 - `ov::log::Level::NO`
-- 1 - `ov::log::Level::ERR`
-- 2 - `ov::log::Level::WARNING`
-- 3 - `ov::log::Level::INFO`
-- 4 - `ov::log::Level::DEBUG`
-- 5 - `ov::log::Level::TRACE`
+- -1 - `ov::log::Level::NO`
+- 0 - `ov::log::Level::ERR`
+- 1 - `ov::log::Level::WARNING`
+- 2 - `ov::log::Level::INFO`
+- 3 - `ov::log::Level::DEBUG`
+- 4 - `ov::log::Level::TRACE`
 
-When setting the environment variable `OPENVINO_LOG_LEVEL` > `ov::log::Level::WARNING`, the properties of the compiled model will be printed.
+When setting the environment variable `OPENVINO_LOG_LEVEL` > `ov::log::Level::DEBUG`, the properties of the compiled model will be printed.
 
 <Tabs groupId="os">
     <TabItem label="Linux & macOS" value="linux_macos">
@@ -75,4 +75,14 @@ Generated tokens: 100
 Accepted token rate, %: 51
 ===============================
 Request_id: 0 ||| 40 0 40 20 0 0 40 40 0 20 20 20 0 40 0 0 20 80 0 80 20 0 0 0 40 80 0 40 60 40 80 0 0 0 0 40 20 20 0 40 20 40 0 20 0 0 0
+```
+
+When a GGUF model is passed to the pipeline, the detailed debug info will also be printed.
+
+```sh title="Output:"
+[GGUF Reader]: Loading and unpacking model from: gguf_models/qwen2.5-0.5b-instruct-q4_0.gguf
+[GGUF Reader]: Loading and unpacking model done. Time: 196ms
+[GGUF Reader]: Start generating OpenVINO model...
+[GGUF Reader]: Save generated OpenVINO model to: gguf_models/openvino_model.xml done. Time: 466 ms
+[GGUF Reader]: Model generation done. Time: 757ms
 ```

@@ -59,7 +59,7 @@ result = pipeline.generate(raw_speech);
 //  Il s'agit d'une entité très complexe qui consiste...
 ```
 
-If the source audio languange is know in advance, it can be specified as an argument to `generate` method:
+If the source audio language is known in advance, it can be specified as an argument to `generate` method:
 
 ```c++
 ov::genai::RawSpeechInput raw_speech = read_wav("how_are_you_doing_today.wav");

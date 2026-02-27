@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
-    "glob": "^11.0.1"
+    "glob": "^11.1.0"
   },
   "devDependencies": {
     "@vercel/ncc": "^0.38.3",

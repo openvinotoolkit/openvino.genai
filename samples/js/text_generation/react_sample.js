@@ -1,7 +1,9 @@
 // Copyright(C) 2025 Intel Corporation
 // SPDX - License - Identifier: Apache - 2.0
+
 import * as https from 'https';
 import { LLMPipeline, StreamingStatus } from "openvino-genai-node";
+import { serialize_json } from './helper.js';
 
 const llmConfig = {
     'max_new_tokens': 256,
@@ -67,11 +69,6 @@ function formatTemplate(template, values) {
         return value;
     });
     return result;
-}
-
-function serialize_json(object) {
-    return JSON.stringify(object)
-        .replaceAll('":', '": ').replaceAll('",', '", '); // to align with Python;
 }
 
 function buildInputText(tokenizer, chatHistory, listOfToolInfo) {

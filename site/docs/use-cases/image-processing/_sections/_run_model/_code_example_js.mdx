@@ -1,0 +1,40 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="javascript" showLineNumbers>
+{`import { addon as ov } from "openvino-node";
+import { VLMPipeline } from "openvino-genai-node";
+import { stat, readdir } from "node:fs/promises";
+import sharp from "sharp";
+import path from "node:path";
+
+async function readImage(imagePath) {
+    const img = sharp(imagePath);
+    const metadata = await img.metadata();
+    const { width, height, channels } = metadata;
+    const imageBuffer = await img.raw().toBuffer();
+    return new ov.Tensor(ov.element.u8, [height, width, channels], imageBuffer);
+}
+
+async function readImages(imagePath) {
+    const stats = await stat(imagePath);
+    if (stats.isDirectory()) {
+        const files = await readdir(imagePath);
+        return Promise.all(files.sort().map((file) => readImage(path.join(imagePath, file))));
+    }
+    return [await readImage(imagePath)];
+}
+
+const images = await readImages("./images");
+
+const pipe = await VLMPipeline(modelPath, "${props.device || 'CPU'}");
+
+const result = await pipe.generate(prompt, {
+    images,
+    generationConfig: { max_new_tokens: 100 },
+});
+console.log(result.texts[0]);
+
+// To input videos frames, use 'videos' option, frames tensor layout = [Frame, H, W, C]
+// const result = await pipe.generate(prompt, { videos: [frames], generationConfig: { max_new_tokens: 100 } });
+`}
+</CodeBlock>

@@ -26,6 +26,5 @@ std::shared_ptr<ov::Model> get_dummy_model(ov::Core core, size_t num_layers) {
     }
     const auto& concat1 = std::make_shared<ov::op::v0::Concat>(keys, 1);
     const auto& concat2 = std::make_shared<ov::op::v0::Concat>(values, 1);
-    auto model = std::make_shared<ov::Model>(ov::NodeVector{concat1, concat2}, params);
-    return std::make_shared<ov::Model>(ov::NodeVector{concat1, concat2}, params);
+    return std::make_shared<ov::Model>(ov::OutputVector{concat1, concat2}, params);
 }

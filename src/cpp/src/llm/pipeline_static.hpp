@@ -1,4 +1,4 @@
-// Copyright (C) 2024-2025 Intel Corporation
+// Copyright (C) 2024-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -43,6 +43,12 @@ public:
 
     DecodedResults generate(
         StringInputs inputs,
+        OptionalGenerationConfig generation_config,
+        StreamerVariant streamer
+    ) override;
+
+    DecodedResults generate(
+        const ChatHistory& history,
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override;

@@ -1,9 +1,10 @@
 import util from "node:util";
-import addon, {
+import {
   TextEmbeddingPipelineWrapper,
   EmbeddingResult,
   EmbeddingResults,
   TextEmbeddingConfig,
+  TextEmbeddingPipeline as TextEmbeddingPipelineWrap,
 } from "../addon.js";
 
 export class TextEmbeddingPipeline {
@@ -17,19 +18,19 @@ export class TextEmbeddingPipeline {
   constructor(
     modelPath: string,
     device: string,
-    config?: TextEmbeddingConfig,
+    config: TextEmbeddingConfig,
     ovProperties?: object,
   ) {
     this.modelPath = modelPath;
     this.device = device;
-    this.config = config || {};
+    this.config = config;
     this.ovProperties = ovProperties || {};
   }
 
   async init() {
     if (this.pipeline) throw new Error("TextEmbeddingPipeline is already initialized");
 
-    this.pipeline = new addon.TextEmbeddingPipeline();
+    this.pipeline = new TextEmbeddingPipelineWrap();
 
     const initPromise = util.promisify(this.pipeline.init.bind(this.pipeline));
     await initPromise(this.modelPath, this.device, this.config, this.ovProperties);

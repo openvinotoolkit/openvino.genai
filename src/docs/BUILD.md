@@ -9,14 +9,14 @@ The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - GCC 7.5 or higher
-- Python 3.9 or higher
+- Python 3.10 or higher
 - Git
 
 ### Windows
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - Microsoft Visual Studio 2019 or higher, version 16.3 or later
-- Python 3.9 or higher
+- Python 3.10 or higher
 - Git for Windows
 
 ### macOS
@@ -30,7 +30,7 @@ The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources
     ```sh
     xcode-select --install
     ```
-- Python 3.9 or higher
+- Python 3.10 or higher
 - Git
 
 
@@ -59,7 +59,7 @@ Follow the OpenVINO [build instructions](https://github.com/openvinotoolkit/open
 
 ### Build OpenVINO, OpenVINO Tokenizers, and OpenVINO GenAI From Source
 
-1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build).  
+1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build).
 The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throughout the document.
 2. Clone OpenVINO GenAI repository and init submodules:
     ```sh
@@ -108,7 +108,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     set OPENVINO_LIB_PATHS=<INSTALL_DIR>\bin\intel64\Release;%OPENVINO_LIB_PATHS%
     set PATH=%OPENVINO_LIB_PATHS%;%PATH%
     ```
-    
+
     Windows PowerShell:
     ```sh
     $env:OpenVINO_DIR = "<INSTALL_DIR>\runtime"
@@ -127,7 +127,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
 5. Install OpenVINO GenAI:
 
     #### Option 1 - using cmake:
-    
+
     The following command will store built OpenVINO GenAI artifacts along with OpenVINO in `<INSTALL_DIR>`:
 
     ```sh
@@ -187,12 +187,12 @@ Visit the [OpenVINO Download Page](https://www.intel.com/content/www/us/en/devel
     .<INSTALL_DIR>\setupvars.ps1
     .<INSTALL_DIR>\samples\cpp\build_samples.ps1
     ```
-GenAI samples are also built along with the entire OpenVINO GenAI using the standard building process 
+GenAI samples are also built along with the entire OpenVINO GenAI using the standard building process
 
 
 ### Build OpenVINO GenAI Wheel
 
-1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build)  
+1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build)
 The path to the openvino install directory is referred as <INSTALL_DIR> throughout the document.
 2. Clone OpenVINO GenAI repository and init submodules:
     ```sh
@@ -245,7 +245,7 @@ After setting up your environment, use the following commands to configure addit
     ```
 - **Disable Python bindings to reduce build size:**
     ```sh
-    cmake -DENABLE_PYTHON_BINDINGS=OFF -S ./ -B ./build/
+    cmake -DENABLE_PYTHON=OFF -S ./ -B ./build/
     ```
 - **Experimental free threaded Python build:**
     To build the Python bindings with experimental free threaded Python support, add the following flag to your `cmake` command:

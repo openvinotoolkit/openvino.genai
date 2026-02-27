@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cassert>
@@ -41,8 +41,9 @@ DDIMScheduler::DDIMScheduler(const std::filesystem::path& scheduler_config_path)
 }
 
 DDIMScheduler::DDIMScheduler(const Config& scheduler_config)
-    : m_config(scheduler_config) {
-
+    : m_config(scheduler_config),
+      m_final_alpha_cumprod(0.0f),
+      m_num_inference_steps(0) {
     std::vector<float> alphas, betas;
 
     using numpy_utils::linspace;

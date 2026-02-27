@@ -21,19 +21,19 @@ class TestChatSample:
         if sys.platform == 'darwin':
             pytest.xfail("Ticket 173586")
         # C++ test
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'chat_sample')
+        cpp_sample = SAMPLES_CPP_DIR / 'chat_sample'
         cpp_command = [cpp_sample, convert_model]
         cpp_result = run_sample(cpp_command, '\n'.join(prompts))
         cpp_predictions = cpp_result.stdout
 
         # Python test
-        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/chat_sample.py")
+        py_script = SAMPLES_PY_DIR / "text_generation/chat_sample.py"
         py_command = [sys.executable, py_script, convert_model]
         py_result = run_sample(py_command, '\n'.join(prompts))
         py_predictions = py_result.stdout
 
         # C test
-        c_sample = os.path.join(SAMPLES_C_DIR, 'chat_sample_c')
+        c_sample = SAMPLES_C_DIR / 'chat_sample_c'
         c_command = [c_sample, convert_model]
         c_result = run_sample(c_command, '\n'.join(prompts))
         c_predictions = c_result.stdout

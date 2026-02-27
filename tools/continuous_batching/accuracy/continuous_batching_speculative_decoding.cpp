@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/openvino.hpp>
@@ -12,26 +12,46 @@ void print_cb_generation_result(const ov::genai::GenerationResult& generation_re
     }
 }
 
+ov::genai::GenerationConfig greedy_config() {
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 30;
+    return config;
+}
+
+ov::genai::GenerationConfig multinomial_config() {
+    ov::genai::GenerationConfig config;
+    config.do_sample = true;
+    config.temperature = 0.9f;
+    config.top_p = 0.9f;
+    config.top_k = 20;
+    config.num_return_sequences = 3;
+    config.presence_penalty = 0.01f;
+    config.frequency_penalty = 0.1f;
+    config.min_new_tokens = 15;
+    config.max_new_tokens = 30;
+    return config;
+}
+
 std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_examples() {
     
     // sampling param for speulative decoding
-    ov::genai::GenerationConfig generation_config_greedy_constant = ov::genai::greedy();
+    ov::genai::GenerationConfig generation_config_greedy_constant = greedy_config();
     {
         generation_config_greedy_constant.num_assistant_tokens = 5;
     }
 
-    ov::genai::GenerationConfig generation_config_multinomial_constant = ov::genai::multinomial();
+    ov::genai::GenerationConfig generation_config_multinomial_constant = multinomial_config();
     {
         generation_config_multinomial_constant.num_assistant_tokens = 5;
         generation_config_multinomial_constant.num_return_sequences = 1;
     }
 
-    ov::genai::GenerationConfig generation_config_greedy_dynamic = ov::genai::greedy();
+    ov::genai::GenerationConfig generation_config_greedy_dynamic = greedy_config();
     {
         generation_config_greedy_dynamic.assistant_confidence_threshold = 0.8f;
     }
 
-    ov::genai::GenerationConfig generation_config_multinomial_dynamic = ov::genai::multinomial();
+    ov::genai::GenerationConfig generation_config_multinomial_dynamic = multinomial_config();
     {
         generation_config_multinomial_dynamic.assistant_confidence_threshold = 0.8f;
     }

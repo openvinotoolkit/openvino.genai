@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "xgrammar_backend.hpp"
+#include "logger.hpp"
 #include <iostream>
 
 namespace ov {
@@ -24,63 +25,86 @@ XGrammarStructuredOutput::XGrammarStructuredOutput(const ov::genai::Tokenizer::T
 }
 
 
-xgrammar::Grammar XGrammarStructuredOutput::parse_compound_grammar(const StructuredOutputConfig::CompoundGrammar& compound_grammar) {
-    return std::visit([](const auto& grammar) -> xgrammar::Grammar {
-        using T = std::decay_t<decltype(grammar)>;
-        if constexpr (std::is_same_v<T, StructuredOutputConfig::Regex>) {
-            return xgrammar::Grammar::FromRegex(grammar.value);
-        } else if constexpr (std::is_same_v<T, StructuredOutputConfig::JSONSchema>) {
-            return xgrammar::Grammar::FromJSONSchema(grammar.value);
-        } else if constexpr (std::is_same_v<T, StructuredOutputConfig::EBNF>) {
-            return xgrammar::Grammar::FromEBNF(grammar.value);
-        } else if constexpr (std::is_same_v<T, std::shared_ptr<StructuredOutputConfig::Concat>>) {
-            return xgrammar::Grammar::Concat({
-                XGrammarStructuredOutput::parse_compound_grammar(grammar->left),
-                XGrammarStructuredOutput::parse_compound_grammar(grammar->right)
-            });
-        } else if constexpr (std::is_same_v<T, std::shared_ptr<StructuredOutputConfig::Union>>) {
-            return xgrammar::Grammar::Union({
-                XGrammarStructuredOutput::parse_compound_grammar(grammar->left),
-                XGrammarStructuredOutput::parse_compound_grammar(grammar->right)
-            });
-        } else {
-            OPENVINO_THROW(
-                "Cannot compile the compound grammar. Unsupported compound grammar type. "
-                "Supported types are: Regex, JSONSchema, EBNF, Union, Concat."
-            );
-        }
-    }, compound_grammar);
+xgrammar::Grammar XGrammarStructuredOutput::parse_structural_tag(const StructuredOutputConfig::CompoundGrammar& compound_grammar) {
+    
+    std::ostringstream oss;
+
+    // compound grammar is already a string JSON representation
+    if (std::holds_alternative<std::string>(compound_grammar)) {
+        oss << std::get<std::string>(compound_grammar);
+    } else {
+        oss << "{\"type\": \"structural_tag\", \"format\": ";
+        oss << std::visit([](const auto& grammar) -> std::string {
+            return StructuredOutputConfig::structural_tag_to_json(grammar);
+        }, compound_grammar);
+        oss << "}";
+    };
+    auto result = xgrammar::Grammar::FromStructuralTag(oss.str());
+    if (std::holds_alternative<xgrammar::Grammar>(result)) {
+        return std::get<xgrammar::Grammar>(result);
+    } else {
+        const auto& error = std::get<xgrammar::StructuralTagError>(result);
+        std::string error_message;
+        std::visit([&error_message](const auto& err) {
+            if constexpr (std::is_member_function_pointer<decltype(&std::decay_t<decltype(err)>::what)>::value) {
+                error_message = err.what();
+            } else {
+                error_message = "Unknown error type";
+            }
+        }, error);
+        OPENVINO_THROW("Failed to create grammar from structural tag: " + error_message);
+    }
 }
 
 xgrammar::Grammar XGrammarStructuredOutput::create_grammar(const std::optional<StructuredOutputConfig>& structured_output_config) {
-    // Default constructor for xgrammar::Grammar is not enabled,
-    // create explicitly an empty grammar.
-    xgrammar::Grammar grammar = xgrammar::Grammar::FromEBNF("root ::= root");
     if (!structured_output_config.has_value()) {
-        return grammar;
+        return xgrammar::Grammar::FromEBNF("root ::= root");
     }
 
     if (structured_output_config.value().json_schema.has_value()) {
-        grammar = xgrammar::Grammar::FromJSONSchema(structured_output_config.value().json_schema.value());
+        return xgrammar::Grammar::FromJSONSchema(structured_output_config.value().json_schema.value());
     } else if (structured_output_config.value().regex.has_value()) {
-        grammar = xgrammar::Grammar::FromRegex(structured_output_config.value().regex.value());
+        return xgrammar::Grammar::FromRegex(structured_output_config.value().regex.value());
     } else if (structured_output_config.value().grammar.has_value()) {
-        grammar = xgrammar::Grammar::FromEBNF(structured_output_config.value().grammar.value());
+        return xgrammar::Grammar::FromEBNF(structured_output_config.value().grammar.value());
     } else if (structured_output_config.value().structural_tags_config.has_value()) {
-        std::vector<xgrammar::StructuralTagItem> xgrammar_structural_tags;
-        for (const auto& tag : structured_output_config.value().structural_tags_config.value().structural_tags) {
-            auto structural_tag = xgrammar::StructuralTagItem{tag.begin, tag.schema, tag.end};
-            xgrammar_structural_tags.push_back(std::move(structural_tag));
-        }
-        grammar = xgrammar::Grammar::FromStructuralTag(
-            xgrammar_structural_tags, structured_output_config.value().structural_tags_config.value().triggers
-        );
+        return std::visit([](const auto& config) -> xgrammar::Grammar {
+            using ConfigType = std::decay_t<decltype(config)>;
+            if constexpr (std::is_same_v<ConfigType, StructuralTagsConfig>) {
+                // Old format: StructuralTagsConfig
+                GENAI_WARN("The use of \"structural_tags_config\" with StructuralTagsConfig instance is "
+                           "deprecated and will be removed in future releases. "
+                           "Use TriggeredTags instead.");
+
+                std::ostringstream oss;
+                oss << "{\"type\": \"structural_tag\", \"format\": " << config.to_json() << "}";
+                auto result = xgrammar::Grammar::FromStructuralTag(oss.str());
+                if (std::holds_alternative<xgrammar::Grammar>(result)) {
+                    return std::get<xgrammar::Grammar>(result);
+                } else {
+                    const auto& error = std::get<xgrammar::StructuralTagError>(result);
+                    std::string error_message;
+                    std::visit([&error_message](const auto& err) {
+                        if constexpr (std::is_member_function_pointer<decltype(&std::decay_t<decltype(err)>::what)>::value) {
+                            error_message = err.what();
+                        } else {
+                            error_message = "Unknown error type";
+                        }
+                    }, error);
+                    OPENVINO_THROW("Failed to create grammar from structural tag: " + error_message);
+                }
+            } else {
+                // New format: StructuralTag
+                return parse_structural_tag(config);
+            }
+        }, structured_output_config.value().structural_tags_config.value());
     } else if (structured_output_config.value().compound_grammar.has_value()) {
-        grammar = parse_compound_grammar(structured_output_config.value().compound_grammar.value());
-    } else {
-        OPENVINO_THROW("No grammar definition provided for structured output generation.");
+        GENAI_WARN("The use of \"compound_grammar\" is deprecated and will be removed in future releases.\n"
+                   "Pass the same input to \"structural_tags_config\" instead.");
+        return parse_structural_tag(structured_output_config.value().compound_grammar.value());
     }
-    return grammar;
+
+    OPENVINO_THROW("No grammar definition provided for structured output generation.");
 }
 
 void XGrammarStructuredOutput::validate_grammar(const std::optional<StructuredOutputConfig>& structured_output_config) {
@@ -129,7 +153,7 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
     m_token_bitmask->ndim = 1;
     m_token_bitmask->dtype = DLDataType{kDLInt, 32, 1};
     m_token_bitmask->byte_offset = 0;
-    m_token_bitmask->strides = nullptr; // No strides, tensor is compact
+    m_token_bitmask->strides = &m_bitmask_strides[0];  // xgrammar expects strides to be set, even for compact tensors
     m_bitmask_shape = {static_cast<int64_t>(m_token_bitmask_ov.get_size())};
     m_token_bitmask->shape = &m_bitmask_shape[0];
     
@@ -138,9 +162,9 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
     m_next_token_logits->ndim = 1;
     m_next_token_logits->dtype = DLDataType{kDLFloat, 32, 1};
     m_next_token_logits->byte_offset = 0;
-    m_next_token_logits->strides = nullptr; // No strides, tensor is compact
     m_logits_shape = {static_cast<int64_t>(m_vocab_size)};
     m_next_token_logits->shape = &m_logits_shape[0];
+    m_next_token_logits->strides = &m_logits_strides[0];
 }
 
 void XGrammarLogitsTransformer::accept_tokens(const TokenIds& input_ids) {

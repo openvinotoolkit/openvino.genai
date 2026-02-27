@@ -1,0 +1,18 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="javascript" showLineNumbers>
+{`import { TextEmbeddingPipeline, PoolingType } from "openvino-genai-node";
+
+const pipeline = await TextEmbeddingPipeline(
+    models_path,
+    "${props.device || 'CPU'}",
+    {
+        pooling_type: PoolingType.MEAN,
+        normalize: true
+    }
+);
+
+const documents_embeddings = await pipeline.embedDocuments(documents);
+const query_embeddings = await pipeline.embedQuery("What is the capital of France?");
+`}
+</CodeBlock>

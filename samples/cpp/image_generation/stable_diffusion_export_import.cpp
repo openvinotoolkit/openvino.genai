@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "imwrite.hpp"
@@ -38,7 +38,7 @@ void dedicated_models_export_import(const std::filesystem::path& root_dir) {
     auto unet = ov::genai::UNet2DConditionModel(root_dir / "unet", device);
     unet.export_model(blob_path / "unet");
 
-    auto vae = ov::genai::AutoencoderKL(root_dir / "vae_decoder", "CPU", ov::AnyMap{});
+    auto vae = ov::genai::AutoencoderKL(root_dir / "vae_decoder", device, ov::AnyMap{});
     vae.export_model(blob_path);
     // AutoencoderKL can be composed with decoder and encoder models
     // exported/

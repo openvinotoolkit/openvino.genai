@@ -22,6 +22,16 @@ public:
         std::optional<size_t> max_length;
 
         /**
+         * @brief If 'true', model input tensors are padded to the maximum length
+         */
+        std::optional<bool> pad_to_max_length;
+
+        /**
+         * @brief Side to use for padding "left" or "right"
+         */
+        std::optional<std::string> padding_side;
+
+        /**
          * @brief Constructs text rerank pipeline configuration
          */
         Config() = default;

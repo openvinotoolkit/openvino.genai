@@ -1,5 +1,5 @@
 
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/llava_next/classes.hpp"
@@ -13,9 +13,7 @@ namespace ov::genai {
 // forward declaration
 clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const ProcessorConfig& config);
 
-namespace {
-
-ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorConfig& config) {
+ov::Tensor VisionEncoderLLaVANext::get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorConfig& config) {
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
     std::pair<int, int> size{config.size_shortest_edge, config.size_shortest_edge};
@@ -47,8 +45,6 @@ ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorC
     return concatenated_tensor;
 }
 
-} // namespace
-
 EncodedImage VisionEncoderLLaVANext::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
@@ -71,7 +67,7 @@ EncodedImage VisionEncoderLLaVANext::encode(const ov::Tensor& image, const ov::A
     int num_patches_w = best_resolution.first / config.size_shortest_edge;
     int num_patches_h = best_resolution.second / config.size_shortest_edge;
 
-    EncodedImage encoded_image;
+    EncodedImage encoded_image{};
     encoded_image.resized_source = std::move(image_features);
     encoded_image.resized_source_size = resized_source_size;
     encoded_image.patches_grid = {num_patches_h, num_patches_w};
@@ -81,6 +77,8 @@ EncodedImage VisionEncoderLLaVANext::encode(const ov::Tensor& image, const ov::A
 
 namespace {
 
+// ref:
+// https://github.com/huggingface/transformers/blob/v4.57.3/src/transformers/models/llava_next/modeling_llava_next.py#L109
 ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size) {
     size_t original_height = original_size.height;
     size_t original_width = original_size.width;
@@ -92,41 +90,37 @@ ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size)
     float original_aspect_ratio = static_cast<float>(original_width) / original_height;
     float current_aspect_ratio = static_cast<float>(current_width) / current_height;
 
-    ov::Tensor unpadded_tensor;
-
+    ov::Shape unpadded_tensor_shape;
+    ov::Coordinate view_begin, view_end;
     if (original_aspect_ratio > current_aspect_ratio) {
         float scale_factor = static_cast<float>(current_width) / original_width;
         size_t new_height = static_cast<size_t>(original_height * scale_factor);
         size_t padding = (current_height - new_height) / 2;
-        size_t unpadded_height_dim = new_height + 1;
-        unpadded_tensor = ov::Tensor(tensor.get_element_type(), {embed_dim, unpadded_height_dim, current_width});
 
-        for (size_t e = 0; e < embed_dim; ++e) {
-            for (int h = 0; h < unpadded_height_dim; ++h) {
-                std::copy(
-                    tensor.data<float>() + (e * current_height * current_width + (padding + h) * current_width),
-                    tensor.data<float>() + (e * current_height * current_width + (padding + h) * current_width + current_width),
-                    unpadded_tensor.data<float>() + (e * unpadded_height_dim * current_width + h * current_width)
-                );
-            }
-        }
+        OPENVINO_ASSERT(current_height > padding * 2,
+                        "current_height(" + std::to_string(current_height) + ") must be > padding(" +
+                            std::to_string(padding) + ") * 2");
+        size_t unpadded_height = current_height - padding * 2;
+        unpadded_tensor_shape = ov::Shape({embed_dim, unpadded_height, current_width});
+        view_begin = ov::Coordinate({0, padding, 0});
+        view_end = ov::Coordinate({embed_dim, current_height - padding, current_width});
     } else {
         float scale_factor = static_cast<float>(current_height) / original_height;
         size_t new_width = static_cast<size_t>(original_width * scale_factor);
         size_t padding = (current_width - new_width) / 2;
-        size_t unpadded_width_dim = new_width + 1;
-        unpadded_tensor = ov::Tensor(tensor.get_element_type(), {embed_dim, current_height, unpadded_width_dim});
 
-        for (size_t e = 0; e < embed_dim; ++e) {
-            for (int h = 0; h < current_height; ++h) {
-                std::copy(
-                    tensor.data<float>() + (e * current_height * current_width + h * current_width + padding),
-                    tensor.data<float>() + (e * current_height * current_width + h * current_width + padding + unpadded_width_dim),
-                    unpadded_tensor.data<float>() + (e * current_height * unpadded_width_dim + h * unpadded_width_dim)
-                );
-            }
-        }
+        OPENVINO_ASSERT(current_width > padding * 2,
+                        "current_width(" + std::to_string(current_width) + ") must be > padding(" +
+                            std::to_string(padding) + ") * 2");
+        size_t unpadded_width = current_width - padding * 2;
+        unpadded_tensor_shape = ov::Shape({embed_dim, current_height, unpadded_width});
+        view_begin = ov::Coordinate({0, 0, padding});
+        view_end = ov::Coordinate({embed_dim, current_height, current_width - padding});
     }
+
+    auto unpadded_tensor_view = ov::Tensor(tensor, view_begin, view_end);
+    auto unpadded_tensor = ov::Tensor(tensor.get_element_type(), unpadded_tensor_shape);
+    unpadded_tensor_view.copy_to(unpadded_tensor);
 
     return unpadded_tensor;
 }
@@ -251,6 +245,7 @@ ov::Tensor add_image_newline(const ov::Tensor& image_feature, const ov::Tensor& 
 
     return feature_with_newline;
 }
+} // namespace
 
 /**
  * @brief Processes base and patches image features extracted from encoded image.
@@ -261,9 +256,9 @@ ov::Tensor add_image_newline(const ov::Tensor& image_feature, const ov::Tensor& 
  * @param image_newline An image newline tensor with a shape (embed_dim)
  * @return A tensor with a shape (1, new_seq_len, embed_dim)
  */
-ov::Tensor pack_image_features_llava_next(
+ov::Tensor InputsEmbedderLLaVANext::pack_image_features_llava_next(
     const EncodedImage& encoded_image,
-    const ov::Tensor& image_newline) {
+    const ov::Tensor& image_newline) const {
     auto image_feature = encoded_image.resized_source;
     auto image_feature_shape = image_feature.get_shape();
     size_t num_patches = image_feature_shape[0];
@@ -331,8 +326,6 @@ ov::Tensor pack_image_features_llava_next(
     }
 }
 
-} // namespace
-
 std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVANext::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> embeds;
     ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
@@ -343,7 +336,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVANext::encode_images(cons
     return embeds;
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderLLaVANext::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderLLaVANext::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
     auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
     std::vector<ov::Tensor> image_embeds;

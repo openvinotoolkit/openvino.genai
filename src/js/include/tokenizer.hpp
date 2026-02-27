@@ -15,6 +15,12 @@ public:
     Napi::Value get_eos_token_id(const Napi::CallbackInfo& info);
     Napi::Value get_pad_token(const Napi::CallbackInfo& info);
     Napi::Value get_pad_token_id(const Napi::CallbackInfo& info);
+    Napi::Value get_chat_template(const Napi::CallbackInfo& info);
+    Napi::Value get_original_chat_template(const Napi::CallbackInfo& info);
+    Napi::Value set_chat_template(const Napi::CallbackInfo& info);
+    Napi::Value supports_paired_input(const Napi::CallbackInfo& info);
+    Napi::Value encode(const Napi::CallbackInfo& info);
+    Napi::Value decode(const Napi::CallbackInfo& info);
 private:
     ov::genai::Tokenizer _tokenizer;
 };

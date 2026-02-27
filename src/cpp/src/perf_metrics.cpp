@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/perf_metrics.hpp"
@@ -12,31 +12,33 @@ namespace genai {
 
 ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSeconds>& durations) {
     if (durations.size() == 0) {
-        return {-1, -1};
+        return {-1.0f, -1.0f};
     }
     // Accepts time durations in microseconds and returns standard deviation and mean in milliseconds.
-    float mean = std::accumulate(durations.begin(), durations.end(), 0.0f, 
-        [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
-            return acc + duration.count() / 1000.0f;
+    double mean = std::accumulate(durations.begin(), durations.end(), 0.0, 
+        [](const double& acc, const ov::genai::MicroSeconds& duration) -> double {
+            return acc + duration.count() / 1000.0;
         });
     mean /= durations.size();
     
-    float sum_square_durations = std::accumulate(durations.begin(), durations.end(), 0.0f,
-        [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
-            auto d = duration.count() / 1000.0f;
+    double sum_square_durations = std::accumulate(durations.begin(), durations.end(), 0.0,
+        [](const double& acc, const ov::genai::MicroSeconds& duration) -> double {
+            auto d = duration.count() / 1000.0;
             return acc + d * d;
         });
-    float std = std::sqrt(sum_square_durations / durations.size() - mean * mean);
-    return {mean, std};
+    double std = std::sqrt(sum_square_durations / durations.size() - mean * mean);
+    return {static_cast<float>(mean), static_cast<float>(std)};
 }
 
 ov::genai::SummaryStats calc_full_stat(const std::vector<ov::genai::MicroSeconds>& durations) {
     if (durations.size() == 0) {
-        return {-1, -1, -1, -1};
+        return {-1.0f, -1.0f, -1.0f, -1.0f};
     }
-    auto minmax = std::minmax_element(durations.begin(), durations.end());
     auto meanstd = calc_mean_and_std(durations);
-    return {meanstd.mean, meanstd.std, minmax.first->count() / 1000.0f, minmax.second->count() / 1000.0f};
+    auto minmax = std::minmax_element(durations.begin(), durations.end());
+    float min = static_cast<float>(minmax.first->count() / 1000.0);
+    float max = static_cast<float>(minmax.second->count() / 1000.0);
+    return {meanstd.mean, meanstd.std, min, max};
 }
 
 float PerfMetrics::get_load_time() {
@@ -116,11 +118,14 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
         auto start_time_val = *start_time;
         auto& tok_times = raw_metrics.m_new_token_times;
         auto& batch_sizes = raw_metrics.m_batch_sizes;
+
+        raw_metrics.m_durations.clear();
         raw_metrics.m_durations.reserve(tok_times.size());
 
         auto ttft = tok_times[0] - start_time_val;
         raw_metrics.m_times_to_first_token.clear();
         raw_metrics.m_times_to_first_token.emplace_back(ttft);
+
         num_generated_tokens = batch_sizes[0];
 
         // The very first infer request (prefill stage) is slower than subsequent ones since we process a sequence of tokens.

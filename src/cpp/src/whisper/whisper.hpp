@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -7,6 +7,7 @@
 
 #include "context_tokens.hpp"
 #include "models/decoder.hpp"
+#include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "sampling/sampler.hpp"
@@ -26,6 +27,7 @@ struct Segment {
 struct WhisperGenerateResult {
     std::vector<int64_t> output_tokens;
     std::optional<std::vector<Segment>> segments = std::nullopt;
+    std::optional<std::vector<WhisperWordTiming>> words = std::nullopt;
     WhisperPerfMetrics perf_metrics;
 };
 
@@ -37,7 +39,8 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                        std::shared_ptr<WhisperDecoder> decoder,
                                        WhisperFeatureExtractor& feature_extractor,
                                        const std::shared_ptr<StreamerBase> streamer,
-                                       Sampler& sampler);
+                                       Sampler& sampler,
+                                       Tokenizer& tokenizer);
 
 }  // namespace genai
 }  // namespace ov

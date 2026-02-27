@@ -15,13 +15,13 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 To export text embedding model run Optimum CLI command:
 
 ```sh
-optimum-cli export openvino --trust-remote-code --model BAAI/bge-small-en-v1.5 BAAI/bge-small-en-v1.5
+optimum-cli export openvino --task feature-extraction --model BAAI/bge-small-en-v1.5 BAAI/bge-small-en-v1.5
 ```
 
 To export text reranking model run Optimum CLI command:
 
 ```sh
-optimum-cli export openvino --trust-remote-code --model cross-encoder/ms-marco-MiniLM-L6-v2 cross-encoder/ms-marco-MiniLM-L6-v2
+optimum-cli export openvino --task text-classification --model cross-encoder/ms-marco-MiniLM-L6-v2 cross-encoder/ms-marco-MiniLM-L6-v2
 ```
 
 Alternatively, do it in Python code:
@@ -33,7 +33,7 @@ from transformers import AutoTokenizer
 
 output_dir = "embedding_model"
 
-model = OVModelForFeatureExtraction.from_pretrained("BAAI/bge-small-en-v1.5", export=True, trust_remote_code=True)
+model = OVModelForFeatureExtraction.from_pretrained("BAAI/bge-small-en-v1.5", export=True)
 model.save_pretrained(output_dir)
 
 tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-small-en-v1.5")

@@ -1,8 +1,10 @@
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+
 import dataclasses
 import json
-from typing import Optional
+import sys
+from pathlib import Path
 
 import numpy as np
 import openvino
@@ -10,9 +12,10 @@ import openvino.properties.hint as hints
 import pytest
 from data.models import get_models_list
 from data.tokenizer_configs import get_tokenizer_configs
-from openvino_genai import Tokenizer
+from openvino_genai import Tokenizer, ChatHistory
 from openvino_tokenizers import convert_tokenizer
 from transformers import AutoTokenizer
+from huggingface_hub import snapshot_download
 
 from utils.constants import get_disabled_mmap_ov_config
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
@@ -48,6 +51,10 @@ def get_chat_templates():
     return [(k, v) for k, v in get_tokenizer_configs().items() if k not in skipped_models]
 
 
+def assert_hf_equals_genai(hf_str: str, genai_str: str):
+    assert hf_str == genai_str, f"HF reference:\n{hf_str}\nGenAI output:\n{genai_str}"
+
+
 prompts = [
     "table is made of",
     "你好！ 你好嗎？",
@@ -59,14 +66,15 @@ prompts = [
 
 @pytest.fixture(scope="module")
 def ov_hf_tokenizers(request):
-    _, hf_tokenizer, models_path = download_and_convert_model(request.param)
+    model_schema = download_and_convert_model(request.param)
+    hf_tokenizer = model_schema.hf_tokenizer
+    models_path = model_schema.models_path
     ov_tokenizer = Tokenizer(models_path)
     return ov_tokenizer, hf_tokenizer
 
 
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 @pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.precommit
 def test_encode(ov_hf_tokenizers, prompt):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
 
@@ -80,25 +88,31 @@ def test_encode(ov_hf_tokenizers, prompt):
         assert np.all(encoded_hf == encoded_ov[0])
 
 
-encoded_prompts = [
-    [1, 1591, 338, 1754, 310],
-    [1, 17102, 323, 3864, 471, 263],
-    # chineze characters
-    [1, 29871, 30919, 31076, 30584, 29871, 30919, 31076, 232, 154, 145, 30882],
-    # On meta-llama/Meta-Llama-3-8B-Instruct this becomes longer  after removing the last token
-    [3113, 264, 364, 267],
-    # batched tokens
+@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
+@pytest.mark.parametrize(
+    "encoded_prompt", 
     [
         [1, 1591, 338, 1754, 310],
-        [1, 1591, 338, 1754, 310],
         [1, 17102, 323, 3864, 471, 263],
+        # chinese characters
+        [1, 29871, 30919, 31076, 30584, 29871, 30919, 31076, 232, 154, 145, 30882],
+        # On meta-llama/Meta-Llama-3-8B-Instruct this becomes longer  after removing the last token
+        [3113, 264, 364, 267],
+        # batched tokens
+        [
+            [1, 1591, 338, 1754, 310],
+            [1, 1591, 338, 1754, 310],
+            [1, 17102, 323, 3864, 471, 263],
+        ],
     ],
-]
-
-
-@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
-@pytest.mark.parametrize("encoded_prompt", encoded_prompts)
-@pytest.mark.precommit
+    ids=[
+        "encoded_prompt",
+        "encoded_prompt_2",
+        "encoded_prompt_chinese",
+        "encoded_prompt_meta_llama",
+        "encoded_prompt_batched",
+    ],
+)
 def test_decode(ov_hf_tokenizers, encoded_prompt):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
     decoded_ov = ov_tokenizer.decode(encoded_prompt)
@@ -112,7 +126,7 @@ def test_decode(ov_hf_tokenizers, encoded_prompt):
         assert decoded_hf == decoded_ov
 
 
-conversation = [
+CONVERSATION_EXAMPLE = [
     {"role": "user", "content": "1+1="},
     {"role": "assistant", "content": "1 + 1 = 2"},
     {"role": "user", "content": "What is the previous answer?"},
@@ -126,7 +140,6 @@ conversation = [
 ]
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("chat_config", get_chat_templates())
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_hf_tokenizers):
@@ -138,17 +151,16 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
         tokenizer_config["chat_template"] = tokenizer_config["chat_template"]["default"]
 
     hf_full_history_str = hf_tokenizer.apply_chat_template(
-        conversation, add_generation_prompt=False, tokenize=False, **tokenizer_config
+        CONVERSATION_EXAMPLE, add_generation_prompt=False, tokenize=False, **tokenizer_config
     )
 
     ov_tokenizer = load_genai_tokenizer_with_configs([(tokenizer_config, "tokenizer_config.json")], model_tmp_path[1])
     ov_tokenizer.set_chat_template(tokenizer_config["chat_template"])
-    ov_full_history_str = ov_tokenizer.apply_chat_template(conversation, add_generation_prompt=False)
+    ov_full_history_str = ov_tokenizer.apply_chat_template(CONVERSATION_EXAMPLE, add_generation_prompt=False)
 
-    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
+    assert_hf_equals_genai(hf_full_history_str, ov_full_history_str)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 @pytest.mark.parametrize("tokenizer_config_model_id", ["google/gemma-3-1b-it"])
 def test_apply_chat_template_nested_content(model_tmp_path, ov_hf_tokenizers, tokenizer_config_model_id):
@@ -175,10 +187,19 @@ def test_apply_chat_template_nested_content(model_tmp_path, ov_hf_tokenizers, to
         messages, add_generation_prompt=add_generation_prompt
     )
 
-    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
+    assert_hf_equals_genai(hf_full_history_str, ov_full_history_str)
+
+    chat_history = ChatHistory(messages)
+    
+    assert chat_history.get_messages() == messages
+
+    genai_templated_chat_history = genai_tokenizer.apply_chat_template(
+        chat_history, add_generation_prompt=add_generation_prompt
+    )
+
+    assert genai_templated_chat_history == ov_full_history_str
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 @pytest.mark.parametrize("tokenizer_config_model_id", ["Qwen/Qwen3-8B-Base"])
 def test_apply_chat_template_with_tools_and_extra_context(model_tmp_path, ov_hf_tokenizers, tokenizer_config_model_id):
@@ -198,27 +219,41 @@ def test_apply_chat_template_with_tools_and_extra_context(model_tmp_path, ov_hf_
             }
         }
     }]
-    # In GenAI order of dict keys is not preserved (sorted alphabetically, due to conversion to AnyMap)
-    tools = [json.loads(json.dumps(tool, sort_keys=True)) for tool in tools]
 
     add_generation_prompt = True
 
     extra_context = { "enable_thinking": False }
     
     hf_full_history_str = hf_tokenizer.apply_chat_template(
-        conversation, add_generation_prompt=add_generation_prompt, tokenize=False, tools=tools, **extra_context, **tokenizer_config
+        CONVERSATION_EXAMPLE, add_generation_prompt=add_generation_prompt, tokenize=False, tools=tools, **extra_context, **tokenizer_config
     )
 
     genai_tokenizer = load_genai_tokenizer_with_configs([(tokenizer_config, "tokenizer_config.json")], model_tmp_path[1])
 
     ov_full_history_str = genai_tokenizer.apply_chat_template(
-        conversation, add_generation_prompt=add_generation_prompt, tools=tools, extra_context=extra_context
+        CONVERSATION_EXAMPLE, add_generation_prompt=add_generation_prompt, tools=tools, extra_context=extra_context
     )
 
-    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
+    assert_hf_equals_genai(hf_full_history_str, ov_full_history_str)
+
+    # Test tools and extra context set via chat history state
+    chat_history = ChatHistory(CONVERSATION_EXAMPLE)
+    chat_history.set_tools(tools)
+    chat_history.set_extra_context(extra_context)
+    genai_templated_chat_history = genai_tokenizer.apply_chat_template(
+        chat_history, add_generation_prompt=add_generation_prompt
+    )
+    assert_hf_equals_genai(genai_templated_chat_history, ov_full_history_str)
+
+    # Test apply_chat_template tools and extra_context arguments prioritized over chat history state
+    chat_history.set_tools([])
+    chat_history.set_extra_context({})
+    genai_templated_chat_history = genai_tokenizer.apply_chat_template(
+        chat_history, add_generation_prompt=add_generation_prompt, tools=tools, extra_context=extra_context
+    )
+    assert_hf_equals_genai(genai_templated_chat_history, ov_full_history_str)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
     [("Xenova/c4ai-command-r-v01-tokenizer", { "padding_side": None })],
@@ -228,15 +263,14 @@ def test_non_string_chat_template(hf_ov_genai_models):
     hf_tokenizer, genai_tokenzier = hf_ov_genai_models
     
     hf_full_history_str = hf_tokenizer.apply_chat_template(
-        conversation, add_generation_prompt=False, tokenize=False,
+        CONVERSATION_EXAMPLE, add_generation_prompt=False, tokenize=False,
     )
 
-    ov_full_history_str = genai_tokenzier.apply_chat_template(conversation, add_generation_prompt=False)
+    ov_full_history_str = genai_tokenzier.apply_chat_template(CONVERSATION_EXAMPLE, add_generation_prompt=False)
 
-    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
+    assert_hf_equals_genai(hf_full_history_str, ov_full_history_str)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
 def test_set_chat_template(ov_hf_tokenizers):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
@@ -260,33 +294,37 @@ def test_set_chat_template(ov_hf_tokenizers):
     assert prompt == templated_prompt
 
 
-eng_prompts = [
-    "1+1=",
-    "What is the previous answer?",
-    "Why is the Sun yellow?",
-    "What was my first question?",
-    ["Why is the Sun yellow?"],
-    "Multiline\nstring\nWow!",
-]
-unicode_prompts = [
-    *(str.encode(x, "unicode_escape") for x in [
-            "如果您有任何疑问，请联系我们，我们将予以解答。",
-            "מחרוזת בדיקה",
-        ])
-]
-
-
 @pytest.mark.parametrize(
     "ov_hf_tokenizers",
     [
-        "katuni4ka/tiny-random-phi3",
+        "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
     ],
     indirect=True,
 )
-@pytest.mark.precommit
-@pytest.mark.parametrize("prompt", [*eng_prompts, *unicode_prompts])
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "1+1=",
+        "What is the previous answer?",
+        "Why is the Sun yellow?",
+        "What was my first question?",
+        ["Why is the Sun yellow?"],
+        "Multiline\nstring\nWow!",
+        str.encode("如果您有任何疑问，请联系我们，我们将予以解答。", "unicode_escape"),
+        str.encode("מחרוזת בדיקה", "unicode_escape"),
+    ],
+    ids=[
+        "Sum",
+        "Question 1",
+        "Question 2",
+        "Question 3",
+        "Question 4",
+        "Multiline string",
+        "Unicode escape Chinese",
+        "Unicode escape Hebrew",
+    ]
+)
 def test_special_tokens(prompt, ov_hf_tokenizers):
     prompt = prompt.decode("unicode_escape") if isinstance(prompt, bytes) else prompt
 
@@ -317,9 +355,9 @@ def test_special_tokens(prompt, ov_hf_tokenizers):
     assert decoded_hf_skip_spec != decoded_hf_no_skip
 
 
-@pytest.mark.precommit
 def test_multiple_infer_request_state(tmp_path):
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained("llamafactory/tiny-random-Llama-3"))
+    model_cached = snapshot_download("llamafactory/tiny-random-Llama-3")  # required to avoid HF rate limits
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_cached))
     ov_tokenizer = convert_tokenizer(hf_tokenizer)
     openvino.save_model(ov_tokenizer, tmp_path / "openvino_tokenizer.xml")
     del ov_tokenizer, hf_tokenizer
@@ -354,7 +392,8 @@ def hf_ov_genai_models(request, tmp_path_factory):
     model_dir = tmp_path_factory.getbasetemp() / model_id.replace("/", "_")
     model_dir.mkdir(exist_ok=True, parents=True)
 
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_args)
+    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_cached, **hf_args)
     convert_args = {"number_of_inputs": hf_args.pop("number_of_inputs")} if "number_of_inputs" in hf_args else {}
     convert_and_save_tokenizer(hf_tokenizer, model_dir, **convert_args)
 
@@ -362,44 +401,55 @@ def hf_ov_genai_models(request, tmp_path_factory):
     return hf_tokenizer, genai_tokenizer
 
 
-prompts = [
-    ["1+1=", "What is the previous answer?"],
-    # long sentence exceeding max_length, check that is truncated
-    "What is the previous answers? " * 1000,
-    # check that short sentence is padded to long
-    "what",
-    # check that large batch with multilangual data is correctly padded
-    [
-        "1+1=",
-        "What is the previous answer?",
-        "Why is the Sun yellow?",
-        "What was my first question?",
-        "若我有一亿美元，在人工智能盛行的今天，我怎样投资才能收益最大化？",
-        "מחרוזת בדיקה",
-        "Multiline\nstring!\nWow!",
-    ],
-]
-
-
-@pytest.mark.precommit
 @pytest.mark.parametrize("add_special_tokens", [True, False])
 @pytest.mark.parametrize("max_length", [None, 16, 103, 512, 1024])
 @pytest.mark.parametrize("pad_to_max_length", [None, True, False])
 # regardless of what side was set during conversion we should be able to set it at runtime
 @pytest.mark.parametrize("padding_side", [None, "right", "left"])
-@pytest.mark.parametrize("prompt", prompts)
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        ["1+1=", "What is the previous answer?"],
+        # long sentence exceeding max_length, check that is truncated
+        "What is the previous answers? " * 1000,
+        # check that short sentence is padded to long
+        "what",
+        # check that large batch with multilingual data is correctly padded
+        [
+            "1+1=",
+            "What is the previous answer?",
+            "Why is the Sun yellow?",
+            "What was my first question?",
+            "若我有一亿美元，在人工智能盛行的今天，我怎样投资才能收益最大化？",
+            "מחרוזת בדיקה",
+            "Multiline\nstring!\nWow!",
+        ],
+    ],
+    ids=[
+        "Sum and Question 1",
+        "Long sentence",
+        "Short sentence",
+        "Multilingual data",
+    ],
+)
 @pytest.mark.parametrize(
     "hf_ov_genai_models",
     [
-        ("katuni4ka/tiny-random-phi3", {"padding_side": None}),
+        ("optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM", {"padding_side": None}),
         ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", {"padding_side": None}),
-        ("katuni4ka/tiny-random-llava-next", {"padding_side": "right"}),
-        ("katuni4ka/tiny-random-llava-next", {"padding_side": "left"}),
+        ("optimum-intel-internal-testing/tiny-random-llava-next", {"padding_side": "right"}),
+        ("optimum-intel-internal-testing/tiny-random-llava-next", {"padding_side": "left"}),
         (
             "BAAI/bge-small-en-v1.5",
             {"padding_side": None},
         ),  # model with 2 RaggedToDense ops
-        # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
+    ],
+    ids=[
+        "phi3",
+        "TinyLlama-1.1B-Chat-v1.0",
+        "llava-next-right",
+        "llava-next-left",
+        "bge-small-en-v1.5",
     ],
     indirect=True,
 )
@@ -456,13 +506,12 @@ def test_padding(
 base_models_for_paired_input_test = [
     ("answerdotai/ModernBERT-base", {"padding_side": None}),
     ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", {"padding_side": None}),
-    ("katuni4ka/tiny-random-llava-next", {"padding_side": "right"}),
-    ("katuni4ka/tiny-random-llava-next", {"padding_side": "left"}),
+    ("optimum-intel-internal-testing/tiny-random-llava-next", {"padding_side": "right"}),
+    ("optimum-intel-internal-testing/tiny-random-llava-next", {"padding_side": "left"}),
 ]
 
 def make_model_params():
     # Parametrize over add_second_input and number_of_inputs
-    
     params = []
     for model_id_and_params in base_models_for_paired_input_test:
         model_id, params_dict = model_id_and_params
@@ -474,17 +523,22 @@ def make_model_params():
         params.append((model_id, {**params_dict, "add_second_input": True, "number_of_inputs": 2}))
     return params
 
-models_with_pair_input = make_model_params()
+MODELS_WITH_PAIR_INPUT = make_model_params()
 
-@pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
-@pytest.mark.precommit
-@pytest.mark.parametrize("input_pair", [[
-    ["hi", "sun in yellow"],
-    ["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!"],
-    ["Eng... test, string?!", "Multiline\nstring!\nWow!" * 100],
-    ["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!" * 100],
-    ["hi" * 20, "buy" * 90],
-]])
+@pytest.mark.parametrize("hf_ov_genai_models", MODELS_WITH_PAIR_INPUT, indirect=True)
+@pytest.mark.parametrize(
+    "input_pair",
+    [
+        [
+            ["hi", "sun in yellow"],
+            ["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!"],
+            ["Eng... test, string?!", "Multiline\nstring!\nWow!" * 100],
+            ["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!" * 100],
+            ["hi" * 20, "buy" * 90],
+        ]
+    ],
+    ids=["batched_pairs_mixed_length"]
+)
 def test_two_inputs_string_list_of_lists_batched(hf_ov_genai_models, input_pair):
     # Check with batched inputs: list of [str, str] pairs, consistent with HF format.
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
@@ -492,15 +546,24 @@ def test_two_inputs_string_list_of_lists_batched(hf_ov_genai_models, input_pair)
     hf_encoded = hf_tokenizer(input_pair, return_tensors="np", padding=True)["input_ids"]
     assert np.all(ov_encoded == hf_encoded)
 
-@pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
-@pytest.mark.precommit
-@pytest.mark.parametrize("input_pair", [
-    [["hi", "sun in yellow"]],
-    [["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!"]],
-    [["Eng... test, string?!", "Multiline\nstring!\nWow!" * 100]],
-    [["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!" * 100]],
-    [["hi" * 20, "buy" * 90]],
-])
+@pytest.mark.parametrize("hf_ov_genai_models", MODELS_WITH_PAIR_INPUT, indirect=True)
+@pytest.mark.parametrize(
+    "input_pair",
+    [
+        [["hi", "sun in yellow"]],
+        [["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!"]],
+        [["Eng... test, string?!", "Multiline\nstring!\nWow!" * 100]],
+        [["Eng... test, string?!" * 100, "Multiline\nstring!\nWow!" * 100]],
+        [["hi" * 20, "buy" * 90]],
+    ],
+    ids=[
+        "short_pair",
+        "long_first_short_second",
+        "short_first_long_second",
+        "both_long",
+        "repeated_tokens",
+    ]
+)
 def test_two_inputs_string_list_of_lists(hf_ov_genai_models, input_pair):
     # Check with inputs consisted of lists of lists consistent with HF format.
     hf_tokenizer, genai_tokenzier = hf_ov_genai_models
@@ -509,14 +572,22 @@ def test_two_inputs_string_list_of_lists(hf_ov_genai_models, input_pair):
     assert np.all(ov_encoded == hf_encoded)
 
 
-@pytest.mark.parametrize("hf_ov_genai_models", models_with_pair_input, indirect=True)
-@pytest.mark.precommit
-@pytest.mark.parametrize("input_pair", [
-    [["Eng... test, string?!" * 100], ["Multiline\nstring!\nWow!"]],
-    [["hi" * 20], ["buy" * 90]],
-    [["What is the capital of Great Britain"] * 4, ["London is capital of Great Britain"]],
-    [["What is the capital of Great Britain"], ["London is capital of Great Britain"] * 4],
-])
+@pytest.mark.parametrize("hf_ov_genai_models", MODELS_WITH_PAIR_INPUT, indirect=True)
+@pytest.mark.parametrize(
+    "input_pair",
+    [
+        [["Eng... test, string?!" * 100], ["Multiline\nstring!\nWow!"]],
+        [["hi" * 20], ["buy" * 90]],
+        [["What is the capital of Great Britain"] * 4, ["London is capital of Great Britain"]],
+        [["What is the capital of Great Britain"], ["London is capital of Great Britain"] * 4],
+    ],
+    ids=[
+        "broadcast_long_first_short_second",
+        "broadcast_repeated_tokens",
+        "broadcast_first_batch_4",
+        "broadcast_second_batch_4",
+    ]
+)
 def test_two_inputs_string(hf_ov_genai_models, input_pair):
     # Test when inputs are separate and they are broadcasted to the same length.
     # For HF we broadcast manually, but in GenAI this happens automatically.
@@ -533,7 +604,6 @@ def test_two_inputs_string(hf_ov_genai_models, input_pair):
     assert np.all(ov_encoded == hf_encoded)
 
 
-@pytest.mark.precommit
 def test_load_special_tokens_from_config_json(model_tmp_path):
     # test when there is an available config.json
     config_json = {
@@ -547,7 +617,6 @@ def test_load_special_tokens_from_config_json(model_tmp_path):
     assert tok.get_eos_token_id() == config_json["eos_token_id"]
 
 
-@pytest.mark.precommit
 def test_load_special_tokens_from_special_tokens_map_json(model_tmp_path):
     # test with special_tokens_map
     special_tokens_map_json = {
@@ -561,7 +630,6 @@ def test_load_special_tokens_from_special_tokens_map_json(model_tmp_path):
     assert tok.get_eos_token() == special_tokens_map_json["eos_token"]["content"]
 
 
-@pytest.mark.precommit
 def test_load_special_tokens_from_tokenizer_config_json(model_tmp_path):
     # special_tokens_map is not available
     # but tokenize_config.json exists
@@ -587,7 +655,6 @@ def test_load_special_tokens_from_tokenizer_config_json(model_tmp_path):
     assert tok.get_eos_token_id() == 42
 
 
-@pytest.mark.precommit
 def test_load_special_tokens_from_tokenizer_config_and_config_json(model_tmp_path):
     # both config.json is available and tokenizer_config.json available
     # check that it does not read int values from tokenizer_config.json if they are in config.json
@@ -618,7 +685,6 @@ def test_load_special_tokens_from_tokenizer_config_and_config_json(model_tmp_pat
     assert tok.get_eos_token() == tok_config_json["eos_token"]
 
 
-@pytest.mark.precommit
 @pytest.mark.xfail(
     raises=AssertionError,
     reason="CVS-143410 ov tokenizer should be aligned with hf",
@@ -629,7 +695,8 @@ def test_load_special_tokens_from_special_tokens_map_json_with_string_repr(
 ):
     # only string representation is provided, find token integers by inference
     model_id, temp_path = model_tmp_path
-    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
+    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True))
 
     special_tokens_map_json = {}
     token_str_int_map = {}
@@ -655,14 +722,14 @@ def test_load_special_tokens_from_special_tokens_map_json_with_string_repr(
 
 @dataclasses.dataclass(frozen=True)
 class ChatTemplates:
-    reference: Optional[str]
-    rt_template: Optional[str]
-    chat_template_json: Optional[str]
-    processor_config_json: Optional[str]
-    tokenizer_config_json: Optional[str]
+    reference: str | None
+    rt_template: str | None
+    chat_template_json: str | None
+    processor_config_json: str | None
+    tokenizer_config_json: str | None
 
 
-def generate_tokenizer(tmp_path, chat_templates):
+def generate_tokenizer(tmp_path: Path, chat_templates: ChatTemplates) -> Tokenizer:
     input_ids = openvino.op.Constant(openvino.Type.i64, openvino.Shape([0, 0]), []).output(0)
     input_ids.get_tensor().set_names({"input_ids"})
     attention_mask = openvino.op.Constant(openvino.Type.i64, openvino.Shape([0, 0]), []).output(0)
@@ -674,32 +741,36 @@ def generate_tokenizer(tmp_path, chat_templates):
     if chat_templates.rt_template is not None:
         model.set_rt_info(chat_templates.rt_template, "chat_template")
     if chat_templates.chat_template_json is not None:
-        with open(tmp_path / "chat_template.json", "w", encoding="utf-8") as file:
+        with (tmp_path / "chat_template.json").open("w", encoding="utf-8") as file:
             json.dump({"chat_template": chat_templates.chat_template_json}, file)
     if chat_templates.processor_config_json is not None:
-        with open(tmp_path / "processor_config.json", "w", encoding="utf-8") as file:
+        with (tmp_path / "processor_config.json").open("w", encoding="utf-8") as file:
             json.dump({"chat_template": chat_templates.processor_config_json}, file)
     if chat_templates.tokenizer_config_json is not None:
-        with open(tmp_path / "tokenizer_config.json", "w", encoding="utf-8") as file:
+        with (tmp_path / "tokenizer_config.json").open("w", encoding="utf-8") as file:
             json.dump({"chat_template": chat_templates.tokenizer_config_json}, file)
-    openvino.save_model(model, tmp_path / "openvino_tokenizer.xml")
+    openvino.save_model(model, str(tmp_path / "openvino_tokenizer.xml"))
     return Tokenizer(tmp_path)
 
 
-QWEN2_VL_2B = "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}"
+QWEN2_VL_2B = (
+    "{% if messages is string %}{{ messages }}{% else %}{% for content in messages %}"
+    "{% if content['type'] == 'image' or 'image' in content or 'image_url' in content %}"
+    "<|vision_start|><|image_pad|><|vision_end|>{% elif content['type'] == 'video' or 'video' in content %}"
+    "<|vision_start|><|video_pad|><|vision_end|>{% elif 'text' in content %}"
+    "{{ content['text'] }}{% endif %}{% endfor %}{% endif %}"
+)
 
 
 SIMPLIFIED_QWEN2_VL_2B = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
 
 
-@pytest.mark.precommit
 def test_set_special_runtime_template(tmp_path):
     tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None))
     tokenizer.chat_template = QWEN2_VL_2B
     assert tokenizer.chat_template == SIMPLIFIED_QWEN2_VL_2B
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "chat_templates",
     [
@@ -716,11 +787,15 @@ def test_template_priorities(tmp_path, chat_templates):
     assert tokenizer.chat_template == chat_templates.reference
 
 
-@pytest.mark.precommit
 def test_chat_template_with_empty_output(tmp_path):
-    tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None))
-    # Test throwing exception for empty rendered chat template (e.g. Qwen2-VL)
-    # Original Qwen2-VL chat template is modified with \n to avoid remapping with simplified template.
+    tokenizer = generate_tokenizer(
+        tmp_path, 
+        ChatTemplates(None, None, None, None, None)
+    )
     chat_template_with_empty_output = QWEN2_VL_2B + "\n"
     with pytest.raises(Exception):
-        tokenizer.apply_chat_template(conversation, add_generation_prompt=False, chat_template=chat_template_with_empty_output)
+        tokenizer.apply_chat_template(
+            CONVERSATION_EXAMPLE, 
+            add_generation_prompt=False, 
+            chat_template=chat_template_with_empty_output
+        )

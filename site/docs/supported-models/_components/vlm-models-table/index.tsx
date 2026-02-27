@@ -1,10 +1,10 @@
 import Link from '@docusaurus/Link';
 import React from 'react';
-import { BaseModelsTable, LinksCell, StatusCell } from '../base-models-table';
+import { BaseModelsTable, LinksCell } from '../base-models-table';
 import { VLM_MODELS } from './models';
 
 export default function VLMModelsTable(): React.JSX.Element {
-  const headers = ['Architecture', 'Models', 'LoRA Support', 'Example HuggingFace Models'];
+  const headers = ['Architecture', 'Models', 'Example HuggingFace Models'];
 
   const rows = VLM_MODELS.map(({ architecture, models }) => (
     <>
@@ -20,13 +20,11 @@ export default function VLMModelsTable(): React.JSX.Element {
             </>
           )}
         </td>
-        <StatusCell value={models[0].loraSupport} />
         <LinksCell links={models[0].links} />
       </tr>
-      {models.slice(1).map(({ name, loraSupport, links }) => (
+      {models.slice(1).map(({ name, links }) => (
         <tr key={name}>
           <td>{name}</td>
-          <StatusCell value={loraSupport} />
           <LinksCell links={links} />
         </tr>
       ))}

@@ -144,15 +144,15 @@ TEST_F(KVCrushAlgorithmTest, CreateAnchorPointRandomTest) {
     EXPECT_EQ(count_zeros + count_ones, anchor_point.size()) << "All values should be either 0 or 1";
 }
 
-// Test create_anchor_point_kvcrush with ALTERNATE mode
+// Test create_anchor_point_kvcrush with ALTERNATING mode
 TEST_F(KVCrushAlgorithmTest, CreateAnchorPointAlternateTest) {
     // Setup using helper function
-    auto anchor_point = setup_anchor_points(KVCrushAnchorPointMode::ALTERNATE, 16);
+    auto anchor_point = setup_anchor_points(KVCrushAnchorPointMode::ALTERNATING, 16);
 
     // Verify
     EXPECT_EQ(anchor_point.size(), m_block_size);
 
-    // In ALTERNATE mode, we expect alternating blocks to be selected
+    // In ALTERNATING mode, we expect alternating blocks to be selected
     // We should have non-zero values at regular intervals
     bool found_pattern = false;
     for (size_t i = 0; i < anchor_point.size(); i += m_block_size) {

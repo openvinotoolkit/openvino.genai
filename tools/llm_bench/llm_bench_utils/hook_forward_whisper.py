@@ -124,8 +124,8 @@ class WhisperHook:
     def new_generate(self, pipe):
         old_generate = pipe.model.generate
 
-        def my_generate(attention_mask, **kwargs):
-            r = old_generate(attention_mask, **kwargs)
+        def my_generate(**kwargs):
+            r = old_generate(**kwargs)
             self.set_decoder_time_data()
             return r
         pipe.model.generate = my_generate

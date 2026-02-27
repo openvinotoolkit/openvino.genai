@@ -1,5 +1,5 @@
 
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -15,6 +15,22 @@
 
 #include "openvino/genai/json_container.hpp"
 
+namespace nlohmann {
+
+template<>
+struct adl_serializer<ov::genai::JsonContainer> {
+    static void to_json(ordered_json& json, const ov::genai::JsonContainer& container) {
+        auto json_value_ptr = static_cast<const ordered_json*>(container._get_json_value_ptr());
+        json = *json_value_ptr;
+    }
+    
+    static ov::genai::JsonContainer from_json(const ordered_json& json) {
+        return ov::genai::JsonContainer::from_json_string(json.dump());
+    }
+};
+
+} // namespace nlohmann
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -29,7 +45,7 @@ constexpr bool is_std_array<std::array<T, N>> = true;
 /// if types are not compatible leave param unchanged
 template <typename T>
 void read_json_param(const nlohmann::json& data, const std::string& name, T& param) {
-    if (data.contains(name)) {
+    if (data.contains(name) && !data[name].is_null()) {
         if (data[name].is_number() || data[name].is_boolean() || data[name].is_string() || data[name].is_object()
             || (is_std_array<T> && data[name].is_array())
         ) {
@@ -109,7 +125,7 @@ inline nlohmann::ordered_json any_to_json(const ov::Any& value) {
         }
         return array_json;
     } else if (value.is<ov::genai::JsonContainer>()) {
-        return value.as<ov::genai::JsonContainer>().to_json();
+        return value.as<ov::genai::JsonContainer>();
     } else {
         OPENVINO_THROW("Failed to convert Any to JSON, unsupported type: ", value.type_info().name());
     }

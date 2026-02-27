@@ -4,7 +4,11 @@ from conftest import logger
 import os
 import subprocess # nosec B404
 
-def run_sample(command, input_data=None, env=os.environ):
+def run_sample(
+    command: list[str],
+    input_data: str | None = None,
+    env: dict[str, str] = os.environ,
+):
     logger.info(f"Running sample command: {' '.join(map(str, command))}")
     if input_data:
         logger.info(f"Input data: {input_data}")

@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 7
 ---
 import OptimumCLI from '@site/src/components/OptimumCLI';
 import ConvertModelSection from '../_shared/_convert_model.mdx';
@@ -10,7 +10,7 @@ import RunModelSection from './_sections/_run_model/index.mdx';
 <ConvertModelSection>
     Download and convert a reranker model (e.g. [cross-encoder/ms-marco-MiniLM-L6-v2](https://huggingface.co/cross-encoder/ms-marco-MiniLM-L6-v2)) to OpenVINO format from Hugging Face:
 
-    <OptimumCLI model='cross-encoder/ms-marco-MiniLM-L6-v2' outputDir='cross-encoder/ms-marco-MiniLM-L6-v2' trustRemoteCode />
+    <OptimumCLI model='cross-encoder/ms-marco-MiniLM-L6-v2' outputDir='cross-encoder/ms-marco-MiniLM-L6-v2' task='text-classification' />
 
     See all supported [Reranker Models](/docs/supported-models/#text-rerank-models).
 </ConvertModelSection>
