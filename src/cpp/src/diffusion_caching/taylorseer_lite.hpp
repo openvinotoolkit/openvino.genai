@@ -22,8 +22,6 @@ namespace ov::genai {
  */
 class TaylorSeerState {
 public:
-    TaylorSeerState() = default;
-
     /**
      * @brief Constructs TaylorSeerState with optional configuration.
      * @param config Optional TaylorSeer configuration.
