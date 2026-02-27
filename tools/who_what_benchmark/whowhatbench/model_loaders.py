@@ -204,8 +204,6 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             model.load_adapter(adapter, adapter_name=f"adapter_{idx}")
             adapter_names.append(f"adapter_{idx}")
 
-        print('alphas', alphas)
-
         assert len(alphas) == len(adapter_names), "`alphas` must be the same length as `adapters`"
         model.add_weighted_adapter(adapter_names, alphas, "merged_lora")
 
@@ -333,13 +331,19 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
+    adapter_config = openvino_genai.AdapterConfig()
+    if kwargs.get("adapters") is not None:
+        for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
+            ov_adapter = openvino_genai.Adapter(adapter)
+            adapter_config.add(ov_adapter, alpha)
+
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
-        pipeline = openvino_genai.VLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA", **ov_config)
+        pipeline = openvino_genai.VLMPipeline(model_dir, device=device, adapters=adapter_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA", **ov_config)
     else:
         logger.info("Using OpenVINO GenAI VLMPipeline API")
-        pipeline = openvino_genai.VLMPipeline(model_dir, device=device, **ov_config)
+        pipeline = openvino_genai.VLMPipeline(model_dir, device=device, adapters=adapter_config, **ov_config)
 
     return GenAIModelWrapper(
         pipeline,
@@ -399,6 +403,7 @@ def load_visual_text_model(
                     **from_pretrained_kwargs,
                 )
 
+                # phi4mm modality-specific LoRA adapters (handled internally by the pipeline/model)
                 if config.model_type == "phi4mm":
                     use_lora = False
                     if hasattr(config, "vision_lora") and config.vision_lora is not None:
@@ -412,6 +417,24 @@ def load_visual_text_model(
                         model.set_lora_adapter = lambda _: None
                     if hasattr(model.model, "_require_grads_hook"):
                         model.model.disable_input_require_grads()
+        
+        # Common LoRA support via PEFT
+        if kwargs.get("adapters") is not None:
+            adapters = kwargs["adapters"]
+            alphas = kwargs.get("alphas", None)
+
+            from peft import PeftModel
+            adapter_names = ["adapter_0"]
+            model = PeftModel.from_pretrained(model, adapters[0], adapter_name=adapter_names[0])
+
+            for idx, adapter in enumerate(adapters[1:], start=1):
+                model.load_adapter(adapter, adapter_name=f"adapter_{idx}")
+                adapter_names.append(f"adapter_{idx}")
+
+            assert len(alphas) == len(adapter_names), "`alphas` must be the same length as `adapters`"
+            model.add_weighted_adapter(adapter_names, alphas, "merged_lora")
+
+            model.set_adapter("merged_lora")
 
         model.eval()
         try:
@@ -429,6 +452,8 @@ def load_visual_text_model(
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVModelForVisualCausalLM
+        if 'adapters' in kwargs and kwargs['adapters'] is not None:
+            raise ValueError("Adapters are not supported for OVModelForVisualCausalLM.")
         try:
             model = OVModelForVisualCausalLM.from_pretrained(
                 model_id, device=device, ov_config=ov_config
