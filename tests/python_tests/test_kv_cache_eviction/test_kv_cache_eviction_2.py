@@ -16,9 +16,9 @@ from kv_cache_eviction_utils import get_scheduler_config
 
 # KVCrush test configurations
 KVCRUSH_SNAPKV_BASELINE_CONFIG = CacheEvictionConfig(
-    start_size=32, 
-    recent_size=128, 
-    max_cache_size=1024, 
+    start_size=32,
+    recent_size=128,
+    max_cache_size=960,
     aggregation_mode=AggregationMode.NORM_SUM,
     apply_rotation=False,
     snapkv_window_size=8,
