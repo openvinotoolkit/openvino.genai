@@ -5,8 +5,10 @@
 #include "visual_language/videochat_flash/classes.hpp"
 
 #include "openvino/opsets/opset13.hpp"
-
+#include "visual_language/clip.hpp"
 #include "utils.hpp"
+
+#include <cstring>
 
 namespace ov::genai {
 
@@ -20,6 +22,81 @@ void write_native(std::ostream& os, size_t idx) {
 } // namespace
 
 namespace videochat_flash_utils {
+
+/**
+ * @brief Preprocess frame batch in NHWC/u8 layout.
+ *
+ * Pipeline:
+ * 1) Resize each frame with bicubic interpolation to (target_h, target_w)
+ * 2) Rescale pixel values by /255
+ * 3) Normalize by (x - mean) / std
+ *
+ * Input:
+ *   - input_nhwc_u8: [N, H, W, 3], element type u8
+ * Output:
+ *   - Tensor with shape [N, C, target_h, target_w], element type f32
+ *     (clip_image_preprocess returns planar CHW buffer per frame)
+ *
+ * Notes:
+ *   - This function does not infer layout. Caller must provide NHWC.
+ *   - Channel count is strictly 3 for current normalization parameters.
+ */
+ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8,
+                                                     const size_t target_h,
+                                                     const size_t target_w,
+                                                     const std::array<float, 3>& image_mean,
+                                                     const std::array<float, 3>& image_std)
+{
+    const ov::Shape& in_shape = input_nhwc_u8.get_shape();
+    OPENVINO_ASSERT(in_shape.size() == 4, "Input must be 4D NHWC.");
+    OPENVINO_ASSERT(input_nhwc_u8.get_element_type() == ov::element::u8, "Input dtype must be u8.");
+    OPENVINO_ASSERT(in_shape[3] == 3, "Input channel must be 3 for normalization.");
+    OPENVINO_ASSERT(target_h > 0 && target_w > 0, "target_h and target_w must be > 0.");
+
+    const size_t batch = in_shape[0];
+    const size_t in_h = in_shape[1];
+    const size_t in_w = in_shape[2];
+    const size_t channels = in_shape[3];
+    std::cout << "Preprocessing video features with original shape: [" << batch << ", " << in_h << ", " << in_w << ", " << channels << "] to target size: [" << target_h << ", " << target_w << "]" << std::endl;
+    ov::Tensor output_nchw_f32(ov::element::f32, ov::Shape{batch, channels, target_h, target_w});
+    float* out_ptr = output_nchw_f32.data<float>();
+
+    const uint8_t* in_ptr = input_nhwc_u8.data<const uint8_t>();
+    const size_t in_frame_bytes = in_h * in_w * channels;
+    const size_t out_frame_elems = channels * target_h * target_w;
+
+    clip_ctx ctx;
+    
+    ctx.image_mean[0] = image_mean[0];
+    ctx.image_mean[1] = image_mean[1];
+    ctx.image_mean[2] = image_mean[2];
+    ctx.image_std[0] = image_std[0];
+    ctx.image_std[1] = image_std[1];
+    ctx.image_std[2] = image_std[2];
+
+    for (size_t b = 0; b < batch; ++b) {
+        ov::Tensor one_frame_u8(
+            ov::element::u8,
+            ov::Shape{1, in_h, in_w, channels},
+            const_cast<uint8_t*>(in_ptr + b * in_frame_bytes)
+        );
+
+        // 1) resize (BICUBIC)
+        clip_image_u8 clip_in = tensor_to_clip_image_u8(one_frame_u8);
+        clip_image_u8 clip_resized;
+        bicubic_resize(clip_in, clip_resized, target_w, target_h);
+
+        // 2) rescale(/255) + 3) normalize((x-mean)/std)
+        // clip_image_preprocess implements normalization pipeline and returns f32 planar image.
+        clip_image_f32 clip_norm = clip_image_preprocess(ctx, clip_resized); //// CHW
+
+        // Convert planar(CHW) -> NCHW
+        OPENVINO_ASSERT(clip_norm.buf.size() == out_frame_elems, "Unexpected preprocessed frame size.");
+        std::memcpy(out_ptr + b * out_frame_elems, clip_norm.buf.data(), out_frame_elems * sizeof(float));
+    }
+    std::cout << "Preprocessed video features shape (NCHW): [" << batch << ", " << channels << ", " << target_h << ", " << target_w << "]" << std::endl;
+    return output_nchw_f32;
+}
 
 std::string normalize_prompt(
     const std::string& prompt, size_t base_id, size_t n_images, const std::regex& native_pattern, void(*write_native)(std::ostream& os, size_t idx)
@@ -180,50 +257,43 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
 ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t mm_local_num_frames) {
     // Input feature:  [N, C, H, W]
     // Output feature with reshape & transpose: [N//mm_local_num_frames, C, mm_local_num_frames, H, W]
-    const ov::Shape S0 = src_tensor.get_shape();
-    if (S0.size() != 4 || S0[0] % 4 != 0) {
-        throw std::runtime_error("Input tensor must be 4D (NCHW) and Batch size N must be divisible by 4.");
-    }
+    const ov::Shape src_shape = src_tensor.get_shape();
+    OPENVINO_ASSERT(src_shape.size() == 4, "Input tensor must be 4D [N, C, H, W].");
+    OPENVINO_ASSERT(mm_local_num_frames > 0, "mm_local_num_frames must be greater than 0.");
+    OPENVINO_ASSERT(
+        src_shape[0] % mm_local_num_frames == 0,
+        "Batch N must be divisible by mm_local_num_frames. N=", src_shape[0],
+        ", mm_local_num_frames=", mm_local_num_frames
+    );
 
-    const size_t N = S0[0];
-    const size_t C = S0[1];
-    const size_t H = S0[2];
-    const size_t W = S0[3];
+    const size_t n = src_shape[0];
+    const size_t c = src_shape[1];
+    const size_t h = src_shape[2];
+    const size_t w = src_shape[3];
+    const size_t n_prime = n / mm_local_num_frames;
+    std::cout << "Transposing video features with original shape: [" << n << ", " << c << ", " << h << ", " << w << "] and mm_local_num_frames: " << mm_local_num_frames << std::endl;
+    
 
-    const ov::Shape S2 = {N / mm_local_num_frames, C, mm_local_num_frames, H, W};
-    const size_t N_prime = N / mm_local_num_frames;
+    const ov::Shape dst_shape{n_prime, c, mm_local_num_frames, h, w};
+    ov::Tensor dst_tensor(src_tensor.get_element_type(), dst_shape);
 
-    ov::Tensor dst_tensor(src_tensor.get_element_type(), S2);
+    const uint8_t* src_data = static_cast<const uint8_t*>(src_tensor.data());
+    uint8_t* dst_data = static_cast<uint8_t*>(dst_tensor.data());
+    const size_t elem_size = src_tensor.get_element_type().size();
 
-    if (src_tensor.get_element_type() != ov::element::f32) {
-        throw std::runtime_error("Only f32 element type is supported in this manual implementation.");
-    }
+    const size_t mchw = mm_local_num_frames * c * h * w;
+    const size_t chw = c * h * w;
+    const size_t hw = h * w;
+    const size_t mhw = mm_local_num_frames * h * w;
 
-    const float* src_data = src_tensor.data<const float>();
-    float* dst_data = dst_tensor.data<float>();
-
-    const size_t MCHW = mm_local_num_frames * C * H * W;
-    const size_t CHW = C * H * W;
-    const size_t HW = H * W;
-    const size_t MHW = mm_local_num_frames * H * W;
-
-    for (size_t n_prime = 0; n_prime < N_prime; ++n_prime) { // N/4
-        for (size_t c_prime = 0; c_prime < C; ++c_prime) {   // C
-            for (size_t d_prime = 0; d_prime < mm_local_num_frames; ++d_prime) { // 4
-                for (size_t h_prime = 0; h_prime < H; ++h_prime) { // H
-                    for (size_t w_prime = 0; w_prime < W; ++w_prime) { // W
-                        // dst shape [N/4, C, 4, H, W])
-                        size_t dst_idx = n_prime * MCHW + 
-                                         c_prime * MHW + 
-                                         d_prime * HW + 
-                                         h_prime * W + 
-                                         w_prime;
-                        // src shape [N, C, H, W]
-                        size_t src_idx = (n_prime * mm_local_num_frames + d_prime) * CHW + 
-                                         c_prime * HW + 
-                                         h_prime * W + 
-                                         w_prime;
-                        dst_data[dst_idx] = src_data[src_idx];
+    for (size_t np = 0; np < n_prime; ++np) {
+        for (size_t cp = 0; cp < c; ++cp) {
+            for (size_t dp = 0; dp < mm_local_num_frames; ++dp) {
+                for (size_t hp = 0; hp < h; ++hp) {
+                    for (size_t wp = 0; wp < w; ++wp) {
+                        const size_t dst_idx = np * mchw + cp * mhw + dp * hw + hp * w + wp;
+                        const size_t src_idx = (np * mm_local_num_frames + dp) * chw + cp * hw + hp * w + wp;
+                        std::memcpy(dst_data + dst_idx * elem_size, src_data + src_idx * elem_size, elem_size);
                     }
                 }
             }
@@ -521,6 +591,15 @@ ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
 }
 
 ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings, ov::Tensor& m_pos_emb) {
+    OPENVINO_ASSERT(
+        transpose_features.get_element_type() == ov::element::f32,
+        "vision_embeddings input pixel_values must be f32."
+    );
+    OPENVINO_ASSERT(
+        m_pos_emb.get_element_type() == ov::element::f32,
+        "vision_embeddings input rotary_pos_emb must be f32."
+    );
+
     ov::Shape full_shape = transpose_features.get_shape();
     size_t N = full_shape[0];
     size_t single_sample_size = transpose_features.get_size() / N;
@@ -529,8 +608,8 @@ ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vi
     for (size_t i = 0; i < N; ++i) {
         ov::Shape single_shape = {1, full_shape[1], full_shape[2], full_shape[3], full_shape[4]};
         ov::Tensor single_input(transpose_features.get_element_type(), single_shape, src_ptr + (i * single_sample_size));
-        vision_embeddings.set_tensor("hidden_states", single_input);
-        vision_embeddings.set_tensor("rotary_pos_emb", m_pos_emb);
+        vision_embeddings.set_tensor("pixel_values", single_input);
+       // vision_embeddings.set_tensor("rotary_pos_emb", m_pos_emb);
         vision_embeddings.infer();
         ov::Tensor out_tensor = vision_embeddings.get_output_tensor();
         ov::Tensor copy_tensor(out_tensor.get_element_type(), out_tensor.get_shape());
@@ -541,7 +620,7 @@ ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vi
     return final_processed_embeds;
 }
 
-}  // namespace videochat_flash_utils
+} // namespace videochat_flash_utils
 
 
 VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
@@ -556,7 +635,7 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
     // input_shapes["hidden_states"] = x_shape;
     // accelerate model by using static rope shape
     ov::Shape pos_embed_shape = { 1, 1025, 1408 };
-    input_shapes["rotary_pos_emb"] = pos_embed_shape;
+   // input_shapes["rotary_pos_emb"] = pos_embed_shape;
     model->reshape(input_shapes);
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
@@ -568,11 +647,11 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
         });
 
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
-    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
+    auto compiled_model_vision = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
+        compiled_model_vision.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model_vision]() -> ov::InferRequest {
+            return compiled_model_vision.create_infer_request();
         });
 
     auto merge_dim = m_vlm_config.mm_hidden_size / 16;
@@ -628,65 +707,95 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
     m_pos_emb = videochat_flash_utils::get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
 }
 
-EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    EncodedImage encoded_feature;
-    size_t frame_num = image.get_shape().at(0);
-    size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
-    size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
-    auto input_shape = image.get_shape();
-    OPENVINO_ASSERT(input_shape.size() == 4, "Input video features must be 4D.");
-
-    // TODO: here suppose passed in frames have been preprocessed, and shape is [N,3,224,224]
-    // Consider if we add preprocess in encode_frames in next step
-
-    // transpose video features
-    auto transpose_features = videochat_flash_utils::transpose_video_features(image, mm_local_num_frames);
-    // video embedding
-    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
-    ov::InferRequest& vision_embeddings = infer_request_guard.get();
+ov::Tensor infer_visual_features(
+    ov::Tensor& transpose_features,
+    ov::InferRequest& vision_embeddings,
+    ov::InferRequest& merge_embeddings,
+    ov::InferRequest& vision_projection,
+    ov::Tensor& pos_emb,
+    const ov::AnyMap& config_map
+) {
     bool use_batch_vit = false;
     utils::read_anymap_param(config_map, "use_batch_vit", use_batch_vit);
+
+    OPENVINO_ASSERT(pos_emb.get_element_type() == ov::element::f32, "rotary_pos_emb must be f32.");
+
     ov::Tensor processed_vision_embeds;
     if (!use_batch_vit) {
-        processed_vision_embeds = videochat_flash_utils::cyclic_vit_infer(transpose_features, vision_embeddings, m_pos_emb);
+        processed_vision_embeds = videochat_flash_utils::cyclic_vit_infer(transpose_features, vision_embeddings, pos_emb);
     } else {
-        vision_embeddings.set_tensor("hidden_states", transpose_features);
-        vision_embeddings.set_tensor("rotary_pos_emb", m_pos_emb);
+        vision_embeddings.set_tensor("pixel_values", transpose_features);
         vision_embeddings.infer();
         processed_vision_embeds = vision_embeddings.get_output_tensor();
     }
 
     ov::Tensor clipped_vision_embeds = videochat_flash_utils::remove_second_dim_first_element(processed_vision_embeds);
-
-    // merge tokens
-    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard_merge(this->m_ireq_queue_merge_model.get());
-    ov::InferRequest& merge_embeddings = infer_request_guard_merge.get();
     ov::Tensor merged_vision_features = videochat_flash_utils::merge_tokens(clipped_vision_embeds, merge_embeddings);
 
-    // vision projection
-    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard_proj(this->m_ireq_queue_vision_projection.get());
-    ov::InferRequest& vision_projection = infer_request_guard_proj.get();
-    vision_projection.set_tensor("hidden_states", merged_vision_features);
+    vision_projection.set_tensor("input", merged_vision_features);
     vision_projection.infer();
-    // here proj features shape is [N_frames // 4, 4 * 16, 3584]
     ov::Tensor proj_features = vision_projection.get_output_tensor();
 
-    // flatten vision features
-    auto final_features = videochat_flash_utils::efficient_flatten(proj_features);
-    encoded_feature.images_features_projection = final_features;
+    return videochat_flash_utils::efficient_flatten(proj_features);
+}
+
+EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    EncodedImage encoded_feature;
+
+    ov::Tensor image_nchw = image;
+    const ov::Shape& input_shape = image.get_shape();
+    OPENVINO_ASSERT(input_shape.size() == 3 || input_shape.size() == 4, "Input image must be 3D CHW or 4D NCHW after preprocessing.");
+    if (input_shape.size() == 3) {
+        image_nchw.set_shape({1, input_shape[0], input_shape[1], input_shape[2]});
+    }
+
+    auto transpose_features = videochat_flash_utils::transpose_image_features(image_nchw);
+
+    CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(this->m_ireq_queue_vision_encoder.get());
+    CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(this->m_ireq_queue_merge_model.get());
+    CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(this->m_ireq_queue_vision_projection.get());
+
+    encoded_feature.images_features_projection = infer_visual_features(
+        transpose_features,
+        vision_guard.get(),
+        merge_guard.get(),
+        projection_guard.get(),
+        m_pos_emb,
+        config_map
+    );
     return encoded_feature;
 }
 
 
-std::vector<ov::genai::EncodedImage> InputsEmbedderVideoChat_Flash::encode_images(const std::vector<ov::Tensor>& images) {
-    return encode_images(images, {});
+std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChat_Flash::encode_videos(const std::vector<ov::Tensor>& videos) {
+    return encode_videos(videos, {});
 }
 
-std::vector<ov::genai::EncodedImage> InputsEmbedderVideoChat_Flash::encode_images(const std::vector<ov::Tensor>& images, const ov::AnyMap& config_map) {
-    std::vector<EncodedImage> embeds;
-    for (const ov::Tensor& single_video : images) {
-        auto encoded_video = m_vision_encoder->encode(single_video, config_map);
-        embeds.emplace_back(encoded_video);
+std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChat_Flash::encode_videos(const std::vector<ov::Tensor>& videos, const ov::AnyMap& config_map) {
+    auto vision_encoder = std::static_pointer_cast<VisionEncoderVideoChat_Flash>(m_vision_encoder);
+    std::vector<EncodedVideo> embeds;
+    for (const ov::Tensor& video : videos) {
+        auto video_nchw_f32 = videochat_flash_utils::preprocess(video, 224, 224, {0.485f, 0.456f, 0.406f}, {0.229f, 0.224f, 0.225f});
+
+        const size_t mm_local_num_frames = vision_encoder->get_mm_local_num_frames();
+        auto transpose_features = videochat_flash_utils::transpose_video_features(video_nchw_f32, mm_local_num_frames);
+
+        CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(vision_encoder->get_vision_encoder());
+        CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(vision_encoder->get_merge_model());
+        CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(vision_encoder->get_vision_projection());
+
+        auto final_features = infer_visual_features(
+            transpose_features,
+            vision_guard.get(),
+            merge_guard.get(),
+            projection_guard.get(),
+            vision_encoder->get_pos_emb(),
+            config_map
+        );
+        EncodedVideo encoded_video;
+        encoded_video.video_features = final_features;
+        encoded_video.num_video_tokens = final_features.get_shape()[1];
+        embeds.emplace_back(std::move(encoded_video));
     }
     return embeds;
 }
@@ -697,7 +806,6 @@ InputsEmbedderVideoChat_Flash::InputsEmbedderVideoChat_Flash(
     const std::string& device,
     const ov::AnyMap device_config
 ) : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
-
 
 InputsEmbedderVideoChat_Flash::InputsEmbedderVideoChat_Flash(
     const VLMConfig& vlm_config,
@@ -711,6 +819,20 @@ InputsEmbedderVideoChat_Flash::InputsEmbedderVideoChat_Flash(
 
 NormalizedPrompt InputsEmbedderVideoChat_Flash::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     return {videochat_flash_utils::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native), {}};
+}
+
+NormalizedPrompt InputsEmbedderVideoChat_Flash::normalize_prompt(
+    const std::string& prompt,
+    size_t base_image_id,
+    size_t base_video_id,
+    const std::vector<EncodedImage>& images,
+    const std::vector<EncodedVideo>& videos) const {
+    OPENVINO_ASSERT(
+        base_video_id == base_image_id + images.size(),
+        "VideoChat-Flash uses a single visual tag space. base_video_id must follow image ids."
+    );
+    const size_t total_visuals = images.size() + videos.size();
+    return {videochat_flash_utils::normalize_prompt(prompt, base_image_id, total_visuals, NATIVE_PATTERN, write_native), {}};
 }
 
 ov::Tensor InputsEmbedderVideoChat_Flash::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
@@ -779,6 +901,29 @@ ov::Tensor InputsEmbedderVideoChat_Flash::get_inputs_embeds(const std::string& i
         m_tokens_per_images.clear();
     }
     return inputs_embeds;
+}
+
+ov::Tensor InputsEmbedderVideoChat_Flash::get_inputs_embeds(
+    const std::string& prompt,
+    const std::vector<ov::genai::EncodedImage>& images,
+    const std::vector<ov::genai::EncodedVideo>& videos,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    OPENVINO_ASSERT(videos_sequence.empty(), "VideoChat-Flash does not use separate video tags. Use image tags for visuals.");
+    OPENVINO_ASSERT(history_vision_count.empty(), "VideoChat-Flash does not support history_vision_count.");
+
+    std::vector<ov::genai::EncodedImage> combined_images = images;
+    combined_images.reserve(images.size() + videos.size());
+    for (const auto& video : videos) {
+        ov::genai::EncodedImage as_image;
+        as_image.images_features_projection = video.video_features;
+        combined_images.emplace_back(std::move(as_image));
+    }
+
+    return get_inputs_embeds(prompt, combined_images, metrics, recalculate_merged_embeddings, image_sequence);
 }
 
 void InputsEmbedderVideoChat_Flash::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
