@@ -245,21 +245,22 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                                                                                          bool is_update_logit_processor) {
     UpdateRequestResult result{0, 0};
     // Check if all requests have completed pre-filling
-    bool pause_gen_status = false;
-    std::vector<uint64_t> generated_requests;
+    bool all_prefill_finished = true;
+    bool current_finished_prefill = false;
     for (auto& request : m_requests) {
-        if (request->has_finished_prefill()) {
-            generated_requests.push_back(request->get_request_id());
+        const bool finished = request->has_finished_prefill();
+        if (!finished) {
+            all_prefill_finished = false;
+        }
+        if (request->get_request_id() == request_id && finished) {
+            current_finished_prefill = true;
         }
     }
 
     // To ensure that `draft model` and `main model` process the same chunks.
     // The request that completes the prefill first needs to pause and wait for other requests to complete their
     // prefill.
-    if (generated_requests.size() < m_requests.size() &&
-        std::find(generated_requests.begin(), generated_requests.end(), request_id) != generated_requests.end()) {
-        pause_gen_status = true;
-    }
+    bool pause_gen_status = !all_prefill_finished && current_finished_prefill;
 
     for (auto& request : m_requests) {
         if (request_id != request->get_request_id()) {
