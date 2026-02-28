@@ -725,11 +725,13 @@ private:
         if (hidden_size == 0) {
             for (const auto& kv : m_initial_hidden_states) {
                 const auto& initial_hidden_states = kv.second;
-                auto hidden_states_shape = initial_hidden_states.get_shape();
-                OPENVINO_ASSERT(initial_hidden_states && hidden_states_shape.size() >= 2,
-                                "Initial hidden states tensor rank is less than 2.");
-                hidden_size = hidden_states_shape.back();
-                break;
+                if (initial_hidden_states) {
+                    auto hidden_states_shape = initial_hidden_states.get_shape();
+                    OPENVINO_ASSERT(hidden_states_shape.size() >= 2,
+                                    "Initial hidden states tensor rank is less than 2.");
+                    hidden_size = hidden_states_shape.back();
+                    break;
+                }
             }
         }
         if (hidden_size == 0) {
