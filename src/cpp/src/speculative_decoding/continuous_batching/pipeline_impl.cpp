@@ -248,7 +248,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
     bool all_prefill_finished = true;
     bool current_finished_prefill = false;
     for (auto& request : m_requests) {
-        const bool finished = request->has_finished_prefill();
+        const bool finished = request->has_generated_tokens();
         if (!finished) {
             all_prefill_finished = false;
         }
