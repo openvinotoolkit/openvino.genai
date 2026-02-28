@@ -163,7 +163,7 @@ public:
      * @param latent A latent video
      * @param decode_timestep Last scheduler timestep normalized to [0, 1] (e.g., timestep / max_timestep).
      *   For schedulers that expose num_train_timesteps, this typically corresponds to timestep / num_train_timesteps,
-     *   so that 0.0 is the first (noisiest) step and 1.0 is the last (cleanest) step.
+     *   so that 1.0 is the first (noisiest) step and 0.0 is the last (cleanest) step when timesteps decrease over the denoising process.
      *   Required when the VAE config has timestep_conditioning=true (e.g., LTX-Video 0.9.1+).
      *   Ignored for models without timestep conditioning.
      * @returns VideoGenerationResult with:
