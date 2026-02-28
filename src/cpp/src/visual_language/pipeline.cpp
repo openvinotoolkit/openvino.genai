@@ -19,7 +19,6 @@
 
 #include "visual_language/vision_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
-#include "visual_language/chat_history_state.hpp"
 
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
@@ -283,8 +282,6 @@ public:
             if (generation_config.pruning_ratio > 0) {
                 auto history_state = ChatHistoryInternalState::get_or_create(m_history, m_vision_registry);
                 size_t last_user_idx = history_state->get_last_user_message_index();
-
-                OPENVINO_ASSERT(last_user_idx < m_history.size(), "Invalid last_user_idx");
 
                 // Replace the original prompt with the pruned prompt after CDPruner
                 auto user_message = m_history[last_user_idx];
