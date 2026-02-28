@@ -642,7 +642,13 @@ public:
         }
 
         // Normalize last scheduler timestep to [0, 1] for VAE timestep conditioning (LTX-Video 0.9.1+)
-        const float decode_timestep = timesteps.empty() ? 0.0f : timesteps.back() / 1000.0f;
+        float decode_timestep = 0.0f;
+        if (!timesteps.empty()) {
+            const float max_timestep = static_cast<float>(timesteps.front());
+            if (max_timestep > 0.0f) {
+                decode_timestep = static_cast<float>(timesteps.back()) / max_timestep;
+            }
+        }
 
         latent = postprocess_latents(latent);
 
