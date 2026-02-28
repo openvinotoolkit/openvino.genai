@@ -25,6 +25,8 @@
 namespace {
 
 std::string normalize_language_variant(const std::string& language) {
+    // Python parity: mirrors alias handling in `kokoro/pipeline.py` (`ALIASES`),
+    // where `en-us` -> `a` and `en-gb` -> `b` are treated as equivalent variants.
     std::string normalized = language;
     std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
@@ -47,15 +49,91 @@ std::string to_utf8(char32_t codepoint) {
 }
 
 std::u32string from_utf8(const std::string& input) {
-    std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> convert;
-    return convert.from_bytes(input);
+    // Lenient UTF-8 decoder used for TTS preprocessing.
+    // - Valid UTF-8 sequences are decoded into Unicode code points.
+    // - Invalid/truncated sequences fall back to byte-wise passthrough (no throw).
+    //
+    // Validation rules follow the standard UTF-8 form from RFC 3629:
+    // https://datatracker.ietf.org/doc/html/rfc3629
+    // with additional checks for overlong encodings and surrogate-range exclusion.
+    std::u32string output;
+    output.reserve(input.size());
+
+    size_t index = 0;
+    while (index < input.size()) {
+        const unsigned char b0 = static_cast<unsigned char>(input[index]);
+
+        // 1-byte ASCII: 0xxxxxxx
+        if ((b0 & 0x80) == 0) {
+            output.push_back(static_cast<char32_t>(b0));
+            ++index;
+            continue;
+        }
+
+        // 2-byte sequence: 110xxxxx 10xxxxxx
+        if ((b0 & 0xE0) == 0xC0 && index + 1 < input.size()) {
+            const unsigned char b1 = static_cast<unsigned char>(input[index + 1]);
+            if ((b1 & 0xC0) == 0x80) {
+                const char32_t cp = (static_cast<char32_t>(b0 & 0x1F) << 6) |
+                                    static_cast<char32_t>(b1 & 0x3F);
+                // Reject overlong 2-byte form (must encode >= U+0080).
+                if (cp >= 0x80) {
+                    output.push_back(cp);
+                    index += 2;
+                    continue;
+                }
+            }
+        // 3-byte sequence: 1110xxxx 10xxxxxx 10xxxxxx
+        } else if ((b0 & 0xF0) == 0xE0 && index + 2 < input.size()) {
+            const unsigned char b1 = static_cast<unsigned char>(input[index + 1]);
+            const unsigned char b2 = static_cast<unsigned char>(input[index + 2]);
+            if ((b1 & 0xC0) == 0x80 && (b2 & 0xC0) == 0x80) {
+                const char32_t cp = (static_cast<char32_t>(b0 & 0x0F) << 12) |
+                                    (static_cast<char32_t>(b1 & 0x3F) << 6) |
+                                    static_cast<char32_t>(b2 & 0x3F);
+                // Reject overlong 3-byte form and UTF-16 surrogate code points.
+                if (cp >= 0x800 && !(cp >= 0xD800 && cp <= 0xDFFF)) {
+                    output.push_back(cp);
+                    index += 3;
+                    continue;
+                }
+            }
+        // 4-byte sequence: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+        } else if ((b0 & 0xF8) == 0xF0 && index + 3 < input.size()) {
+            const unsigned char b1 = static_cast<unsigned char>(input[index + 1]);
+            const unsigned char b2 = static_cast<unsigned char>(input[index + 2]);
+            const unsigned char b3 = static_cast<unsigned char>(input[index + 3]);
+            if ((b1 & 0xC0) == 0x80 && (b2 & 0xC0) == 0x80 && (b3 & 0xC0) == 0x80) {
+                const char32_t cp = (static_cast<char32_t>(b0 & 0x07) << 18) |
+                                    (static_cast<char32_t>(b1 & 0x3F) << 12) |
+                                    (static_cast<char32_t>(b2 & 0x3F) << 6) |
+                                    static_cast<char32_t>(b3 & 0x3F);
+                // Valid Unicode scalar range for 4-byte UTF-8.
+                if (cp >= 0x10000 && cp <= 0x10FFFF) {
+                    output.push_back(cp);
+                    index += 4;
+                    continue;
+                }
+            }
+        }
+
+        // Invalid leading byte or malformed/truncated sequence:
+        // preserve raw byte so downstream logic remains non-throwing.
+        output.push_back(static_cast<char32_t>(b0));
+        ++index;
+    }
+
+    return output;
 }
 
 size_t utf8_codepoint_length(const std::string& input) {
+    // Python parity: `len(ps)` counts Unicode code points, not UTF-8 bytes.
     return from_utf8(input).size();
 }
 
 std::string truncate_utf8_codepoints(const std::string& input, size_t max_codepoints) {
+    // Python parity: `ps[:N]` slices by code points (characters), not raw bytes.
+    // We decode to code points, clamp to N, then re-encode to valid UTF-8.
     const auto codepoints = from_utf8(input);
     const size_t limited = std::min(max_codepoints, codepoints.size());
     std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> convert;
@@ -63,6 +141,8 @@ std::string truncate_utf8_codepoints(const std::string& input, size_t max_codepo
 }
 
 std::vector<std::string> split_by_newline_groups(const std::string& text) {
+    // Python reference: `KPipeline` warns non-English chunking is not fully automatic;
+    // users can split long text by '\n'. This helper preserves that usage pattern.
     std::vector<std::string> segments;
     std::string current;
     for (char c : text) {
@@ -82,6 +162,8 @@ std::vector<std::string> split_by_newline_groups(const std::string& text) {
 }
 
 std::vector<std::string> split_voice_list(const std::string& voice) {
+    // Python parity: mirrors `KPipeline.load_voice(..., delimiter=",")` behavior,
+    // where multiple voices can be requested and blended.
     std::vector<std::string> voices;
     std::string item;
     std::stringstream stream(voice);
@@ -98,6 +180,8 @@ std::vector<std::string> split_voice_list(const std::string& voice) {
 
 std::vector<std::filesystem::path> resolve_voice_file_candidates(const std::filesystem::path& models_path,
                                                                  const std::string& voice_id) {
+    // Python reference: upstream `KPipeline.load_single_voice` resolves voices by id.
+    // C++ resolves local .bin candidates deterministically instead of HF downloads.
     std::vector<std::filesystem::path> candidates;
     candidates.push_back(models_path / "voices" / (voice_id + ".bin"));
 
@@ -171,6 +255,8 @@ public:
 
 private:
     void init_config() {
+        // Python reference: `KModel` keeps `self.vocab` and `context_length` from config.
+        // C++ loads the same data from `config.json` for phoneme->id mapping and limits.
         const std::filesystem::path config_path = m_models_path / "config.json";
         std::ifstream file(config_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
@@ -216,6 +302,7 @@ KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
     m_request = compiled.create_infer_request();
 
     m_runtime = std::make_shared<KokoroRuntime>(models_path);
+    // Python reference: same engine family as `KPipeline(...).g2p` for English variants.
     m_g2p = misaki::make_engine("en", m_runtime->language_variant());
 
     for (size_t idx = 0; idx < compiled.inputs().size(); ++idx) {
@@ -250,6 +337,14 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
     (void)generation_config;
     OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
 #else
+    // Python -> C++ quick map for side-by-side debugging:
+    // - `KPipeline.__init__` (`ALIASES`/G2P selection) -> `normalize_language_variant` + `misaki::make_engine(...)`
+    // - `KPipeline.en_tokenize` / `tokens_to_ps` -> newline segmentation + token loop building phoneme chunks
+    // - `examples/export.py::ps[:510]` -> `truncate_utf8_codepoints(..., max_phoneme_length)`
+    // - `KPipeline.load_voice` (including multi-voice averaging) -> `split_voice_list` + `load_voice_binary` + averaging
+    // - `KModel.forward` phoneme->vocab->`[0, *ids, 0]` + length assert -> token-id build + context check below
+    // - `KPipeline.infer` / `load_voice(pack[len(ps)-1])` -> `length_index` style-row selection
+    // - `KModelForONNX.forward(input_ids, ref_s, speed)` -> OV request tensors (`input_ids`, `ref_s`, `speed`) + infer
     const bool has_external_speaker_embedding = static_cast<bool>(speaker_embedding);
     if (has_external_speaker_embedding) {
         OPENVINO_ASSERT(speaker_embedding.get_element_type() == ov::element::f32,
@@ -261,6 +356,7 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
     const std::string language_variant = normalize_language_variant(generation_config.language);
     if (language_variant != m_runtime->language_variant()) {
         m_runtime->set_language_variant(language_variant);
+        // Python parity: language change rebinds G2P behavior (see `KPipeline.__init__`).
         m_g2p = misaki::make_engine("en", language_variant);
     }
 
@@ -277,11 +373,12 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
             if (segment.empty()) {
                 continue;
             }
-
             auto tokenized = m_g2p->phonemize_with_tokens(segment);
             std::string current_chunk;
 
             for (const auto& token : tokenized.tokens) {
+                // Python reference: equivalent to `KPipeline.tokens_to_ps` building
+                // `phonemes + (' ' if whitespace else '')` per token.
                 const std::string token_phonemes = token.phonemes.value_or("");
                 const std::string suffix = token.whitespace.empty() ? "" : " ";
                 const std::string next_piece = token_phonemes + suffix;
@@ -292,6 +389,8 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
 
                 if (utf8_codepoint_length(current_chunk) + utf8_codepoint_length(next_piece) >
                     generation_config.max_phoneme_length) {
+                    // Python reference: `KPipeline.en_tokenize` enforces ~510 char chunks.
+                    // We apply the same cap with Unicode code-point counting.
                     if (!current_chunk.empty()) {
                         while (!current_chunk.empty() && current_chunk.back() == ' ') {
                             current_chunk.pop_back();
@@ -304,6 +403,8 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
 
                     std::string limited_piece = next_piece;
                     if (utf8_codepoint_length(limited_piece) > generation_config.max_phoneme_length) {
+                        // Python parity: same intent as `ps = ps[:510]` from
+                        // `kokoro/examples/export.py`, but UTF-8-safe in C++.
                         limited_piece = truncate_utf8_codepoints(limited_piece, generation_config.max_phoneme_length);
                     }
                     while (!limited_piece.empty() && limited_piece.back() == ' ') {
@@ -371,6 +472,8 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
                                 "All Kokoro voices in a mixed request must have matching row count");
             }
             speaker_shape = ov::Shape{rows, 256};
+            // Python parity: if multiple voices are provided, equivalent to
+            // `torch.mean(torch.stack(packs), dim=0)` in `KPipeline.load_voice`.
         }
 
         for (const auto& phonemes : phoneme_chunks) {
@@ -388,6 +491,9 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
             }
             token_ids.push_back(0);
 
+            // Python parity: mirrors `KModel.forward` path:
+            // `input_ids = [0, *mapped_vocab_ids, 0]` and context-length assertion.
+
             OPENVINO_ASSERT(token_ids.size() <= context_length,
                             "Kokoro tokenized length exceeds model context length: ", token_ids.size(),
                             " > ", context_length);
@@ -395,6 +501,9 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
             const size_t num_tokens = token_ids.size() >= 2 ? token_ids.size() - 2 : 0;
             const size_t length_index = std::min<size_t>(num_tokens > 0 ? num_tokens - 1 : 0,
                                                          speaker_shape[0] > 0 ? speaker_shape[0] - 1 : 0);
+
+            // Python parity: equivalent to selecting `pack[len(ps) - 1]` in
+            // `KPipeline.infer` / `examples/export.py::load_voice`.
 
             std::vector<float> style_slice(speaker_shape[1]);
             const size_t offset = length_index * speaker_shape[1];
