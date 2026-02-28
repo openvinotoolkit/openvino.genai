@@ -161,11 +161,14 @@ public:
     /**
      * Performs latent video decoding. It can be useful to use within 'callback' which accepts current latent video
      * @param latent A latent video
+     * @param decode_timestep Last scheduler timestep normalized to [0, 1] (i.e., timestep / 1000).
+     *   Required when the VAE config has timestep_conditioning=true (e.g., LTX-Video 0.9.1+).
+     *   Ignored for models without timestep conditioning.
      * @returns VideoGenerationResult with:
      *   - video: a video tensor decoded with VAE auto encoder shaped as [num_videos_per_prompt, num_frames, height, width, 3]
      *   - performance_stat: ov::genai::VideoGenerationPerfMetrics with timing and other performance metrics for the generation run.
      */
-    VideoGenerationResult decode(const ov::Tensor& latent);
+    VideoGenerationResult decode(const ov::Tensor& latent, float decode_timestep = 0.0f);
 
     /**
      * @brief Exports compiled models to a specified directory.

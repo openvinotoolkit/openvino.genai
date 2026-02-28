@@ -222,6 +222,17 @@ class TestAutoEncoderKLLTXVideo:
             assert hasattr(config, "latent_channels")
             assert hasattr(config, "scaling_factor")
 
+    def test_timestep_conditioning_attribute(self, video_generation_model):
+        """timestep_conditioning must be accessible from config; False for the tiny random model."""
+        model_path = Path(video_generation_model) / "vae_decoder"
+        if not model_path.exists():
+            pytest.skip("VAE decoder not found")
+        vae = ov_genai.AutoencoderKLLTXVideo(str(model_path))
+        config = vae.get_config()
+        assert hasattr(config, "timestep_conditioning")
+        # The tiny random test model does not use timestep conditioning
+        assert config.timestep_conditioning is False
+
 
 class TestText2VideoPipelineAdvanced:
     def test_reshape(self, video_generation_model):
@@ -275,4 +286,58 @@ class TestText2VideoPipelineAdvanced:
             num_frames=9,
             num_inference_steps=2,
         )
+        assert result.video is not None
+
+    def test_pipeline_decode_method_with_decode_timestep(self, video_generation_model):
+        """pipe.decode(latent, decode_timestep) must be accepted without error.
+
+        decode_timestep is the last scheduler timestep normalized to [0, 1],
+        required by models with timestep_conditioning=True (e.g., LTX-Video 0.9.1+).
+        For models without timestep conditioning the value is silently ignored.
+        """
+        import numpy as np
+        import openvino as ov
+
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+
+        captured = []
+
+        def callback(step, num_steps, latent):
+            if not captured:
+                captured.append(np.array(latent, copy=True))
+            return False
+
+        pipe.generate(
+            "test prompt", height=32, width=32, num_frames=9, num_inference_steps=2, callback=callback
+        )
+
+        assert captured, "Callback was never invoked"
+
+        latent_tensor = ov.Tensor(captured[0])
+        # decode_timestep=0.5 corresponds to scheduler timestep 500 / 1000; ignored for non-conditioning models.
+        result = pipe.decode(latent_tensor, decode_timestep=0.5)
+        assert result.video is not None
+
+    def test_pipeline_decode_method_default_decode_timestep(self, video_generation_model):
+        """pipe.decode(latent) with no decode_timestep defaults to 0.0 without error."""
+        import numpy as np
+        import openvino as ov
+
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+
+        captured = []
+
+        def callback(step, num_steps, latent):
+            if not captured:
+                captured.append(np.array(latent, copy=True))
+            return False
+
+        pipe.generate(
+            "test prompt", height=32, width=32, num_frames=9, num_inference_steps=2, callback=callback
+        )
+
+        assert captured, "Callback was never invoked"
+
+        latent_tensor = ov.Tensor(captured[0])
+        result = pipe.decode(latent_tensor)
         assert result.video is not None
