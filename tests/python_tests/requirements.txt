@@ -1,6 +1,6 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 diffusers==0.35.2
-optimum-intel==1.27.0
+https://github.com/huggingface/optimum-intel/archive/2c48d6430c265ac259c1b264f3e2c4025cdd7b76.tar.gz#egg=optimum-intel
 numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
 safetensors==0.6.2; platform_system == "Darwin" and platform_machine == "x86_64"
 pytest==9.0.2
@@ -20,7 +20,7 @@ einops==0.8.2
 torchvision==0.17.2; platform_system == "Darwin" and platform_machine == "x86_64"
 torchvision==0.23.0; platform_system != "Darwin" or platform_machine != "x86_64"
 # - openbmb/MiniCPM-V-2
-timm==1.0.24
+timm==1.0.25
 # - openai/whisper-base
 librosa==0.11.0
 soundfile==0.13.1

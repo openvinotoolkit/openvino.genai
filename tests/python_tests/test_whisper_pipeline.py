@@ -22,6 +22,7 @@ import datasets
 from transformers import WhisperProcessor, AutoTokenizer
 from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+from huggingface_hub import snapshot_download
 import gc
 import json
 import typing
@@ -110,7 +111,8 @@ def save_model(model_id: str, tmp_path: pathlib.Path):
     manager = AtomicDownloadManager(tmp_path)
 
     def save_to_temp(temp_path: pathlib.Path) -> None:
-        tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
+        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+        tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True))
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
             tokenizer,
             with_detokenizer=True,
@@ -122,19 +124,21 @@ def save_model(model_id: str, tmp_path: pathlib.Path):
 
         tokenizer.save_pretrained(temp_path)
 
-        opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-            model_id,
-            export=True,
-            trust_remote_code=True,
-            compile=False,
-            device="CPU",
-            load_in_8bit=False,
-        ))
+        opt_model = retry_request(
+            lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                model_cached,
+                export=True,
+                trust_remote_code=True,
+                compile=False,
+                device="CPU",
+                load_in_8bit=False,
+            )
+        )
         opt_model.generation_config.save_pretrained(temp_path)
         opt_model.config.save_pretrained(temp_path)
         opt_model.save_pretrained(temp_path)
 
-        processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
+        processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_cached, trust_remote_code=True))
         processor.save_pretrained(temp_path)
 
     manager.execute(save_to_temp)
