@@ -128,7 +128,9 @@ private:
 
       const auto pronunciation = resolve_word_token(tokens, i);
       if (!pronunciation.has_value()) {
-        auto fallback_token = make_output_token(tk.text, "WORD", "", std::nullopt, 1);
+        // Python parity: EspeakFallback returns `(phonemes, 2)`.
+        // Use rating=2 for unresolved-word fallback tokens.
+        auto fallback_token = make_output_token(tk.text, "WORD", "", std::nullopt, 2);
         if (fallback_token._.has_value()) {
           fallback_token._->prespace = needs_space;
           if (tk.linked_stress.has_value()) {

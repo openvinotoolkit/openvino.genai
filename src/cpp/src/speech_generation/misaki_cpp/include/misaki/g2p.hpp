@@ -81,3 +81,4 @@ void set_english_lexicon_data_root(const std::string& path);
 void clear_english_lexicon_data_root();
 
 } // namespace misaki
+

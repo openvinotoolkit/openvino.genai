@@ -24,6 +24,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 add_library(misaki_cpp STATIC
   src/en_g2p.cpp
+  src/espeak_fallback.cpp
   src/english_lexicon.cpp
   src/factory_stub.cpp
 )

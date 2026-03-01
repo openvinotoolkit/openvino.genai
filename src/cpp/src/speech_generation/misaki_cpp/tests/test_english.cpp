@@ -1,4 +1,5 @@
 #include "misaki/g2p.hpp"
+#include "misaki/fallbacks.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
@@ -156,6 +157,19 @@ TEST_CASE("English fallback hook resolves unknown token", "[english][fallback]")
   REQUIRE(result.tokens[0]._.has_value());
   REQUIRE(result.tokens[0]._->rating.has_value());
   REQUIRE(*result.tokens[0]._->rating == 1);
+}
+
+TEST_CASE("Espeak fallback returns nullopt when runtime library is unavailable", "[english][fallback][espeak]") {
+  misaki::EspeakFallback espeak(/*british=*/false, /*version=*/"", "definitely_missing_espeak_ng_library");
+  REQUIRE_FALSE(espeak.backend_available());
+  const auto error = espeak.backend_error();
+  REQUIRE(error.has_value());
+  REQUIRE(error->find("espeak-ng runtime library") != std::string::npos);
+
+  misaki::MToken token;
+  token.text = "zzzznotawordzzzz";
+  const auto result = espeak(token);
+  REQUIRE_FALSE(result.has_value());
 }
 
 TEST_CASE("English en-gb variant produces british lexicon outputs", "[english][gb]") {

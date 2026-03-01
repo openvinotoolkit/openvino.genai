@@ -187,6 +187,17 @@ engine->set_fallback_hook([](const misaki::MToken& token) -> std::optional<std::
 
 // Python-like unknown token marker (default is "❓"):
 engine->set_unknown_token("<UNK>");
+
+// Built-in espeak-ng fallback (Python EspeakFallback equivalent):
+// Requires runtime availability of libespeak-ng (no build-time link required).
+#include "misaki/fallbacks.hpp"
+misaki::EspeakFallback espeak_fallback(/*british=*/false);
+engine->set_fallback_hook(espeak_fallback.as_hook());
+
+if (!espeak_fallback.backend_available()) {
+  // Helpful for deployment diagnostics (missing DLL/.so/.dylib, etc.)
+  auto err = espeak_fallback.backend_error();
+}
 ```
 
 `tokens` is a C++ mirror of Python `MToken`, including:
