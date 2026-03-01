@@ -55,6 +55,8 @@ Dataset parse_vlm_dataset(const std::string& models_path, const std::string& dat
 }
 }  // namespace
 
+namespace {
+
 void statisticsReporter(GenerationInfoCollector* generations_info_collector, int num_prompts) {
     int num_finished = 0;
     while (num_finished < num_prompts) {
@@ -65,6 +67,8 @@ void statisticsReporter(GenerationInfoCollector* generations_info_collector, int
 
     std::cout << "Exiting statistics reporter thread." << std::endl;
 }
+
+}  // namespace
 
 int main(int argc, char* argv[]) try {
     //
