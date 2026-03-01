@@ -8,7 +8,6 @@
 #include <random>
 #include <stdexcept>
 #include <thread>
-#include <mutex>
 #include <atomic>
 
 #include <nlohmann/json.hpp>
@@ -18,8 +17,12 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_handle.hpp"
+#include "benchmark_utils.hpp"
 
 namespace {
+
+using benchmark_utils::Dataset;
+using benchmark_utils::GenerationInfoCollector;
 
 class AutoStartTimer {
     const decltype(std::chrono::steady_clock::now()) m_start;
@@ -31,53 +34,6 @@ public:
     double current_in_milli() const {
         auto m_end = std::chrono::steady_clock::now();
         return std::chrono::duration<double, std::milli>(m_end - m_start).count();
-    }
-};
-
-struct Dataset {
-    std::vector<std::string> m_prompts;
-    std::vector<ov::genai::GenerationConfig> m_sampling_params;
-    std::vector<size_t> m_input_lens, m_output_lens;
-
-    size_t m_total_input_len = 0;
-    size_t m_total_output_len = 0;
-
-    void reserve(const size_t size) {
-        m_prompts.reserve(size);
-        m_sampling_params.reserve(size);
-        m_input_lens.reserve(size);
-        m_output_lens.reserve(size);
-    }
-
-    void push_data(std::string prompt, ov::genai::GenerationConfig sampling_params) {
-        m_prompts.push_back(prompt);
-        m_sampling_params.push_back(sampling_params);
-    }
-
-    void push_lens(size_t input_len, size_t output_len) {
-        m_input_lens.push_back(input_len);
-        m_output_lens.push_back(output_len);
-
-        m_total_input_len += input_len;
-        m_total_output_len += output_len;
-    }
-
-    float get_average_input_len() const {
-        OPENVINO_ASSERT(!empty());
-        return static_cast<float>(m_total_input_len / size());
-    }
-
-    float get_average_output_len() const {
-        OPENVINO_ASSERT(!empty());
-        return static_cast<float>(m_total_output_len / size());
-    }
-
-    bool empty() const {
-        return size() == 0;
-    }
-
-    size_t size() const {
-        return m_prompts.size();
     }
 };
 
@@ -138,175 +94,6 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
 
     return sampled_dataset;
 }
-
-class GenerationInfo {
-
-    struct SequenceInfo {
-        std::chrono::milliseconds ttft;
-        std::chrono::milliseconds cumulated_tpot;
-        std::chrono::milliseconds mean_tpot;
-        size_t num_output_tokens;
-    
-        std::chrono::steady_clock::time_point start_time;
-        std::chrono::steady_clock::time_point last_read_time;
-
-        SequenceInfo(std::chrono::steady_clock::time_point& start_time) {
-            num_output_tokens = 0;
-            ttft = std::chrono::milliseconds::zero();
-            cumulated_tpot = std::chrono::milliseconds::zero();
-            this->start_time = start_time;
-        }
-
-        void update() {
-            std::chrono::steady_clock::time_point new_read_time = std::chrono::steady_clock::now();
-            if (last_read_time.time_since_epoch() == std::chrono::milliseconds::zero()) {
-                ttft = std::chrono::duration_cast<std::chrono::milliseconds>(new_read_time - start_time);
-            } else {
-                cumulated_tpot += std::chrono::duration_cast<std::chrono::milliseconds>(new_read_time - last_read_time);
-                mean_tpot = cumulated_tpot / num_output_tokens;
-
-            }
-            num_output_tokens++;
-            last_read_time = new_read_time;
-        }
-    };
-
-    struct GenerationMetrics {
-        std::chrono::milliseconds mean_ttft = std::chrono::milliseconds::zero();
-        std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
-        size_t num_output_tokens = 0;
-        size_t num_input_tokens;
-    };
-
-    ov::genai::GenerationHandle generation_handle;
-    std::chrono::steady_clock::time_point start_time;
-    std::unordered_map<int64_t, SequenceInfo> sequences_info;
-    bool active = true;
-    size_t input_len;
-
-public:
-    GenerationInfo(ov::genai::GenerationHandle generation_handle, size_t input_len) : input_len(input_len)
-    {
-        this->generation_handle = std::move(generation_handle);
-        start_time = std::chrono::steady_clock::now();
-    }
-
-    void update_sequence(int64_t sequence_id) {
-        if (sequences_info.find(sequence_id) == sequences_info.end())
-            sequences_info.emplace(sequence_id, SequenceInfo(start_time));
-        sequences_info.at(sequence_id).update();
-    }
-
-    void update(ov::genai::GenerationOutputs& outputs){
-        for (auto const& output: outputs) {
-            update_sequence(output.first);
-        }
-    }
-
-    ov::genai::GenerationOutputs read() {
-        return generation_handle->read();
-    }
-
-    bool can_read() {
-        return generation_handle->can_read();
-    }
-
-    bool is_finished() {
-        return generation_handle->get_status() == ov::genai::GenerationStatus::FINISHED;
-    }
-
-    void set_inactive() {
-        active = false;
-    }
-
-    bool is_active() {
-        return active;
-    }
-
-    GenerationMetrics get_metrics() {
-        GenerationMetrics generation_metrics;
-        if (!sequences_info.empty()) {
-            for (auto& sequenceInfoPair : sequences_info) {
-                generation_metrics.mean_ttft += sequenceInfoPair.second.ttft;
-                generation_metrics.mean_tpot += sequenceInfoPair.second.mean_tpot;
-                generation_metrics.num_output_tokens += sequenceInfoPair.second.num_output_tokens;
-            }
-            generation_metrics.mean_ttft /= sequences_info.size();
-            generation_metrics.mean_tpot /= sequences_info.size();
-            generation_metrics.num_input_tokens = input_len;
-        }
-        return generation_metrics;
-    }
-};
-
-class GenerationInfoCollector {
-    std::mutex mutex;
-    std::vector<GenerationInfo> generations_info;
-    size_t num_finished = 0;
-    std::chrono::steady_clock::time_point start_time;
-
-public:
-
-    void set_start_time(std::chrono::steady_clock::time_point start_time) {
-        this->start_time = start_time;
-    }
-
-    void add_generation(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, size_t request_id, bool is_speculative_decoding_enabled) {
-        auto sampling_params = dataset->m_sampling_params[request_id];
-        if (is_speculative_decoding_enabled) {
-            // to enable static speculative decoding
-            sampling_params.num_assistant_tokens = 5;
-            // to enable dynamic speculative decoding
-            // sampling_params.assistant_confidence_threshold = 0.4f;
-        }
-        ov::genai::GenerationHandle generation_handle = pipe->add_request(request_id, dataset->m_prompts[request_id], sampling_params);
-        std::lock_guard<std::mutex> lock(mutex);
-        generations_info.emplace_back(std::move(generation_handle), dataset->m_input_lens[request_id]);
-    }
-
-    size_t run() {
-        std::lock_guard<std::mutex> lock(mutex);
-        for (GenerationInfo& generation_info : generations_info) {
-            if (!generation_info.is_active())
-                continue;
-            
-            if (generation_info.is_finished()) {
-                num_finished++;
-                generation_info.set_inactive();
-            } else if (generation_info.can_read()) {
-                auto outputs = generation_info.read();
-                generation_info.update(outputs);
-            }
-        }
-        return num_finished;
-    }
-
-    void print_statistics() {
-        std::chrono::seconds total_duration = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start_time);
-        std::chrono::milliseconds mean_ttft = std::chrono::milliseconds::zero();
-        std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
-        size_t total_input_len = 0;
-        size_t total_output_len = 0;
-        
-    
-        for (GenerationInfo& generation_info : generations_info){
-            auto generation_metrics = generation_info.get_metrics();
-            mean_ttft += generation_metrics.mean_ttft;
-            mean_tpot += generation_metrics.mean_tpot;
-            total_input_len += generation_metrics.num_input_tokens;
-            total_output_len += generation_metrics.num_output_tokens;
-        }
-        mean_ttft /= generations_info.size();
-        mean_tpot /= generations_info.size();
-        std::cout << "Benchmark duration: " << total_duration.count() << " s" << std::endl;
-        std::cout << "Total number of input tokens: " << total_input_len << std::endl;
-        std::cout << "Total number of output tokens: " << total_output_len << std::endl;
-        std::cout << "Input throughput: " << total_input_len / total_duration.count() << " tokens / s" << std::endl;
-        std::cout << "Output throughput: " << total_output_len / total_duration.count() << " tokens / s" << std::endl;
-        std::cout << "Mean TTFT: " << mean_ttft.count() << " ms" << std::endl;
-        std::cout << "Mean TPOT: " << mean_tpot.count() << " ms" << std::endl; 
-    }
-};
 
 void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, std::string request_rate, GenerationInfoCollector* generation_info_collector, bool is_speculative_decoding_enabled) {
     double numeric_request_rate;

@@ -6,11 +6,8 @@
 #include <cstdlib>
 #include <chrono>
 #include <ostream>
-#include <random>
 #include <stdexcept>
 #include <thread>
-#include <mutex>
-#include <atomic>
 
 #include <nlohmann/json.hpp>
 #include <cxxopts.hpp>
@@ -19,124 +16,20 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_handle.hpp"
+#include "benchmark_utils.hpp"
 #include "load_image.hpp"
-#include "stb_image.h"
 
 namespace {
 
-struct Image_info {
-    int width = 0;
-    int height = 0;
-};
+using benchmark_utils::Dataset;
+using benchmark_utils::GenerationInfoCollector;
 
-namespace fs = std::filesystem;
-
-// Returns an optional, which cleanly handles cases where image info cannot be read.
-std::optional<Image_info> get_image_dimensions(const fs::path& image_path) {
-    Image_info info;
-    int channels; // This variable is required by stbi_info but we don't need it.
-
-    // Use stbi_info to get dimensions without decoding the entire image.
-    // This is significantly faster and uses less memory.
-    if (stbi_info(image_path.string().c_str(), &info.width, &info.height, &channels)) {
-        return info;
-    }
-
-    // On failure, print a detailed error and return an empty optional.
-    std::cerr << "Failed to read info for image '" << image_path.string()
-              << "': " << stbi_failure_reason() << std::endl;
-    return std::nullopt;
-}
-
-std::vector<Image_info> check_images(const fs::path& input_path) {
-    if (input_path.empty() || !fs::exists(input_path)) {
-        throw std::runtime_error("Input path is empty or does not exist.");
-    }
-
-    std::vector<Image_info> images;
-    if (fs::is_directory(input_path)) {
-        // Using a set sorts the file paths automatically.
-        const std::set<fs::path> sorted_entries(fs::directory_iterator{input_path}, fs::directory_iterator{});
-
-        // Reserve memory in the vector to prevent multiple reallocations.
-        images.reserve(images.size() + sorted_entries.size());
-
-        for (const fs::path& entry_path : sorted_entries) {
-            // Ensure we only attempt to process regular files.
-            if (fs::is_regular_file(entry_path)) {
-                if (auto info = get_image_dimensions(entry_path)) {
-                    images.push_back(*info); // Push back the valid info.
-                }
-            }
-        }
-    } else if (fs::is_regular_file(input_path)) {
-        if (auto info = get_image_dimensions(input_path)) {
-            images.push_back(*info);
-        }
-    }
-    return images;
-}
-
-struct VLMDataset {
-    std::vector<std::string> m_prompts;
-    std::vector<std::string> m_image_path;
-    std::vector<std::vector<Image_info>> m_image_info;
-    std::vector<ov::genai::GenerationConfig> m_sampling_params;
-    std::vector<size_t> m_input_lens, m_output_lens;
-
-    size_t m_total_input_len = 0;
-    size_t m_total_output_len = 0;
-
-    void reserve(const size_t size) {
-        m_prompts.reserve(size);
-        m_image_path.reserve(size);
-        m_sampling_params.reserve(size);
-        m_input_lens.reserve(size);
-        m_output_lens.reserve(size);
-    }
-
-    void push_data(const std::string& prompt, const std::string& image_path, const ov::genai::GenerationConfig& sampling_params) {
-        m_prompts.push_back(prompt);
-        m_image_path.push_back(image_path);
-        m_sampling_params.push_back(sampling_params);
-
-        std::vector<Image_info> image_info = check_images(image_path);
-        m_image_info.push_back(image_info);
-    }
-
-    void push_lens(size_t input_len, size_t output_len) {
-        m_input_lens.push_back(input_len);
-        m_output_lens.push_back(output_len);
-
-        m_total_input_len += input_len;
-        m_total_output_len += output_len;
-    }
-
-    float get_average_input_len() const {
-        OPENVINO_ASSERT(!empty());
-        return static_cast<float>(m_total_input_len) / size();
-    }
-
-    float get_average_output_len() const {
-        OPENVINO_ASSERT(!empty());
-        return static_cast<float>(m_total_output_len) / size();
-    }
-
-    bool empty() const {
-        return size() == 0;
-    }
-
-    size_t size() const {
-        return m_prompts.size();
-    }
-};
-
-VLMDataset parse_vlm_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_new_tokens) {
+Dataset parse_vlm_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_output_len) {
     std::ifstream json_file(dataset_path.c_str());
     OPENVINO_ASSERT(json_file.is_open(), "Cannot open dataset file:", dataset_path);
 
     nlohmann::json json_dataset = nlohmann::json::parse(json_file);
-    VLMDataset dataset;
+    Dataset dataset;
     dataset.reserve(num_prompts);
 
     ov::genai::Tokenizer tokenizer(models_path);
@@ -150,220 +43,16 @@ VLMDataset parse_vlm_dataset(const std::string& models_path, const std::string& 
         ov::Tensor _input_ids_prompt = tokenizer.encode(prompt).input_ids;
         size_t prompt_input_len = _input_ids_prompt.get_size();
 
-        ov::genai::GenerationConfig greedy_search = ov::genai::greedy();
-        greedy_search.max_new_tokens = max_new_tokens;
+        ov::genai::GenerationConfig greedy_search;
+        greedy_search.max_new_tokens = max_output_len;
         greedy_search.ignore_eos = true;
 
-        dataset.push_data(prompt, image_path, greedy_search);
-        dataset.push_lens(prompt_input_len, max_new_tokens);
+        dataset.push_data(prompt, greedy_search, image_path);
+        dataset.push_lens(prompt_input_len, max_output_len);
     }
 
     return dataset;
 }
-
-class GenerationInfo {
-
-    struct SequenceInfo {
-        std::chrono::milliseconds ttft;
-        std::chrono::milliseconds cumulated_tpot;
-        std::chrono::milliseconds mean_tpot;
-        size_t num_output_tokens;
-        std::vector<int64_t> generated_ids;
-    
-        std::chrono::steady_clock::time_point start_time;
-        std::chrono::steady_clock::time_point last_read_time;
-
-        SequenceInfo(std::chrono::steady_clock::time_point& start_time) {
-            num_output_tokens = 0;
-            ttft = std::chrono::milliseconds::zero();
-            cumulated_tpot = std::chrono::milliseconds::zero();
-            this->start_time = start_time;
-        }
-
-        void update() {
-            std::chrono::steady_clock::time_point new_read_time = std::chrono::steady_clock::now();
-            if (last_read_time.time_since_epoch() == std::chrono::milliseconds::zero()) {
-                ttft = std::chrono::duration_cast<std::chrono::milliseconds>(new_read_time - start_time);
-            } else {
-                cumulated_tpot += std::chrono::duration_cast<std::chrono::milliseconds>(new_read_time - last_read_time);
-                if (num_output_tokens > 0)
-                    mean_tpot = cumulated_tpot / num_output_tokens;
-
-            }
-            num_output_tokens++;
-            last_read_time = new_read_time;
-        }
-
-        void update_generated_ids(const std::vector<int64_t>& gen_ids) {
-            generated_ids.insert(generated_ids.end(), gen_ids.begin(), gen_ids.end());
-        }
-    };
-
-    struct GenerationMetrics {
-        std::chrono::milliseconds mean_ttft = std::chrono::milliseconds::zero();
-        std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
-        size_t num_output_tokens = 0;
-        size_t num_input_tokens;
-        std::vector<Image_info> input_images_info;
-    };
-
-    ov::genai::GenerationHandle generation_handle;
-    std::chrono::steady_clock::time_point start_time;
-    std::unordered_map<int64_t, SequenceInfo> sequences_info;
-    bool active = true;
-    size_t input_len;
-    std::vector<Image_info> input_img_info;
-
-public:
-    GenerationInfo(ov::genai::GenerationHandle generation_handle, size_t input_len, std::vector<Image_info>& images_info) 
-        : input_len(input_len), input_img_info(images_info)
-    {
-        this->generation_handle = std::move(generation_handle);
-        start_time = std::chrono::steady_clock::now();
-    }
-
-    const std::unordered_map<int64_t, SequenceInfo>& get_all_seq_info() const {
-        return sequences_info;
-    }
-
-    void update_sequence(int64_t sequence_id, ov::genai::GenerationOutput& gen_output) {
-        if (sequences_info.find(sequence_id) == sequences_info.end())
-            sequences_info.emplace(sequence_id, SequenceInfo(start_time));
-        sequences_info.at(sequence_id).update();
-        sequences_info.at(sequence_id).update_generated_ids(gen_output.generated_ids);
-    }
-
-    void update(ov::genai::GenerationOutputs& outputs){
-        for (auto& output: outputs) {
-            update_sequence(output.first, output.second);
-        }
-    }
-
-    ov::genai::GenerationOutputs read() {
-        return generation_handle->read();
-    }
-
-    bool can_read() {
-        return generation_handle->can_read();
-    }
-
-    bool is_finished() {
-        return generation_handle->get_status() == ov::genai::GenerationStatus::FINISHED;
-    }
-
-    void set_inactive() {
-        active = false;
-    }
-
-    bool is_active() {
-        return active;
-    }
-
-    GenerationMetrics get_metrics() {
-        GenerationMetrics generation_metrics;
-        if (!sequences_info.empty()) {
-            for (auto& sequenceInfoPair : sequences_info) {
-                generation_metrics.mean_ttft += sequenceInfoPair.second.ttft;
-                generation_metrics.mean_tpot += sequenceInfoPair.second.mean_tpot;
-                generation_metrics.num_output_tokens += sequenceInfoPair.second.num_output_tokens;
-            }
-            generation_metrics.mean_ttft /= sequences_info.size();
-            generation_metrics.mean_tpot /= sequences_info.size();
-            generation_metrics.num_input_tokens = input_len;
-            generation_metrics.input_images_info = input_img_info;
-        }
-        return generation_metrics;
-    }
-};
-
-class GenerationInfoCollector {
-    std::vector<GenerationInfo> generations_info;
-    size_t num_finished = 0;
-    std::chrono::steady_clock::time_point start_time;
-
-public:
-
-    void set_start_time(std::chrono::steady_clock::time_point start_time) {
-        this->start_time = start_time;
-    }
-
-    void add_generation(ov::genai::ContinuousBatchingPipeline* pipe, VLMDataset* dataset, size_t request_id) {
-        auto sampling_params = dataset->m_sampling_params[request_id];
-
-        std::vector<ov::Tensor> images = utils::load_images(dataset->m_image_path[request_id]);
-        ov::genai::GenerationHandle generation_handle = pipe->add_request(request_id, dataset->m_prompts[request_id], images, sampling_params);
-        generations_info.emplace_back(std::move(generation_handle), dataset->m_input_lens[request_id], dataset->m_image_info[request_id]);
-    }
-
-    size_t run() {
-        for (GenerationInfo& generation_info : generations_info) {
-            if (!generation_info.is_active())
-                continue;
-            
-            if (generation_info.is_finished()) {
-                num_finished++;
-                generation_info.set_inactive();
-            } else if (generation_info.can_read()) {
-                auto outputs = generation_info.read();
-                generation_info.update(outputs);
-            }
-        }
-        return num_finished;
-    }
-
-    void output_generated_text(ov::genai::Tokenizer& tokenizer) {
-        int request_idx = 0;
-        for (GenerationInfo& generation_info : generations_info) {
-            auto outputs = generation_info.get_all_seq_info();
-            for (const auto& output : outputs) {
-                auto text = tokenizer.decode(output.second.generated_ids);
-                std::cout << "[" << request_idx << "] generated text:" << text << std::endl;
-            }
-            request_idx++;
-        }
-    }
-
-    void print_statistics() {
-        std::chrono::seconds total_duration = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start_time);
-        std::chrono::milliseconds mean_ttft = std::chrono::milliseconds::zero();
-        std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
-        size_t total_input_len = 0;
-        size_t total_output_len = 0;
-
-        std::cout << "Benchmark duration: " << total_duration.count() << " s" << std::endl;
-        size_t gen_idx = 0;
-        for (GenerationInfo& generation_info : generations_info) {
-            auto generation_metrics = generation_info.get_metrics();
-            mean_ttft += generation_metrics.mean_ttft;
-            mean_tpot += generation_metrics.mean_tpot;
-            std::cout << "[" << gen_idx << "] Input prompt tokens: " << generation_metrics.num_input_tokens << std::endl;
-            size_t img_idx = 0;
-            for (Image_info& img_info : generation_metrics.input_images_info) {
-                std::cout << "[" << gen_idx << "] Input image[" << img_idx << "]: width:" << img_info.width << ", height:" << img_info.height << std::endl;
-                img_idx++;
-            }
-            std::cout << "[" << gen_idx << "] Number of output tokens: " << generation_metrics.num_output_tokens << std::endl;
-            total_input_len += generation_metrics.num_input_tokens;
-            total_output_len += generation_metrics.num_output_tokens;
-            gen_idx++;
-        }
-        mean_ttft /= generations_info.size();
-        mean_tpot /= generations_info.size();
-        std::cout << "Total number of input prompt tokens: " << total_input_len << std::endl;
-        std::cout << "Total number of output tokens: " << total_output_len << std::endl;
-
-        if (total_duration.count() > 0) {
-            std::cout << "Input throughput: " << total_input_len / total_duration.count() << " tokens / s" << std::endl;
-            std::cout << "Output throughput: " << total_output_len / total_duration.count() << " tokens / s" << std::endl;            
-        }
-        
-        if (mean_ttft.count() > 0)
-            std::cout << "Mean TTFT: " << mean_ttft.count() << " ms" << std::endl;
-        
-        if (mean_tpot.count() > 0)
-            std::cout << "Mean TPOT: " << mean_tpot.count() << " ms" << std::endl; 
-    }
-};
 }  // namespace
 
 void statisticsReporter(GenerationInfoCollector* generations_info_collector, int num_prompts) {
@@ -372,7 +61,7 @@ void statisticsReporter(GenerationInfoCollector* generations_info_collector, int
         num_finished = generations_info_collector->run();
     }
     std::cout << "Benchmark finished, summarizing statistics..." << std::endl;
-    generations_info_collector->print_statistics();
+    generations_info_collector->print_statistics(true);
 
     std::cout << "Exiting statistics reporter thread." << std::endl;
 }
@@ -386,10 +75,14 @@ int main(int argc, char* argv[]) try {
 
     options.add_options()
     ("n,num_prompts", "A number of prompts", cxxopts::value<size_t>()->default_value("1"))
+    ("b,max_batch_size", "A maximum number of batched tokens", cxxopts::value<size_t>()->default_value("256"))
+    ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("true"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("dataset", "Path to dataset .json file", cxxopts::value<std::string>())
-    ("mt,max_new_tokens", "Maximal number of output tokens", cxxopts::value<size_t>()->default_value("128"))
+    ("max_output_len", "Max output length", cxxopts::value<size_t>()->default_value("128"))
+    ("cache_size", "Size of memory used for KV cache in GB. Default: 16", cxxopts::value<size_t>()->default_value("16"))
     ("device", "Target device to run the model. Default: CPU", cxxopts::value<std::string>()->default_value("CPU"))
+    ("use_cache_eviction", "Whether to use cache eviction", cxxopts::value<bool>()->default_value("false"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -419,22 +112,43 @@ int main(int argc, char* argv[]) try {
     std::cout << ov::get_openvino_version() << std::endl;
 
     const size_t num_prompts = result["num_prompts"].as<size_t>();
+    const size_t max_batch_size = result["max_batch_size"].as<size_t>();
+    const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
     const std::string models_path = result["model"].as<std::string>();
     const std::string dataset_path = result["dataset"].as<std::string>();
-    const size_t max_new_tokens = result["max_new_tokens"].as<size_t>();
+    const size_t max_output_len = result["max_output_len"].as<size_t>();
+    const size_t cache_size = result["cache_size"].as<size_t>();
     const std::string device = result["device"].as<std::string>();
+    const bool use_cache_eviction = result["use_cache_eviction"].as<bool>();
 
     // Create requests for generation
-    VLMDataset dataset = parse_vlm_dataset(models_path, dataset_path, num_prompts, max_new_tokens);
+    Dataset dataset = parse_vlm_dataset(models_path, dataset_path, num_prompts, max_output_len);
     const size_t prompt_nums = std::min(num_prompts, dataset.size());
 
     // Perform the first inference
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.enable_prefix_caching = false;
-    scheduler_config.max_num_batched_tokens = std::numeric_limits<std::size_t>::max();
+    scheduler_config.max_num_batched_tokens = max_batch_size;
+    scheduler_config.cache_size = cache_size;
+    scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
+    scheduler_config.max_num_seqs = 256;
+    if (use_cache_eviction) {
+        scheduler_config.use_cache_eviction = true;
+        scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(32,
+                                                                                 32,
+                                                                                 128,
+                                                                                 ov::genai::AggregationMode::NORM_SUM,
+                                                                                 false,
+                                                                                 8,
+                                                                                 ov::genai::KVCrushConfig(0, ov::genai::KVCrushAnchorPointMode::MEAN));
+    }
 
     std::cout << "Benchmarking parameters: " << std::endl;
     std::cout << "\tMax number of batched tokens: " << scheduler_config.max_num_batched_tokens << std::endl;
+    std::cout << "\tScheduling type: " << (scheduler_config.dynamic_split_fuse ? "dynamic split-fuse" : "vLLM") << std::endl;
+    if (!scheduler_config.dynamic_split_fuse) {
+        std::cout << "\tMax number of batched sequences: " << scheduler_config.max_num_seqs << std::endl;
+    }
     std::cout << "\tNum prompts: " << prompt_nums << std::endl;
     std::cout << "\tTarget device: " << device << std::endl;
     
@@ -442,10 +156,11 @@ int main(int argc, char* argv[]) try {
     std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
     ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device);
 
-    GenerationInfoCollector generation_info_collector;
+    GenerationInfoCollector generation_info_collector(true);
     generation_info_collector.set_start_time(std::chrono::steady_clock::now());
     for (size_t request_id = 0; request_id < prompt_nums; ++request_id) {
-        generation_info_collector.add_generation(&pipe, &dataset, request_id);
+        std::vector<ov::Tensor> images = utils::load_images(dataset.m_image_path[request_id]);
+        generation_info_collector.add_generation(&pipe, &dataset, request_id, false, &images);
     }
 
     std::thread statisticsReporterThread(statisticsReporter, &generation_info_collector, prompt_nums);
