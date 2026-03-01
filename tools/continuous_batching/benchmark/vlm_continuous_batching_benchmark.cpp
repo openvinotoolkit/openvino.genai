@@ -109,7 +109,7 @@ int main(int argc, char* argv[]) try {
         return EXIT_FAILURE;
     }
 
-    if (result["num_prompts"].as<size_t>() <= 0) {
+    if (result["num_prompts"].as<size_t>() == 0) {
         std::cout << "The num of prompts should be greater than 0!" << std::endl;
         return EXIT_FAILURE;
     }
