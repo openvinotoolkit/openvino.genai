@@ -299,7 +299,7 @@ int main(int argc, char* argv[]) try {
         std::cout << "ERROR: Wrong json parameter in device_config." << std::endl;
         return EXIT_FAILURE;
     }
-    
+
     // Benchmarking
     std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
     ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map);
@@ -313,7 +313,7 @@ int main(int argc, char* argv[]) try {
         std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled);
         trafficSimulatorThread.join();
     }
-    
+
     std::thread lmmEngineThread(llmEngineLoop, &pipe, &dataset, &finishGenerationThread);
     std::thread statisticsReporterThread(statisticsReporter, &generation_info_collector, num_prompts);
     if (request_rate != "inf") {

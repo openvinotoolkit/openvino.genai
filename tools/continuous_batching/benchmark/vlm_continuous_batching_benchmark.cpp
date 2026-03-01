@@ -99,6 +99,11 @@ int main(int argc, char* argv[]) try {
         return EXIT_SUCCESS;
     }
 
+    if (!result.count("dataset")) {
+        std::cout << "The option '--dataset' is required!" << std::endl;
+        return EXIT_FAILURE;
+    }
+
     if (result["dataset"].as<std::string>().empty()) {
         std::cout << "The value of option '--dataset' is empty!" << std::endl;
         return EXIT_FAILURE;
