@@ -20,6 +20,7 @@
 
 #if OPENVINO_GENAI_HAS_MISAKI_CPP
 #include "misaki/g2p.hpp"
+#include "misaki/fallbacks.hpp"
 #endif
 
 namespace {
@@ -225,6 +226,34 @@ std::vector<float> load_voice_binary(const std::filesystem::path& models_path, c
     OPENVINO_THROW(ss.str());
 }
 
+#if OPENVINO_GENAI_HAS_MISAKI_CPP
+void install_espeak_fallback_if_available(std::unique_ptr<misaki::G2P>& g2p,
+                                          const std::string& language_variant) {
+    if (!g2p) {
+        return;
+    }
+
+    // Python parity: `KPipeline` wires `en.G2P(..., fallback=EspeakFallback(...))`
+    // for English variants (`a`/`b` -> `en-us`/`en-gb`).
+    const bool british = (language_variant == "en-gb");
+
+    const char* library_hint = std::getenv("MISAKI_ESPEAK_LIBRARY");
+    const char* version_hint = std::getenv("MISAKI_ESPEAK_VERSION");
+
+    misaki::EspeakFallback espeak_fallback(british,
+                                           version_hint ? std::string(version_hint) : std::string{},
+                                           library_hint ? std::string(library_hint) : std::string{});
+    if (!espeak_fallback.backend_available()) {
+        std::cout << "Warning: espeak-ng fallback is not available for Kokoro G2P. Install espeak-ng and set "
+                     "MISAKI_ESPEAK_LIBRARY to enable fallback support for out-of-vocab words."
+                  << std::endl;
+        return;
+    }
+
+    g2p->set_fallback_hook(espeak_fallback.as_hook());
+}
+#endif
+
 }  // namespace
 
 namespace ov {
@@ -304,6 +333,7 @@ KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
     m_runtime = std::make_shared<KokoroRuntime>(models_path);
     // Python reference: same engine family as `KPipeline(...).g2p` for English variants.
     m_g2p = misaki::make_engine("en", m_runtime->language_variant());
+    install_espeak_fallback_if_available(m_g2p, m_runtime->language_variant());
 
     for (size_t idx = 0; idx < compiled.inputs().size(); ++idx) {
         const auto input_name = compiled.input(static_cast<int>(idx)).get_any_name();
@@ -358,6 +388,7 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
         m_runtime->set_language_variant(language_variant);
         // Python parity: language change rebinds G2P behavior (see `KPipeline.__init__`).
         m_g2p = misaki::make_engine("en", language_variant);
+        install_espeak_fallback_if_available(m_g2p, language_variant);
     }
 
     Text2SpeechDecodedResults result;
