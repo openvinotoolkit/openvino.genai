@@ -252,6 +252,151 @@ void install_espeak_fallback_if_available(std::unique_ptr<misaki::G2P>& g2p,
 
     g2p->set_fallback_hook(espeak_fallback.as_hook());
 }
+
+std::vector<std::string> phonemize_single_text(misaki::G2P& g2p,
+                                               const std::string& text,
+                                               const ov::genai::SpeechGenerationConfig& generation_config) {
+    auto rstrip_spaces = [](std::string value) {
+        while (!value.empty() && value.back() == ' ') {
+            value.pop_back();
+        }
+        return value;
+    };
+
+    auto lstrip_spaces = [](std::string value) {
+        std::size_t first = 0;
+        while (first < value.size() && value[first] == ' ') {
+            ++first;
+        }
+        return value.substr(first);
+    };
+
+    auto tokens_to_ps = [&](const std::vector<misaki::MToken>& tokens) {
+        std::string result;
+        for (const auto& token : tokens) {
+            result += token.phonemes.value_or("");
+            if (!token.whitespace.empty()) {
+                result.push_back(' ');
+            }
+        }
+        return rstrip_spaces(result);
+    };
+
+    auto sanitize_utf8 = [](const std::string& value) {
+        return truncate_utf8_codepoints(value, utf8_codepoint_length(value));
+    };
+
+    auto in_set = [](const std::string& value, const std::string& set_chars) {
+        return value.size() == 1 && set_chars.find(value[0]) != std::string::npos;
+    };
+
+    auto waterfall_last = [&](const std::vector<misaki::MToken>& tokens, std::size_t next_count) {
+        static const std::vector<std::string> waterfall = {"!.?…", ":;", ",—"};
+        static const std::vector<std::string> bumps = {")", "”"};
+
+        for (const auto& marks : waterfall) {
+            std::optional<std::size_t> split_index;
+            for (std::size_t i = tokens.size(); i-- > 0;) {
+                if (in_set(tokens[i].phonemes.value_or(""), marks)) {
+                    split_index = i;
+                    break;
+                }
+            }
+            if (!split_index.has_value()) {
+                continue;
+            }
+
+            std::size_t z = *split_index + 1;
+            if (z < tokens.size()) {
+                const auto next_phonemes = tokens[z].phonemes.value_or("");
+                for (const auto& bump : bumps) {
+                    if (next_phonemes == bump) {
+                        ++z;
+                        break;
+                    }
+                }
+            }
+
+            std::vector<misaki::MToken> prefix(tokens.begin(), tokens.begin() + static_cast<std::ptrdiff_t>(z));
+            const auto prefix_len = utf8_codepoint_length(tokens_to_ps(prefix));
+            if (next_count >= prefix_len && (next_count - prefix_len) <= generation_config.max_phoneme_length) {
+                return z;
+            }
+        }
+
+        return tokens.size();
+    };
+
+    const auto segments = split_by_newline_groups(text);
+    std::vector<std::string> phoneme_chunks;
+
+    for (const auto& segment : segments) {
+        if (segment.empty()) {
+            continue;
+        }
+        auto tokenized = g2p.phonemize_with_tokens(segment);
+        std::vector<misaki::MToken> tks;
+        std::size_t pcount = 0;
+
+        for (const auto& token : tokenized.tokens) {
+            // Python reference: equivalent to `KPipeline.tokens_to_ps` building
+            // `phonemes + (' ' if whitespace else '')` per token.
+            const std::string token_phonemes = token.phonemes.value_or("");
+            const std::string suffix = token.whitespace.empty() ? "" : " ";
+            std::string next_piece = token_phonemes + suffix;
+
+            if (next_piece.empty()) {
+                continue;
+            }
+
+            const std::size_t next_pcount = pcount + utf8_codepoint_length(rstrip_spaces(next_piece));
+
+            if (next_pcount > generation_config.max_phoneme_length) {
+                const std::size_t z = waterfall_last(tks, next_pcount);
+                if (z > 0) {
+                    std::vector<misaki::MToken> prefix(tks.begin(), tks.begin() + static_cast<std::ptrdiff_t>(z));
+                    auto chunk = tokens_to_ps(prefix);
+                    if (!chunk.empty()) {
+                        phoneme_chunks.push_back(sanitize_utf8(chunk));
+                    }
+                    tks.erase(tks.begin(), tks.begin() + static_cast<std::ptrdiff_t>(z));
+                    pcount = utf8_codepoint_length(tokens_to_ps(tks));
+                    if (tks.empty()) {
+                        next_piece = lstrip_spaces(next_piece);
+                    }
+                }
+            }
+
+            if (tks.empty() && utf8_codepoint_length(next_piece) > generation_config.max_phoneme_length) {
+                std::string limited_piece = truncate_utf8_codepoints(next_piece, generation_config.max_phoneme_length);
+                limited_piece = rstrip_spaces(limited_piece);
+                if (!limited_piece.empty()) {
+                    phoneme_chunks.push_back(sanitize_utf8(limited_piece));
+                }
+                continue;
+            }
+
+            if (next_piece.empty()) {
+                continue;
+            }
+
+            auto next_token = token;
+            next_token.phonemes = token_phonemes;
+            tks.push_back(std::move(next_token));
+            pcount += utf8_codepoint_length(next_piece);
+        }
+
+        if (!tks.empty()) {
+            auto chunk = tokens_to_ps(tks);
+            if (!chunk.empty()) {
+                phoneme_chunks.push_back(sanitize_utf8(chunk));
+            }
+        }
+    }
+
+    OPENVINO_ASSERT(!phoneme_chunks.empty(), "Kokoro preprocessing produced no phoneme chunks for input text");
+    return phoneme_chunks;
+}
 #endif
 
 }  // namespace
@@ -396,73 +541,11 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
     for (const auto& text : texts) {
         std::vector<float> merged_audio;
         const auto text_tokenize_start = std::chrono::steady_clock::now();
-
-        const auto segments = split_by_newline_groups(text);
-        std::vector<std::string> phoneme_chunks;
-
-        for (const auto& segment : segments) {
-            if (segment.empty()) {
-                continue;
-            }
-            auto tokenized = m_g2p->phonemize_with_tokens(segment);
-            std::string current_chunk;
-
-            for (const auto& token : tokenized.tokens) {
-                // Python reference: equivalent to `KPipeline.tokens_to_ps` building
-                // `phonemes + (' ' if whitespace else '')` per token.
-                const std::string token_phonemes = token.phonemes.value_or("");
-                const std::string suffix = token.whitespace.empty() ? "" : " ";
-                const std::string next_piece = token_phonemes + suffix;
-
-                if (next_piece.empty()) {
-                    continue;
-                }
-
-                if (utf8_codepoint_length(current_chunk) + utf8_codepoint_length(next_piece) >
-                    generation_config.max_phoneme_length) {
-                    // Python reference: `KPipeline.en_tokenize` enforces ~510 char chunks.
-                    // We apply the same cap with Unicode code-point counting.
-                    if (!current_chunk.empty()) {
-                        while (!current_chunk.empty() && current_chunk.back() == ' ') {
-                            current_chunk.pop_back();
-                        }
-                        if (!current_chunk.empty()) {
-                            phoneme_chunks.push_back(current_chunk);
-                        }
-                        current_chunk.clear();
-                    }
-
-                    std::string limited_piece = next_piece;
-                    if (utf8_codepoint_length(limited_piece) > generation_config.max_phoneme_length) {
-                        // Python parity: same intent as `ps = ps[:510]` from
-                        // `kokoro/examples/export.py`, but UTF-8-safe in C++.
-                        limited_piece = truncate_utf8_codepoints(limited_piece, generation_config.max_phoneme_length);
-                    }
-                    while (!limited_piece.empty() && limited_piece.back() == ' ') {
-                        limited_piece.pop_back();
-                    }
-                    if (!limited_piece.empty()) {
-                        phoneme_chunks.push_back(limited_piece);
-                    }
-                    continue;
-                }
-
-                current_chunk += next_piece;
-            }
-
-            while (!current_chunk.empty() && current_chunk.back() == ' ') {
-                current_chunk.pop_back();
-            }
-            if (!current_chunk.empty()) {
-                phoneme_chunks.push_back(current_chunk);
-            }
-        }
+        const auto phoneme_chunks = phonemize_single_text(*m_g2p, text, generation_config);
 
         const auto text_tokenize_end = std::chrono::steady_clock::now();
         result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(
             MicroSeconds(text_tokenize_end - text_tokenize_start));
-
-        OPENVINO_ASSERT(!phoneme_chunks.empty(), "Kokoro preprocessing produced no phoneme chunks for input text");
 
         ov::Shape speaker_shape;
         const float* external_speaker_ptr = nullptr;
@@ -589,6 +672,29 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
     result.perf_metrics.evaluate_statistics();
     m_perf_metrics = result.perf_metrics;
     return result;
+#endif
+}
+
+std::vector<std::vector<std::string>> KokoroTTSImpl::phonemize(const std::vector<std::string>& texts,
+                                                               const SpeechGenerationConfig& generation_config) {
+#if !OPENVINO_GENAI_HAS_MISAKI_CPP
+    (void)texts;
+    (void)generation_config;
+    OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
+#else
+    const std::string language_variant = normalize_language_variant(generation_config.language);
+    if (language_variant != m_runtime->language_variant()) {
+        m_runtime->set_language_variant(language_variant);
+        m_g2p = misaki::make_engine("en", language_variant);
+        install_espeak_fallback_if_available(m_g2p, language_variant);
+    }
+
+    std::vector<std::vector<std::string>> all_chunks;
+    all_chunks.reserve(texts.size());
+    for (const auto& text : texts) {
+        all_chunks.push_back(phonemize_single_text(*m_g2p, text, generation_config));
+    }
+    return all_chunks;
 #endif
 }
 

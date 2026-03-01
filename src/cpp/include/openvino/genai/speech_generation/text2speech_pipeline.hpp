@@ -68,6 +68,25 @@ public:
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),
                                        const ov::AnyMap& properties = {});
 
+    /**
+     * Runs text preprocessing/phonemization and returns Kokoro phoneme chunks for one input text.
+     * This is useful for parity/debug tests against native Kokoro Python preprocessing.
+     * @param text input text to phonemize
+     * @param properties Speech generation parameters specified as properties
+     * @returns phoneme chunks used by Kokoro backend prior to acoustic inference
+     */
+    std::vector<std::string> phonemize(const std::string& text,
+                                       const ov::AnyMap& properties = {});
+
+    /**
+     * Runs text preprocessing/phonemization and returns Kokoro phoneme chunks for each input text.
+     * @param texts input texts to phonemize
+     * @param properties Speech generation parameters specified as properties
+     * @returns a list of per-input phoneme chunk lists
+     */
+    std::vector<std::vector<std::string>> phonemize(const std::vector<std::string>& texts,
+                                                    const ov::AnyMap& properties = {});
+
     template <typename... Properties>
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),

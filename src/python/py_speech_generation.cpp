@@ -96,6 +96,19 @@ auto text_to_speech_generate_docstring = R"(
     :rtype: Text2SpeechDecodedResults
 )";
 
+auto text_to_speech_phonemize_docstring = R"(
+    Runs Kokoro text preprocessing and returns phoneme chunks used before acoustic inference.
+
+    :param text(s): input text(s) to phonemize
+    :type text(s): str or list[str]
+
+    :param properties: speech generation parameters specified as properties
+    :type properties: dict
+
+    :returns: phoneme chunks (or per-input phoneme chunk lists)
+    :rtype: list[str] or list[list[str]]
+)";
+
 SpeechGenerationConfig update_speech_generation_config_from_kwargs(const SpeechGenerationConfig& config,
                                                                    const py::kwargs& kwargs) {
     if (kwargs.empty())
@@ -170,9 +183,9 @@ void init_speech_generation_pipeline(py::module_& m) {
                py::object speaker_embedding,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
                 ov::genai::Text2SpeechDecodedResults res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                 {
                     py::gil_scoped_release rel;
-                    const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                     if (speaker_embedding.is_none()) {
                         res = pipe.generate(text, ov::Tensor(), properties);
                     } else {
@@ -195,9 +208,9 @@ void init_speech_generation_pipeline(py::module_& m) {
                py::object speaker_embedding,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
                 ov::genai::Text2SpeechDecodedResults res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                 {
                     py::gil_scoped_release rel;
-                    const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                     if (speaker_embedding.is_none()) {
                         res = pipe.generate(texts, ov::Tensor(), properties);
                     } else {
@@ -212,6 +225,40 @@ void init_speech_generation_pipeline(py::module_& m) {
             py::arg("speaker_embedding") = py::none(),
             "vector representing the unique characteristics of a speaker's voice.",
             (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
+
+        .def(
+            "phonemize",
+            [](Text2SpeechPipeline& pipe,
+               const std::string& text,
+               const py::kwargs& kwargs) -> std::vector<std::string> {
+                std::vector<std::string> res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    res = pipe.phonemize(text, properties);
+                }
+                return res;
+            },
+            py::arg("text"),
+            "input text for which to generate Kokoro phoneme chunks.",
+            (text_to_speech_phonemize_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
+
+        .def(
+            "phonemize",
+            [](Text2SpeechPipeline& pipe,
+               const std::vector<std::string>& texts,
+               const py::kwargs& kwargs) -> std::vector<std::vector<std::string>> {
+                std::vector<std::vector<std::string>> res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    res = pipe.phonemize(texts, properties);
+                }
+                return res;
+            },
+            py::arg("texts"),
+            "input texts for which to generate Kokoro phoneme chunks.",
+            (text_to_speech_phonemize_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def("get_generation_config", &Text2SpeechPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &Text2SpeechPipeline::set_generation_config, py::arg("config"));

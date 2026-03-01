@@ -94,6 +94,21 @@ Text2SpeechDecodedResults Text2SpeechPipeline::generate(const std::vector<std::s
     return m_impl->generate(texts, speaker_embedding, request_config);
 }
 
+std::vector<std::string> Text2SpeechPipeline::phonemize(const std::string& text,
+                                                        const ov::AnyMap& properties) {
+    auto chunks = phonemize(std::vector<std::string>{text}, properties);
+    OPENVINO_ASSERT(chunks.size() == 1, "Expected one phonemized item");
+    return chunks[0];
+}
+
+std::vector<std::vector<std::string>> Text2SpeechPipeline::phonemize(const std::vector<std::string>& texts,
+                                                                     const ov::AnyMap& properties) {
+    SpeechGenerationConfig request_config = m_speech_gen_config;
+    request_config.update_generation_config(properties);
+    request_config.validate();
+    return m_impl->phonemize(texts, request_config);
+}
+
 SpeechGenerationConfig Text2SpeechPipeline::get_generation_config() const {
     return m_speech_gen_config;
 }

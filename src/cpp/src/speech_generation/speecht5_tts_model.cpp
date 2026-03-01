@@ -205,6 +205,13 @@ Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::strin
     return gen_speech_res;
 }
 
+std::vector<std::vector<std::string>> SpeechT5TTSImpl::phonemize(const std::vector<std::string>& texts,
+                                                                 const SpeechGenerationConfig& generation_config) {
+    (void)texts;
+    (void)generation_config;
+    OPENVINO_THROW("Text2SpeechPipeline.phonemize is only supported for Kokoro backend");
+}
+
 SpeechGenerationPerfMetrics SpeechT5TTSImpl::get_performance_metrics() {
     return m_perf_metrics;
 }

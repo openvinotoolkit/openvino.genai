@@ -43,6 +43,9 @@ int main() {
       std::cerr << "[Info] EspeakFallback unavailable: " << *err << "\n";
     }
   }
+  else {
+    std::cout << "[Info] EspeakFallback is available and will be used for out-of-vocabulary words.\n";
+  }
 
   engine->set_unknown_token("<UNK>");
   engine->set_fallback_hook([espeak_fallback](const misaki::MToken &token) -> std::optional<std::string> {

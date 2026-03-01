@@ -3451,6 +3451,16 @@ class Text2SpeechPipeline:
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
         """
+    @typing.overload
+    def phonemize(self, text: str, **kwargs) -> list[str]:
+        """
+            Runs Kokoro text preprocessing and returns phoneme chunks used before acoustic inference.
+        """
+    @typing.overload
+    def phonemize(self, texts: collections.abc.Sequence[str], **kwargs) -> list[list[str]]:
+        """
+            Runs Kokoro text preprocessing and returns phoneme chunks used before acoustic inference.
+        """
     def get_generation_config(self) -> SpeechGenerationConfig:
         ...
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:

@@ -29,6 +29,9 @@ public:
                                        const ov::Tensor& speaker_embedding,
                                        const SpeechGenerationConfig& generation_config) override;
 
+    std::vector<std::vector<std::string>> phonemize(const std::vector<std::string>& texts,
+                                                    const SpeechGenerationConfig& generation_config) override;
+
 private:
     std::filesystem::path m_models_path;
     ov::InferRequest m_request;
