@@ -40,8 +40,8 @@ Dataset parse_vlm_dataset(const std::string& models_path, const std::string& dat
         std::string prompt = json_data["prompt"];
         std::string image_path = json_data["image"];
 
-        ov::Tensor _input_ids_prompt = tokenizer.encode(prompt).input_ids;
-        size_t prompt_input_len = _input_ids_prompt.get_size();
+        ov::Tensor input_ids_prompt = tokenizer.encode(prompt).input_ids;
+        size_t prompt_input_len = input_ids_prompt.get_size();
 
         ov::genai::GenerationConfig greedy_search;
         greedy_search.max_new_tokens = max_output_len;
