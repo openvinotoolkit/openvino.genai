@@ -41,7 +41,7 @@ install(TARGETS ${TARGET_NAME}
         EXCLUDE_FROM_ALL)
 
 set(TARGET_NAME vlm_continuous_batching_benchmark)
-add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp benchmark_utils.cpp ../../../samples/cpp/visual_language_chat/load_image.cpp ../../../samples/cpp/text_generation/read_prompt_from_file.cpp)
+add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp benchmark_utils.cpp ../../../samples/cpp/visual_language_chat/load_image.cpp)
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai nlohmann_json::nlohmann_json cxxopts::cxxopts Threads::Threads)
 
 target_include_directories(vlm_continuous_batching_benchmark PRIVATE "${CMAKE_BINARY_DIR}" "${OpenVINOGenAI_SOURCE_DIR}/samples/cpp/visual_language_chat")
