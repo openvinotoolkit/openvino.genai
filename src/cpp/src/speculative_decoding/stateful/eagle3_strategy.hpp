@@ -34,12 +34,9 @@ struct InferContext {
     size_t input_token_count = 0;             ///< Number of input tokens for this inference
     size_t sample_count = 1;                  ///< Number of positions to sample from
     bool use_target_hidden = false;           ///< Whether to use hidden states from target_sequence
-    Sequence::Ptr target_sequence = nullptr;  ///< Source sequence for hidden states
-    size_t num_tokens_to_validate = 0;        ///< Number of draft tokens to validate
-    size_t iteration_id = 0;                  ///< Draft iteration index (0 = first iteration)
-    std::shared_ptr<std::vector<int64_t>> iteration_history =
-        nullptr;                   ///< History of all generated tokens across iterations
-    size_t past_generate_len = 0;  ///< Number of tokens already accepted by target (before this speculative window)
+    Sequence::Ptr target_sequence = nullptr;  ///< Source sequence for hidden states (DRAFT_INITIAL only)
+    size_t num_tokens_to_validate = 0;        ///< Number of draft tokens to validate (TARGET_VALIDATION only)
+    size_t past_accepted_token_count = 0;     ///< Tokens already accepted by target before this speculative window
 };
 
 /// @brief Result from a forward pass
@@ -149,17 +146,21 @@ public:
     }
 
     ov::Tensor get_logits() const;
-    ov::Tensor get_hidden_features() const;
+    /// @brief Extracts the hidden features from the model output.
+    /// @param actual_seq_len  The actual input sequence length (shape[1] of the input_ids
+    ///                        tensor that was fed to the model).  Pass 0 to let the method
+    ///                        re-query the input_ids tensor — useful when the caller does not
+    ///                        already hold the length.
+    ov::Tensor get_hidden_features(size_t actual_seq_len = 0) const;
 
-    void build_model_inputs(const size_t token_count,
+    /// @brief Dispatches input tensor construction based on inference phase.
+    void build_model_inputs(size_t input_token_count,
                             ov::Tensor& input_ids,
                             ov::Tensor& attention_mask,
                             ov::Tensor& position_ids,
                             ov::Tensor& eagle_tree_mask,
                             InferencePhase phase,
-                            size_t iteration_id = 0,
-                            std::shared_ptr<std::vector<int64_t>> iteration_history = nullptr,
-                            size_t past_generate_len = 0);
+                            size_t past_accepted_token_count = 0);
 
     /// @brief Samples tokens from logits
     /// @param num_tokens_to_validate Draft tokens to validate (0 for standard sampling)
@@ -183,6 +184,27 @@ protected:
     void update_inference_time(uint64_t inference_time_us);
     void record_generated_tokens(size_t actual_generated_count);
 
+    /// @brief Builds inputs for TARGET_PREFILL and DRAFT_INITIAL phases (causal, no tree mask).
+    void build_inputs_for_prefill(size_t input_token_count,
+                                  ov::Tensor& input_ids,
+                                  ov::Tensor& attention_mask,
+                                  ov::Tensor& position_ids,
+                                  ov::Tensor& eagle_tree_mask);
+
+    /// @brief Builds inputs for DRAFT_ITERATION: flat-concatenated branch tokens across all sequences.
+    /// @param past_accepted_token_count Tokens already in the draft KV cache (history + root).
+    void build_inputs_for_draft_iteration(size_t past_accepted_token_count,
+                                          ov::Tensor& input_ids,
+                                          ov::Tensor& attention_mask,
+                                          ov::Tensor& position_ids,
+                                          ov::Tensor& eagle_tree_mask);
+
+    /// @brief Builds inputs for TARGET_VALIDATION: all N+1 tree candidates with tree attention mask.
+    void build_inputs_for_target_validation(ov::Tensor& input_ids,
+                                            ov::Tensor& attention_mask,
+                                            ov::Tensor& position_ids,
+                                            ov::Tensor& eagle_tree_mask);
+
     std::string m_device;
     ov::AnyMap m_properties;
     ov::genai::Tokenizer m_tokenizer;
@@ -204,7 +226,7 @@ protected:
 class Eagle3TargetWrapper : public Eagle3InferWrapperBase {
 public:
     explicit Eagle3TargetWrapper(const ov::genai::ModelDesc& model_desc);
-    ~Eagle3TargetWrapper() = default;
+    ~Eagle3TargetWrapper() override = default;
 
     /// @brief Initializes sequence with prompt tokens
     void initialize_sequence(const ov::Tensor& input_ids, const ov::genai::GenerationConfig& config);
@@ -226,7 +248,7 @@ public:
 class Eagle3DraftWrapper : public Eagle3InferWrapperBase {
 public:
     explicit Eagle3DraftWrapper(const ov::genai::ModelDesc& model_desc);
-    ~Eagle3DraftWrapper() = default;
+    ~Eagle3DraftWrapper() override = default;
 
     /// @brief Initializes sequence using tokens[1:] per Eagle3 spec
     void initialize_sequence(const ov::Tensor& input_ids, const ov::genai::GenerationConfig& config);
@@ -284,7 +306,6 @@ private:
     std::unique_ptr<Eagle3TargetWrapper> m_target;
 
     size_t m_draft_iterations = 5;
-    std::vector<int32_t> m_hidden_layers_to_abstract;
     size_t m_prompt_length = 0;
 };
 
