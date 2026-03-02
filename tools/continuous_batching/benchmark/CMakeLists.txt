@@ -34,7 +34,7 @@ file(DOWNLOAD
 set(TARGET_NAME continuous_batching_benchmark)
 add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp benchmark_utils.cpp)
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai nlohmann_json::nlohmann_json cxxopts::cxxopts Threads::Threads)
-target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_BINARY_DIR}")
+target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_BINARY_DIR}" "${OpenVINOGenAI_SOURCE_DIR}/samples/cpp/visual_language_chat")
 
 set_target_properties(${TARGET_NAME} PROPERTIES
     # Ensure out of box LC_RPATH on macOS with SIP
