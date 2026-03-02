@@ -287,6 +287,8 @@ def output_avg_statis_tokens(
         if index_num > 0:
             avg_1st_token_latency = avg_1st_token_latency / index_num
             avg_2nd_tokens_latency = avg_2nd_tokens_latency / index_num
+            # in chat mode we need just last input size, because it increase with every iteration
+            # in non-chat mode we need to calculate average input size
             if not chat_mode:
                 avg_input_size = int(avg_input_size / index_num)
             if avg_2nd_tokens_latency > 0:
@@ -372,8 +374,8 @@ def print_average(
         )
         log.info("<<< Warm-up iteration is excluded. >>>")
         out_str = "[Total] Iterations: {}".format(total_iters)
-        for prompt_key in inputs_dict:
-            out_str += inputs_dict[prompt_key]
+        for input_key in inputs_dict:
+            out_str += inputs_dict[input_key]
         log.info(out_str)
 
 

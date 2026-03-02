@@ -98,13 +98,50 @@ def load_image_genai(image_path):
 
 
 def extract_prompt_data(inputs, required_frames, genai_flag):
+    """
+    Extracts textual prompts and associated visual inputs (images/videos) from
+    a unified JSON-like structure used for VLM pipeline.
+
+    Parameters
+    ----------
+    inputs : dict | list[dict] | tuple[dict] | set[dict]
+        Single mapping or collection of mappings describing one or more
+        input entries. Each mapping may contain:
+          - "prompt": str | list[str], required
+          - "video": str | pathlib.Path | list[str | pathlib.Path] | None, optional
+              Path or list of paths to video files or directories with videos.
+              If a directory is provided, all files in the directory will be processed.
+          - "media": str | pathlib.Path | list[str | pathlib.Path] | None, optional
+              Path or list of paths to image files or directories with images.
+              If a directory is provided, all files in the directory will be processed.
+
+    required_frames : int | None
+        Number of frames to keep from each video, or decimation factor, passed
+        to `make_video_tensor`. If None, all frames are kept.
+
+    genai_flag : bool
+        If true videos and images are converted to `openvino.Tensor`.
+
+    Returns
+    -------
+    prompts : list[str]
+        List of textual prompts, one entry per element in `inputs`, in the same
+        order as processed.
+
+    images : list[openvino.Tensor | np.ndarray | PIL.Image] | list[list[openvino.Tensor | np.ndarray | PIL.Image]]
+        list of image tensors in question mode or list of lists of image tensors in chat mode.
+
+    videos : list[openvino.Tensor | np.ndarray] | list[list[openvino.Tensor | np.ndarray]]
+        list of video tensors in question mode or list of lists of video tensors in chat mode.
+    """
     prompts, images, videos = [], [], []
     if not isinstance(inputs, (list, tuple, set)):
         inputs = [inputs]
     for input_data in inputs:
         if input_data.get("video") is not None:
             input_videos = input_data["video"]
-            if not isinstance(input_data["video"], (list, tuple, set)):
+            is_chat_mode = isinstance(input_data["video"], (list, tuple, set))
+            if not is_chat_mode:
                 input_videos = [input_data["video"]]
             for video in input_videos:
                 input_videos_tensors = []
@@ -117,13 +154,14 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
                     else:
                         video_tensor = make_video_tensor(entry, required_frames, genai_flag)
                         input_videos_tensors.append(video_tensor)
-                if isinstance(input_data["video"], (list, tuple, set)):
+                if is_chat_mode:
                     videos.append(input_videos_tensors)
                 else:
                     videos.extend(input_videos_tensors)
         if input_data.get("media") is not None:
             input_medias = input_data["media"]
-            if not isinstance(input_data["media"], (list, tuple, set)):
+            is_chat_mode = isinstance(input_data["media"], (list, tuple, set))
+            if not is_chat_mode:
                 input_medias = [input_data["media"]]
             func_load_image = load_image_genai if genai_flag else load_image
             for media in input_medias:
@@ -137,7 +175,7 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
                     else:
                         img = func_load_image(media)
                         input_medias_tensors.append(img)
-                if isinstance(input_data["media"], (list, tuple, set)):
+                if is_chat_mode:
                     images.append(input_medias_tensors)
                 else:
                     images.extend(input_medias_tensors)
