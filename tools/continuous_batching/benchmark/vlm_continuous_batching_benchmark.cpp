@@ -57,8 +57,8 @@ Dataset parse_vlm_dataset(const std::string& models_path, const std::string& dat
 
 namespace {
 
-void statisticsReporter(GenerationInfoCollector* generations_info_collector, int num_prompts) {
-    int num_finished = 0;
+void statisticsReporter(GenerationInfoCollector* generations_info_collector, size_t num_prompts) {
+    size_t num_finished = 0;
     while (num_finished < num_prompts) {
         num_finished = generations_info_collector->run();
     }
