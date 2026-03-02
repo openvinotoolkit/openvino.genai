@@ -257,7 +257,7 @@ void GenerationInfoCollector::output_generated_text(ov::genai::Tokenizer& tokeni
         const auto generated_sequences = generation_info.get_generated_sequences();
         for (const auto& generated_ids : generated_sequences) {
             const auto text = tokenizer.decode(generated_ids);
-            std::cout << "[" << request_idx << "] generated text:" << text << std::endl;
+            std::cout << "[" << request_idx << "] generated text: " << text << std::endl;
         }
         request_idx++;
     }
