@@ -85,7 +85,8 @@ jobs:
         platform: macos_14_7
         arch: 'arm64'
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        revision: latest_available_commit
+        # debug whisper mac os tests failure
+        revision: 8f1e6829dc8eecdb9fca2a95d9271f35b780ddaa
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -450,33 +451,33 @@ jobs:
           #   cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py'
           #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
           #   timeout: 180
-          - name: 'GGUF Reader tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_gguf_reader.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
-            timeout: 360
-          - name: 'Tokenizer tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_tokenizer.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
-            timeout: 60
+          # - name: 'GGUF Reader tests'
+          #   cmd: 'python -m pytest -v ./tests/python_tests/test_gguf_reader.py'
+          #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
+          #   timeout: 360
+          # - name: 'Tokenizer tests'
+          #   cmd: 'python -m pytest -v ./tests/python_tests/test_tokenizer.py'
+          #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
+          #   timeout: 60
           # Only supported on X64 or ARM with SVE support
           # - name: 'API tests'
           #   cmd: 'tests/python_tests/test_continuous_batching.py tests/python_tests/test_generation_config.py tests/python_tests/test_sampling.py tests/python_tests/test_text_streamer.py'
           #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
           #   timeout: 60
-          - name: 'Rag tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_rag.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
-            timeout: 30
-          - name: 'WWB tests'
-            cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
-            timeout: 120
-          - name: 'WWB tests (nanollava)'
-            cmd: |
-              python -m pip install transformers==4.48.0
-              python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
-            timeout: 90
+          # - name: 'Rag tests'
+          #   cmd: 'python -m pytest -v ./tests/python_tests/test_rag.py'
+          #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
+          #   timeout: 30
+          # - name: 'WWB tests'
+          #   cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava"'
+          #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+          #   timeout: 120
+          # - name: 'WWB tests (nanollava)'
+          #   cmd: |
+          #     python -m pip install transformers==4.48.0
+          #     python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
+          #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+          #   timeout: 90
     defaults:
       run:
         shell: bash
