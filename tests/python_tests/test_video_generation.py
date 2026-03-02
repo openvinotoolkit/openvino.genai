@@ -296,6 +296,20 @@ class TestLoRAVideoGeneration:
         assert result is not None
         assert result.video is not None
 
+    def test_lora_adapters_default_from_constructor(self, video_generation_model):
+        """Test that LoRA adapters passed to the constructor are used by default in generate()"""
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU", adapters=adapter_config)
+        result = pipe.generate(
+            "test prompt",
+            height=32,
+            width=32,
+            num_frames=9,
+            num_inference_steps=2,
+        )
+        assert result is not None
+        assert result.video is not None
+
     def test_transformer_has_set_adapters_method(self, video_generation_model):
         """Test that the LTXVideoTransformer3DModel has the set_adapters method"""
         model_path = Path(video_generation_model) / "transformer"
