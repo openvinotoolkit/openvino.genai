@@ -23,6 +23,48 @@ using namespace ov::genai;
 
 namespace {
 
+class DiagonalGaussianDistribution {
+public:
+    explicit DiagonalGaussianDistribution(ov::Tensor parameters)
+        : m_parameters(parameters) {
+        ov::Shape shape = parameters.get_shape();
+        OPENVINO_ASSERT(shape[0] == 1, "Batch size must be 1");
+        shape[1] /= 2;
+
+        m_mean = ov::Tensor(parameters.get_element_type(), shape, parameters.data());
+        m_std = ov::Tensor(m_mean.get_element_type(), shape);
+        ov::Tensor logvar(parameters.get_element_type(), shape, m_mean.data<float>() + m_mean.get_size());
+
+        float* logvar_data = logvar.data<float>();
+        float* std_data = m_std.data<float>();
+
+        for (size_t i = 0; i < logvar.get_size(); ++i) {
+            logvar_data[i] = std::min(std::max(logvar_data[i], -30.0f), 20.0f);
+            std_data[i] = std::exp(0.5f * logvar_data[i]);
+        }
+    }
+
+    ov::Tensor sample(std::shared_ptr<ov::genai::Generator> generator) const {
+        OPENVINO_ASSERT(generator, "Generator must not be nullptr");
+
+        ov::Tensor rand_tensor = generator->randn_tensor(m_mean.get_shape());
+
+        float* rand_tensor_data = rand_tensor.data<float>();
+        const float* mean_data = m_mean.data<float>();
+        const float* std_data = m_std.data<float>();
+
+        for (size_t i = 0; i < rand_tensor.get_size(); ++i) {
+            rand_tensor_data[i] = mean_data[i] + std_data[i] * rand_tensor_data[i];
+        }
+
+        return rand_tensor;
+    }
+
+private:
+    ov::Tensor m_parameters;
+    ov::Tensor m_mean, m_std;
+};
+
 // for BW compatibility with 2024.6.0
 ov::AnyMap handle_scale_factor(std::shared_ptr<ov::Model> model, const std::string& device, ov::AnyMap properties) {
     auto it = properties.find("WA_INFERENCE_PRECISION_HINT");
@@ -119,8 +161,12 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::compile(const std::string& device,
     std::optional<AdapterConfig> unused;
     auto filtered_properties = extract_adapters_from_properties(properties, &unused);
 
-    // TODO: for img2video
-    // if (m_encoder_model) {...}
+    if (m_encoder_model) {
+        ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, *filtered_properties));
+        ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL LTX video encoder model");
+        m_encoder_request = encoder_compiled_model.create_infer_request();
+        m_encoder_model.reset();
+    }
 
     ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, handle_scale_factor(m_decoder_model, device, *filtered_properties));
     ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto encoder KL LTX video decoder model");
@@ -141,8 +187,11 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
     OPENVINO_ASSERT(width > 0, "Width must be positive");
     OPENVINO_ASSERT(width % 32 == 0, "Width have to be divisible by 32 but got ", width);
 
-    // TODO: for img2video
-    // if (m_encoder_model) {...}
+    if (m_encoder_model) {
+        ov::PartialShape input_shape = m_encoder_model->input(0).get_partial_shape();
+        std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], num_frames, height, width}}};
+        m_encoder_model->reshape(idx_to_shape);
+    }
 
     int64_t spatial_compression_ratio =
         get_config().patch_size *
@@ -172,6 +221,55 @@ ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent) {
     m_decoder_request.set_input_tensor(latent);
     m_decoder_request.infer();
     return m_decoder_request.get_output_tensor();
+}
+
+ov::Tensor AutoencoderKLLTXVideo::encode(const ov::Tensor& video, std::shared_ptr<Generator> generator) {
+    OPENVINO_ASSERT(m_encoder_request || m_encoder_model,
+        "AutoencoderKLLTXVideo is created without 'VAE encoder' capability. "
+        "Please, pass 'vae_encoder_path' argument to constructor.");
+    OPENVINO_ASSERT(m_encoder_request,
+        "VAE encoder model must be compiled first. Cannot infer non-compiled model");
+
+    m_encoder_request.set_input_tensor(video);
+    m_encoder_request.infer();
+
+    ov::Tensor output = m_encoder_request.get_output_tensor(), latent;
+
+    ov::CompiledModel compiled_model = m_encoder_request.get_compiled_model();
+    auto outputs = compiled_model.outputs();
+    OPENVINO_ASSERT(outputs.size() == 1, "AutoencoderKLLTXVideo encoder model is expected to have a single output");
+
+    const std::string output_name = outputs[0].get_any_name();
+    if (output_name == "latent_sample") {
+        latent = output;
+    } else if (output_name == "latent_parameters") {
+        latent = DiagonalGaussianDistribution(output).sample(generator);
+    } else {
+        OPENVINO_THROW("Unexpected output name for AutoencoderKLLTXVideo encoder '", output_name, "'");
+    }
+
+    // normalize latents channel-wise: (latents - latents_mean) * scaling_factor / latents_std
+    // inverse of denormalize_latents used in the decode path
+    const ov::Shape shape = latent.get_shape();
+    OPENVINO_ASSERT(shape.size() == 5, "Encoder output expected to be [B, C, F, H, W]");
+    const size_t B = shape[0], C = shape[1], spatial = shape[2] * shape[3] * shape[4];
+
+    float* latent_data = latent.data<float>();
+    const auto& mean = m_config.latents_mean_data;
+    const auto& std_data = m_config.latents_std_data;
+    const float scale = m_config.scaling_factor;
+
+    for (size_t b = 0; b < B; ++b) {
+        for (size_t c = 0; c < C; ++c) {
+            float* ptr = latent_data + (b * C + c) * spatial;
+            const float m = mean[c], s = std_data[c];
+            for (size_t i = 0; i < spatial; ++i) {
+                ptr[i] = (ptr[i] - m) * scale / s;
+            }
+        }
+    }
+
+    return latent;
 }
 
 const AutoencoderKLLTXVideo::Config& AutoencoderKLLTXVideo::get_config() const {
