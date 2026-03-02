@@ -91,6 +91,7 @@ def parse_args():
         type=str,
         choices=[
             "text",
+            "text-chat",
             "text-to-image",
             "text-to-video",
             "visual-text",
@@ -517,6 +518,38 @@ def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, us
     )
 
 
+def genai_gen_chat_text(
+    model,
+    _tokenizer,
+    prompts,
+    max_new_tokens,
+    empty_adapters=False,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+):
+    import openvino_genai
+
+    kwargs = {}
+    if empty_adapters:
+        kwargs["adapters"] = openvino_genai.AdapterConfig()
+
+    chat_history = openvino_genai.ChatHistory()
+    for prompt in prompts:
+        chat_history.append({"role": "user", "content": prompt})
+        decode_res = model.generate(
+            chat_history,
+            do_sample=False,
+            max_new_tokens=max_new_tokens,
+            num_assistant_tokens=num_assistant_tokens,
+            assistant_confidence_threshold=assistant_confidence_threshold,
+            **kwargs,
+        )
+        chat_history.append({"role": "assistant", "content": decode_res.texts[0]})
+
+    chat = model.get_tokenizer().apply_chat_template(chat_history, add_generation_prompt=True)
+    return chat
+
+
 def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,
                       assistant_confidence_threshold=0.0):
     if use_chat_template:
@@ -783,6 +816,38 @@ def create_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 gen_rerank_fn=genai_gen_reranking if args.genai else None
             )
+        elif task == "text-chat":
+            tokenizer = load_tokenizer(args)
+
+            if tokenizer is not None and tokenizer.chat_template is None:
+                raise ValueError(
+                    "Tokenizer for model type 'text-chat' has no 'chat_template' defined. "
+                    "WWB can't start an evaluation in text-chat mode, "
+                    "please, specify chat_template or use --model-type text. "
+                )
+
+            if args.genai:
+                gen_answer_fn = genai_gen_chat_text
+            else:
+                gen_answer_fn = None
+
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                tokenizer=tokenizer,
+                similarity_model_id=args.data_encoder,
+                num_samples=args.num_samples,
+                max_new_tokens=args.max_new_tokens,
+                empty_adapters=args.empty_adapters,
+                gen_answer_fn=gen_answer_fn,
+                num_assistant_tokens=(int(args.num_assistant_tokens) if args.num_assistant_tokens is not None else 0),
+                assistant_confidence_threshold=(
+                    float(args.assistant_confidence_threshold)
+                    if args.assistant_confidence_threshold is not None
+                    else 0.0
+                ),
+            )
         else:
             raise ValueError(f"Unsupported task: {task}")
     except KeyError as e:
@@ -994,7 +1059,7 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type in ["text", "visual-text", "visual-video-text"]:
+        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text"]:
             print_text_results(evaluator)
         elif (
             "text-to-image" in args.model_type

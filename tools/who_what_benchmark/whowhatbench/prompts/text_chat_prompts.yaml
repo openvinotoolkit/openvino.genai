@@ -1,0 +1,135 @@
+prompts:
+    -
+        - |
+           Act as you are a professinal English instructor. I will say a paragraph or sentences. If my sentence have grammar errors, show me the reply in this format: Reason, Corrected, Reply. If there are no errors, just say Answer. If I say "Finish", finish your role.
+        - Hi. I is Sam Nice to meet you.
+        - Hi. I am Sam. Nice to meet you.
+        - Finish
+    -
+        - |
+           Identify the main clause in this sentence.
+           Output should be a single sentence: A busy morning, interrupted by a phone call from a friend, made John late for school.
+        - Can you please tell me what the subject of the sentence is?
+        - What verb is used in the main clause of the sentence?
+        - Thank you for the response. Can you please explain what the main clause of a sentence is?
+    -
+        - |
+           Reverse the following list alphabetically: apple, carrot, banana, potato
+        - |
+           Can you reverse this list numerically: 4, 8, 2, 9?
+        - Is there a way to sort this list in ascending order?
+        - Thanks for the information. Can you explain how merge sort works?
+    -
+        - You are an expert grocery store shopping assistant. Help me shop. I will suggest names of products I'm adding to my cart. I will only add names. As I add products, in 150 characters or less explain to me why I might be buying it, taking into account my previous products I've added to cart. Also, suggest 3 products that I might be interested in along with 150 characters reasons for each.
+        - ripple pea milk
+        - Add 2 bananas
+        - stone IPA
+        - I like spicy side dishes.
+        - what else should i add to my cart?
+        - Those aren't interesting to me. I'm also interested in cooking meat-based dinners. What else can I add to my cart ?
+        - i'm Indian.
+        - I have a dog too. What can I add for him? I generally get human-grade food for him.
+        - What else should I get for my dog?
+    -
+        - I am planning to teach my 9 year old daughter to code in python. Give me a best way to introduce programming to her and how do I start
+        - Give me an excellent analogy to introduce how computers execute programs and data types to her
+        - Give me some engaging mini projects for her to start with after learning a bit of programming
+    -
+        - I'm trying to create a weekly meal plan with certain restrictions. I want my daily calorie intake to not exceed 1800 calories and I'm practicing a pescatarian diet. I would also like to have a meal plan that will maximize my protein intake and reduce my sugar intake. please propose a weekly meal plan that includes 3 main meals a day with a snack in the mid morning time.
+        - Perfect thanks. I'd like to add wine to my diet but only on the weekend and with a limit of 2 glasses per day. Please add wine to my weekend meal plan without exceeding my maximum calorie target of 1800 calories.
+        - That's great thanks. I'd like you to convert the full weekly meal plan you proposed into a table format where the rows represent the day of the week and the columns represent the meals
+        - Perfect. Thanks. Is there an advantage to a pescatarian diet over eating beef and chicken?
+    -
+        - |
+            You're a college writing instructor and you're giving a lesson on how to write persuasive essays, which involves making a claim and supporting that claim with reasoning and evidence. You also emphasize the importance of logos, pathos, and ethos in developing a compelling essay.
+            Create three metaphors that help students understand how persuasive essays work.
+        - Create a gaming metaphor
+        - what about counter arguments?
+    -
+        - describe cognitive functions
+        - are these corelated to Carl Jung's studies?
+        - so we can agree that, according to jung, there are 8 cognitive functions. can you map your last 2 responses to be corelated to one another?
+    -
+        - Give me 20 pairs of words. The first word in the pair should be something that would make a good subject for a drawing. The second word should be a material or type of matter that would be interesting for the first word to be made out of.
+        - This answer has a creativity level of 3/10. Crank it up to a creativity level of 9/10.
+        - pick your 3 favorite pairs and give me a fun correpsonding midjourney prompt for each
+        - write a 15-page children's book about the steampunk giraffe made of circuit boards using the "Pixar Storytelling Framework"
+        - continue
+        - Re-write the story edgier and for an older audience, but in the same children's book format. Use the "Rags-to-Riches Storytelling" Framework. And write the story in the style of David Fincher.
+        - Add 7 more pages between pages 11 and 12 detailing the story of how Gadget, Izzy, and the resistance confronted the corrupt officials. Add some drama to the confrontation, and feel free to flesh out the character details of some of the other resistance members and corrupt officials.
+    -
+        - Explain in detail the process of mitosis.
+        - Can you explain how mitosis differs from meiosis?
+        - Are there any specific genes that are more likely to undergo crossing over during meiosis than others?
+        - Thank you for the detailed explanation. Can genetic mapping also be used to study population genetics and evolution?
+    -
+        - |
+           Create a linear equation illustrating the relationship between hours and rate of pay: A freelance job pays $250 per hour.
+        - Can you provide an example of how this equation can be used to calculate the rate of pay for 4 hours of work?
+        - What would be the rate of pay for 7 hours of work?
+        - What if the freelance job paid $150 per hour instead of $250? Can you show me how to calculate the rate of pay for 3 hours of work using the updated hourly rate?
+    -
+        - Compose a sonnet about the beauty of nature.
+        - Can you tell me more about the different types of nature that are described in the sonnet?
+        - Can you give me some examples of how humans can appreciate and embrace nature's beauty?
+        - Do you think it's important for us as humans to appreciate and protect nature's beauty? Why?
+        - What are some specific ways we can protect nature's beauty?
+    -
+        - | 
+            Analyze the following data to recommend a suitable product: The customer is looking for a laptop with a 15.6" screen, 8GB RAM, 256GB of storage, and a dedicated graphics card.
+        - That sounds great! How much does it cost?
+        - What other laptops with similar specs and features would you recommend in the same price range?
+        - Can you tell me more about the battery life of each of these laptops?
+    -
+        - |
+            Collect evidence to support a hypothesis: The hypothesis is: Plants grow better in soil than in water.
+        - What type of plant should I use for the experiment?
+        - Can I conduct this experiment indoors or do I need to do it outdoors?
+        - How long should I observe the plants for in order to draw conclusions on which environment is better?
+        - How do I measure the growth of the plants? Do I measure the height or should I measure something else?
+    -
+        - |
+           Question: What is the capital city of Canada?
+        - Can you tell me the population of it?
+        - What are some famous tourist attractions?
+        - What is the best time of year to visit this town for tourism?"
+        - Are there any winter activities that are worth checking out?
+    -
+        - Write a biography of Albert Einstein.
+        - What were some of the major contributions made by Albert Einstein to the field of physics?
+        - What was Einstein's involvement in the development of nuclear weapons?
+        - What were Einstein's political views and activism beyond his scientific work?
+        - Is there anything else you would like to know about Albert Einstein or his life and work
+    -
+        - |
+           Compose a marketing slogan for the given product: Cake mix
+        - Can you tell me more about the flavors available in the cake mix?
+        - Do you have a favorite flavor that you like to use for your cakes?
+        - Can you tell me which flavor you prefer for your cake?
+        - What type of event are you planning to make the cake for? Maybe we can find a flavor that will impress your guests
+    -
+        - |
+           Suggest 3 best restaurants near the given location: Berlin, Germany
+        - Thanks for your recommendations! Can you tell me which restaurant has the best vegetarian options?
+        - That sounds great! Are they expensive or affordable?
+        - Do they have outdoor seating or is it only indoors?
+        - Thanks for the information ! Do they take reservations or is it first-come, first-served?
+    -
+        - |
+            Please create a parent and family needs assessment and needs assessment plan for a classroom environment. It should include the following components:
+            1. Needs Assessment Instrument. Develop an instrument that can be used to determine the needs of parents and families within the classroom environment. Sample instruments could include the development of a survey, an focus group interview protocol, or other instruments that determine the specific needs of parents and families in the classroom environment.
+            2. Needs Assessment Implementation and Analysis Plan: Develop a timeline for the collection of needs assessment data during the academic year, as well as a timeline for the analysis of the data and implementation of activities that respond to the needs assessment data.",
+        - Please write a 1500 word narrative that describes this needs assessment instrument and implementation plan, use appropriate evidence to justify each decision, as well as ways to address cultural and linguistic diversity throughout the needs assessment process. Please include 3 citations.
+        - continue
+    -
+        - |
+            Below is an overview of a marketing pitch from Inditech for pharmaceutical brands. I want you to come up with ideas for a series of 15 billboard advertisements targeted at pharma industry executives. The banners should be catchy enough for standalone billboard advertising. They should also lend themselves to call for action online banner advertisements where people click through and reach a page where they can sign up for a masterclass or to know more
+            "Pharmaceutical brands in India always look for ways to improve mindshare for their brands and stronger relationships between doctors and pharma field representatives. They look for ways to add value to the doctor's professional lives and hunt for such value opportunities that are associated with the brand's therapy areas.
+            Brands have tried to do this by sponsoring professional education (CME) for doctors, patient education initiatives, and more. But they struggle to differentiate themselves from the competition in creating top-of-mind value for the doctors they meet.
+            Inditech solves this problem by creating highly innovative solutions that combine elements of technology, patient engagement, doctor engagement, professional education and patient education in methods that are simply not available from any pharma marketing agency in India.
+            Over 60 pharma brands have worked with Inditech and benefitted from these solutions in the last two years. This year, Inditech has ratcheted up the value delivered through a new class of scalable in-clinic solutions and intends to work with well over one hundred pharma brands!
+            Pharma brands, what are you waiting for? Talk to us and go up the in-clinic value chain before your competitors do! We are happy to give you and your team a free of cost 60-minute master class on in-clinic innovation! "
+        - For each of the above, write a prompt for midjourney, to create an appropriate billboard image with placeholders for the advertisement copy
+        - Would you recommend a new list for online banner advertisements or will the same images work?
+        - Are the billboard ideas you gave me the same as the advertisement copy that should appear on the billboard? Or will the actual copy (text) be different? If so, give me the text for each of them
+        - What about action statements for the online banner advertisements? How will they know to click on it and why will they click on it? Can you please modify each of the banner advertisement ideas you gave to include a call to action? Please add a call to action only for the ideas where you find it useful
