@@ -133,7 +133,7 @@ int main(int argc, char* argv[]) try {
     Dataset dataset = parse_vlm_dataset(models_path, dataset_path, num_prompts, max_output_len);
     const size_t prompt_nums = std::min(num_prompts, dataset.size());
 
-    // Perform the first inference
+    // Configure scheduler and pipeline settings
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.enable_prefix_caching = false;
     scheduler_config.max_num_batched_tokens = max_batch_size;
