@@ -102,7 +102,11 @@ void init_ltx_video_transformer_3d_model(py::module_& m) {
             )")
         .def("set_adapters",
              &ov::genai::LTXVideoTransformer3DModel::set_adapters,
-             py::arg("adapters"))
+             py::arg("adapters"),
+             R"(
+                Sets LoRA adapters for the transformer model.
+                adapters (AdapterConfig or None): Adapter configuration to apply.
+            )")
         .def("infer",
              &ov::genai::LTXVideoTransformer3DModel::infer,
              py::call_guard<py::gil_scoped_release>(),

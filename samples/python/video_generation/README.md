@@ -82,12 +82,12 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 
 - **Run Command:**
   ```bash
-  python lora_text2video.py model_dir prompt lora_adapter_path
+  python lora_text2video.py model_dir prompt [lora_adapter_path alpha] ...
   ```
 
   Example:
   ```bash
-  python lora_text2video.py ./ltx_video_ov/INT8 "A cute golden retriever puppy running in a green grassy field on a sunny day, high quality, photorealistic" adapter.safetensors
+  python lora_text2video.py ./ltx_video_ov/INT8 "A cute golden retriever puppy running in a green grassy field on a sunny day, high quality, photorealistic" adapter.safetensors 1.0
   ```
 
 The sample will generate a video file `genai_video.avi` in the current directory.

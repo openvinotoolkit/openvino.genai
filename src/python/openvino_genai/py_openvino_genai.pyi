@@ -4302,6 +4302,7 @@ class VLMRawPerfMetrics:
     def prepare_embeddings_durations(self) -> list[float]:
         ...
 class VideoGenerationConfig:
+    adapters: AdapterConfig | None
     generator: Generator
     negative_prompt: str | None
     taylorseer_config: openvino_genai.py_openvino_genai.TaylorSeerCacheConfig | None

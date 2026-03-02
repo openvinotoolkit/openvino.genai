@@ -1,9 +1,7 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <memory>
 #include <string>
-#include <random>
 #include <filesystem>
 
 #include "progress_bar.hpp"
@@ -12,7 +10,7 @@
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
 
 int main(int32_t argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc >= 3 && (argc - 3) % 2 == 0, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [<LORA_SAFETENSORS> <ALPHA> ...]]");
+    OPENVINO_ASSERT(argc >= 3 && (argc - 3) % 2 == 0, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [<LORA_SAFETENSORS> <ALPHA> ...]");
 
     std::filesystem::path models_dir = argv[1];
     std::string prompt = argv[2];
