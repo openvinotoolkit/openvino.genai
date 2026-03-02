@@ -290,51 +290,27 @@ std::vector<std::string> split_voice_list(const std::string& voice) {
     return voices;
 }
 
-std::vector<std::filesystem::path> resolve_voice_file_candidates(const std::filesystem::path& models_path,
-                                                                 const std::string& voice_id) {
-    // Python reference: upstream `KPipeline.load_single_voice` resolves voices by id.
-    // C++ resolves local .bin candidates deterministically instead of HF downloads.
-    std::vector<std::filesystem::path> candidates;
-    candidates.push_back(models_path / "voices" / (voice_id + ".bin"));
-
-    if (const char* env_voices = std::getenv("KOKORO_VOICES_DIR")) {
-        candidates.push_back(std::filesystem::path(env_voices) / (voice_id + ".bin"));
-    }
-
-    candidates.push_back(models_path.parent_path() / "kokoro" / "kokoro.js" / "voices" / (voice_id + ".bin"));
-    candidates.push_back(models_path.parent_path().parent_path() / "kokoro" / "kokoro.js" / "voices" /
-                         (voice_id + ".bin"));
-    return candidates;
-}
-
 std::vector<float> load_voice_binary(const std::filesystem::path& models_path, const std::string& voice_id) {
-    const auto candidates = resolve_voice_file_candidates(models_path, voice_id);
-    for (const auto& candidate : candidates) {
-        if (!std::filesystem::exists(candidate)) {
-            continue;
-        }
+    const auto voice_path = models_path / "voices" / (voice_id + ".bin");
+    OPENVINO_ASSERT(std::filesystem::exists(voice_path),
+                    "Unable to find Kokoro voice '",
+                    voice_id,
+                    "' at expected path: ",
+                    voice_path);
 
-        std::ifstream file(candidate, std::ios::binary | std::ios::ate);
-        OPENVINO_ASSERT(file.is_open(), "Failed to open Kokoro voice file: ", candidate);
+    std::ifstream file(voice_path, std::ios::binary | std::ios::ate);
+    OPENVINO_ASSERT(file.is_open(), "Failed to open Kokoro voice file: ", voice_path);
 
-        const std::streamsize size = file.tellg();
-        OPENVINO_ASSERT(size > 0, "Kokoro voice file is empty: ", candidate);
-        OPENVINO_ASSERT((size % static_cast<std::streamsize>(sizeof(float))) == 0,
-                        "Kokoro voice file has invalid byte size: ", candidate);
+    const std::streamsize size = file.tellg();
+    OPENVINO_ASSERT(size > 0, "Kokoro voice file is empty: ", voice_path);
+    OPENVINO_ASSERT((size % static_cast<std::streamsize>(sizeof(float))) == 0,
+                    "Kokoro voice file has invalid byte size: ", voice_path);
 
-        file.seekg(0, std::ios::beg);
-        std::vector<float> data(static_cast<size_t>(size) / sizeof(float));
-        file.read(reinterpret_cast<char*>(data.data()), size);
-        OPENVINO_ASSERT(file.good(), "Failed to read Kokoro voice file: ", candidate);
-        return data;
-    }
-
-    std::stringstream ss;
-    ss << "Unable to find Kokoro voice '" << voice_id << "'. Checked:";
-    for (const auto& path : candidates) {
-        ss << "\n - " << path.string();
-    }
-    OPENVINO_THROW(ss.str());
+    file.seekg(0, std::ios::beg);
+    std::vector<float> data(static_cast<size_t>(size) / sizeof(float));
+    file.read(reinterpret_cast<char*>(data.data()), size);
+    OPENVINO_ASSERT(file.good(), "Failed to read Kokoro voice file: ", voice_path);
+    return data;
 }
 
 #if OPENVINO_GENAI_HAS_MISAKI_CPP
