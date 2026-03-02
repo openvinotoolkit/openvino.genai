@@ -202,8 +202,9 @@ class TestImageGenerationCallback:
 
 def construct_reshape(model_dir):
     pipe = ov_genai.Text2ImagePipeline(model_dir)
-    NHWC = 1, 64, 64, 3
-    pipe.reshape(*NHWC)
+    pipe.reshape(
+        num_images_per_prompt=1, height=64, width=64, guidance_scale=pipe.get_generation_config().guidance_scale
+    )
     return pipe
 
 
