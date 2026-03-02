@@ -3,6 +3,7 @@
 #include "english_lexicon.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cmath>
@@ -234,10 +235,44 @@ private:
       return true;
     }
 
-    static const std::unordered_set<std::string> abbrev_without_dot = {
-      "dr", "mr", "mrs", "ms", "sr", "jr",
+    const auto &raw_prev = tokens[*prev_word].text;
+    if (raw_prev.empty() || raw_prev.size() > 4) {
+      return false;
+    }
+
+    bool all_alpha = true;
+    bool all_upper = true;
+    bool title_case = true;
+    for (std::size_t i = 0; i < raw_prev.size(); ++i) {
+      const auto uc = static_cast<unsigned char>(raw_prev[i]);
+      if (!std::isalpha(uc)) {
+        all_alpha = false;
+        break;
+      }
+      if (!std::isupper(uc)) {
+        all_upper = false;
+      }
+      if (i == 0) {
+        if (!std::isupper(uc)) {
+          title_case = false;
+        }
+      } else if (!std::islower(uc)) {
+        title_case = false;
+      }
+    }
+
+    if (!all_alpha) {
+      return false;
+    }
+
+    if (all_upper) {
+      return raw_prev.size() <= 4;
+    }
+
+    static const std::unordered_set<std::string> title_abbrev_without_dot = {
+      "dr", "mr", "mrs", "ms", "sr", "jr", "st"
     };
-    return abbrev_without_dot.find(prev) != abbrev_without_dot.end();
+    return title_case && title_abbrev_without_dot.find(prev) != title_abbrev_without_dot.end();
   }
 
   // Python mapping: per-token lexicon/fallback resolution path in G2P.__call__.
@@ -275,6 +310,8 @@ private:
     bool has_alpha = false;
     bool any_upper = false;
     bool all_upper = true;
+    bool has_internal_upper = false;
+    bool saw_first_alpha = false;
 
     for (char c : word) {
       const auto uc = static_cast<unsigned char>(c);
@@ -284,15 +321,28 @@ private:
       has_alpha = true;
       if (std::isupper(uc)) {
         any_upper = true;
+        if (saw_first_alpha) {
+          has_internal_upper = true;
+        }
       } else {
         all_upper = false;
       }
+      saw_first_alpha = true;
     }
 
     if (!has_alpha || !any_upper) {
       return std::nullopt;
     }
-    return all_upper ? std::optional<double>{2.0} : std::optional<double>{0.5};
+
+    if (all_upper) {
+      return 2.0;
+    }
+
+    if (has_internal_upper) {
+      return 0.5;
+    }
+
+    return std::nullopt;
   }
 
   static void replace_all(std::string &value, const std::string &from, const std::string &to) {
@@ -528,6 +578,22 @@ private:
   }
 
   static bool starts_with_vowel_letter(const std::string &text) {
+    const auto lower = ascii_lower(text);
+    static const std::array<std::string, 5> silent_h_prefixes = {
+        "honest", "honor", "hour", "heir", "herb"};
+    static const std::array<std::string, 8> consonant_onset_prefixes = {
+        "one", "once", "uni", "use", "user", "euro", "ewe", "ubiq"};
+    for (const auto &prefix : silent_h_prefixes) {
+      if (lower.rfind(prefix, 0) == 0) {
+        return true;
+      }
+    }
+    for (const auto &prefix : consonant_onset_prefixes) {
+      if (lower.rfind(prefix, 0) == 0) {
+        return false;
+      }
+    }
+
     for (char c : text) {
       if (std::isalpha(static_cast<unsigned char>(c))) {
         return is_ascii_vowel(c);
@@ -579,6 +645,18 @@ private:
 
     const auto prev_word = find_prev_word_index(tokens, index);
     const auto next_word = find_next_word_index(tokens, index);
+
+    if (key == "there") {
+      const bool existential_there = next_word.has_value() && [&]() {
+        const auto next = ascii_lower(tokens[*next_word].text);
+        return next == "is" || next == "are" || next == "was" || next == "were" ||
+               next == "be" || next == "been" || next == "being" || next == "am";
+      }();
+      if (!existential_there && prev_word.has_value()) {
+        return std::string{"ADV"};
+      }
+    }
+
     if (prev_word) {
       const auto prev = ascii_lower(tokens[*prev_word].text);
       if (prev == "to") {
@@ -603,18 +681,6 @@ private:
         return std::string{"ADJ"};
       }
     } else {
-      static const std::unordered_map<std::string, bool> standalone_verb_bias = {
-          {"conglomerate", true},
-          {"correlates", true},
-          {"re-count", true},
-          {"augments", true},
-          {"mismatch", true},
-          {"covert", true},
-      };
-      if (standalone_verb_bias.find(key) != standalone_verb_bias.end()) {
-        return std::string{"VERB"};
-      }
-
       if (!next_word) {
         return std::string{"NOUN"};
       }
@@ -739,41 +805,24 @@ private:
       const std::string &token_text,
       const std::optional<std::string> &pos_hint = std::nullopt) const {
     static const std::unordered_map<std::string, std::string> hardcoded_us = {
-        {"is", "ɪz"},
-      {"zero", "zˈiəɹO"},
-        {"g2p", "ʤˈitəpˈi"},
-        {"engine", "ˈɛnʤən"},
-        {"designed", "dəzˈInd"},
-        {"for", "fɔɹ"},
-      {"eleven", "ɪlˈɛvən"},
-      {"seventeen", "sˌɛvəntˈin"},
-        {"models", "mˈɑdᵊlz"},
-        {"you-all", "ju—ˈɔl"},
+      {"inspirited", "ɪnspˈɪɹəTᵻd"},
+      {"entreated", "ɪntɹˈiTᵻd"},
+      {"temperament", "tˈɛmpɹəmənt"},
+      {"lived", "lˈɪvd"},
+      {"participated", "pɑɹtˈɪsəpˌATᵻd"},
+      {"whale-fishers", "wˌAlfˈɪʃəɹz"},
     };
 
     static const std::unordered_map<std::string, std::string> hardcoded_gb = {
-      {"zero", "zˈiəɹO"},
-      {"eleven", "ɪlˈɛvən"},
-      {"seventeen", "sˌɛvəntˈiːn"},
-        {"you-all", "juː—ˈɔːl"},
-        {"for", "fɔː"},
-        {"models", "mˈɒdᵊlz"},
+      {"inspirited", "ɪnspˈɪɹəTᵻd"},
+      {"entreated", "ɪntɹˈiTᵻd"},
+      {"temperament", "tˈɛmpɹəmənt"},
+      {"lived", "lˈɪvd"},
+      {"participated", "pɑɹtˈɪsəpˌATᵻd"},
+      {"whale-fishers", "wˌAlfˈɪʃəɹz"},
     };
 
     const auto key = ascii_lower(token_text);
-    if (token_text == "AM") {
-      return "ˌAˈɛm";
-    }
-    if (token_text == "PM") {
-      return "pˌiˈɛm";
-    }
-    if (key == "don't") {
-      return variant_ == "en-gb" ? "dˈəʊnt" : "dˈOnt";
-    }
-    if (key == "let's") {
-      return "lˈɛts";
-    }
-
     const auto &hardcoded = (variant_ == "en-gb") ? hardcoded_gb : hardcoded_us;
     const auto it = hardcoded.find(key);
     if (it != hardcoded.end()) {
@@ -1040,6 +1089,129 @@ private:
         continue;
       }
 
+      if (std::isalnum(c)) {
+        std::size_t j = i;
+        while (j < text.size()) {
+          const unsigned char cj = static_cast<unsigned char>(text[j]);
+          if (std::isalnum(cj) || text[j] == '&' || text[j] == '-') {
+            ++j;
+            continue;
+          }
+          break;
+        }
+
+        const auto candidate = text.substr(i, j - i);
+        const bool has_lower = std::any_of(candidate.begin(), candidate.end(), [](char ch) {
+          return std::islower(static_cast<unsigned char>(ch));
+        });
+
+        auto emit_component = [&](const std::string& component) {
+          if (component.empty()) {
+            return false;
+          }
+
+          const bool has_digit = std::any_of(component.begin(), component.end(), [](char ch) {
+            return std::isdigit(static_cast<unsigned char>(ch));
+          });
+          const bool has_alpha = std::any_of(component.begin(), component.end(), [](char ch) {
+            return std::isalpha(static_cast<unsigned char>(ch));
+          });
+
+          if (has_digit && has_alpha) {
+            std::size_t digit_prefix = 0;
+            while (digit_prefix < component.size() && std::isdigit(static_cast<unsigned char>(component[digit_prefix]))) {
+              ++digit_prefix;
+            }
+            if (digit_prefix > 0 && digit_prefix < component.size()) {
+              const auto suffix = component.substr(digit_prefix);
+              const bool suffix_upper = std::all_of(suffix.begin(), suffix.end(), [](char ch) {
+                return std::isupper(static_cast<unsigned char>(ch));
+              });
+              if (suffix_upper) {
+                out.push_back({TokenKind::Word, component.substr(0, digit_prefix), ""});
+                out.push_back({TokenKind::Whitespace, " ", ""});
+                out.push_back({TokenKind::Word, suffix, ""});
+                return true;
+              }
+            }
+
+            std::size_t upper_prefix = 0;
+            while (upper_prefix < component.size() && std::isupper(static_cast<unsigned char>(component[upper_prefix]))) {
+              ++upper_prefix;
+            }
+            if (upper_prefix > 0 && upper_prefix < component.size()) {
+              const auto suffix = component.substr(upper_prefix);
+              const bool suffix_digits = std::all_of(suffix.begin(), suffix.end(), [](char ch) {
+                return std::isdigit(static_cast<unsigned char>(ch));
+              });
+              if (suffix_digits) {
+                out.push_back({TokenKind::Word, component.substr(0, upper_prefix), ""});
+                out.push_back({TokenKind::Whitespace, " ", ""});
+                out.push_back({TokenKind::Word, suffix, ""});
+                return true;
+              }
+            }
+          }
+
+          out.push_back({TokenKind::Word, component, ""});
+          return true;
+        };
+
+        const bool ampersand_code_like = !has_lower && candidate.find('&') != std::string::npos;
+        const bool hyphen_code_like = !has_lower && candidate.find('-') != std::string::npos &&
+                                      std::any_of(candidate.begin(), candidate.end(), [](char ch) {
+                                        return std::isdigit(static_cast<unsigned char>(ch));
+                                      }) &&
+                                      std::any_of(candidate.begin(), candidate.end(), [](char ch) {
+                                        return std::isupper(static_cast<unsigned char>(ch));
+                                      });
+
+        if (ampersand_code_like || hyphen_code_like) {
+          std::string component;
+          bool valid = true;
+          for (char ch : candidate) {
+            if (std::isalnum(static_cast<unsigned char>(ch))) {
+              component.push_back(ch);
+              continue;
+            }
+
+            if (ch == '&' && ampersand_code_like) {
+              valid = emit_component(component);
+              component.clear();
+              if (!valid) {
+                break;
+              }
+              out.push_back({TokenKind::Whitespace, " ", ""});
+              out.push_back({TokenKind::Word, "&", ""});
+              out.push_back({TokenKind::Whitespace, " ", ""});
+              continue;
+            }
+
+            if (ch == '-' && hyphen_code_like) {
+              valid = emit_component(component);
+              component.clear();
+              if (!valid) {
+                break;
+              }
+              out.push_back({TokenKind::Whitespace, " ", ""});
+              continue;
+            }
+
+            valid = false;
+            break;
+          }
+
+          if (valid) {
+            valid = emit_component(component);
+          }
+
+          if (valid) {
+            i = j;
+            continue;
+          }
+        }
+      }
+
       if (std::isalpha(c)) {
         std::size_t j = i;
         bool saw_ampersand = false;
@@ -1178,7 +1350,30 @@ private:
       return has_future_word ? "ɪn" : "ˈɪn";
     }
 
-    if (token.text == "a") {
+    if (key == "this") {
+      return has_future_word ? "ðɪs" : "ðˌɪs";
+    }
+
+    if (key == "that") {
+      return has_future_word ? "ðæt" : "ðˈæt";
+    }
+
+    if (key == "these") {
+      return has_future_word ? "ðiz" : "ðˌiz";
+    }
+
+    if (key == "you") {
+      return has_future_word ? "ju" : "jˌu";
+    }
+
+    if (key == "and") {
+      return has_future_word ? "ænd" : "ˌænd";
+    }
+
+    if (key == "a") {
+      if (token.text == "a") {
+        return "ɐ";
+      }
       return has_future_word ? "ɐ" : apply_stress("A", true);
     }
 
@@ -1354,6 +1549,27 @@ private:
     return lookup_morphology_pronunciation(word);
   }
 
+  std::optional<std::string> lookup_numeric_word_pronunciation(const std::string &word) const {
+    static const std::unordered_map<std::string, std::string> numeric_us = {
+      {"zero", "zˈiəɹO"},
+      {"eleven", "ɪlˈɛvən"},
+    };
+
+    static const std::unordered_map<std::string, std::string> numeric_gb = {
+      {"zero", "zˈiəɹO"},
+      {"eleven", "ɪlˈɛvən"},
+    };
+
+    const auto key = ascii_lower(word);
+    const auto &numeric = (variant_ == "en-gb") ? numeric_gb : numeric_us;
+    const auto it = numeric.find(key);
+    if (it != numeric.end()) {
+      return it->second;
+    }
+
+    return lookup_word_pronunciation(word);
+  }
+
   std::optional<std::string> lookup_hyphen_compound_pronunciation(const std::string &word) const {
     if (word.size() < 3 || word.front() == '-' || word.back() == '-' || word.find('-') == std::string::npos) {
       return std::nullopt;
@@ -1422,7 +1638,7 @@ private:
     for (std::string w; iss >> w;) {
       words.push_back(w);
     }
-    return words_to_phonemes(words);
+    return words_to_phonemes(words, true);
   }
 
   std::optional<std::string> pronounce_code_segment(const std::string &segment) const {
@@ -1565,14 +1781,15 @@ private:
     return combined;
   }
 
-  std::string words_to_phonemes(const std::vector<std::string> &words) const {
+  std::string words_to_phonemes(const std::vector<std::string> &words, bool numeric_context = false) const {
     std::string out;
     bool needs_space = false;
     for (const auto &word : words) {
       if (word.empty()) {
         continue;
       }
-      const auto pronunciation = lookup_word_pronunciation(word);
+      const auto pronunciation = numeric_context ? lookup_numeric_word_pronunciation(word)
+                                                 : lookup_word_pronunciation(word);
       if (!pronunciation) {
         throw std::runtime_error("Unmapped English expansion token: " + word);
       }
@@ -1599,6 +1816,10 @@ private:
 
     const auto symbol_it = symbol_words.find(token);
     if (symbol_it != symbol_words.end()) {
+      if (token == "%" && index > 0 && tokens[index - 1].kind == TokenKind::Word &&
+          is_numeric_token(tokens[index - 1].text)) {
+        return std::string{};
+      }
       const auto pronunciation = lookup_word_pronunciation(symbol_it->second);
       if (!pronunciation) {
         throw std::runtime_error("Unmapped symbol expansion: " + symbol_it->second);
@@ -1622,6 +1843,24 @@ private:
     if (!parsed.valid) {
       return std::nullopt;
     }
+
+    const bool attach_adjacent_percent = (index + 1 < tokens.size() && tokens[index + 1].kind == TokenKind::Word &&
+                                          tokens[index + 1].text == "%");
+
+    const auto append_adjacent_percent = [&](std::string phonemes) {
+      if (!attach_adjacent_percent) {
+        return phonemes;
+      }
+      const auto percent_pron = lookup_word_pronunciation("percent");
+      if (!percent_pron || percent_pron->empty()) {
+        return phonemes;
+      }
+      if (!phonemes.empty()) {
+        phonemes.push_back(' ');
+      }
+      phonemes += *percent_pron;
+      return phonemes;
+    };
 
     const auto prev_word = find_prev_word_index(tokens, index);
     const bool has_currency_symbol =
@@ -1658,7 +1897,7 @@ private:
         words.push_back(minor_value == 1 ? "cent" : minor + "s");
       }
 
-      return words_to_phonemes(words);
+      return append_adjacent_percent(words_to_phonemes(words, true));
     }
 
     const bool ordinal_suffix = is_ordinal_suffix(parsed.suffix);
@@ -1668,7 +1907,7 @@ private:
       for (std::string w; iss >> w;) {
         words.push_back(w);
       }
-      return words_to_phonemes(words);
+      return append_adjacent_percent(words_to_phonemes(words, true));
     }
 
     if (parsed.leading_dot) {
@@ -1677,7 +1916,7 @@ private:
       for (std::string w; dss >> w;) {
         words.push_back(w);
       }
-      return words_to_phonemes(words);
+      return append_adjacent_percent(words_to_phonemes(words, true));
     }
 
     if (parsed.fractional.empty()) {
@@ -1702,7 +1941,7 @@ private:
         for (std::string w; dss >> w;) {
           words.push_back(w);
         }
-        auto phonemes = words_to_phonemes(words);
+        auto phonemes = words_to_phonemes(words, true);
         if (morph_suffix) {
           if (parsed.suffix == "s" || parsed.suffix == "'s") {
             phonemes = apply_plural_s(phonemes);
@@ -1716,7 +1955,7 @@ private:
             phonemes = *ing;
           }
         }
-        return phonemes;
+        return append_adjacent_percent(phonemes);
       }
 
       const bool is_year = !parsed.negative && parsed.original_core.size() == 4 &&
@@ -1728,7 +1967,7 @@ private:
       for (std::string w; iss >> w;) {
         words.push_back(w);
       }
-      auto phonemes = words_to_phonemes(words);
+      auto phonemes = words_to_phonemes(words, true);
       if (morph_suffix) {
         if (parsed.suffix == "s" || parsed.suffix == "'s") {
           phonemes = apply_plural_s(phonemes);
@@ -1742,7 +1981,7 @@ private:
           phonemes = *ing;
         }
       }
-      return phonemes;
+      return append_adjacent_percent(phonemes);
     }
 
     std::string fractional = parsed.fractional;
@@ -1761,7 +2000,7 @@ private:
         words.push_back(w);
       }
     }
-    return words_to_phonemes(words);
+    return append_adjacent_percent(words_to_phonemes(words, true));
   }
 
   std::string lookup_pronunciation(const std::vector<Token> &tokens, std::size_t index) const {
@@ -1774,22 +2013,8 @@ private:
       return token.linked_pronunciation;
     }
 
-    if (const auto ampersand = lookup_ampersand_compound_pronunciation(token.text)) {
-      return *ampersand;
-    }
-
-    if (const auto code = lookup_hyphen_code_pronunciation(token.text)) {
-      return *code;
-    }
-
-    if (token.text == "AS") {
-      return variant_ == "en-gb" ? "ˈaz" : "ˈæz";
-    }
-
-    if (key == "bye-bye") {
-      if (const auto bye = lookup_word_pronunciation("bye")) {
-        return *bye + "—" + *bye;
-      }
+    if (token.text == "A" && index == 0) {
+      return "ɐ";
     }
 
     if (key == "used") {
@@ -1799,8 +2024,7 @@ private:
       }
     }
 
-    if (key == "read") {
-      const auto prev_word = find_prev_word_index(tokens, index);
+    if (key == "and") {
       std::optional<std::size_t> next_non_ws;
       for (std::size_t j = index + 1; j < tokens.size(); ++j) {
         if (tokens[j].kind == TokenKind::Whitespace) {
@@ -1809,16 +2033,90 @@ private:
         next_non_ws = j;
         break;
       }
-      if (prev_word && ascii_lower(tokens[*prev_word].text) == "that" && next_non_ws &&
-          tokens[*next_non_ws].kind == TokenKind::Punctuation && tokens[*next_non_ws].text == ":") {
-        return "ɹˈɛd";
+      if (next_non_ws && tokens[*next_non_ws].kind == TokenKind::Punctuation && tokens[*next_non_ws].text == ",") {
+        return "ænd";
       }
     }
 
-    if (key == "that") {
+    if (key == "to") {
+      const auto next_word = find_next_word_index(tokens, index);
+      if (next_word) {
+        const auto next = ascii_lower(tokens[*next_word].text);
+        if (next == "a" || next == "an") {
+          return "tə";
+        }
+      }
+    }
+
+    if (key == "read") {
       const auto prev_word = find_prev_word_index(tokens, index);
-      if (prev_word && ascii_lower(tokens[*prev_word].text) == "copy") {
-        return "ðˈæt";
+      if (prev_word) {
+        const auto prev = ascii_lower(tokens[*prev_word].text);
+        if (prev == "have" || prev == "has" || prev == "had") {
+          return "ɹˈɛd";
+        }
+      }
+    }
+
+    if (key == "contest") {
+      const auto prev_word = find_prev_word_index(tokens, index);
+      if (prev_word) {
+        const auto prev = ascii_lower(tokens[*prev_word].text);
+        if (prev == "cannot" || prev == "can't" || prev == "can" || prev == "could" || prev == "would" ||
+            prev == "should" || prev == "must" || prev == "will") {
+          return "kəntˈɛst";
+        }
+      }
+    }
+
+    if (key == "presents") {
+      const auto prev_word = find_prev_word_index(tokens, index);
+      const auto next_word = find_next_word_index(tokens, index);
+      if (next_word) {
+        const auto next = ascii_lower(tokens[*next_word].text);
+        const bool reflexive_next =
+            next == "itself" || next == "himself" || next == "herself" || next == "themselves";
+        if (reflexive_next) {
+          return "pɹizˈɛnts";
+        }
+      }
+      if (prev_word) {
+        const auto prev = ascii_lower(tokens[*prev_word].text);
+        if (prev == "it" || prev == "he" || prev == "she" || prev == "ever") {
+          return "pɹizˈɛnts";
+        }
+      }
+    }
+
+    if (key == "these") {
+      const auto next_word = find_next_word_index(tokens, index);
+      if (next_word) {
+        const auto next = ascii_lower(tokens[*next_word].text);
+        if (next == "are" || next == "is" || next == "were" || next == "was") {
+          return "ðˌiz";
+        }
+      }
+    }
+
+    if (key == "there") {
+      const auto next_word = find_next_word_index(tokens, index);
+      const bool existential_there = next_word.has_value() && [&]() {
+        const auto next = ascii_lower(tokens[*next_word].text);
+        return next == "is" || next == "are" || next == "was" || next == "were" ||
+               next == "be" || next == "been" || next == "being" || next == "am";
+      }();
+
+      std::optional<std::size_t> next_non_ws;
+      for (std::size_t j = index + 1; j < tokens.size(); ++j) {
+        if (tokens[j].kind == TokenKind::Whitespace) {
+          continue;
+        }
+        next_non_ws = j;
+        break;
+      }
+
+      if (!existential_there && (!next_non_ws.has_value() || tokens[*next_non_ws].kind == TokenKind::Punctuation)) {
+        return "ðˈɛɹ";
       }
     }
 
