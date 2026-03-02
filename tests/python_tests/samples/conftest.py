@@ -161,6 +161,14 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "AngelSlim/Qwen3-1.7B_eagle3",
         "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code", "--eagle3"],
     },
+    "Qwen2.5-VL-7B-Instruct": {
+        "name": "Qwen/Qwen2.5-VL-7B-Instruct",
+        "convert_args": ['--trust-remote-code', '--weight-format', 'int4']
+    },
+    "qwen2.5-vl-7b-eagle3-ov-int4": {
+        "name": "Rayzl/qwen2.5-vl-7b-eagle3-sgl-en-zh",
+        "convert_args": ["--task", "text-generation-with-past", "--weight-format", "int4", "--group-size", "128", "--trust-remote-code", "--eagle3"],
+    },
     "tiny-random-llava-next-video": {
         "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]

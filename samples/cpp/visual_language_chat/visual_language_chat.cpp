@@ -11,22 +11,26 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
 }
 
 int main(int argc, char* argv[]) try {
-    if (argc < 3 || argc > 4) {
-        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE>");
+    if (argc < 3 || argc > 5) {
+        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DRAFT_MODEL_DIR> <DEVICE>");
     }
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
 
     // GPU and NPU can be used as well.
     // Note: If NPU is selected, only language model will be run on NPU
-    std::string device = (argc == 4) ? argv[3] : "CPU";
-    ov::AnyMap enable_compile_cache;
+    std::string draft_model_dir = (argc >= 4) ? argv[3] : "";
+    std::string device = (argc == 5) ? argv[4] : "CPU";
+    ov::AnyMap properties;
+    if (!draft_model_dir.empty()) {
+        properties.insert(ov::genai::draft_model(draft_model_dir, device));
+    }
     if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the
         // next run. It's not beneficial for CPU.
-        enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
+        properties.insert({ov::cache_dir("vlm_cache")});
     }
-    ov::genai::VLMPipeline pipe(argv[1], device, enable_compile_cache);
+    ov::genai::VLMPipeline pipe(argv[1], device, properties);
 
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
