@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <locale>
+#include <map>
 #include <numeric>
 #include <sstream>
 #include <unordered_map>
@@ -24,6 +25,116 @@
 #endif
 
 namespace {
+
+void set_default_property(ov::AnyMap& config, const std::string& key, const ov::Any& value) {
+    if (config.count(key) == 0) {
+        config.insert({key, value});
+    }
+}
+
+ov::CompiledModel compile_kokoro_model(ov::Core& core,
+                                       const std::filesystem::path& model_path,
+                                       const std::string& device,
+                                       const ov::AnyMap& properties,
+                                       const bool npu_requested,
+                                       const size_t static_input_ids_length) {
+    ov::AnyMap compile_properties = properties;
+    if (!npu_requested) {
+        return core.compile_model(model_path, device, compile_properties);
+    }
+
+    set_default_property(compile_properties, "NPU_USE_NPUW", std::string{"YES"});
+    set_default_property(compile_properties, "NPUW_DEVICES", std::string{"NPU,CPU"});
+    set_default_property(compile_properties, "NPUW_KOKORO", std::string{"YES"});
+
+    auto model = core.read_model(model_path, {}, compile_properties);
+
+    std::map<std::string, ov::PartialShape> static_shapes;
+    if (model->inputs().size() >= 1) {
+        static_shapes.emplace(model->input(0).get_any_name(), ov::PartialShape{1, static_cast<int64_t>(static_input_ids_length)});
+    }
+    if (model->inputs().size() >= 2) {
+        static_shapes.emplace(model->input(1).get_any_name(), ov::PartialShape{1, 256});
+    }
+    if (model->inputs().size() >= 3) {
+        static_shapes.emplace(model->input(2).get_any_name(), ov::PartialShape{1});
+    }
+
+    if (!static_shapes.empty()) {
+        model->reshape(static_shapes);
+    }
+
+    return core.compile_model(model, device, compile_properties);
+}
+
+double sum_tensor_prefix_as_double(const ov::Tensor& tensor, const size_t count) {
+    const size_t n = std::min(count, tensor.get_size());
+    if (n == 0) {
+        return 0.0;
+    }
+
+    const auto et = tensor.get_element_type();
+    double sum = 0.0;
+
+    if (et == ov::element::f32) {
+        const auto* ptr = tensor.data<const float>();
+        for (size_t i = 0; i < n; ++i) {
+            sum += static_cast<double>(ptr[i]);
+        }
+        return sum;
+    }
+    if (et == ov::element::f16) {
+        const auto* ptr = tensor.data<const ov::float16>();
+        for (size_t i = 0; i < n; ++i) {
+            sum += static_cast<double>(ptr[i]);
+        }
+        return sum;
+    }
+    if (et == ov::element::bf16) {
+        const auto* ptr = tensor.data<const ov::bfloat16>();
+        for (size_t i = 0; i < n; ++i) {
+            sum += static_cast<double>(ptr[i]);
+        }
+        return sum;
+    }
+    if (et == ov::element::f64) {
+        const auto* ptr = tensor.data<const double>();
+        for (size_t i = 0; i < n; ++i) {
+            sum += ptr[i];
+        }
+        return sum;
+    }
+    if (et == ov::element::i64) {
+        const auto* ptr = tensor.data<const int64_t>();
+        for (size_t i = 0; i < n; ++i) {
+            sum += static_cast<double>(ptr[i]);
+        }
+        return sum;
+    }
+    if (et == ov::element::i32) {
+        const auto* ptr = tensor.data<const int32_t>();
+        for (size_t i = 0; i < n; ++i) {
+            sum += static_cast<double>(ptr[i]);
+        }
+        return sum;
+    }
+    if (et == ov::element::u64) {
+        const auto* ptr = tensor.data<const uint64_t>();
+        for (size_t i = 0; i < n; ++i) {
+            sum += static_cast<double>(ptr[i]);
+        }
+        return sum;
+    }
+    if (et == ov::element::u32) {
+        const auto* ptr = tensor.data<const uint32_t>();
+        for (size_t i = 0; i < n; ++i) {
+            sum += static_cast<double>(ptr[i]);
+        }
+        return sum;
+    }
+
+    return 0.0;
+}
 
 std::string normalize_language_variant(const std::string& language) {
     // Python parity: mirrors alias handling in `kokoro/pipeline.py` (`ALIASES`),
@@ -469,13 +580,25 @@ KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
 #else
     m_models_path = models_path;
     ov::Core core = ov::genai::utils::singleton_core();
+    const bool npu_requested = device == "NPU";
 
-    auto compiled = core.compile_model(models_path / "openvino_model.xml", device, properties);
+    m_runtime = std::make_shared<KokoroRuntime>(models_path);
+
+    if (npu_requested) {
+        m_static_input_ids_length = m_runtime->context_length();
+    }
+
+    auto compiled = compile_kokoro_model(core,
+                                         models_path / "openvino_model.xml",
+                                         device,
+                                         properties,
+                                         npu_requested,
+                                         m_static_input_ids_length);
     ov::genai::utils::print_compiled_model_properties(compiled, "kokoro model");
+    m_has_pred_dur_output = compiled.outputs().size() > 1;
 
     m_request = compiled.create_infer_request();
 
-    m_runtime = std::make_shared<KokoroRuntime>(models_path);
     // Python reference: same engine family as `KPipeline(...).g2p` for English variants.
     m_g2p = misaki::make_engine("en", m_runtime->language_variant());
     install_espeak_fallback_if_available(m_g2p, m_runtime->language_variant());
@@ -604,6 +727,7 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
                 }
             }
             token_ids.push_back(0);
+            const size_t text_len = token_ids.size();
 
             // Python parity: mirrors `KModel.forward` path:
             // `input_ids = [0, *mapped_vocab_ids, 0]` and context-length assertion.
@@ -640,9 +764,23 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
                 }
             }
 
-            ov::Tensor input_ids_tensor(ov::element::i64,
-                                        ov::Shape{1, token_ids.size()},
-                                        token_ids.data());
+            std::vector<int64_t> static_token_ids;
+            ov::Tensor input_ids_tensor;
+            if (m_static_input_ids_length > 0) {
+                OPENVINO_ASSERT(token_ids.size() <= m_static_input_ids_length,
+                                "Kokoro tokenized length exceeds static input length: ", token_ids.size(),
+                                " > ", m_static_input_ids_length);
+                // Align with static NPU path from Python reference: use non-zero padding token.
+                static_token_ids.assign(m_static_input_ids_length, 16);
+                std::copy(token_ids.begin(), token_ids.end(), static_token_ids.begin());
+                input_ids_tensor = ov::Tensor(ov::element::i64,
+                                              ov::Shape{1, m_static_input_ids_length},
+                                              static_token_ids.data());
+            } else {
+                input_ids_tensor = ov::Tensor(ov::element::i64,
+                                              ov::Shape{1, token_ids.size()},
+                                              token_ids.data());
+            }
             ov::Tensor ref_s_tensor(ov::element::f32,
                                     ov::Shape{1, speaker_shape[1]},
                                     style_slice.data());
@@ -658,7 +796,22 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
 
             ov::Tensor waveform = m_request.get_output_tensor(0);
             const float* waveform_data = waveform.data<const float>();
-            merged_audio.insert(merged_audio.end(), waveform_data, waveform_data + waveform.get_size());
+            size_t samples_to_keep = waveform.get_size();
+            if (m_static_input_ids_length > 0 && text_len < m_static_input_ids_length && m_has_pred_dur_output) {
+                ov::Tensor pred_dur = m_request.get_output_tensor(1);
+                const size_t pred_dur_len = pred_dur.get_size();
+                const double total_dur = sum_tensor_prefix_as_double(pred_dur, pred_dur_len);
+                const size_t valid_len = std::min(text_len, pred_dur_len);
+                const double valid_dur = sum_tensor_prefix_as_double(pred_dur, valid_len);
+
+                if (total_dur > 0.0) {
+                    const double ratio = valid_dur / total_dur;
+                    samples_to_keep = std::min<size_t>(waveform.get_size(),
+                                                       static_cast<size_t>(static_cast<double>(waveform.get_size()) * ratio));
+                }
+            }
+
+            merged_audio.insert(merged_audio.end(), waveform_data, waveform_data + samples_to_keep);
         }
 
         ov::Tensor speech(ov::element::f32, ov::Shape{merged_audio.size()});

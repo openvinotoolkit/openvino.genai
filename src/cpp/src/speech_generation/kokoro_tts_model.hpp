@@ -38,6 +38,8 @@ private:
     std::string m_input_ids_name;
     std::string m_ref_s_name;
     std::string m_speed_name;
+    size_t m_static_input_ids_length = 0;
+    bool m_has_pred_dur_output = false;
     std::shared_ptr<KokoroRuntime> m_runtime;
     std::unordered_map<std::string, std::vector<float>> m_voice_cache;
 #if OPENVINO_GENAI_HAS_MISAKI_CPP
