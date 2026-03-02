@@ -109,37 +109,26 @@ public:
 
         OPENVINO_ASSERT(sample.get_shape()[0] == m_native_batch_size, "sample batch size must match native batch size");
 
-        char* pSample = (char*)sample.data();
-        size_t sample_batch_stride_bytes = sample.get_strides()[0];
-
         auto out_sample = ov::Tensor(sample.get_element_type(), sample.get_shape());
-        char* pOutSample = (char*)out_sample.data();
-        size_t out_sample_batch_stride_bytes = out_sample.get_strides()[0];
 
-        auto bs1_sample_shape = sample.get_shape();
-        bs1_sample_shape[0] = 1;
+        const ov::Shape& sample_shape = sample.get_shape();
+        // Using the coordinate-based Tensor constructor keeps the parent tensor reference alive
+        // inside each batch-1 view, which prevents NPU plugin memory-pool reimport issues
+        // when the same virtual address is reused across iterations. E###-203710
+        ov::Coordinate begin(sample_shape.size(), 0);
+        ov::Coordinate end(sample_shape.begin(), sample_shape.end());
 
         for (int i = 0; i < m_native_batch_size; i++) {
             m_requests[i].set_tensor("timestep", timestep);
 
-            // wrap a portion of sample tensor as a batch-1 tensor, as set this as input tensor.
-            {
-                ov::Tensor bs1_wrapper(sample.get_element_type(), bs1_sample_shape, pSample, sample.get_strides());
-                m_requests[i].set_tensor("hidden_states", bs1_wrapper);
-            }
+            begin[0] = i;
+            end[0] = i + 1;
 
-            // wrap a portion of out_sample tensor as a batch-1 tensor, as set this as output tensor.
-            {
-                ov::Tensor bs1_wrapper(sample.get_element_type(),
-                                       bs1_sample_shape,
-                                       pOutSample,
-                                       out_sample.get_strides());
-                m_requests[i].set_tensor("out_sample", bs1_wrapper);
-            }
+            // Create a batch-1 view of the sample input tensor and set it as model input.
+            m_requests[i].set_tensor("hidden_states", ov::Tensor(sample, begin, end));
 
-            // increment pSample & pOutSample to start location of next batch (using stride)
-            pSample += sample_batch_stride_bytes;
-            pOutSample += out_sample_batch_stride_bytes;
+            // Create a batch-1 view of the out_sample output tensor and set it as model output.
+            m_requests[i].set_tensor("out_sample", ov::Tensor(out_sample, begin, end));
 
             // kick off infer for this request.
             m_requests[i].start_async();
