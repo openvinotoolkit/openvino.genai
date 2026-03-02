@@ -1,6 +1,8 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import platform
+import sys
 import pytest
 import subprocess  # nosec B404
 import logging
@@ -40,7 +42,7 @@ def image_generation_model():
     try:
         manager.execute(convert_model)
     except subprocess.CalledProcessError as error:
-        logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
+        logger.exception(f"optimum-cli returned {error.returncode}. Stdout:\n{error.output}\nStderr:\n{error.stderr}")
         raise
     
     return str(model_path)
@@ -196,3 +198,23 @@ class TestImageGenerationCallback:
         
         assert len(callback_calls) > 0
         assert image is not None
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
+    reason="NPU plugin is available only on Linux and Windows x86_64",
+)
+def test_image_generation_cpu_vs_npuw_cpu(image_generation_model):
+    generation_args = {"prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69}
+
+    cpu_pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+    cpu_image = cpu_pipe.generate(**generation_args)
+
+    npuw_pipe = ov_genai.Text2ImagePipeline(image_generation_model, "NPU", {
+        "NPU_USE_NPUW": "YES",
+        "NPUW_DEVICES": "CPU",
+        "NPUW_ONLINE_PIPELINE": "NONE",
+    })
+    npuw_image = npuw_pipe.generate(**generation_args)
+
+    assert (cpu_image.data == npuw_image.data).all()
