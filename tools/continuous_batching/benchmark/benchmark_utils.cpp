@@ -32,9 +32,7 @@ std::optional<ImageInfo> get_image_dimensions(const fs::path& image_path) {
 }  // namespace
 
 std::vector<ImageInfo> check_images(const fs::path& input_path) {
-    if (input_path.empty() || !fs::exists(input_path)) {
-        throw std::runtime_error("Input path is empty or does not exist.");
-    }
+    OPENVINO_ASSERT(!input_path.empty() && fs::exists(input_path), "Input path is empty or does not exist.");
 
     std::vector<ImageInfo> images;
     if (fs::is_directory(input_path)) {
