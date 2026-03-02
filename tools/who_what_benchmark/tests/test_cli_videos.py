@@ -6,6 +6,7 @@ import pytest
 import logging
 import tempfile
 from test_cli_image import run_wwb, get_similarity
+from profile_utils import _log, _stage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,11 +16,15 @@ OV_VIDEO_MODELS = ["optimum-intel-internal-testing/tiny-random-ltx-video"]
 
 
 def setup_module():
+    logger.info("Setting up video models")
+    _log("Setting up WWB video test models")
     for model_id in OV_VIDEO_MODELS:
         MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
-        subprocess.run(
-            ["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH], capture_output=True, text=True
-        )
+        _log(f"Converting video model: {model_id} to {MODEL_PATH}")
+        with _stage(f"convert_model_{model_id.replace('/', '_')}"):
+            subprocess.run(
+                ["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH], capture_output=True, text=True
+            )
 
 
 def teardown_module():
@@ -34,10 +39,12 @@ def teardown_module():
     [("optimum-intel-internal-testing/tiny-random-ltx-video", "text-to-video")],
 )
 def test_video_model_genai(model_id, model_type, tmp_path):
+    _log(f"test_video_model_genai: model_id={model_id} model_type={model_type}")
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
 
-    run_wwb(
+    with _stage("run_wwb_gt_data_gen"):
+        run_wwb(
         [
             "--base-model",
             model_id,
@@ -58,7 +65,8 @@ def test_video_model_genai(model_id, model_type, tmp_path):
     assert GT_FILE.exists()
     assert (tmp_path / "reference").exists()
 
-    output = run_wwb(
+    with _stage("run_wwb_genai_target"):
+        output = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -86,7 +94,8 @@ def test_video_model_genai(model_id, model_type, tmp_path):
     assert (tmp_path / "target").exists()
 
     # test w/o models
-    run_wwb(
+    with _stage("run_wwb_metrics_without_models"):
+        run_wwb(
         [
             "--target-data",
             tmp_path / "target.csv",

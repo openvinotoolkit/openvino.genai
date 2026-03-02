@@ -6,6 +6,10 @@ import pytest
 from dataclasses import dataclass
 from pathlib import Path
 import datasets
+import os
+import time
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from tqdm import tqdm
 
 from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, CacheEvictionConfig, AggregationMode
@@ -16,6 +20,25 @@ from utils.hugging_face import download_and_convert_model
 from data.test_dataset import get_test_dataset
 from kv_cache_eviction_utils import get_scheduler_config
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
+
+
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    print(f"[{_ts()}] [kv-cache-eviction] {message}", flush=True)
+
+
+@contextmanager
+def _stage(name: str):
+    _log(f"START {name}")
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        dt = time.perf_counter() - start
+        _log(f"END   {name} dt={dt:.3f}s")
 
 
 def load_prompts_dataset(file_name : str) -> dict[str, list[str]]:
@@ -79,7 +102,15 @@ LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
 def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply_rotation, use_sparse_attention):
     import whowhatbench
 
+    if os.environ.get("HF_HUB_OFFLINE") == "1":
+        pytest.skip("HF_HUB_OFFLINE=1; cannot download/convert Hugging Face model")
+
     seqs_per_request = 32
+    _log(
+        "Test params: "
+        f"test_id={test_struct.test_id} prompt_file={test_struct.prompt_file} max_new_tokens={test_struct.max_new_tokens} "
+        f"num_kv_blocks={test_struct.num_kv_blocks} apply_rotation={apply_rotation} use_sparse_attention={use_sparse_attention}"
+    )
     scheduler_config = get_scheduler_config(test_struct.num_kv_blocks)
 
     generation_config = GenerationConfig()  # expecting default greedy sampling
@@ -96,32 +127,45 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply
     if use_sparse_attention:
         scheduler_config_opt.sparse_attention_config.num_last_dense_tokens_in_prefill = 10
 
+    if scheduler_config_opt.use_cache_eviction and scheduler_config_opt.cache_eviction_config is not None:
+        cfg = scheduler_config_opt.cache_eviction_config
+        _log(
+            "Cache eviction config: "
+            f"start_size={cfg.get_start_size()} recent_size={cfg.get_recent_size()} max_cache_size={cfg.get_max_cache_size()} "
+            f"aggregation_mode={cfg.aggregation_mode} apply_rotation={cfg.apply_rotation}"
+        )
+
     model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    model_schema = download_and_convert_model(model_id)
+    with _stage("download_and_convert_model"):
+        model_schema = download_and_convert_model(model_id)
     tokenizer = model_schema.hf_tokenizer
     models_path = model_schema.models_path
-    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_llm_properties())
-    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_llm_properties())
+    _log(f"Converted model path: {models_path}")
+    with _stage("init_pipelines"):
+        model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_llm_properties())
+        model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_llm_properties())
 
     data_dict = load_prompts_dataset(test_struct.prompt_file)
 
-    evaluator = whowhatbench.Evaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
-                                       generation_config=generation_config,
-                                       generation_config_base=generation_config,
-                                       max_new_tokens=test_struct.max_new_tokens, seqs_per_request=seqs_per_request)
+    with _stage("init_whowhatbench_evaluator"):
+        evaluator = whowhatbench.Evaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
+                                           generation_config=generation_config,
+                                           generation_config_base=generation_config,
+                                           max_new_tokens=test_struct.max_new_tokens, seqs_per_request=seqs_per_request)
 
-    _, all_metrics = evaluator.score(model_cb_opt)
+    with _stage("whowhatbench_score"):
+        _, all_metrics = evaluator.score(model_cb_opt)
 
     similarity_metric = float(all_metrics['similarity'][0])
     pipeline_opt_metrics = model_cb_opt.get_metrics()
     pipeline_noopt_metrics = model_cb_noopt.get_metrics()
 
-    print(f"Similarity: {similarity_metric}")
-    print(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
-    print(f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}")
+    _log(f"Similarity: {similarity_metric}")
+    _log(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
+    _log(f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}")
     max_optimization_ratio = (pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage)
     avg_optimization_ratio = (pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage)
-    print(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
+    _log(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
 
     del model_cb_opt
     del model_cb_noopt
@@ -166,14 +210,18 @@ scheduler_params_list = [
 ]
 @pytest.mark.parametrize("params", scheduler_params_list)
 def test_dynamic_memory_allocation(params):
+    _log(f"test_dynamic_memory_allocation params={params[0]} generation_config={params[1]}")
     prompts, _ = get_test_dataset()
-    generate_and_compare(
-        model_schema=download_and_convert_model("facebook/opt-125m"),
-        prompts=prompts,
-        scheduler_config=params[0],
-        generation_config=params[1],
-        pipeline_type=PipelineType.CONTINUOUS_BATCHING
-    )
+    with _stage("download_and_convert_model_opt125m"):
+        model_schema = download_and_convert_model("facebook/opt-125m")
+    with _stage("generate_and_compare"):
+        generate_and_compare(
+            model_schema=model_schema,
+            prompts=prompts,
+            scheduler_config=params[0],
+            generation_config=params[1],
+            pipeline_type=PipelineType.CONTINUOUS_BATCHING
+        )
 
 
 @dataclass(frozen=True)
@@ -189,11 +237,22 @@ class LongBenchTestData:
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
 ], ids=["samsum", "trec"])
 def test_optimized_generation_longbench(test_struct):
+    if os.environ.get("HF_DATASETS_OFFLINE") == "1":
+        pytest.skip("HF_DATASETS_OFFLINE=1; cannot load THUDM/LongBench")
+    if os.environ.get("HF_HUB_OFFLINE") == "1":
+        pytest.skip("HF_HUB_OFFLINE=1; cannot download/convert Hugging Face model")
+
     seqs_per_request = 32
     device = "CPU"
     num_kv_blocks = 1000 if device == "CPU" else 500
     model_id = "Qwen/Qwen2-0.5B-Instruct"
-    models_path = download_and_convert_model(model_id).models_path
+    _log(
+        "Test params: "
+        f"subset={test_struct.subset} device={device} seqs_per_request={seqs_per_request} num_kv_blocks={num_kv_blocks} model_id={model_id}"
+    )
+    with _stage("download_and_convert_model"):
+        models_path = download_and_convert_model(model_id).models_path
+    _log(f"Converted model path: {models_path}")
     scheduler_config = get_scheduler_config(num_kv_blocks)
 
     scheduler_config_opt = get_scheduler_config(num_kv_blocks)
@@ -202,18 +261,27 @@ def test_optimized_generation_longbench(test_struct):
 
     scheduler_config_opt.use_sparse_attention = True
 
-    model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
-    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
+    _log(
+        "Cache eviction config (LongBench): "
+        f"start_size={LONGBENCH_CACHE_EVICTION_CONFIG.get_start_size()} recent_size={LONGBENCH_CACHE_EVICTION_CONFIG.get_recent_size()} "
+        f"max_cache_size={LONGBENCH_CACHE_EVICTION_CONFIG.get_max_cache_size()} aggregation_mode={LONGBENCH_CACHE_EVICTION_CONFIG.aggregation_mode}"
+    )
+
+    with _stage("init_pipelines"):
+        model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
+        model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
 
     model_name = "/".join(models_path.parts[-2:])
     subset = test_struct.subset
     max_new_tokens = dataset2maxlen[subset]
+    _log(f"model_name={model_name} max_new_tokens={max_new_tokens}")
 
     generation_config = GenerationConfig()  # expecting default greedy sampling
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = max_new_tokens
 
-    data = datasets.load_dataset("zai-org/LongBench", subset, split="test[:32]", revision="8cbd1")
+    with _stage("load_dataset"):
+        data = datasets.load_dataset("zai-org/LongBench", subset, split="test[:32]", revision="8cbd1")
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         answers = []
@@ -226,30 +294,138 @@ def test_optimized_generation_longbench(test_struct):
             ref_answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
 
             if len(batch) == seqs_per_request or p_idx == len(data) - 1:
-                ans_batch = model_cb_opt.generate(
-                    batch, [generation_config] * len(batch)
-                )
-                ref_ans_batch = model_cb_noopt.generate(
-                    batch, [generation_config] * len(batch)
-                )
+                _log(f"Generating batch size={len(batch)} last_index={p_idx}")
+                with _stage("opt_generate"):
+                    ans_batch = model_cb_opt.generate(
+                        batch, [generation_config] * len(batch)
+                    )
+                with _stage("ref_generate"):
+                    ref_ans_batch = model_cb_noopt.generate(
+                        batch, [generation_config] * len(batch)
+                    )
                 for i, (opt_output, ref_output) in enumerate(zip(ans_batch, ref_ans_batch), start=p_idx-len(batch)+1):
                     answers[i]["pred"] = post_process_pred(opt_output.m_generation_ids[0], subset, model_name)
                     ref_answers[i]["pred"] = post_process_pred(ref_output.m_generation_ids[0], subset, model_name)
                 batch.clear()
 
-    score = evaluate(answers, subset)
-    print(f"Score: {score}")
+    with _stage("evaluate_opt"):
+        score = evaluate(answers, subset)
+    _log(f"Score: {score}")
 
-    ref_score = evaluate(ref_answers, subset)
-    print(f"Reference score: {ref_score}")
+    with _stage("evaluate_ref"):
+        ref_score = evaluate(ref_answers, subset)
+    _log(f"Reference score: {ref_score}")
     pipeline_opt_metrics = model_cb_opt.get_metrics()
     pipeline_noopt_metrics = model_cb_noopt.get_metrics()
 
-    print(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
-    print(f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}")
+    _log(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
+    _log(f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}")
     max_optimization_ratio = (pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage)
     avg_optimization_ratio = (pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage)
-    print(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
+    _log(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
+
+    del model_cb_opt
+    del model_cb_noopt
+    import gc
+    gc.collect()
+
+    assert ref_score - score <= test_struct.threshold
+    assert max_optimization_ratio >= test_struct.max_cache_usage_optimization_ratio
+    assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio
+
+
+@pytest.mark.parametrize("test_struct", [
+    LongBenchTestData("samsum", 4, 1.6, 2.5),
+    LongBenchTestData("trec", 3.2, 2.0, 3.3),
+], ids=["samsum", "trec"])
+def test_optimized_generation_longbench_updated(test_struct):
+    if os.environ.get("HF_DATASETS_OFFLINE") == "1":
+        pytest.skip("HF_DATASETS_OFFLINE=1; cannot load THUDM/LongBench")
+    if os.environ.get("HF_HUB_OFFLINE") == "1":
+        pytest.skip("HF_HUB_OFFLINE=1; cannot download/convert Hugging Face model")
+
+    seqs_per_request = 16
+    device = "CPU"
+    num_kv_blocks = 1000 if device == "CPU" else 500
+    model_id = "HuggingFaceTB/SmolLM2-135M-Instruct"
+    _log(
+        "Test params: "
+        f"subset={test_struct.subset} device={device} seqs_per_request={seqs_per_request} num_kv_blocks={num_kv_blocks} model_id={model_id}"
+    )
+    with _stage("download_and_convert_model"):
+        models_path = download_and_convert_model(model_id).models_path
+    _log(f"Converted model path: {models_path}")
+    scheduler_config = get_scheduler_config(num_kv_blocks)
+
+    scheduler_config_opt = get_scheduler_config(num_kv_blocks)
+    scheduler_config_opt.use_cache_eviction = True
+    scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
+
+    scheduler_config_opt.use_sparse_attention = True
+
+    _log(
+        "Cache eviction config (LongBench): "
+        f"start_size={LONGBENCH_CACHE_EVICTION_CONFIG.get_start_size()} recent_size={LONGBENCH_CACHE_EVICTION_CONFIG.get_recent_size()} "
+        f"max_cache_size={LONGBENCH_CACHE_EVICTION_CONFIG.get_max_cache_size()} aggregation_mode={LONGBENCH_CACHE_EVICTION_CONFIG.aggregation_mode}"
+    )
+
+    with _stage("init_pipelines"):
+        model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
+        model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
+
+    model_name = "/".join(models_path.parts[-2:])
+    subset = test_struct.subset
+    max_new_tokens = dataset2maxlen[subset]
+    _log(f"model_name={model_name} max_new_tokens={max_new_tokens}")
+
+    generation_config = GenerationConfig()  # expecting default greedy sampling
+    generation_config.num_return_sequences = 1
+    generation_config.max_new_tokens = max_new_tokens
+
+    with _stage("load_dataset"):
+        data = datasets.load_dataset("zai-org/LongBench", subset, split="test[:16]", revision="8cbd1")
+
+    with tqdm(total=len(data)) as progress_bar:
+        batch = []
+        answers = []
+        ref_answers = []
+        for p_idx, data_sample in enumerate(data):
+            prompt = preprocess_prompt(data_sample, subset, model_name)
+            progress_bar.update(1)
+            batch.append(prompt)
+            answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
+            ref_answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
+
+            if len(batch) == seqs_per_request or p_idx == len(data) - 1:
+                _log(f"Generating batch size={len(batch)} last_index={p_idx}")
+                with _stage("opt_generate"):
+                    ans_batch = model_cb_opt.generate(
+                        batch, [generation_config] * len(batch)
+                    )
+                with _stage("ref_generate"):
+                    ref_ans_batch = model_cb_noopt.generate(
+                        batch, [generation_config] * len(batch)
+                    )
+                for i, (opt_output, ref_output) in enumerate(zip(ans_batch, ref_ans_batch), start=p_idx-len(batch)+1):
+                    answers[i]["pred"] = post_process_pred(opt_output.m_generation_ids[0], subset, model_name)
+                    ref_answers[i]["pred"] = post_process_pred(ref_output.m_generation_ids[0], subset, model_name)
+                batch.clear()
+
+    with _stage("evaluate_opt"):
+        score = evaluate(answers, subset)
+    _log(f"Score: {score}")
+
+    with _stage("evaluate_ref"):
+        ref_score = evaluate(ref_answers, subset)
+    _log(f"Reference score: {ref_score}")
+    pipeline_opt_metrics = model_cb_opt.get_metrics()
+    pipeline_noopt_metrics = model_cb_noopt.get_metrics()
+
+    _log(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
+    _log(f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}")
+    max_optimization_ratio = (pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage)
+    avg_optimization_ratio = (pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage)
+    _log(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
 
     del model_cb_opt
     del model_cb_noopt
