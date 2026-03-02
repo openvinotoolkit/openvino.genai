@@ -52,9 +52,6 @@ Dataset parse_vlm_dataset(const std::string& models_path, const std::string& dat
 
     return dataset;
 }
-}  // namespace
-
-namespace {
 
 void statisticsReporter(GenerationInfoCollector* generations_info_collector, size_t num_prompts) {
     size_t num_finished = 0;

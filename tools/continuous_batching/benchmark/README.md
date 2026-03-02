@@ -34,7 +34,7 @@ vlm_continuous_batching_benchmark [OPTIONS]
 ### Output:
 
 ```
-vlm_continuous_batching_benchmark -m qwen2-vl-2b --dataset vlm_input.json -n 2
+vlm_continuous_batching_benchmark -m qwen2-vl-2b --dataset vlm_input.json -n 1
 ```
 
 ```
