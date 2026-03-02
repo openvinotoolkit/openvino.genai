@@ -32,7 +32,7 @@ file(DOWNLOAD
 # end of dependencies
 
 set(TARGET_NAME continuous_batching_benchmark)
-add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp benchmark_utils.cpp ../../../samples/cpp/visual_language_chat/load_image.cpp)
+add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp benchmark_utils.cpp)
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai nlohmann_json::nlohmann_json cxxopts::cxxopts Threads::Threads)
 target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_BINARY_DIR}")
 
