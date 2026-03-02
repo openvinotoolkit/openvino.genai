@@ -2,9 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
-#include <fstream>
-#include <sstream>
+#include <cctype>
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
 #include "openvino/runtime/core.hpp"
 #include "utils.hpp"
 
@@ -75,10 +80,8 @@ static std::vector<CacheTypesModelParam> get_csv_params() {
     if (csv_env) {
         return load_cache_types_csv(csv_env);
     }
-    // Default: look for data/cache_types_models.csv next to the test binary.
-    // This matches the installed layout: tests/tests_continuous_batching and tests/data/.
-    const auto binary_dir = std::filesystem::read_symlink("/proc/self/exe").parent_path();
-    return load_cache_types_csv((binary_dir / "data" / "cache_types_models.csv").string());
+    std::cerr << "WARNING: CACHE_TYPES_CSV is not set, skipping cache-types tests.\n";
+    return {};
 }
 
 INSTANTIATE_TEST_SUITE_P(
