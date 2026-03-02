@@ -42,6 +42,7 @@ class GenAIModelWrapper:
 
         if model_type in (
             "text",
+            "text-chat",
             "visual-text",
             "visual-video-text",
             "text-embedding",
@@ -719,7 +720,7 @@ def load_model(
     else:
         ov_options = {}
 
-    if model_type == "text":
+    if model_type == "text" or model_type == "text-chat":
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(
