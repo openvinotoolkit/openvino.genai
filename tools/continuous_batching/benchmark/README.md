@@ -27,8 +27,7 @@ vlm_continuous_batching_benchmark [OPTIONS]
     {
         "prompt": "what is it in the image?",
         "image": "multi_images_448x448/"
-    },
-    .......
+    }
 ]
 ```
 
