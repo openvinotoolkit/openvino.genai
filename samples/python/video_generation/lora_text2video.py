@@ -35,12 +35,14 @@ def main():
     )
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("prompt", help="Text prompt for video generation")
-    parser.add_argument("lora_adapter", help="Path to the LoRA adapter file (.safetensors)")
-    args = parser.parse_args()
+    args, adapters = parser.parse_known_args()
 
-    # Load adapter
+    # Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
     adapter_config = openvino_genai.AdapterConfig()
-    adapter_config.add(openvino_genai.Adapter(args.lora_adapter))
+    for i in range(int(len(adapters) / 2)):
+        adapter = openvino_genai.Adapter(adapters[2 * i])
+        alpha = float(adapters[2 * i + 1])
+        adapter_config.add(adapter, alpha)
 
     pipe = openvino_genai.Text2VideoPipeline(args.model_dir, "CPU", adapters=adapter_config)  # GPU can be used as well
 

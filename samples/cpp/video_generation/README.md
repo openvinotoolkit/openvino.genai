@@ -82,7 +82,7 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
   ./lora_text2video ltx_video_ov/INT8 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"  adapter1.safetensors 1.0 adapter2.safetensors 0.5
   ```
 
-The sample will generate a video file `genai_video.avi` in the current directory.
+The LoRA text-to-video sample will generate two video files, `lora_video.avi` and `baseline_video.avi`, in the current directory.
 
 Users can modify the source code to experiment with different generation parameters:
 - Change width or height of generated video
