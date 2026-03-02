@@ -11,10 +11,10 @@ vlm_continuous_batching_benchmark [OPTIONS]
 - `--dataset`: Path to dataset .json file, read prompts and images from this file.
 - `--max_output_len` (default: `128`): Maximal number of output tokens.
 - `--device` (default: `"CPU"`): Device to run the model on.
-- `-b, --max_batch_size`: Maximum number of requests to process in a single batch during continuous batching.
-- `--dynamic_split_fuse`: Enable dynamic splitting and fusing of prompts to improve batch utilization.
-- `--cache_size`: Size of the KV-cache used for continuous batching (controls how many cached sequences can be stored).
-- `--use_cache_eviction`: Enable eviction of entries from the KV-cache when the configured cache size is exceeded.
+- `-b, --max_batch_size` (default: `256`): Maximum number of requests to process in a single batch during continuous batching.
+- `--dynamic_split_fuse` (default: `true`): Enable dynamic splitting and fusing of prompts to improve batch utilization.
+- `--cache_size` (default: `16 GB`): Size of the KV-cache used for continuous batching (controls how many cached sequences can be stored).
+- `--use_cache_eviction` (default: `false`): Enable eviction of entries from the KV-cache when the configured cache size is exceeded.
 
 ### Dataset JSON file format
 
