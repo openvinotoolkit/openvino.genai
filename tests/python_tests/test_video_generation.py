@@ -224,6 +224,93 @@ class TestAutoEncoderKLLTXVideo:
             assert hasattr(config, "scaling_factor")
 
 
+class TestAutoEncoderKLLTXVideoEncoder:
+    @pytest.fixture(autouse=True)
+    def require_encoder(self, video_generation_model):
+        encoder_path = Path(video_generation_model) / "vae_encoder"
+        if not encoder_path.exists():
+            pytest.skip("vae_encoder not available in test model")
+
+    def test_constructor_with_encoder(self, video_generation_model):
+        encoder_path = Path(video_generation_model) / "vae_encoder"
+        decoder_path = Path(video_generation_model) / "vae_decoder"
+        vae = ov_genai.AutoencoderKLLTXVideo(str(encoder_path), str(decoder_path))
+        assert vae is not None
+
+    def test_encode_without_compile_raises(self, video_generation_model):
+        import openvino as ov
+        import numpy as np
+
+        encoder_path = Path(video_generation_model) / "vae_encoder"
+        decoder_path = Path(video_generation_model) / "vae_decoder"
+        vae = ov_genai.AutoencoderKLLTXVideo(str(encoder_path), str(decoder_path))  # no compile
+        generator = ov_genai.CppStdGenerator(42)
+        dummy = ov.Tensor(np.zeros([1, 3, 9, 32, 32], dtype=np.float32))
+
+        with pytest.raises(Exception, match="must be compiled first"):
+            vae.encode(dummy, generator)
+
+    def test_encode_without_encoder_raises(self, video_generation_model):
+        import openvino as ov
+        import numpy as np
+
+        decoder_path = Path(video_generation_model) / "vae_decoder"
+        vae = ov_genai.AutoencoderKLLTXVideo(str(decoder_path), "CPU")  # decoder-only
+        generator = ov_genai.CppStdGenerator(42)
+        dummy = ov.Tensor(np.zeros([1, 3, 9, 32, 32], dtype=np.float32))
+
+        with pytest.raises(Exception, match="without 'VAE encoder' capability"):
+            vae.encode(dummy, generator)
+
+    def test_encode_output_shape(self, video_generation_model):
+        import openvino as ov
+        import numpy as np
+
+        encoder_path = Path(video_generation_model) / "vae_encoder"
+        decoder_path = Path(video_generation_model) / "vae_decoder"
+        vae = ov_genai.AutoencoderKLLTXVideo(str(encoder_path), str(decoder_path), "CPU")
+        config = vae.get_config()
+        generator = ov_genai.CppStdGenerator(42)
+
+        video = ov.Tensor(np.zeros([1, 3, 9, 32, 32], dtype=np.float32))
+        latent = vae.encode(video, generator)
+
+        assert latent is not None
+        shape = latent.shape
+        assert len(shape) == 5, f"Expected 5D latent [B, C, F, H, W], got shape {shape}"
+        assert shape[0] == 1
+        assert shape[1] == config.latent_channels
+
+    def test_encode_is_deterministic(self, video_generation_model):
+        import openvino as ov
+        import numpy as np
+
+        encoder_path = Path(video_generation_model) / "vae_encoder"
+        decoder_path = Path(video_generation_model) / "vae_decoder"
+        vae = ov_genai.AutoencoderKLLTXVideo(str(encoder_path), str(decoder_path), "CPU")
+
+        video = ov.Tensor(np.ones([1, 3, 9, 32, 32], dtype=np.float32) * 0.5)
+        latent1 = vae.encode(video, ov_genai.CppStdGenerator(42))
+        latent2 = vae.encode(video, ov_genai.CppStdGenerator(42))
+
+        np.testing.assert_array_equal(np.array(latent1), np.array(latent2))
+
+    def test_encode_varies_with_seed(self, video_generation_model):
+        import openvino as ov
+        import numpy as np
+
+        encoder_path = Path(video_generation_model) / "vae_encoder"
+        decoder_path = Path(video_generation_model) / "vae_decoder"
+        vae = ov_genai.AutoencoderKLLTXVideo(str(encoder_path), str(decoder_path), "CPU")
+
+        video = ov.Tensor(np.ones([1, 3, 9, 32, 32], dtype=np.float32) * 0.5)
+        latent1 = vae.encode(video, ov_genai.CppStdGenerator(42))
+        latent2 = vae.encode(video, ov_genai.CppStdGenerator(99))
+
+        assert not np.array_equal(np.array(latent1), np.array(latent2)), \
+            "Different generator seeds should produce different latents"
+
+
 class TestText2VideoPipelineAdvanced:
     def test_reshape(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model)
