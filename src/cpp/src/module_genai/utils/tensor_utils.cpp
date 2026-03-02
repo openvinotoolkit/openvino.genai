@@ -75,21 +75,27 @@ ov::Tensor squeeze(const ov::Tensor &tensor, size_t dim) {
 }
 
 ov::Tensor stack(const std::vector<ov::Tensor>& tensors, size_t axis) {
-    ov::Shape stacked_shape = tensors[0].get_shape();
+    ov::Shape input_shape = tensors[0].get_shape();
+    ov::Shape stacked_shape = input_shape;
     stacked_shape.insert(stacked_shape.begin() + static_cast<long>(axis), tensors.size());
     ov::Tensor stacked_tensor(tensors[0].get_element_type(), stacked_shape);
     size_t elem_size = tensors[0].get_element_type().size();
-    size_t inner = 1;
-    for (size_t i = axis + 1; i < stacked_shape.size(); ++i) {
-        inner *= stacked_shape[static_cast<long>(i)];
-    }
-    uint8_t *stacked_data = static_cast<uint8_t *>(stacked_tensor.data());
-    for (size_t i = 0; i < stacked_shape[0]; i++) {
-        for (size_t j = 0; j < tensors.size(); j++) {
-            auto tensor_data = static_cast<const uint8_t *>(tensors[j].data());
 
-            size_t in_offset = (i * inner) * elem_size;
-            size_t out_offset = ((i * tensors.size() + j) * inner) * elem_size;
+    size_t outer = 1;
+    for (size_t i = 0; i < axis; ++i) {
+        outer *= input_shape[i];
+    }
+    size_t inner = 1;
+    for (size_t i = axis; i < input_shape.size(); ++i) {
+        inner *= input_shape[i];
+    }
+
+    uint8_t *stacked_data = static_cast<uint8_t *>(stacked_tensor.data());
+    for (size_t o = 0; o < outer; ++o) {
+        for (size_t j = 0; j < tensors.size(); ++j) {
+            const uint8_t *tensor_data = static_cast<const uint8_t *>(tensors[j].data());
+            size_t in_offset  = o * inner * elem_size;
+            size_t out_offset = (o * tensors.size() + j) * inner * elem_size;
             std::memcpy(stacked_data + out_offset, tensor_data + in_offset, inner * elem_size);
         }
     }

@@ -4,10 +4,11 @@
 #pragma once
 
 #include <yaml-cpp/yaml.h>
+#include <variant>
 
 #include "module_genai/module.hpp"
 #include "module_genai/module_type.hpp"
-
+#include "model/qwen3_5/qwen3_5preprocessor.hpp"
 #include "visual_language/qwen2vl/classes.hpp"
 
 namespace ov {
@@ -17,7 +18,7 @@ class ImagePreprocessModule : public IBaseModule {
     DeclareModuleConstructor(ImagePreprocessModule);
 
 private:
-    std::shared_ptr<VisionEncoderQwen2VL> encoder_ptr = nullptr;
+    std::variant<std::shared_ptr<VisionEncoderQwen2VL>, std::shared_ptr<Qwen3_5Preprocessor>> encoder_ptr;
 };
 
 REGISTER_MODULE_CONFIG(ImagePreprocessModule);

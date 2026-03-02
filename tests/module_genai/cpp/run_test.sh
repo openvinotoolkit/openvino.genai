@@ -25,10 +25,10 @@ export MODEL_DIR=${SCRIPT_DIR_UNIT_TEST_CPP}/test_models
 app=../../../build/tests/module_genai/cpp/genai_modules_test
 
 # All tests
-$app
+# $app
 
 # All ModuleTest examples
-# $app --gtest_filter="ModuleTest*"
+$app --gtest_filter="ModuleTest*"
 
 # All PipelineTest examples
 # $app --gtest_filter="PipelineTest*"
