@@ -15,6 +15,7 @@ from data.tokenizer_configs import get_tokenizer_configs
 from openvino_genai import Tokenizer, ChatHistory
 from openvino_tokenizers import convert_tokenizer
 from transformers import AutoTokenizer
+from huggingface_hub import snapshot_download
 
 from utils.constants import get_disabled_mmap_ov_config
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
@@ -355,7 +356,8 @@ def test_special_tokens(prompt, ov_hf_tokenizers):
 
 
 def test_multiple_infer_request_state(tmp_path):
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained("llamafactory/tiny-random-Llama-3"))
+    model_cached = snapshot_download("llamafactory/tiny-random-Llama-3")  # required to avoid HF rate limits
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_cached))
     ov_tokenizer = convert_tokenizer(hf_tokenizer)
     openvino.save_model(ov_tokenizer, tmp_path / "openvino_tokenizer.xml")
     del ov_tokenizer, hf_tokenizer
@@ -390,7 +392,8 @@ def hf_ov_genai_models(request, tmp_path_factory):
     model_dir = tmp_path_factory.getbasetemp() / model_id.replace("/", "_")
     model_dir.mkdir(exist_ok=True, parents=True)
 
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_args)
+    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_cached, **hf_args)
     convert_args = {"number_of_inputs": hf_args.pop("number_of_inputs")} if "number_of_inputs" in hf_args else {}
     convert_and_save_tokenizer(hf_tokenizer, model_dir, **convert_args)
 
@@ -692,7 +695,8 @@ def test_load_special_tokens_from_special_tokens_map_json_with_string_repr(
 ):
     # only string representation is provided, find token integers by inference
     model_id, temp_path = model_tmp_path
-    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
+    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True))
 
     special_tokens_map_json = {}
     token_str_int_map = {}

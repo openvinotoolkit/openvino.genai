@@ -44,6 +44,7 @@ import numpy as np
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
+from huggingface_hub import snapshot_download
 from openvino_genai import (
     VLMPipeline,
     GenerationConfig,
@@ -228,17 +229,18 @@ def _get_ov_model(model_id: str) -> str:
         return model_dir
 
     def convert_to_temp(temp_dir: Path) -> None:
+        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
-                model_id,
+                model_cached,
                 trust_remote_code=True,
                 **align_with_optimum_cli,
             )
         )
         model = retry_request(
             lambda: OVModelForVisualCausalLM.from_pretrained(
-                model_id,
+                model_cached,
                 compile=False,
                 device="CPU",
                 export=True,
@@ -254,13 +256,11 @@ def _get_ov_model(model_id: str) -> str:
             )
         )
         if model.config.model_type == "llava-qwen2":
-            tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         # For tiny-random-internvl2 processor is actually tokenizer
         elif isinstance(processor, transformers.Qwen2TokenizerFast):
             tokenizer = processor
-            processor = transformers.AutoImageProcessor.from_pretrained(
-                model_id, trust_remote_code=True
-            )
+            processor = transformers.AutoImageProcessor.from_pretrained(model_cached, trust_remote_code=True)
         else:
             tokenizer = processor.tokenizer
             if tokenizer.chat_template is None:
@@ -1546,14 +1546,15 @@ def test_model_tags_representation(
     prompt = "Describe"
 
     align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
+    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
     if model_id == "qnguyen3/nanoLLaVA":
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         messages = [{"role": "user", "content": f"{ov_pipe_model.get_vision_tag(vision_type)(0)}{prompt}"}]
         templated_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     else:
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
-                model_id,
+                model_cached,
                 trust_remote_code=True,
                 **align_with_optimum_cli,
             )
@@ -1793,14 +1794,14 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
 
     def get_nanollava_processor():
         hf_model = transformers.AutoModelForCausalLM.from_pretrained(
-            model_id,
-            device_map='auto',
-            trust_remote_code=True)
+            model_cached, device_map="auto", trust_remote_code=True
+        )
         return NanollavaProcessorWrapper(hf_model.process_images, hf_model.config, hf_model.dtype)
 
     ov_pipe = ov_pipe_model.pipeline
 
     model_id = ov_pipe_model.model_id
+    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
     model_path = _get_ov_model(model_id)
     optimum_model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
 
@@ -1822,7 +1823,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     tokenizer = None
     if optimum_model.config.model_type == "llava-qwen2":
         processor = get_nanollava_processor()
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
 
         from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
 
@@ -1834,7 +1835,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         if optimum_model.config.model_type == "gemma3":
             processor.tokenizer.add_bos_token = False
         if optimum_model.config.model_type in ["internvl_chat", "minicpmv"]:
-            tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         if optimum_model.config.model_type == "minicpmv":
             # optimum 1.27.0 will manually apply chat template if processor.chat_template isn't set.
             # So, make sure we set it here to align with GenAI routines.
