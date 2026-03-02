@@ -44,4 +44,3 @@ class TestImage2Image:
         cpp_sample = SAMPLES_CPP_DIR / "image2image_concurrency"
         cpp_command = [cpp_sample, download_model, *prompts, download_test_content]
         run_sample(cpp_command)
-

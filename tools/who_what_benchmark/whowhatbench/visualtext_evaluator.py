@@ -175,7 +175,11 @@ class VisualTextEvaluator(TextEvaluator):
         images = image_data.values
         videos = videos_data.values
 
-        for p, i, v in tqdm(zip_longest(prompts, images, videos), desc="Evaluate pipeline"):
+        for p, i, v in tqdm(
+            zip_longest(prompts, images, videos),
+            total=max(len(prompts), len(images), len(videos)),
+            desc="Evaluate pipeline",
+        ):
             answers.append(
                 gen_answer_fn(
                     model,

@@ -1,7 +1,13 @@
 import sys
 import pytest
-
+import shutil
+from pathlib import Path
+from test_cli_image import get_similarity
 from conftest import convert_model, run_wwb
+
+
+def remove_artifacts(artifacts_path: Path):
+    shutil.rmtree(artifacts_path)
 
 
 @pytest.mark.parametrize(
@@ -15,12 +21,11 @@ from conftest import convert_model, run_wwb
         ("Qwen/Qwen3-Embedding-0.6B", "text-embedding"),
     ],
 )
+@pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)
 def test_embeddings_basic(model_id, model_type, tmp_path):
-    if sys.platform == "win32":
-        pytest.xfail("Ticket 178790")
-
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = convert_model(model_id)
+    SIMILARITY_THRESHOLD = 0.99
 
     # Collect reference with HF model
     run_wwb(
@@ -39,8 +44,9 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         ]
     )
 
+    outputs_path = tmp_path / "optimum"
     # test Optimum
-    run_wwb(
+    outputs = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -52,11 +58,25 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
             "CPU",
             "--model-type",
             model_type,
+            "--output",
+            outputs_path,
         ]
     )
 
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs
+
+    similarity = get_similarity(outputs)
+    assert similarity >= SIMILARITY_THRESHOLD
+
+    remove_artifacts(outputs_path)
+
+    outputs_path = tmp_path / "genai"
     # test GenAI
-    run_wwb(
+    outputs = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -70,15 +90,24 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
             model_type,
             "--genai",
             "--output",
-            tmp_path,
+            outputs_path,
         ]
     )
+
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs
+
+    similarity = get_similarity(outputs)
+    assert similarity >= SIMILARITY_THRESHOLD
 
     # test w/o models
     run_wwb(
         [
             "--target-data",
-            tmp_path / "target.csv",
+            outputs_path / "target.csv",
             "--num-samples",
             "1",
             "--gt-data",
@@ -90,6 +119,8 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
             "--genai",
         ]
     )
+
+    remove_artifacts(outputs_path)
 
 
 @pytest.mark.parametrize(
@@ -99,11 +130,11 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         ("Qwen/Qwen3-Embedding-0.6B", "text-embedding", 12),
     ],
 )
+@pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)
 def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
-    if sys.platform == "win32":
-        pytest.xfail("Ticket 178790")
     GT_FILE = tmp_path / f"gt_batch_{batch_size}.csv"
     MODEL_PATH = convert_model(model_id)
+    SIMILARITY_THRESHOLD = 0.99
 
     # Collect reference with HF model
     run_wwb(
@@ -125,7 +156,8 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
     )
 
     # test Optimum
-    run_wwb(
+    outputs_path = tmp_path / "optimum"
+    outputs = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -137,13 +169,26 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
             "CPU",
             "--model-type",
             model_type,
+            "--output",
+            outputs_path,
             "--embeds_batch_size",
             str(batch_size),
         ]
     )
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs
+
+    similarity = get_similarity(outputs)
+    assert similarity >= SIMILARITY_THRESHOLD
+
+    remove_artifacts(outputs_path)
 
     # test GenAI
-    run_wwb(
+    outputs_path = tmp_path / "genai"
+    outputs = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -157,17 +202,26 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
             model_type,
             "--genai",
             "--output",
-            tmp_path,
+            outputs_path,
             "--embeds_batch_size",
             str(batch_size),
         ]
     )
 
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs
+
+    similarity = get_similarity(outputs)
+    assert similarity >= SIMILARITY_THRESHOLD
+
     # test w/o models
     run_wwb(
         [
             "--target-data",
-            tmp_path / "target.csv",
+            outputs_path / "target.csv",
             "--num-samples",
             "1",
             "--gt-data",
@@ -181,3 +235,5 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
             str(batch_size),
         ]
     )
+
+    remove_artifacts(outputs_path)
