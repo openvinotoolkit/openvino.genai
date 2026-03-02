@@ -210,11 +210,14 @@ def test_image_generation_cpu_vs_npuw_cpu(image_generation_model):
     cpu_pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
     cpu_image = cpu_pipe.generate(**generation_args)
 
-    npuw_pipe = ov_genai.Text2ImagePipeline(image_generation_model, "NPU", {
-        "NPU_USE_NPUW": "YES",
-        "NPUW_DEVICES": "CPU",
-        "NPUW_ONLINE_PIPELINE": "NONE",
-    })
+    npuw_pipe = ov_genai.Text2ImagePipeline(
+        image_generation_model,
+        "NPU", {
+            "NPU_USE_NPUW": "YES",
+            "NPUW_DEVICES": "CPU",
+            "NPUW_ONLINE_PIPELINE": "NONE",
+        },
+    )
     npuw_image = npuw_pipe.generate(**generation_args)
 
     assert (cpu_image.data == npuw_image.data).all()
