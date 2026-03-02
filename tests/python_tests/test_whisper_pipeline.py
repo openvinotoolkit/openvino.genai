@@ -831,7 +831,7 @@ def streamer_for_test(request):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
-@pytest.mark.skipif(sys.platform == "darwin", reason="Ticket - 182134")
+@pytest.mark.xfail(sys.platform == "darwin", reason="Ticket - 182134", raises=AssertionError)
 def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
     _, _, _, genai_pipe = read_whisper_model(model_descr)
 
