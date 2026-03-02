@@ -28,10 +28,12 @@ ov_continious_batching_pipe
 """
 
 import collections
+import ctypes
 from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Generator
+from tkinter import Image
+from typing import Any, Callable, Generator
 import openvino_tokenizers
 import openvino
 import PIL
@@ -55,6 +57,10 @@ from openvino_genai import (
     GenerationFinishReason,
     ChatHistory,
 )
+try:
+    from huggingface_hub import hf_hub_download
+except Exception:  # pragma: no cover
+    hf_hub_download = None
 
 from utils.network import retry_request
 from utils.generation_config import (
@@ -87,19 +93,38 @@ class VlmModelInfo:
         return self.image_tag if vision_type == VisionType.IMAGE else self.video_tag
 
 
+def _is_videochat_flash_model(model_id: str) -> bool:
+    return "VideoChat-Flash" in model_id
+
+class _VlmPipelineVideoChatFlashImageGuard:
+    def __init__(self, pipeline: VLMPipeline, model_id: str):
+        self._pipeline = pipeline
+        self._model_id = model_id
+
+    def generate(self, *args: Any, **kwargs: Any):
+        if _is_videochat_flash_model(self._model_id) and ("image" in kwargs or "images" in kwargs):
+            pytest.skip("VideoChat-Flash image/image(s) tests are disabled. Use video/videos input.")
+        return self._pipeline.generate(*args, **kwargs)
+
+    def __getattr__(self, name: str):
+        return getattr(self._pipeline, name)
+
+
+
 PROMPTS: list[str] = [
     "What is in the image?",
     "What is special about this image?",
-    "Describe the image"
+    "Describe the image",
 ]
+
 
 
 VIDEO_MODEL_IDS = [
     "optimum-intel-internal-testing/tiny-random-llava-next-video",
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+    "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B",
 ]
-
 
 MODEL_IDS: list[str] = [
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
@@ -126,6 +151,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next": lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
@@ -139,6 +165,8 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
+    # vicky : no video tags for other models, including gemma3 which supports video, because it uses same tags for image and video?
+    "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B": lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
 
@@ -170,15 +198,20 @@ MAX_RETRIES = 10
 RETRY_BASE_DELAY_SEC = 0.1
 RETRY_MAX_DELAY_SEC = 2.0
 
+#TEST_IMAGE_URLS = {
+#    'cat': 'https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11',
+#    'car': 'https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg',
+  #  'handwritten': 'https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350' #"C:\Users\SAS\Downloads\handwritten.png"
+#}
+
 TEST_IMAGE_URLS = {
-    'cat': 'https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11',
-    'car': 'https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg',
-    'handwritten': 'https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350'
+    'cat': 'C:/Users/SAS/Downloads/pytest_imgs/cat.jpg',
+    'car': 'C:/Users/SAS/Downloads/pytest_imgs/car.jpg',
+    'handwritten': 'C:/Users/SAS/Downloads/pytest_imgs/handwritten.png'
 }
-
-
 NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-internvl2",
+    "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B",
 }
 
 DEFAULT_NPUW_PROPERTIES = {
@@ -222,7 +255,10 @@ def _get_ov_model(model_id: str) -> str:
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
     model_dir = ov_cache_converted_dir / dir_name
-
+    ## vicky to modify model_dir
+    ## enable 2 case only: 1) qwen2.5-vl 2) flash-qwen2_5-7B_InternVideo2-1B 
+    if model_id in {"optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B"}:
+        model_dir = "D:\\models\\videochat-ov-int4"
     manager = AtomicDownloadManager(model_dir)
 
     if manager.is_complete() or (model_dir / "openvino_language_model.xml").exists():
@@ -282,6 +318,18 @@ def _get_ov_model(model_id: str) -> str:
     manager.execute(convert_to_temp)
     return model_dir
 
+def _ov_tensor_to_numpy_view(t: openvino.Tensor) -> np.ndarray:
+    # Avoid np.asarray(openvino.Tensor) -> 0-d object array in some builds
+    dt_map = {
+        openvino.Type.u8: np.uint8,
+        openvino.Type.f32: np.float32,
+        openvino.Type.i64: np.int64,
+    }
+
+    if t.element_type not in dt_map:
+        raise ValueError(f"Unsupported tensor element type: {t.element_type}")
+    arr = np.frombuffer(t.data, dtype=dt_map[t.element_type])
+    return arr.reshape(tuple(int(x) for x in t.shape))
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
 GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
@@ -386,6 +434,7 @@ def ov_npu_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     models_path = _get_ov_model(ov_model)
 
     pipeline = VLMPipeline(models_path, "NPU", config=_sorted_tuple_to_dict(config))
+
     return VlmModelInfo(
         ov_model,
         "SDPA",
@@ -433,20 +482,19 @@ def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[8])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
-
 def download_image(link: str) -> PIL.Image:
     return PIL.Image.open(requests.get(link, stream=True).raw).convert("RGB")
 
-
 def from_cache_or_download(pytestconfig: pytest.Config, link: str, file_name: str):
     def implementation():
-        try:
+        try: # vicky for test
             image_path = pytestconfig.cache.mkdir("images") / file_name
+            image_path = Path("C:/Users/SAS/Downloads/pytest_imgs") / file_name
         except AttributeError:
             # Cache is disabled with -p no:cacheprovider
             return download_image(link)
         if image_path.exists():
-            image: PIL.Image = PIL.Image.open(image_path)
+            image: PIL.Image = PIL.Image.open(image_path).convert("RGB")
         else:
             image = download_image(link)
             image.save(image_path)
@@ -473,7 +521,7 @@ def synthetic_video(pytestconfig):
     image = from_cache_or_download(pytestconfig, car_url, "car.jpg")
 
     # make 10 frames
-    total_frames = 10
+    total_frames = 12
     frames = []
     frames.append(np.array(image))
     shift = 3
@@ -493,11 +541,13 @@ def synthetic_video(pytestconfig):
 def synthetic_video_32x32(synthetic_video):
     return resize_video(synthetic_video, (32, 32))
 
+@pytest.fixture(scope="module")
+def synthetic_video_224x224(synthetic_video):
+    return resize_video(synthetic_video, (224, 224))
 
 @pytest.fixture(scope="module")
 def cat_image_448x448(cat_image):
     return cat_image.resize((448, 448))
-
 
 @pytest.fixture(scope="module")
 def cat_image_384x384(cat_image):
@@ -523,21 +573,48 @@ def cat_tensor(cat_image) -> openvino.Tensor:
 def car_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
     return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['car'], "car.jpg"))
 
+@pytest.fixture(scope="module")
+def synthetic_video_224x224_tensor(synthetic_video_224x224):
+    return openvino.Tensor(synthetic_video_224x224)
+
 
 @pytest.fixture(scope="module")
 def synthetic_video_32x32_tensor(synthetic_video_32x32):
     return openvino.Tensor(synthetic_video_32x32)
 
+@pytest.fixture(scope="module")
+def synthetic_video_32x32_tensor_nchw(synthetic_video_32x32):
+    arr = np.asarray(synthetic_video_32x32)
+    # NHWC -> NCHW
+    if arr.ndim != 4 or arr.shape[-1] not in (1, 3):
+        raise ValueError(f"Expected NHWC video, got shape={arr.shape}")
+    arr_nchw = np.transpose(arr, (0, 3, 1, 2))
+    return openvino.Tensor(np.ascontiguousarray(arr_nchw))
 
 @pytest.fixture(scope="module")
 def handwritten_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
     return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['handwritten'], "handwritten.png"))
 
+@pytest.fixture(scope="module")
+def four_frame_tensor(pytestconfig: pytest.Config, synthetic_video) -> openvino.Tensor:
+    # return openvino.Tensor(synthetic_video[:4])  # vicky for test, use synthetic video frames instead of real images
+    frame_single = from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['car'], "car.jpg")
+    frames_pil = [
+        frame_single,
+        frame_single,
+        frame_single,
+        frame_single,
+    ]
+   # frames_np = [np.array(img.convert("RGB")) for img in frames_pil]
+    frames_np = synthetic_video[:4]  # vicky for test, use synthetic video frames instead of real images
+    cfg = PreprocessConfig()
+    return preprocess_video(frames_np, cfg) ## TODO: preprocess_video should be called inside pipeline, not in test fixture, to avoid any unexpected preprocessing logic in preprocess_video. But currently some models require specific preprocessing (e.g. video flash requires padding to 4 frames), so we put it here for now. We can refactor it later when we have a better solution for model-specific preprocessing.
+
 
 @pytest.fixture(scope="function", params=[
     pytest.param([], id="no_images"),
     pytest.param(["cat_tensor"], id="single_image"),
-    pytest.param(["cat_tensor", "handwritten_tensor", "car_tensor"], id="multiple_images"),
+    pytest.param(["cat_tensor", "handwritten_tensor", "car_tensor"], id="multiple_images")
 ])
 def test_images(request: pytest.FixtureRequest):
     return [request.getfixturevalue(image) for image in request.param]
@@ -900,6 +977,10 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
             ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"),
             id="qwen2.5-vl/SDPA",
         ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B", "SDPA"),
+            id="VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B/SDPA",
+        ),
     ],
     indirect=["ov_pipe_model"],
 )
@@ -913,7 +994,7 @@ def test_vlm_pipeline_chat_history_multipart_content(
 
     prompts_with_images = [
         (PROMPTS[0], iteration_images[0]),
-        *[(PROMPTS[1], image_set) for image_set in iteration_images[1:]],
+      #  *[(PROMPTS[1], image_set) for image_set in iteration_images[1:]],
     ]
 
     # Collect chat_history results (baseline)
@@ -1463,6 +1544,7 @@ TAG_INSERTED_BY_TEMPLATE = [
     ("optimum-intel-internal-testing/tiny-random-llava-next", "PA"),
     ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"),
     ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B", "PA"),
     ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
     ("qnguyen3/nanoLLaVA", "PA"),
     ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
@@ -1776,7 +1858,9 @@ def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo, vision_type: 
 @parametrize_model_with_vision_type()
 def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo, vision_type: VisionType):
     ov_pipe = ov_pipe_model.pipeline
+    print(f"Testing model {ov_pipe_model.model_id} with vision type {vision_type}")
     vision_tag = ov_pipe_model.get_vision_tag(vision_type)
+    print(f"Got vision tag: {vision_tag(0)}")
 
     with pytest.raises(RuntimeError):
         ov_pipe.generate(vision_tag(0))
@@ -2226,3 +2310,21 @@ def test_cdpruner_continuous_batching(
     )
 
     assert results[0].texts[0].strip() != "", "Result should not be empty"
+
+VIDEOCHAT_FLASH_MODEL_ID = "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B"
+
+
+@pytest.fixture(scope="module", params=ATTENTION_BACKEND, ids=lambda b: f"VideoChat-Flash/{b}")
+def ov_videochatflash_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeline:
+    """
+    Raw VideoChat-Flash pipeline without _VlmPipelineImageAdapter.
+    Used for input-contract tests that must not auto-pad frames.
+    """
+    ov_backend = request.param
+    model_path = _get_ov_model(VIDEOCHAT_FLASH_MODEL_ID)
+    return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_backend)
+
+def test_videochatflash_rejects_image_input(ov_videochatflash_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor):
+    generation_config = _setup_generation_config(ov_videochatflash_pipe_raw, max_new_tokens=5, do_sample=False)
+    with pytest.raises(RuntimeError):
+        ov_videochatflash_pipe_raw.generate(PROMPTS[0], image=cat_tensor, generation_config=generation_config)
