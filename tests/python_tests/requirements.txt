@@ -20,7 +20,7 @@ einops==0.8.2
 torchvision==0.17.2; platform_system == "Darwin" and platform_machine == "x86_64"
 torchvision==0.23.0; platform_system != "Darwin" or platform_machine != "x86_64"
 # - openbmb/MiniCPM-V-2
-timm==1.0.24
+timm==1.0.25
 # - openai/whisper-base
 librosa==0.11.0
 soundfile==0.13.1
