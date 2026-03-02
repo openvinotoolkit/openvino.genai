@@ -167,6 +167,8 @@ auto pipeline_metrics_docstring = R"(
     :type avg_cache_usage: float
 
     :param kv_cache_size_in_bytes: Total allocated KV cache size in bytes, based on the total number of KV blocks.
+      This value represents reserved/allocated memory for the KV cache and does not
+      distinguish between used and unused portions in dynamic KV cache configurations.
     :type kv_cache_size_in_bytes: int
 )";
 
