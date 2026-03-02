@@ -124,10 +124,7 @@ public:
             begin[0] = i;
             end[0] = i + 1;
 
-            // Create a batch-1 view of the sample input tensor and set it as model input.
             m_requests[i].set_tensor("hidden_states", ov::Tensor(sample, begin, end));
-
-            // Create a batch-1 view of the out_sample output tensor and set it as model output.
             m_requests[i].set_tensor("out_sample", ov::Tensor(out_sample, begin, end));
 
             // kick off infer for this request.

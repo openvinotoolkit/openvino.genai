@@ -201,8 +201,8 @@ class TestImageGenerationCallback:
 
 
 def construct_reshape(model_dir):
-    NHWC = 1, 64, 64, 3
     pipe = ov_genai.Text2ImagePipeline(model_dir)
+    NHWC = 1, 64, 64, 3
     pipe.reshape(*NHWC)
     return pipe
 
