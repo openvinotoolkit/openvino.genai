@@ -1,8 +1,12 @@
 import argparse
 import difflib
+import json
 import numpy as np
 import logging
 import os
+from importlib.resources import files
+from datetime import datetime
+import jinja2
 
 from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
@@ -19,6 +23,96 @@ from whowhatbench.utils import get_json_config
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def raise_exception(message: str):
+    raise Exception(message)
+
+
+def strftime_now(format_string: str):
+    return datetime.now().strftime(format_string)
+
+
+def _is_json_dataset(dataset: str) -> bool:
+    if dataset is None:
+        return False
+    return dataset.lower().endswith(".json")
+
+
+def _resolve_json_dataset_path(dataset_path: str) -> str:
+    if os.path.exists(dataset_path):
+        return dataset_path
+
+    resource_path = files('whowhatbench.prompts').joinpath(dataset_path)
+    if resource_path.is_file():
+        return str(resource_path)
+
+    raise FileNotFoundError(
+        f"JSON dataset file '{dataset_path}' was not found as a local file or in whowhatbench.prompts resources"
+    )
+
+
+def _read_json_dataset(dataset_path: str):
+    with open(dataset_path, "r", encoding="utf-8") as input_file:
+        content = input_file.read().strip()
+
+    if not content:
+        return []
+
+    if content.startswith("["):
+        parsed = json.loads(content)
+        if not isinstance(parsed, list):
+            raise ValueError(f"JSON dataset '{dataset_path}' must contain an array of records")
+        return parsed
+
+    items = []
+    for line in content.splitlines():
+        line = line.strip()
+        if line:
+            items.append(json.loads(line))
+    return items
+
+
+def _render_messages_dataset_to_prompts(records, tokenizer):
+    prompts = []
+    chat_template = None
+    
+    if tokenizer is not None:
+        try:
+            chat_template = tokenizer.chat_template
+        except AttributeError:
+            pass
+    
+    for item in records:
+        messages = item.get("messages", [])
+        tools = item.get("tools", [])
+        
+        if chat_template is None:
+            # Fallback: concatenate message content
+            prompt = "\n".join(
+                str(msg.get("content", ""))
+                for msg in messages
+                if isinstance(msg, dict)
+            )
+        else:
+            try:
+                jinja_env = jinja2.Environment()
+                jinja_env.policies["json.dumps_kwargs"]["ensure_ascii"] = False
+                jinja_env.globals["raise_exception"] = raise_exception
+                jinja_env.filters["from_json"] = json.loads
+                jinja_env.filters['strftime_now'] = strftime_now
+                prompt = jinja_env.from_string(chat_template).render(
+                    messages=messages,
+                    tools=tools,
+                    strftime_now=strftime_now
+                )
+            except Exception as e:
+                logger.warning(f"Error rendering template: {e}")
+                prompt = ""
+        
+        prompts.append(prompt)
+    
+    return {"prompts": prompts}
 
 
 def pruning_ratio_type(value: str) -> int:
@@ -109,6 +203,7 @@ def parse_args():
         default=None,
         help="Name of the dataset with prompts. The interface for dataset is load_dataset from datasets library."
         " Please provide this argument in format path,name (for example wikitext,wikitext-2-v1)."
+        " Local .json files are also supported for chat messages datasets (records with messages/tools)."
         " If None then internal list of prompts will be used.",
     )
     parser.add_argument(
@@ -335,20 +430,23 @@ def check_args(args):
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
 
 
-def load_prompts(args):
+def load_prompts(args, tokenizer=None):
     if args.dataset is None:
         return None
-    split = "validation"
+
+    if _is_json_dataset(args.dataset):
+        resolved_path = _resolve_json_dataset_path(args.dataset)
+        data = _read_json_dataset(resolved_path)
+        return _render_messages_dataset_to_prompts(data, tokenizer)
+
+    dataset_split = "validation"
     if args.split is not None:
-        split = args.split
-    if "," in args.dataset:
-        path_name = args.dataset.split(",")
-        path = path_name[0]
-        name = path_name[1]
-    else:
-        path = args.dataset
+        dataset_split = args.split
+
+    path, separator, name = args.dataset.partition(",")
+    if not separator:
         name = None
-    data = load_dataset(path=path, name=name, split=split)
+    data = load_dataset(path=path, name=name, split=dataset_split)
 
     res = data[args.dataset_field]
     res = {"prompts": list(res)}
@@ -628,10 +726,20 @@ def create_evaluator(base_model, args):
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
-        prompts = load_prompts(args)
+        
+        # Load tokenizer early if we have a JSON dataset (for chat template rendering)
+        tokenizer_for_prompts = None
+        if _is_json_dataset(args.dataset) and task == "text":
+            tokenizer_for_prompts = load_tokenizer(args) if not args.llamacpp else None
+        
+        prompts = load_prompts(args, tokenizer=tokenizer_for_prompts)
 
         if task == "text":
-            tokenizer = load_tokenizer(args) if not args.llamacpp else None
+            if tokenizer_for_prompts is None:
+                tokenizer = load_tokenizer(args) if not args.llamacpp else None
+            else:
+                tokenizer = tokenizer_for_prompts
+            prompts = load_prompts(args, tokenizer=tokenizer)
 
             if args.genai:
                 gen_answer_fn = genai_gen_text
@@ -641,7 +749,7 @@ def create_evaluator(base_model, args):
                 gen_answer_fn = None
 
             use_chat_template = (
-                tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
+                tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template and not _is_json_dataset(args.dataset)
             )
             return EvaluatorCLS(
                 base_model=base_model,
@@ -664,6 +772,7 @@ def create_evaluator(base_model, args):
                 ),
             )
         elif task == "text-to-image":
+            prompts = load_prompts(args)
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -677,6 +786,7 @@ def create_evaluator(base_model, args):
                 seed=args.seed,
             )
         elif task == "text-to-video":
+            prompts = load_prompts(args)
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -689,6 +799,7 @@ def create_evaluator(base_model, args):
                 seed=args.seed,
             )
         elif task == "visual-text" or task == "visual-video-text":
+            prompts = load_prompts(args)
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
             if config and is_model_with_automatic_crop(config) and args.hf:
