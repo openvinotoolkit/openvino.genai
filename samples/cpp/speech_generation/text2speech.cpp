@@ -4,8 +4,6 @@
 #include "audio_utils.hpp"
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 
-#include <filesystem>
-#include <fstream>
 #include <optional>
 #include <string>
 #include <vector>
@@ -64,13 +62,6 @@ std::vector<std::string> normalized_argv(int argc, char* argv[]) {
     }
     return args;
 #endif
-}
-
-uint32_t detect_default_sample_rate(const std::filesystem::path& models_path) {
-    if (std::filesystem::exists(models_path / "openvino_model.xml")) {
-        return 24000;
-    }
-    return 16000;
 }
 
 } // namespace
@@ -141,8 +132,7 @@ int main(int argc, char* argv[]) try {
     auto waveform_size = gen_speech.speeches[0].get_size();
     auto waveform_ptr = gen_speech.speeches[0].data<const float>();
     auto bits_per_sample = gen_speech.speeches[0].get_element_type().bitwidth();
-    const uint32_t output_sample_rate =
-        sample_rate > 0 ? sample_rate : detect_default_sample_rate(std::filesystem::path(models_path));
+    const uint32_t output_sample_rate = sample_rate > 0 ? sample_rate : gen_speech.output_sample_rate;
     utils::audio::save_to_wav(waveform_ptr, waveform_size, output_file_name, bits_per_sample, output_sample_rate);
     std::cout << "[Info] Text successfully converted to audio file \"" << output_file_name << "\"." << std::endl;
 

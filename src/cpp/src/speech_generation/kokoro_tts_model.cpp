@@ -636,6 +636,7 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
     }
 
     Text2SpeechDecodedResults result;
+    result.output_sample_rate = 24000;
 
     for (const auto& text : texts) {
         std::vector<float> merged_audio;

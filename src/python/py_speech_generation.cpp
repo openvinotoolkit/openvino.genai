@@ -32,9 +32,6 @@ auto speech_generation_config_docstring = R"(
     Shared parameters:
     :param speed: speech speed multiplier.
     :type speed: float
-
-    :param sample_rate: output sample rate.
-    :type sample_rate: int
     
     Speech-generation specific parameters:
     :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
@@ -66,10 +63,13 @@ auto speech_generation_perf_metrics_docstring = R"(
 
 auto text_to_speech_decoded_results = R"(
     Structure that stores the result from the generate method, including a list of waveform tensors
-    sampled at 16 kHz, along with performance metrics
+    along with output sample rate and performance metrics
 
-    :param speeches: a list of waveform tensors sampled at 16 kHz
+    :param speeches: a list of generated waveform tensors
     :type speeches: list
+
+    :param output_sample_rate: sample rate of generated waveform tensors
+    :type output_sample_rate: int
 
     :param perf_metrics: performance metrics
     :type perf_metrics: SpeechGenerationPerfMetrics
@@ -89,7 +89,8 @@ auto text_to_speech_generate_docstring = R"(
     :param properties: speech generation parameters specified as properties
     :type properties: dict
 
-    :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+    :returns: raw audios of the input texts spoken in the specified speaker's voice;
+              sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
     :rtype: Text2SpeechDecodedResults
 )";
 
@@ -130,7 +131,6 @@ void init_speech_generation_pipeline(py::module_& m) {
             return update_speech_generation_config_from_kwargs(SpeechGenerationConfig(), kwargs);
         }))
         .def_readwrite("speed", &SpeechGenerationConfig::speed)
-        .def_readwrite("sample_rate", &SpeechGenerationConfig::sample_rate)
         .def_readwrite("minlenratio", &SpeechGenerationConfig::minlenratio)
         .def_readwrite("maxlenratio", &SpeechGenerationConfig::maxlenratio)
         .def_readwrite("threshold", &SpeechGenerationConfig::threshold)
@@ -153,6 +153,7 @@ void init_speech_generation_pipeline(py::module_& m) {
     py::class_<Text2SpeechDecodedResults>(m, "Text2SpeechDecodedResults", text_to_speech_decoded_results)
         .def(py::init<>())
         .def_readonly("speeches", &Text2SpeechDecodedResults::speeches)
+        .def_readonly("output_sample_rate", &Text2SpeechDecodedResults::output_sample_rate)
         .def_readonly("perf_metrics", &Text2SpeechDecodedResults::perf_metrics);
 
     py::class_<Text2SpeechPipeline>(m, "Text2SpeechPipeline", "Text-to-speech pipeline")

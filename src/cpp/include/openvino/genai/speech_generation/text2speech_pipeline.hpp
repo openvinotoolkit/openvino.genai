@@ -13,10 +13,11 @@ class Text2SpeechPipelineImpl;
 
 /**
  * Structure that stores the result from the generate method, including a list of waveform tensors
- * sampled at 16 kHz, along with performance metrics
+ * and performance metrics.
  */
 struct Text2SpeechDecodedResults {
     std::vector<ov::Tensor> speeches;
+    uint32_t output_sample_rate = 0;
     SpeechGenerationPerfMetrics perf_metrics;
 };
 
@@ -47,7 +48,8 @@ public:
      * voice. If not provided for SpeechT5 TSS model, the 7306th vector from the validation set of the
      * `Matthijs/cmu-arctic-xvectors` dataset is used by default.
      * @param properties Speech generation parameters specified as properties
-     * @returns raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+    * @returns raw audios of the input texts spoken in the specified speaker's voice; sample rate is provided in
+    * `Text2SpeechDecodedResults::output_sample_rate`
      */
     Text2SpeechDecodedResults generate(const std::string& text,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),
@@ -62,7 +64,8 @@ public:
      * voice. If not provided for SpeechT5 TSS model, the 7306th vector from the validation set of the
      * `Matthijs/cmu-arctic-xvectors` dataset is used by default.
      * @param properties Speech generation parameters specified as properties
-     * @returns raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+    * @returns raw audios of the input texts spoken in the specified speaker's voice; sample rate is provided in
+    * `Text2SpeechDecodedResults::output_sample_rate`
      */
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),

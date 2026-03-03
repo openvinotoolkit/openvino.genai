@@ -24,7 +24,6 @@ void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_m
     using ov::genai::utils::read_anymap_param;
 
     read_anymap_param(config_map, "speed", speed);
-    read_anymap_param(config_map, "sample_rate", sample_rate);
     read_anymap_param(config_map, "minlenratio", minlenratio);
     read_anymap_param(config_map, "maxlenratio", maxlenratio);
     read_anymap_param(config_map, "threshold", threshold);
@@ -37,7 +36,6 @@ void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_m
 
 void SpeechGenerationConfig::validate() const {
     OPENVINO_ASSERT(speed > 0.0f, "speed must be positive");
-    OPENVINO_ASSERT(sample_rate > 0, "sample_rate must be positive");
     OPENVINO_ASSERT(minlenratio >= 0.0f, "minlenratio must be non-negative");
     OPENVINO_ASSERT(maxlenratio > minlenratio, "maxlenratio must be greater than minlenratio");
     OPENVINO_ASSERT(0.0f <= threshold && threshold <= 1.0f, "threshold must be in the range [0; 1]");

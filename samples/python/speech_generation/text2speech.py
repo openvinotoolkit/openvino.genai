@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
-import pathlib
 
 import numpy as np
 import openvino as ov
@@ -51,10 +50,8 @@ def main():
     output_file_name = "output_audio.wav"
     if args.sample_rate > 0:
         sample_rate = args.sample_rate
-    elif (pathlib.Path(args.model_dir) / "openvino_model.xml").exists():
-        sample_rate = 24000
     else:
-        sample_rate = 16000
+        sample_rate = result.output_sample_rate
     sf.write(output_file_name, speech_data, samplerate=sample_rate)
 
     print("[Info] Text successfully converted to audio file \"", output_file_name, "\".")
