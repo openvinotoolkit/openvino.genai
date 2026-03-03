@@ -70,7 +70,10 @@ public:
 
     /**
      * Runs text preprocessing/phonemization and returns Kokoro phoneme chunks for one input text.
-     * This is useful for parity/debug tests against native Kokoro Python preprocessing.
+     *
+     * NOTE: This API is temporary and currently exposed only for debugging/parity analysis
+     * between misaki-cpp and Python Misaki preprocessing behavior.
+     *
      * @param text input text to phonemize
      * @param properties Speech generation parameters specified as properties
      * @returns phoneme chunks used by Kokoro backend prior to acoustic inference
@@ -80,6 +83,10 @@ public:
 
     /**
      * Runs text preprocessing/phonemization and returns Kokoro phoneme chunks for each input text.
+     *
+     * NOTE: This API is temporary and currently exposed only for debugging/parity analysis
+     * between misaki-cpp and Python Misaki preprocessing behavior.
+     *
      * @param texts input texts to phonemize
      * @param properties Speech generation parameters specified as properties
      * @returns a list of per-input phoneme chunk lists
