@@ -12,7 +12,7 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
 
 int main(int argc, char* argv[]) try {
     if (argc < 3 || argc > 5) {
-        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE> <PROMPT_LOOKUP>");
+        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> [DEVICE] [PROMPT_LOOKUP]");
     }
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
