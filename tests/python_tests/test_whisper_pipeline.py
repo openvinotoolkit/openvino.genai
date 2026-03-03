@@ -878,3 +878,23 @@ def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
 
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
+def test_2_generate(model_descr, sample_from_dataset):
+    _, _, _, genai_pipe = read_whisper_model(model_descr)
+
+    result_1 = genai_pipe.generate(sample_from_dataset)
+    print("First generate:")
+    print(result_1.texts[0])
+
+    config = genai_pipe.get_generation_config()
+    result_2 = genai_pipe.generate(sample_from_dataset, config)
+
+    print("Second generate:")
+    print(result_2.texts[0])
+
+    result_3 = genai_pipe.generate(sample_from_dataset)
+    print("Third generate:")
+    print(result_3.texts[0])
