@@ -89,13 +89,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     log.info(f"[{'warm-up' if num == 0 else num}][P{image_id}]{out_str}")
 
     result_md5_list = []
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start()
-
+    mem_consumption.smart_start(num)
     input_text_list = [input_text] * args['batch_size']
     input_data = pipe.tokenizer(input_text, return_tensors='pt')
     input_data.pop('token_type_ids', None)
@@ -108,24 +102,19 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     start = time.perf_counter()
     res = pipe(input_text_list, **input_args, num_images_per_prompt=args['batch_size']).images
     end = time.perf_counter()
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
+    generation_time = end - start
+    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
     for bs_idx in range(args['batch_size']):
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, proc_id, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
-    generation_time = end - start
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=input_token_size * args['batch_size'],
         infer_count=input_args["num_inference_steps"],
         gen_time=generation_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=image_id,
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -157,13 +146,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
             log.warning(f"image generation pipeline was reshaped with guidance_scale={reshaped_gs}, but is being passed into generate() as {new_gs}")
 
     result_md5_list = []
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start()
-
+    mem_consumption.smart_start(num)
     input_text_list = [input_text] * args['batch_size']
     if num == 0 and args["output_dir"] is not None:
         for bs_idx, in_text in enumerate(input_text_list):
@@ -185,9 +168,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
     elif "callback" in input_args:
         performance_metrics = callback
 
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
+    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
     for bs_idx in range(args['batch_size']):
         image = Image.fromarray(res[bs_idx])
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(image, args, image_id, num, bs_idx, proc_id, '.png')
@@ -199,11 +180,8 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         infer_count=input_args["num_inference_steps"],
         gen_time=generation_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=image_id,
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -230,8 +208,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         if "guidance_scale" in static_input_args:
             args["guidance_scale"] = static_input_args["guidance_scale"]
 
-    if mem_consumption:
-        mem_consumption.update_marker("model")
+    mem_consumption.update_marker("model")
     pipe, pretrain_time, use_genai, callback = FW_UTILS[framework].create_image_gen_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
 
@@ -253,8 +230,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for image_id, image_param in enumerate(image_list):
-                if mem_consumption:
-                    mem_consumption.update_marker(f"step-{num}-{image_id}")
+                mem_consumption.update_marker(f"step-{num}-{image_id}")
                 p_idx = prompt_idx_list[image_id]
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 image_gen_fn(image_param, num, prompt_idx_list[image_id], pipe, args, iter_data_list, proc_id, mem_consumption, callback)
@@ -265,8 +241,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         for image_id, image_param in enumerate(image_list):
             p_idx = prompt_idx_list[image_id]
             for num in range(num_iters + 1):
-                if mem_consumption:
-                    mem_consumption.update_marker(f"step-{num}-{image_id}")
+                mem_consumption.update_marker(f"step-{num}-{image_id}")
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 image_gen_fn(image_param, num, p_idx, pipe, args, iter_data_list, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()

@@ -12,7 +12,6 @@ from pathlib import Path
 from abc import ABC, abstractmethod
 
 import llm_bench_utils.model_utils as model_utils
-
 from llm_bench_utils.memory_monitor import MemMonitorWrapper
 
 
@@ -31,6 +30,7 @@ class CommonPipeline(ABC):
     DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
     def __init__(self, model, tokenizer, model_args: dict, model_path: Path, mem_consumption_meter: MemMonitorWrapper):
+        self.mem_consumption_meter = mem_consumption_meter
         self.genai = True
 
         self.model = model
@@ -44,9 +44,6 @@ class CommonPipeline(ABC):
         self.seed = model_args["seed"]
         self.num_beams = model_args["num_beams"]
         self.model_precision = model_utils.get_model_precision(model_path.parts)
-
-        self.mem_consumption_meter = mem_consumption_meter
-        self.mem_consumption_level = model_args.get("mem_consumption", 0)
 
     @execution_time_in_sec
     def tokenize(self, input_text_list: list, **kwargs):
@@ -238,8 +235,7 @@ def launch(
     proc_id: int,
     bench_hook: object | None,
 ) -> dict:
-    if pipeline.mem_consumption_meter is not None:
-        pipeline.mem_consumption_meter.update_marker(f"step-{iter_num}-{prompt_idx}")
+    pipeline.mem_consumption_meter.update_marker(f"step-{iter_num}-{prompt_idx}")
     iter_timestamp[iter_num][prompt_idx]["start"] = datetime.datetime.now().isoformat()
     iter_data, _ = pipeline.run(input_item, iter_num, prompt_idx, proc_id, bench_hook)
     iter_timestamp[iter_num][prompt_idx]["end"] = datetime.datetime.now().isoformat()

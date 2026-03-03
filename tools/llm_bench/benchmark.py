@@ -21,6 +21,7 @@ import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
 from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
 from llm_bench_utils.memory_monitor import MemoryDataSummarizer
+from llm_bench_utils.memory_monitor import MemoryPhantom
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 
@@ -493,11 +494,11 @@ def main():
             log.info(f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
                      f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
     log.info(out_str)
-    memory_data_collector = None
     if args.memory_consumption:
         memory_data_collector = MemoryDataSummarizer(args)
         memory_data_collector.update_marker("setup")
-
+    else:
+        memory_data_collector = MemoryPhantom()
     try:
         if model_args['use_case'].task in ['text_gen', 'code_gen']:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
@@ -506,8 +507,7 @@ def main():
         else:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
                 model_path, framework, args.device, model_args, args.num_iters, memory_data_collector)
-        if args.memory_consumption:
-            memory_data_collector.update_marker("teardown")
+        memory_data_collector.update_marker("teardown")
 
         if args.report is not None or args.report_json is not None:
             model_precision = ''
@@ -547,10 +547,10 @@ def main():
         log.info(traceback.format_exc())
         exit(1)
     finally:
-        if memory_data_collector:
-            if memory_data_collector.mmh is not None:
-                memory_data_collector.mmh.stop()
-            memory_data_collector.stop()
+        if memory_data_collector.mmh is not None:
+            memory_data_collector.mmh.stop()
+        memory_data_collector.stop()
+
 
 if __name__ == '__main__':
     main()
