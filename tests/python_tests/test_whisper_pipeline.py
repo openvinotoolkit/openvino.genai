@@ -898,3 +898,6 @@ def test_2_generate(model_descr, sample_from_dataset):
     result_3 = genai_pipe.generate(sample_from_dataset)
     print("Third generate:")
     print(result_3.texts[0])
+
+    assert result_1.texts[0] == result_2.texts[0]
+    assert result_1.texts[0] == result_3.texts[0]
