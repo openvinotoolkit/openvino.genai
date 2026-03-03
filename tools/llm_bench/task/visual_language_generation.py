@@ -63,7 +63,7 @@ def run_visual_language_generation_optimum(
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
 
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     additional_args = model_utils.setup_gen_config_use_custom_args()
     start = time.perf_counter()
@@ -90,7 +90,7 @@ def run_visual_language_generation_optimum(
         )
     end = time.perf_counter()
     generation_time = end - start
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     tok_decode_start = time.perf_counter()
     generated_text = processor["tokenizer"].batch_decode(result[:, input_data["input_ids"].shape[1]:], skip_special_tokens=True)
@@ -183,7 +183,7 @@ def run_visual_language_generation_genai(
                 in_text, args, model_precision,
                 prompt_index, bs_index, proc_id)
 
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     gen_config = model.get_generation_config()
     gen_config.max_new_tokens = max_gen_tokens
@@ -210,7 +210,7 @@ def run_visual_language_generation_genai(
     generation_time = end - start
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     result_md5_list = []
     generated_text_len = perf_metrics.get_num_generated_tokens()

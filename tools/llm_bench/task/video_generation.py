@@ -195,9 +195,9 @@ class TextToVideoOptimum(CommonPipeline):
         self.num_steps = input_args["num_inference_steps"]
         self.print_batch_size_info(iter_num, input_args)
 
-        self.mem_consumption_meter.smart_start(iter_num)
+        self.mem_consumption_meter.start(iter_num)
         generation_result, generation_time = self.generate(input_param["prompt"], **input_args)
-        memory_metrics = self.mem_consumption_meter.smart_stop_and_collect_data(iter_num, dict_format=False)
+        memory_metrics = self.mem_consumption_meter.iter_stop_and_collect_data(iter_num, dict_format=False)
 
         iter_data = {}
         iter_data, _ = self.postprocess_output_info(
@@ -348,9 +348,9 @@ class TextToVideoGenAI(CommonPipeline):
         self.num_steps = input_args["num_inference_steps"]
         self.print_batch_size_info(iter_num, input_args)
 
-        self.mem_consumption_meter.smart_start(iter_num)
+        self.mem_consumption_meter.start(iter_num)
         generation_result = self.generate(input_param["prompt"], **input_args)
-        memory_metrics = self.mem_consumption_meter.smart_stop_and_collect_data(iter_num, dict_format=False)
+        memory_metrics = self.mem_consumption_meter.iter_stop_and_collect_data(iter_num, dict_format=False)
 
         iter_data, _ = self.postprocess_output_info(
             generation_result,

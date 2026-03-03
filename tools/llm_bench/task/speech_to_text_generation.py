@@ -34,7 +34,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
 
     mem_consumption = input_param["mem_consumption"]
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
     if use_genai:
         start = time.perf_counter()
         result_text = pipe.generate(
@@ -81,7 +81,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         md5_list[num] = {speech_id : result_md5_list}
     else:
         md5_list[num][speech_id] = result_md5_list
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
@@ -141,10 +141,10 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     md5_list = {num : {} for num in range(num_iters + 1)}
     iter_timestamp = model_utils.init_timestamp(num_iters, speech_list, speech_idx_list)
     input_param = {
+        "pipe": pipe,
         "mem_consumption": mem_consumption,
         "processor": processor,
         "use_genai": use_genai,
-        "pipe": pipe,
     }
     if framework == "ov" and use_genai is False:
         whisper_hook.new_text_encoder(pipe)

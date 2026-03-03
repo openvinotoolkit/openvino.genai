@@ -89,7 +89,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     log.info(f"[{'warm-up' if num == 0 else num}][P{image_id}]{out_str}")
 
     result_md5_list = []
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
     input_text_list = [input_text] * args['batch_size']
     input_data = pipe.tokenizer(input_text, return_tensors='pt')
     input_data.pop('token_type_ids', None)
@@ -103,7 +103,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     res = pipe(input_text_list, **input_args, num_images_per_prompt=args['batch_size']).images
     end = time.perf_counter()
     generation_time = end - start
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
     for bs_idx in range(args['batch_size']):
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, proc_id, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
@@ -146,7 +146,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
             log.warning(f"image generation pipeline was reshaped with guidance_scale={reshaped_gs}, but is being passed into generate() as {new_gs}")
 
     result_md5_list = []
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
     input_text_list = [input_text] * args['batch_size']
     if num == 0 and args["output_dir"] is not None:
         for bs_idx, in_text in enumerate(input_text_list):
@@ -168,7 +168,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
     elif "callback" in input_args:
         performance_metrics = callback
 
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
     for bs_idx in range(args['batch_size']):
         image = Image.fromarray(res[bs_idx])
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(image, args, image_id, num, bs_idx, proc_id, '.png')

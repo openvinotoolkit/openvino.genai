@@ -21,20 +21,164 @@ from functools import lru_cache
 from functools import partial
 from pathlib import Path
 from typing import Callable, Optional
+from collections import OrderedDict
 
+import math
 import psutil
 import matplotlib
 import matplotlib.pyplot as plt
 import logging as log
+import traceback
+import json
+import sys
 
 
 # CUSTOM FIX TO AVOID ISSUE: RuntimeError: main thread is not in main loop
 matplotlib.use("Agg")
 
+class MonitorLevel(Enum):
+    DISABLED = 0
+    WARMUP = 1
+    FULL = 2
+
+class MonitorType(Enum):
+    DISABLED = 0
+    THREAD = 1
+    PROCESS = 2
+
+class MonitorMode(Enum):
+    NO_MONITORING = (MonitorLevel.DISABLED, MonitorType.DISABLED)
+    THREAD_WARMUP = (MonitorLevel.WARMUP, MonitorType.THREAD)
+    THREAD_FULL = (MonitorLevel.FULL, MonitorType.THREAD)
+    PROCESS_WARMUP = (MonitorLevel.WARMUP, MonitorType.PROCESS)
+    PROCESS_FULL = (MonitorLevel.FULL, MonitorType.PROCESS)
+
+    def __init__(self, monitor_level, monitor_type):
+        self.monitor_level = monitor_level
+        self.monitor_type = monitor_type
+
+    @classmethod
+    def from_code(cls, code: int):
+        """Create MonitorMode from integer code 0-4"""
+        modes = [cls.NO_MONITORING, cls.THREAD_WARMUP, cls.THREAD_FULL,
+                 cls.PROCESS_WARMUP, cls.PROCESS_FULL]
+        if not 0 <= code <= 4:
+            raise ValueError(f"Invalid memory monitor mode: {code}. Must be 0-4")
+        return modes[code]
+
+    @property
+    def is_process(self) -> bool:
+        return self.monitor_type == MonitorType.PROCESS
+
+    @property
+    def is_thread(self) -> bool:
+        return self.monitor_type == MonitorType.THREAD
+
+    @property
+    def is_full(self) -> bool:
+        return self.monitor_level == MonitorLevel.FULL
+
+    @property
+    def is_warmup(self) -> bool:
+        return self.monitor_level == MonitorLevel.WARMUP
+
+    @property
+    def is_enabled(self) -> bool:
+        return self.monitor_level != MonitorLevel.DISABLED
+
+
+class MemoryMonitorHandler:
+    def __init__(self, args):
+        self.mode = MonitorMode.from_code(args.memory_consumption)
+        self.mmw = MemMonitorWrapper(args) if self.mode.is_thread else None
+        self.mmh = MemoryMarkerHandler(args) if self.mode.is_process else None
+        self.last_iter_number = None
+        self.args = args
+
+        self.update_marker = (
+            self.mmh.update_marker if self.mmh
+            else self._noop_update_marker
+        )
+        self.stop_and_collect_data = (
+            self.mmw.stop_and_collect_data if self.mmw
+            else self._noop_stop_and_collect_data
+        )
+        self.get_initial_mem_data = (
+            self.mmw.get_initial_mem_data if self.mmw
+            else self._noop_get_mem_data
+        )
+        self.get_compilation_mem_data = (
+            self.mmw.get_compilation_mem_data if self.mmw
+            else self._noop_get_mem_data
+        )
+        self.log_data = (
+            self.mmw.log_data if self.mmw
+            else self._noop_log_data
+        )
+
+    def start(self, iter_num=None):
+        if self.mmw:
+            if self.mode.is_full or iter_num is None:
+                return self.mmw.start()
+            elif self.mode.is_warmup and iter_num == 0:
+                return self.mmw.start()
+        if self.last_iter_number is not None and iter_num is not None:
+            if self.mode.is_warmup and self.last_iter_number != iter_num:
+                return self.mmh.stop()
+
+    @staticmethod
+    def _noop_update_marker(marker):
+        """No-op marker update when process monitoring is disabled"""
+        pass
+
+    @staticmethod
+    def _noop_stop_and_collect_data(stage):
+        """No-op stop when process monitoring is disabled"""
+        pass
+
+    @staticmethod
+    def _noop_get_mem_data(print_unit=None):
+        """No-op get data  when process monitoring is disabled"""
+        return {}
+
+    @staticmethod
+    def _noop_log_data(compilation=False):
+        """No-op stop when process monitoring is disabled"""
+        pass
+
+    def stop(self):
+        if self.mmh:
+            return self.mmh.stop()
+        if self.mmw:
+            return self.mmw.stop()
+
+    def iter_stop_and_collect_data(self, iter_num, dict_format=True):
+        self.last_iter_number = iter_num
+        if self.mode.is_process or not self.mode.is_enabled:
+            return {} if dict_format else []
+        if self.mode.is_warmup and iter_num > 0:
+            return {} if dict_format else []
+
+        dir_name = f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}"
+        self.stop_and_collect_data(dir_name)
+        cooldown = self.args.memory_consumption_cooldown
+        if cooldown is not None:
+            time.sleep(cooldown)
+        return self.mmw.get_data(dict_format)
+
+
+######################################################
+### Memory Monitoring (in separated thread)
 
 class MemoryType(Enum):
     RSS = "rss"
     SYSTEM = "system"
+
+
+class MemStatus():
+    def __init__(self, rss=None, sys=None):
+        self.rss = rss
+        self.sys = sys
 
 
 class MemoryUnit(Enum):
@@ -262,7 +406,7 @@ class MemoryMonitor:
 
     @staticmethod
     def get_rss_memory(include_child_processes=True):
-        this_process = psutil.Process()
+        this_process = psutilProcess()
         bytes_used = this_process.memory_info().rss
         if include_child_processes:
             return sum((proc.memory_info().rss for proc in this_process.children(recursive=True)), start=bytes_used)
@@ -285,15 +429,25 @@ class MemoryMonitor:
 
 
 class MemMonitorWrapper:
-    def __init__(self):
-        self.save_dir = None
+    MEMORY_NOT_COLLECTED = ""
+    DEF_MEM_UNIT = MemoryUnit.MiB
 
-        self.interval = 0.01
+    def __init__(self, args):
+        self.interval = args.memory_consumption_interval
         self.memory_unit = MemoryUnit.MiB
         self.proc_id = os.getpid()
 
-        self.memory_types = [MemoryType.RSS, MemoryType.SYSTEM]
+        self.save_dir = None
+        if args.memory_consumption_dir:
+            self.set_dir(args.memory_consumption_dir)
+        self.initial_mem_status = self.log_curent_memory_data(prefix="Start")
+        self.compilation_mem_info = {
+            "max_mem": MemStatus(self.MEMORY_NOT_COLLECTED, self.MEMORY_NOT_COLLECTED),
+            "increase_mem": MemStatus(self.MEMORY_NOT_COLLECTED, self.MEMORY_NOT_COLLECTED)
+        }
 
+        self.memory_data = {"full_mem": {}, "from_zero": {}}
+        self.memory_types = [MemoryType.RSS, MemoryType.SYSTEM]
         self.memory_monitors = {}
         self.memory_data = {"full_mem": {}, "from_zero": {}}
 
@@ -349,6 +503,29 @@ class MemMonitorWrapper:
 
         for mm in self.memory_monitors.values():
             mm.stop()
+
+    def log_curent_memory_data(self, prefix : str = ""):
+        mem_status = MemStatus(cast_bytes_to(MemoryMonitor.get_rss_memory(), self.memory_unit),
+                               cast_bytes_to(MemoryMonitor.get_system_memory(), self.memory_unit))
+        log.info(f"{prefix} RSS memory {mem_status.rss:.2f}{self.memory_unit.value}, "
+                 f"{prefix} System memory {mem_status.sys:.2f}{self.memory_unit.value}")
+        return mem_status
+
+    def log_data(self, compilation: bool = False):
+        max_rss_mem, rss_increase, max_sys_mem, sys_increase = self.get_data()
+        comment = ""
+        if compilation:
+            comment = "on compilation phase"
+            self.compilation_mem_info["max_mem"].sys = max_sys_mem
+            self.compilation_mem_info["max_mem"].rss = max_rss_mem
+            self.compilation_mem_info["increase_mem"].sys = sys_increase
+            self.compilation_mem_info["increase_mem"].rss = rss_increase
+
+        msg = (f"Max RSS memory {comment}: {max_rss_mem:.2f}{self.memory_unit.value}, "
+               f"RSS memory increase {comment}: {rss_increase:.2f}{self.memory_unit.value}, "
+               f"Max System memory {comment}: {max_sys_mem:.2f}{self.memory_unit.value}, "
+               f"System memory increase {comment}: {sys_increase:.2f}{self.memory_unit.value}")
+        log.info(msg)
 
     def get_data(self, dict_format=False):
         if dict_format:
@@ -617,16 +794,16 @@ class MemoryDataSummarizer:
         suffix = f"({print_unit})" if print_unit else ""
         sys = self.initial_mem_status.sys
         rss = self.initial_mem_status.rss
-        if print_unit and print_unit != self.memory_monitor.memory_unit:
-            sys = convert_mem_unit(sys, self.memory_monitor.memory_unit, print_unit)
-            rss = convert_mem_unit(rss, self.memory_monitor.memory_unit, print_unit)
+        if print_unit and print_unit != self.memory_unit:
+            sys = convert_mem_unit(sys, self.memory_unit, print_unit)
+            rss = convert_mem_unit(rss, self.memory_unit, print_unit)
         return {
             f"initial_sys_mem{suffix}": round(sys, 5),
             f"initial_rss_mem{suffix}": round(rss, 5),
         }
 
     def get_compilation_mem_data(self, print_unit: MemoryUnit | None = None):
-        bytes_total = cast_bytes_to(psutil.virtual_memory().total, memory_unit=self.memory_monitor.memory_unit)
+        bytes_total = cast_bytes_to(psutil.virtual_memory().total, memory_unit=self.memory_unit)
 
         suffix = f"({print_unit.value})" if print_unit else ""
         sys_max = self.compilation_mem_info["max_mem"].sys
@@ -636,11 +813,11 @@ class MemoryDataSummarizer:
         sys_share = 100.0 * float(self.compilation_mem_info["max_mem"].sys) / bytes_total
         rss_share = 100.0 * float(self.compilation_mem_info["max_mem"].rss) / bytes_total
 
-        if print_unit and print_unit != self.memory_monitor.memory_unit:
-            sys_max = convert_mem_unit(sys_max, self.memory_monitor.memory_unit, print_unit)
-            rss_max = convert_mem_unit(rss_max, self.memory_monitor.memory_unit, print_unit)
-            sys_increase = convert_mem_unit(sys_increase, self.memory_monitor.memory_unit, print_unit)
-            rss_increase = convert_mem_unit(rss_increase, self.memory_monitor.memory_unit, print_unit)
+        if print_unit and print_unit != self.memory_unit:
+            sys_max = convert_mem_unit(sys_max, self.memory_unit, print_unit)
+            rss_max = convert_mem_unit(rss_max, self.memory_unit, print_unit)
+            sys_increase = convert_mem_unit(sys_increase, self.memory_unit, print_unit)
+            rss_increase = convert_mem_unit(rss_increase, self.memory_unit, print_unit)
 
         return {
             f"compile_max_rss_mem{suffix}": round(rss_max, 5),
@@ -686,3 +863,317 @@ def _subtract_first_element(data):
         data[i] = data[i] - data[0]
     data[0] = 0
     return data
+
+
+######################################################
+### Memory Marker Monitoring (in separated process)
+
+class MemorySampler5(dict):
+    chunk_size = 8192
+    metrics = OrderedDict([
+        ("rss", {
+            "denom": 1048576,
+            "unit": "MiB",
+            "digits": 3,
+            "cv": True
+        }),
+        ("uss", {
+            "denom": 1048576,
+            "unit": "MiB",
+            "digits": 3,
+            "cv": True
+        }),
+        ("priv", {
+            "denom": 1048576,
+            "unit": "MiB",
+            "digits": 3,
+            "cv": True
+        }),
+        ("sys", {
+            "denom": 1048576,
+            "unit": "MiB",
+            "digits": 3,
+            "cv": True
+        }),
+        ("nsys", {
+            "denom": 1,
+            "unit": "%",
+            "digits": 1,
+            "cv": False
+        })
+    ])
+
+    def __init__(self, process_id):
+        dict.__init__(self)
+        self.process_id = process_id
+        self.header = " ".join([
+            f"{k}({v['unit']})" for k, v in self.metrics.items()
+        ])
+
+    def init_marker(self, marker):
+        self[marker] = {"cnt": 0}
+        vals_min = {(k, "min"): math.inf for k in self.metrics}
+        vals_mass2 = {(k, "mass2"): 0.0 for k in self.metrics}
+        vals_mass = {(k, "mass"): 0.0 for k in self.metrics}
+        vals_max = {(k, "max"): 0.0 for k in self.metrics}
+        self[marker].update(vals_mass2)
+        self[marker].update(vals_mass)
+        self[marker].update(vals_max)
+        self[marker].update(vals_min)
+
+    def calc_metric_stats(self, marker, metric):
+        cnt = self[marker]["cnt"]
+        mx = self[marker][metric, "max"]
+        mn = self[marker][metric, "min"]
+        ave = self[marker][metric, "mass"] / cnt
+        ems2 = self[marker][metric, "mass2"] / cnt
+        if self.metrics[metric]["cv"] and ave > 0:
+            cv = 100.0 * math.sqrt(ems2 - ave**2) / ave
+        elif self.metrics[metric]["cv"] and ave == 0:
+            cv = 0.0
+        else:
+            cv = None
+        return mx, mn, ave, cv
+
+    def repr_metric(self, marker, metric):
+        mx, mn, ave, cv = self.calc_metric_stats(marker, metric)
+        out = f"\t{metric} maximum: " + self.format_to_print(metric, mx)
+        out += f"\n\t{metric} minimum: " + self.format_to_print(metric, mn)
+        out += f"\n\t{metric} average: " + self.format_to_print(metric, ave)
+        if self.metrics[metric]["cv"] and ave > 0:
+            out += f"\n\t{metric} cv: {round(cv, 1)}%"
+        elif self.metrics[metric]["cv"] and ave == 0:
+            out += f"\n\t{metric} cv: 0%"
+        elif self.metrics[metric]["cv"]:
+            out += f"\n\t{metric} cv: --"
+        return f"{out}\n"
+
+    def __str__(self):
+        outstr = "MemorySampler5 summarize:\n"
+        for marker in self:
+            if marker in ("start", "stop"):
+                continue
+            count = self[marker]["cnt"]
+            outstr += f"Marker: {marker}\n"
+            outstr += f"\tsamples: {count}\n"
+            if count == 0:
+                return outstr
+            for metric in self.metrics:
+                outstr += self.repr_metric(marker, metric)
+        return outstr
+
+    def report_summary(self, chunks, extra):
+        out = {
+            **extra,
+            "chunks_number": chunks,
+            "chunk_size": self.chunk_size,
+            "metrics": dict(self.metrics),
+            "markers": {}
+        }
+        for marker in self:
+            out["markers"][marker] = {}
+            out["markers"][marker]["samples"] = self[marker]["cnt"]
+            out["markers"][marker]["stats"] = {}
+            for metric in self.metrics:
+                mx, mn, ave, cv = self.calc_metric_stats(marker, metric)
+                out["markers"][marker]["stats"][metric] = {}
+                out["markers"][marker]["stats"][metric]["ave"] = self.format_to_export((metric, ave))
+                out["markers"][marker]["stats"][metric]["max"] = self.format_to_export((metric, mx))
+                out["markers"][marker]["stats"][metric]["min"] = self.format_to_export((metric, mn))
+                if cv is None:
+                    continue
+                out["markers"][marker]["stats"][metric]["cv"]= cv
+        return out
+
+    def format_to_export(self, metric_value):
+        metric, value = metric_value
+        mconf = self.metrics.get(metric)
+        formated_value = round(value / mconf["denom"], mconf["digits"])
+        return formated_value
+
+    def format_to_print(self, metric, value):
+        mconf = self.metrics.get(metric)
+        formated_value = round(value / mconf["denom"], mconf["digits"])
+        return f"{formated_value} {mconf['unit']}"
+
+    def add_to_summary(self, marker, metric, val):
+        self[marker][metric, "max"] = max(self[marker][metric, "max"], val)
+        self[marker][metric, "min"] = min(self[marker][metric, "min"], val)
+        self[marker][metric, "mass2"] += val**2
+        self[marker][metric, "mass"] += val
+
+    def aggregate_and_format(self, marker, values):
+        if marker not in self:
+            self.init_marker(marker)
+        self[marker]["cnt"] += 1
+        for metric, value in zip(self.metrics.keys(), values):
+            self.add_to_summary(marker, metric, value)
+        mapargs = zip(self.metrics.keys(), values)
+        return tuple(map(self.format_to_export, mapargs))
+
+    def collect(self, marker):
+        parent_process = psutilProcess(self.process_id)
+        mem_info = parent_process.memory_full_info()
+        rss_mem, uss_mem, priv_mem = mem_info.rss, 0, 0
+        if hasattr(mem_info, "uss"):
+            uss_mem = mem_info.uss
+        if hasattr(mem_info, "private"):
+            priv_mem = mem_info.private
+        for child_proc in parent_process.children(recursive=True):
+            child_mem_info = child_proc.memory_full_info()
+            rss_mem += child_mem_info.rss
+            if hasattr(child_mem_info, "uss"):
+                uss_mem += child_mem_info.uss
+            if hasattr(child_mem_info, "private"):
+                priv_mem += child_mem_info.private
+        sys_mem = psutil.virtual_memory().total - psutil.virtual_memory().available
+        nsys_mem = 100 * float(sys_mem) / psutil.virtual_memory().total
+        vals5 = rss_mem, uss_mem, priv_mem, sys_mem, nsys_mem
+        return self.aggregate_and_format(marker, vals5)
+
+
+class MemoryMarkerMonitor(list):
+    def __init__(self, conn, process_id, sampling_interval, path_prefix):
+        self.sampler = MemorySampler5(process_id)
+        self.sampling_interval = float(sampling_interval)
+        self.process_id = int(process_id)
+        self.last_ts = time.perf_counter()
+        self.start_perf = time.perf_counter()
+        self.start_time_ns = time.time_ns()
+        self.marker = "start"
+        self.conn = conn
+
+        self.path_prefix = Path(path_prefix)
+        if not self.path_prefix.exists():
+            self.path_prefix.mkdir(parents=True)
+        self.collect_samples()
+        self.file_counter = 0
+
+    def deduce_filename(self, report_json=False):
+        if report_json:
+            return Path(self.path_prefix / f"{self.process_id}_summary.json")
+        def fnfunc(path_prefix, process_id, file_counter):
+            return path_prefix / f"{process_id}_{file_counter}.txt"
+        while fnfunc(self.path_prefix, self.process_id, self.file_counter).exists():
+            self.file_counter += 1
+        return fnfunc(self.path_prefix, self.process_id, self.file_counter)
+
+    def loop(self, metadata):
+        while True:
+            last_interval = time.perf_counter() - self.last_ts
+            wait_interval = max(0.0, self.sampling_interval - last_interval)
+            if self.conn.poll(wait_interval):
+                self.marker = self.conn.recv()
+                if self.marker == "stop":
+                    print("Memory worker: Received stop signal")
+                    self.collect_samples()
+                    print(self.sampler)
+                    break
+            if len(self) >= self.sampler.chunk_size:
+                self.write_chunk()
+            try:
+                self.collect_samples()
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                print("Memory worker: Received stop signal")
+                break
+        self.write_report(metadata)
+        self.write_chunk()
+
+    def write_report(self, extra):
+        fname = self.deduce_filename(report_json=True)
+        with open(fname, "w", encoding="utf-8") as fd:
+            saved_chunks = self.file_counter + 1
+            data = self.sampler.report_summary(saved_chunks, extra)
+            json.dump(data, fd)
+
+    def write_chunk(self):
+        if not self:
+            return
+
+        counter = 0
+        fname = self.deduce_filename()
+        with open(fname, "w", encoding="utf-8") as fd:
+            fd.write(f"#ts marker {self.sampler.header}\n")
+            while self:
+                row = self.pop(0)
+                line = " ".join(map(str, row))
+                fd.write(f"{line}\n")
+                counter += 1
+            fd.write(f"#number of samples: {counter}\n")
+
+    def collect_samples(self):
+        vals = self.sampler.collect(self.marker)
+        self.last_ts = time.perf_counter()
+
+        elapsed_seconds = self.last_ts - self.start_perf
+        elapsed_ns = int(elapsed_seconds * 1_000_000_000)
+        ts = self.start_time_ns + elapsed_ns
+        self.append((ts, self.marker, *vals))
+
+
+class MemoryMarkerHandler:
+    def __init__(self, args):
+
+        mode = args.memory_consumption
+        cooldown = args.memory_consumption_cooldown
+        interval = args.memory_consumption_interval
+        report_path = args.memory_consumption_dir
+        if cooldown is None:
+            cooldown = 0
+        time.sleep(cooldown)
+
+        parent_pid = os.getpid()
+        self.parent_conn, child_conn = multiprocessing.Pipe()
+        pargs = child_conn, parent_pid, interval, report_path, mode, cooldown
+        self.background_process = mProcess(target=self.background_worker, args=pargs)
+        self.set_high_priority()
+        self.background_process.start()
+
+    def set_high_priority(self):
+        priority = psutil.HIGH_PRIORITY_CLASS if sys.platform == "win32" else -10
+        try:
+            psutilproc = psutilProcess(self.background_process.pid)
+            psutilproc.nice(priority)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            print(f"Could not set process priority")
+        except PermissionError:
+            print(f"No permission to set process priority")
+
+    @staticmethod
+    def background_worker(conn, pid, interval, path, mode, cooldown):
+            mmm = MemoryMarkerMonitor(conn, pid, interval, path)
+            metadata = {
+                "mode": mode,
+                "cooldown": cooldown,
+                "interval": interval,
+                "process": pid,
+                "path": path,
+            }
+
+            try:
+                mmm.loop(metadata)
+                conn.close()
+                log.info("Memory monitor background worker stopped")
+            except Exception as e:
+                print(f"Error in background worker: {e}")
+                traceback.print_exc()
+
+    def update_marker(self, marker):
+        try:
+            if marker == "stop":
+                self.parent_conn.send("stop")
+                self.background_process.join()
+                self.parent_conn.close()
+            else:
+                self.parent_conn.send(marker)
+        except OSError:
+            if marker != "stop":
+                log.warning(f"{marker}: markers are not longer accepted!")
+
+    def stop(self):
+        try:
+            self.parent_conn.send("stop")
+            self.background_process.join()
+            self.parent_conn.close()
+        except OSError:
+            pass

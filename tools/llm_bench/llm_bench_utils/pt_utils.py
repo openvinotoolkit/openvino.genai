@@ -56,7 +56,7 @@ def run_torch_compile(model, backend='openvino', dynamic=None, options=None, chi
         log.info(f'Compiling model via torch.compile() took: {compile_time}')
     if memory_data_collector:
         memory_data_collector.stop_and_collect_data("compilation")
-        memory_data_collector.log_data(compilation_phase=True)
+        memory_data_collector.log_data(compilation=True)
     return compiled_model
 
 
@@ -91,7 +91,7 @@ def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
     from_pretrain_time = end - start
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("pretrained")
-        memory_data_collector.log_data(compilation_phase=True)
+        memory_data_collector.log_data(compilation=True)
 
     log.info(f'model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s')
 
@@ -152,7 +152,7 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):
                 memory_data_collector.stop_and_collect_data("pretrained")
-                memory_data_collector.log_data(compilation_phase=True)
+                memory_data_collector.log_data(compilation=True)
             from_pretrain_time = end - start
         else:
             raise RuntimeError(f'==Failure ==: model path:{model_path} is not directory or directory is empty')
@@ -199,7 +199,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):
                 memory_data_collector.stop_and_collect_data("pretrained")
-                memory_data_collector.log_data(compilation_phase=True)
+                memory_data_collector.log_data(compilation=True)
             from_pretrain_time = end - start
             processor = token_class.from_pretrained(model_path)
         else:
@@ -241,7 +241,7 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):
                 memory_data_collector.stop_and_collect_data("pretrained")
-                memory_data_collector.log_data(compilation_phase=True)
+                memory_data_collector.log_data(compilation=True)
             from_pretrain_time = end - start
         else:
             raise RuntimeError(f'==Failure ==: model path:{model_path} is not directory or directory is empty')
@@ -331,7 +331,7 @@ def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):
                 memory_data_collector.stop_and_collect_data("pretrained")
-                memory_data_collector.log_data(compilation_phase=True)
+                memory_data_collector.log_data(compilation=True)
             from_pretrain_time = end - start
         else:
             raise RuntimeError(f"==Failure ==: model path:{model_path} is not directory or directory is empty")

@@ -20,8 +20,8 @@ import task.text_embeddings as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
 from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
-from llm_bench_utils.memory_monitor import MemoryDataSummarizer
-from llm_bench_utils.memory_monitor import MemoryPhantom
+from llm_bench_utils.memory_monitor import MemoryMonitorHandler
+
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 
@@ -133,10 +133,11 @@ def get_argparser():
         default=0,
         required=False,
         type=int,
-        help="Enables memory usage monitoring mode. Use 1 to track maximum memory consumption during model compilation"
-        " and warm-up iteration, 2 to track across all iterations, or 3 to track for debug in separated process over"
-        " whole benchmarking. Warning: Concurrent memory consumption and performance benchmarking is not recommended."
-        " Performance impact can be reduced by using longer --memory_consumption_cooldown and --memory_consumption_interval"
+        help="Enables memory usage monitoring mode. For 0 monitoring is off. Use 1 to track memory consumption"
+        " during model compilation and warm-up iteration, 2 to track across all iterations, or 3 to track in"
+        " separated process over model compilation and wam-up, and respectively 4 for the whole benchmarking."
+        " Warning: Concurrent memory consumption and performance benchmarking is not recommended. Performance"
+        " impact can be reduced by using longer --memory_consumption_cooldown and --memory_consumption_interval"
         " values, though a degradation is unavoidable.",
     )
     parser.add_argument(
@@ -464,6 +465,7 @@ def main():
         **logging_kwargs,
     )
     args = get_argparser()
+    memory_data_collector = MemoryMonitorHandler(args)
 
     if args.tokens_len is not None and not args.streaming:
         log.error("--tokens_len requires --streaming to be set.")
@@ -514,11 +516,7 @@ def main():
                 f"{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference."
             )
     log.info(out_str)
-    if args.memory_consumption:
-        memory_data_collector = MemoryDataSummarizer(args)
-        memory_data_collector.update_marker("setup")
-    else:
-        memory_data_collector = MemoryPhantom()
+
     try:
         if model_args["use_case"].task in ["text_gen", "code_gen"]:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args["use_case"].task](
@@ -535,7 +533,7 @@ def main():
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args["use_case"].task](
                 model_path, framework, args.device, model_args, args.num_iters, memory_data_collector
             )
-        memory_data_collector.update_marker("teardown")
+        memory_data_collector.update_marker("stop")
 
         if args.report is not None or args.report_json is not None:
             model_precision = ""
@@ -575,8 +573,6 @@ def main():
         log.info(traceback.format_exc())
         exit(1)
     finally:
-        if memory_data_collector.mmh is not None:
-            memory_data_collector.mmh.stop()
         memory_data_collector.stop()
 
 

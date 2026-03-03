@@ -51,7 +51,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
     additional_args = model_utils.setup_gen_config_use_custom_args()
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
 
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     # llama-3-8b-instruct's generation_config.json has 4096 max_length.
@@ -111,7 +111,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             )
     end = time.perf_counter()
     generation_time = end - start
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     tok_decode_start = time.perf_counter()
     generated_text = tokenizer.batch_decode(result)
@@ -249,7 +249,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         for bs_index, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
 
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     tokenizer = model.get_tokenizer()
     if args['apply_chat_template']:
@@ -337,7 +337,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         generated_text = tokenizer.decode(generated_tokens)
         detokenization_end = time.perf_counter()
         tokenization_time.append((detokenization_end - detokenization_start) * 1000)
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
@@ -435,7 +435,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
 
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     streamer.reset()
     gen_config = model.get_generation_config()
@@ -483,7 +483,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens
     end = time.perf_counter()
     generation_time = end - start
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     tok_decode_start = time.perf_counter()
     generated_text = pipe_tokenizer.decode(generated_tokens)
