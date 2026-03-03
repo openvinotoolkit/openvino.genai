@@ -11,6 +11,7 @@ option(ENABLE_TOOLS "Enable tools build" ON)
 option(ENABLE_GGUF "Enable support for GGUF format" ON)
 option(ENABLE_XGRAMMAR "Enable support for structured output generation with xgrammar backend" ON)
 option(ENABLE_DYNAMIC_WEIGHT_MANAGEMENT "Enable offloading model weights (load/release)" OFF)
+option(ENABLE_OPENVINO_NEW_ARCH "Enable OpenVINO new architecture for QWen3.5 etc models support" OFF)
 
 # Disable building samples for NPM package
 if(CPACK_GENERATOR STREQUAL "NPM")

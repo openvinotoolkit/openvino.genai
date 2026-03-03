@@ -44,6 +44,10 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_D
                                                        $<TARGET_PROPERTY:openvino::genai,INTERFACE_INCLUDE_DIRECTORIES>
                                                        "${OpenCV_INCLUDE_DIRS}")
 
+if(ENABLE_OPENVINO_NEW_ARCH)
+  target_compile_definitions(${TEST_TARGET_NAME} PRIVATE ENABLE_OPENVINO_NEW_ARCH)
+endif()
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
   target_link_options(${TEST_TARGET_NAME} PRIVATE /IGNORE:4207,4286)
 endif()

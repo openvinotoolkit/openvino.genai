@@ -15,6 +15,13 @@ namespace genai {
 
 namespace module {
 
+    // Conditional X-macro entry for new-arch modules
+    #ifdef ENABLE_OPENVINO_NEW_ARCH
+    #define OPENVINO_NEW_ARCH_X(name, val) X(name, val)
+    #else
+    #define OPENVINO_NEW_ARCH_X(name, val)
+    #endif
+
     // Module type list - maintain only once
     #define GENAI_MODULE_TYPE_LIST \
         X(ParameterModule, 0) \
@@ -31,6 +38,7 @@ namespace module {
         X(LLMInferenceModule, 40) \
         X(DenoiserLoopModule, 41) \
         X(VAEDecoderModule, 42) \
+        OPENVINO_NEW_ARCH_X(LLMInferenceSDPAModule, 43) \
         X(ResultModule, 50) \
         X(SaveImageModule, 51) \
         X(SaveVideoModule, 52) \
