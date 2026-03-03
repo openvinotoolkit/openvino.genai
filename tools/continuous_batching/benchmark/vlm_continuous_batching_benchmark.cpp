@@ -179,6 +179,7 @@ int main(int argc, char* argv[]) try {
     auto tokenizer = pipe.get_tokenizer();
     generation_info_collector.output_generated_text(tokenizer);
 
+    return EXIT_SUCCESS;
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
