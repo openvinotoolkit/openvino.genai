@@ -1,5 +1,5 @@
 import json
-from llm_bench_utils.memory_monitor import MemoryUnit, MemoryDataSummarizer
+from llm_bench_utils.memory_monitor import MemoryUnit, MemMonitorWrapper
 
 
 def estimate_throughput(latency, bs, ms=True):
@@ -122,9 +122,9 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         json.dump(output_result, outfile, indent=4)
 
 
-def get_pre_gen_memory_data(memory_data_collector: MemoryDataSummarizer | None, print_unit: MemoryUnit | None = None):
-    no_info = MemoryDataSummarizer.MEMORY_NOT_COLLECTED
-    suffix = f'({MemoryDataSummarizer.DEF_MEM_UNIT})' if print_unit else ''
+def get_pre_gen_memory_data(memory_data_collector: MemMonitorWrapper | None, print_unit: MemoryUnit | None = None):
+    no_info = MemMonitorWrapper.MEMORY_NOT_COLLECTED
+    suffix = f'({MemMonitorWrapper.DEF_MEM_UNIT})' if print_unit else ''
     data = {f'initial_sys_mem{suffix}': no_info, f'initial_rss_mem{suffix}': no_info,
             f'compile_max_rss_mem{suffix}': no_info, f'compile_max_sys_mem{suffix}': no_info,
             f'compile_max_increase_rss_mem{suffix}': no_info, f'compile_max_increase_sys_mem{suffix}': no_info}

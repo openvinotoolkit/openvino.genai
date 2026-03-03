@@ -42,7 +42,7 @@ def run_text_to_speech_generation_optimum(
         out_str += 'all input token size after padding: {} * {}, '.format(input_token_size, args['batch_size'])
         log.info(out_str)
 
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
     start = time.perf_counter()
     if vocoder:
         result = model.generate(input_tokens, speaker_embeddings=args.get('speaker_embeddings'), vocoder=vocoder)
@@ -50,7 +50,7 @@ def run_text_to_speech_generation_optimum(
         result = model.generate(input_tokens, speaker_embeddings=args.get('speaker_embeddings'))
     end = time.perf_counter()
     generation_time = end - start
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     result_md5_list = []
     for bs_idx in range(args['batch_size']):
@@ -99,7 +99,7 @@ def run_text_to_speech_generation_genai(
         for bs_index, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
 
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
     input_data = processor(text=input_text)
     num_input_tokens = len(input_data['input_ids'])
 
@@ -114,7 +114,7 @@ def run_text_to_speech_generation_genai(
     generation_result = model.generate(input_text_list, **additional_args)
     end = time.perf_counter()
     generation_time = end - start
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     perf_metrics = generation_result.perf_metrics
     tokenization_time = [perf_metrics.get_tokenization_duration().mean]
