@@ -105,7 +105,7 @@ private:
 
   static std::filesystem::path resolve_data_root() {
     std::vector<std::filesystem::path> attempted_paths;
-    attempted_paths.reserve(8);
+    attempted_paths.reserve(2);
 
     if (g_data_root_override) {
       attempted_paths.push_back(*g_data_root_override);
@@ -122,41 +122,12 @@ private:
       }
     }
 
-    const auto source_root = std::filesystem::path(MISAKI_SOURCE_DIR);
-    const auto standalone_data = source_root / "data";
-    attempted_paths.push_back(standalone_data);
-    if (std::filesystem::exists(standalone_data / "us_gold.json") &&
-        std::filesystem::exists(standalone_data / "us_silver.json") &&
-        std::filesystem::exists(standalone_data / "gb_gold.json") &&
-        std::filesystem::exists(standalone_data / "gb_silver.json")) {
-      return standalone_data;
-    }
-
-    const auto monorepo_data = source_root / "../misaki/data";
-    attempted_paths.push_back(monorepo_data);
-    if (std::filesystem::exists(monorepo_data / "us_gold.json") &&
-        std::filesystem::exists(monorepo_data / "us_silver.json") &&
-        std::filesystem::exists(monorepo_data / "gb_gold.json") &&
-        std::filesystem::exists(monorepo_data / "gb_silver.json")) {
-      return monorepo_data;
-    }
-
-    if (const auto module_dir = current_module_dir()) {
-      const auto installed_share_data = *module_dir / ".." / "share" / "misaki" / "data";
-      attempted_paths.push_back(installed_share_data);
-      if (has_required_lexicon_files(installed_share_data)) {
-        return installed_share_data;
-      }
-
-      const auto sibling_data = *module_dir / ".." / "data";
-      attempted_paths.push_back(sibling_data);
-      if (has_required_lexicon_files(sibling_data)) {
-        return sibling_data;
-      }
-    }
-
     std::ostringstream oss;
-    oss << "Could not locate English lexicon data files (us/gb gold/silver json files). Tried:";
+    oss << "Could not locate English lexicon data files (us/gb gold/silver json files)."
+           " Supported lookup roots are:"
+           "\n - set_english_lexicon_data_root(...) override"
+           "\n - MISAKI_DATA_DIR environment variable"
+           "\nTried:";
     for (const auto &path : attempted_paths) {
       oss << "\n - " << path.string();
     }
