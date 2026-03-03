@@ -13,6 +13,7 @@ from optimum.intel import OVModelForCausalLM, OVModelForSequenceClassification
 from optimum.intel.openvino.modeling import OVModel
 
 from huggingface_hub import hf_hub_download, snapshot_download
+from modelscope import snapshot_download as model_scope_snapshot_download
 
 from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
@@ -177,6 +178,9 @@ def run_hugging_face(
     return generation_results
 
 
+MODEL_SCOPE_MODELS_LIST = [
+    "AngelSlim/Qwen3-1.7B_eagle3",
+]
 # download HF model or read converted model
 def get_huggingface_models(
     model_id: str | Path,
@@ -185,7 +189,10 @@ def get_huggingface_models(
     trust_remote_code=False,
 ) -> tuple[OptimizedModel, AutoTokenizer]:
     if not local_files_only and isinstance(model_id, str):
-        model_id = snapshot_download(model_id)  # required to avoid HF rate limits
+        if model_id in MODEL_SCOPE_MODELS_LIST:
+            model_id = model_scope_snapshot_download(model_id)
+        else:
+            model_id = snapshot_download(model_id)  # required to avoid HF rate limits
 
     def auto_tokenizer_from_pretrained() -> AutoTokenizer:
         return AutoTokenizer.from_pretrained(

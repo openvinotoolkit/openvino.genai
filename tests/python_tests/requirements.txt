@@ -34,3 +34,5 @@ peft==0.18.1
 vocos==0.1.0
 torchaudio==2.8.0
 vector-quantize-pytorch==1.27.20
+# - AngelSlim/Qwen3-1.7B_eagle3
+modelscope
