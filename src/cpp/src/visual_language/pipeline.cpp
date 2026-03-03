@@ -139,8 +139,9 @@ public:
         // NPU is not supporting history, so in chat scenarios let's use full chat history on each iteration
         m_use_full_chat_history = m_is_npu;
 
-        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
-        kv_cache_state.seq_length_axis = kv_pos.seq_len;
+        utils::CacheState& cache_state = m_inputs_embedder->get_kv_cache_state();
+        cache_state.set_cache_types(utils::get_cache_types(*language_model));
+        cache_state.seq_length_axis = kv_pos.seq_len;
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
@@ -172,12 +173,18 @@ public:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
-        auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
+        const auto& language_pair = utils::get_model_weights_pair(models_map, "language");
+        auto language_model = utils::singleton_core().read_model(language_pair.first, language_pair.second);
+        auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
         m_language = utils::singleton_core().compile_model(
-            m_language_pair.first, m_language_pair.second, device, properties
+            language_model, device, properties
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
+
+        utils::CacheState& cache_state = m_inputs_embedder->get_kv_cache_state();
+        cache_state.set_cache_types(utils::get_cache_types(*language_model));
+        cache_state.seq_length_axis = kv_pos.seq_len;
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
@@ -296,7 +303,7 @@ public:
                 }
             }
         } else {
-            utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+            utils::CacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
             kv_cache_state.reset_state();
         }
 
@@ -561,7 +568,7 @@ private:
                 " config option to increase the limit.");
         }
 
-        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        utils::CacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
 
         if (m_is_chat_conversation) {
             if (m_use_full_chat_history) {

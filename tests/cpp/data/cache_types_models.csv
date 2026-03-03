@@ -1,0 +1,8 @@
+# model_id,has_kvcache,has_linear
+# Standard transformer (attention-only) models — kvcache only
+optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM,true,false
+# Hybrid models (attention + SSM state) — both kvcache and linear
+optimum-intel-internal-testing/tiny-random-lfm2,true,true
+# optimum-intel-internal-testing/tiny-random-qwen3-next,true,true  uncomment when optimum-intel supports conversion
+# Pure SSM (Mamba-like) models — linear only
+optimum-intel-internal-testing/tiny-mamba,false,true

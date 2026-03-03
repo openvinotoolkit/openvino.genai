@@ -17,7 +17,7 @@ namespace ov::genai {
 // Forward declarations
 class EncodedImage;
 namespace utils {
-class KVCacheState;
+class CacheState;
 }
 
 /**
@@ -216,7 +216,7 @@ public:
      */
     std::optional<PruningResult> execute(const PruningContext& context,
                                          ov::Tensor& position_ids,
-                                         utils::KVCacheState& kv_cache_state,
+                                         utils::CacheState& kv_cache_state,
                                          size_t prev_hist_length);
 
 private:
