@@ -27,4 +27,3 @@ class TestReactSample:
         js_result = run_sample(js_command)
 
         assert py_result.stdout == js_result.stdout, f"Results should match"
-

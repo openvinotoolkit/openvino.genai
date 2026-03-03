@@ -74,6 +74,8 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LTX Video Transformer 3D model");
     m_request = compiled_model.create_infer_request();
+    const auto& input_shape = compiled_model.input(0).get_partial_shape();
+    m_expected_batch_size = input_shape.is_static() ? input_shape[0].get_length() : 0;
     // release the original model
     m_model.reset();
 
@@ -93,6 +95,21 @@ ov::Tensor LTXVideoTransformer3DModel::infer(const ov::Tensor& latent_model_inpu
     m_request.infer();
 
     return m_request.get_output_tensor();
+}
+
+size_t LTXVideoTransformer3DModel::get_expected_batch_size() const {
+    return m_expected_batch_size;
+}
+
+size_t LTXVideoTransformer3DModel::get_request_input_batch() {
+    if (!m_request) {
+        return 0;
+    }
+    const ov::Shape shape = m_request.get_input_tensor(0).get_shape();
+    if (shape.empty()) {
+        return 0;
+    }
+    return shape[0];
 }
 
 LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_size,
