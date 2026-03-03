@@ -195,20 +195,9 @@ class TextToVideoOptimum(CommonPipeline):
         self.num_steps = input_args["num_inference_steps"]
         self.print_batch_size_info(iter_num, input_args)
 
-        max_rss_mem_consumption = ""
-        max_sys_mem_consumption = ""
-        rss_mem_increase = ""
-        sys_mem_increase = ""
-        if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
-            self.mem_consumption_meter.start()
+        self.mem_consumption_meter.smart_start(iter_num)
         generation_result, generation_time = self.generate(input_param["prompt"], **input_args)
-        if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
-            self.mem_consumption_meter.stop_and_collect_data(
-                f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}_{proc_id}"
-            )
-            max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = (
-                self.mem_consumption_meter.get_data()
-            )
+        memory_metrics = self.mem_consumption_meter.smart_stop_and_collect_data(iter_num, dict_format=False)
 
         iter_data = {}
         iter_data, _ = self.postprocess_output_info(
@@ -217,10 +206,7 @@ class TextToVideoOptimum(CommonPipeline):
             iter_num,
             [],
             input_token_size,
-            max_rss_mem_consumption,
-            rss_mem_increase,
-            max_sys_mem_consumption,
-            sys_mem_increase,
+            *memory_metrics,
             prompt_index,
             None,
             None,
@@ -362,31 +348,15 @@ class TextToVideoGenAI(CommonPipeline):
         self.num_steps = input_args["num_inference_steps"]
         self.print_batch_size_info(iter_num, input_args)
 
-        max_rss_mem_consumption = ""
-        max_sys_mem_consumption = ""
-        rss_mem_increase = ""
-        sys_mem_increase = ""
-        if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
-            self.mem_consumption_meter.start()
-
+        self.mem_consumption_meter.smart_start(iter_num)
         generation_result = self.generate(input_param["prompt"], **input_args)
-
-        if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
-            self.mem_consumption_meter.stop_and_collect_data(
-                f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}_{proc_id}"
-            )
-            max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = (
-                self.mem_consumption_meter.get_data()
-            )
+        memory_metrics = self.mem_consumption_meter.smart_stop_and_collect_data(iter_num, dict_format=False)
 
         iter_data, _ = self.postprocess_output_info(
             generation_result,
             iter_num,
             input_token_size,
-            max_rss_mem_consumption,
-            rss_mem_increase,
-            max_sys_mem_consumption,
-            sys_mem_increase,
+            *memory_metrics,
             prompt_index,
             proc_id,
         )
@@ -404,8 +374,7 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
         )
         args |= input_args
 
-    if mem_consumption_meter:
-        mem_consumption_meter.update_marker("model")
+    mem_consumption.update_marker("model")
     pipe, tokenizer, pretrain_time, _, use_genai = FW_UTILS[framework].create_video_gen_model(
         model_path, device, mem_consumption, **args
     )
