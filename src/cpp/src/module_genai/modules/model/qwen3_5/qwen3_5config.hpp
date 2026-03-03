@@ -7,6 +7,7 @@
 #include <vector>
 #include <filesystem>
 #include <array>
+#include "openvino/runtime/tensor.hpp"
 
 namespace ov::genai::module {
 
@@ -41,6 +42,13 @@ struct Qwen3_5VisionPreprocessConfig {
     bool do_resize = true;
 
     static Qwen3_5VisionPreprocessConfig from_json_file(const std::filesystem::path& path);
+};
+
+struct Qwen3_5VisionEmbeddingResult {
+    ov::Tensor position_ids;
+    ov::Tensor visual_pos_mask;
+    ov::Tensor rope_deltas;
+    ov::Tensor visual_embeds;
 };
 
 }

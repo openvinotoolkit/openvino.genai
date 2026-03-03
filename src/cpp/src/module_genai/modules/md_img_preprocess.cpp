@@ -5,6 +5,7 @@
 
 #include "module_genai/module_factory.hpp"
 #include "module_genai/utils/tensor_utils.hpp"
+#include "model/qwen3_5/qwen3_5preprocessor.hpp"
 
 #include <chrono>
 #include <thread>

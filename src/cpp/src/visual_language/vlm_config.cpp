@@ -23,6 +23,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen2_5_vl", VLMModelType::QWEN2_5_VL},
         {"gemma3", VLMModelType::GEMMA3},
         {"qwen3_5", VLMModelType::QWEN3_5},
+        {"qwen3_5_moe", VLMModelType::QWEN3_5_MOE},
     };
 
     auto it = model_types_map.find(value);

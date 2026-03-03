@@ -30,12 +30,17 @@ private:
                         const std::vector<ov::Tensor>& encoded_images,
                         const std::vector<std::vector<int>>& source_sizes,
                         bool has_encoded_image = false);
+    TokenizedInputs run(const std::vector<std::string>& prompts, std::optional<ov::Tensor>& grid_thw);
     NormalizedPrompt normalize_prompt(const std::string& prompt,
                                       size_t base_image_id,
                                       size_t base_video_id,
                                       const std::vector<ov::Tensor>& encoded_images,
                                       const std::vector<ov::Tensor>& encoded_videos,
                                       const std::vector<std::vector<int>>& source_sizes);
+    NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                      size_t base_image_id,
+                                      size_t base_video_id,
+                                      const ov::Tensor& grid_thw);
     std::pair<std::string, std::vector<size_t>> normalize(
             const std::string& prompt,
             const std::string& native_tag,
@@ -43,6 +48,8 @@ private:
             size_t base_id,
             size_t n_images);
     size_t calc_tokens_num(size_t grid_t, size_t grid_h, size_t grid_w) const;
+
+    ov::Tensor calc_thw(const std::vector<std::vector<int>>& source_sizes);
 };
 
 REGISTER_MODULE_CONFIG(TextEncoderModule);
