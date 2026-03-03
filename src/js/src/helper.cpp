@@ -725,6 +725,21 @@ GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value
 }
 
 template <>
+VLMGenerateInputs js_to_cpp<VLMGenerateInputs>(const Napi::Env& env, const Napi::Value& value) {
+    try {
+        if (value.IsString()) {
+            return value.As<Napi::String>().Utf8Value();
+        }
+        if (is_chat_history(env, value)) {
+            return ov::genai::ChatHistory(unwrap<ov::genai::ChatHistory>(env, value));
+        }
+        OPENVINO_THROW("Passed argument must be a string or ChatHistory.");
+    } catch (const ov::Exception& e) {
+        OPENVINO_THROW("An incorrect input value has been passed. ", e.what());
+    }
+}
+
+template <>
 Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& env,
                                                                const ov::genai::EmbeddingResult& embedding_result) {
     return std::visit(overloaded{[env](std::vector<float> embed_vector) -> Napi::Value {

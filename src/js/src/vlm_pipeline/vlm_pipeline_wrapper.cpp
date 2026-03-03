@@ -14,8 +14,8 @@
 #include "include/vlm_pipeline/start_chat_worker.hpp"
 
 struct VLMTsfnContext {
-    VLMTsfnContext(std::string prompt, std::shared_ptr<bool> is_generating)
-        : prompt(prompt),
+    VLMTsfnContext(VLMGenerateInputs inputs, std::shared_ptr<bool> is_generating)
+        : inputs(std::move(inputs)),
           is_generating(is_generating) {};
     ~VLMTsfnContext() {};
 
@@ -23,7 +23,7 @@ struct VLMTsfnContext {
     Napi::ThreadSafeFunction callback;
     std::optional<Napi::ThreadSafeFunction> streamer;
 
-    std::string prompt;
+    VLMGenerateInputs inputs;
     std::vector<ov::Tensor> images;
     std::vector<ov::Tensor> videos;
     std::shared_ptr<bool> is_generating;
@@ -94,7 +94,15 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
 
         ov::genai::VLMDecodedResults result;
 
-        result = context->pipe->generate(context->prompt, context->images, context->videos, config, streamer);
+        std::visit(
+            overloaded{[context, &config, &streamer, &result](std::string& prompt) {
+                           result = context->pipe->generate(prompt, context->images, context->videos, config, streamer);
+                       },
+                       [context, &config, &streamer, &result](ov::genai::ChatHistory& history) {
+                           result =
+                               context->pipe->generate(history, context->images, context->videos, config, streamer);
+                       }},
+            context->inputs);
 
         if (!streamer_exceptions.empty()) {
             // If there were exceptions from the streamer, report them all as a single error and finish without result
@@ -173,8 +181,8 @@ Napi::Value VLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         VALIDATE_ARGS_COUNT(info, 6, "generate()");
         VLMTsfnContext* context = nullptr;
 
-        // Arguments: prompt, images, videos, streamer, generationConfig, callback
-        auto prompt = js_to_cpp<std::string>(env, info[0]);
+        // Arguments: prompt or ChatHistory, images, videos, streamer, generationConfig, callback
+        auto inputs = js_to_cpp<VLMGenerateInputs>(env, info[0]);
         auto images = js_to_cpp<std::vector<ov::Tensor>>(env, info[1]);
         auto videos = js_to_cpp<std::vector<ov::Tensor>>(env, info[2]);
         OPENVINO_ASSERT(info[3].IsFunction() || info[3].IsUndefined(), "generate callback is not a function");
@@ -183,7 +191,7 @@ Napi::Value VLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         OPENVINO_ASSERT(info[5].IsFunction(), "generate callback is not a function");
         auto callback = info[5].As<Napi::Function>();
 
-        context = new VLMTsfnContext(prompt, this->is_generating);
+        context = new VLMTsfnContext(std::move(inputs), this->is_generating);
         context->images = std::move(images);
         context->videos = std::move(videos);
         context->pipe = this->pipe;

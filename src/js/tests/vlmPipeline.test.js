@@ -4,7 +4,13 @@
 import assert from "node:assert";
 import { describe, it, before } from "node:test";
 import { createTestImageTensor, createTestVideoTensor } from "./utils.js";
-import { Tokenizer, VLMPipeline, DecodedResults, VLMDecodedResults } from "../dist/index.js";
+import {
+  Tokenizer,
+  VLMPipeline,
+  DecodedResults,
+  VLMDecodedResults,
+  ChatHistory,
+} from "../dist/index.js";
 
 const { VLM_PATH } = process.env;
 
@@ -46,6 +52,17 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
     });
 
     assert.strictEqual(result.texts.length, 1, "Should generate comparison");
+  });
+
+  it("should generate text with ChatHistory", async () => {
+    const history = new ChatHistory();
+    history.push({ role: "user", content: "What is in the image?" });
+    const result = await pipeline.generate(history, {
+      images: [testImage1],
+      generationConfig: { max_new_tokens: 20 },
+    });
+    assert.ok(result instanceof VLMDecodedResults);
+    assert.strictEqual(result.texts.length, 1);
   });
 
   it("should generate text with video input", async () => {

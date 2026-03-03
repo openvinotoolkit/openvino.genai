@@ -21,6 +21,8 @@ template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
 using GenerateInputs = std::variant<ov::genai::StringInputs, ov::genai::ChatHistory>;
+/** VLM generate first argument: prompt string or ChatHistory */
+using VLMGenerateInputs = std::variant<std::string, ov::genai::ChatHistory>;
 
 #define VALIDATE_ARGS_COUNT(info, expected_count, method_name)                                 \
     if (info.Length() != expected_count) {                                                     \
@@ -70,6 +72,9 @@ std::vector<double> js_to_cpp<std::vector<double>>(const Napi::Env& env, const N
 /** @brief  A template specialization for TargetType GenerateInputs */
 template <>
 GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType VLMGenerateInputs */
+template <>
+VLMGenerateInputs js_to_cpp<VLMGenerateInputs>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::genai::JsonContainer */
 template <>
 ov::genai::JsonContainer js_to_cpp<ov::genai::JsonContainer>(const Napi::Env& env, const Napi::Value& value);
