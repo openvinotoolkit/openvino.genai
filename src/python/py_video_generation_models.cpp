@@ -214,8 +214,11 @@ void init_autoencoder_kl_ltx_video(py::module_& m) {
                 width (int): Video width.
             )")
         .def("encode",
-             &ov::genai::AutoencoderKLLTXVideo::encode,
-             py::call_guard<py::gil_scoped_release>(),
+             [](ov::genai::AutoencoderKLLTXVideo& self,
+                const ov::Tensor& video,
+                std::shared_ptr<ov::genai::Generator> generator) {
+                 return self.encode(video, generator);
+             },
              py::arg("video"),
              py::arg("generator"),
              R"(
