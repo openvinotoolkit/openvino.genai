@@ -1,9 +1,10 @@
 # Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Type
+from typing import Any, Type
 
 from optimum.modeling_base import OptimizedModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -13,6 +14,7 @@ from optimum.intel import OVModelForCausalLM, OVModelForSequenceClassification
 from optimum.intel.openvino.modeling import OVModel
 
 from huggingface_hub import hf_hub_download, snapshot_download
+import datasets
 
 from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
@@ -331,3 +333,26 @@ def load_hf_model_from_gguf(gguf_model_id, gguf_filename):
 def load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename):
     model_cached = snapshot_download(gguf_model_id)  # required to avoid HF rate limits
     return retry_request(lambda: AutoTokenizer.from_pretrained(model_cached, gguf_file=gguf_filename))
+
+
+def load_dataset_via_snapshot(
+    repo_id: str, *args: Any, **kwargs: Any
+) -> datasets.Dataset | datasets.DatasetDict | datasets.IterableDataset | datasets.IterableDatasetDict:
+    """Download dataset with snapshot_download, then load from local path.
+
+    In CI snapshot_download stores files under HF_HOME/hub/ on the shared NFS
+    mount (proven reliable for model downloads). datasets.load_dataset
+    then reads from that local snapshot with cache_dir on local disk,
+    avoiding NFS lock issues with filelock on NFS mounts. Ticket: 181288.
+
+    Set HF_DATASETS_LOCAL_CACHE_PATH env variable to redirect builder
+    lock/Arrow cache files to local disk (e.g. /tmp/hf_datasets_cache).
+    When unset, datasets uses its default cache location.
+    """
+
+    local_cache = os.environ.get("HF_DATASETS_LOCAL_CACHE_PATH")
+    local_cache_kwargs = {}
+    if local_cache is not None:
+        local_cache_kwargs["cache_dir"] = local_cache
+    local_path = retry_request(lambda: snapshot_download(repo_id, repo_type="dataset"))
+    return datasets.load_dataset(local_path, *args, **{**kwargs, **local_cache_kwargs})
