@@ -225,19 +225,19 @@ class TestAutoEncoderKLLTXVideo:
 
 
 class TestAutoEncoderKLLTXVideoEncoder:
-    @pytest.fixture(autouse=True)
+    @pytest.fixture
     def require_encoder(self, video_generation_model):
         encoder_path = Path(video_generation_model) / "vae_encoder"
         if not encoder_path.exists():
             pytest.skip("vae_encoder not available in test model")
 
-    def test_constructor_with_encoder(self, video_generation_model):
+    def test_constructor_with_encoder(self, video_generation_model, require_encoder):
         encoder_path = Path(video_generation_model) / "vae_encoder"
         decoder_path = Path(video_generation_model) / "vae_decoder"
         vae = ov_genai.AutoencoderKLLTXVideo(str(encoder_path), str(decoder_path))
         assert vae is not None
 
-    def test_encode_without_compile_raises(self, video_generation_model):
+    def test_encode_without_compile_raises(self, video_generation_model, require_encoder):
         import openvino as ov
         import numpy as np
 
@@ -264,7 +264,7 @@ class TestAutoEncoderKLLTXVideoEncoder:
         with pytest.raises(Exception, match="without 'VAE encoder' capability"):
             vae.encode(dummy, generator)
 
-    def test_encode_output_shape(self, video_generation_model):
+    def test_encode_output_shape(self, video_generation_model, require_encoder):
         import openvino as ov
         import numpy as np
 
@@ -283,7 +283,7 @@ class TestAutoEncoderKLLTXVideoEncoder:
         assert shape[0] == 1
         assert shape[1] == config.latent_channels
 
-    def test_encode_is_deterministic(self, video_generation_model):
+    def test_encode_is_deterministic(self, video_generation_model, require_encoder):
         import openvino as ov
         import numpy as np
 
@@ -297,7 +297,7 @@ class TestAutoEncoderKLLTXVideoEncoder:
 
         np.testing.assert_array_equal(latent1.data, latent2.data)
 
-    def test_encode_varies_with_seed(self, video_generation_model):
+    def test_encode_varies_with_seed(self, video_generation_model, require_encoder):
         import openvino as ov
         import numpy as np
 

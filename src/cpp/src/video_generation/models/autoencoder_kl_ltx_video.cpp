@@ -90,7 +90,6 @@ public:
     }
 
 private:
-    ov::Tensor m_parameters;
     ov::Tensor m_mean, m_std;
 };
 
