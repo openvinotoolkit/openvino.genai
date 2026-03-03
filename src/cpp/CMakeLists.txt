@@ -4,6 +4,13 @@
 
 file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 
+# modeling/ sources rely on OpenVINO internal/dev-api headers (e.g. openvino/op/linear_attn.hpp)
+# and are intended to be built only when ENABLE_OPENVINO_NEW_ARCH is enabled.
+file(GLOB_RECURSE MODELING_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/modeling/*.cpp")
+if(NOT ENABLE_OPENVINO_NEW_ARCH)
+    list(REMOVE_ITEM SOURCE_FILES ${MODELING_SOURCES})
+endif()
+
 list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
 
 # Dependencies
@@ -133,9 +140,7 @@ set(TARGET_NAME_OBJ ${TARGET_NAME}_obj)
 add_library(${TARGET_NAME_OBJ} OBJECT ${SOURCE_FILES})
 
 if(ENABLE_OPENVINO_NEW_ARCH)
-    file(GLOB_RECURSE MODELING_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/modeling/*.cpp")
-    target_sources(${TARGET_NAME_OBJ} PRIVATE ${MODELING_SOURCES})
-    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_OPENVINO_NEW_ARCH)
+    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_OPENVINO_NEW_ARCH=1)
 endif()
 
 target_include_directories(${TARGET_NAME_OBJ}
@@ -163,7 +168,7 @@ target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::thr
 
 # modeling/ sources use internal OpenVINO dev-api headers (e.g. openvino/op/linear_attn.hpp)
 # openvino::core::dev exposes src/core/dev_api which contains these headers.
-if(TARGET openvino::core::dev)
+if(ENABLE_OPENVINO_NEW_ARCH AND TARGET openvino::core::dev)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::core::dev)
 endif()
 
