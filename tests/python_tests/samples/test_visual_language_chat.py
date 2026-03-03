@@ -6,8 +6,10 @@ import pytest
 import subprocess # nosec B404
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR, convert_model
 from test_utils import run_sample
+
+convert_draft_model = convert_model
 
 class TestVisualLanguageChat:
     @pytest.mark.vlm
@@ -63,6 +65,28 @@ class TestVisualLanguageChat:
         # Test CPP sample
         cpp_sample = SAMPLES_CPP_DIR / 'visual_language_chat'
         cpp_command =[cpp_sample, convert_model, os.path.dirname(generate_test_content)]
+        cpp_result = run_sample(cpp_command, questions)
+
+        # Compare results
+        assert py_result.stdout == cpp_result.stdout, f"Results should match"
+
+    @pytest.mark.vlm
+    @pytest.mark.eagle3_vlm_decoding
+    @pytest.mark.parametrize(
+        "convert_model, convert_draft_model, download_test_content, questions",
+        [
+            pytest.param("Qwen2.5-VL-7B-Instruct", "qwen2.5-vl-7b-eagle3-ov-int4", "monalisa.jpg", 'Who drew this painting?'),
+        ],
+        indirect=["convert_model", "convert_draft_model", "download_test_content"],
+    )
+    def test_eagle3_visual_language_chat(self, convert_model, convert_draft_model, download_test_content, questions):
+        # Test eagle3
+        py_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_chat.py"
+        py_command = [sys.executable, py_script, convert_model, download_test_content, convert_draft_model]
+        py_result = run_sample(py_command, questions)
+
+        # Test vlm without eagle3
+        cpp_command = [sys.executable, py_script, convert_model, download_test_content]
         cpp_result = run_sample(cpp_command, questions)
 
         # Compare results
