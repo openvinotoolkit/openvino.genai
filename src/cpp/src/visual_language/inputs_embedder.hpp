@@ -235,7 +235,8 @@ private:
 
         // Get last pruned prompt after vision token pruning.
         virtual std::string get_last_pruned_prompt(const std::string& original_prompt) const {
-            OPENVINO_THROW_NOT_IMPLEMENTED("Base class get_last_pruned_prompt() isn't implemented");
+            OPENVINO_THROW_NOT_IMPLEMENTED(
+                "get_last_pruned_prompt() must be implemented by derived classes that support vision token pruning");
         }
 
         virtual void finish_chat();
@@ -325,7 +326,6 @@ private:
             return m_pruning_processor->execute(context,
                                                 m_position_ids,
                                                 m_kv_cache_state,
-                                                m_is_chat_conversation,
                                                 m_prev_hist_length);
         }
     };

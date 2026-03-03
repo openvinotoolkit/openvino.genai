@@ -771,7 +771,6 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     const PruningContext& context,
     ov::Tensor& position_ids,
     utils::KVCacheState& kv_cache_state,
-    bool is_chat_conversation,
     size_t& prev_hist_length) {
     auto pruning_start = std::chrono::high_resolution_clock::now();
 

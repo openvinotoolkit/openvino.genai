@@ -226,14 +226,12 @@ public:
      * @param context PruningContext containing input data
      * @param position_ids Position IDs tensor (modified in-place)
      * @param kv_cache_state KV cache state (modified)
-     * @param is_chat_conversation Whether in chat mode
-     * @param prev_hist_length Previous history length (modified in-place if chat + pruning occurred)
+     * @param prev_hist_length Previous history length (modified in-place if pruning occurred)
      * @return std::optional<PruningResult> with pruned tensors if pruning occurred, std::nullopt otherwise
      */
     std::optional<PruningResult> execute(const PruningContext& context,
                                          ov::Tensor& position_ids,
                                          utils::KVCacheState& kv_cache_state,
-                                         bool is_chat_conversation,
                                          size_t& prev_hist_length);
 
 private:
