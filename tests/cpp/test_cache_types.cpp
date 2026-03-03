@@ -67,7 +67,7 @@ TEST_P(GetCacheTypesRealModel, MatchesExpected) {
 
     ov::Core core;
     const auto model = core.read_model(xml_path);
-    const auto types = get_cache_types(model);
+    const auto types = get_cache_types(*model);
 
     EXPECT_EQ(types.has_kvcache(), param.expected_kvcache)
         << param.model_id << ": unexpected has_kvcache";

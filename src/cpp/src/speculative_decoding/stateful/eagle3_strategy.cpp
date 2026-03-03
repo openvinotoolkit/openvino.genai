@@ -43,7 +43,7 @@ Eagle3InferWrapperBase::Eagle3InferWrapperBase(const ModelDesc& model_desc)
     m_kv_axes_pos = utils::get_kv_axes_pos(model_desc.model);
 
     // detect cache kinds (KV / Linear)
-    m_cache_types = utils::get_cache_types(model_desc.model);
+    m_cache_types = utils::get_cache_types(*model_desc.model);
 
     if (m_device == "NPU") {
         auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, m_properties, m_kv_axes_pos);

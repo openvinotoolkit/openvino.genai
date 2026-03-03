@@ -158,7 +158,7 @@ private:
     uint8_t mask = 0;
 };
 
-CacheTypes get_cache_types(std::shared_ptr<const ov::Model> model);
+CacheTypes get_cache_types(const ov::Model& model);
 
 struct KVAxesPosition {
     size_t batch;
@@ -179,7 +179,7 @@ public:
 
     // Construct from model by detecting cache types inside the model
     explicit CacheState(const std::shared_ptr<const ov::Model>& model) {
-        cache_types = get_cache_types(model);
+        cache_types = get_cache_types(*model);
     }
 
     size_t num_tokens_to_trim = 0;
@@ -195,6 +195,8 @@ public:
     }
 
     void reset_state() {
+        std::cerr << "[ reset_state ] num_tokens_to_trim: " << num_tokens_to_trim << ", reset_mem_state: " << reset_mem_state
+                  << ", has_linear: " << has_linear() << std::endl;
         reset_mem_state = false;
         num_tokens_to_trim = 0;
         state.clear();
@@ -209,7 +211,9 @@ public:
     bool is_hybrid() const { return cache_types.is_hybrid(); }
 
     bool needs_reset() const {
-        return reset_mem_state || state.empty() || (num_tokens_to_trim > 0 && has_linear());
+        std::cerr << "[ needs_reset ] num_tokens_to_trim: " << num_tokens_to_trim << ", reset_mem_state: " << reset_mem_state
+                  << ", has_linear: " << has_linear() << std::endl;
+        return reset_mem_state || (num_tokens_to_trim > 0 && has_linear());
     }
 };
 

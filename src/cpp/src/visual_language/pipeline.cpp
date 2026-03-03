@@ -140,7 +140,7 @@ public:
         m_use_full_chat_history = m_is_npu;
 
         utils::CacheState& cache_state = m_inputs_embedder->get_kv_cache_state();
-        cache_state.set_cache_types(utils::get_cache_types(language_model));
+        cache_state.set_cache_types(utils::get_cache_types(*language_model));
         cache_state.seq_length_axis = kv_pos.seq_len;
 
         // If eos_token_id was not provided, take value

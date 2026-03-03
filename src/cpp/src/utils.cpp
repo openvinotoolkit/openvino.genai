@@ -436,12 +436,12 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
 }
 
 
-CacheTypes get_cache_types(std::shared_ptr<const ov::Model> model) {
+CacheTypes get_cache_types(const ov::Model& model) {
     // "ReadValue" node is cache representation in stateful model
     const std::string state_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
     CacheTypes cache_types;
 
-    for (const auto op : model->get_ops()) {
+    for (const auto op : model.get_ops()) {
         // check input size, as in LoRA adapters case it could be 0
         if (op->get_type_name() != state_node_type_name || op->get_input_size() < 1) {
             continue;

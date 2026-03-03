@@ -349,8 +349,10 @@ void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::CacheS
 
     std::vector<int64_t>& state = cache_state.get_state();
 
-    if (state.empty())
+    if (state.empty()) {
+        cache_state.reset_mem_state = true;
         return;
+    }
 
     size_t first_diverse_tokens_idx = ov::genai::utils::get_first_history_difference(new_chat_tokens, state);
     // in the case of beam_search the longest answer is in the kv cache, but the best one is needed
