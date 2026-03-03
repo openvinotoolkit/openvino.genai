@@ -179,6 +179,8 @@ def run_hugging_face(
 
 
 MODEL_SCOPE_MODELS_IDS = ("AngelSlim/Qwen3-1.7B_eagle3",)
+
+
 # download model from Hugging Face or ModelScope or read converted model
 def get_huggingface_models(
     model_id: str | Path,
