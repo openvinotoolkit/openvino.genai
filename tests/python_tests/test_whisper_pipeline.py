@@ -36,55 +36,21 @@ from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
 from typing import Any
 from difflib import SequenceMatcher
-import time
-import logging
-
-logger = logging.getLogger(__name__)
 
 
-def _clear_filelock_registry():
-    """Clear stale entries from filelock in-process lock registry.
+def load_dataset_via_snapshot(repo_id, *args, **kwargs):
+    """Download dataset with snapshot_download, then load from local path.
 
-    On NFS mounts, os.close(fd) in filelock _release() can fail with
-    OSError [Errno 5], leaving stale entries in filelock's internal
-    _registry.held dict. Subsequent lock attempts on the same path
-    then raise RuntimeError (deadlock detection). Clearing the
-    registry recovers from this corrupted state.
+    snapshot_download stores files under HF_HOME/hub/ on the shared NFS
+    mount (proven reliable for model downloads). datasets.load_dataset
+    then reads from that local snapshot.
+
+    If filelock errors reappear on NFS (OSError [Errno 5] or deadlock in
+    filelock._api._registry), pass cache_dir="/tmp/hf_datasets_cache" to
+    redirect builder lock/Arrow cache files to local disk. Ticket: 181288.
     """
-    try:
-        from filelock._api import _registry
-
-        if hasattr(_registry, "held"):
-            _registry.held.clear()
-    except (ImportError, AttributeError):
-        pass
-
-
-def load_dataset_nfs_safe(*args, max_retries=3, **kwargs):
-    """Wrapper around datasets.load_dataset tolerant to NFS lock failures.
-
-    fcntl.flock() is unreliable on NFS. When filelock release fails with an
-    I/O error the in-process lock registry is left in a corrupted state,
-    causing every subsequent lock acquisition on that path to raise a
-    deadlock RuntimeError. This wrapper catches both error types, clears
-    the stale registry, and retries.
-    """
-    for attempt in range(max_retries):
-        try:
-            return datasets.load_dataset(*args, **kwargs)
-        except (OSError, RuntimeError) as e:
-            error_msg = str(e)
-            is_nfs_lock_error = "Input/output error" in error_msg or "Deadlock" in error_msg
-            if not is_nfs_lock_error or attempt == max_retries - 1:
-                raise
-            logger.warning(
-                "NFS filelock error (attempt %d/%d): %s. Clearing filelock registry and retrying.",
-                attempt + 1,
-                max_retries,
-                error_msg,
-            )
-            _clear_filelock_registry()
-            time.sleep(0.5 * (attempt + 1))
+    local_path = retry_request(lambda: snapshot_download(repo_id, repo_type="dataset"))
+    return datasets.load_dataset(local_path, *args, **kwargs)
 
 
 @pytest.fixture(scope="class", autouse=True)
@@ -258,7 +224,7 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
     # https://github.com/huggingface/datasets/issues/7647 dataset is fixed for streaming mode
     # if not long_form:
     if False:
-        ds = load_dataset_nfs_safe(
+        ds = load_dataset_via_snapshot(
             "mozilla-foundation/common_voice_11_0",
             language,
             split="test",
@@ -266,7 +232,7 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
             trust_remote_code=True,
         )
     else:
-        ds = load_dataset_nfs_safe(
+        ds = load_dataset_via_snapshot(
             "distil-whisper/meanwhile",
             split="test",
             streaming=True,
@@ -583,7 +549,7 @@ def test_longform_audio(model_descr, sample_from_dataset):
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_shortform(model_descr):
     samples = []
-    ds = load_dataset_nfs_safe("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
+    ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
 
     for ds_row in ds:
         samples.append(ds_row["audio"]["array"])
@@ -622,7 +588,7 @@ def align_words_by_text(ref_words, test_words):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_reference):
-    ds = load_dataset_nfs_safe("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
+    ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
     samples = [i["audio"]["array"] for i in ds]
 
     pipe = read_whisper_model(model_descr, word_timestamps=True)[3]
