@@ -36,6 +36,10 @@ Dataset parse_vlm_dataset(const std::string& models_path, const std::string& dat
     for (auto json_data_iterator = json_dataset.begin(); json_data_iterator != json_dataset.end() && dataset.size() < num_prompts; ++json_data_iterator) {
         auto & json_data = *json_data_iterator;
 
+        OPENVINO_ASSERT(json_data.contains("prompt") && json_data["prompt"].is_string(),
+                        "Dataset entry does not contain a string \"prompt\" field");
+        OPENVINO_ASSERT(json_data.contains("image") && json_data["image"].is_string(),
+                        "Dataset entry does not contain a string \"image\" field");
         std::string prompt = json_data["prompt"];
         std::string image_path = json_data["image"];
 
