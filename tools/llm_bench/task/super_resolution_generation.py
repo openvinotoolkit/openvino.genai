@@ -32,11 +32,11 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     )
     low_res_img = Image.open(img['prompt']).convert('RGB')
     low_res_img = low_res_img.resize((resize_image_width, resize_image_height))
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
     start = time.perf_counter()
     res = pipe(low_res_img, num_inference_steps=nsteps, tm_list=tm_list)
     end = time.perf_counter()
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     result_md5_list = []
     if framework == 'ov':

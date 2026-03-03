@@ -41,13 +41,13 @@ def run_text_embeddings_optimum(input_text, num, model, tokenizer, args, iter_da
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
 
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
     start = time.perf_counter()
     model(**input_data)
     end = time.perf_counter()
     embed_time = end - start
     embed_time_full = end - tok_encode_start
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     tm_list = []
     tm_infer_list = []
@@ -112,12 +112,12 @@ def run_text_embeddings_genai(input_text, num, model, tokenizer, args, iter_data
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
 
-    mem_consumption.smart_start(num)
+    mem_consumption.start(num)
     start = time.perf_counter()
     model.embed_documents(input_text_list)
     end = time.perf_counter()
     embed_time = end - start
-    memory_metrics = mem_consumption.smart_stop_and_collect_data(num)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     tm_list = []
     tm_infer_list = []

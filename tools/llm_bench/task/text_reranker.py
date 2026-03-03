@@ -185,9 +185,9 @@ class TextRerankerOptimum(CommonPipeline):
         input_token_size = input_tokens[0].numel() * len(self.texts)
         self.print_batch_size_info(iter_num, input_token_size)
 
-        self.mem_consumption_meter.smart_start(iter_num)
+        self.mem_consumption_meter.start(iter_num)
         generation_result, generation_time = self.generate(tokenized_input)
-        memory_metrics = self.mem_consumption_meter.smart_stop_and_collect_data(iter_num, dict_format=False)
+        memory_metrics = self.mem_consumption_meter.iter_stop_and_collect_data(iter_num, dict_format=False)
 
         iter_data, _ = self.postprocess_output_info(
             generation_result,
@@ -325,9 +325,9 @@ class TextRerankerGenAI(CommonPipeline):
         input_token_size = tokenized_input[0].numel() * len(self.texts)
         self.print_batch_size_info(iter_num, input_token_size)
 
-        self.mem_consumption_meter.smart_start(iter_num)
+        self.mem_consumption_meter.start(iter_num)
         generation_result, generation_time = self.generate(input_text)
-        memory_metrics = self.mem_consumption_meter.smart_stop_and_collect_data(iter_num, dict_format=False)
+        memory_metrics = self.mem_consumption_meter.iter_stop_and_collect_data(iter_num, dict_format=False)
 
         iter_data, _ = self.postprocess_output_info(
             generation_result,
