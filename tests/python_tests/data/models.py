@@ -14,9 +14,7 @@ def get_models_list() -> tuple[str, ...]:
     return tuple(model_ids)
 
 
-CHAT_MODELS_LIST = (
-    "Qwen/Qwen2-0.5B-Instruct",
-)
+CHAT_MODELS_LIST = ("Qwen/Qwen2-0.5B-Instruct",)
 
 
 LINEAR_ATTENTION_MODELS_LIST = (

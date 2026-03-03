@@ -427,7 +427,7 @@ def test_linear_attention_chat_matches_last_answer_after_cache_reset(llm_model, 
 
     last_answer = chat_history.pop()
     decoded_results: ov_genai.DecodedResults = ov_pipe.generate(chat_history, config)
-    assert last_answer['content'] == decoded_results.texts[0]
+    assert last_answer["content"] == decoded_results.texts[0]
 
 
 #
