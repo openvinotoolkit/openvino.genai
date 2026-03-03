@@ -21,9 +21,12 @@ class TestLoraText2Video:
         indirect=["convert_model"],
     )
     @pytest.mark.parametrize("download_test_content", ["ltx_tiny_dummy_lora.safetensors"], indirect=True)
-    @pytest.mark.parametrize("executable", [
-        [SAMPLES_CPP_DIR / "lora_text2video"],
-        [sys.executable, SAMPLES_PY_DIR / "video_generation/lora_text2video.py"],
-    ])
+    @pytest.mark.parametrize(
+        "executable",
+        [
+            [SAMPLES_CPP_DIR / "lora_text2video"],
+            [sys.executable, SAMPLES_PY_DIR / "video_generation/lora_text2video.py"],
+        ],
+    )
     def test_sample_lora_text2video(self, convert_model, sample_args, download_test_content, executable):
         run_sample(executable + [convert_model, sample_args, download_test_content, "0.7"])
