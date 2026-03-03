@@ -357,10 +357,24 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                 break;
             }
 
+            // print chunk output tokens
+            std::cout << "Chunk output tokens (return timestamps): ";
+            for (const auto& token : extracted_segments.non_timestamp_tokens) {
+                std::cout << token << ", ";
+            }
+            std::cout << std::endl;
+
             segment_offset = extracted_segments.last_offset;
         } else {
             output_tokens.insert(output_tokens.end(), chunk_output_tokens.begin(), chunk_output_tokens.end());
             segment_offset = input_features.n_frames;
+
+            // print chunk output tokens
+            std::cout << "Chunk output tokens: ";
+            for (const auto& token : chunk_output_tokens) {
+                std::cout << token << ", ";
+            }
+            std::cout << std::endl;
         }
 
         if (cancelled) {

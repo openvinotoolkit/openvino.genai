@@ -864,20 +864,86 @@ def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
     assert expected == as_argument_result
     result_handler.reset()
 
-    genai_pipe.generate(sample_from_dataset, config, streamer=streamer)
+    result_config_streamer_kw = genai_pipe.generate(sample_from_dataset, config, streamer=streamer)
+    config_streamer_kw_result = result_handler.decode(genai_pipe.get_tokenizer())
 
-    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    print("Config + streamer kwarg result:")
+    print(result_config_streamer_kw.texts[0])
+    print("Config + streamer kwarg decoded:")
+    print(config_streamer_kw_result)
+
+    assert expected == config_streamer_kw_result
     result_handler.reset()
 
-    genai_pipe.generate(sample_from_dataset, generation_config=config, streamer=streamer)
+    result_generation_config_kw = genai_pipe.generate(sample_from_dataset, generation_config=config, streamer=streamer)
+    generation_config_kw_result = result_handler.decode(genai_pipe.get_tokenizer())
 
-    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    print("generation_config kwarg + streamer kwarg result:")
+    print(result_generation_config_kw.texts[0])
+    print("generation_config kwarg + streamer kwarg decoded:")
+    print(generation_config_kw_result)
+
+    assert expected == generation_config_kw_result
     result_handler.reset()
 
-    genai_pipe.generate(sample_from_dataset, return_timestamps=True, streamer=streamer)
+    result_return_timestamps = genai_pipe.generate(sample_from_dataset, return_timestamps=True, streamer=streamer)
+    return_timestamps_result = result_handler.decode(genai_pipe.get_tokenizer())
 
-    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    print("return_timestamps + streamer result:")
+    print(result_return_timestamps.texts[0])
+    print("return_timestamps + streamer decoded:")
+    print(return_timestamps_result)
+
+    assert expected == return_timestamps_result
     result_handler.reset()
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
+def test_streamers_2(model_descr, sample_from_dataset):
+    _, _, _, genai_pipe = read_whisper_model(model_descr)
+
+    class Streamer(ov_genai.StreamerBase):
+        def __init__(self) -> None:
+            super().__init__()
+            self.tokens = []
+
+        def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
+            print(f"Received token: {token}")
+            if type(token) == list:
+                self.tokens += token
+            else:
+                self.tokens.append(token)
+            return ov_genai.StreamingStatus.RUNNING
+
+        def end(self) -> None:
+            pass
+
+    streamer = Streamer()
+
+    result = genai_pipe.generate(sample_from_dataset, streamer=streamer)
+
+    expected = result.texts[0]
+    print("Expected:")
+    print(expected)
+
+    tokenizer = genai_pipe.get_tokenizer()
+
+    streamer_result_decoded = tokenizer.decode(streamer.tokens)
+
+    print("Streamer result:")
+    print(streamer_result_decoded)
+
+    assert expected == streamer_result_decoded
+
+    def streamer_callback(subword):
+        print(f"Received subword: {subword}")
+        return ov_genai.StreamingStatus.RUNNING
+
+    callback_result = genai_pipe.generate(sample_from_dataset, streamer=streamer_callback)
+
+    print("Callback result:")
+    print(callback_result.texts[0])
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
