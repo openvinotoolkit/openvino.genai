@@ -26,7 +26,7 @@ class TextEvaluator(BaseEvaluator):
         test_data: Union[str, list] = None,
         metrics="similarity",
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
-        max_new_tokens=128,
+        max_new_tokens=1024,
         crop_question=True,
         num_samples=None,
         language="en",

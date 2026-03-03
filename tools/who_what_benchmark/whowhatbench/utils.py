@@ -259,3 +259,140 @@ def parquet_generate_tables(self, files, *args, **kwargs):
 def disable_diffusers_model_progress_bar(model):
     if hasattr(model, "set_progress_bar_config"):
         model.set_progress_bar_config(disable=True)
+
+
+# Chat template utilities for JSON dataset handling
+def raise_exception(message: str):
+    """Raise an exception with the given message. Used as a Jinja2 filter."""
+    raise Exception(message)
+
+
+def strftime_now(format_string: str):
+    """Return current datetime formatted according to format_string. Used as a Jinja2 filter."""
+    from datetime import datetime
+    return datetime.now().strftime(format_string)
+
+
+def is_json_dataset(dataset: str) -> bool:
+    """Check if the dataset path has a .json extension."""
+    if dataset is None:
+        return False
+    return dataset.lower().endswith(".json")
+
+
+def resolve_json_dataset_path(dataset_path: str) -> str:
+    """Resolve JSON dataset path, checking local filesystem first, then whowhatbench.prompts resources."""
+    if os.path.exists(dataset_path):
+        logger.info(f"JSON dataset found at local path: {dataset_path}")
+        return dataset_path
+
+    from importlib.resources import files
+    resource_path = files('whowhatbench.prompts').joinpath(dataset_path)
+    if resource_path.is_file():
+        logger.info(f"JSON dataset found in whowhatbench.prompts resources: {resource_path}")
+        return str(resource_path)
+
+    logger.error(f"JSON dataset file '{dataset_path}' not found in local filesystem or whowhatbench.prompts resources")
+    raise FileNotFoundError(
+        f"JSON dataset file '{dataset_path}' was not found as a local file or in whowhatbench.prompts resources"
+    )
+
+
+def read_json_dataset(dataset_path: str):
+    """Read JSON dataset from file. Supports both JSON array and JSONL (line-delimited JSON) formats."""
+    items = []
+    logger.info(f"Reading JSON dataset from: {dataset_path}")
+    with open(dataset_path, "r", encoding="utf-8") as input_file:
+        for line in input_file:
+            line = line.strip()
+            if line:
+                items.append(json.loads(line))
+    logger.info(f"Loaded {len(items)} records from JSON dataset")
+    return items
+
+
+def get_chat_template_for_model(model_path, tokenizer=None):
+    """Get the appropriate chat template for known models."""
+    import re
+    
+    # Extract model name from path
+    model_name_lower = model_path.lower() if model_path else ""
+    
+    # Hardcoded chat template mappings
+    chat_template_map = {
+        "qwen3coder": "https://raw.githubusercontent.com/openvinotoolkit/model_server/refs/heads/main/extras/chat_template_examples/chat_template_qwen3coder_instruct.jinja",
+        "gpt-oss-120b": "https://raw.githubusercontent.com/openvinotoolkit/model_server/refs/heads/main/extras/chat_template_examples/chat_template_gpt_oss.jinja",
+        "gpt-oss-20b": "https://raw.githubusercontent.com/openvinotoolkit/model_server/refs/heads/main/extras/chat_template_examples/chat_template_gpt_oss.jinja",
+    }
+    
+    # Find matching model
+    for key, template_source in chat_template_map.items():
+        if key in model_name_lower:
+            logger.info(f"Matched model '{key}' with chat template source: {template_source}")
+            return template_source
+    
+    logger.info(f"No hardcoded chat template found for model: {model_path}, using tokenizer")
+    return None
+
+
+def render_messages_dataset_to_prompts(records, tokenizer, model_path=None):
+    """Render messages from JSON dataset to prompts using tokenizer's chat template via Jinja2."""
+    import jinja2
+    
+    logger.info(f"Rendering {len(records)} records to prompts using chat template")
+    prompts = []
+    chat_template = None
+    
+    # Get chat template source for known models
+    chat_template_source = get_chat_template_for_model(model_path, tokenizer)
+    
+    # Load chat template from custom source if found
+    if chat_template_source:
+        if chat_template_source.startswith("http://") or chat_template_source.startswith("https://"):
+            import requests
+            logger.info(f"Loading chat template from URL: {chat_template_source}")
+            chat_template = requests.get(chat_template_source).text
+        else:
+            from transformers import AutoTokenizer
+            logger.info(f"Loading chat template from model: {chat_template_source}")
+            custom_tokenizer = AutoTokenizer.from_pretrained(chat_template_source)
+            chat_template = custom_tokenizer.get_chat_template()
+    # Otherwise try to get from provided tokenizer
+    elif tokenizer is not None:
+        try:
+            if hasattr(tokenizer, "get_chat_template"):
+                chat_template = tokenizer.get_chat_template()
+            else:
+                chat_template = tokenizer.chat_template
+            logger.info("Chat template loaded from tokenizer")
+        except AttributeError:
+            logger.warning("Failed to load chat template from tokenizer")
+            pass
+    
+    if chat_template is None:
+        logger.error("Chat template is missing; cannot render prompts for JSON dataset")
+        raise ValueError("Chat template is missing; cannot render prompts for JSON dataset.")
+    
+    for item in records:
+        messages = item["messages"]
+        tools = item["tools"]
+        
+        try:
+            jinja_env = jinja2.Environment()
+            jinja_env.policies["json.dumps_kwargs"]["ensure_ascii"] = False
+            jinja_env.globals["raise_exception"] = raise_exception
+            jinja_env.filters["from_json"] = json.loads
+            jinja_env.filters['strftime_now'] = strftime_now
+            prompt = jinja_env.from_string(chat_template).render(
+                messages=messages,
+                tools=tools,
+                strftime_now=strftime_now
+            )
+        except Exception as e:
+            logger.warning(f"Error rendering template: {e}")
+            prompt = ""
+        
+        prompts.append(prompt)
+    
+    logger.info(f"Successfully rendered {len(prompts)} prompts from JSON dataset")
+    return {"prompts": prompts}

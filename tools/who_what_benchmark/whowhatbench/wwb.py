@@ -4,9 +4,6 @@ import json
 import numpy as np
 import logging
 import os
-from importlib.resources import files
-from datetime import datetime
-import jinja2
 
 from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
@@ -18,101 +15,30 @@ from PIL import Image
 from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
-from whowhatbench.utils import get_json_config
+from whowhatbench.utils import (
+    get_json_config,
+    is_json_dataset,
+    resolve_json_dataset_path,
+    read_json_dataset,
+    render_messages_dataset_to_prompts,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def raise_exception(message: str):
-    raise Exception(message)
-
-
-def strftime_now(format_string: str):
-    return datetime.now().strftime(format_string)
-
-
-def _is_json_dataset(dataset: str) -> bool:
-    if dataset is None:
-        return False
-    return dataset.lower().endswith(".json")
-
-
-def _resolve_json_dataset_path(dataset_path: str) -> str:
-    if os.path.exists(dataset_path):
-        return dataset_path
-
-    resource_path = files('whowhatbench.prompts').joinpath(dataset_path)
-    if resource_path.is_file():
-        return str(resource_path)
-
-    raise FileNotFoundError(
-        f"JSON dataset file '{dataset_path}' was not found as a local file or in whowhatbench.prompts resources"
-    )
-
-
-def _read_json_dataset(dataset_path: str):
-    with open(dataset_path, "r", encoding="utf-8") as input_file:
-        content = input_file.read().strip()
-
-    if not content:
-        return []
-
-    if content.startswith("["):
-        parsed = json.loads(content)
-        if not isinstance(parsed, list):
-            raise ValueError(f"JSON dataset '{dataset_path}' must contain an array of records")
-        return parsed
-
-    items = []
-    for line in content.splitlines():
-        line = line.strip()
-        if line:
-            items.append(json.loads(line))
-    return items
-
-
-def _render_messages_dataset_to_prompts(records, tokenizer):
-    prompts = []
-    chat_template = None
-    
-    if tokenizer is not None:
-        try:
-            chat_template = tokenizer.chat_template
-        except AttributeError:
-            pass
-    
-    for item in records:
-        messages = item.get("messages", [])
-        tools = item.get("tools", [])
-        
-        if chat_template is None:
-            # Fallback: concatenate message content
-            prompt = "\n".join(
-                str(msg.get("content", ""))
-                for msg in messages
-                if isinstance(msg, dict)
-            )
-        else:
-            try:
-                jinja_env = jinja2.Environment()
-                jinja_env.policies["json.dumps_kwargs"]["ensure_ascii"] = False
-                jinja_env.globals["raise_exception"] = raise_exception
-                jinja_env.filters["from_json"] = json.loads
-                jinja_env.filters['strftime_now'] = strftime_now
-                prompt = jinja_env.from_string(chat_template).render(
-                    messages=messages,
-                    tools=tools,
-                    strftime_now=strftime_now
-                )
-            except Exception as e:
-                logger.warning(f"Error rendering template: {e}")
-                prompt = ""
-        
-        prompts.append(prompt)
-    
-    return {"prompts": prompts}
+def _log_prompts_summary(prompts, source):
+    if not prompts:
+        logger.info("Pgi (%s): none", source)
+        return
+    prompt_list = prompts.get("prompts", []) if isinstance(prompts, dict) else []
+    logger.info("Prompts summary (%s): count=%d", source, len(prompt_list))
+    for idx, prompt in enumerate(prompt_list):
+        prompt_str = str(prompt).replace("\r", " ").replace("\n", " ")
+        preview = prompt_str[:200]
+        last_chars = prompt_str[-200:] if len(prompt_str) > 200 else ""
+        logger.info("Prompt %d: %s ... (last 200 chars: %s)", idx, preview, last_chars)
 
 
 def pruning_ratio_type(value: str) -> int:
@@ -434,10 +360,13 @@ def load_prompts(args, tokenizer=None):
     if args.dataset is None:
         return None
 
-    if _is_json_dataset(args.dataset):
-        resolved_path = _resolve_json_dataset_path(args.dataset)
-        data = _read_json_dataset(resolved_path)
-        return _render_messages_dataset_to_prompts(data, tokenizer)
+    if is_json_dataset(args.dataset):
+        resolved_path = resolve_json_dataset_path(args.dataset)
+        data = read_json_dataset(resolved_path)
+        model_path = args.base_model or args.target_model
+        prompts = render_messages_dataset_to_prompts(data, tokenizer, model_path)
+        _log_prompts_summary(prompts, f"json:{resolved_path}")
+        return prompts
 
     dataset_split = "validation"
     if args.split is not None:
@@ -449,8 +378,9 @@ def load_prompts(args, tokenizer=None):
     data = load_dataset(path=path, name=name, split=dataset_split)
 
     res = data[args.dataset_field]
-    res = {"prompts": list(res)}
-    return res
+    prompts = {"prompts": list(res)}
+    _log_prompts_summary(prompts, f"dataset:{path}:{dataset_split}")
+    return prompts
 
 
 def load_tokenizer(args):
@@ -726,19 +656,9 @@ def create_evaluator(base_model, args):
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
-        
-        # Load tokenizer early if we have a JSON dataset (for chat template rendering)
-        tokenizer_for_prompts = None
-        if _is_json_dataset(args.dataset) and task == "text":
-            tokenizer_for_prompts = load_tokenizer(args) if not args.llamacpp else None
-        
-        prompts = load_prompts(args, tokenizer=tokenizer_for_prompts)
 
         if task == "text":
-            if tokenizer_for_prompts is None:
-                tokenizer = load_tokenizer(args) if not args.llamacpp else None
-            else:
-                tokenizer = tokenizer_for_prompts
+            tokenizer = load_tokenizer(args)
             prompts = load_prompts(args, tokenizer=tokenizer)
 
             if args.genai:
@@ -749,7 +669,7 @@ def create_evaluator(base_model, args):
                 gen_answer_fn = None
 
             use_chat_template = (
-                tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template and not _is_json_dataset(args.dataset)
+                tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template and not is_json_dataset(args.dataset)
             )
             return EvaluatorCLS(
                 base_model=base_model,
