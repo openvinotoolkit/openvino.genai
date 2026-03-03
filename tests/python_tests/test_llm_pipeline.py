@@ -4,13 +4,10 @@
 
 import pytest
 import torch
-import gc
-import sys
 import os
 import json
 import logging
 import numpy as np
-from pathlib import Path
 from typing import Literal, Callable
 from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
@@ -18,12 +15,12 @@ from unittest.mock import MagicMock
 import openvino as ov
 import openvino_genai as ov_genai
 
-from utils.constants import get_default_llm_properties, extra_generate_kwargs
+from utils.constants import extra_generate_kwargs
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model, OVConvertedModelSchema
 # model_tmp_path fixture import required
 from utils.tokenizers import delete_rt_info, model_tmp_path
 from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, MAIN_PIPELINE_TYPES, PipelineType, GenerationChatInputsType
-from data.models import get_models_list, CHAT_MODELS_LIST
+from data.models import get_models_list, CHAT_MODELS_LIST, LINEAR_ATTENTION_MODELS_LIST
 
 
 def assert_hf_equals_genai(hf_reference, genai_output):
@@ -253,6 +250,17 @@ def test_different_input_types_works_same_and_change_nothing(
 
     assert res_string_input_1 == res_string_input_2
 
+
+@pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL])
+def test_linear_model_deterministic(llm_model: OVConvertedModelSchema, pipeline_type: PipelineType) -> None:
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
+    prompt = "The capital of France is"
+    config = ov_genai.GenerationConfig(max_new_tokens=20, apply_chat_template=False, do_sample=False)
+    result1 = ov_pipe.generate(prompt, generation_config=config)
+    result2 = ov_pipe.generate(prompt, generation_config=config)
+    assert result1 == result2
+
 #
 # Chat scenario
 #
@@ -398,6 +406,29 @@ def test_generate_works_same_before_and_after_chat(ov_pipe: ov_genai.LLMPipeline
     res_after_chat = ov_pipe.generate(QUESTIONS[0], generation_config=ov_generation_config)
     
     assert res_after_chat == res_before_chat
+
+
+@pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL])
+def test_linear_attention_chat_matches_last_answer_after_cache_reset(llm_model, pipeline_type):
+    questions = ["1+1=", "What was my previous question?"]
+    
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
+
+    config = ov_genai.GenerationConfig()
+    config.max_new_tokens = 20
+    config.do_sample = False
+
+    chat_history = ov_genai.ChatHistory()
+    for question in questions:
+        chat_history.append({"role": "user", "content": question})
+        decoded_results: ov_genai.DecodedResults = ov_pipe.generate(chat_history, config)
+        chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})
+
+    last_answer = chat_history.pop()
+    decoded_results: ov_genai.DecodedResults = ov_pipe.generate(chat_history, config)
+    assert last_answer['content'] == decoded_results.texts[0]
+
 
 #
 # Streaming with callback
