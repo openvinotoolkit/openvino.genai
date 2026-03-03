@@ -26,6 +26,8 @@ def load_dataset_via_snapshot(
     local_cache = os.environ.get("HF_DATASETS_LOCAL_CACHE_PATH")
     local_cache_kwargs = {}
     if local_cache is not None:
-        local_cache_kwargs["cache_dir"] = local_cache
+        local_cache_stripped = local_cache.strip()
+        if local_cache_stripped:
+            local_cache_kwargs["cache_dir"] = local_cache_stripped
     local_path = retry_request(lambda: snapshot_download(repo_id, repo_type="dataset"))
     return datasets.load_dataset(local_path, *args, **{**kwargs, **local_cache_kwargs})
