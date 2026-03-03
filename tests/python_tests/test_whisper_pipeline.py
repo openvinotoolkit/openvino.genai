@@ -37,20 +37,25 @@ from utils.atomic_download import AtomicDownloadManager
 from typing import Any
 from difflib import SequenceMatcher
 
+# datasets library uses filelock whose fcntl.flock() is unreliable on NFS
+# mounts (OSError on close, stale in-process deadlock registry). Ticket: 181288.
+# snapshot_download handles raw file caching on NFS reliably, while
+# cache_dir redirects builder lock/Arrow cache files to local disk.
+_LOCAL_DATASETS_CACHE = "/tmp/hf_datasets_cache"
 
-def load_dataset_via_snapshot(repo_id, *args, **kwargs):
+
+def load_dataset_via_snapshot(
+    repo_id: str, *args: Any, **kwargs: Any
+) -> datasets.Dataset | datasets.DatasetDict | datasets.IterableDataset | datasets.IterableDatasetDict:
     """Download dataset with snapshot_download, then load from local path.
 
     snapshot_download stores files under HF_HOME/hub/ on the shared NFS
     mount (proven reliable for model downloads). datasets.load_dataset
-    then reads from that local snapshot.
-
-    If filelock errors reappear on NFS (OSError [Errno 5] or deadlock in
-    filelock._api._registry), pass cache_dir="/tmp/hf_datasets_cache" to
-    redirect builder lock/Arrow cache files to local disk. Ticket: 181288.
+    then reads from that local snapshot with cache_dir on local disk,
+    avoiding NFS lock issues.
     """
     local_path = retry_request(lambda: snapshot_download(repo_id, repo_type="dataset"))
-    return datasets.load_dataset(local_path, *args, **kwargs)
+    return datasets.load_dataset(local_path, *args, cache_dir=_LOCAL_DATASETS_CACHE, **kwargs)
 
 
 @pytest.fixture(scope="class", autouse=True)
