@@ -520,6 +520,7 @@ void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optio
             request.reset_state();
         }
 
+        cache_state.reset_state();
         return;
     }
 
