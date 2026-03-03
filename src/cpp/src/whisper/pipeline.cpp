@@ -92,6 +92,10 @@ public:
             // WA: Push eos_token to NPUW to stop infer() if KVcache is full
             auto eos_token = m_generation_config.eos_token_id == -1 ? m_tokenizer.get_eos_token_id() : m_generation_config.eos_token_id;
             properties_copy.insert({"WHISPER_EOS_TOKEN", eos_token});
+
+            if (m_generation_config.word_timestamps) {
+                properties_copy.insert({"WHISPER_DECOMPOSE_SDPA", m_generation_config.word_timestamps});
+            }
         } else {
             compiled_model = core.compile_model(models_path / "openvino_encoder_model.xml", device, properties_copy);
         }
