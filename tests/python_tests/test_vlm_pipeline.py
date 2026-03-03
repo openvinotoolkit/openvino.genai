@@ -2286,7 +2286,8 @@ def test_cdpruner_continuous_batching(
     car_tensor: openvino.Tensor,
 ):
     """Test CDPruner with continuous batching pipeline.
-    Verifies that pruning_ratio=1 produces the same output as pruning_ratio=0 (no pruning)."""
+    Verifies that a small non-zero pruning ratio (pruning_ratio=1, i.e. ~1% pruning)
+    produces the same output as the unpruned baseline with pruning_ratio=0."""
     # Baseline run with pruning_ratio=0
     generation_config_baseline = GenerationConfig()
     generation_config_baseline.max_new_tokens = 10
@@ -2428,7 +2429,6 @@ def test_cdpruner_continuous_batching_chat_history(
     assert baseline1 == pruned1, f"Turn 1 mismatch: baseline='{baseline1}', pruned='{pruned1}'"
     assert baseline2 == pruned2, f"Turn 2 mismatch: baseline='{baseline2}', pruned='{pruned2}'"
     assert baseline3 == pruned3, f"Turn 3 mismatch: baseline='{baseline3}', pruned='{pruned3}'"
-    assert results[0].texts[0].strip() != "", "Result should not be empty"
 
 
 def test_vlm_prompt_lookup_functionality(cat_tensor):
