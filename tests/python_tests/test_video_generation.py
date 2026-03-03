@@ -305,12 +305,19 @@ class TestAutoEncoderKLLTXVideoEncoder:
         decoder_path = Path(video_generation_model) / "vae_decoder"
         vae = ov_genai.AutoencoderKLLTXVideo(str(encoder_path), str(decoder_path), "CPU")
 
+        output_name = ov.Core().read_model(str(encoder_path / "openvino_model.xml")).outputs[0].get_any_name()
+
         video = ov.Tensor(np.ones([1, 3, 9, 32, 32], dtype=np.float32) * 0.5)
         latent1 = vae.encode(video, ov_genai.CppStdGenerator(42))
         latent2 = vae.encode(video, ov_genai.CppStdGenerator(99))
 
-        assert not np.array_equal(latent1.data, latent2.data), \
-            "Different generator seeds should produce different latents"
+        if output_name == "latent_parameters":
+            assert not np.array_equal(latent1.data, latent2.data), \
+                "Different generator seeds should produce different latents"
+        elif output_name == "latent_sample":
+            np.testing.assert_array_equal(latent1.data, latent2.data)
+        else:
+            pytest.skip(f"Unexpected encoder output name '{output_name}'")
 
 
 class TestText2VideoPipelineAdvanced:

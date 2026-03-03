@@ -44,32 +44,27 @@ public:
 
         m_mean = ov::Tensor(parameters.get_element_type(), reduced_shape);
         m_std  = ov::Tensor(parameters.get_element_type(), reduced_shape);
-        ov::Tensor logvar(parameters.get_element_type(), reduced_shape);
 
         size_t spatial = 1;
         for (size_t i = 2; i < full_shape.size(); ++i)
             spatial *= full_shape[i];
 
-        const float* src  = parameters.data<float>();
-        float* mean_data  = m_mean.data<float>();
-        float* logvar_data = logvar.data<float>();
-        float* std_data   = m_std.data<float>();
+        const float* src = parameters.data<float>();
+        float* mean_data = m_mean.data<float>();
+        float* std_data  = m_std.data<float>();
 
+        // Split mean and logvar, clamp and compute std in a single pass — no intermediate tensor.
         for (size_t b = 0; b < batch; ++b) {
             for (size_t c = 0; c < channels; ++c) {
                 const size_t dst_off  = (b * channels + c) * spatial;
                 const size_t mean_off = (b * full_shape[1] + c) * spatial;
                 const size_t lvar_off = (b * full_shape[1] + channels + c) * spatial;
                 for (size_t s = 0; s < spatial; ++s) {
-                    mean_data[dst_off + s]  = src[mean_off + s];
-                    logvar_data[dst_off + s] = src[lvar_off + s];
+                    mean_data[dst_off + s] = src[mean_off + s];
+                    const float logvar = std::min(std::max(src[lvar_off + s], -30.0f), 20.0f);
+                    std_data[dst_off + s]  = std::exp(0.5f * logvar);
                 }
             }
-        }
-
-        for (size_t i = 0; i < logvar.get_size(); ++i) {
-            logvar_data[i] = std::min(std::max(logvar_data[i], -30.0f), 20.0f);
-            std_data[i]    = std::exp(0.5f * logvar_data[i]);
         }
     }
 
