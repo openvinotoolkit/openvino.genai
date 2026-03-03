@@ -52,8 +52,7 @@ def main():
         print(f"Generation step {step + 1} / {num_steps}")
         return False
 
-    output = pipe.generate(
-        args.prompt,
+    generate_args = dict(
         negative_prompt="worst quality, inconsistent motion, blurry, jittery, distorted",
         height=480,
         width=704,
@@ -65,7 +64,24 @@ def main():
         guidance_scale=3,
     )
 
-    save_video("genai_video.avi", output.video, frame_rate)
+    print("Generating video with LoRA adapters applied, resulting video will be in lora_video.avi")
+    output = pipe.generate(args.prompt, **generate_args)
+    save_video("lora_video.avi", output.video, frame_rate)
+
+    print(f"\nPerformance metrics:")
+    print(f"  Load time: {output.perf_metrics.get_load_time():.2f} ms")
+    print(f"  Generate duration: {output.perf_metrics.get_generate_duration():.2f} ms")
+    print(f"  Transformer duration: {output.perf_metrics.get_transformer_infer_duration().mean:.2f} ms")
+    print(f"  VAE decoder duration: {output.perf_metrics.get_vae_decoder_infer_duration():.2f} ms")
+
+    print("Generating video without LoRA adapters applied, resulting video will be in baseline_video.avi")
+    output = pipe.generate(
+        args.prompt,
+        # passing adapters in generate overrides adapters set in the constructor; openvino_genai.AdapterConfig() means no adapters
+        adapters=openvino_genai.AdapterConfig(),
+        **generate_args,
+    )
+    save_video("baseline_video.avi", output.video, frame_rate)
 
     print(f"\nPerformance metrics:")
     print(f"  Load time: {output.perf_metrics.get_load_time():.2f} ms")
