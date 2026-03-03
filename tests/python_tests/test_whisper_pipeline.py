@@ -37,7 +37,7 @@ from utils.atomic_download import AtomicDownloadManager
 from typing import Any
 from difflib import SequenceMatcher
 
-from utils.datasets import load_dataset_via_snapshot
+from tests.python_tests.utils.dataset_utils import load_dataset_via_snapshot
 
 
 @pytest.fixture(scope="class", autouse=True)
