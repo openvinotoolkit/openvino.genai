@@ -234,10 +234,26 @@ public:
         auto current_embeds_size = m_generated_ids_embeds.size();
         for (size_t i = current_embeds_size, idx = 0; i < current_embeds_size + embeds_count; i++, idx++) {
             m_generated_ids_embeds.emplace_back(std::vector<float>());
-            m_generated_ids_embeds[i].resize(m_hidden_size);
+             m_generated_ids_embeds[i].resize(m_hidden_size);
             std::copy_n(generated_ids_embeds.data<float>() + idx * m_hidden_size, m_hidden_size, m_generated_ids_embeds[i].begin());
 
         }
+    }
+    void truncate_generated_ids_embeds(size_t num_tokens) {
+        OPENVINO_ASSERT(m_type == SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(num_tokens <= m_generated_ids_embeds.size());
+        auto current_embeds_size = m_generated_ids_embeds.size();
+        // remove the last num_tokens embeddings
+        if (num_tokens > 0)
+            m_generated_ids_embeds.erase(m_generated_ids_embeds.begin() + (current_embeds_size - num_tokens), m_generated_ids_embeds.end());
+    }
+
+    void update_position_ids(size_t num_tokens) {
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(num_tokens <= m_position_ids_list.size());
+        // remove the first num_tokens position ids
+        if (num_tokens > 0)
+            m_position_ids_list.erase(m_position_ids_list.begin() + m_position_ids_list.size() - num_tokens, m_position_ids_list.end());
     }
 
     void append_position_ids(const ov::Tensor& position_ids) {

@@ -50,7 +50,7 @@ protected:
     std::vector<ov::Tensor> m_current_step_rotation_deltas;
 
     std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
-
+    size_t step_counter{0};
 
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;

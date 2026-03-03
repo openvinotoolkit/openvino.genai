@@ -37,7 +37,9 @@ public:
                                  const ov::genai::GenerationConfig& sampling_params) override;
 protected:
     void update_eagle_pipeline_params(const std::shared_ptr<ov::op::v0::Constant>& d2t_tensor);
+    ov::Tensor create_draft_input(const ov::Tensor& original_input_ids);
     // Creates draft model input by removing the first token from the original input sequence.
     ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
+    ov::Tensor create_draft_input_embeddings(const ov::Tensor& original_input_embeddings);
 };
 }

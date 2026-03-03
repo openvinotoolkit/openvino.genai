@@ -9,6 +9,11 @@ namespace ov::genai {
 ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::genai::ModelDesc& main_model_desc,
                                                                  const ov::genai::ModelDesc& draft_model_desc,
                                                                  const std::vector<int32_t>& hidden_layers) {
+    if (main_model_desc.inputs_embedder) {
+        m_inputs_embedder = main_model_desc.inputs_embedder;
+        m_model_input_type = ModelInputType::EMBEDDINGS;
+    }
+
     auto scheduler_configs = init_speculative_models(main_model_desc, draft_model_desc);
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
@@ -34,20 +39,40 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     utils::eagle3::transform_hidden_state(draft_model, {-1});
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
-    m_main_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(main_model,
-                                                                               main_model_tokenizer,
-                                                                               main_model_desc.generation_config,
-                                                                               scheduler_configs.first,
-                                                                               main_device,
-                                                                               main_model_desc.properties,
-                                                                               true);
-    m_draft_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(draft_model,
-                                                                                draft_model_tokenizer,
-                                                                                draft_model_desc.generation_config,
-                                                                                scheduler_configs.second,
-                                                                                draft_device,
-                                                                                draft_properties,
-                                                                                false);
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        m_main_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(main_model,
+                                                                                    m_inputs_embedder,
+                                                                                    main_model_tokenizer,
+                                                                                    main_model_desc.generation_config,
+                                                                                    scheduler_configs.first,
+                                                                                    main_device,
+                                                                                    main_model_desc.properties,
+                                                                                    true);
+        m_draft_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(draft_model,
+                                                                                     m_inputs_embedder,
+                                                                                     draft_model_tokenizer,
+                                                                                     draft_model_desc.generation_config,
+                                                                                     scheduler_configs.second,
+                                                                                     draft_device,
+                                                                                     draft_properties,
+                                                                                     false);
+    } else {
+        m_main_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(main_model,
+                                                                                    main_model_tokenizer,
+                                                                                    main_model_desc.generation_config,
+                                                                                    scheduler_configs.first,
+                                                                                    main_device,
+                                                                                    main_model_desc.properties,
+                                                                                    true);
+        m_draft_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(draft_model,
+                                                                                     draft_model_tokenizer,
+                                                                                     draft_model_desc.generation_config,
+                                                                                     scheduler_configs.second,
+                                                                                     draft_device,
+                                                                                     draft_properties,
+                                                                                     false);
+    }
+
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
     m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
@@ -56,6 +81,14 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     // check draft_model, retrieve d2t table if exists
     auto d2t_tensor = utils::eagle3::extract_d2t_mapping_table(draft_model);
     update_eagle_pipeline_params(d2t_tensor);
+}
+
+ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input(const ov::Tensor& original_input_ids) {
+    if (m_model_input_type == ModelInputType::TOKENS) {
+        return create_draft_input_ids(original_input_ids);
+    } else {
+        return create_draft_input_embeddings(original_input_ids);
+    }
 }
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_ids(const ov::Tensor& original_input_ids) {
@@ -74,6 +107,27 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_id
     std::copy(src_data + 1, src_data + original_length, dst_data);
 
     return draft_input_ids;
+}
+
+ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_embeddings(const ov::Tensor& original_input_embeddings) {
+    auto shape = original_input_embeddings.get_shape();
+
+    OPENVINO_ASSERT(shape.size() == 3u, "Input embedding tensor shape size should be 3.");
+    OPENVINO_ASSERT(shape[0] == 1u, "Input embedding tensor only support batch == 1.");
+
+    size_t original_length = shape[1];
+
+    OPENVINO_ASSERT(original_length >= 1u, "At least input length >= 1");
+    size_t new_length = original_length - 1;
+
+    ov::Tensor draft_input_embeddings(ov::element::f32, {1, new_length, shape[2]});
+
+    const float* src_data = original_input_embeddings.data<float>();
+    float* dst_data = draft_input_embeddings.data<float>();
+
+    std::copy(src_data + shape[2], src_data + (original_length * shape[2]), dst_data);
+
+    return draft_input_embeddings;
 }
 
 void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_params(const std::shared_ptr<ov::op::v0::Constant>& d2t_tensor) {
@@ -96,7 +150,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
     // remove first token from input_ids to create draft_input_ids
-    ov::Tensor draft_input_ids = create_draft_input_ids(input_ids);
+    ov::Tensor draft_input_ids = create_draft_input(input_ids);
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params, token_type_ids)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids);
 }
@@ -112,7 +166,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     // remove first token from input_ids to create draft_input_ids
     // add_special_tokens is false for better compression rate
     auto input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
-    ov::Tensor draft_input_ids = create_draft_input_ids(input_ids);
+    ov::Tensor draft_input_ids = create_draft_input(input_ids);
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
 }
@@ -139,7 +193,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
         draft_cfg.ignore_eos = true;
         draft_cfg.stop_strings = {};
         main_in = in_ids;
-        draft_in = create_draft_input_ids(in_ids);
+        draft_in = create_draft_input(in_ids);
     };
 
     strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,

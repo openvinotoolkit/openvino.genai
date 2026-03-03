@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "utils.hpp"
+#include "model_desc.hpp"
 
 #include <variant>
 #include <fstream>
@@ -237,23 +238,6 @@ ProcessorConfig from_any_map(
     read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
     read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
     return extracted_config;
-}
-
-ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config) {
-    ov::genai::ModelDesc draft_model;
-    if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
-        draft_model = config.at(utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
-    }
-    return draft_model;
-}
-
-ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config) {
-    ov::genai::ModelDesc draft_model;
-    if (config.find(ov::genai::utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
-        draft_model = config.at(ov::genai::utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
-        config.erase(ov::genai::utils::DRAFT_MODEL_ARG_NAME);
-    }
-    return draft_model;
 }
 
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties) {
@@ -735,7 +719,7 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
 SchedulerConfig get_latency_oriented_scheduler_config() {
     SchedulerConfig default_config;
     default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
-    default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
+    default_config.enable_prefix_caching = false; // for better TTFT in chat scenarios
     return default_config;
 }
 
