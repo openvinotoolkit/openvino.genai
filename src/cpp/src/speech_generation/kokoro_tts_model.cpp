@@ -22,6 +22,22 @@
 #if OPENVINO_GENAI_HAS_MISAKI_CPP
 #include "misaki/g2p.hpp"
 #include "misaki/fallbacks.hpp"
+
+bool has_required_misaki_lexicon_files(const std::filesystem::path& root) {
+    return std::filesystem::exists(root / "us_gold.json") &&
+           std::filesystem::exists(root / "us_silver.json") &&
+           std::filesystem::exists(root / "gb_gold.json") &&
+           std::filesystem::exists(root / "gb_silver.json");
+}
+
+void configure_misaki_lexicon_data_root_from_model_dir(const std::filesystem::path& models_path) {
+    const auto model_lexicon_root = models_path / "misaki_data";
+    if (!has_required_misaki_lexicon_files(model_lexicon_root)) {
+        return;
+    }
+
+    misaki::set_english_lexicon_data_root(model_lexicon_root.string());
+}
 #endif
 
 namespace {
@@ -559,6 +575,7 @@ KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
     const bool npu_requested = device == "NPU";
 
     m_runtime = std::make_shared<KokoroRuntime>(models_path);
+    configure_misaki_lexicon_data_root_from_model_dir(models_path);
 
     if (npu_requested) {
         m_static_input_ids_length = m_runtime->context_length();
