@@ -64,6 +64,7 @@ jobs:
         with:
           scan-type: 'fs'
           scan-ref: '.'
+          version: v0.69.2
 
       - name: Dependency Review
         if: ${{ github.event_name == 'pull_request' }}
