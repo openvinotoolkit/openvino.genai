@@ -51,18 +51,18 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
         }
     };
     auto finalize = [context]() {
-        *context->is_generating = false;
         context->callback.Release();
         if (context->streamer.has_value()) {
             context->streamer->Release();
         }
     };
+    std::vector<std::string> streamer_exceptions;
+    ov::genai::VLMDecodedResults result;
     try {
         ov::genai::GenerationConfig config;
         config.update_generation_config(*context->generation_config);
 
         ov::genai::StreamerVariant streamer = std::monostate();
-        std::vector<std::string> streamer_exceptions;
         if (context->streamer.has_value()) {
             streamer = [context, &streamer_exceptions](std::string word) {
                 std::promise<ov::genai::StreamingStatus> resultPromise;
@@ -92,8 +92,6 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
             };
         }
 
-        ov::genai::VLMDecodedResults result;
-
         std::visit(
             overloaded{[context, &config, &streamer, &result](std::string& prompt) {
                            result = context->pipe->generate(prompt, context->images, context->videos, config, streamer);
@@ -104,21 +102,27 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
                        }},
             context->inputs);
 
+    } catch (std::exception& e) {
+        report_error(e.what());
+    }
+    // should be called right after inference to release the flag asap
+    *context->is_generating = false;
+
+    // Call callback with result or error
+    try {
         if (!streamer_exceptions.empty()) {
-            // If there were exceptions from the streamer, report them all as a single error and finish without result
             std::string combined_error = "Streamer exceptions occurred:\n";
             for (size_t i = 0; i < streamer_exceptions.size(); ++i) {
                 combined_error += "[" + std::to_string(i + 1) + "] " + streamer_exceptions[i] + "\n";
             }
             report_error(combined_error);
         } else {
-            // If no exceptions from streamer, call the final callback with the result
             napi_status status =
                 context->callback.BlockingCall([result, &report_error](Napi::Env env, Napi::Function jsCallback) {
                     try {
                         jsCallback.Call({
-                            env.Null(),                         // Error should be null in normal case
-                            to_vlm_decoded_result(env, result)  // Return DecodedResults as the final result
+                            env.Null(),
+                            to_vlm_decoded_result(env, result),
                         });
                     } catch (std::exception& err) {
                         report_error("The final callback failed. Details:\n" + std::string(err.what()));
@@ -129,11 +133,10 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
                 report_error("The final BlockingCall failed with status " + status);
             }
         }
-        finalize();
     } catch (std::exception& e) {
         report_error(e.what());
-        finalize();
     }
+    finalize();
 }
 
 VLMPipelineWrapper::VLMPipelineWrapper(const Napi::CallbackInfo& info) : Napi::ObjectWrap<VLMPipelineWrapper>(info) {};
