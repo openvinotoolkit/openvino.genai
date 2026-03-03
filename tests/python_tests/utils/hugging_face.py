@@ -255,7 +255,7 @@ def sanitize_model_id(model_id: str) -> str:
     return model_id.replace("/", "_")
 
 
-TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
+TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3", )
 
 
 def download_and_convert_model_class(
