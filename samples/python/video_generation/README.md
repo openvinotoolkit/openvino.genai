@@ -90,7 +90,7 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
   python lora_text2video.py ./ltx_video_ov/INT8 "A cute golden retriever puppy running in a green grassy field on a sunny day, high quality, photorealistic" adapter.safetensors 1.0
   ```
 
-The sample will generate a video file `genai_video.avi` in the current directory.
+The sample will generate two video files, `lora_video.avi` and `baseline_video.avi`, in the current directory.
 
 Users can modify the source code to experiment with different generation parameters:
 - Change width or height of generated video
