@@ -195,8 +195,6 @@ public:
     }
 
     void reset_state() {
-        std::cerr << "[ reset_state ] num_tokens_to_trim: " << num_tokens_to_trim << ", reset_mem_state: " << reset_mem_state
-                  << ", has_linear: " << has_linear() << std::endl;
         reset_mem_state = false;
         num_tokens_to_trim = 0;
         state.clear();
@@ -211,8 +209,6 @@ public:
     bool is_hybrid() const { return cache_types.is_hybrid(); }
 
     bool needs_reset() const {
-        std::cerr << "[ needs_reset ] num_tokens_to_trim: " << num_tokens_to_trim << ", reset_mem_state: " << reset_mem_state
-                  << ", has_linear: " << has_linear() << std::endl;
         return reset_mem_state || (num_tokens_to_trim > 0 && has_linear());
     }
 };
