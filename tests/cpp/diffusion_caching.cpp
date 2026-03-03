@@ -371,3 +371,90 @@ TEST_F(TaylorSeerStateTest, FullWorkflow) {
     EXPECT_TRUE(state.should_compute(8));
     EXPECT_TRUE(state.should_compute(9));
 }
+
+TEST_F(TaylorSeerStateTest, ReinitializeResetsState) {
+    // Create an active TaylorSeer state
+    TaylorSeerCacheConfig config(3, 2, -2);
+    TaylorSeerState state(config, 10);
+
+    EXPECT_TRUE(state.is_active());
+
+    // Populate state with data
+    auto tensor1 = CreateTestTensor({1.0f, 2.0f});
+    auto tensor2 = CreateTestTensor({3.0f, 4.0f});
+    state.update(0, tensor1);
+    state.update(1, tensor2);
+
+    EXPECT_TRUE(state.get_last_update_step().has_value());
+    EXPECT_EQ(state.get_last_update_step().value(), 1);
+    EXPECT_NO_THROW(state.get_taylor_factor(0));
+    EXPECT_NO_THROW(state.get_taylor_factor(1));
+
+    // Re-initialize with invalid config (should clear all state)
+    state.initialize(std::nullopt, 10);
+
+    EXPECT_FALSE(state.is_active());
+    EXPECT_FALSE(state.get_last_update_step().has_value());
+    EXPECT_THROW(state.should_compute(0), ov::Exception);  // Schedule should be empty
+
+    // Re-initialize with valid config (should reset and work properly)
+    state.initialize(config, 10);
+
+    EXPECT_TRUE(state.is_active());
+    EXPECT_FALSE(state.get_last_update_step().has_value());  // Should be reset
+    EXPECT_NO_THROW(state.should_compute(0));
+
+    // Should be able to use normally after reinitialization
+    auto tensor3 = CreateTestTensor({5.0f, 6.0f});
+    auto tensor4 = CreateTestTensor({7.0f, 8.0f});
+    EXPECT_NO_THROW(state.update(0, tensor3));
+    EXPECT_NO_THROW(state.update(1, tensor4));
+    EXPECT_NO_THROW(state.predict(2));
+}
+
+TEST_F(TaylorSeerStateTest, ReinitializeWithInactiveConfig) {
+    // Start with active config
+    TaylorSeerCacheConfig active_config(3, 2, -2);
+    TaylorSeerState state(active_config, 10);
+
+    EXPECT_TRUE(state.is_active());
+
+    auto tensor = CreateTestTensor({1.0f});
+    state.update(0, tensor);
+    EXPECT_TRUE(state.get_last_update_step().has_value());
+
+    // Re-initialize with config that makes TaylorSeer inactive
+    TaylorSeerCacheConfig inactive_config(3, 100, -2);
+    state.initialize(inactive_config, 10);
+
+    EXPECT_FALSE(state.is_active());
+    EXPECT_FALSE(state.get_last_update_step().has_value());
+    EXPECT_THROW(state.should_compute(0), ov::Exception);
+
+    // Re-initialize back to active config
+    state.initialize(active_config, 10);
+
+    EXPECT_TRUE(state.is_active());
+    EXPECT_FALSE(state.get_last_update_step().has_value());
+    EXPECT_NO_THROW(state.should_compute(0));
+}
+
+TEST_F(TaylorSeerStateTest, ReinitializeDoesNotLeaveStaleSchedule) {
+    // Start with config having specific schedule
+    TaylorSeerCacheConfig config1(3, 2, -2);
+    TaylorSeerState state(config1, 10);
+
+    EXPECT_TRUE(state.is_active());
+    EXPECT_TRUE(state.should_compute(0));
+    EXPECT_FALSE(state.should_compute(2));
+
+    // Re-initialize with different config
+    TaylorSeerCacheConfig config2(5, 2, -2);
+    state.initialize(config2, 10);
+
+    EXPECT_TRUE(state.is_active());
+    EXPECT_TRUE(state.should_compute(0));
+    EXPECT_FALSE(state.should_compute(2));
+    EXPECT_FALSE(state.should_compute(5));
+    EXPECT_TRUE(state.should_compute(6));
+}

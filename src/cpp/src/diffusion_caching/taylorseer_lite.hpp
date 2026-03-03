@@ -38,14 +38,15 @@ public:
      * @param num_inference_steps Total number of inference steps.
      */
     void initialize(const std::optional<TaylorSeerCacheConfig>& config, std::size_t num_inference_steps) {
+        // Reset all state to ensure clean initialization
+        reset_state();
+
         if (!config) {
-            m_is_active = false;
             return;
         }
 
         // Check if TaylorSeer will be effective
         if (config->disable_cache_before_step >= num_inference_steps) {
-            m_is_active = false;
             return;
         }
 
@@ -53,13 +54,11 @@ public:
         if (disable_cache_after_step < 0) {
             disable_cache_after_step = static_cast<int>(num_inference_steps) + disable_cache_after_step;
             if (disable_cache_after_step < 0) { // If still negative, it means caching is disabled for all steps
-                m_is_active = false;
                 return;
             }
         }
 
         if (static_cast<std::size_t>(disable_cache_after_step) <= config->disable_cache_before_step) {
-            m_is_active = false;
             return;
         }
 
@@ -71,6 +70,10 @@ public:
             has_predictions |= !m_schedule[step];
         }
         m_is_active = has_predictions;
+
+        if (!m_is_active) {
+            m_schedule.clear();
+        }
     }
 
     /**
@@ -95,6 +98,9 @@ public:
      * @return The Taylor factor tensor for the specified order.
      */
     const ov::Tensor& get_taylor_factor(std::size_t order) const {
+        OPENVINO_ASSERT(order < m_max_order,
+                "Requested Taylor factor order ", order,
+                " is out of bounds. Maximum supported order is ", m_max_order - 1, ".");
         return m_taylor_factors[order];
     }
 
@@ -202,6 +208,22 @@ public:
     }
 
 private:
+    /**
+     * @brief Resets all internal state to initial values.
+     *
+     * Clears Taylor factors, schedule, and resets tracking state.
+     */
+    void reset_state() {
+        m_is_active = false;
+        m_last_update_step = std::nullopt;
+        m_schedule.clear();
+
+        // Clear Taylor factor tensors
+        for (auto& factor : m_taylor_factors) {
+            factor = ov::Tensor();
+        }
+    }
+
     bool should_compute_at_step(std::size_t current_step,
                                 const TaylorSeerCacheConfig& config,
                                 std::size_t num_inference_steps) const {

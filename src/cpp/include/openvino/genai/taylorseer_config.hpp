@@ -14,9 +14,10 @@ class TaylorSeerCacheConfig {
 public:
     /**
      * @brief Constructs a TaylorSeerCacheConfig with the specified parameters.
-     * @param cache_interval_ The interval between full computation steps. After a full computation,
-     *        cached (predicted) outputs are reused for this many subsequent denoising steps before
-     *        refreshing with a new full forward pass. Must be at least 2.
+     * @param cache_interval_ The interval between full computation steps. Determines how often
+     *        the model is executed: after a full computation at step N, the next full computation
+     *        occurs at step N + cache_interval. This means (cache_interval - 1) steps use cached
+     *        predictions between computations. Must be at least 2.
      * @param disable_cache_before_step_ The denoising step index before which caching is disabled.
      *        Full computation is performed for initial steps (0 to disable_cache_before_step - 1)
      *        to gather data for Taylor series approximations. Caching begins at this step.
