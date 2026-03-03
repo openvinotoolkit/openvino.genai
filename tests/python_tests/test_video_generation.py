@@ -255,7 +255,8 @@ class TestAutoEncoderKLLTXVideoEncoder:
         import numpy as np
 
         decoder_path = Path(video_generation_model) / "vae_decoder"
-        # Use 1-arg constructor + explicit compile to avoid overload ambiguity with 2-path constructor
+        if not decoder_path.exists():
+            pytest.skip("vae_decoder not available in test model")
         vae = ov_genai.AutoencoderKLLTXVideo(str(decoder_path))
         vae.compile("CPU")
         generator = ov_genai.CppStdGenerator(42)
