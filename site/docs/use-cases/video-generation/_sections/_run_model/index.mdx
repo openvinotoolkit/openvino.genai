@@ -6,6 +6,8 @@ import Text2VideoPython from './_text2video_python.mdx';
 OpenVINO GenAI supports the following video generation pipeline:
 - [`Text2VideoPipeline`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.Text2VideoPipeline.html) for creating videos from text prompts.
 
+[`AutoencoderKLLTXVideo`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.AutoencoderKLLTXVideo.html) also exposes an `encode()` method for encoding video frames into latent space, enabling Image-to-Video workflows where a conditioning frame is provided alongside the text prompt.
+
 <LanguageTabs>
     <TabItemPython>
         <Tabs groupId="device">
