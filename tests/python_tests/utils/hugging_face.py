@@ -178,9 +178,9 @@ def run_hugging_face(
     return generation_results
 
 
-MODEL_SCOPE_MODELS_LIST = [
+MODEL_SCOPE_MODELS_LIST = (
     "AngelSlim/Qwen3-1.7B_eagle3",
-]
+)
 # download HF model or read converted model
 def get_huggingface_models(
     model_id: str | Path,
