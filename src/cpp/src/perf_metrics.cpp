@@ -95,6 +95,11 @@ MeanStdPair PerfMetrics::get_inference_duration() {
     return inference_duration;
 }
 
+MeanStdPair PerfMetrics::get_sampling_duration() {
+    evaluate_statistics();
+    return sampling_duration;
+}
+
 std::map<std::string, float> PerfMetrics::get_grammar_compiler_init_times() {
     return grammar_compiler_init_times;
 }
@@ -154,6 +159,7 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     tokenization_duration = calc_mean_and_std(raw_metrics.tokenization_durations);
     detokenization_duration = calc_mean_and_std(raw_metrics.detokenization_durations);
     inference_duration = calc_mean_and_std(raw_metrics.m_inference_durations);
+    sampling_duration = calc_mean_and_std(raw_metrics.m_sampling_durations);
 
     // tokens per second
     throughput = {1000.0f / tpot.mean, (tpot.std * 1000.0f) / (tpot.mean * tpot.mean)};
@@ -212,6 +218,10 @@ PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
     // Concatenate structured output compilation times.
     auto& new_grammar_compile_times = res.raw_metrics.m_grammar_compile_times;
     new_grammar_compile_times.insert(new_grammar_compile_times.end(), right.raw_metrics.m_grammar_compile_times.begin(), right.raw_metrics.m_grammar_compile_times.end());
+
+    // Concatenate sampling durations.
+    auto& new_sampling_durations = res.raw_metrics.m_sampling_durations;
+    new_sampling_durations.insert(new_sampling_durations.end(), right.raw_metrics.m_sampling_durations.begin(), right.raw_metrics.m_sampling_durations.end());
 
     res.num_generated_tokens += right.num_generated_tokens;
     res.num_input_tokens += right.num_input_tokens;

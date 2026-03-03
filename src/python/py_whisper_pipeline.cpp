@@ -209,6 +209,12 @@ auto raw_perf_metrics_docstring = R"(
 
     :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
     :type word_level_timestamps_processing_durations: list[MicroSeconds]
+
+    :param encode_inference_durations: Duration for each encoder inference call.
+    :type encode_inference_durations: list[MicroSeconds]
+
+    :param decode_inference_durations: Duration for each decoder inference call.
+    :type decode_inference_durations: list[MicroSeconds]
 )";
 
 auto perf_metrics_docstring = R"(
@@ -219,6 +225,12 @@ auto perf_metrics_docstring = R"(
 
     :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
     :type get_word_level_timestamps_processing_duration: MeanStdPair
+
+    :param get_encode_inference_duration: Returns mean and standard deviation of encode inference duration in milliseconds
+    :type get_encode_inference_duration: MeanStdPair
+
+    :param get_decode_inference_duration: Returns mean and standard deviation of decode inference duration in milliseconds
+    :type get_decode_inference_duration: MeanStdPair
 
     :param whisper_raw_metrics: Whisper specific raw metrics
     :type WhisperRawPerfMetrics:
@@ -300,12 +312,20 @@ void init_whisper_pipeline(py::module_& m) {
         })
         .def_property_readonly("word_level_timestamps_processing_durations", [](const WhisperRawPerfMetrics& rw) {
             return common_utils::get_ms(rw, &WhisperRawPerfMetrics::word_level_timestamps_processing_durations);
+        })
+        .def_property_readonly("encode_inference_durations", [](const WhisperRawPerfMetrics& rw) {
+            return common_utils::get_ms(rw, &WhisperRawPerfMetrics::encode_inference_durations);
+        })
+        .def_property_readonly("decode_inference_durations", [](const WhisperRawPerfMetrics& rw) {
+            return common_utils::get_ms(rw, &WhisperRawPerfMetrics::decode_inference_durations);
         });
 
     py::class_<WhisperPerfMetrics, PerfMetrics>(m, "WhisperPerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
         .def("get_features_extraction_duration", &WhisperPerfMetrics::get_features_extraction_duration)
         .def("get_word_level_timestamps_processing_duration", &WhisperPerfMetrics::get_word_level_timestamps_processing_duration)
+        .def("get_encode_inference_duration", &WhisperPerfMetrics::get_encode_inference_duration)
+        .def("get_decode_inference_duration", &WhisperPerfMetrics::get_decode_inference_duration)
         .def_readonly("whisper_raw_metrics", &WhisperPerfMetrics::whisper_raw_metrics);
 
     py::class_<WhisperDecodedResultChunk>(m, "WhisperDecodedResultChunk", whisper_decoded_result_chunk)

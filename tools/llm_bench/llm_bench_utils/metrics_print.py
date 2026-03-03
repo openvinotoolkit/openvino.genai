@@ -10,7 +10,7 @@ MAX_INPUT_TXT_IN_LOG = 1024
 def print_metrics(iter_num, iter_data, tms=None, tms_infer=None, warm_up=False,
                   stable_diffusion=None, tokenization_time=None, batch_size=1,
                   prompt_idx=-1, whisper=None, text_emb=None, latency_unit=None,
-                  tts=None, cb_metric=None, text_rerank=None):
+                  tts=None, cb_metric=None, text_rerank=None, whisper_perf_data=None):
     iter_str = str(iter_num)
     if warm_up:
         iter_str = 'warm-up'
@@ -83,6 +83,8 @@ def print_metrics(iter_num, iter_data, tms=None, tms_infer=None, warm_up=False,
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx)
     if whisper is not None:
         print_whisper_infer_latency(iter_str, whisper, prompt_idx)
+    if whisper_perf_data is not None:
+        print_whisper_genai_perf_metrics(iter_str, whisper_perf_data, prompt_idx)
     if tts is not None:
         print_tts_latency(iter_str, tts, prompt_idx)
     output_str = ''
@@ -269,6 +271,49 @@ def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False
         for prompt_key in prompt_dict:
             out_str += prompt_dict[prompt_key]
         log.info(out_str)
+
+
+def print_whisper_genai_perf_metrics(iter_str, whisper_perf_data, prompt_idx=-1):
+    """Print detailed per-stage Whisper performance metrics from GenAI pipeline."""
+    prefix = f'[{iter_str}][P{prompt_idx}]'
+
+    features_extraction = whisper_perf_data.get('features_extraction_durations', [])
+    encode_durations = whisper_perf_data.get('encode_inference_durations', [])
+    decode_durations = whisper_perf_data.get('decode_inference_durations', [])
+    sampling_durations = whisper_perf_data.get('sampling_durations', [])
+    tokenization_ms = whisper_perf_data.get('tokenization_duration', -1.0)
+    detokenization_ms = whisper_perf_data.get('detokenization_duration', -1.0)
+
+    # First token uses only the first chunk's feature extraction and encode
+    first_feat_extract_ms = features_extraction[0] if features_extraction else 0.0
+    first_encode_ms = encode_durations[0] if encode_durations else 0.0
+    first_decode_ms = decode_durations[0] if len(decode_durations) > 0 else 0.0
+    first_sampling_ms = sampling_durations[0] if len(sampling_durations) > 0 else 0.0
+
+    log_str = f"{prefix} Whisper first token breakdown:"
+    if tokenization_ms >= 0:
+        log_str += f" Tokenization: {tokenization_ms:.2f} ms,"
+    log_str += f" Feature Extraction: {first_feat_extract_ms:.2f} ms,"
+    log_str += f" Encode: {first_encode_ms:.2f} ms,"
+    log_str += f" Decode: {first_decode_ms:.2f} ms,"
+    log_str += f" Sampling: {first_sampling_ms:.2f} ms"
+    log.info(log_str)
+
+    # Second+ token breakdown: average decode + average sampling
+    if len(decode_durations) > 1:
+        other_decode_durations = decode_durations[1:]
+        avg_other_decode = sum(other_decode_durations) / len(other_decode_durations)
+        other_sampling_durations = sampling_durations[1:] if len(sampling_durations) > 1 else []
+        avg_other_sampling = sum(other_sampling_durations) / len(other_sampling_durations) if other_sampling_durations else 0.0
+        log.info(
+            f"{prefix} Whisper other tokens (avg): Decode: {avg_other_decode:.2f} ms/token, "
+            f"Sampling: {avg_other_sampling:.2f} ms/token, "
+            f"decode count: {len(other_decode_durations)}"
+        )
+
+    # Detokenization
+    if detokenization_ms >= 0:
+        log.info(f"{prefix} Whisper Detokenization: {detokenization_ms:.2f} ms")
 
 
 def print_whisper_infer_latency(iter_str, whisper, prompt_idx=-1):

@@ -809,6 +809,14 @@ def test_perf_metrics(
     assert len(raw_metrics.m_durations) > 0
     assert len(raw_metrics.m_durations) == num_generated_tokens - 1
 
+    # Verify sampling duration metrics
+    mean_sampling, std_sampling = perf_metrics.get_sampling_duration()
+    assert mean_sampling > 0
+    assert len(raw_metrics.sampling_durations) > 0
+    raw_sampling = np.array(raw_metrics.sampling_durations) / 1000
+    assert np.allclose(mean_sampling, np.mean(raw_sampling))
+    assert np.allclose(std_sampling, np.std(raw_sampling))
+
 
 @pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-gemma2"], indirect=True)
 @pytest.mark.parametrize("generation_config,prompt", PERF_METRICS_STRUCTURED_OUTPUT_TEST_CASES)

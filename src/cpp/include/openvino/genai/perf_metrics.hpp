@@ -30,6 +30,7 @@ using MicroSeconds = std::chrono::duration<float, std::ratio<1, 1000000>>;
  * @param m_durations Total durations for each generate call in microseconds.
  * @param m_inference_durations Total inference duration for each generate call in microseconds.
  * @param m_grammar_compile_times Time to compile the grammar in microseconds.
+ * @param m_sampling_durations Per-token sampling durations in microseconds.
  */
 struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<MicroSeconds> generate_durations;
@@ -44,6 +45,8 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<MicroSeconds> m_inference_durations;
 
     std::vector<MicroSeconds> m_grammar_compile_times;
+
+    std::vector<MicroSeconds> m_sampling_durations;
 };
 
 /**
@@ -93,6 +96,7 @@ struct OPENVINO_GENAI_EXPORTS SummaryStats {
  * @param get_generate_duration Returns the mean and standard deviation of generate duration.
  * @param get_tokenization_duration Returns the mean and standard deviation of tokenization duration.
  * @param get_detokenization_duration Returns the mean and standard deviation of detokenization duration.
+ * @param get_sampling_duration Returns the mean and standard deviation of sampling duration in milliseconds.
  * @param get_grammar_compiler_init_times Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
  * @param get_grammar_compile_time Returns the time to compile the grammar in milliseconds.
  * @param get_microsec Converts a duration to microseconds.
@@ -132,6 +136,7 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair inference_duration = {0, 0};
     MeanStdPair tokenization_duration = {-1.0f, -1.0f};
     MeanStdPair detokenization_duration = {-1.0f, -1.0f};
+    MeanStdPair sampling_duration = {-1.0f, -1.0f};
 
     size_t num_generated_tokens = 0;
     size_t num_input_tokens = 0;
@@ -151,6 +156,7 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair get_generate_duration();        // in ms
     MeanStdPair get_tokenization_duration();    // in ms
     MeanStdPair get_detokenization_duration();  // in ms
+    MeanStdPair get_sampling_duration();        // in ms
 
     // Flag indicating if raw metrics were evaluated.
     // If false means current mean/std ttft, tpot, etc. are not actual

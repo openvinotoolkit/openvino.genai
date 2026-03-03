@@ -310,7 +310,13 @@ EncodedResults StatefulLLMPipeline::generate(
     GenerationHandle handle = std::make_shared<GenerationHandleImpl>(
         sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters());
 
-    SamplerOutput sampler_output = m_sampler.sample({sequence_group}, logits);
+    SamplerOutput sampler_output;
+    {
+        const auto sampling_start = std::chrono::steady_clock::now();
+        sampler_output = m_sampler.sample({sequence_group}, logits);
+        const auto sampling_ms = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sampling_start);
+        raw_perf_counters.m_sampling_durations.emplace_back(sampling_ms);
+    }
     stream_generated_tokens(streamer_ptr, handle);
 
     int64_t input_ids_data = -1;
@@ -343,7 +349,12 @@ EncodedResults StatefulLLMPipeline::generate(
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
-        SamplerOutput sampler_output = m_sampler.sample({sequence_group}, m_request.get_tensor("logits"));
+        {
+            const auto sampling_start = std::chrono::steady_clock::now();
+            SamplerOutput sampler_output = m_sampler.sample({sequence_group}, m_request.get_tensor("logits"));
+            const auto sampling_ms = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sampling_start);
+            raw_perf_counters.m_sampling_durations.emplace_back(sampling_ms);
+        }
         stream_generated_tokens(streamer_ptr, handle);
     }
 

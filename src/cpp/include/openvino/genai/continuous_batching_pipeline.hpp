@@ -57,6 +57,11 @@ struct PipelineMetrics {
      * Duration of the last generation step in microseconds.
      */
     float inference_duration = 0.0;
+
+    /**
+     * Duration of the last sampling step in microseconds.
+     */
+    float sampling_duration = 0.0;
 };
 
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
