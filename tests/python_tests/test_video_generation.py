@@ -254,7 +254,9 @@ class TestAutoEncoderKLLTXVideoEncoder:
         import numpy as np
 
         decoder_path = Path(video_generation_model) / "vae_decoder"
-        vae = ov_genai.AutoencoderKLLTXVideo(str(decoder_path), "CPU")  # decoder-only
+        # Use 1-arg constructor + explicit compile to avoid overload ambiguity with 2-path constructor
+        vae = ov_genai.AutoencoderKLLTXVideo(str(decoder_path))
+        vae.compile("CPU")
         generator = ov_genai.CppStdGenerator(42)
         dummy = ov.Tensor(np.zeros([1, 3, 9, 32, 32], dtype=np.float32))
 
@@ -292,7 +294,7 @@ class TestAutoEncoderKLLTXVideoEncoder:
         latent1 = vae.encode(video, ov_genai.CppStdGenerator(42))
         latent2 = vae.encode(video, ov_genai.CppStdGenerator(42))
 
-        np.testing.assert_array_equal(np.array(latent1), np.array(latent2))
+        np.testing.assert_array_equal(latent1.data, latent2.data)
 
     def test_encode_varies_with_seed(self, video_generation_model):
         import openvino as ov
@@ -306,7 +308,7 @@ class TestAutoEncoderKLLTXVideoEncoder:
         latent1 = vae.encode(video, ov_genai.CppStdGenerator(42))
         latent2 = vae.encode(video, ov_genai.CppStdGenerator(99))
 
-        assert not np.array_equal(np.array(latent1), np.array(latent2)), \
+        assert not np.array_equal(latent1.data, latent2.data), \
             "Different generator seeds should produce different latents"
 
 
