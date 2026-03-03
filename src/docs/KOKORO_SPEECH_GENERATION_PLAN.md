@@ -33,9 +33,8 @@ Introduce an explicit backend discriminator for speech generation:
 - `kokoro`
 
 Resolution order:
-1. Optional explicit property (recommended) in `ov::AnyMap` (e.g., `speech_model_type`).
-2. Fallback to `config.json` auto-detection via `architectures[0]`.
-3. Final fallback to deterministic model-file signatures.
+1. `config.json` auto-detection via `architectures[0]`.
+2. Fallback to deterministic model-file signatures.
 
 Rationale:
 - Keeps compatibility with existing SpeechT5 export layouts.

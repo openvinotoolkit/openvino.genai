@@ -44,11 +44,11 @@ to run the sample.
 
 SpeechT5 example:
 
-`text-to-speech speecht5_tts "Hello OpenVINO GenAI" speaker_embedding.bin --speech_model_type speecht5_tts`
+`text-to-speech speecht5_tts "Hello OpenVINO GenAI" speaker_embedding.bin`
 
 Kokoro example (voice-based, no speaker embedding file):
 
-`text-to-speech standalone_python_ov/Kokoro-82M "Hello from Kokoro in OpenVINO GenAI" --speech_model_type kokoro --voice af_heart --language en-us`
+`text-to-speech standalone_python_ov/Kokoro-82M "Hello from Kokoro in OpenVINO GenAI" --voice af_heart --language en-us`
 
 It generates `output_audio.wav` file containing the phrase `Hello OpenVINO GenAI` spoken in the target voice.
 
@@ -60,13 +60,12 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 
 ov::genai::Text2SpeechPipeline pipe(models_path, device);
-gen_speech = pipe.generate(prompt, speaker_embedding, ov::AnyMap{{"speech_model_type", "speecht5_tts"}});
+gen_speech = pipe.generate(prompt, speaker_embedding);
 
 // Kokoro voice-based generation (speaker embedding not required)
 gen_speech = pipe.generate(prompt,
 						   ov::Tensor(),
-						   ov::AnyMap{{"speech_model_type", "kokoro"},
-									  {"voice", "af_heart"},
+						   ov::AnyMap{{"voice", "af_heart"},
 									  {"language", "en-us"}});
 
 auto speech = gen_speech.speeches[0];

@@ -4,38 +4,105 @@
 #include "audio_utils.hpp"
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <optional>
+#include <string>
+#include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
+namespace {
+
+#ifdef _WIN32
+std::vector<std::string> windows_utf8_argv(int argc, char* argv[]) {
+    std::vector<std::string> args;
+    int wide_argc = 0;
+    LPWSTR* wide_argv = CommandLineToArgvW(GetCommandLineW(), &wide_argc);
+    if (wide_argv == nullptr || wide_argc <= 0) {
+        args.reserve(static_cast<size_t>(argc));
+        for (int i = 0; i < argc; ++i) {
+            args.emplace_back(argv[i]);
+        }
+        return args;
+    }
+
+    args.reserve(static_cast<size_t>(wide_argc));
+    for (int i = 0; i < wide_argc; ++i) {
+        const wchar_t* warg = wide_argv[i];
+        const int needed = WideCharToMultiByte(CP_UTF8, 0, warg, -1, nullptr, 0, nullptr, nullptr);
+        OPENVINO_ASSERT(needed > 0, "Failed to convert command-line argument to UTF-8");
+        std::string utf8(static_cast<size_t>(needed - 1), '\0');
+        const int written = WideCharToMultiByte(CP_UTF8,
+                                                0,
+                                                warg,
+                                                -1,
+                                                utf8.data(),
+                                                needed,
+                                                nullptr,
+                                                nullptr);
+        OPENVINO_ASSERT(written > 0, "Failed to convert command-line argument to UTF-8");
+        args.push_back(std::move(utf8));
+    }
+
+    LocalFree(wide_argv);
+    return args;
+}
+#endif
+
+std::vector<std::string> normalized_argv(int argc, char* argv[]) {
+#ifdef _WIN32
+    return windows_utf8_argv(argc, argv);
+#else
+    std::vector<std::string> args;
+    args.reserve(static_cast<size_t>(argc));
+    for (int i = 0; i < argc; ++i) {
+        args.emplace_back(argv[i]);
+    }
+    return args;
+#endif
+}
+
+uint32_t detect_default_sample_rate(const std::filesystem::path& models_path) {
+    if (std::filesystem::exists(models_path / "openvino_model.xml")) {
+        return 24000;
+    }
+    return 16000;
+}
+
+} // namespace
 
 int main(int argc, char* argv[]) try {
+    const auto args = normalized_argv(argc, argv);
     OPENVINO_ASSERT(
-        argc >= 3,
+        args.size() >= 3,
         "Usage: ",
-        argv[0],
-        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>] [--speech_model_type <speecht5_tts|kokoro>] [--voice <VOICE_ID>] [--language <en-us|en-gb>] [--speed <FLOAT>] [--sample_rate <INT>]");
+        args[0],
+        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>] [--voice <VOICE_ID>] [--language <en-us|en-gb>] [--speed <FLOAT>] [--sample_rate <INT>]");
 
-    const std::string models_path = argv[1], prompt = argv[2];
+    const std::string models_path = args[1], prompt = args[2];
     const std::string device = "CPU";
 
     std::optional<std::string> speaker_embedding_path;
-    std::string speech_model_type;
     std::string voice;
     std::string language;
     float speed = 1.0f;
     uint32_t sample_rate = 0;
 
     int arg_idx = 3;
-    if (arg_idx < argc && std::string(argv[arg_idx]).rfind("--", 0) != 0) {
-        speaker_embedding_path = argv[arg_idx++];
+    if (arg_idx < static_cast<int>(args.size()) && args[arg_idx].rfind("--", 0) != 0) {
+        speaker_embedding_path = args[arg_idx++];
     }
 
-    while (arg_idx < argc) {
-        const std::string option = argv[arg_idx++];
-        OPENVINO_ASSERT(arg_idx < argc, "Missing value for option ", option);
-        const std::string value = argv[arg_idx++];
+    while (arg_idx < static_cast<int>(args.size())) {
+        const std::string option = args[arg_idx++];
+        OPENVINO_ASSERT(arg_idx < static_cast<int>(args.size()), "Missing value for option ", option);
+        const std::string value = args[arg_idx++];
 
-        if (option == "--speech_model_type") {
-            speech_model_type = value;
-        } else if (option == "--voice") {
+        if (option == "--voice") {
             voice = value;
         } else if (option == "--language") {
             language = value;
@@ -50,9 +117,6 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::Text2SpeechPipeline pipe(models_path, device);
     ov::AnyMap properties;
-    if (!speech_model_type.empty()) {
-        properties["speech_model_type"] = speech_model_type;
-    }
     if (!voice.empty()) {
         properties["voice"] = voice;
     }
@@ -77,7 +141,8 @@ int main(int argc, char* argv[]) try {
     auto waveform_size = gen_speech.speeches[0].get_size();
     auto waveform_ptr = gen_speech.speeches[0].data<const float>();
     auto bits_per_sample = gen_speech.speeches[0].get_element_type().bitwidth();
-    const uint32_t output_sample_rate = sample_rate > 0 ? sample_rate : (speech_model_type == "kokoro" ? 24000 : 16000);
+    const uint32_t output_sample_rate =
+        sample_rate > 0 ? sample_rate : detect_default_sample_rate(std::filesystem::path(models_path));
     utils::audio::save_to_wav(waveform_ptr, waveform_size, output_file_name, bits_per_sample, output_sample_rate);
     std::cout << "[Info] Text successfully converted to audio file \"" << output_file_name << "\"." << std::endl;
 

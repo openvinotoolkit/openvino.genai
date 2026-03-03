@@ -23,9 +23,6 @@ public:
     SpeechGenerationConfig();
     explicit SpeechGenerationConfig(const std::filesystem::path& json_path);
 
-    // Explicit backend override. Empty means auto-detect from model metadata/files.
-    std::string model_type;
-
     // Shared speech-generation speed multiplier.
     float speed = 1.0f;
 
@@ -65,7 +62,6 @@ public:
 static constexpr ov::Property<float> minlenratio{"minlenratio"};
 static constexpr ov::Property<float> maxlenratio{"maxlenratio"};
 static constexpr ov::Property<float> threshold{"threshold"};
-static constexpr ov::Property<std::string> speech_model_type{"speech_model_type"};
 static constexpr ov::Property<float> speed{"speed"};
 static constexpr ov::Property<uint32_t> sample_rate{"sample_rate"};
 static constexpr ov::Property<std::string> language{"language"};

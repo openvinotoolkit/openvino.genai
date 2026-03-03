@@ -30,9 +30,6 @@ auto speech_generation_config_docstring = R"(
     SpeechGenerationConfig
 
     Shared parameters:
-    :param speech_model_type: backend override; one of "speecht5_tts" or "kokoro". Empty value means auto-detect.
-    :type speech_model_type: str
-
     :param speed: speech speed multiplier.
     :type speed: float
 
@@ -132,7 +129,6 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def(py::init([](const py::kwargs& kwargs) {
             return update_speech_generation_config_from_kwargs(SpeechGenerationConfig(), kwargs);
         }))
-        .def_readwrite("speech_model_type", &SpeechGenerationConfig::model_type)
         .def_readwrite("speed", &SpeechGenerationConfig::speed)
         .def_readwrite("sample_rate", &SpeechGenerationConfig::sample_rate)
         .def_readwrite("minlenratio", &SpeechGenerationConfig::minlenratio)

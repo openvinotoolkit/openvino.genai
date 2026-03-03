@@ -64,11 +64,11 @@ via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
 SpeechT5 example:
 
-`python text2speech.py --speech_model_type speecht5_tts --speaker_embedding_file_path speaker_embedding.bin speecht5_tts "Hello OpenVINO GenAI"`
+`python text2speech.py --speaker_embedding_file_path speaker_embedding.bin speecht5_tts "Hello OpenVINO GenAI"`
 
 Kokoro example (voice-based, no speaker embedding file):
 
-`python text2speech.py --speech_model_type kokoro --voice af_heart --language en-us standalone_python_ov/Kokoro-82M "Hello from Kokoro in OpenVINO GenAI"`
+`python text2speech.py --voice af_heart --language en-us standalone_python_ov/Kokoro-82M "Hello from Kokoro in OpenVINO GenAI"`
 
 It generates `output_audio.wav` file containing the spoken phrase.
 
@@ -80,10 +80,10 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 import openvino_genai
 
 pipe = openvino_genai.Text2SpeechPipeline(model_dir, device)
-result = pipe.generate("Hello OpenVINO GenAI", speaker_embedding, speech_model_type="speecht5_tts")
+result = pipe.generate("Hello OpenVINO GenAI", speaker_embedding)
 
 # Kokoro voice-based generation (speaker embedding not required)
-result = pipe.generate("Hello from Kokoro", None, speech_model_type="kokoro", voice="af_heart", language="en-us")
+result = pipe.generate("Hello from Kokoro", None, voice="af_heart", language="en-us")
 speech = result.speeches[0]
 # speech tensor contains the waveform of the spoken phrase
 ```

@@ -39,20 +39,7 @@ enum class SpeechBackend {
 };
 
 SpeechBackend resolve_backend(const std::filesystem::path& root_dir,
-                             const ov::AnyMap& properties,
-                             const ov::genai::SpeechGenerationConfig& config,
                              const std::string& class_name) {
-    std::string model_type = config.model_type;
-    using ov::genai::utils::read_anymap_param;
-    read_anymap_param(properties, "speech_model_type", model_type);
-
-    if (model_type == "speecht5_tts") {
-        return SpeechBackend::SpeechT5;
-    }
-    if (model_type == "kokoro") {
-        return SpeechBackend::Kokoro;
-    }
-
     if (class_name == "SpeechT5ForTextToSpeech") {
         return SpeechBackend::SpeechT5;
     }
@@ -62,7 +49,7 @@ SpeechBackend resolve_backend(const std::filesystem::path& root_dir,
     }
 
     OPENVINO_THROW("Unsupported text to speech generation pipeline '", class_name,
-                   "'. Set speech_model_type to one of: speecht5_tts, kokoro");
+                   "'. Unable to auto-detect a supported backend from model metadata/files");
 }
 
 }  // namespace
@@ -76,7 +63,7 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
     : m_speech_gen_config(utils::from_config_json_if_exists<SpeechGenerationConfig>(root_dir)) {
     const std::string class_name = get_class_name(root_dir);
 
-    const auto backend = resolve_backend(root_dir, properties, m_speech_gen_config, class_name);
+    const auto backend = resolve_backend(root_dir, class_name);
     if (backend == SpeechBackend::SpeechT5) {
         auto tokenizer = ov::genai::Tokenizer(root_dir);
         m_impl = std::make_shared<SpeechT5TTSImpl>(root_dir, device, properties, tokenizer);

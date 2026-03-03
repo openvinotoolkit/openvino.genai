@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import pathlib
 
 import numpy as np
 import openvino as ov
@@ -14,8 +15,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("text", help="Input text for which to generate speech")
-    parser.add_argument("--speech_model_type", default="", choices=["", "speecht5_tts", "kokoro"],
-                        help="Speech backend override (default: auto-detect from model)")
     parser.add_argument("--speaker_embedding_file_path", default=None,
                         help="Path to the binary file with a speaker embedding")
     parser.add_argument("--voice", default="", help="Kokoro voice id, e.g. af_heart")
@@ -34,8 +33,6 @@ def main():
 
     pipe = openvino_genai.Text2SpeechPipeline(args.model_dir, args.device)
     generation_properties = {}
-    if args.speech_model_type:
-        generation_properties["speech_model_type"] = args.speech_model_type
     if args.voice:
         generation_properties["voice"] = args.voice
     if args.language:
@@ -54,7 +51,7 @@ def main():
     output_file_name = "output_audio.wav"
     if args.sample_rate > 0:
         sample_rate = args.sample_rate
-    elif args.speech_model_type == "kokoro":
+    elif (pathlib.Path(args.model_dir) / "openvino_model.xml").exists():
         sample_rate = 24000
     else:
         sample_rate = 16000
