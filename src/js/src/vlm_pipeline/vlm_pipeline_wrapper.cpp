@@ -185,8 +185,8 @@ Napi::Value VLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         auto inputs = js_to_cpp<VLMGenerateInputs>(env, info[0]);
         auto images = js_to_cpp<std::vector<ov::Tensor>>(env, info[1]);
         auto videos = js_to_cpp<std::vector<ov::Tensor>>(env, info[2]);
-        OPENVINO_ASSERT(info[3].IsFunction() || info[3].IsUndefined(), "generate callback is not a function");
-        auto streamer = info[3].As<Napi::Function>();
+        auto streamer = info[3];
+        OPENVINO_ASSERT(streamer.IsFunction() || streamer.IsUndefined(), "streamer must be a function or undefined");
         auto generation_config = js_to_cpp<ov::AnyMap>(env, info[4]);
         OPENVINO_ASSERT(info[5].IsFunction(), "generate callback is not a function");
         auto callback = info[5].As<Napi::Function>();
@@ -208,11 +208,12 @@ Napi::Value VLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
                                               delete context;
                                           });
         if (!streamer.IsUndefined()) {
-            context->streamer = Napi::ThreadSafeFunction::New(env,
-                                                              streamer,  // JavaScript function called asynchronously
-                                                              "VLM_generate_streamer",  // Name
-                                                              0,                        // Unlimited queue
-                                                              1);  // Only one thread will use this initially
+            context->streamer = Napi::ThreadSafeFunction::New(
+                env,
+                streamer.As<Napi::Function>(),  // JavaScript function called asynchronously
+                "VLM_generate_streamer",        // Name
+                0,                              // Unlimited queue
+                1);                             // Only one thread will use this initially
         }
         context->native_thread = std::thread(vlmPerformInferenceThread, context);
     } catch (const std::exception& ex) {
