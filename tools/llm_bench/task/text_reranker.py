@@ -185,16 +185,9 @@ class TextRerankerOptimum(CommonPipeline):
         input_token_size = input_tokens[0].numel() * len(self.texts)
         self.print_batch_size_info(iter_num, input_token_size)
 
-        max_rss_mem_consumption = ""
-        max_sys_mem_consumption = ""
-        rss_mem_increase = ""
-        sys_mem_increase = ""
-        if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
-            self.mem_consumption_meter.start()
+        self.mem_consumption_meter.smart_start(iter_num)
         generation_result, generation_time = self.generate(tokenized_input)
-        if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
-            self.mem_consumption_meter.stop_and_collect_data(f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}")
-            max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = self.mem_consumption_meter.get_data()
+        memory_metrics = self.mem_consumption_meter.smart_stop_and_collect_data(iter_num, dict_format=False)
 
         iter_data, _ = self.postprocess_output_info(
             generation_result,
@@ -202,10 +195,7 @@ class TextRerankerOptimum(CommonPipeline):
             iter_num,
             [],
             input_token_size,
-            max_rss_mem_consumption,
-            rss_mem_increase,
-            max_sys_mem_consumption,
-            sys_mem_increase,
+            *memory_metrics,
             prompt_index,
             [tokenization_time * 1000],
             None,
@@ -335,16 +325,9 @@ class TextRerankerGenAI(CommonPipeline):
         input_token_size = tokenized_input[0].numel() * len(self.texts)
         self.print_batch_size_info(iter_num, input_token_size)
 
-        max_rss_mem_consumption = ""
-        max_sys_mem_consumption = ""
-        rss_mem_increase = ""
-        sys_mem_increase = ""
-        if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
-            self.mem_consumption_meter.start()
+        self.mem_consumption_meter.smart_start(iter_num)
         generation_result, generation_time = self.generate(input_text)
-        if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
-            self.mem_consumption_meter.stop_and_collect_data(f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}")
-            max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = self.mem_consumption_meter.get_data()
+        memory_metrics = self.mem_consumption_meter.smart_stop_and_collect_data(iter_num, dict_format=False)
 
         iter_data, _ = self.postprocess_output_info(
             generation_result,
@@ -352,10 +335,7 @@ class TextRerankerGenAI(CommonPipeline):
             iter_num,
             [],
             input_token_size,
-            max_rss_mem_consumption,
-            rss_mem_increase,
-            max_sys_mem_consumption,
-            sys_mem_increase,
+            *memory_metrics,
             prompt_index,
             [],
             None,
@@ -368,8 +348,7 @@ class TextRerankerGenAI(CommonPipeline):
 def run_text_reranker_benchmark(
     model_path: Path, framework: str, device: str, args: dict, num_iters: int, mem_consumption: MemMonitorWrapper
 ) -> tuple[list, float, dict]:
-    if mem_consumption is not None:
-        mem_consumption.update_marker("model")
+    mem_consumption.update_marker("model")
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_reranker_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
     text_list, prompt_idx_list = collect_prompts_step(args, get_text_prompt)
@@ -384,12 +363,14 @@ def run_text_reranker_benchmark(
     if args["subsequent"] is False:
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
+                mem_consumption.update_marker(f"step-{num}-{idx}")
                 p_idx = prompt_idx_list[idx]
                 iter_data_list.append(launch(text_reranker_pipeline, num, p_idx, iter_timestamp, input_text, proc_id, bench_hook))
     else:
         for idx, input_text in enumerate(text_list):
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
+                mem_consumption.update_marker(f"step-{num}-{idx}")
                 iter_data_list.append(launch(text_reranker_pipeline, num, p_idx, iter_timestamp, input_text, proc_id, bench_hook))
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args["batch_size"], False, True, latency_unit="text")
@@ -397,8 +378,6 @@ def run_text_reranker_benchmark(
 
 
 def launch(pipeline: CommonPipeline, iter_num: int, prompt_idx: int, iter_timestamp: dict, input_text: str, proc_id: int, bench_hook: object | None) -> dict:
-    if mem_consumption is not None:
-        mem_consumption.update_marker(f"step-{iter_num}-{prompt_idx}")
     if iter_num == 0:
         metrics_print.print_unicode(
             f"[warm-up][P{prompt_idx}] Input query: {input_text}\n Input texts: {pipeline.texts}", f"[warm-up][P{prompt_idx}] Unable print input text"

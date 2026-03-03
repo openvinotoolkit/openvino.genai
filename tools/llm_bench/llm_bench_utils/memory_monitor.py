@@ -500,7 +500,24 @@ class MemoryMarkerHandler:
         self.parent_conn.close()
 
 
-class MemoryDataSummarizer():
+class MemoryPhantom:
+    def __init__(self):
+        self.mmh = None
+
+    def smart_start(self, num=None):
+        pass
+
+    def update_marker(self, marker):
+        pass
+
+    def smart_stop_and_collect_data(self, num, dict_format=True):
+        return {} if dict_format else [""] * 4
+
+    def stop(self):
+        pass
+
+
+class MemoryDataSummarizer:
     MEMORY_NOT_COLLECTED = ''
     DEF_MEM_UNIT = MemoryUnit.MiB
 
@@ -519,20 +536,43 @@ class MemoryDataSummarizer():
         self.initial_mem_status = self.log_curent_memory_data(prefix="Start")
 
         self.mmh = None
-        if self.memory_consumption_mode == 3:
+        if self.memory_consumption_mode in (3, 4):
             self.mmh = MemoryMarkerHandler(args)
 
     def update_marker(self, marker):
         if self.mmh is not None:
             self.mmh.update_marker(marker)
 
-    def start(self):
+    def verify_num_in_mode(self, num):
+        if self.memory_consumption_mode not in (1, 2):
+            return False
+        if self.memory_consumption_mode == 1 and num > 0:
+            return False
+        return True
+
+    def start(self, num=None):
         if self.cooldown is not None:
             time.sleep(int(self.cooldown))
         self.memory_monitor.start()
 
+    def smart_start(self, num=None):
+        if num is not None:
+            if not self.verify_num_in_mode(num):
+                return
+        self.start()
+
     def stop_and_collect_data(self, dir_name='mem_monitor_log'):
         self.memory_monitor.stop_and_collect_data(dir_name)
+
+    def smart_stop_and_collect_data(self, num, dict_format=True):
+        if not self.verify_num_in_mode(num):
+            return {} if dict_format else []
+
+        if isinstance(num, int):
+            dir_name = f"{'P' + str(num) if num > 0 else 'warm-up'}"
+            self.memory_monitor.stop_and_collect_data(dir_name)
+            return self.get_data(dict_format)
+        return {} if dict_format else []
 
     def stop(self):
         self.memory_monitor.stop()
