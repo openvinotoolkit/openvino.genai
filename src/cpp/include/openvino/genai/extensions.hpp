@@ -15,7 +15,7 @@
 namespace ov {
 namespace genai {
 
-using PathExtensions = std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>;
+using ExtensionList = std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>;
 
 /**
  * @brief Wrap paths and Extensions into an ov::AnyMap-compatible pair that can be passed to pipeline constructors
