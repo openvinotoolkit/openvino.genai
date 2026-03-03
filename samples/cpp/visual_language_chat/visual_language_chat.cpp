@@ -30,7 +30,6 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
-    generation_config.pruning_ratio = 43;
 
     std::string prompt;
 
