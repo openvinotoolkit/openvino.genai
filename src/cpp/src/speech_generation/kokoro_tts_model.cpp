@@ -59,6 +59,8 @@ ov::CompiledModel compile_kokoro_model(ov::Core& core,
         return core.compile_model(model_path, device, compile_properties);
     }
 
+    // In the case of NPU, set some NPUW properties, and reshape to static.
+
     set_default_property(compile_properties, "NPU_USE_NPUW", std::string{"YES"});
     set_default_property(compile_properties, "NPUW_DEVICES", std::string{"NPU,CPU"});
     set_default_property(compile_properties, "NPUW_KOKORO", std::string{"YES"});
@@ -89,67 +91,15 @@ double sum_tensor_prefix_as_double(const ov::Tensor& tensor, const size_t count)
         return 0.0;
     }
 
-    const auto et = tensor.get_element_type();
+    OPENVINO_ASSERT(tensor.get_element_type() == ov::element::i64,
+                    "Expected pred_dur tensor to have element type == i64");
+
     double sum = 0.0;
-
-    if (et == ov::element::f32) {
-        const auto* ptr = tensor.data<const float>();
-        for (size_t i = 0; i < n; ++i) {
-            sum += static_cast<double>(ptr[i]);
-        }
-        return sum;
+    const auto* ptr = tensor.data<const int64_t>();
+    for (size_t i = 0; i < n; ++i) {
+        sum += static_cast<double>(ptr[i]);
     }
-    if (et == ov::element::f16) {
-        const auto* ptr = tensor.data<const ov::float16>();
-        for (size_t i = 0; i < n; ++i) {
-            sum += static_cast<double>(ptr[i]);
-        }
-        return sum;
-    }
-    if (et == ov::element::bf16) {
-        const auto* ptr = tensor.data<const ov::bfloat16>();
-        for (size_t i = 0; i < n; ++i) {
-            sum += static_cast<double>(ptr[i]);
-        }
-        return sum;
-    }
-    if (et == ov::element::f64) {
-        const auto* ptr = tensor.data<const double>();
-        for (size_t i = 0; i < n; ++i) {
-            sum += ptr[i];
-        }
-        return sum;
-    }
-    if (et == ov::element::i64) {
-        const auto* ptr = tensor.data<const int64_t>();
-        for (size_t i = 0; i < n; ++i) {
-            sum += static_cast<double>(ptr[i]);
-        }
-        return sum;
-    }
-    if (et == ov::element::i32) {
-        const auto* ptr = tensor.data<const int32_t>();
-        for (size_t i = 0; i < n; ++i) {
-            sum += static_cast<double>(ptr[i]);
-        }
-        return sum;
-    }
-    if (et == ov::element::u64) {
-        const auto* ptr = tensor.data<const uint64_t>();
-        for (size_t i = 0; i < n; ++i) {
-            sum += static_cast<double>(ptr[i]);
-        }
-        return sum;
-    }
-    if (et == ov::element::u32) {
-        const auto* ptr = tensor.data<const uint32_t>();
-        for (size_t i = 0; i < n; ++i) {
-            sum += static_cast<double>(ptr[i]);
-        }
-        return sum;
-    }
-
-    return 0.0;
+    return sum;
 }
 
 std::string normalize_language_variant(const std::string& language) {
@@ -347,7 +297,7 @@ void install_espeak_fallback_if_available(std::unique_ptr<misaki::G2P>& g2p,
                                            version_hint ? std::string(version_hint) : std::string{},
                                            library_hint ? std::string(library_hint) : std::string{});
     if (!espeak_fallback.backend_available()) {
-        std::cout << "Warning: espeak-ng fallback is not available for Kokoro G2P. Install espeak-ng and set "
+        std::cout << "Warning: espeak-ng fallback is not available for Kokoro G2P. Install espeak-ng and optionally set "
                      "MISAKI_ESPEAK_LIBRARY to enable fallback support for out-of-vocab words."
                   << std::endl;
         return;
