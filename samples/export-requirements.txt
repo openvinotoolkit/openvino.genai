@@ -1,7 +1,7 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino-tokenizers[transformers]~=2026.1.0.0.dev
-optimum-intel[nncf]==1.27.0
+https://github.com/huggingface/optimum-intel/archive/2c48d6430c265ac259c1b264f3e2c4025cdd7b76.tar.gz#egg=optimum-intel
 numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
 safetensors==0.6.2; platform_system == "Darwin" and platform_machine == "x86_64"
 einops==0.8.2  # For Qwen
