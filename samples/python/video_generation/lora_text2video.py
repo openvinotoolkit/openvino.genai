@@ -63,7 +63,6 @@ def main():
         callback=callback,
         frame_rate=frame_rate,
         guidance_scale=3,
-        adapters=adapter_config,
     )
 
     save_video("genai_video.avi", output.video, frame_rate)
