@@ -268,7 +268,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
     std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
-    std::vector<ov::Tensor> org_prompt_ids_list;
+    std::vector<ov::Tensor> original_prompt_ids_list;
     
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
     std::vector<EncodedImage> encoded_images = {};
@@ -304,7 +304,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         if (sampling_params[0].is_prompt_lookup()) {
             auto prompt_ids = m_inputs_embedder->encode_prompt(prompt);
-            org_prompt_ids_list.push_back(prompt_ids);
+            original_prompt_ids_list.push_back(prompt_ids);
         }
 
         if (m_inputs_embedder->has_token_type_ids()) {
@@ -349,7 +349,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             if (sampling_params[i].is_prompt_lookup()) {
                 auto prompt_ids = m_inputs_embedder->encode_prompt(prompt);
-                org_prompt_ids_list.push_back(prompt_ids);
+                original_prompt_ids_list.push_back(prompt_ids);
             }
 
             if (m_inputs_embedder->has_token_type_ids()) {
@@ -372,7 +372,12 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
     }
     std::vector<VLMDecodedResults> results;
-    std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list, sampling_params, streamer, token_type_ids_list, position_ids_list, org_prompt_ids_list);
+    std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list,
+                                                                    sampling_params,
+                                                                    streamer,
+                                                                    token_type_ids_list,
+                                                                    position_ids_list,
+                                                                    original_prompt_ids_list);
     for (size_t i = 0; i < prompts.size(); i++) {
         auto result = encoded_results[i];
         VLMDecodedResults gen_result;
