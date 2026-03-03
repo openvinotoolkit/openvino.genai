@@ -178,10 +178,8 @@ def run_hugging_face(
     return generation_results
 
 
-MODEL_SCOPE_MODELS_LIST = (
-    "AngelSlim/Qwen3-1.7B_eagle3",
-)
-# download HF model or read converted model
+MODEL_SCOPE_MODELS_IDS = ("AngelSlim/Qwen3-1.7B_eagle3",)
+# download model from Hugging Face or ModelScope or read converted model
 def get_huggingface_models(
     model_id: str | Path,
     model_class: Type[OVModel],
@@ -189,7 +187,7 @@ def get_huggingface_models(
     trust_remote_code=False,
 ) -> tuple[OptimizedModel, AutoTokenizer]:
     if not local_files_only and isinstance(model_id, str):
-        if model_id in MODEL_SCOPE_MODELS_LIST:
+        if model_id in MODEL_SCOPE_MODELS_IDS:
             model_id = model_scope_snapshot_download(model_id)
         else:
             model_id = snapshot_download(model_id)  # required to avoid HF rate limits
