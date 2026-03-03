@@ -731,7 +731,7 @@ VLMGenerateInputs js_to_cpp<VLMGenerateInputs>(const Napi::Env& env, const Napi:
             return value.As<Napi::String>().Utf8Value();
         }
         if (is_chat_history(env, value)) {
-            return ov::genai::ChatHistory(unwrap<ov::genai::ChatHistory>(env, value));
+            return unwrap<ov::genai::ChatHistory>(env, value);
         }
         OPENVINO_THROW("Passed argument must be a string or ChatHistory.");
     } catch (const ov::Exception& e) {
