@@ -3,6 +3,8 @@
 
 #include "openvino/genai/video_generation/autoencoder_kl_ltx_video.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <memory>
 #include <numeric>
@@ -25,22 +27,49 @@ namespace {
 
 class DiagonalGaussianDistribution {
 public:
-    explicit DiagonalGaussianDistribution(ov::Tensor parameters)
-        : m_parameters(parameters) {
-        ov::Shape shape = parameters.get_shape();
-        OPENVINO_ASSERT(shape[0] == 1, "Batch size must be 1");
-        shape[1] /= 2;
+    explicit DiagonalGaussianDistribution(ov::Tensor parameters) {
+        OPENVINO_ASSERT(parameters.get_element_type() == ov::element::f32,
+            "DiagonalGaussianDistribution requires f32 encoder output, got ",
+            parameters.get_element_type());
 
-        m_mean = ov::Tensor(parameters.get_element_type(), shape, parameters.data());
-        m_std = ov::Tensor(m_mean.get_element_type(), shape);
-        ov::Tensor logvar(parameters.get_element_type(), shape, m_mean.data<float>() + m_mean.get_size());
+        const ov::Shape& full_shape = parameters.get_shape();
+        OPENVINO_ASSERT(full_shape.size() >= 2, "Parameters tensor rank must be at least 2");
+        OPENVINO_ASSERT(full_shape[1] % 2 == 0, "Channel dimension must be even to split mean and logvar");
 
+        const size_t batch = full_shape[0];
+        const size_t channels = full_shape[1] / 2;
+
+        ov::Shape reduced_shape = full_shape;
+        reduced_shape[1] = channels;
+
+        m_mean = ov::Tensor(parameters.get_element_type(), reduced_shape);
+        m_std  = ov::Tensor(parameters.get_element_type(), reduced_shape);
+        ov::Tensor logvar(parameters.get_element_type(), reduced_shape);
+
+        size_t spatial = 1;
+        for (size_t i = 2; i < full_shape.size(); ++i)
+            spatial *= full_shape[i];
+
+        const float* src  = parameters.data<float>();
+        float* mean_data  = m_mean.data<float>();
         float* logvar_data = logvar.data<float>();
-        float* std_data = m_std.data<float>();
+        float* std_data   = m_std.data<float>();
+
+        for (size_t b = 0; b < batch; ++b) {
+            for (size_t c = 0; c < channels; ++c) {
+                const size_t dst_off  = (b * channels + c) * spatial;
+                const size_t mean_off = (b * full_shape[1] + c) * spatial;
+                const size_t lvar_off = (b * full_shape[1] + channels + c) * spatial;
+                for (size_t s = 0; s < spatial; ++s) {
+                    mean_data[dst_off + s]  = src[mean_off + s];
+                    logvar_data[dst_off + s] = src[lvar_off + s];
+                }
+            }
+        }
 
         for (size_t i = 0; i < logvar.get_size(); ++i) {
             logvar_data[i] = std::min(std::max(logvar_data[i], -30.0f), 20.0f);
-            std_data[i] = std::exp(0.5f * logvar_data[i]);
+            std_data[i]    = std::exp(0.5f * logvar_data[i]);
         }
     }
 
@@ -252,11 +281,16 @@ ov::Tensor AutoencoderKLLTXVideo::encode(const ov::Tensor& video, std::shared_pt
     // inverse of denormalize_latents used in the decode path
     const ov::Shape shape = latent.get_shape();
     OPENVINO_ASSERT(shape.size() == 5, "Encoder output expected to be [B, C, F, H, W]");
+    OPENVINO_ASSERT(latent.get_element_type() == ov::element::f32,
+        "Latent normalization requires f32, got ", latent.get_element_type());
     const size_t B = shape[0], C = shape[1], spatial = shape[2] * shape[3] * shape[4];
 
-    float* latent_data = latent.data<float>();
     const auto& mean = m_config.latents_mean_data;
     const auto& std_data = m_config.latents_std_data;
+    OPENVINO_ASSERT(mean.size() == C && std_data.size() == C,
+        "Config latents_mean/std size (", mean.size(), ") does not match latent channels (", C, ")");
+
+    float* latent_data = latent.data<float>();
     const float scale = m_config.scaling_factor;
 
     for (size_t b = 0; b < B; ++b) {
