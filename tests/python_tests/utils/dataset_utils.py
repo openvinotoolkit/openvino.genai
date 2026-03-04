@@ -11,4 +11,5 @@ def load_dataset_via_snapshot(
     repo_id: str, *args: Any, **kwargs: Any
 ) -> "datasets.Dataset | datasets.DatasetDict | datasets.IterableDataset | datasets.IterableDatasetDict":
     local_path = retry_request(lambda: snapshot_download(repo_id, repo_type="dataset"))
+    print("Dataset snapshot downloaded to:", local_path)
     return datasets.load_dataset(local_path, *args, **kwargs)
