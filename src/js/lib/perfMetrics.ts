@@ -116,3 +116,35 @@ export interface VLMPerfMetrics extends PerfMetrics {
    */
   add(other: VLMPerfMetrics): this;
 }
+
+/**
+ * Holds performance metrics for video generation.
+ *
+ * VideoGenerationPerfMetrics holds:
+ *  - Load time, ms
+ *  - Generate duration, ms
+ *  - Iteration duration (mean/std), ms
+ *  - Text encoder inference durations, ms
+ *  - UNet inference duration (mean/std), ms
+ *  - Transformer inference duration (mean/std), ms
+ *  - VAE encoder inference duration, ms
+ *  - VAE decoder inference duration, ms
+ */
+export type VideoGenerationPerfMetrics = {
+  /** Model load time in milliseconds. */
+  loadTime: number;
+  /** Total generate duration in milliseconds. */
+  generateDuration: number;
+  /** Mean and standard deviation of iteration duration in milliseconds. */
+  iterationDuration: MeanStdPair;
+  /** Inference durations for each text encoder in milliseconds. */
+  encoderInferenceDuration: { [key: string]: number };
+  /** Mean and standard deviation of UNet inference duration in milliseconds. */
+  unetInferDuration: MeanStdPair;
+  /** Mean and standard deviation of transformer inference duration in milliseconds. */
+  transformerInferDuration: MeanStdPair;
+  /** VAE encoder inference duration in milliseconds. */
+  vaeEncoderInferDuration: number;
+  /** VAE decoder inference duration in milliseconds. */
+  vaeDecoderInferDuration: number;
+};

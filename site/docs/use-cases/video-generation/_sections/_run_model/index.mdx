@@ -1,4 +1,5 @@
 import Text2VideoCPP from './_text2video_cpp.mdx';
+import Text2VideoJS from './_text2video_js.mdx';
 import Text2VideoPython from './_text2video_python.mdx';
 
 ## Run Model Using OpenVINO GenAI
@@ -27,6 +28,16 @@ OpenVINO GenAI supports the following video generation pipeline:
             </TabItem>
         </Tabs>
     </TabItemCpp>
+    <TabItemJS>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <Text2VideoJS device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <Text2VideoJS device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemJS>
 </LanguageTabs>
 
 :::tip

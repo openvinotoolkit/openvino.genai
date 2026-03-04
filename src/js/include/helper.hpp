@@ -8,6 +8,8 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
+#include "openvino/genai/video_generation/generation_config.hpp"
+#include "openvino/genai/video_generation/text2video_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/openvino.hpp"
 
@@ -150,6 +152,18 @@ Napi::Value cpp_to_js<ov::Tensor, Napi::Value>(const Napi::Env& env, const ov::T
 
 template <>
 Napi::Value cpp_to_js<ov::genai::TokenizedInputs, Napi::Value>(const Napi::Env& env, const ov::genai::TokenizedInputs& tokenized_inputs);
+
+template <>
+ov::genai::VideoGenerationConfig js_to_cpp<ov::genai::VideoGenerationConfig>(const Napi::Env& env, const Napi::Value& value);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::VideoGenerationConfig, Napi::Value>(const Napi::Env& env, const ov::genai::VideoGenerationConfig& config);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::VideoGenerationPerfMetrics, Napi::Value>(const Napi::Env& env, const ov::genai::VideoGenerationPerfMetrics& perf);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::VideoGenerationResult, Napi::Value>(const Napi::Env& env, const ov::genai::VideoGenerationResult& result);
 /**
  * @brief  Template function to convert C++ map into Javascript Object. Map key must be std::string.
  * @tparam MapElementType C++ data type of map elements.

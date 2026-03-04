@@ -5,12 +5,13 @@ import assert from "node:assert";
 import { describe, it, before } from "node:test";
 import { Text2VideoPipeline } from "../dist/index.js";
 
-const { T2V_PATH } = process.env;
+const T2V_PATH = process.env.T2V_PATH;
 
-describe(
-  "Text2VideoPipeline",
-  { skip: !T2V_PATH ? "T2V_PATH environment variable is not set" : undefined },
-  () => {
+if (!T2V_PATH) {
+  throw new Error("Please set T2V_PATH environment variable to run the tests.");
+}
+
+describe("Text2VideoPipeline", () => {
     let pipeline;
 
     before(async () => {
@@ -92,5 +93,46 @@ describe(
       assert.ok(result, "Should return a result");
       assert.ok(result.video, "Result should have a video tensor");
     });
-  },
-);
+
+    it("should invoke callback during generation", async () => {
+      const steps = [];
+      const result = await pipeline.generate("A scenic landscape", {
+        num_inference_steps: 2,
+        height: 64,
+        width: 64,
+        num_frames: 9,
+        callback: (step, numSteps) => {
+          steps.push({ step, numSteps });
+          return false;
+        },
+      });
+
+      assert.ok(result, "Should return a result");
+      assert.ok(steps.length > 0, "Callback should have been called at least once");
+      assert.ok(
+        steps.every((s) => typeof s.step === "number" && typeof s.numSteps === "number"),
+        "Callback arguments should be numbers",
+      );
+    });
+
+    it("should throw when generating without prompt", async () => {
+      await assert.rejects(
+        () => pipeline.generate(),
+        "Should throw when no prompt is provided",
+      );
+    });
+
+    it("should throw when setting invalid generation config type", () => {
+      assert.throws(
+        () => pipeline.setGenerationConfig("invalid"),
+        "Should throw when config is not an object",
+      );
+    });
+
+    it("should throw when initializing with invalid model path", async () => {
+      await assert.rejects(
+        () => Text2VideoPipeline("/nonexistent/path", "CPU"),
+        "Should throw when model path does not exist",
+      );
+    });
+});

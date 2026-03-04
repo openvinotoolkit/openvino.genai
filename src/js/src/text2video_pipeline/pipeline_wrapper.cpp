@@ -53,38 +53,11 @@ void text2videoPerformInferenceThread(Text2VideoTsfnContext* context) {
         napi_status status =
             context->callback.BlockingCall([result, &report_error](Napi::Env env, Napi::Function jsCallback) {
                 try {
-                    auto result_obj = Napi::Object::New(env);
-
-                    // Convert video tensor
-                    result_obj.Set("video", cpp_to_js<ov::Tensor, Napi::Value>(env, result.video));
-
-                    // Convert performance metrics to a plain JS object
-                    auto perf_obj = Napi::Object::New(env);
-                    auto& perf = const_cast<ov::genai::VideoGenerationPerfMetrics&>(result.performance_stat);
-
-                    perf_obj.Set("loadTime", Napi::Number::New(env, perf.get_load_time()));
-                    perf_obj.Set("generateDuration", Napi::Number::New(env, perf.get_generate_duration()));
-
-                    auto iter_dur = perf.get_iteration_duration();
-                    auto iter_obj = Napi::Object::New(env);
-                    iter_obj.Set("mean", Napi::Number::New(env, iter_dur.mean));
-                    iter_obj.Set("std", Napi::Number::New(env, iter_dur.std));
-                    perf_obj.Set("iterationDuration", iter_obj);
-
-                    auto trans_dur = perf.get_transformer_infer_duration();
-                    auto trans_obj = Napi::Object::New(env);
-                    trans_obj.Set("mean", Napi::Number::New(env, trans_dur.mean));
-                    trans_obj.Set("std", Napi::Number::New(env, trans_dur.std));
-                    perf_obj.Set("transformerInferDuration", trans_obj);
-
-                    perf_obj.Set("vaeDecoderInferDuration",
-                                 Napi::Number::New(env, perf.get_vae_decoder_infer_duration()));
-
-                    result_obj.Set("perfMetrics", perf_obj);
+                    auto result_obj = cpp_to_js<ov::genai::VideoGenerationResult, Napi::Value>(env, result);
 
                     jsCallback.Call({
-                        env.Null(),  // Error should be null in normal case
-                        result_obj   // Return result object
+                        env.Null(),
+                        result_obj
                     });
                 } catch (std::exception& err) {
                     report_error("The final callback failed. Details:\n" + std::string(err.what()));
@@ -177,26 +150,7 @@ Napi::Value Text2VideoPipelineWrapper::get_generation_config(const Napi::Callbac
         OPENVINO_ASSERT(this->pipe, "Text2VideoPipeline is not initialized");
         const auto& config = this->pipe->get_generation_config();
 
-        auto config_obj = Napi::Object::New(env);
-        config_obj.Set("guidance_scale", Napi::Number::New(env, config.guidance_scale));
-        config_obj.Set("height", Napi::Number::New(env, config.height));
-        config_obj.Set("width", Napi::Number::New(env, config.width));
-        config_obj.Set("num_inference_steps", Napi::Number::New(env, config.num_inference_steps));
-        config_obj.Set("num_videos_per_prompt", Napi::Number::New(env, static_cast<double>(config.num_videos_per_prompt)));
-        config_obj.Set("num_frames", Napi::Number::New(env, static_cast<double>(config.num_frames)));
-        config_obj.Set("max_sequence_length", Napi::Number::New(env, config.max_sequence_length));
-
-        if (config.negative_prompt.has_value()) {
-            config_obj.Set("negative_prompt", Napi::String::New(env, config.negative_prompt.value()));
-        }
-        if (config.guidance_rescale.has_value()) {
-            config_obj.Set("guidance_rescale", Napi::Number::New(env, config.guidance_rescale.value()));
-        }
-        if (config.frame_rate.has_value()) {
-            config_obj.Set("frame_rate", Napi::Number::New(env, config.frame_rate.value()));
-        }
-
-        return config_obj;
+        return cpp_to_js<ov::genai::VideoGenerationConfig, Napi::Value>(env, config);
     } catch (const std::exception& ex) {
         Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
     }
@@ -210,41 +164,7 @@ Napi::Value Text2VideoPipelineWrapper::set_generation_config(const Napi::Callbac
         VALIDATE_ARGS_COUNT(info, 1, "setGenerationConfig()");
         OPENVINO_ASSERT(info[0].IsObject(), "setGenerationConfig expects an object argument");
 
-        auto js_obj = info[0].As<Napi::Object>();
-        auto config = this->pipe->get_generation_config();
-
-        if (js_obj.Has("negative_prompt") && !js_obj.Get("negative_prompt").IsUndefined()) {
-            config.negative_prompt = js_to_cpp<std::string>(env, js_obj.Get("negative_prompt"));
-        }
-        if (js_obj.Has("guidance_scale") && !js_obj.Get("guidance_scale").IsUndefined()) {
-            config.guidance_scale = js_obj.Get("guidance_scale").As<Napi::Number>().FloatValue();
-        }
-        if (js_obj.Has("height") && !js_obj.Get("height").IsUndefined()) {
-            config.height = js_to_cpp<int64_t>(env, js_obj.Get("height"));
-        }
-        if (js_obj.Has("width") && !js_obj.Get("width").IsUndefined()) {
-            config.width = js_to_cpp<int64_t>(env, js_obj.Get("width"));
-        }
-        if (js_obj.Has("num_inference_steps") && !js_obj.Get("num_inference_steps").IsUndefined()) {
-            config.num_inference_steps = js_to_cpp<int64_t>(env, js_obj.Get("num_inference_steps"));
-        }
-        if (js_obj.Has("num_videos_per_prompt") && !js_obj.Get("num_videos_per_prompt").IsUndefined()) {
-            config.num_videos_per_prompt =
-                static_cast<size_t>(js_obj.Get("num_videos_per_prompt").As<Napi::Number>().Int64Value());
-        }
-        if (js_obj.Has("num_frames") && !js_obj.Get("num_frames").IsUndefined()) {
-            config.num_frames = static_cast<size_t>(js_obj.Get("num_frames").As<Napi::Number>().Int64Value());
-        }
-        if (js_obj.Has("max_sequence_length") && !js_obj.Get("max_sequence_length").IsUndefined()) {
-            config.max_sequence_length = js_obj.Get("max_sequence_length").As<Napi::Number>().Int32Value();
-        }
-        if (js_obj.Has("guidance_rescale") && !js_obj.Get("guidance_rescale").IsUndefined()) {
-            config.guidance_rescale = js_obj.Get("guidance_rescale").As<Napi::Number>().FloatValue();
-        }
-        if (js_obj.Has("frame_rate") && !js_obj.Get("frame_rate").IsUndefined()) {
-            config.frame_rate = js_obj.Get("frame_rate").As<Napi::Number>().FloatValue();
-        }
-
+        auto config = js_to_cpp<ov::genai::VideoGenerationConfig>(env, info[0]);
         this->pipe->set_generation_config(config);
     } catch (const std::exception& ex) {
         Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();

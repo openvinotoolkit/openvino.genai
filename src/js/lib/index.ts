@@ -3,7 +3,7 @@
 
 import { LLMPipeline as LLM } from "./pipelines/llmPipeline.js";
 import { VLMPipeline as VLM } from "./pipelines/vlmPipeline.js";
-import { Text2VideoPipeline as T2V } from "./pipelines/text2VideoPipeline.js";
+import { Text2VideoPipeline as Text2Video } from "./pipelines/text2VideoPipeline.js";
 import { TextEmbeddingPipeline as Embedding } from "./pipelines/textEmbeddingPipeline.js";
 import {
   TextRerankPipeline as TextRerank,
@@ -65,7 +65,7 @@ class PipelineFactory {
     device: string = "CPU",
     properties: Record<string, unknown> = {},
   ) {
-    const pipeline = new T2V(modelPath, device, properties);
+    const pipeline = new Text2Video(modelPath, device, properties);
     await pipeline.init();
 
     return pipeline;

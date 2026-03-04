@@ -169,12 +169,24 @@ export interface VLMPipeline {
   setGenerationConfig(config: GenerationConfig): void;
 }
 
-export type VideoGenerationPerfMetrics = {
-  loadTime: number;
-  generateDuration: number;
-  iterationDuration: { mean: number; std: number };
-  transformerInferDuration: { mean: number; std: number };
-  vaeDecoderInferDuration: number;
+export type { VideoGenerationPerfMetrics } from "./perfMetrics.js";
+import type { VideoGenerationPerfMetrics } from "./perfMetrics.js";
+
+export type VideoGenerationConfig = {
+  negative_prompt?: string;
+  height?: number;
+  width?: number;
+  num_frames?: number;
+  num_inference_steps?: number;
+  guidance_scale?: number;
+  frame_rate?: number;
+  num_videos_per_prompt?: number;
+  max_sequence_length?: number;
+  guidance_rescale?: number;
+};
+
+export type Text2VideoGenerateOptions = VideoGenerationConfig & {
+  callback?: (step: number, numSteps: number, latent: Tensor) => boolean;
 };
 
 export type Text2VideoResult = {
@@ -192,11 +204,11 @@ export interface Text2VideoPipeline {
   ): void;
   generate(
     prompt: string,
-    properties: Record<string, unknown>,
+    options: Text2VideoGenerateOptions,
     callback: (err: Error | null, result: Text2VideoResult) => void,
   ): void;
-  getGenerationConfig(): Record<string, unknown>;
-  setGenerationConfig(config: Record<string, unknown>): void;
+  getGenerationConfig(): VideoGenerationConfig;
+  setGenerationConfig(config: VideoGenerationConfig): void;
 }
 
 interface OpenVINOGenAIAddon {

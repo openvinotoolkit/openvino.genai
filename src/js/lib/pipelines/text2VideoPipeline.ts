@@ -6,42 +6,9 @@ import {
   Text2VideoPipeline as Text2VideoPipelineWrapper,
   VideoGenerationPerfMetrics,
   Text2VideoResult,
+  VideoGenerationConfig,
+  Text2VideoGenerateOptions,
 } from "../addon.js";
-import type { Tensor } from "openvino-node";
-
-/**
- * Video generation configuration parameters for Text2VideoPipeline.
- */
-export type VideoGenerationConfig = {
-  /** Negative prompt to guide generation away from undesired content. */
-  negative_prompt?: string;
-  /** Height of generated video frames in pixels. */
-  height?: number;
-  /** Width of generated video frames in pixels. */
-  width?: number;
-  /** Number of video frames to generate. */
-  num_frames?: number;
-  /** Number of denoising inference steps. */
-  num_inference_steps?: number;
-  /** Classifier-free guidance scale. Higher values produce outputs more aligned with the prompt. */
-  guidance_scale?: number;
-  /** Video frame rate. Affects rope interpolation scale. */
-  frame_rate?: number;
-  /** Number of videos to generate per call. */
-  num_videos_per_prompt?: number;
-  /** Maximum sequence length for T5 encoder / tokenizer. */
-  max_sequence_length?: number;
-  /** Guidance rescale factor. */
-  guidance_rescale?: number;
-};
-
-/**
- * Options for generate() method.
- */
-export type Text2VideoGenerateOptions = VideoGenerationConfig & {
-  /** Callback invoked at each denoising step with (step, numSteps, latent). Return true to cancel. */
-  callback?: (step: number, numSteps: number, latent: Tensor) => boolean;
-};
 
 /**
  * Pipeline for generating video from text prompts using OpenVINO GenAI.
@@ -89,27 +56,8 @@ export class Text2VideoPipeline {
   ): Promise<Text2VideoResult> {
     if (!this.pipeline) throw new Error("Text2VideoPipeline is not initialized");
 
-    const properties: Record<string, unknown> = {};
-
-    if (options.negative_prompt !== undefined)
-      properties["negative_prompt"] = options.negative_prompt;
-    if (options.height !== undefined) properties["height"] = options.height;
-    if (options.width !== undefined) properties["width"] = options.width;
-    if (options.num_frames !== undefined) properties["num_frames"] = options.num_frames;
-    if (options.num_inference_steps !== undefined)
-      properties["num_inference_steps"] = options.num_inference_steps;
-    if (options.guidance_scale !== undefined) properties["guidance_scale"] = options.guidance_scale;
-    if (options.frame_rate !== undefined) properties["frame_rate"] = options.frame_rate;
-    if (options.num_videos_per_prompt !== undefined)
-      properties["num_videos_per_prompt"] = options.num_videos_per_prompt;
-    if (options.max_sequence_length !== undefined)
-      properties["max_sequence_length"] = options.max_sequence_length;
-    if (options.guidance_rescale !== undefined)
-      properties["guidance_rescale"] = options.guidance_rescale;
-    if (options.callback !== undefined) properties["callback"] = options.callback;
-
     const innerGenerate = util.promisify(this.pipeline.generate.bind(this.pipeline));
-    return await innerGenerate(prompt, properties);
+    return await innerGenerate(prompt, options);
   }
 
   /**
@@ -118,7 +66,7 @@ export class Text2VideoPipeline {
    */
   getGenerationConfig(): VideoGenerationConfig {
     if (!this.pipeline) throw new Error("Text2VideoPipeline is not initialized");
-    return this.pipeline.getGenerationConfig() as VideoGenerationConfig;
+    return this.pipeline.getGenerationConfig();
   }
 
   /**
@@ -131,4 +79,9 @@ export class Text2VideoPipeline {
   }
 }
 
-export type { VideoGenerationPerfMetrics, Text2VideoResult };
+export type {
+  VideoGenerationConfig,
+  Text2VideoGenerateOptions,
+  VideoGenerationPerfMetrics,
+  Text2VideoResult,
+};
