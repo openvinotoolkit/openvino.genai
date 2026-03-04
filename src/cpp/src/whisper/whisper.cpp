@@ -230,11 +230,14 @@ std::vector<int64_t> prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
         return std::vector<int64_t>{config.decoder_start_token_id};
     }
 
+    std::cout << "Config provided language: " << (config.language.has_value() ? *config.language : "None") << std::endl;
+
     int64_t language_token_id = 0;
     if (config.language.has_value()) {
         std::string language = *config.language;
         if (config.lang_to_id.count(language)) {
             language_token_id = config.lang_to_id.at(language);
+            std::cout << "Using provided language token id from lang_to_id map: " << language_token_id << std::endl;
         }
     } else {
         auto [language_token, infer_ms] = decoder->detect_language(encoder_hidden_state, config.decoder_start_token_id);

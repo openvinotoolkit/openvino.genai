@@ -37,6 +37,9 @@ std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& enco
 
     int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 
+    std::cout << "Language detection, decoder_start_token_id: " << decoder_start_token_id
+              << ", detected language token id: " << output_token << std::endl;
+
     reset_state();
 
     return {output_token, infer_ms};
