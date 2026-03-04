@@ -324,6 +324,12 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, chunk_sot_tokens, config, 1);
 
+        std::cout << "Chunk SOT tokens: ";
+        for (const auto& token : chunk_sot_tokens) {
+            std::cout << token << ", ";
+        }
+        std::cout << std::endl;
+
         auto [chunk_result, cancelled] = decode(decoder,
                                                 chunk_sot_tokens,
                                                 hidden_state_tensor,
