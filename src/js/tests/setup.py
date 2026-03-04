@@ -33,7 +33,6 @@ TEST_MODELS = {
     "VLM": {
         "model_id": "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "model_class": OVModelForVisualCausalLM,
-        "trust_remote_code": True,
     },
     "EMBEDDING_MODEL": {
         "model_id": "BAAI/bge-small-en-v1.5",

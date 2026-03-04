@@ -410,8 +410,6 @@ public:
         m_vae_device = device;
         m_compile_properties = properties;
         m_is_compiled = true;
-        m_reshape_batch_size_multiplier = do_classifier_free_guidance(m_generation_config.guidance_scale) ? 2 : 1;
-        m_compiled_batch_size_multiplier = m_reshape_batch_size_multiplier;
         const std::filesystem::path model_index_path = models_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);

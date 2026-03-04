@@ -22,6 +22,7 @@ import datasets
 from transformers import WhisperProcessor, AutoTokenizer
 from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+from huggingface_hub import snapshot_download
 import gc
 import json
 import typing
@@ -110,7 +111,8 @@ def save_model(model_id: str, tmp_path: pathlib.Path):
     manager = AtomicDownloadManager(tmp_path)
 
     def save_to_temp(temp_path: pathlib.Path) -> None:
-        tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
+        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+        tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True))
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
             tokenizer,
             with_detokenizer=True,
@@ -122,19 +124,21 @@ def save_model(model_id: str, tmp_path: pathlib.Path):
 
         tokenizer.save_pretrained(temp_path)
 
-        opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-            model_id,
-            export=True,
-            trust_remote_code=True,
-            compile=False,
-            device="CPU",
-            load_in_8bit=False,
-        ))
+        opt_model = retry_request(
+            lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                model_cached,
+                export=True,
+                trust_remote_code=True,
+                compile=False,
+                device="CPU",
+                load_in_8bit=False,
+            )
+        )
         opt_model.generation_config.save_pretrained(temp_path)
         opt_model.config.save_pretrained(temp_path)
         opt_model.save_pretrained(temp_path)
 
-        processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
+        processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_cached, trust_remote_code=True))
         processor.save_pretrained(temp_path)
 
     manager.execute(save_to_temp)
@@ -204,7 +208,7 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
     # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0" 
     # https://github.com/huggingface/datasets/issues/7647 dataset is fixed for streaming mode
     # if not long_form:
-    if False:  
+    if False:
         ds = datasets.load_dataset(
             "mozilla-foundation/common_voice_11_0",
             language,
@@ -217,7 +221,6 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
             "distil-whisper/meanwhile",
             split="test",
             streaming=True,
-            trust_remote_code=True,
         )
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
@@ -828,6 +831,7 @@ def streamer_for_test(request):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
+@pytest.mark.xfail(sys.platform == "darwin", reason="Ticket - 182134", raises=AssertionError)
 def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
     _, _, _, genai_pipe = read_whisper_model(model_descr)
 
