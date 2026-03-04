@@ -65,6 +65,21 @@ bool ModuleTestBase::compare_big_tensor(const ov::Tensor& output,
     return bresult;
 }
 
+bool ModuleTestBase::print_tensor_top(const ov::Tensor& tensor, size_t top_k) {
+    if (tensor.get_element_type() != ov::element::f32) {
+        std::cerr << "Only support printing float tensor" << std::endl;
+        return false;
+    }
+    size_t real_size = std::min(tensor.get_size(), top_k);
+    const float* data = tensor.data<float>();
+    std::cout << "Tensor top " << real_size << " values: ";
+    for (size_t i = 0; i < real_size; ++i) {
+        std::cout << data[i] << ", ";
+    }
+    std::cout << std::endl;
+    return true;
+}
+
 void ModuleTestBase::set_test_name(const std::string& test_name) {
     // replace / and space with _
     m_test_name = test_name;

@@ -111,7 +111,7 @@ void EmbeddingMergerModule::encode_vision_placeholder_tokens() {
 
 ov::Tensor EmbeddingMergerModule::merge_text_and_video_image_embeddings(
     const ov::Tensor& input_ids,
-    const ov::Tensor& text_embeds, 
+    const ov::Tensor& text_embeds,
     const ov::Tensor& processed_image_embeds,
     const ov::Tensor& processed_video_embeds,
     const int64_t image_pad_token_id,

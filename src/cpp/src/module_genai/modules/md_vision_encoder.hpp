@@ -8,7 +8,7 @@
 #include "visual_language/processor_config.hpp"
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/vlm_config.hpp"
-#include "model/qwen3_5/qwen3_5config.hpp"
+#include "module_genai/modules/model/qwen3_5/qwen3_5config.hpp"
 
 
 namespace ov {

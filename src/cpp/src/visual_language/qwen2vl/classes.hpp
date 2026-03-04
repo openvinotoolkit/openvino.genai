@@ -148,6 +148,17 @@ ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_im
 
 ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reordered_video_embeds, const std::vector<ov::Tensor>& reordered_image_embeds);
 
+ov::Tensor merge_text_and_video_image_embeddings(
+    const ov::Tensor& input_ids,
+    const ov::Tensor& text_embeds,
+    const ov::Tensor& processed_image_embeds,
+    const ov::Tensor& processed_video_embeds,
+    const int64_t image_pad_token_id,
+    const int64_t video_pad_token_id
+);
+
+ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels);
+
 } // namespace qwen2vl_utils
 
 } // namespace ov::genai

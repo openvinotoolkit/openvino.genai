@@ -583,7 +583,7 @@ ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reorder
 
 ov::Tensor merge_text_and_video_image_embeddings(
     const ov::Tensor& input_ids,
-    const ov::Tensor& text_embeds, 
+    const ov::Tensor& text_embeds,
     const ov::Tensor& processed_image_embeds,
     const ov::Tensor& processed_video_embeds,
     const int64_t image_pad_token_id,

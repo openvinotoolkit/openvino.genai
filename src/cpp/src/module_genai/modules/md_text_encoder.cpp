@@ -6,7 +6,7 @@
 #include "module_genai/module_factory.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
-#include "model/qwen3_5/qwen3_5config.hpp"
+#include "module_genai/modules/model/qwen3_5/qwen3_5config.hpp"
 
 #include <chrono>
 #include <thread>

@@ -15,6 +15,32 @@ clip_image_u8 tensor_to_clip_image_u8(const ov::Tensor& image_tensor) {
     return image;
 }
 
+clip_image_u8 frames_tensor_to_clip_image_u8(const ov::Tensor& frames_tensor, size_t frame_index) {
+    const auto shape = frames_tensor.get_shape();
+    if (shape.size() != 4) {
+        OPENVINO_THROW("Each video tensor must have shape [T, H, W, C]");
+    }
+    const auto element_type = frames_tensor.get_element_type();
+    if (element_type != ov::element::u8) {
+        OPENVINO_THROW("Video tensor must have element type u8");
+    }
+    size_t t = shape[0];
+    size_t h = shape[1];
+    size_t w = shape[2];
+    size_t c = shape[3];
+    if (c != 3) {
+        OPENVINO_THROW("Video tensor must have 3 channels");
+    }
+    if (frame_index >= t) {
+        OPENVINO_THROW("Frame index out of range");
+    }
+    clip_image_u8 image{int(w),
+                        int(h),
+                        {frames_tensor.data<uint8_t>() + frame_index * h * w * c,
+                         frames_tensor.data<uint8_t>() + (frame_index + 1) * h * w * c}};
+    return image;
+}
+
 ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image) {
     ov::Tensor image_tensor{
         ov::element::f32,

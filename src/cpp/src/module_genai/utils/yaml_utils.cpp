@@ -8,7 +8,7 @@
 #include <filesystem>
 
 #include "logger.hpp"
-#include "module_genai/modules/md_img_preprocess.hpp"
+#include "module_genai/modules/md_vision_preprocess/md_img_preprocess.hpp"
 #include "module_genai/modules/md_io.hpp"
 #include "module_genai/modules/md_text_encoder.hpp"
 #include "module_genai/utils/com_utils.hpp"

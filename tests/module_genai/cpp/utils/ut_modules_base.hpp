@@ -125,6 +125,9 @@ protected:
         std::string yaml_content = check_yaml(get_yaml_content());
         return yaml_content;
     }
+
+    // tool functions
+    bool print_tensor_top(const ov::Tensor& tensor, size_t top_k = 10);
 };
 
 extern std::map<std::string, DummyModuleInterface::PTR> g_dummy_impl_instances_map;
@@ -137,6 +140,32 @@ extern std::map<std::string, DummyModuleInterface::PTR> g_dummy_impl_instances_m
 #ifndef CLEAR_DUMMY_MODULE_IMPLS
 #    define CLEAR_DUMMY_MODULE_IMPLS() ov::genai::module::g_dummy_impl_instances_map.clear()
 #endif
+
+inline std::string get_last_component(std::string raw_path) {
+    auto p = std::filesystem::path(raw_path);
+    if (p.has_filename()) {
+        return p.stem().string();
+    } else {
+        return p.parent_path().stem().string();
+    }
+}
+
+/**
+ * @brief Converts a string into a valid gtest identifier by replacing
+ * non-alphanumeric characters with underscores.
+ */
+inline std::string sanitize_for_gtest(std::string name) {
+    // Replace dots and hyphens with underscores
+    std::replace_if(
+        name.begin(),
+        name.end(),
+        [](char c) {
+            return !std::isalnum(static_cast<unsigned char>(c)) && c != '_';
+        },
+        '_');
+
+    return name;
+}
 
 }  // namespace module
 }  // namespace genai

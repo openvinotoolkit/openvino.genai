@@ -8,8 +8,10 @@
 
 #include "module_genai/module.hpp"
 #include "module_genai/module_type.hpp"
-#include "model/qwen3_5/qwen3_5preprocessor.hpp"
+#include "module_genai/modules/model/qwen3_5/qwen3_5preprocessor.hpp"
 #include "visual_language/qwen2vl/classes.hpp"
+// include vision_preprocess.hpp
+#include "vision_preprocess.hpp"
 
 namespace ov {
 namespace genai {
@@ -18,7 +20,10 @@ class ImagePreprocessModule : public IBaseModule {
     DeclareModuleConstructor(ImagePreprocessModule);
 
 private:
-    std::variant<std::shared_ptr<VisionEncoderQwen2VL>, std::shared_ptr<Qwen3_5Preprocessor>> encoder_ptr;
+    VLMModelType _model_type;
+    VisionPreprocess::PTR _vision_preprocess_ptr = nullptr;
+    VisionEncoder::Ptr _encoder_ptr = nullptr;
+    void run_image(const bool& has_images_input);
 };
 
 REGISTER_MODULE_CONFIG(ImagePreprocessModule);
