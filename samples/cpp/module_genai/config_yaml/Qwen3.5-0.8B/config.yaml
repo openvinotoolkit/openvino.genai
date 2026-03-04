@@ -85,7 +85,7 @@ pipeline_modules:
       - name: "rope_delta"
         type: "OVTensor"
     params:
-      model_path: "./tests/module_genai/cpp/test_models/Qwen3.5-0.8B/"
+      model_path: "./tests/module_genai/cpp/test_models/Qwen3.5-0.8B/qwen3_5_vision_q4a_b4a_g128.xml"
       vision_start_token_id: 248053
 
   llm:
