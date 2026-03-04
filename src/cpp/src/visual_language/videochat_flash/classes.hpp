@@ -15,7 +15,6 @@ namespace ov::genai {
 
 namespace videochat_flash_utils {
     ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t mm_local_num_frames);
-    ov::Tensor transpose_image_features(const ov::Tensor& src_tensor);
     ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8,
                                     const size_t target_h = 224,
                                     const size_t target_w = 224,
@@ -35,9 +34,9 @@ public:
         const std::filesystem::path& config_dir_path,
         const std::string& device,
         const ov::AnyMap properties);
-    
-    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 
+    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+    
     CircularBufferQueueElementGuard<ov::InferRequest> get_vision_encoder() {
         return m_ireq_queue_vision_encoder.get();
     }
@@ -89,7 +88,6 @@ public:
         const ov::AnyMap device_config);
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos) override;
-    std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos, const ov::AnyMap& config_map);
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
     ov::Tensor get_inputs_embeds(const std::string& prompt,
@@ -121,6 +119,7 @@ public:
         const std::vector<EncodedVideo>& videos) const override;
 
 private:
+    bool m_use_batch_vit = false;
     std::vector<size_t> m_tokens_per_images;
     std::vector<size_t> m_prev_tokens_per_images;
 };

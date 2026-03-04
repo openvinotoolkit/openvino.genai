@@ -595,10 +595,6 @@ ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vi
         transpose_features.get_element_type() == ov::element::f32,
         "vision_embeddings input pixel_values must be f32."
     );
-    OPENVINO_ASSERT(
-        m_pos_emb.get_element_type() == ov::element::f32,
-        "vision_embeddings input rotary_pos_emb must be f32."
-    );
 
     ov::Shape full_shape = transpose_features.get_shape();
     size_t N = full_shape[0];
@@ -609,7 +605,6 @@ ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vi
         ov::Shape single_shape = {1, full_shape[1], full_shape[2], full_shape[3], full_shape[4]};
         ov::Tensor single_input(transpose_features.get_element_type(), single_shape, src_ptr + (i * single_sample_size));
         vision_embeddings.set_tensor("pixel_values", single_input);
-       // vision_embeddings.set_tensor("rotary_pos_emb", m_pos_emb);
         vision_embeddings.infer();
         ov::Tensor out_tensor = vision_embeddings.get_output_tensor();
         ov::Tensor copy_tensor(out_tensor.get_element_type(), out_tensor.get_shape());
@@ -629,13 +624,6 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
     const ov::AnyMap properties) : VisionEncoder(model_dir, device, properties) {
     auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
     std::map<std::string, ov::PartialShape> input_shapes;
-    // static x shape may cause output change
-    // ov::Shape x_shape = { 1, 3, 4, 224, 224 };
-    // ov::PartialShape x_shape = { -1, 3, -1, 224, 224 };
-    // input_shapes["hidden_states"] = x_shape;
-    // accelerate model by using static rope shape
-    ov::Shape pos_embed_shape = { 1, 1025, 1408 };
-   // input_shapes["rotary_pos_emb"] = pos_embed_shape;
     model->reshape(input_shapes);
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
@@ -707,17 +695,20 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
     m_pos_emb = videochat_flash_utils::get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
 }
 
+EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    (void)image;
+    (void)config_map;
+    OPENVINO_THROW("VideoChat-Flash currently does not support image inference. Please use video input.");
+}
+
 ov::Tensor infer_visual_features(
     ov::Tensor& transpose_features,
     ov::InferRequest& vision_embeddings,
     ov::InferRequest& merge_embeddings,
     ov::InferRequest& vision_projection,
     ov::Tensor& pos_emb,
-    const ov::AnyMap& config_map
+    const bool use_batch_vit
 ) {
-    bool use_batch_vit = false;
-    utils::read_anymap_param(config_map, "use_batch_vit", use_batch_vit);
-
     OPENVINO_ASSERT(pos_emb.get_element_type() == ov::element::f32, "rotary_pos_emb must be f32.");
 
     ov::Tensor processed_vision_embeds;
@@ -739,39 +730,10 @@ ov::Tensor infer_visual_features(
     return videochat_flash_utils::efficient_flatten(proj_features);
 }
 
-EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    EncodedImage encoded_feature;
-
-    ov::Tensor image_nchw = image;
-    const ov::Shape& input_shape = image.get_shape();
-    OPENVINO_ASSERT(input_shape.size() == 3 || input_shape.size() == 4, "Input image must be 3D CHW or 4D NCHW after preprocessing.");
-    if (input_shape.size() == 3) {
-        image_nchw.set_shape({1, input_shape[0], input_shape[1], input_shape[2]});
-    }
-
-    auto transpose_features = videochat_flash_utils::transpose_image_features(image_nchw);
-
-    CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(this->m_ireq_queue_vision_encoder.get());
-    CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(this->m_ireq_queue_merge_model.get());
-    CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(this->m_ireq_queue_vision_projection.get());
-
-    encoded_feature.images_features_projection = infer_visual_features(
-        transpose_features,
-        vision_guard.get(),
-        merge_guard.get(),
-        projection_guard.get(),
-        m_pos_emb,
-        config_map
-    );
-    return encoded_feature;
-}
 
 
 std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChat_Flash::encode_videos(const std::vector<ov::Tensor>& videos) {
-    return encode_videos(videos, {});
-}
 
-std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChat_Flash::encode_videos(const std::vector<ov::Tensor>& videos, const ov::AnyMap& config_map) {
     auto vision_encoder = std::static_pointer_cast<VisionEncoderVideoChat_Flash>(m_vision_encoder);
     std::vector<EncodedVideo> embeds;
     for (const ov::Tensor& video : videos) {
@@ -790,7 +752,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChat_Flash::encode_video
             merge_guard.get(),
             projection_guard.get(),
             vision_encoder->get_pos_emb(),
-            config_map
+            m_use_batch_vit
         );
         EncodedVideo encoded_video;
         encoded_video.video_features = final_features;
@@ -805,7 +767,9 @@ InputsEmbedderVideoChat_Flash::InputsEmbedderVideoChat_Flash(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap device_config
-) : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
+) : IInputsEmbedder(vlm_config, model_dir, device, device_config) {
+    utils::read_anymap_param(device_config, "use_batch_vit", m_use_batch_vit);
+}
 
 InputsEmbedderVideoChat_Flash::InputsEmbedderVideoChat_Flash(
     const VLMConfig& vlm_config,
@@ -814,7 +778,9 @@ InputsEmbedderVideoChat_Flash::InputsEmbedderVideoChat_Flash(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
+    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    utils::read_anymap_param(device_config, "use_batch_vit", m_use_batch_vit);
+}
 
 
 NormalizedPrompt InputsEmbedderVideoChat_Flash::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
