@@ -810,7 +810,8 @@ ExtensionList extract_extensions(ov::AnyMap& properties) {
     return extensions;
 }
 
-void add_extensions_to_core(const ExtensionList& extensions) {
+void extract_extensions_to_core(ov::AnyMap& properties) {
+    ExtensionList extensions = extract_extensions(properties);
     for (const auto& extension : extensions) {
         if (std::holds_alternative<std::filesystem::path>(extension)) {
             singleton_core().add_extension(std::get<std::filesystem::path>(extension));

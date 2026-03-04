@@ -302,11 +302,20 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
  *   - a std::shared_ptr<ov::Extension> representing an already constructed OpenVINO extension.
  *
  * @param properties Properties map that may contain the "extensions" key with a vector of extension specifications.
- * @return A ExtensionList object representing the extracted extensions.
+ * @return An ExtensionList object representing the extracted extensions.
  */
 ExtensionList extract_extensions(ov::AnyMap& properties);
 
-void add_extensions_to_core(const ExtensionList& extensions);
+/**
+ * @brief Extracts extensions from properties and registers them in the shared ov::Core instance.
+ *
+ * Supported extension item types are:
+ *   - std::filesystem::path to an extension library, and
+ *   - std::shared_ptr<ov::Extension> for an already constructed extension object.
+ *
+ * @param properties Properties map that may contain the "extensions" key.
+ */
+void extract_extensions_to_core(ov::AnyMap& properties);
 
 void clear_false_prompt_lookup_from_config(ov::AnyMap& properties);
 

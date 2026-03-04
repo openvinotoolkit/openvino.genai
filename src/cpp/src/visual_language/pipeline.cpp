@@ -95,8 +95,7 @@ public:
 
         auto properties_copy = properties;
         auto language_model_path = models_dir / "openvino_language_model.xml";
-        auto extensions = utils::extract_extensions(properties_copy);
-        utils::add_extensions_to_core(extensions);
+        utils::extract_extensions_to_core(properties_copy);
         auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
@@ -170,8 +169,7 @@ public:
             "VLMPipeline initialization from string isn't supported for NPU device");
 
         auto properties_copy = properties;
-        auto extensions = utils::extract_extensions(properties_copy);
-        utils::add_extensions_to_core(extensions);
+        utils::extract_extensions_to_core(properties_copy);
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
 
         m_tokenizer = m_inputs_embedder->get_tokenizer();
