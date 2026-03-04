@@ -96,6 +96,7 @@ VisionEncoderModule::~VisionEncoderModule() {}
 
 bool VisionEncoderModule::initialize() {
     const auto &params = module_desc->params;
+    VLMModelType model_type = to_vlm_model_type(module_desc->model_type);
     auto it_path = params.find("model_path");
     if (it_path == params.end()) {
         GENAI_ERR("VisionEncoderModule[" + module_desc->name + "]: 'model_path' not found in params");
@@ -121,16 +122,18 @@ bool VisionEncoderModule::initialize() {
         model = utils::singleton_core().read_model(model_path);
         model_path = model_path.parent_path();
     } else {
-        if (!std::filesystem::exists(model_path / "openvino_vision_embeddings_merger_model.xml")) {
+        auto model_file_path = model_path / "openvino_vision_embeddings_merger_model.xml";
+        if (model_type == VLMModelType::QWEN3_5) {
+            model_file_path = model_path / "qwen3_5_vision.xml";
+        }
+        if (!std::filesystem::exists(model_file_path)) {
             GENAI_ERR("VisionEncoderModule[" + module_desc->name + "]: model file not found at " + 
-                (model_path / "openvino_vision_embeddings_merger_model.xml").string());
+                model_file_path.string());
             return false;
         }
-        model = utils::singleton_core().read_model(
-            model_path / "openvino_vision_embeddings_merger_model.xml");
+        model = utils::singleton_core().read_model(model_file_path);
     }
 
-    auto model_type = to_vlm_model_type(module_desc->model_type);
     if (model_type == VLMModelType::QWEN2_VL || model_type == VLMModelType::QWEN2_5_VL) {
         utils::request_vl_sdpa_transformations(model);
     }

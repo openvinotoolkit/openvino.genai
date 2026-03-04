@@ -1,0 +1,46 @@
+global_context:
+  model_type: "qwen3_5"
+
+pipeline_modules:
+  pipeline_params:
+    type: "ParameterModule"
+    outputs:
+      - name: "prompt"
+        type: "String"
+
+  prompt_encoder:
+    type: "TextEncoderModule"
+    device: "GPU"
+    inputs:
+      - name: "prompt"
+        type: "String"
+        source: "pipeline_params.prompt"
+    outputs:
+      - name: "input_ids"
+        type: "OVTensor"
+      - name: "mask"
+        type: "OVTensor"
+    params:
+      model_path: "./tests/module_genai/cpp/test_models/Qwen3.5-0.8B/"
+
+  llm:
+    type: "LLMInferenceSDPAModule"
+    device: "GPU"
+    inputs:
+      - name: "input_ids"
+        type: "OVTensor"
+        source: "prompt_encoder.input_ids"
+    outputs:
+      - name: "generated_text"
+        type: "String"
+    params:
+      model_path: "./tests/module_genai/cpp/test_models/Qwen3.5-0.8B/"
+      max_new_tokens: 512
+
+  pipeline_result:
+    type: "ResultModule"
+    description: "Collects final results and formats the output structure."
+    inputs:
+      - name: "generated_text"
+        type: "String"
+        source: "llm.generated_text"

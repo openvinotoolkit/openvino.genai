@@ -180,9 +180,9 @@ Qwen3_5VisionEncoderTestData qwen3_5_vision_encoder_test_data() {
     const size_t seed = 42;
 
     data.pixel_values = ov::genai::module::ModuleTestBase::ut_randn_tensor(ov::Shape{256, 3, 2, 16, 16}, seed);
-    data.pos_embeds   = ov::genai::module::ModuleTestBase::ut_randn_tensor(ov::Shape{256, 1152}, seed);
-    data.rotary_cos   = ov::genai::module::ModuleTestBase::ut_randn_tensor(ov::Shape{256, 72},   seed);
-    data.rotary_sin   = ov::genai::module::ModuleTestBase::ut_randn_tensor(ov::Shape{256, 72},   seed);
+    data.pos_embeds   = ov::genai::module::ModuleTestBase::ut_randn_tensor(ov::Shape{256, 768}, seed);
+    data.rotary_cos   = ov::genai::module::ModuleTestBase::ut_randn_tensor(ov::Shape{256, 64}, seed);
+    data.rotary_sin   = ov::genai::module::ModuleTestBase::ut_randn_tensor(ov::Shape{256, 64}, seed);
 
     data.grid_thw = ov::Tensor(ov::element::i64, ov::Shape{1, 3});
     {
@@ -279,7 +279,7 @@ protected:
             cur_node["outputs"].push_back(output_node("position_ids", to_string(DataType::OVTensor)));
             cur_node["outputs"].push_back(output_node("rope_delta", to_string(DataType::OVTensor)));
             cur_node["params"] = YAML::Node();
-            cur_node["params"]["model_path"] = TEST_MODEL::Qwen3_5() + "qwen3_5_vision_q4a_b4a_g128.xml";
+            cur_node["params"]["model_path"] = TEST_MODEL::Qwen3_5_0_8B() + "qwen3_5_vision.xml";
             cur_node["params"]["vision_start_token_id"] = 248053;
             pipeline_modules[vision_encoder_name] = cur_node;
         }
@@ -301,7 +301,7 @@ protected:
     std::vector<float> expected_image_embedding = {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
     };
-    ov::Shape expected_image_embedding_shape = ov::Shape{1, 78, 2048};
+    ov::Shape expected_image_embedding_shape = ov::Shape{1, 78, 1024};
 
     std::vector<bool> expected_visual_pos_mask = {
         0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1

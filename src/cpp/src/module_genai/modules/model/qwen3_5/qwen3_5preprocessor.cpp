@@ -184,9 +184,11 @@ void Qwen3_5Preprocessor::load_pos_embed_weight(const std::filesystem::path &mod
     nlohmann::json meta = nlohmann::json::parse(meta_data_file);
     const ov::element::Type dtype = parse_ov_dtype(meta.at("dtype").get<std::string>());
     const std::vector<size_t> shape_vec = meta.at("shape").get<std::vector<size_t>>();
-    const size_t expected_bytes = meta.at("byte_size").get<size_t>();
     const ov::Shape shape(shape_vec.begin(), shape_vec.end());
     m_pos_embed_weight = ov::Tensor(dtype, shape);
+    const size_t expected_bytes = meta.contains("byte_size")
+        ? meta.at("byte_size").get<size_t>()
+        : m_pos_embed_weight.get_byte_size();
     if (m_pos_embed_weight.get_byte_size() != expected_bytes) {
         OPENVINO_THROW("byte_size mismatch: json=" +
                        std::to_string(expected_bytes) +

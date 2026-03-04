@@ -233,7 +233,7 @@ protected:
 
         image_preprocessor["outputs"] = outputs;
         YAML::Node model_path;
-        model_path["model_path"] = TEST_MODEL::Qwen3_5();
+        model_path["model_path"] = TEST_MODEL::Qwen3_5_0_8B();
         image_preprocessor["params"] = model_path;
         pipeline_modules["image_preprocessor"] = image_preprocessor;
 
@@ -260,19 +260,19 @@ protected:
     const ov::Shape expected_grid_thw_shape = {1, 3};
 
     const std::vector<float> expected_pos_embeds = {
-        0.012573, 0.046143, -0.080566, 0.085938, -0.155273, 0.015869, -0.026367, 0.055908, 0.036377, 0.308594, -0.073242, -0.038818, -0.030273, -0.094727, 0.200195, 0.069336, -0.347656, 0.126953, 0.063965, 0.042480
+        -0.026367, -0.320312, 0.045410, -0.069336, -0.250000, 0.028809, 0.153320, 0.125977, 0.104004, 0.156250, -0.351562, 0.160156, 0.080566, -0.015747, -0.375000, 0.011719, -0.016235, -0.022705, 0.108887, 0.048828
     };
-    const ov::Shape expected_pos_embeds_shape = {256, 1152};
+    const ov::Shape expected_pos_embeds_shape = {256, 768};
 
     const std::vector<float> expected_rotary_cos = {
         1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000
     };
-    const ov::Shape expected_rotary_cos_shape = {256, 72};
+    const ov::Shape expected_rotary_cos_shape = {256, 64};
 
     const std::vector<float> expected_rotary_sin = {
         0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000
     };
-    const ov::Shape expected_rotary_sin_shape = {256, 72};
+    const ov::Shape expected_rotary_sin_shape = {256, 64};
 
     void check_outputs(ov::genai::module::ModulePipeline& pipe) override {
         auto pixel_values = pipe.get_output("pixel_values").as<ov::Tensor>();

@@ -189,7 +189,7 @@ protected:
             cur_node["outputs"].push_back(output_node("rotary_cos", to_string(DataType::OVTensor)));
             cur_node["outputs"].push_back(output_node("rotary_sin", to_string(DataType::OVTensor)));
             cur_node["params"] = YAML::Node();
-            cur_node["params"]["model_path"] = TEST_MODEL::Qwen3_5();
+            cur_node["params"]["model_path"] = TEST_MODEL::Qwen3_5_0_8B();
             pipeline_modules[image_preprocessor_name] = cur_node;
         }
 

@@ -1,0 +1,126 @@
+global_context:
+  model_type: "qwen3_5"
+
+pipeline_modules:
+  pipeline_params:
+    type: "ParameterModule"
+    outputs:
+      - name: "image"
+        type: "OVTensor"
+      - name: "prompt"
+        type: "String"
+
+  image_preprocessor:
+    type: "ImagePreprocessModule"
+    device: "GPU"
+    description: "Image or Video preprocessing."
+    inputs:
+      - name: "image"
+        type: "OVTensor"
+        source: "pipeline_params.image"
+    outputs:
+      - name: "pixel_values"
+        type: "OVTensor"
+      - name: "grid_thw"
+        type: "OVTensor"
+      - name: "pos_embeds"
+        type: "OVTensor"
+      - name: "rotary_cos"
+        type: "OVTensor"
+      - name: "rotary_sin"
+        type: "OVTensor"
+    params:
+      model_path: "./tests/module_genai/cpp/test_models/Qwen3.5-0.8B/"
+
+  prompt_encoder:
+    type: "TextEncoderModule"
+    device: "GPU"
+    inputs:
+      - name: "prompt"
+        type: "String"
+        source: "pipeline_params.prompt"
+      - name: "grid_thw"
+        type: "OVTensor"
+        source: "image_preprocessor.grid_thw"
+    outputs:
+      - name: "input_ids"
+        type: "OVTensor"
+      - name: "mask"
+        type: "OVTensor"
+    params:
+      model_path: "./tests/module_genai/cpp/test_models/Qwen3.5-0.8B/"
+
+  vision_encoder:
+    type: "VisionEncoderModule"
+    device: "GPU"
+    inputs:
+      - name: "preprocessed_image"
+        type: "OVTensor"
+        source: "image_preprocessor.pixel_values"
+      - name: "grid_thw"
+        type: "OVTensor"
+        source: "image_preprocessor.grid_thw"
+      - name: "pos_embeds"
+        type: "OVTensor"
+        source: "image_preprocessor.pos_embeds"
+      - name: "rotary_cos"
+        type: "OVTensor"
+        source: "image_preprocessor.rotary_cos"
+      - name: "rotary_sin"
+        type: "OVTensor"
+        source: "image_preprocessor.rotary_sin"
+      - name: "input_ids"
+        type: "OVTensor"
+        source: "prompt_encoder.input_ids"
+      - name: "attention_mask"
+        type: "OVTensor"
+        source: "prompt_encoder.mask"
+    outputs:
+      - name: "image_embedding"
+        type: "OVTensor"
+      - name: "visual_pos_mask"
+        type: "OVTensor"
+      - name: "position_ids"
+        type: "OVTensor"
+      - name: "rope_delta"
+        type: "OVTensor"
+    params:
+      model_path: "./tests/module_genai/cpp/test_models/Qwen3.5-0.8B/"
+      vision_start_token_id: 248053
+
+  llm:
+    type: "LLMInferenceSDPAModule"
+    device: "GPU"
+    inputs:
+      - name: "input_ids"
+        type: "OVTensor"
+        source: "prompt_encoder.input_ids"
+      - name: "visual_embeds"
+        type: "OVTensor"
+        source: "vision_encoder.image_embedding"
+      - name: "visual_pos_mask"
+        type: "OVTensor"
+        source: "vision_encoder.visual_pos_mask"
+      - name: "grid_thw"
+        type: "OVTensor"
+        source: "image_preprocessor.grid_thw"
+      - name: "position_ids"
+        type: "OVTensor"
+        source: "vision_encoder.position_ids"
+      - name: "rope_delta"
+        type: "OVTensor"
+        source: "vision_encoder.rope_delta"
+    outputs:
+      - name: "generated_text"
+        type: "String"
+    params:
+      model_path: "./tests/module_genai/cpp/test_models/Qwen3.5-0.8B/"
+      max_new_tokens: 512
+
+  pipeline_result:
+    type: "ResultModule"
+    description: "Collects final results and formats the output structure."
+    inputs:
+      - name: "generated_text"
+        type: "String"
+        source: "llm.generated_text"

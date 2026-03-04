@@ -461,7 +461,9 @@ void LLMInferenceSDPAModule::run() {
     // Determine VL mode: all three additional inputs must be present
     const bool is_vl = (this->inputs.find("visual_embeds") != this->inputs.end() &&
                         this->inputs.find("visual_pos_mask") != this->inputs.end() &&
-                        this->inputs.find("grid_thw") != this->inputs.end());
+                        this->inputs.find("grid_thw") != this->inputs.end() &&
+                        this->inputs.find("position_ids") != this->inputs.end() &&
+                        this->inputs.find("rope_delta") != this->inputs.end());
 
     ov::genai::modeling::models::Qwen3_5InputPlanner planner(m_model_config);
 
@@ -470,18 +472,13 @@ void LLMInferenceSDPAModule::run() {
         ov::Tensor visual_embeds   = inputs["visual_embeds"].data.as<ov::Tensor>();
         ov::Tensor visual_pos_mask = inputs["visual_pos_mask"].data.as<ov::Tensor>();
         ov::Tensor grid_thw        = inputs["grid_thw"].data.as<ov::Tensor>();
+        ov::Tensor position_ids    = inputs["position_ids"].data.as<ov::Tensor>();
+        ov::Tensor rope_delta      = inputs["rope_delta"].data.as<ov::Tensor>();
 
-        // Compute 3D MRoPE position_ids and rope_deltas from grid_thw
-        auto plan = planner.build_plan(input_ids, &attention_mask, &grid_thw);
-
-        // Scatter raw visual embeddings to full sequence length
-        auto visual_padded =
-            ov::genai::modeling::models::Qwen3_5InputPlanner::scatter_visual_embeds(
-                visual_embeds, plan.visual_pos_mask);
 
         std::string generated_text = run_vl_decode(input_ids, attention_mask,
-                                                    plan.position_ids, plan.rope_deltas,
-                                                    visual_padded, plan.visual_pos_mask);
+                                                    position_ids, rope_delta,
+                                                    visual_embeds, visual_pos_mask);
         GENAI_INFO("LLM output: " + generated_text);
         this->outputs["generated_text"].data = generated_text;
     } else {
