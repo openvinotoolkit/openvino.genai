@@ -617,7 +617,7 @@ jobs:
             timeout: 30
           - name: 'WWB tests'
             cmd: |
-              export HF_DATASETS_CACHE=${{ env.HF_DATASETS_LOCAL_CACHE_PATH }}
+              export HF_DATASETS_CACHE=/tmp/.hf_cache/datasets/
               python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120

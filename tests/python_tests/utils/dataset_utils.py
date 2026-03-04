@@ -4,7 +4,7 @@
 import os
 import datasets
 from typing import Any
-from .hugging_face import retry_request
+from .network import retry_request
 from huggingface_hub import snapshot_download
 
 
@@ -23,11 +23,11 @@ def load_dataset_via_snapshot(
     When unset, datasets uses its default cache location.
     """
 
-    local_cache = os.environ.get("HF_DATASETS_LOCAL_CACHE_PATH")
-    local_cache_kwargs = {}
-    if local_cache is not None:
-        local_cache_stripped = local_cache.strip()
-        if local_cache_stripped:
-            local_cache_kwargs["cache_dir"] = local_cache_stripped
+    local_cache = os.environ.get("HF_DATASETS_LOCAL_CACHE_PATH", "").strip()
+
+    # Apply HF_DATASETS_LOCAL_CACHE_PATH only as a default when cache_dir was not provided explicitly.
+    if "cache_dir" not in kwargs and local_cache:
+        kwargs["cache_dir"] = local_cache
+
     local_path = retry_request(lambda: snapshot_download(repo_id, repo_type="dataset"))
-    return datasets.load_dataset(local_path, *args, **{**kwargs, **local_cache_kwargs})
+    return datasets.load_dataset(local_path, *args, **kwargs)
