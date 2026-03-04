@@ -135,7 +135,7 @@ python taylorseer_text2image.py ./flux.1-dev/FP16 \
     --steps 28 \
     --cache-interval 3 \
     --disable-before 4 \
-    --disable-after -2 \
+    --disable-after -2
 ```
 
 The sample generates two images with and without TaylorSeer config applied using the same prompt:

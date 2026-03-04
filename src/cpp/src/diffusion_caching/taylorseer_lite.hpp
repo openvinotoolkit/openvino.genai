@@ -3,10 +3,12 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <optional>
 #include <sstream>
+#include <vector>
 
 #include <openvino/core/except.hpp>
 #include <openvino/runtime/tensor.hpp>

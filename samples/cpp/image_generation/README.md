@@ -121,7 +121,7 @@ Run the sample with custom parameters:
     --steps 28 \
     --cache-interval 3 \
     --disable-before 4 \
-    --disable-after -2 \
+    --disable-after -2
 ```
 
 The sample generates two images with and without TaylorSeer config applied using the same prompt:
