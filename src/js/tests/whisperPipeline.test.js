@@ -3,7 +3,6 @@
 
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
 import { WhisperPipeline, StreamingStatus } from "../dist/index.js";
 import { createTestRawSpeech } from "./utils.js";
 import { WhisperPipeline as WhisperPipelineClass } from "../dist/pipelines/whisperPipeline.js";
@@ -15,6 +14,7 @@ if (!WHISPER_MODEL_PATH) {
     "Environment variable WHISPER_MODEL_PATH must be set to the Whisper model directory for tests.",
   );
 }
+
 describe("WhisperPipeline creation", () => {
   it("WhisperPipeline(modelPath, device) creates and initializes pipeline", async () => {
     const pipeline = await WhisperPipeline(WHISPER_MODEL_PATH, "CPU");
@@ -146,7 +146,7 @@ describe("WhisperPipeline with word_timestamps=true", () => {
     assert.strictEqual(config.word_timestamps, true);
   });
 
-  it("generate() without generationConfig doesn't returns chunks but returns words", async () => {
+  it("generate() without generationConfig doesn't return chunks but returns words", async () => {
     const result = await pipeline.generate(rawSpeech);
     assert.strictEqual(result.chunks, undefined);
     assert.ok(Array.isArray(result.words));

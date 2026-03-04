@@ -258,4 +258,3 @@ export type DeepSeekR1ReasoningParser = IDeepSeekR1ReasoningParser;
 export type Phi4ReasoningParser = IPhi4ReasoningParser;
 export type Llama3PythonicToolParser = ILlama3PythonicToolParser;
 export type Llama3JsonToolParser = ILlama3JsonToolParser;
-export type { WhisperGenerationConfig, WhisperPipelineProperties } from "./utils.js";

@@ -20,6 +20,7 @@ if (!WHISPER_MODEL_PATH) {
 function valuesEqual(a, b) {
   if (typeof a !== typeof b) return false;
   if (typeof a !== "object") return a === b;
+  if (a === null || b === null) return a === b;
   if (a instanceof Set) {
     if (!(b instanceof Set)) return false;
     const arrA = [...a].sort();
@@ -30,12 +31,7 @@ function valuesEqual(a, b) {
     if (!Array.isArray(b)) return false;
     return a.length === b.length && a.every((v, i) => valuesEqual(v, b[i]));
   }
-  try {
-    assert.deepStrictEqual(Object.keys(a).sort(), Object.keys(b).sort());
-    return true;
-  } catch {
-    return false;
-  }
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 describe("GenerationConfig JS <-> C++ conversion", () => {

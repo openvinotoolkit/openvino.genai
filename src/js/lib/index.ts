@@ -85,8 +85,6 @@ export const {
 } = PipelineFactory;
 export { DecodedResults, VLMDecodedResults, WhisperDecodedResults } from "./decodedResults.js";
 export type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
-export type { WhisperGenerationConfig, WhisperPipelineProperties } from "./addon.js";
-export type { WhisperGenerateOptions } from "./pipelines/whisperPipeline.js";
 export { PerfMetrics, VLMPerfMetrics, WhisperPerfMetrics } from "./perfMetrics.js";
 export * from "./utils.js";
 export * from "./addon.js";
