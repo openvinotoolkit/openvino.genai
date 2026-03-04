@@ -4,8 +4,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "devDependencies": {
-    "ffmpeg-static": "^3.0.0",
-    "ffprobe-static": "^3.1.0",
+    "node-wav": "^0.0.2",
     "openvino-genai-node": "^2025.4.0",
     "yargs": "^18.0.0",
     "zod": "^4.1.13"

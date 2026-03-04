@@ -5,13 +5,12 @@ import { basename } from 'node:path';
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 import { WhisperPipeline } from 'openvino-genai-node';
-import { readAudio } from '../ffmpeg_utils.js';
+import { readAudio } from './wav_utils.js';
 
-function getConfigForCache() {
-  const config = { CACHE_DIR: 'whisper_cache' };
-  return config;
-}
-
+/**
+ * Parse CLI arguments, run Whisper inference and print transcription output.
+ * @returns {Promise<void>}
+ */
 async function main() {
   const argv = yargs(hideBin(process.argv))
     .scriptName(basename(process.argv[1]))
@@ -27,7 +26,7 @@ async function main() {
           })
           .positional('audio_file', {
             type: 'string',
-            describe: 'Path to the audio file (WAV, MP3, M4A, etc.; decoded via ffmpeg to 16 kHz mono)',
+            describe: 'Path to the WAV audio file',
             demandOption: true,
           })
           .positional('device', {
@@ -46,7 +45,7 @@ async function main() {
 
   let properties = {};
   if (device === 'NPU' || device.startsWith('GPU')) {
-    properties = getConfigForCache();
+    properties["CACHE_DIR"] = 'whisper_cache';
   }
   // Word timestamps require word_timestamps in the pipeline constructor
   properties.word_timestamps = true;

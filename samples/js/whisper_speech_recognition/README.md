@@ -1,6 +1,6 @@
 # Whisper automatic speech recognition sample (JavaScript)
 
-This example showcases inference of speech recognition Whisper models using the JavaScript/Node.js API. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `WhisperPipeline` from `openvino-genai-node` and uses an audio file as input. Audio is decoded via **ffmpeg-static** (any format supported by ffmpeg is accepted; output is 16 kHz mono Float32).
+This example showcases inference of speech recognition Whisper models using the JavaScript/Node.js API. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `WhisperPipeline` from `openvino-genai-node` and uses a WAV audio file as input. Audio is decoded via **node-wav** and converted to 16 kHz mono Float32.
 
 ## Download and convert the model and tokenizers
 
@@ -36,7 +36,7 @@ export_tokenizer(tokenizer, output_dir)
 
 ## Prepare audio file
 
-The sample uses **ffmpeg-static** to decode audio, so you can pass WAV, MP3, M4A, FLAC, or any format supported by ffmpeg; it will be converted to 16 kHz mono automatically.
+The sample uses **node-wav** to decode audio, so pass a WAV file; it will be converted to 16 kHz mono automatically.
 
 Download example WAV: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 
@@ -156,11 +156,9 @@ result = await pipeline.generate(rawSpeech, { generationConfig });
 
 #### Empty or rubbish output
 
-Ensure the audio is 16 kHz (or use the sample's `readWav`, which resamples to 16 kHz). You can convert with FFmpeg:
+Ensure the input is a valid WAV file. The sample's `readAudio` helper converts it to 16 kHz mono before inference.
 
-```sh
-ffmpeg -i input.wav -ar 16000 -ac 1 output.wav
-```
+For non-WAV sources (MP3, M4A, FLAC), convert to WAV first with your preferred tool.
 
 #### NPU device
 
