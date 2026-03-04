@@ -394,3 +394,67 @@ ov_status_e ov_genai_generation_config_validate(ov_genai_generation_config* conf
     }
     return ov_status_e::OK;
 }
+
+// =========================================================================================
+// VIDEO GENERATION CONFIGURATION PARAMETERS IMPLEMENTATION
+// =========================================================================================
+
+ov_status_e ov_genai_generation_config_set_width(ov_genai_generation_config* config, const size_t value) {
+    if (!config || !(config->object)) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        config->object->width = value;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_generation_config_set_height(ov_genai_generation_config* config, const size_t value) {
+    if (!config || !(config->object)) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        config->object->height = value;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_generation_config_set_num_frames(ov_genai_generation_config* config, const size_t value) {
+    if (!config || !(config->object)) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        config->object->num_frames = value;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_generation_config_set_num_inference_steps(ov_genai_generation_config* config, const size_t value) {
+    if (!config || !(config->object)) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        config->object->num_inference_steps = value;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_generation_config_set_guidance_scale(ov_genai_generation_config* config, const float value) {
+    if (!config || !(config->object)) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        config->object->guidance_scale = value;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}

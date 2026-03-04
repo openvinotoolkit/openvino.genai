@@ -10,6 +10,8 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/json_container.hpp"
+// Added include for Text2VideoPipeline
+#include "openvino/genai/video_generation/text2video_pipeline.hpp"
 
 #define GET_PROPERTY_FROM_ARGS_LIST                                                                            \
     std::string property_key = va_arg(args_ptr, char*);                                                        \
@@ -145,4 +147,12 @@ struct ov_genai_chat_history_opaque {
  */
 struct ov_genai_json_container_opaque {
     std::shared_ptr<ov::genai::JsonContainer> object;
+};
+
+/**
+ * @struct ov_genai_text2video_pipeline_opaque
+ * @brief This is an interface of ov::genai::Text2VideoPipeline
+ */
+struct ov_genai_text2video_pipeline_opaque {
+    std::shared_ptr<ov::genai::Text2VideoPipeline> object;
 };
