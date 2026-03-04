@@ -66,6 +66,11 @@ struct VLMInputs {
     /// Shape: [1, sequence_length].
     ov::Tensor token_type_ids;
 
+    /// @brief RoPE delta for position ID computation during autoregressive
+    /// generation. Required by Qwen2-VL / Qwen2.5-VL (3D MROPE).
+    /// For other models this remains nullopt and is not used.
+    std::optional<int64_t> rope_delta;
+
     /// @brief Preprocessing timing (vision encoding + embedding merge).
     /// Populated by VLMProcessor::embed(); merged into VLMPerfMetrics
     /// by VLMPipeline::generate() so that a single VLMPerfMetrics
@@ -94,7 +99,7 @@ namespace ov::genai {
 
 /// @brief Per-model device assignment for the ModelsMap constructor.
 /// Key is the model role name (same keys as ModelsMap, e.g.
-/// "vision_embeddings", "text_embeddings", "resampler").
+/// "vision_embeddings", "text_embeddings", "resampler", ...).
 /// Value is the device name ("CPU", "GPU", "NPU", etc.).
 /// Models not listed default to "CPU".
 using DeviceMapping = std::map<std::string, std::string>;
@@ -127,8 +132,12 @@ public:
 
     /// @brief Construct from pre-loaded models.
     /// @param models_map Map of model name to (IR string, weights tensor) pairs.
-    ///        Expected keys: "vision_embeddings", "text_embeddings",
-    ///        and optionally "resampler".
+    ///        Required keys: "vision_embeddings", "text_embeddings".
+    ///        Model-specific optional keys:
+    ///        - "resampler" (MiniCPM, LLaVA Next Video)
+    ///        - "vision_embeddings_merger" (Qwen2-VL, Qwen2.5-VL)
+    ///        - "vision_projection" (Phi3-V, Phi4-MM)
+    ///        - "multi_modal_projector" (LLaVA Next Video)
     /// @param tokenizer Pre-initialized tokenizer.
     /// @param config_dir_path Path to directory containing config.json.
     /// @param device_mapping Inference device per model type, e.g.:
@@ -618,7 +627,7 @@ Drop `start_chat()` / `finish_chat()` from `VLMPipeline`. `LLMPipeline` has alre
 
 To override the chat template, call `processor.get_tokenizer().set_chat_template(...)` — no dedicated method on `VLMProcessor` is needed.
 
-### Processor with Embeddings Cache, Pipeline Stateful
+### Processor with Embeddings Cache, Pipeline Manages KV Cache and State
 
 The processor is able to **cache** embeddings — `VLMProcessor::embed()` always produces embeddings for the full prompt or full `ChatHistory`. It does not track what the pipeline has already processed, other than full image/video deduplication via the shared `VisionRegistry`. This means that if the same image appears in multiple calls to `embed()`, it will be encoded once and cached in the `VisionRegistry` for subsequent reuse, regardless of how many pipelines or requests are using it.
 
