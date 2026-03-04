@@ -70,6 +70,10 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // Qwen2.5VL
     read_json_param(parsed, "vision_config.window_size", vision_config_window_size);
     read_json_param(parsed, "vision_config.tokens_per_second", vision_config_tokens_per_second);
+
+    // VideoChat_Flash specific config params
+    read_json_param(parsed, "mm_local_num_frames", mm_local_num_frames);
+    read_json_param(parsed, "mm_hidden_size", mm_hidden_size);
 }
 
 } // namespace ov::genai

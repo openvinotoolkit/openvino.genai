@@ -76,18 +76,6 @@ public:
         const StreamerVariant& streamer
     ) = 0;
 
-    virtual VLMDecodedResults generate(
-        const std::string& prompt,
-        const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& videos,
-        GenerationConfig generation_config,
-        const StreamerVariant& streamer,
-        const ov::AnyMap& config_map
-    ) {
-        (void)config_map;
-        return generate(prompt, images, videos, std::move(generation_config), streamer);
-    }
-
     VLMDecodedResults generate(
         const std::string& prompt,
         const ov::AnyMap& config_map
@@ -127,7 +115,7 @@ public:
             }
         }
 
-        return generate(prompt, images_vector, videos_vector, config, utils::get_streamer_from_map(config_map), config_map);
+        return generate(prompt, images_vector, videos_vector, config, utils::get_streamer_from_map(config_map));
     }
 
     virtual VLMDecodedResults generate(
