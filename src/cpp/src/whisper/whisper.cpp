@@ -7,6 +7,7 @@
 #include <openvino/openvino.hpp>
 #include <thread>
 
+#include "debug_utils.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
@@ -279,11 +280,19 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
     result.perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations = {{MicroSeconds(0.0f)}};
-
+    std::cout << "Raw speech stats:" << std::endl;
+    ov::Tensor raw_speech_tensor(ov::element::f32, {raw_speech.size()}, raw_speech.data());
+    print_tensor_stats(raw_speech_tensor);
     const auto infer_start = std::chrono::steady_clock::now();
     auto input_features = feature_extractor.extract(raw_speech);
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
     result.perf_metrics.whisper_raw_metrics.features_extraction_durations.emplace_back(infer_ms);
+
+    std::cout << "Input features stats:" << std::endl;
+    ov::Tensor input_features_tensor(ov::element::f32,
+                                     {input_features.n_frames, feature_extractor.feature_size},
+                                     input_features.data.data());
+    print_tensor_stats(input_features_tensor);
 
     const bool is_shortform = input_features.n_frames <= feature_extractor.nb_max_frames;
     // long-form audio processing requires timestamps to be enabled

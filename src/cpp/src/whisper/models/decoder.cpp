@@ -5,6 +5,7 @@
 
 #include <filesystem>
 
+#include "debug_utils.hpp"
 #include "statefull_decoder.hpp"
 #include "whisper/whisper_utils.hpp"
 
@@ -23,6 +24,9 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
 
 std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& encoder_hidden_state,
                                                           const int64_t decoder_start_token_id) {
+    std::cout << "Detecting language..." << std::endl;
+    std::cout << "Encoder hidden state stats" << std::endl;
+    print_tensor_stats(encoder_hidden_state);
     Tensor input_ids_tensor = create_host_tensor(ov::element::i64, {1, 1});
     input_ids_tensor.data<int64_t>()[0] = decoder_start_token_id;
 
