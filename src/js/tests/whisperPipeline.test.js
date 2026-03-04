@@ -91,7 +91,8 @@ describe("WhisperPipeline methods", () => {
 
   it("stream(rawSpeech, options) accepts generation config", async () => {
     const chunks = [];
-    const stream = pipeline.stream(rawSpeech, { language: "<|en|>", task: "transcribe" });
+    const generationConfig = { language: "<|en|>", task: "transcribe" };
+    const stream = pipeline.stream(rawSpeech, { generationConfig });
     for await (const chunk of stream) {
       chunks.push(chunk);
       assert.strictEqual(typeof chunk, "string");

@@ -115,7 +115,7 @@ void whisperPerformInferenceThread(WhisperTsfnContext* context) {
                 context->callback_tsfn.BlockingCall([result, &report_error](Napi::Env env, Napi::Function js_callback) {
                     try {
                         js_callback.Call({env.Null(), to_whisper_decoded_result(env, result)});
-                    } catch (std::exception& err) {
+                    } catch (const std::exception& err) {
                         report_error("The final callback failed. Details:\n" + std::string(err.what()));
                     }
                 });
