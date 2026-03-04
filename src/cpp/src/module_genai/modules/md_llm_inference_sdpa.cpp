@@ -24,10 +24,23 @@
 #include <openvino/openvino.hpp>
 
 #include "openvino/genai/chat_history.hpp"
+#include "module_genai/utils/com_utils.hpp"
 
 namespace ov {
 namespace genai {
 namespace module {
+
+namespace {
+bool dump_performance_enabled() {
+    static const bool enabled = utils::check_env_variable("DUMP_PERFORMANCE");
+    return enabled;
+}
+
+double elapsed_ms(std::chrono::steady_clock::time_point a,
+                  std::chrono::steady_clock::time_point b) {
+    return std::chrono::duration<double, std::milli>(b - a).count();
+}
+}  // namespace
 
 GENAI_REGISTER_MODULE_SAME(LLMInferenceSDPAModule);
 
@@ -243,6 +256,7 @@ bool LLMInferenceSDPAModule::initialize() {
         ov::hint::num_requests(1)
     };
 
+    m_device = text_device;
     GENAI_INFO("LLMInferenceSDPAModule: compiling text -> " + text_device);
     m_compiled_text = m_core.compile_model(text_ir, text_device, latency_props);
 
@@ -309,7 +323,9 @@ std::string LLMInferenceSDPAModule::run_text_decode(const ov::Tensor& input_ids,
             make_zeros(ov::element::boolean, {batch, static_cast<size_t>(prompt_len)}));
     }
 
+    const auto t_prefill0 = std::chrono::steady_clock::now();
     text_req.infer();
+    const auto t_prefill1 = std::chrono::steady_clock::now();
     int64_t next_id = argmax_last(text_req.get_tensor(TIO::kLogits));
 
     // --- Decode loop ---
@@ -325,6 +341,9 @@ std::string LLMInferenceSDPAModule::run_text_decode(const ov::Tensor& input_ids,
     }
 
     int64_t past_len     = prompt_len;
+
+    size_t decode_steps = 0;
+    const auto t_dec0 = std::chrono::steady_clock::now();
 
     for (size_t step = 1; step < m_max_new_tokens; ++step) {
         if (!m_stop_ids.empty() && m_stop_ids.count(next_id)) break;
@@ -347,7 +366,32 @@ std::string LLMInferenceSDPAModule::run_text_decode(const ov::Tensor& input_ids,
         text_req.infer();
         next_id = argmax_last(text_req.get_tensor(TIO::kLogits));
         generated.push_back(next_id);
+        ++decode_steps;
         ++past_len;
+    }
+
+    const auto t_dec1 = std::chrono::steady_clock::now();
+
+    if (dump_performance_enabled()) {
+        const double ttft_ms    = elapsed_ms(t_prefill0, t_prefill1);
+        const double decode_ms  = elapsed_ms(t_dec0, t_dec1);
+        const double tpot_ms    = decode_steps > 0 ? decode_ms / static_cast<double>(decode_steps) : 0.0;
+        const double throughput = decode_steps > 0 && decode_ms > 0.0
+                                   ? static_cast<double>(decode_steps) * 1000.0 / decode_ms
+                                   : 0.0;
+        std::cout << std::fixed << std::setprecision(2);
+        std::cout << "Mode: sdpa / text\n"
+                  << "Device: " << m_device << "\n"
+                  << "Prompt token size: " << prompt_len << "\n"
+                  << "Output token size: " << generated.size() << "\n"
+                  << "TTFT: " << ttft_ms << " ms\n"
+                  << "Decode time: " << decode_ms << " ms\n";
+        if (decode_steps > 0) {
+            std::cout << "TPOT: " << tpot_ms << " ms/token\n"
+                      << "Throughput: " << throughput << " tokens/s\n";
+        } else {
+            std::cout << "TPOT: N/A\nThroughput: N/A\n";
+        }
     }
 
     // Decode tokens to text
@@ -388,7 +432,9 @@ std::string LLMInferenceSDPAModule::run_vl_decode(const ov::Tensor& input_ids,
     text_req.set_tensor(TIO::kVisualEmbeds,  visual_embeds);
     text_req.set_tensor(TIO::kVisualPosMask, visual_pos_mask);
 
+    const auto t_prefill0 = std::chrono::steady_clock::now();
     text_req.infer();
+    const auto t_prefill1 = std::chrono::steady_clock::now();
     int64_t next_id = argmax_last(text_req.get_tensor(TIO::kLogits));
 
     // --- Decode loop ---
@@ -401,6 +447,9 @@ std::string LLMInferenceSDPAModule::run_vl_decode(const ov::Tensor& input_ids,
     ov::Tensor dec_vis_mask = make_zeros(ov::element::boolean, {batch, 1});
 
     int64_t past_len     = prompt_len;
+
+    size_t decode_steps = 0;
+    const auto t_dec0 = std::chrono::steady_clock::now();
 
     for (size_t step = 1; step < m_max_new_tokens; ++step) {
         if (!m_stop_ids.empty() && m_stop_ids.count(next_id)) break;
@@ -421,7 +470,32 @@ std::string LLMInferenceSDPAModule::run_vl_decode(const ov::Tensor& input_ids,
         text_req.infer();
         next_id = argmax_last(text_req.get_tensor(TIO::kLogits));
         generated.push_back(next_id);
+        ++decode_steps;
         ++past_len;
+    }
+
+    const auto t_dec1 = std::chrono::steady_clock::now();
+
+    if (dump_performance_enabled()) {
+        const double ttft_ms    = elapsed_ms(t_prefill0, t_prefill1);
+        const double decode_ms  = elapsed_ms(t_dec0, t_dec1);
+        const double tpot_ms    = decode_steps > 0 ? decode_ms / static_cast<double>(decode_steps) : 0.0;
+        const double throughput = decode_steps > 0 && decode_ms > 0.0
+                                   ? static_cast<double>(decode_steps) * 1000.0 / decode_ms
+                                   : 0.0;
+        std::cout << std::fixed << std::setprecision(2);
+        std::cout << "Mode: sdpa / vl\n"
+                  << "Device: " << m_device << "\n"
+                  << "Prompt token size: " << prompt_len << "\n"
+                  << "Output token size: " << generated.size() << "\n"
+                  << "TTFT: " << ttft_ms << " ms\n"
+                  << "Decode time: " << decode_ms << " ms\n";
+        if (decode_steps > 0) {
+            std::cout << "TPOT: " << tpot_ms << " ms/token\n"
+                      << "Throughput: " << throughput << " tokens/s\n";
+        } else {
+            std::cout << "TPOT: N/A\nThroughput: N/A\n";
+        }
     }
 
     // Decode tokens to text
