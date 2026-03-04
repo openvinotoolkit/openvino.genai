@@ -1,51 +1,25 @@
 # Whisper automatic speech recognition sample (JavaScript)
 
-This example showcases inference of speech recognition Whisper models using the JavaScript/Node.js API. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `WhisperPipeline` from `openvino-genai-node` and uses a WAV audio file as input. Audio is decoded via **node-wav** and converted to 16 kHz mono Float32.
+This example showcases inference of speech recognition Whisper Models. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `WhisperPipeline` and uses audio file in wav format as an input source. Audio conversion is performed by a custom helper in `wav_utils.js` (PCM16 mono/stereo at 16 kHz) to align numerical behavior with the C++ and Python sample paths.
 
 ## Download and convert the model and tokenizers
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
+It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
-```
-
-Then, run the export with Optimum CLI:
-
-```sh
+pip install --upgrade-strategy eager -r ../../requirements.txt
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
-```
-
-Alternatively, you can do it in Python code:
-
-```python
-from optimum.exporters.openvino.convert import export_tokenizer
-from optimum.intel import OVModelForSpeechSeq2Seq
-from transformers import AutoTokenizer
-
-output_dir = "whisper-base"
-
-model = OVModelForSpeechSeq2Seq.from_pretrained("openai/whisper-base", export=True, trust_remote_code=True)
-model.save_pretrained(output_dir)
-
-tokenizer = AutoTokenizer.from_pretrained("openai/whisper-base")
-export_tokenizer(tokenizer, output_dir)
 ```
 
 ## Prepare audio file
 
-The sample uses **node-wav** to decode audio, so pass a WAV file; it will be converted to 16 kHz mono automatically.
+Prepare audio file in wav format with sampling rate 16k Hz.
 
-Download example WAV: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+You can download example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 
-Or record from the microphone (16 kHz mono WAV):
-
-- **JavaScript:** `node whisper_speech_recognition/recorder.js` (optional: `--duration 5 --output output.wav`). Uses the **naudiodon** npm package (PortAudio bindings), so no system tools are required; run `npm install` in `samples/js` first.
-- **Python:** [recorder.py](../../python/whisper_speech_recognition/recorder.py) (requires `pip install pyaudio`).
-
-## Run the Whisper model
+## Run
 
 From the `samples/js` directory, install dependencies (if not already done):
 
@@ -67,7 +41,7 @@ Optional third argument is the device (default: CPU):
 node whisper_speech_recognition/whisper_speech_recognition.js whisper-base how_are_you_doing_today.wav GPU
 ```
 
-Expected output:
+Output:
 
 ```
  How are you doing today?
@@ -79,17 +53,12 @@ timestamps: [0.00, 2.00] text:  How are you doing today?
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-recognition-models-whisper-based) for more details.
 
-## Whisper pipeline usage (JavaScript)
+# Whisper pipeline usage
 
 ```javascript
 import { WhisperPipeline } from 'openvino-genai-node';
 import { readFileSync } from 'node:fs';
 
-// Helper: read WAV as Float32Array at 16 kHz (see whisper_speech_recognition.js for full readWav)
-function readWav(filepath) {
-  // ... parse WAV, normalize to [-1, 1], resample to 16 kHz if needed
-  return float32Samples;
-}
 
 const pipeline = await WhisperPipeline(modelDir, "CPU");
 const rawSpeech = readWav('how_are_you_doing_today.wav');
@@ -100,7 +69,9 @@ console.log(result.texts[0]);
 
 ### Transcription
 
-Specify language in the generation config for better accuracy:
+Whisper pipeline predicts the language of the source audio automatically.
+
+If the source audio language is known in advance, it can be specified in generation config:
 
 ```javascript
 const generationConfig = { language: "<|en|>", task: "transcribe" };
@@ -109,7 +80,7 @@ const result = await pipeline.generate(rawSpeech, { generationConfig });
 
 ### Translation
 
-To translate non-English speech to English:
+By default, Whisper performs the task of speech transcription, where the source audio language is the same as the target text language. To perform speech translation, where the target text is in English, set the task to "translate":
 
 ```javascript
 const generationConfig = { task: "translate" };
@@ -118,7 +89,7 @@ const result = await pipeline.generate(rawSpeech, { generationConfig });
 
 ### Timestamps prediction
 
-Segment-level timestamps:
+The model can predict timestamps. For sentence-level timestamps, pass the `return_timestamps` argument:
 
 ```javascript
 const generationConfig = { return_timestamps: true, language: "<|en|>", task: "transcribe" };
@@ -142,6 +113,12 @@ for (const w of result.words ?? []) {
 ```
 
 ### Initial prompt and hotwords
+
+Whisper pipeline has `initial_prompt` and `hotwords` generate arguments:
+* `initial_prompt`: initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing window
+* `hotwords`: hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows
+
+The Whisper model can use that context to better understand the speech and maintain a consistent writing style. However, prompts do not need to be genuine transcripts from prior audio segments. Such prompts can be used to steer the model to use particular spellings or styles:
 
 ```javascript
 let result = await pipeline.generate(rawSpeech);

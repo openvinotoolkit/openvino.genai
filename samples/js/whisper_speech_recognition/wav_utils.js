@@ -2,70 +2,88 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { readFile } from 'node:fs/promises';
-import wav from 'node-wav';
 
-/**
- * Convert decoded multi-channel PCM data to mono by averaging channels.
- * @param {Float32Array[]} channelData
- * @returns {Float32Array}
- */
-function toMono(channelData) {
-  if (!Array.isArray(channelData) || channelData.length === 0) {
-    throw new Error('Invalid WAV payload: no channel data.');
+function parseWavPcm16Mono(buffer) {
+  if (buffer.length < 44) {
+    throw new Error('Invalid WAV payload: file is too small.');
   }
 
-  if (channelData.length === 1) {
-    return channelData[0];
+  if (buffer.toString('ascii', 0, 4) !== 'RIFF' || buffer.toString('ascii', 8, 12) !== 'WAVE') {
+    throw new Error('Invalid WAV payload: RIFF/WAVE header is missing.');
   }
 
-  const minLength = Math.min(...channelData.map((channel) => channel.length));
-  if (!Number.isFinite(minLength) || minLength <= 0) {
-    throw new Error('Invalid WAV payload: channel data is empty.');
-  }
+  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  let offset = 12;
 
-  const mono = new Float32Array(minLength);
-  for (let index = 0; index < minLength; index++) {
-    let sum = 0;
-    for (const channel of channelData) {
-      sum += channel[index];
+  let audioFormat;
+  let channels;
+  let sampleRate;
+  let bitsPerSample;
+  let dataOffset;
+  let dataSize;
+
+  while (offset + 8 <= buffer.length) {
+    const chunkId = buffer.toString('ascii', offset, offset + 4);
+    const chunkSize = view.getUint32(offset + 4, true);
+    const chunkDataOffset = offset + 8;
+
+    if (chunkDataOffset + chunkSize > buffer.length) {
+      throw new Error('Invalid WAV payload: malformed chunk size.');
     }
-    mono[index] = sum / channelData.length;
+
+    if (chunkId === 'fmt ') {
+      if (chunkSize < 16) {
+        throw new Error('Invalid WAV payload: fmt chunk is too small.');
+      }
+      audioFormat = view.getUint16(chunkDataOffset, true);
+      channels = view.getUint16(chunkDataOffset + 2, true);
+      sampleRate = view.getUint32(chunkDataOffset + 4, true);
+      bitsPerSample = view.getUint16(chunkDataOffset + 14, true);
+    } else if (chunkId === 'data') {
+      dataOffset = chunkDataOffset;
+      dataSize = chunkSize;
+    }
+
+    offset = chunkDataOffset + chunkSize + (chunkSize % 2);
+  }
+
+  if (audioFormat !== 1) {
+    throw new Error('Unsupported WAV format: only PCM is supported.');
+  }
+
+  if (channels !== 1 && channels !== 2) {
+    throw new Error('WAV file must be mono or stereo.');
+  }
+
+  if (sampleRate !== 16000) {
+    throw new Error(`WAV file must be 16 kHz, but got ${sampleRate}.`);
+  }
+
+  if (bitsPerSample !== 16) {
+    throw new Error(`Unsupported WAV bit depth: ${bitsPerSample}. Only 16-bit PCM is supported.`);
+  }
+
+  if (dataOffset === undefined || dataSize === undefined) {
+    throw new Error('Invalid WAV payload: missing data chunk.');
+  }
+
+  const bytesPerFrame = channels * 2;
+  const frameCount = Math.floor(dataSize / bytesPerFrame);
+  const mono = new Float32Array(frameCount);
+
+  for (let index = 0; index < frameCount; index++) {
+    const frameOffset = dataOffset + index * bytesPerFrame;
+    if (channels === 1) {
+      const sample = view.getInt16(frameOffset, true);
+      mono[index] = sample / 32768.0;
+    } else {
+      const left = view.getInt16(frameOffset, true);
+      const right = view.getInt16(frameOffset + 2, true);
+      mono[index] = (left + right) / 65536.0;
+    }
   }
 
   return mono;
-}
-
-/**
- * Resample PCM data with linear interpolation.
- * @param {Float32Array} samples
- * @param {number} inputRate
- * @param {number} outputRate
- * @returns {Float32Array}
- */
-function resampleLinear(samples, inputRate, outputRate) {
-  if (inputRate === outputRate) {
-    return samples;
-  }
-
-  if (!Number.isFinite(inputRate) || inputRate <= 0) {
-    throw new Error(`Invalid WAV sample rate: ${inputRate}`);
-  }
-
-  const outputLength = Math.max(1, Math.round((samples.length * outputRate) / inputRate));
-  const resampled = new Float32Array(outputLength);
-  const ratio = inputRate / outputRate;
-
-  for (let outputIndex = 0; outputIndex < outputLength; outputIndex++) {
-    const inputPosition = outputIndex * ratio;
-    const leftIndex = Math.floor(inputPosition);
-    const rightIndex = Math.min(leftIndex + 1, samples.length - 1);
-    const weight = inputPosition - leftIndex;
-    const leftValue = samples[leftIndex] ?? 0;
-    const rightValue = samples[rightIndex] ?? leftValue;
-    resampled[outputIndex] = leftValue + (rightValue - leftValue) * weight;
-  }
-
-  return resampled;
 }
 
 /**
@@ -80,18 +98,5 @@ export async function readAudio(audioPath) {
     throw new Error('Audio file is empty.');
   }
 
-  const decoded = wav.decode(wavBuffer);
-  const sampleRate = Number(decoded?.sampleRate);
-
-  if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
-    throw new Error('Unable to read WAV sample rate.');
-  }
-
-  const mono = toMono(decoded.channelData);
-  if (mono.length === 0) {
-    throw new Error('Decoded audio contains 0 samples.');
-  }
-
-  const whisperSampleRate = 16_000;
-  return resampleLinear(mono, sampleRate, whisperSampleRate);
+  return parseWavPcm16Mono(wavBuffer);
 }
