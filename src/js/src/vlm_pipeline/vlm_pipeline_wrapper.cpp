@@ -93,10 +93,10 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
         }
 
         std::visit(
-            overloaded{[context, &config, &streamer, &result](std::string& prompt) {
+            overloaded{[context, &config, &streamer, &result](const std::string& prompt) {
                            result = context->pipe->generate(prompt, context->images, context->videos, config, streamer);
                        },
-                       [context, &config, &streamer, &result](ov::genai::ChatHistory& history) {
+                       [context, &config, &streamer, &result](const ov::genai::ChatHistory& history) {
                            result =
                                context->pipe->generate(history, context->images, context->videos, config, streamer);
                        }},
@@ -104,6 +104,9 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
 
     } catch (std::exception& e) {
         report_error(e.what());
+        *context->is_generating = false;
+        finalize();
+        return;
     }
     // should be called right after inference to release the flag asap
     *context->is_generating = false;
