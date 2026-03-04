@@ -3262,12 +3262,12 @@ class TaylorSeerCacheConfig:
     
     See paper: https://arxiv.org/pdf/2503.06923
     
-    Parameters:
-      cache_interval: Interval between full computation steps (default: 3)
+    Attributes:
+      cache_interval: Interval between full computation steps (default: 3, must be >= 2)
       disable_cache_before_step: Step before which caching is disabled for warmup (default: 6)
       disable_cache_after_step: Step after which caching is disabled. If negative, calculated as num_inference_steps + disable_cache_after_step (default: -2)
     """
-    def __init__(self, cache_interval: typing.SupportsInt = 3, disable_cache_before_step: typing.SupportsInt = 6, disable_cache_after_step: typing.SupportsInt = -2) -> None:
+    def __init__(self) -> None:
         ...
     def __repr__(self) -> str:
         ...
@@ -3275,19 +3275,25 @@ class TaylorSeerCacheConfig:
         ...
     @property
     def cache_interval(self) -> int:
-        ...
+        """
+        Interval between full computation steps (must be >= 2)
+        """
     @cache_interval.setter
     def cache_interval(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def disable_cache_after_step(self) -> int:
-        ...
+        """
+        Step after which caching is disabled (negative values are relative to num_inference_steps)
+        """
     @disable_cache_after_step.setter
     def disable_cache_after_step(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def disable_cache_before_step(self) -> int:
-        ...
+        """
+        Step before which caching is disabled for warmup
+        """
     @disable_cache_before_step.setter
     def disable_cache_before_step(self, arg0: typing.SupportsInt) -> None:
         ...

@@ -32,19 +32,21 @@ TEST_F(TaylorSeerCacheConfigTest, DefaultConstructor) {
 }
 
 TEST_F(TaylorSeerCacheConfigTest, InvalidCacheIntervalZero) {
+    TaylorSeerCacheConfig config{0, 0, -1};
     EXPECT_THROW(
         {
-            const TaylorSeerCacheConfig config(0, 0, -1);
-            (void)config;
+            TaylorSeerState state(config, 10);
+            (void)state;
         },
         ov::Exception);
 }
 
 TEST_F(TaylorSeerCacheConfigTest, InvalidCacheIntervalOne) {
+    TaylorSeerCacheConfig config{1, 0, -1};
     EXPECT_THROW(
         {
-            const TaylorSeerCacheConfig config(1, 0, -1);
-            (void)config;
+            TaylorSeerState state(config, 10);
+            (void)state;
         },
         ov::Exception);
 }
@@ -60,9 +62,9 @@ class TSFullConstructorTest : public TaylorSeerCacheConfigTest,
 
 TEST_P(TSFullConstructorTest, AllParameters) {
     auto params = GetParam();
-    TaylorSeerCacheConfig config(params.cache_interval,
+    TaylorSeerCacheConfig config{params.cache_interval,
                                   params.disable_cache_before_step,
-                                  params.disable_cache_after_step);
+                                  params.disable_cache_after_step};
     AssertConfigEquals(config, params.cache_interval,
                       params.disable_cache_before_step,
                       params.disable_cache_after_step);
@@ -91,10 +93,10 @@ TEST_P(TSPartialConstructorTest, PartialParameters) {
     auto params = GetParam();
 
     if (params.disable_cache_before_step.has_value()) {
-        TaylorSeerCacheConfig config(params.cache_interval, *params.disable_cache_before_step);
+        TaylorSeerCacheConfig config{params.cache_interval, *params.disable_cache_before_step};
         AssertConfigEquals(config, params.cache_interval, params.expected_before, -2);
     } else {
-        TaylorSeerCacheConfig config(params.cache_interval);
+        TaylorSeerCacheConfig config{params.cache_interval};
         AssertConfigEquals(config, params.cache_interval, params.expected_before, -2);
     }
 }
@@ -122,9 +124,9 @@ class TSToStringTest : public TaylorSeerCacheConfigTest,
 
 TEST_P(TSToStringTest, FormatsCorrectly) {
     auto params = GetParam();
-    TaylorSeerCacheConfig config(params.cache_interval,
+    TaylorSeerCacheConfig config{params.cache_interval,
                                   params.disable_cache_before_step,
-                                  params.disable_cache_after_step);
+                                  params.disable_cache_after_step};
     std::string result = config.to_string();
 
     EXPECT_NE(result.find("TaylorSeerCacheConfig"), std::string::npos);
@@ -168,7 +170,7 @@ protected:
 };
 
 TEST_F(TaylorSeerStateTest, SecondUpdateComputesDerivative) {
-    TaylorSeerCacheConfig config(3, 2, -2);
+    TaylorSeerCacheConfig config{3, 2, -2};
     TaylorSeerState state(config, 10);
     auto tensor1 = CreateTestTensor({1.0f, 4.0f});
     auto tensor2 = CreateTestTensor({3.0f, 6.0f});
@@ -200,9 +202,9 @@ class TSShouldComputeTest : public TaylorSeerStateTest,
 
 TEST_P(TSShouldComputeTest, ComputeDecisions) {
     auto params = GetParam();
-    TaylorSeerCacheConfig config(params.cache_interval,
+    TaylorSeerCacheConfig config{params.cache_interval,
                                   params.disable_before,
-                                  params.disable_after);
+                                  params.disable_after};
     TaylorSeerState state(config, params.num_inference_steps);
     bool result = state.should_compute(params.current_step);
     EXPECT_EQ(result, params.expected_result) << params.description;
@@ -234,13 +236,13 @@ INSTANTIATE_TEST_SUITE_P(
 );
 
 TEST_F(TaylorSeerStateTest, DisableCacheBeforeStepGreaterThanNumSteps) {
-    TaylorSeerCacheConfig config(3, 100, -2);
+    TaylorSeerCacheConfig config{3, 100, -2};
     TaylorSeerState state(config, 50);
     EXPECT_THROW(state.should_compute(0), ov::Exception);
 }
 
 TEST_F(TaylorSeerStateTest, InactiveWhenDisableBeforeEqualsSteps) {
-    TaylorSeerCacheConfig config(3, 50, -2);
+    TaylorSeerCacheConfig config{3, 50, -2};
     TaylorSeerState state(config, 50);
     // TaylorSeer is inactive when disable_before >= num_steps
     EXPECT_FALSE(state.is_active());
@@ -248,7 +250,7 @@ TEST_F(TaylorSeerStateTest, InactiveWhenDisableBeforeEqualsSteps) {
 }
 
 TEST_F(TaylorSeerStateTest, ActiveWhenDisableBeforeLessThanNumSteps) {
-    TaylorSeerCacheConfig config(3, 50, -2);
+    TaylorSeerCacheConfig config{3, 50, -2};
     TaylorSeerState state(config, 60);
     // TaylorSeer is active when disable_before < num_steps
     EXPECT_TRUE(state.is_active());
@@ -256,7 +258,7 @@ TEST_F(TaylorSeerStateTest, ActiveWhenDisableBeforeLessThanNumSteps) {
 }
 
 TEST_F(TaylorSeerStateTest, InactiveWhenNegativeDisableAfterExceedsSteps) {
-    TaylorSeerCacheConfig config(3, 6, -100);
+    TaylorSeerCacheConfig config{3, 6, -100};
     TaylorSeerState state(config, 50);
     // -100 + 50 = -50 (still negative), so inactive
     EXPECT_FALSE(state.is_active());
@@ -265,14 +267,14 @@ TEST_F(TaylorSeerStateTest, InactiveWhenNegativeDisableAfterExceedsSteps) {
 
 TEST_F(TaylorSeerStateTest, InactiveWhenNegativeDisableAfterEqualsSteps) {
     // -50 + 50 = 0, which is <= disable_before (6), so no caching window
-    TaylorSeerCacheConfig config(3, 6, -50);
+    TaylorSeerCacheConfig config{3, 6, -50};
     TaylorSeerState state(config, 50);
     EXPECT_FALSE(state.is_active());
     EXPECT_THROW(state.should_compute(0), ov::Exception);
 }
 
 TEST_F(TaylorSeerStateTest, InactiveWhenDisableBeforeExceedsSteps) {
-    TaylorSeerCacheConfig config(3, 50, -2);
+    TaylorSeerCacheConfig config{3, 50, -2};
     TaylorSeerState state(config, 50);
 
     // TaylorSeer is inactive, schedule is empty
@@ -281,7 +283,7 @@ TEST_F(TaylorSeerStateTest, InactiveWhenDisableBeforeExceedsSteps) {
 }
 
 TEST_F(TaylorSeerStateTest, ShouldComputeWithZeroDisableBefore) {
-    TaylorSeerCacheConfig config(3, 0, -2);
+    TaylorSeerCacheConfig config{3, 0, -2};
     TaylorSeerState state(config, 10);
     EXPECT_TRUE(state.is_active());
     // Warmup is max(0, 2) = 2, so steps 0-1 compute
@@ -295,7 +297,7 @@ TEST_F(TaylorSeerStateTest, ShouldComputeWithZeroDisableBefore) {
 
 TEST_F(TaylorSeerStateTest, InactiveWhenDisableAfterBeforeDisableBefore) {
     // disable_after=0 <= disable_before=2, so no caching window
-    TaylorSeerCacheConfig config(3, 2, 0);
+    TaylorSeerCacheConfig config{3, 2, 0};
     TaylorSeerState state(config, 50);
 
     // TaylorSeer is inactive
@@ -304,7 +306,7 @@ TEST_F(TaylorSeerStateTest, InactiveWhenDisableAfterBeforeDisableBefore) {
 }
 
 TEST_F(TaylorSeerStateTest, InactiveWhenDisableAfterEqualsDisableBefore) {
-    TaylorSeerCacheConfig config(3, 10, 10);
+    TaylorSeerCacheConfig config{3, 10, 10};
     TaylorSeerState state(config, 50);
 
     // disable_after=10 <= disable_before=10, no caching window
@@ -313,7 +315,7 @@ TEST_F(TaylorSeerStateTest, InactiveWhenDisableAfterEqualsDisableBefore) {
 }
 
 TEST_F(TaylorSeerStateTest, PredictWithTaylorSeries) {
-    TaylorSeerCacheConfig config(3, 2, -2);
+    TaylorSeerCacheConfig config{3, 2, -2};
     TaylorSeerState state(config, 10);
 
     auto tensor1 = CreateTestTensor({1.0f});
@@ -332,7 +334,7 @@ TEST_F(TaylorSeerStateTest, PredictWithTaylorSeries) {
 }
 
 TEST_F(TaylorSeerStateTest, PredictRequiresSecondUpdate) {
-    TaylorSeerCacheConfig config(3, 2, -2);
+    TaylorSeerCacheConfig config{3, 2, -2};
     TaylorSeerState state(config, 10);
     auto tensor = CreateTestTensor({1.0f});
 
@@ -345,7 +347,7 @@ TEST_F(TaylorSeerStateTest, PredictRequiresSecondUpdate) {
 }
 
 TEST_F(TaylorSeerStateTest, FullWorkflow) {
-    TaylorSeerCacheConfig config(3, 2, -2);
+    TaylorSeerCacheConfig config{3, 2, -2};
     TaylorSeerState state(config, 10);
 
     // Steps 0-1: warm-up (should compute)
@@ -374,7 +376,7 @@ TEST_F(TaylorSeerStateTest, FullWorkflow) {
 
 TEST_F(TaylorSeerStateTest, ReinitializeResetsState) {
     // Create an active TaylorSeer state
-    TaylorSeerCacheConfig config(3, 2, -2);
+    TaylorSeerCacheConfig config{3, 2, -2};
     TaylorSeerState state(config, 10);
 
     EXPECT_TRUE(state.is_active());
@@ -414,7 +416,7 @@ TEST_F(TaylorSeerStateTest, ReinitializeResetsState) {
 
 TEST_F(TaylorSeerStateTest, ReinitializeWithInactiveConfig) {
     // Start with active config
-    TaylorSeerCacheConfig active_config(3, 2, -2);
+    TaylorSeerCacheConfig active_config{3, 2, -2};
     TaylorSeerState state(active_config, 10);
 
     EXPECT_TRUE(state.is_active());
@@ -424,7 +426,7 @@ TEST_F(TaylorSeerStateTest, ReinitializeWithInactiveConfig) {
     EXPECT_TRUE(state.get_last_update_step().has_value());
 
     // Re-initialize with config that makes TaylorSeer inactive
-    TaylorSeerCacheConfig inactive_config(3, 100, -2);
+    TaylorSeerCacheConfig inactive_config{3, 100, -2};
     state.initialize(inactive_config, 10);
 
     EXPECT_FALSE(state.is_active());
@@ -441,7 +443,7 @@ TEST_F(TaylorSeerStateTest, ReinitializeWithInactiveConfig) {
 
 TEST_F(TaylorSeerStateTest, ReinitializeDoesNotLeaveStaleSchedule) {
     // Start with config having specific schedule
-    TaylorSeerCacheConfig config1(3, 2, -2);
+    TaylorSeerCacheConfig config1{3, 2, -2};
     TaylorSeerState state(config1, 10);
 
     EXPECT_TRUE(state.is_active());
@@ -449,7 +451,7 @@ TEST_F(TaylorSeerStateTest, ReinitializeDoesNotLeaveStaleSchedule) {
     EXPECT_FALSE(state.should_compute(2));
 
     // Re-initialize with different config
-    TaylorSeerCacheConfig config2(5, 2, -2);
+    TaylorSeerCacheConfig config2{5, 2, -2};
     state.initialize(config2, 10);
 
     EXPECT_TRUE(state.is_active());

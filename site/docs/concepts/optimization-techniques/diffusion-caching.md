@@ -20,33 +20,26 @@ At regular intervals (controlled by `cache_interval`), a full forward pass is ex
 TaylorSeer Lite is configured through `ov::genai::TaylorSeerCacheConfig` and exposed in `ov::genai::ImageGenerationConfig`.
 
 ### Parameters
-* **`cache_interval`** (`size_t`, defaults to `3`) - Number of consecutive prediction steps between full forward passes. After a full computation, the cached output is reused for this many subsequent denoising steps before refreshing with a new full forward pass.
+* **`cache_interval`** (`size_t`, defaults to `3`) - Controls how often a full forward pass is performed after warm-up. Once warm-up is finished, TaylorSeer performs a full transformer computation every `cache_interval` steps and uses Taylor-series predictions for the intermediate steps, resulting in up to `cache_interval - 1` predicted (cached) denoising steps between two full computations.
 
-* **`disable_cache_before_step`** (`size_t`, defaults to `6`) - Number of initial steps where caching is disabled. Full computation is performed for steps 0 through `disable_cache_before_step - 1` to establish stable derivatives before prediction begins. This warm-up period improves prediction accuracy.
+* **`disable_cache_before_step`** (`size_t`, defaults to `6`) -  Number of initial denoising steps during which caching is disabled. In practice, the implementation always performs full computations for steps `0..max(disable_cache_before_step, 2) - 1`, ensuring at least two warm-up steps with no caching to stabilize the derivatives before prediction begins.
 
-* **`disable_cache_after_step`** (`int`, defaults to `-2`) - Step index after which caching is disabled to ensure quality in final denoising stages. Negative values are interpreted relative to the end: `num_inference_steps + disable_cache_after_step`.
+* **`disable_cache_after_step`** (`int`, defaults to `-2`) - Step index from which caching is disabled (inclusive) to ensure quality in the final denoising stages. Negative values are interpreted relative to the end of the schedule: `num_inference_steps + disable_cache_after_step`.
 
 ## Sample Usage (Python)
 [samples/python/image_generation/taylorseer_text2image.py](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/image_generation/taylorseer_text2image.py) demonstrates TaylorSeer Lite usage with performance comparison.
 
 Basic usage:
 ```bash
-python taylorseer_text2image.py \
-    ./flux.1-dev/FP16 \
-    "a beautiful sunset over mountains" \
-    --steps 28 \
-    --cache-interval 3 \
-    --disable-before 6 \
-    --disable-after -2
+python taylorseer_text2image.py ./flux.1-dev/FP16 "a beautiful sunset over mountains"
 ```
 
 Configuration in code:
 ```python
-taylorseer_config = openvino_genai.TaylorSeerCacheConfig(
-    cache_interval=3,
-    disable_cache_before_step=6,
-    disable_cache_after_step=-2,
-)
+taylorseer_config = openvino_genai.TaylorSeerCacheConfig()
+taylorseer_config.cache_interval = 5
+taylorseer_config.disable_cache_before_step = 2
+taylorseer_config.disable_cache_after_step = -1
 ```
 
 Pipeline creation and generation:

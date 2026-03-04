@@ -13,18 +13,16 @@ def main():
     parser = argparse.ArgumentParser(description="Text-to-image generation with TaylorSeer caching optimization")
     parser.add_argument("model_dir", help="Path to the converted OpenVINO model directory")
     parser.add_argument("prompt", help="Text prompt for image generation")
-    parser.add_argument("--steps", type=int, default=28, help="Number of inference steps")
-
-    ts_group = parser.add_argument_group("TaylorSeer Cache Configurations")
-    ts_group.add_argument("--cache-interval", type=int, default=3, help="Cache interval")
-    ts_group.add_argument("--disable-before", type=int, default=6, help="Disable caching before this step for warmup")
-    ts_group.add_argument(
-        "--disable-after", type=int, default=-2, help="Disable caching after this step from end, -1 means last step"
-    )
     args = parser.parse_args()
 
     device = "CPU"  # GPU can be used as well
     pipe = openvino_genai.Text2ImagePipeline(args.model_dir, device)
+
+    # TaylorSeer configuration
+    cache_interval = 3
+    disable_before = 6
+    disable_after = -2
+    num_inference_steps = 28
 
     def callback(step, num_steps, latent):
         print(f"Step {step + 1}/{num_steps}")
@@ -33,7 +31,7 @@ def main():
     generate_kwargs = {
         "width": 512,
         "height": 512,
-        "num_inference_steps": args.steps,
+        "num_inference_steps": num_inference_steps,
         "rng_seed": 42,
         "num_images_per_prompt": 1,
         "callback": callback,
@@ -55,11 +53,10 @@ def main():
     # Configure TaylorSeer caching
     print(f"\nGenerating image with TaylorSeer caching...")
 
-    taylorseer_config = openvino_genai.TaylorSeerCacheConfig(
-        cache_interval=args.cache_interval,
-        disable_cache_before_step=args.disable_before,
-        disable_cache_after_step=args.disable_after,
-    )
+    taylorseer_config = openvino_genai.TaylorSeerCacheConfig()
+    taylorseer_config.cache_interval = cache_interval
+    taylorseer_config.disable_cache_before_step = disable_before
+    taylorseer_config.disable_cache_after_step = disable_after
     print(taylorseer_config)
     generation_config = pipe.get_generation_config()
     generation_config.taylorseer_config = taylorseer_config

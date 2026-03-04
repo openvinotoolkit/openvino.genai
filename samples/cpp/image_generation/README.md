@@ -116,12 +116,7 @@ The `taylorseer_text2image` sample demonstrates how to use TaylorSeer Lite cachi
 Run the sample with custom parameters:
 
 ```bash
-./taylorseer_text2image ./flux.1-dev/FP16 \
-    "a beautiful sunset over mountains" \
-    --steps 28 \
-    --cache-interval 3 \
-    --disable-before 4 \
-    --disable-after -2
+./taylorseer_text2image ./flux.1-dev/FP16 "a beautiful sunset over mountains"
 ```
 
 The sample generates two images with and without TaylorSeer config applied using the same prompt:

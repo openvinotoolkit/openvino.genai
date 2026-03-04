@@ -130,12 +130,7 @@ The `taylorseer_text2image.py` sample demonstrates how to use TaylorSeer Lite ca
 Run the sample with custom parameters:
 
 ```bash
-python taylorseer_text2image.py ./flux.1-dev/FP16 \
-    "a beautiful sunset over mountains" \
-    --steps 28 \
-    --cache-interval 3 \
-    --disable-before 4 \
-    --disable-after -2
+python taylorseer_text2image.py ./flux.1-dev/FP16 "a beautiful sunset over mountains"
 ```
 
 The sample generates two images with and without TaylorSeer config applied using the same prompt:

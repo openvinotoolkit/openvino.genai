@@ -11,39 +11,20 @@
 #include <iostream>
 
 int32_t main(int32_t argc, char* argv[]) try {
-    if (argc < 3) {
-        std::cout << "Usage: " << argv[0] << " <MODEL_DIR> '<PROMPT>' [--cache-interval <N>] [--disable-before <N>] [--disable-after <N>] [--steps <N>]\n";
-        std::cout << "\nTaylorSeer Cache Configurations:\n";
-        std::cout << "  --cache-interval <N>   : Cache interval (default: 3)\n";
-        std::cout << "  --disable-before <N>   : Disable caching before this step for warmup (default: 6)\n";
-        std::cout << "  --disable-after <N>    : Disable caching after this step from end, -1 means last step (default: -2)\n";
-        std::cout << "\nGeneration Options:\n";
-        std::cout << "  --steps <N>            : Number of inference steps (default: 28)\n";
+    if (argc != 3) {
+        std::cout << "Usage: " << argv[0] << " <MODEL_DIR> '<PROMPT>'\n";
         return EXIT_FAILURE;
     }
 
     const std::string models_path = argv[1];
     const std::string prompt = argv[2];
-    const std::string device = "CPU";  // GPU can be used as well
+    const std::string device = "CPU";
 
-    // Parse optional arguments
-    size_t cache_interval = 3;
-    size_t disable_before = 6;
-    int disable_after = -2;
-    size_t num_inference_steps = 28;
-
-    for (int i = 3; i < argc; ++i) {
-        std::string arg = argv[i];
-        if (arg == "--cache-interval" && i + 1 < argc) {
-            cache_interval = std::stoul(argv[++i]);
-        } else if (arg == "--disable-before" && i + 1 < argc) {
-            disable_before = std::stoul(argv[++i]);
-        } else if (arg == "--disable-after" && i + 1 < argc) {
-            disable_after = std::stoi(argv[++i]);
-        } else if (arg == "--steps" && i + 1 < argc) {
-            num_inference_steps = std::stoul(argv[++i]);
-        }
-    }
+    // TaylorSeer configuration
+    const size_t cache_interval = 3;
+    const size_t disable_before = 6;
+    const int disable_after = -2;
+    const size_t num_inference_steps = 28;
 
     ov::genai::Text2ImagePipeline pipe(models_path, device);
     std::cout << "Generating baseline image without caching...\n";
@@ -68,7 +49,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     // Configure TaylorSeer caching
     std::cout << "\nGenerating image with TaylorSeer caching...\n";
 
-    ov::genai::TaylorSeerCacheConfig taylorseer_config(cache_interval, disable_before, disable_after);
+    ov::genai::TaylorSeerCacheConfig taylorseer_config{cache_interval, disable_before, disable_after};
     std::cout << taylorseer_config.to_string() << "\n";
     auto generation_config = pipe.get_generation_config();
     generation_config.taylorseer_config = taylorseer_config;

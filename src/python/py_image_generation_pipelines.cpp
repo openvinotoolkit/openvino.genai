@@ -331,18 +331,18 @@ void init_image_generation_pipelines(py::module_& m) {
         m, "TaylorSeerCacheConfig",
         "Configuration for TaylorSeer cache mechanism in diffusion transformers.\n\n"
         "See paper: https://arxiv.org/pdf/2503.06923\n\n"
-        "Parameters:\n"
-        "  cache_interval: Interval between full computation steps (default: 3)\n"
+        "Attributes:\n"
+        "  cache_interval: Interval between full computation steps (default: 3, must be >= 2)\n"
         "  disable_cache_before_step: Step before which caching is disabled for warmup (default: 6)\n"
         "  disable_cache_after_step: Step after which caching is disabled. If negative, "
         "calculated as num_inference_steps + disable_cache_after_step (default: -2)")
-        .def(py::init<size_t, size_t, int>(),
-             py::arg("cache_interval") = 3,
-             py::arg("disable_cache_before_step") = 6,
-             py::arg("disable_cache_after_step") = -2)
-        .def_readwrite("cache_interval", &ov::genai::TaylorSeerCacheConfig::cache_interval)
-        .def_readwrite("disable_cache_before_step", &ov::genai::TaylorSeerCacheConfig::disable_cache_before_step)
-        .def_readwrite("disable_cache_after_step", &ov::genai::TaylorSeerCacheConfig::disable_cache_after_step)
+        .def(py::init<>())
+        .def_readwrite("cache_interval", &ov::genai::TaylorSeerCacheConfig::cache_interval,
+                      "Interval between full computation steps (must be >= 2)")
+        .def_readwrite("disable_cache_before_step", &ov::genai::TaylorSeerCacheConfig::disable_cache_before_step,
+                      "Step before which caching is disabled for warmup")
+        .def_readwrite("disable_cache_after_step", &ov::genai::TaylorSeerCacheConfig::disable_cache_after_step,
+                      "Step after which caching is disabled (negative values are relative to num_inference_steps)")
         .def("to_string", &ov::genai::TaylorSeerCacheConfig::to_string)
         .def("__repr__", &ov::genai::TaylorSeerCacheConfig::to_string);
 

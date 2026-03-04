@@ -47,6 +47,10 @@ public:
             return;
         }
 
+        OPENVINO_ASSERT(config->cache_interval >= 2,
+                       "TaylorSeerCacheConfig: cache_interval must be at least 2, got ",
+                       config->cache_interval);
+
         // Check if TaylorSeer will be effective
         if (config->disable_cache_before_step >= num_inference_steps) {
             return;
@@ -140,7 +144,11 @@ public:
         }
 
         std::array<ov::Tensor, m_max_order> new_factors;
-        new_factors[0] = output;
+
+        // Detach factor 0 from potential InferRequest-owned buffer by copying data.
+        ov::Tensor detached_output(output.get_element_type(), output.get_shape());
+        output.copy_to(detached_output);
+        new_factors[0] = std::move(detached_output);
 
         if (!is_first_update) {
             const float divisor = 1.0f / static_cast<float>(current_step - *m_last_update_step);
@@ -254,11 +262,12 @@ private:
     }
 
     /**
-     * @brief Maximum order of Taylor series approximation to use.
+     * @brief Number of Taylor series terms to store (base output + derivatives).
      *
-     * Set to 2 (linear approximation: f(x) ≈ f(x₀) + f'(x₀)·Δx) based on the
-     * TaylorSeer Lite findings that first-order approximation provides the best
-     * balance between accuracy, computational efficiency and memory footprint.
+     * Set to 2 to store order-0 (base output) and order-1 (first derivative),
+     * enabling first-order Taylor approximation: f(x) ≈ f(x₀) + f'(x₀)·Δx.
+     * Based on TaylorSeer Lite findings that linear approximation provides
+     * the best balance between accuracy, computational efficiency and memory footprint.
      * Higher orders may introduce numerical instability without significant quality gains.
      */
     static constexpr std::size_t m_max_order = 2;

@@ -218,9 +218,11 @@ class TestTaylorSeerImageGeneration:
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
 
         # Configure TaylorSeer
-        taylorseer_config = ov_genai.TaylorSeerCacheConfig(
-            cache_interval=5, disable_cache_before_step=2, disable_cache_after_step=-1
-        )
+        taylorseer_config = ov_genai.TaylorSeerCacheConfig()
+        taylorseer_config.cache_interval = 5
+        taylorseer_config.disable_cache_before_step = 2
+        taylorseer_config.disable_cache_after_step = -1
+
         generation_config = pipe.get_generation_config()
         generation_config.taylorseer_config = taylorseer_config
         pipe.set_generation_config(generation_config)
