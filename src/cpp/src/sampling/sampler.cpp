@@ -488,193 +488,302 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
     }
 }
 /* tree generator logics */
+
+// ------------------------------------------------------------------
+// EagleCandidateGraph
+// ------------------------------------------------------------------
+
+EagleCandidateGraph::EagleCandidateGraph(int64_t root_token_id, float root_score, int max_tokens, int max_depth)
+    : m_max_tokens(max_tokens),
+      m_max_depth(max_depth) {
+    InternalNode root;
+    root.data = {0u, root_token_id, root_score, 0};
+    root.parent_id = 0u;
+    root.ancestor_ids = {0u};  // root is its own ancestor (self-inclusive convention)
+    m_nodes[0u] = std::move(root);
+}
+
+uint64_t EagleCandidateGraph::add_node(int64_t token_id, float score, uint64_t parent_node_id) {
+    const auto parent_it = m_nodes.find(parent_node_id);
+    OPENVINO_ASSERT(parent_it != m_nodes.end(), "EagleCandidateGraph: parent node not found");
+    const InternalNode& parent = parent_it->second;
+    if (parent.data.tree_layer >= m_max_depth)
+        return 0;  // beyond max depth; 0 serves as the invalid sentinel (valid IDs start at 1)
+
+    const uint64_t new_id = m_next_node_id++;
+    InternalNode new_node;
+    new_node.data = {new_id, token_id, score, parent.data.tree_layer + 1};
+    new_node.parent_id = parent_node_id;
+    new_node.ancestor_ids = parent.ancestor_ids;  // inherit all ancestors
+    new_node.ancestor_ids.insert(new_id);         // add self
+    m_nodes[new_id] = std::move(new_node);
+    m_nodes[parent_node_id].child_ids.push_back(new_id);
+    return new_id;
+}
+
+std::vector<EagleCandidateGraph::Node> EagleCandidateGraph::get_top_k_nodes() const {
+    if (m_max_tokens <= 0)
+        return {m_nodes.at(0u).data};
+
+    // Min-heap over non-root nodes: evicts the lowest-scoring node when over budget
+    const auto cmp_min = [](const Node& a, const Node& b) {
+        return a.score > b.score;
+    };
+    std::priority_queue<Node, std::vector<Node>, decltype(cmp_min)> min_heap(cmp_min);
+
+    for (const auto& [id, node] : m_nodes) {
+        if (id == 0u)
+            continue;
+        if (min_heap.size() < static_cast<size_t>(m_max_tokens)) {
+            min_heap.push(node.data);
+        } else if (node.data.score > min_heap.top().score) {
+            min_heap.pop();
+            min_heap.push(node.data);
+        }
+    }
+
+    std::vector<Node> result;
+    result.reserve(min_heap.size() + 1);
+    result.push_back(m_nodes.at(0u).data);  // root is always included
+    while (!min_heap.empty()) {
+        result.push_back(min_heap.top());
+        min_heap.pop();
+    }
+
+    // Sort by tree layer for deterministic node ordering
+    std::sort(result.begin(), result.end(), [](const Node& a, const Node& b) {
+        return a.tree_layer < b.tree_layer;
+    });
+    return result;
+}
+
+std::vector<EagleCandidateGraph::Node> EagleCandidateGraph::get_leaf_nodes(const std::vector<Node>& selected) const {
+    std::unordered_set<uint64_t> selected_ids;
+    selected_ids.reserve(selected.size());
+    for (const Node& n : selected)
+        selected_ids.insert(n.node_id);
+
+    std::vector<Node> leaves;
+    for (const Node& n : selected) {
+        const InternalNode& internal = m_nodes.at(n.node_id);
+        const bool has_selected_child =
+            std::any_of(internal.child_ids.begin(), internal.child_ids.end(), [&selected_ids](uint64_t child_id) {
+                return selected_ids.count(child_id) > 0;
+            });
+        if (!has_selected_child)
+            leaves.push_back(n);
+    }
+    return leaves;
+}
+
+std::vector<uint64_t> EagleCandidateGraph::get_path_to_node(uint64_t node_id) const {
+    std::vector<uint64_t> path;
+    auto it = m_nodes.find(node_id);
+    while (it != m_nodes.end()) {
+        path.push_back(it->second.data.node_id);
+        if (it->second.data.node_id == 0u)
+            break;  // reached root
+        it = m_nodes.find(it->second.parent_id);
+    }
+    std::reverse(path.begin(), path.end());
+    return path;
+}
+
+bool EagleCandidateGraph::is_ancestor(uint64_t ancestor_id, uint64_t node_id) const {
+    const auto it = m_nodes.find(node_id);
+    if (it == m_nodes.end())
+        return false;
+    return it->second.ancestor_ids.count(ancestor_id) > 0;
+}
+
+// ------------------------------------------------------------------
+// TreeSearcher
+// ------------------------------------------------------------------
+
 Sampler::TreeSearcher::TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tensor d2t)
     : Sampler::Searcher(sequence_group),
       m_d2t_tensor(std::move(d2t)) {
-    OPENVINO_ASSERT(m_sequence_group->num_running_seqs() ==
-                    1);  // for eagle, support 1 running seq at the very beginning
-    tree_reset(m_sequence_group);
+    OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1,
+                    "TreeSearcher must be initialized with exactly one running sequence");
+    m_org_group_id = m_sequence_group->get_running_sequences()[0]->get_grouped_id();
 }
 
-void Sampler::TreeSearcher::tree_reset(SequenceGroup::Ptr& sequence_group) {
-    m_beams.reserve(m_parameters.eagle_tree_params.branching_factor);
-    Beam root_beam((*m_sequence_group)[0]);
-    root_beam.m_score = 0.0f;
-
-    m_candidate_graph = std::make_shared<EagleCandidateGraph>(root_beam,
-                                                              m_parameters.eagle_tree_params.total_tokens - 1,
-                                                              m_parameters.eagle_tree_params.tree_depth);
-
-    m_beams.push_back(root_beam);
-    m_org_group_id = sequence_group->get_running_sequences()[0]->get_grouped_id();
+void Sampler::TreeSearcher::tree_reset() {
+    m_candidate_graph.emplace(-1,
+                              0.0f,
+                              m_parameters.eagle_tree_params.total_tokens - 1,
+                              m_parameters.eagle_tree_params.tree_depth);
+    // Copy the shared_ptr by value: get_running_sequences() returns a temporary vector,
+    // so a const-ref to [0] would be dangling after the statement ends.
+    Sequence::Ptr root_seq = m_sequence_group->get_running_sequences()[0];
+    m_org_group_id = root_seq->get_grouped_id();
+    m_frontier = {{0u, std::move(root_seq), 0.0f}};  // root: node_id=0, cumulative score=0
 }
 
-auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> std::vector<Beam> {
+auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> std::vector<CandidateBeam> {
     const ov::Shape shape = logits.get_shape();
     OPENVINO_ASSERT(shape.size() == 3);
     const size_t batch = shape[0], seq_len = shape[1], vocab_size = shape[2];
 
-    // Resolve each beam's position in the logits batch dimension
-    for (Beam& beam : m_beams) {
-        const uint64_t seq_id = beam.m_sequence->get_id();
-        const std::vector<Sequence::Ptr> running_seqs = m_sequence_group->get_running_sequences();
-        bool found = false;
-        for (size_t idx = 0; idx < running_seqs.size(); ++idx) {
-            if (seq_id == running_seqs[idx]->get_id()) {
-                beam.m_global_beam_idx = idx;
-                found = true;
-                break;
-            }
-        }
-        OPENVINO_ASSERT(found, "Internal error in tree search: running sequence not found");
-        OPENVINO_ASSERT(beam.m_global_beam_idx < batch, "Logits batch size doesn't match the number of beams");
-    }
-
-    std::vector<Beam> candidates;
-    candidates.reserve(m_parameters.eagle_tree_params.branching_factor * m_beams.size());
+    // Build seq_id -> batch-index lookup for the current frontier
+    const std::vector<Sequence::Ptr> running_seqs = m_sequence_group->get_running_sequences();
+    std::unordered_map<uint64_t, size_t> seq_id_to_batch_idx;
+    seq_id_to_batch_idx.reserve(running_seqs.size());
+    for (size_t idx = 0; idx < running_seqs.size(); ++idx)
+        seq_id_to_batch_idx[running_seqs[idx]->get_id()] = idx;
 
     const int64_t* d2t = m_d2t_tensor ? m_d2t_tensor.data<const int64_t>() : nullptr;
 
-    for (const Beam& beam : m_beams) {
-        const size_t batch_offset = beam.m_global_beam_idx * seq_len * vocab_size;
-        const size_t sequence_offset = (seq_len - 1) * vocab_size;
-        const float* beam_logits = logits.data<const float>() + batch_offset + sequence_offset;
+    std::vector<CandidateBeam> candidates;
+    candidates.reserve(m_parameters.eagle_tree_params.branching_factor * m_frontier.size());
 
-        const float max_logit = *std::max_element(beam_logits, beam_logits + vocab_size);
+    for (const DraftBeam& draft : m_frontier) {
+        const auto idx_it = seq_id_to_batch_idx.find(draft.sequence->get_id());
+        OPENVINO_ASSERT(idx_it != seq_id_to_batch_idx.end(),
+                        "Internal error in tree search: frontier sequence not found in running set");
+        const size_t batch_idx = idx_it->second;
+        OPENVINO_ASSERT(batch_idx < batch, "Logits batch size doesn't match number of frontier sequences");
+
+        const float* logit_row =
+            logits.data<const float>() + batch_idx * seq_len * vocab_size + (seq_len - 1) * vocab_size;
+
+        const float max_logit = *std::max_element(logit_row, logit_row + vocab_size);
         const float log_sum =
-            std::log(std::accumulate(beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float acc, float val) {
+            std::log(std::accumulate(logit_row, logit_row + vocab_size, 0.0f, [max_logit](float acc, float val) {
                 return acc + std::exp(val - max_logit);
             }));
 
-        // Select top-K draft token indices using a min-heap
-        using IndexScorePair = std::pair<float, size_t>;
-        const auto min_cmp = [](const IndexScorePair& a, const IndexScorePair& b) {
+        // Select top-K token indices using a min-heap
+        using IndexScore = std::pair<float, size_t>;
+        const auto min_cmp = [](const IndexScore& a, const IndexScore& b) {
             return a.first > b.first;
         };
-        std::priority_queue<IndexScorePair, std::vector<IndexScorePair>, decltype(min_cmp)> min_heap(min_cmp);
-
+        std::priority_queue<IndexScore, std::vector<IndexScore>, decltype(min_cmp)> min_heap(min_cmp);
         for (size_t i = 0; i < vocab_size; ++i) {
-            if (min_heap.size() < m_parameters.eagle_tree_params.branching_factor) {
-                min_heap.emplace(beam_logits[i], i);
-            } else if (beam_logits[i] > min_heap.top().first) {
+            if (min_heap.size() < m_parameters.eagle_tree_params.branching_factor)
+                min_heap.emplace(logit_row[i], i);
+            else if (logit_row[i] > min_heap.top().first) {
                 min_heap.pop();
-                min_heap.emplace(beam_logits[i], i);
+                min_heap.emplace(logit_row[i], i);
             }
         }
 
-        // Collect top-K entries in ascending score order (from the min-heap)
-        std::vector<IndexScorePair> top_k;
+        // Drain the heap into a vector (ascending order), then iterate in reverse for descending
+        std::vector<IndexScore> top_k;
         top_k.reserve(min_heap.size());
         while (!min_heap.empty()) {
             top_k.push_back(min_heap.top());
             min_heap.pop();
         }
 
-        // Iterate in descending score order and register candidates
         for (auto it = top_k.rbegin(); it != top_k.rend(); ++it) {
-            Beam new_candidate = beam;
-            new_candidate.m_log_prob = it->first - max_logit - log_sum;
-            new_candidate.m_score += new_candidate.m_log_prob;
-            new_candidate.m_token_id = static_cast<int64_t>(it->second) + (d2t ? d2t[it->second] : 0);
-            m_candidate_graph->add_candidate(new_candidate, beam.m_node_id);
-            candidates.push_back(new_candidate);
+            const float log_prob = it->first - max_logit - log_sum;
+            const float cum_score = draft.score + log_prob;
+            const int64_t token_id = static_cast<int64_t>(it->second) + (d2t ? d2t[it->second] : 0);
+            const uint64_t new_node_id = m_candidate_graph->add_node(token_id, cum_score, draft.node_id);
+            if (new_node_id == 0u)
+                continue;  // beyond max depth, skip
+            candidates.push_back({new_node_id, draft.sequence, token_id, log_prob, cum_score});
         }
     }
 
-    // Partially sort to surface the top branching_factor candidates globally
+    // Surface the top branching_factor candidates by cumulative score
+    const size_t k = m_parameters.eagle_tree_params.branching_factor;
     std::partial_sort(candidates.begin(),
-                      candidates.begin() + m_parameters.eagle_tree_params.branching_factor,
+                      candidates.begin() + std::min(k, candidates.size()),
                       candidates.end(),
-                      greater);
+                      [](const CandidateBeam& a, const CandidateBeam& b) {
+                          return a.score > b.score;
+                      });
     return candidates;
 }
 
-void Sampler::TreeSearcher::advance_draft_layer(const std::vector<Beam>& candidates, SamplerOutput& sampler_output) {
-    // Initialize fork count for every current-layer beam to zero
-    std::map<uint64_t, uint64_t> parent_2_num_childs_map;
-    for (const Beam& beam : m_beams) {
-        parent_2_num_childs_map[beam.m_sequence->get_id()] = 0;
-    }
+void Sampler::TreeSearcher::advance_draft_layer(const std::vector<CandidateBeam>& candidates,
+                                                SamplerOutput& sampler_output) {
+    const size_t k = m_parameters.eagle_tree_params.branching_factor;
 
-    std::vector<Beam> child_beams;
-    child_beams.reserve(m_parameters.eagle_tree_params.branching_factor);
-    for (size_t i = 0; i < m_parameters.eagle_tree_params.branching_factor; ++i) {
-        parent_2_num_childs_map[candidates[i].m_sequence->get_id()] += 1;
-        child_beams.push_back(candidates[i]);
-    }
+    // Count how many times each parent sequence needs to be forked
+    std::unordered_map<uint64_t, uint64_t> parent_fork_count;
+    for (const DraftBeam& beam : m_frontier)
+        parent_fork_count[beam.sequence->get_id()] = 0;
+    for (size_t i = 0; i < k; ++i)
+        parent_fork_count[candidates[i].parent_sequence->get_id()] += 1;
 
-    for (Beam& child : child_beams) {
-        const uint64_t parent_id = child.m_sequence->get_id();
-        uint64_t& num_childs = parent_2_num_childs_map[parent_id];
+    std::vector<DraftBeam> next_frontier;
+    next_frontier.reserve(k);
 
-        if (num_childs > 1) {
-            // Fork the parent sequence for this additional child
-            child.m_sequence = m_sequence_group->fork_sequence(child.m_sequence);
-            child.m_sequence->append_token(child.m_token_id, child.m_log_prob);
-            --num_childs;
-            sampler_output.m_forked_sequences[parent_id].push_back(child.m_sequence->get_id());
+    for (size_t i = 0; i < k; ++i) {
+        const CandidateBeam& cand = candidates[i];
+        const uint64_t parent_seq_id = cand.parent_sequence->get_id();
+        uint64_t& forks_remaining = parent_fork_count[parent_seq_id];
+
+        Sequence::Ptr seq;
+        if (forks_remaining > 1) {
+            // Fork: allocate a new sequence sharing the parent's KV-cache
+            seq = m_sequence_group->fork_sequence(cand.parent_sequence);
+            seq->append_token(cand.token_id, cand.log_prob);
+            --forks_remaining;
+            sampler_output.m_forked_sequences[parent_seq_id].push_back(seq->get_id());
         } else {
-            // Extend the existing sequence in place
-            child.m_sequence->append_token(child.m_token_id, child.m_log_prob);
+            // Extend in place
+            seq = cand.parent_sequence;
+            seq->append_token(cand.token_id, cand.log_prob);
         }
+        next_frontier.push_back({cand.node_id, std::move(seq), cand.score});
     }
 
-    // Drop beams not selected in this top-K round
-    for (const Beam& beam : m_beams) {
-        if (parent_2_num_childs_map[beam.m_sequence->get_id()] != 0)
+    // Retire sequences not selected in this round
+    for (const DraftBeam& beam : m_frontier) {
+        if (parent_fork_count[beam.sequence->get_id()] != 0)
             continue;
-        // Preserve the original-group sequence as a caching anchor; drop all others
-        if (beam.m_sequence->get_grouped_id() == m_org_group_id) {
-            beam.m_sequence->set_status(SequenceStatus::CACHING);
+        // Keep the original-group sequence as a caching anchor; drop all others
+        if (beam.sequence->get_grouped_id() == m_org_group_id) {
+            beam.sequence->set_status(SequenceStatus::CACHING);
         } else {
-            sampler_output.m_dropped_sequences.push_back(beam.m_sequence->get_id());
-            m_sequence_group->remove_sequence(beam.m_sequence->get_id());
+            sampler_output.m_dropped_sequences.push_back(beam.sequence->get_id());
+            m_sequence_group->remove_sequence(beam.sequence->get_id());
         }
     }
 
-    m_beams = std::move(child_beams);
+    m_frontier = std::move(next_frontier);
 }
 
 void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitProcessor& logit_processor) {
-    auto final_candidates = m_candidate_graph->get_top_k_candidates();
-    std::sort(final_candidates.begin(), final_candidates.end(), [](const Beam& a, const Beam& b) {
-        return a.m_tree_layer < b.m_tree_layer;
-    });
+    const std::vector<EagleCandidateGraph::Node> final_nodes = m_candidate_graph->get_top_k_nodes();
 
-    // Collect tree-layer position IDs for each candidate
+    // Collect tree-layer position IDs
     std::vector<int> position_ids;
-    position_ids.reserve(final_candidates.size());
-    for (const Beam& cand : final_candidates) {
-        position_ids.push_back(cand.m_tree_layer);
-    }
+    position_ids.reserve(final_nodes.size());
+    for (const EagleCandidateGraph::Node& n : final_nodes)
+        position_ids.push_back(n.tree_layer);
 
-    // Build a node-ID to candidate-index map for path remapping
-    std::map<int, size_t> nodeid_to_index;
-    for (size_t i = 0; i < final_candidates.size(); ++i) {
-        nodeid_to_index[static_cast<int>(final_candidates[i].m_node_id)] = i;
-    }
+    // Build node_id -> index-in-final_nodes map for path remapping
+    std::unordered_map<uint64_t, size_t> nodeid_to_index;
+    nodeid_to_index.reserve(final_nodes.size());
+    for (size_t i = 0; i < final_nodes.size(); ++i)
+        nodeid_to_index[final_nodes[i].node_id] = i;
 
-    // Build retrieve_indices: one root-to-leaf path per leaf, with node IDs replaced by candidate indices
-    const auto leaf_nodes = m_candidate_graph->get_leaf_nodes_from_candidates(final_candidates);
+    // Build retrieve_indices: one root-to-leaf path per leaf, with node IDs replaced by indices
+    const std::vector<EagleCandidateGraph::Node> leaf_nodes = m_candidate_graph->get_leaf_nodes(final_nodes);
     std::vector<std::vector<int64_t>> retrieve_indices;
     retrieve_indices.reserve(leaf_nodes.size());
-    for (const Beam& leaf : leaf_nodes) {
-        std::vector<int64_t> path = m_candidate_graph->get_path_to_node(leaf.m_node_id);
-        for (int64_t& node_id : path) {
-            node_id = static_cast<int64_t>(nodeid_to_index.at(static_cast<int>(node_id)));
-        }
+    for (const EagleCandidateGraph::Node& leaf : leaf_nodes) {
+        const std::vector<uint64_t> raw_path = m_candidate_graph->get_path_to_node(leaf.node_id);
+        std::vector<int64_t> path;
+        path.reserve(raw_path.size());
+        for (uint64_t node_id : raw_path)
+            path.push_back(static_cast<int64_t>(nodeid_to_index.at(node_id)));
         retrieve_indices.push_back(std::move(path));
     }
 
-    // Build tree attention mask: mask[i][j] = 1 iff candidate j is an ancestor of candidate i
+    // Build tree attention mask: mask[i][j] = 1 iff node j is an ancestor of node i (O(N^2) mask, O(1) each lookup)
     std::vector<std::vector<uint8_t>> tree_mask;
-    tree_mask.reserve(final_candidates.size());
-    for (const Beam& cand : final_candidates) {
+    tree_mask.reserve(final_nodes.size());
+    for (const EagleCandidateGraph::Node& node : final_nodes) {
         std::vector<uint8_t> mask_row;
-        mask_row.reserve(final_candidates.size());
-        for (const Beam& other : final_candidates) {
-            mask_row.push_back(m_candidate_graph->is_ancestor(other.m_node_id, cand.m_node_id) ? 1u : 0u);
-        }
+        mask_row.reserve(final_nodes.size());
+        for (const EagleCandidateGraph::Node& other : final_nodes)
+            mask_row.push_back(m_candidate_graph->is_ancestor(other.node_id, node.node_id) ? 1u : 0u);
         tree_mask.push_back(std::move(mask_row));
     }
 
@@ -688,15 +797,14 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitPr
     }
     OPENVINO_ASSERT(sequence != nullptr, "Cannot find the sequence with the original group id");
 
-    // Roll back tokens appended during tree-search drafting, then apply the finalized candidate tokens
-    const size_t tokens_to_remove = sequence->get_generated_len() - m_past_generate_len;
-    sequence->remove_last_tokens(tokens_to_remove);
-    for (size_t t = 1; t < final_candidates.size(); ++t) {
-        sequence->append_token(final_candidates[t].m_token_id, 0.0f);
-        logit_processor.register_new_generated_token(final_candidates[t].m_token_id);
+    // Roll back tokens appended during drafting, then apply the final candidate tokens
+    sequence->remove_last_tokens(sequence->get_generated_len() - m_past_generate_len);
+    for (size_t t = 1; t < final_nodes.size(); ++t) {
+        sequence->append_token(final_nodes[t].token_id, 0.0f);
+        logit_processor.register_new_generated_token(final_nodes[t].token_id);
     }
 
-    const size_t diff = final_candidates.size() - m_parameters.eagle_tree_params.tree_depth - 1;
+    const size_t diff = final_nodes.size() - m_parameters.eagle_tree_params.tree_depth - 1;
     m_sequence_group->update_processed_tokens_num(m_sequence_group->get_num_processed_tokens() + diff);
     sequence->set_eagle_metadata({tree_mask, retrieve_indices, position_ids});
     sequence->set_status(SequenceStatus::RUNNING);
@@ -708,30 +816,28 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitPr
         sampler_output.m_dropped_sequences.push_back(seq->get_id());
         m_sequence_group->remove_sequence(seq->get_id());
     }
-
-    m_tree_layer_counter = 0;
-    m_beams.clear();
 }
 
-void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits,
-                                         SamplerOutput& sampler_output,
-                                         LogitProcessor& logit_processor) {
-    if (m_tree_layer_counter == 0 && m_beams.empty()) {
-        tree_reset(m_sequence_group);
-        OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1);
-    }
-
-    if (m_tree_layer_counter == 0) {
+void Sampler::TreeSearcher::advance_draft_step(const ov::Tensor& logits,
+                                               SamplerOutput& sampler_output,
+                                               LogitProcessor& logit_processor) {
+    if (m_phase == Phase::IDLE) {
         m_past_generate_len = m_sequence_group->get_running_sequences()[0]->get_generated_len();
+        tree_reset();
+        OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1,
+                        "TreeSearcher: unexpected number of running sequences at draft start");
+        m_phase = Phase::DRAFTING;
     }
-    m_tree_layer_counter++;
 
-    const std::vector<Beam> candidates = build_top_k_frontier(logits);
+    m_tree_layer_counter++;
+    const std::vector<CandidateBeam> candidates = build_top_k_frontier(logits);
 
     if (m_tree_layer_counter < m_parameters.eagle_tree_params.tree_depth) {
         advance_draft_layer(candidates, sampler_output);
     } else {
         finalize_tree(sampler_output, logit_processor);
+        m_phase = Phase::IDLE;
+        m_tree_layer_counter = 0;
     }
 }
 
@@ -1375,7 +1481,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 sg_sampling_info.sampler_output.num_generated_tokens++;
             }
 
-            tree_searcher->select_top_k(sequence_group_logits, sg_sampling_info.sampler_output, logit_processor);
+            tree_searcher->advance_draft_step(sequence_group_logits, sg_sampling_info.sampler_output, logit_processor);
         }  // end else (draft tree search)
     } else {
         OPENVINO_THROW("Unsupported sampling method");
