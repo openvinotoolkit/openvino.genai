@@ -12,6 +12,7 @@
 
 #include "openvino/c/openvino.h"
 #include "openvino/genai/c/video_generation_config.h"
+// #include "openvino/genai/c/generation_config.h"
 
 #ifdef __cplusplus
 extern "C" {

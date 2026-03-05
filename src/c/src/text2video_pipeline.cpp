@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/c/text2video_pipeline.h"
+#include "openvino/genai/c/video_generation_config.h"
 #include "openvino/genai/video_generation/text2video_pipeline.hpp"
-#include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/video_generation/generation_config.hpp"
+// #include ""
 
 #include "types_c.h"
 
@@ -67,26 +69,30 @@ ov_status_e ov_genai_text2video_pipeline_generate(ov_genai_text2video_pipeline* 
         std::string prompt_str(prompt);
         ov::AnyMap properties;
 
-        // Convert the VideoGenerationConfig into the AnyMap properties expected by C++
+        // MANUALLY populate properties to avoid the linker error
         if (config && config->object) {
-            properties.insert(ov::genai::generation_config(*(config->object)));
+            properties["width"] = config->object->width;
+            properties["height"] = config->object->height;
+            properties["num_frames"] = config->object->num_frames;
+            properties["num_inference_steps"] = config->object->num_inference_steps;
+            // Add any other specific video parameters here if needed
         }
 
-        // Call generate, which returns a VideoGenerationResult object
+        // Call C++ generate - returns VideoGenerationResult
         auto result = pipe->object->generate(prompt_str, properties);
 
-        // Extract the first actual tensor from the result struct
+        // Extract the generated tensor
         ov::Tensor cpp_tensor = result.video;
 
         // Bridge: Convert C++ ov::Tensor to C ov_tensor_t
         ov_shape_t shape;
         shape.rank = cpp_tensor.get_shape().size();
-        shape.dims = new int64_t[shape.rank];
+        shape.dims = (int64_t*)malloc(sizeof(int64_t) * shape.rank);
         for (size_t i = 0; i < shape.rank; ++i) {
-            shape.dims[i] = cpp_tensor.get_shape()[i];
+            shape.dims[i] = (int64_t)cpp_tensor.get_shape()[i];
         }
         
-        // Explicitly cast the C++ type to the C enum type
+        // Map C++ element type to C element type enum
         ov_element_type_e c_type = static_cast<ov_element_type_e>(
             static_cast<int>(static_cast<ov::element::Type_t>(cpp_tensor.get_element_type()))
         );
@@ -98,7 +104,7 @@ ov_status_e ov_genai_text2video_pipeline_generate(ov_genai_text2video_pipeline* 
             video_tensor
         );
         
-        delete[] shape.dims; // Clean up temporary array
+        free(shape.dims); 
         
         if (status != ov_status_e::OK) {
             return status;
@@ -115,14 +121,14 @@ ov_status_e ov_genai_text2video_pipeline_generate(ov_genai_text2video_pipeline* 
 // -------------------------------------------------------------------------
 
 ov_status_e ov_genai_text2video_pipeline_get_generation_config(const ov_genai_text2video_pipeline* pipe,
-                                                               ov_genai_generation_config** config) {
+                                                               ov_genai_video_generation_config** config) {
     if (!pipe || !(pipe->object) || !config) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        std::unique_ptr<ov_genai_generation_config> _config = std::make_unique<ov_genai_generation_config>();
-        // Fetch the unified generation config from the C++ pipeline and wrap it
-        _config->object = std::make_shared<ov::genai::GenerationConfig>(pipe->object->get_generation_config());
+        std::unique_ptr<ov_genai_video_generation_config> _config = std::make_unique<ov_genai_video_generation_config>();
+        // Fetch the video generation config from the C++ pipeline and wrap it
+        _config->object = std::make_shared<ov::genai::VideoGenerationConfig>(pipe->object->get_generation_config());
         *config = _config.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
@@ -131,7 +137,7 @@ ov_status_e ov_genai_text2video_pipeline_get_generation_config(const ov_genai_te
 }
 
 ov_status_e ov_genai_text2video_pipeline_set_generation_config(ov_genai_text2video_pipeline* pipe,
-                                                               ov_genai_generation_config* config) {
+                                                               ov_genai_video_generation_config* config) {
     if (!pipe || !(pipe->object) || !config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }

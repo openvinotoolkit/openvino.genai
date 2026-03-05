@@ -3,7 +3,12 @@
 
 #pragma once
 #include "openvino/c/openvino.h"
+#include "openvino/genai/c/visibility.h" // Use the standard visibility header
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
+// #include "openvino/genai/c/visibility.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
