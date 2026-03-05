@@ -510,12 +510,16 @@ uint64_t EagleCandidateGraph::add_node(int64_t token_id, float score, uint64_t p
     if (parent.data.tree_layer >= m_max_depth)
         return 0;  // beyond max depth; 0 serves as the invalid sentinel (valid IDs start at 1)
 
+    // Snapshot parent fields before inserting into m_nodes: operator[] may rehash and invalidate refs.
+    const int parent_layer = parent.data.tree_layer;
+    std::unordered_set<uint64_t> inherited_ancestors = parent.ancestor_ids;
+
     const uint64_t new_id = m_next_node_id++;
     InternalNode new_node;
-    new_node.data = {new_id, token_id, score, parent.data.tree_layer + 1};
+    new_node.data = {new_id, token_id, score, parent_layer + 1};
     new_node.parent_id = parent_node_id;
-    new_node.ancestor_ids = parent.ancestor_ids;  // inherit all ancestors
-    new_node.ancestor_ids.insert(new_id);         // add self
+    new_node.ancestor_ids = std::move(inherited_ancestors);
+    new_node.ancestor_ids.insert(new_id);  // add self
     m_nodes[new_id] = std::move(new_node);
     m_nodes[parent_node_id].child_ids.push_back(new_id);
     return new_id;
@@ -577,6 +581,7 @@ std::vector<EagleCandidateGraph::Node> EagleCandidateGraph::get_leaf_nodes(const
 }
 
 std::vector<uint64_t> EagleCandidateGraph::get_path_to_node(uint64_t node_id) const {
+    OPENVINO_ASSERT(m_nodes.count(node_id) > 0, "EagleCandidateGraph::get_path_to_node: node_id not found in graph");
     std::vector<uint64_t> path;
     auto it = m_nodes.find(node_id);
     while (it != m_nodes.end()) {
@@ -605,7 +610,7 @@ Sampler::TreeSearcher::TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tenso
       m_d2t_tensor(std::move(d2t)) {
     OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1,
                     "TreeSearcher must be initialized with exactly one running sequence");
-    m_org_group_id = m_sequence_group->get_running_sequences()[0]->get_grouped_id();
+    // m_org_group_id is set authoritatively in tree_reset() at the start of each draft round.
 }
 
 void Sampler::TreeSearcher::tree_reset() {
@@ -644,29 +649,36 @@ auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> st
         const size_t batch_idx = idx_it->second;
         OPENVINO_ASSERT(batch_idx < batch, "Logits batch size doesn't match number of frontier sequences");
 
+        OPENVINO_ASSERT(seq_len > 0, "Logits tensor has zero sequence length");
         const float* logit_row =
             logits.data<const float>() + batch_idx * seq_len * vocab_size + (seq_len - 1) * vocab_size;
 
-        const float max_logit = *std::max_element(logit_row, logit_row + vocab_size);
-        const float log_sum =
-            std::log(std::accumulate(logit_row, logit_row + vocab_size, 0.0f, [max_logit](float acc, float val) {
-                return acc + std::exp(val - max_logit);
-            }));
-
-        // Select top-K token indices using a min-heap
+        // Pass 1: find the max logit and collect the top-branching_factor tokens simultaneously.
+        // Fusing these two scans reduces full-vocabulary passes from 3 to 2, improving cache utilization.
         using IndexScore = std::pair<float, size_t>;
         const auto min_cmp = [](const IndexScore& a, const IndexScore& b) {
             return a.first > b.first;
         };
+        const size_t branching = m_parameters.eagle_tree_params.branching_factor;
+        float max_logit = -std::numeric_limits<float>::infinity();
         std::priority_queue<IndexScore, std::vector<IndexScore>, decltype(min_cmp)> min_heap(min_cmp);
         for (size_t i = 0; i < vocab_size; ++i) {
-            if (min_heap.size() < m_parameters.eagle_tree_params.branching_factor)
-                min_heap.emplace(logit_row[i], i);
-            else if (logit_row[i] > min_heap.top().first) {
+            const float logit = logit_row[i];
+            if (logit > max_logit)
+                max_logit = logit;
+            if (min_heap.size() < branching)
+                min_heap.emplace(logit, i);
+            else if (logit > min_heap.top().first) {
                 min_heap.pop();
-                min_heap.emplace(logit_row[i], i);
+                min_heap.emplace(logit, i);
             }
         }
+
+        // Pass 2: compute log-sum-exp over the full vocabulary using the max found above.
+        float log_sum_val = 0.0f;
+        for (size_t i = 0; i < vocab_size; ++i)
+            log_sum_val += std::exp(logit_row[i] - max_logit);
+        const float log_sum = std::log(log_sum_val);
 
         // Drain the heap into a vector (ascending order), then iterate in reverse for descending
         std::vector<IndexScore> top_k;
@@ -687,20 +699,23 @@ auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> st
         }
     }
 
-    // Surface the top branching_factor candidates by cumulative score
+    // Sort the top-k candidates by score and truncate so callers can safely iterate all elements.
     const size_t k = m_parameters.eagle_tree_params.branching_factor;
+    const size_t kept = std::min(k, candidates.size());
     std::partial_sort(candidates.begin(),
-                      candidates.begin() + std::min(k, candidates.size()),
+                      candidates.begin() + kept,
                       candidates.end(),
                       [](const CandidateBeam& a, const CandidateBeam& b) {
                           return a.score > b.score;
                       });
+    candidates.resize(kept);
     return candidates;
 }
 
 void Sampler::TreeSearcher::advance_draft_layer(const std::vector<CandidateBeam>& candidates,
                                                 SamplerOutput& sampler_output) {
-    const size_t k = m_parameters.eagle_tree_params.branching_factor;
+    // candidates has been truncated to at most branching_factor entries by build_top_k_frontier.
+    const size_t k = candidates.size();
 
     // Count how many times each parent sequence needs to be forked
     std::unordered_map<uint64_t, uint64_t> parent_fork_count;
@@ -732,7 +747,9 @@ void Sampler::TreeSearcher::advance_draft_layer(const std::vector<CandidateBeam>
         next_frontier.push_back({cand.node_id, std::move(seq), cand.score});
     }
 
-    // Retire sequences not selected in this round
+    // Retire sequences not selected in this round.
+    // A non-zero forks_remaining means the sequence was extended in-place (as the last fork),
+    // so it already appears in next_frontier and must not be retired.
     for (const DraftBeam& beam : m_frontier) {
         if (parent_fork_count[beam.sequence->get_id()] != 0)
             continue;
@@ -804,7 +821,9 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitPr
         logit_processor.register_new_generated_token(final_nodes[t].token_id);
     }
 
-    const size_t diff = final_nodes.size() - m_parameters.eagle_tree_params.tree_depth - 1;
+    OPENVINO_ASSERT(final_nodes.size() > static_cast<size_t>(m_parameters.eagle_tree_params.tree_depth),
+                    "finalize_tree: fewer candidate nodes than tree_depth; tree parameters may be inconsistent");
+    const size_t diff = final_nodes.size() - static_cast<size_t>(m_parameters.eagle_tree_params.tree_depth) - 1;
     m_sequence_group->update_processed_tokens_num(m_sequence_group->get_num_processed_tokens() + diff);
     sequence->set_eagle_metadata({tree_mask, retrieve_indices, position_ids});
     sequence->set_status(SequenceStatus::RUNNING);
@@ -822,10 +841,11 @@ void Sampler::TreeSearcher::advance_draft_step(const ov::Tensor& logits,
                                                SamplerOutput& sampler_output,
                                                LogitProcessor& logit_processor) {
     if (m_phase == Phase::IDLE) {
-        m_past_generate_len = m_sequence_group->get_running_sequences()[0]->get_generated_len();
-        tree_reset();
+        // Assert before indexing: get_running_sequences()[0] is only valid when exactly one seq runs.
         OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1,
                         "TreeSearcher: unexpected number of running sequences at draft start");
+        m_past_generate_len = m_sequence_group->get_running_sequences()[0]->get_generated_len();
+        tree_reset();
         m_phase = Phase::DRAFTING;
     }
 
