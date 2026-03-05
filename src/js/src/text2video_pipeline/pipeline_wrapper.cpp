@@ -65,7 +65,7 @@ void text2videoPerformInferenceThread(Text2VideoTsfnContext* context) {
             });
 
         if (status != napi_ok) {
-            report_error("The final BlockingCall failed with status " + status);
+            report_error("The final BlockingCall failed with status " + std::to_string(status));
         }
         finalize();
     } catch (std::exception& e) {

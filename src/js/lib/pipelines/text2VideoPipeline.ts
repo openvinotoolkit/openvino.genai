@@ -56,8 +56,9 @@ export class Text2VideoPipeline {
   ): Promise<Text2VideoResult> {
     if (!this.pipeline) throw new Error("Text2VideoPipeline is not initialized");
 
+    const { callback: _callback, ...generationConfig } = options;
     const innerGenerate = util.promisify(this.pipeline.generate.bind(this.pipeline));
-    return await innerGenerate(prompt, options);
+    return await innerGenerate(prompt, generationConfig);
   }
 
   /**

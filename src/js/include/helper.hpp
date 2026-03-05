@@ -203,8 +203,6 @@ Napi::Value cpp_to_js<ov::genai::VideoGenerationPerfMetrics, Napi::Value>(const 
 
 template <>
 Napi::Value cpp_to_js<ov::genai::VideoGenerationResult, Napi::Value>(const Napi::Env& env, const ov::genai::VideoGenerationResult& result);
-Napi::Value cpp_to_js<ov::genai::TokenizedInputs, Napi::Value>(const Napi::Env& env,
-                                                               const ov::genai::TokenizedInputs& tokenized_inputs);
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType
  * ov::genai::StructuredOutputConfig::StructuralTag */

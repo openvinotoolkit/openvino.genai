@@ -1046,6 +1046,9 @@ Napi::Value cpp_to_js<ov::genai::VideoGenerationResult, Napi::Value>(const Napi:
     result_obj.Set("video", cpp_to_js<ov::Tensor, Napi::Value>(env, result.video));
     result_obj.Set("perfMetrics", cpp_to_js<ov::genai::VideoGenerationPerfMetrics, Napi::Value>(env, result.performance_stat));
     return result_obj;
+}
+
+template <>
 Napi::Value cpp_to_js<ov::genai::StructuredOutputConfig, Napi::Value>(const Napi::Env& env,
                                                                       const ov::genai::StructuredOutputConfig& config) {
     Napi::Object obj = Napi::Object::New(env);

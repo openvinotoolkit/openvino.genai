@@ -8,7 +8,7 @@ Setup script to download and convert models for JS tests.
 
 import argparse
 import os
-import subprocess
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from optimum.intel import (
