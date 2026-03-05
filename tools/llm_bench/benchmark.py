@@ -148,8 +148,20 @@ def get_argparser():
         type=str,
         help='Path to store memory consumption logs and chart.',
     )
-    parser.add_argument('-bs', '--batch_size', type=int, default=1, required=False, help='Batch size value')
-    parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
+    parser.add_argument(
+    "-bs",
+    "--batch_size",
+    type=int,
+    default=1,
+    required=False,
+    help="Batch size value",
+    )
+    parser.add_argument(
+    "--num_beams",
+    type=int,
+    default=1,
+    help="Number of beams in the decoding strategy, activates beam_search if greater than 1",
+    )
     parser.add_argument(
         "--pruning_ratio",
         type=pruning_ratio_type,
