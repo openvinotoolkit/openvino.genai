@@ -342,3 +342,51 @@ ov_genai_generation_config_get_max_new_tokens(const ov_genai_generation_config* 
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_validate(ov_genai_generation_config* config);
+
+// // =========================================================================================
+// // VIDEO GENERATION CONFIGURATION PARAMETERS
+// // =========================================================================================
+
+// /**
+//  * @brief Set the width of the generated video.
+//  * @param handle A pointer to the ov_genai_generation_config instance.
+//  * @param value The width of the video in pixels.
+//  * @return ov_status_e A status code, return OK(0) if successful.
+//  */
+// OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_width(ov_genai_generation_config* config,
+//                                                                           const size_t value);
+
+// /**
+//  * @brief Set the height of the generated video.
+//  * @param handle A pointer to the ov_genai_generation_config instance.
+//  * @param value The height of the video in pixels.
+//  * @return ov_status_e A status code, return OK(0) if successful.
+//  */
+// OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_height(ov_genai_generation_config* config,
+//                                                                            const size_t value);
+
+// /**
+//  * @brief Set the number of frames to generate for the video.
+//  * @param handle A pointer to the ov_genai_generation_config instance.
+//  * @param value The total number of frames to generate.
+//  * @return ov_status_e A status code, return OK(0) if successful.
+//  */
+// OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_num_frames(ov_genai_generation_config* config,
+//                                                                                const size_t value);
+
+// /**
+//  * @brief Set the number of inference steps for video generation (diffusion steps).
+//  * @param handle A pointer to the ov_genai_generation_config instance.
+//  * @param value The number of denoising steps.
+//  * @return ov_status_e A status code, return OK(0) if successful.
+//  */
+// OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_num_inference_steps(ov_genai_generation_config* config,
+//                                                                                         const size_t value);
+
+// /**
+//  * @brief Set the guidance scale for video generation (often used in classifier-free guidance).
+//  * @param handle A pointer to the ov_genai_generation_config instance.
+//  * @param value The guidance scale multiplier.
+//  * @return ov_status_e A status code, return OK(0) if successful.
+//  */
+// OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_guidance_scale(ov_genai_generation_config* config,

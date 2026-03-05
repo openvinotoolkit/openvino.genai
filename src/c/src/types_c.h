@@ -2,6 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
+
+// --- STANDARD INCLUDES MUST GO FIRST TO FIX UPSTREAM BUGS ---
+#include <string>
+#include <memory>
+#include <vector>
+#include <set>
+#include <utility>
+#include "openvino/core/any.hpp"
+#include "openvino/runtime/tensor.hpp"
+
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
@@ -10,7 +20,9 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/json_container.hpp"
-
+// Include Video pipeline and config
+#include "openvino/genai/video_generation/text2video_pipeline.hpp"
+#include "openvino/genai/video_generation/generation_config.hpp"
 #define GET_PROPERTY_FROM_ARGS_LIST                                                                            \
     std::string property_key = va_arg(args_ptr, char*);                                                        \
     if (property_key == ov::cache_encryption_callbacks.name()) {                                               \
@@ -145,4 +157,18 @@ struct ov_genai_chat_history_opaque {
  */
 struct ov_genai_json_container_opaque {
     std::shared_ptr<ov::genai::JsonContainer> object;
+};
+
+/**
+ * @struct ov_genai_video_generation_config_opaque
+ */
+struct ov_genai_video_generation_config_opaque {
+    std::shared_ptr<ov::genai::VideoGenerationConfig> object;
+};
+
+/**
+ * @struct ov_genai_text2video_pipeline_opaque
+ */
+struct ov_genai_text2video_pipeline_opaque {
+    std::shared_ptr<ov::genai::Text2VideoPipeline> object;
 };
