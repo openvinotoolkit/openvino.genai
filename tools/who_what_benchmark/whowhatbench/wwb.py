@@ -35,6 +35,13 @@ def relevance_weight_type(value: str) -> float:
     return fvalue
 
 
+def positive_integer(value: str) -> int:
+    value = int(value)
+    if value < 1:
+        raise argparse.ArgumentTypeError("Minimum input value is 1")
+    return value
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         prog="WWB CLI",
@@ -316,6 +323,13 @@ def parse_args():
         help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
         "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, "
         "making pruning more conservative on borderline tokens.",
+    )
+    parser.add_argument(
+        "--max_new_tokens",
+        type=positive_integer,
+        default=128,
+        required=False,
+        help="Max numbers of tokens to generate, excluding the number of tokens in the prompt; the value must be greater than 0.",
     )
 
     return parser.parse_args()
@@ -649,6 +663,7 @@ def create_evaluator(base_model, args):
                 test_data=prompts,
                 tokenizer=tokenizer,
                 similarity_model_id=args.data_encoder,
+                max_new_tokens=args.max_new_tokens,
                 num_samples=args.num_samples,
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
@@ -702,6 +717,7 @@ def create_evaluator(base_model, args):
                 tokenizer=tokenizer,
                 num_samples=args.num_samples,
                 similarity_model_id=args.data_encoder,
+                max_new_tokens=args.max_new_tokens,
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
                 crop_question=crop_question,
