@@ -300,7 +300,7 @@ class MemMonitorWrapper():
 
     def set_dir(self, dir):
         if not Path(dir).exists():
-            log.warning(f"Path to dir for memory consumption data is not exists {dir}, run without it.")
+            log.warning(f"Directory for memory consumption data does not exist: {dir}; running without it.")
         else:
             self.save_dir = Path(dir)
 
