@@ -8,14 +8,23 @@ namespace ov::genai {
 
 namespace qwen3_vl_utils {
 
-std::vector<float> calculate_timestamps(std::vector<size_t> frame_indices, float video_fps, size_t merge_size) {
+std::vector<float> calculate_timestamps(const VideoMetadata& video_metadata, size_t merge_size) {
+    OPENVINO_ASSERT(video_metadata.fps > 0, "Video metadata fps must be positive for timestamp calculation.");
+
+    // Copy frame_indices since padding may be needed
+    std::vector<size_t> frame_indices = video_metadata.frames_indices;
     if (frame_indices.size() % merge_size != 0) {
-        frame_indices.resize(frame_indices.size() + (merge_size - frame_indices.size() % merge_size), frame_indices.back());
+        frame_indices.resize(
+            frame_indices.size() + (merge_size - frame_indices.size() % merge_size),
+            frame_indices.back()
+        );
     }
+
     std::vector<float> timestamps;
     timestamps.reserve(frame_indices.size() / merge_size);
     for (size_t i = 0; i < frame_indices.size(); i += merge_size) {
-        float timestamp = (static_cast<float>(frame_indices[i]) + static_cast<float>(frame_indices[i + merge_size - 1])) / 2.0f / video_fps;
+        const float timestamp = (static_cast<float>(frame_indices[i] + frame_indices[i + merge_size - 1]))
+            / 2.0f / static_cast<float>(video_metadata.fps);
         timestamps.push_back(timestamp);
     }
     return timestamps;
@@ -39,12 +48,13 @@ void fill_video_metadata(EncodedVideo& encoded_video, size_t total_num_frames, c
         OPENVINO_ASSERT(encoded_video.metadata.fps != 0,
             "Requested to sample frames by fps but video metadata fps is not set. "
             "Provide VideoMetadata with fps or use a fixed num_frames.");
-        num_frames = static_cast<size_t>(total_num_frames / static_cast<double>(encoded_video.metadata.fps) * video_config.fps);
-        num_frames = std::min(std::min(std::max(num_frames, video_config.min_frames), video_config.max_frames), total_num_frames);
-    }
 
-    if (num_frames == 0) {
-        num_frames = std::min(std::max(total_num_frames, video_config.min_frames), video_config.max_frames);
+        num_frames = static_cast<size_t>(
+            total_num_frames / static_cast<double>(encoded_video.metadata.fps) * static_cast<double>(video_config.fps)
+        );
+        num_frames = std::clamp(num_frames, video_config.min_frames, std::min(video_config.max_frames, total_num_frames));
+    } else if (num_frames == 0) {
+        num_frames = std::clamp(total_num_frames, video_config.min_frames, video_config.max_frames);
     }
 
     OPENVINO_ASSERT(num_frames > 1 && num_frames <= total_num_frames,
@@ -278,13 +288,9 @@ void InputsEmbedderQwen3VL::expand_video_tags_in_prompt(
         // Calculate number of video pad tokens for each frame
         const size_t num_video_pad_tokens = calc_tokens_num(1, grid_h, grid_w);
 
-        auto encoded_video = encoded_videos.at(video_id - video_base_id);
-        size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
-        auto timestamps = qwen3_vl_utils::calculate_timestamps(
-            encoded_video.metadata.frames_indices,
-            encoded_video.metadata.fps,
-            spatial_merge_size
-        );
+        const auto& encoded_video = encoded_videos.at(video_id - video_base_id);
+        const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
+        auto timestamps = qwen3_vl_utils::calculate_timestamps(encoded_video.metadata, spatial_merge_size);
         OPENVINO_ASSERT(timestamps.size() == grid_t, "Timestamps size does not match the number of frames");
 
         std::string expanded_tag;
@@ -294,7 +300,7 @@ void InputsEmbedderQwen3VL::expand_video_tags_in_prompt(
             const std::string timestamp_str = "<" + timestamp_ss.str() + " seconds>";
             expanded_tag.append(timestamp_str);
             expanded_tag.append(m_vlm_config.vision_start_token);
-            for (int i = 0; i < num_video_pad_tokens; ++i) {
+            for (size_t i = 0; i < num_video_pad_tokens; ++i) {
                 expanded_tag.append(m_vlm_config.video_pad_token);
             }
             expanded_tag.append(m_vlm_config.vision_end_token);

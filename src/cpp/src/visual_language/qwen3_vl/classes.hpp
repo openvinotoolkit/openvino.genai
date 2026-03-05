@@ -112,8 +112,7 @@ void fill_video_metadata(
  * @return Vector of float timestamps corresponding to each video frame.
  */
 std::vector<float> calculate_timestamps(
-    std::vector<size_t> frame_indices,
-    float video_fps,
+    const VideoMetadata& video_metadata,
     size_t merge_size);
 
 /**
