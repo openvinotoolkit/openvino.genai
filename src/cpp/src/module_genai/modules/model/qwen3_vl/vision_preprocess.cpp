@@ -78,7 +78,7 @@ ImageSize smart_resize(int num_frames,
         w_bar = static_cast<int>(std::ceil(width * beta / factor)) * factor;
     }
 
-    return {h_bar, w_bar};
+    return {static_cast<size_t>(h_bar), static_cast<size_t>(w_bar)};
 }
 
 ov::Tensor video_padding(const ov::Tensor& video, const size_t& pad) {

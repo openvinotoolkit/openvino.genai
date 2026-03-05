@@ -235,14 +235,14 @@ Qwen3_5PreprocessorOutput Qwen3_5Preprocessor::preprocess_video(const ov::Tensor
 
     auto nchw_shape = ov::Shape{batch,
                                 grid_t,
-                                m_preprocess_config.temporal_patch_size,
+                                static_cast<size_t>(m_preprocess_config.temporal_patch_size),
                                 channel,
                                 grid_h / m_preprocess_config.merge_size,
-                                m_preprocess_config.merge_size,
-                                m_preprocess_config.patch_size,
+                                static_cast<size_t>(m_preprocess_config.merge_size),
+                                static_cast<size_t>(m_preprocess_config.patch_size),
                                 grid_w / m_preprocess_config.merge_size,
-                                m_preprocess_config.merge_size,
-                                m_preprocess_config.patch_size};
+                                static_cast<size_t>(m_preprocess_config.merge_size),
+                                static_cast<size_t>(m_preprocess_config.patch_size)};
 
     resized_video = qwen3vl_utils::ovtensor_view(resized_video, nchw_shape);
 

@@ -159,16 +159,16 @@ auto test_video_types = std::vector<bool>{true};  // true: single video, false: 
 auto test_devices = std::vector<std::string>{TEST_MODEL::get_device()};
 
 ExpectedOutput qwen3_5_expected_output = {
-    .pixel_values = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
-    .pixel_values_shape = {1056, 3, 2, 16, 16},
-    .video_grid_thw = {3, 16, 22},
-    .video_grid_thw_shape = {1, 3},
-    .pos_embeds = {-0.0263672, -0.320312, 0.0454102, -0.0693359, -0.25, 0.0288086, 0.15332, 0.125977, 0.104004, 0.15625},
-    .pos_embeds_shape = {1056, 768},
-    .rotary_cos = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-    .rotary_cos_shape = {1056, 64},
-    .rotary_sin = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    .rotary_sin_shape = {1056, 64}};
+    /*pixel_values=*/{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+    /*pixel_values_shape=*/{1056, 3, 2, 16, 16},
+    /*video_grid_thw=*/{3, 16, 22},
+    /*video_grid_thw_shape=*/{1, 3},
+    /*pos_embeds=*/{-0.0263672f, -0.320312f, 0.0454102f, -0.0693359f, -0.25f, 0.0288086f, 0.15332f, 0.125977f, 0.104004f, 0.15625f},
+    /*pos_embeds_shape=*/{1056, 768},
+    /*rotary_cos=*/{1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+    /*rotary_cos_shape=*/{1056, 64},
+    /*rotary_sin=*/{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    /*rotary_sin_shape=*/{1056, 64}};
 // <models_type, models_path, expected_output>
 std::vector<std::tuple<std::string, std::string, ExpectedOutput>> test_models = {{"qwen3_5", TEST_MODEL::Qwen3_5_0_8B(), qwen3_5_expected_output}};
 }  // namespace VideoPreprocessModuleTestParams
