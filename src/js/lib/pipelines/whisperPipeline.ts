@@ -92,16 +92,18 @@ export class WhisperPipeline {
           rejectPromise(error);
           resolvePromise = null;
           rejectPromise = null;
+        } else {
+          throw error;
         }
-        return;
-      }
-      const fullText = result.texts?.[0] ?? "";
-      if (resolvePromise) {
-        resolvePromise({ done: true, value: fullText });
-        resolvePromise = null;
-        rejectPromise = null;
       } else {
-        queue.push({ done: true, chunk: fullText });
+        const fullText = result.texts?.[0] ?? "";
+        if (resolvePromise) {
+          resolvePromise({ done: true, value: fullText });
+          resolvePromise = null;
+          rejectPromise = null;
+        } else {
+          queue.push({ done: true, chunk: fullText });
+        }
       }
     };
 

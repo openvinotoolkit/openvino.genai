@@ -112,7 +112,7 @@ void whisperPerformInferenceThread(WhisperTsfnContext* context) {
             report_error(combined_error);
         } else {
             napi_status status =
-                context->callback_tsfn.BlockingCall([result, &report_error](Napi::Env env, Napi::Function js_callback) {
+                context->callback_tsfn.BlockingCall([&result, &report_error](Napi::Env env, Napi::Function js_callback) {
                     try {
                         js_callback.Call({env.Null(), to_whisper_decoded_result(env, result)});
                     } catch (const std::exception& err) {
