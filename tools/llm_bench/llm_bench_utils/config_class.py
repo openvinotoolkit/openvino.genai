@@ -138,8 +138,25 @@ USE_CASES = {
         UseCaseImageGen(["stable-diffusion-", "ssd-", "tiny-sd", "small-sd", "lcm-", "sdxl", "dreamlike", "flux"])
     ],
     "video_gen": [UseCaseVideoGen(["ltx"])],
-    "visual_text_gen": [UseCaseVLM(["llava", "llava-next", "qwen2-vl", "llava-qwen2", "internvl-chat", "minicpmv", "phi3-v",
-                                    "minicpm-v", "minicpmo", "maira2", "qwen2-5-vl", "smolvlm"])],
+    "visual_text_gen": [
+        UseCaseVLM(
+            [
+                "llava",
+                "llava-next",
+                "qwen2-vl",
+                "llava-qwen2",
+                "internvl-chat",
+                "minicpmv",
+                "phi3-v",
+                "minicpm-v",
+                "minicpmo",
+                "maira2",
+                "qwen2-5-vl",
+                "smolvlm",
+                "qwen3-vl",
+            ]
+        )
+    ],
     "speech_to_text": [UseCaseSpeech2Text(["whisper"])],
     "image_cls": [UseCaseImageCls(["vit"])],
     "code_gen": [
