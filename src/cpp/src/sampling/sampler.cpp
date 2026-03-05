@@ -5,7 +5,6 @@
 
 #include <future>
 
-#include "speculative_decoding/eagle3_debug_utils.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
 
 namespace ov::genai {
@@ -507,33 +506,16 @@ Sampler::TreeSearcher::TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tenso
 }
 
 void Sampler::TreeSearcher::tree_reset(SequenceGroup::Ptr& sequence_group) {
-    if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-        std::cout << "\n[TREE_RESET DEBUG] ========== Initializing Tree ==========" << std::endl;
-        std::cout << "[TREE_RESET DEBUG] Branching factor: " << m_parameters.eagle_tree_params.branching_factor
-                  << std::endl;
-        std::cout << "[TREE_RESET DEBUG] Tree depth: " << m_parameters.eagle_tree_params.tree_depth << std::endl;
-        std::cout << "[TREE_RESET DEBUG] Total tokens: " << m_parameters.eagle_tree_params.total_tokens << std::endl;
-    }
-
     m_beams.reserve(m_parameters.eagle_tree_params.branching_factor);
     Beam root_beam((*m_sequence_group)[0]);
     root_beam.m_score = 0.0f;
-    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-        std::cout << "[TREE_RESET DEBUG] Created root beam with score: " << root_beam.m_score << std::endl;
 
     m_eagle2_candidate_graph = std::make_shared<Eagle2CandidateGraph>(root_beam,
                                                                       m_parameters.eagle_tree_params.total_tokens - 1,
                                                                       m_parameters.eagle_tree_params.tree_depth);
-    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-        std::cout << "[TREE_RESET DEBUG] Created Eagle2CandidateGraph" << std::endl;
 
     m_beams.push_back(root_beam);
     m_org_group_id = sequence_group->get_running_sequences()[0]->get_grouped_id();
-    if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-        std::cout << "[TREE_RESET DEBUG] Original group ID: " << m_org_group_id << std::endl;
-        std::cout << "[TREE_RESET DEBUG] Initial beam count: " << m_beams.size() << std::endl;
-        std::cout << "[TREE_RESET DEBUG] ========== Tree Initialization Complete ==========" << std::endl;
-    }
 }
 
 void Sampler::TreeSearcher::finalize_eagle2_candidates(SamplerOutput& sampler_output) {
@@ -688,33 +670,15 @@ void Sampler::TreeSearcher::finalize_eagle2_candidates(SamplerOutput& sampler_ou
 void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits,
                                          SamplerOutput& sampler_output,
                                          LogitProcessor& logit_processor) {
-    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-        std::cout << "\n[SELECT_TOP_K DEBUG] ========== select_top_k Entry ==========" << std::endl;
-
     // parent sequence ID -> number of child sequences
     std::map<uint64_t, uint64_t> parent_2_num_childs_map;
     ov::Shape shape = logits.get_shape();
     OPENVINO_ASSERT(shape.size() == 3);
     size_t batch = shape[0], seq_len = shape[1], vocab_size = shape[2];
 
-    if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-        std::cout << "[SELECT_TOP_K DEBUG] Logits shape - batch: " << batch << ", seq_len: " << seq_len
-                  << ", vocab_size: " << vocab_size << std::endl;
-        std::cout << "[SELECT_TOP_K DEBUG] Tree layer counter: " << m_tree_layer_counter << std::endl;
-        std::cout << "[SELECT_TOP_K DEBUG] Number of beams: " << m_beams.size() << std::endl;
-        std::cout << "[SELECT_TOP_K DEBUG] Branching factor: " << m_parameters.eagle_tree_params.branching_factor
-                  << std::endl;
-        std::cout << "[SELECT_TOP_K DEBUG] Tree depth: " << m_parameters.eagle_tree_params.tree_depth << std::endl;
-    }
-
     if (m_tree_layer_counter == 0 && m_beams.empty()) {
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Initializing tree - calling tree_reset" << std::endl;
         tree_reset(m_sequence_group);
         OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1);
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Tree reset complete, num_running_seqs: "
-                      << m_sequence_group->num_running_seqs() << std::endl;
     }
 
     for (Beam& beam : m_beams) {
@@ -740,12 +704,8 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits,
     candidates.reserve(m_parameters.eagle_tree_params.branching_factor * m_beams.size());  // num_beams for each beam
     if (m_tree_layer_counter == 0) {
         m_past_generate_len = m_sequence_group->get_running_sequences()[0]->get_generated_len();
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Initialized past_generate_len: " << m_past_generate_len << std::endl;
     }
     m_tree_layer_counter++;
-    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-        std::cout << "[SELECT_TOP_K DEBUG] Incremented tree_layer_counter to: " << m_tree_layer_counter << std::endl;
 
     for (const Beam& beam : m_beams) {
         size_t batch_offset = beam.m_global_beam_idx * seq_len * vocab_size;
@@ -783,18 +743,11 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits,
             Beam new_candidate = beam;
             new_candidate.m_log_prob = it->first - max_logit - log_sum;
             new_candidate.m_score += new_candidate.m_log_prob;
-            if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                std::cout << "D2T1 mapping applied before: " << it->second << std::endl;
             new_candidate.m_token_id = (it->second + (m_d2t ? m_d2t[it->second] : 0));
-            if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                std::cout << "D2T1 mapping applied after: " << new_candidate.m_token_id << std::endl;
             m_eagle2_candidate_graph->add_candidate(new_candidate, beam.m_node_id);
             candidates.push_back(new_candidate);
         }
     }
-
-    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-        std::cout << "[SELECT_TOP_K DEBUG] Total candidates generated: " << candidates.size() << std::endl;
 
     // Sample 2 * group_size highest score tokens to get at least 1 non EOS token per beam
     // OPENVINO_ASSERT(candidates.size() >= 2 * group_size, "No beams left to search");
@@ -804,25 +757,14 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits,
                       candidates.end(),
                       greater);  // select top k of cumulative probs
 
-    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-        std::cout << "[SELECT_TOP_K DEBUG] After partial_sort, top " << m_parameters.eagle_tree_params.branching_factor
-                  << " candidates selected" << std::endl;
-
     // leave the last cycle of beam selection to candidate finalization stage
     if (m_tree_layer_counter < m_parameters.eagle_tree_params.tree_depth) {
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Layer " << m_tree_layer_counter << " < depth ("
-                      << (m_parameters.eagle_tree_params.tree_depth) << ") - continuing tree expansion" << std::endl;
-
         for (size_t cand_idx = 0; cand_idx < m_parameters.eagle_tree_params.branching_factor; ++cand_idx) {
             Beam& candidate = candidates[cand_idx];
 
             parent_2_num_childs_map[candidate.m_sequence->get_id()] += 1;
             child_beams.push_back(candidate);  // select top beams
         }
-
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Selected " << child_beams.size() << " child beams" << std::endl;
 
         for (Beam& child_beam : child_beams) {
             uint64_t parent_sequence_id = child_beam.m_sequence->get_id();
@@ -861,28 +803,13 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits,
 
         // child become parents
         m_beams = child_beams;
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Updated m_beams with " << m_beams.size()
-                      << " child beams for next iteration" << std::endl;
     } else {  // at this point, we already have the full candidate tree
-        if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-            std::cout << "\n[SELECT_TOP_K DEBUG] ========== Tree Complete - Finalization ==========" << std::endl;
-            std::cout << "[SELECT_TOP_K DEBUG] Tree layer counter: " << m_tree_layer_counter << " >= depth ("
-                      << (m_parameters.eagle_tree_params.tree_depth) << ")" << std::endl;
-        }
 
-        // 1. 获取topk candidates
-        // m_eagle2_candidate_graph->print_tree();
         auto final_candidates = m_eagle2_candidate_graph->get_top_k_candidates();
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Retrieved " << final_candidates.size() << " final candidates from graph"
-                      << std::endl;
 
         std::sort(final_candidates.begin(), final_candidates.end(), [](const auto& a, const auto& b) {
             return a.m_tree_layer < b.m_tree_layer;
         });
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Sorted candidates by tree layer" << std::endl;
 
         size_t topk = final_candidates.size();
         // 2. 输出token id
@@ -892,14 +819,9 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits,
             topk_token_ids.push_back(cand.m_token_id);
             position_ids.push_back(cand.m_tree_layer);
         }
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Extracted " << topk_token_ids.size() << " token IDs and position IDs"
-                      << std::endl;
 
         // get retrive indices for each leaf node
         auto leaf_nodes = m_eagle2_candidate_graph->get_leaf_nodes_from_candidates(final_candidates);
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Found " << leaf_nodes.size() << " leaf nodes" << std::endl;
 
         // map from node_id to its index in final_candidates
         std::map<int, size_t> nodeid_2_index;
@@ -914,9 +836,6 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits,
             std::vector<int64_t> path = m_eagle2_candidate_graph->get_path_to_node(leaf.m_node_id);
             retrieve_indices.push_back(path);
         }
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Built retrieve_indices for " << retrieve_indices.size() << " paths"
-                      << std::endl;
 
         // replace the node id in retrieve_indices with corresponding index in final_candidates
         for (auto& path : retrieve_indices) {
@@ -924,8 +843,6 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits,
                 node_id = static_cast<int64_t>(nodeid_2_index[node_id]);
             }
         }
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Mapped node IDs to candidate indices" << std::endl;
 
         // construct tree mask for the final candidates
         std::vector<std::vector<uint8_t>> tree_mask;
@@ -942,9 +859,6 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits,
             }
             tree_mask.push_back(mask_row);
         }
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Built tree mask: " << tree_mask.size() << " x "
-                      << (tree_mask.empty() ? 0 : tree_mask[0].size()) << std::endl;
 
         // select the sequence which has the group id as m_org_group_id
         Sequence::Ptr sequence = nullptr;
@@ -957,73 +871,39 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits,
             }
         }
         OPENVINO_ASSERT(sequence != nullptr, "Cannot find the sequence with the original group id");
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Found sequence with original group id: " << m_org_group_id << std::endl;
 
         // update the continuing beam's sequence
         // roll back the beam's sequence to past_generate_len
         size_t current_generated_len = sequence->get_generated_len();
         size_t tokens_to_remove = current_generated_len - m_past_generate_len;
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Rolling back sequence - current_len: " << current_generated_len
-                      << ", past_len: " << m_past_generate_len << ", removing: " << tokens_to_remove << " tokens"
-                      << std::endl;
 
         sequence->remove_last_tokens(tokens_to_remove);
 
         // append new tokens
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Appending " << (final_candidates.size() - 1) << " new tokens to sequence"
-                      << std::endl;
         for (size_t t = 1; t < final_candidates.size(); ++t) {
             sequence->append_token(final_candidates[t].m_token_id, 0.0f);
             logit_processor.register_new_generated_token(final_candidates[t].m_token_id);
-            if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-                if (t <= 5 || t >= final_candidates.size() - 2) {
-                    std::cout << "[SELECT_TOP_K DEBUG]   Token[" << t << "]: " << final_candidates[t].m_token_id
-                              << std::endl;
-                } else if (t == 6) {
-                    std::cout << "[SELECT_TOP_K DEBUG]   ..." << std::endl;
-                }
-            }
         }
 
         auto org_processed_tokens_num = m_sequence_group->get_num_processed_tokens();
         auto diff = final_candidates.size() - m_parameters.eagle_tree_params.tree_depth - 1;
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Updating processed tokens - original: " << org_processed_tokens_num
-                      << ", diff: " << diff << ", new: " << (org_processed_tokens_num + diff) << std::endl;
 
         m_sequence_group->update_processed_tokens_num(org_processed_tokens_num + diff);
         sequence->set_eagle_metadata({tree_mask, retrieve_indices, position_ids});
         sequence->set_status(SequenceStatus::RUNNING);
 
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Set eagle metadata - tree_mask size: " << tree_mask.size()
-                      << ", retrieve_indices size: " << retrieve_indices.size()
-                      << ", position_ids size: " << position_ids.size() << std::endl;
-
         // drop other beams' sequences
         auto seqs = m_sequence_group->get_running_sequences();
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[SELECT_TOP_K DEBUG] Dropping non-primary sequences (total running: " << seqs.size() << ")"
-                      << std::endl;
 
         for (size_t i = 0; i < seqs.size(); i++) {
             if (seqs[i]->get_grouped_id() == m_org_group_id)
                 continue;
             sampler_output.m_dropped_sequences.push_back(seqs[i]->get_id());
             m_sequence_group->remove_sequence(seqs[i]->get_id());
-            if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                std::cout << "[SELECT_TOP_K DEBUG]   Dropped sequence ID: " << seqs[i]->get_id() << std::endl;
         }
 
         m_tree_layer_counter = 0;  // reset counter
         m_beams.clear();
-        if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-            std::cout << "[SELECT_TOP_K DEBUG] Reset tree_layer_counter and cleared beams" << std::endl;
-            std::cout << "[SELECT_TOP_K DEBUG] ========== Tree Search Complete ==========" << std::endl;
-        }
         return;
     }
 }
@@ -1223,86 +1103,16 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
                                          const ov::Tensor& sequence_group_logits,
                                          LogitProcessor& logit_processor,
                                          size_t num_tokens_to_validate) {
-    // // ===== DEBUG: Force all draft tokens to be rejected (accuracy debug mode) =====
-    // {
-    //     auto& eagle_metadata = sequence->get_eagle_metadata();
-    //     auto retrieve_indices = eagle_metadata.retrieve_indices;
-    //     if (retrieve_indices.empty())
-    //         return 0;
-
-    //     // Remove all draft tokens and sample one bonus token from target model
-    //     sequence->remove_last_tokens(num_tokens_to_validate);
-
-    //     // Sample bonus token using the first logit position (token_idx_to_end = num_tokens_to_validate)
-    //     auto logit_vector = _get_logit_vector(sequence_group_logits, 0, num_tokens_to_validate);
-    //     logit_processor.apply(logit_vector);
-    //     Token bonus_token = _greedy_sample(logit_vector, 0);
-
-    //     sequence->append_token(bonus_token.m_index, bonus_token.m_log_prob);
-    //     logit_processor.register_new_generated_token(bonus_token.m_index);
-
-    //     std::cout << "[VALIDATE_TREE DEBUG][FORCE_REJECT] All draft tokens rejected. Bonus token: "
-    //               << bonus_token.m_index << std::endl;
-
-    //     // Prune validate_path to length 1 (root only, no accepted draft tokens)
-    //     auto validate_path = retrieve_indices[0];
-    //     validate_path.resize(1);
-    //     sequence->set_eagle_metadata({{}, {}, eagle_metadata.tree_position_ids, validate_path});
-    //     return 1;  // validated_steps = 1 (only bonus token)
-    // }
-    // // ===== END DEBUG =====
-
-    if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-        std::cout << "\n[VALIDATE_TREE DEBUG] ========== validate_tree_candidates Entry ==========" << std::endl;
-        std::cout << "[VALIDATE_TREE DEBUG] num_tokens_to_validate: " << num_tokens_to_validate << std::endl;
-        std::cout << "[VALIDATE_TREE DEBUG] sequence_group_logits shape: [";
-        for (size_t d = 0; d < sequence_group_logits.get_shape().size(); ++d) {
-            std::cout << sequence_group_logits.get_shape()[d];
-            if (d + 1 < sequence_group_logits.get_shape().size())
-                std::cout << ", ";
-        }
-        std::cout << "]" << std::endl;
-    }
-
     auto& eagle_metadata = sequence->get_eagle_metadata();
     auto retrieve_indices = eagle_metadata.retrieve_indices;
 
-    if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-        std::cout << "[VALIDATE_TREE DEBUG] retrieve_indices count: " << retrieve_indices.size() << std::endl;
-        for (size_t pi = 0; pi < retrieve_indices.size(); ++pi) {
-            std::cout << "[VALIDATE_TREE DEBUG]   retrieve_indices[" << pi << "]: [";
-            for (size_t j = 0; j < retrieve_indices[pi].size(); ++j) {
-                std::cout << retrieve_indices[pi][j];
-                if (j + 1 < retrieve_indices[pi].size())
-                    std::cout << ", ";
-            }
-            std::cout << "]" << std::endl;
-        }
-    }
-
     if (retrieve_indices.empty()) {
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[VALIDATE_TREE DEBUG] retrieve_indices empty, returning 0" << std::endl;
         return 0;
     }
 
     // reconstruct the candidate lists from retrieve_indices
     auto generated_len = sequence->get_generated_len();
     auto generated_ids = sequence->get_generated_ids();
-    auto tokens_to_validate = generated_ids.end() - num_tokens_to_validate;
-
-    if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-        std::cout << "[VALIDATE_TREE DEBUG] generated_len: " << generated_len << std::endl;
-        std::cout << "[VALIDATE_TREE DEBUG] total generated_ids size: " << generated_ids.size() << std::endl;
-        std::cout << "[VALIDATE_TREE DEBUG] last " << num_tokens_to_validate
-                  << " generated_ids (tokens to validate): [";
-        for (size_t i = generated_ids.size() - num_tokens_to_validate; i < generated_ids.size(); ++i) {
-            std::cout << generated_ids[i];
-            if (i + 1 < generated_ids.size())
-                std::cout << ", ";
-        }
-        std::cout << "]" << std::endl;
-    }
 
     std::vector<std::vector<int64_t>> candidate_token_ids;
     candidate_token_ids.reserve(retrieve_indices.size());
@@ -1315,64 +1125,25 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
         candidate_token_ids.push_back(candidate_tokens);
     }
 
-    if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-        std::cout << "[VALIDATE_TREE DEBUG] Reconstructed candidate_token_ids:" << std::endl;
-        for (size_t ci = 0; ci < candidate_token_ids.size(); ++ci) {
-            std::cout << "[VALIDATE_TREE DEBUG]   path[" << ci << "]: [";
-            for (size_t j = 0; j < candidate_token_ids[ci].size(); ++j) {
-                std::cout << candidate_token_ids[ci][j];
-                if (j + 1 < candidate_token_ids[ci].size())
-                    std::cout << ", ";
-            }
-            std::cout << "]" << std::endl;
-        }
-    }
-
-    // validate tokens one by one
-    size_t valid_tokens = 0;
-    size_t token_idx = 1;
     // found the max size of retrieve_indices
     size_t max_retrieve_indices_size = 0;
     for (const auto& path : retrieve_indices) {
         max_retrieve_indices_size = std::max(max_retrieve_indices_size, path.size());
     }
-    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-        std::cout << "[VALIDATE_TREE DEBUG] max_retrieve_indices_size: " << max_retrieve_indices_size << std::endl;
 
     std::vector<size_t> path_pos(candidate_token_ids.size(), 1);
     size_t validated_steps = 1;
     size_t token_idx_to_end = num_tokens_to_validate;
     Token bonus_token;
 
-    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-        std::cout << "[VALIDATE_TREE DEBUG] Starting validation loop (max steps: " << max_retrieve_indices_size << ")"
-                  << std::endl;
-
     for (size_t step = 1;
          step < max_retrieve_indices_size && !candidate_token_ids.empty() && validated_steps < num_tokens_to_validate;
          ++step) {
-        if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-            std::cout << "\n[VALIDATE_TREE DEBUG] --- Step " << step << " ---" << std::endl;
-            std::cout << "[VALIDATE_TREE DEBUG]   validated_steps so far: " << validated_steps << std::endl;
-            std::cout << "[VALIDATE_TREE DEBUG]   token_idx_to_end: " << token_idx_to_end << std::endl;
-            std::cout << "[VALIDATE_TREE DEBUG]   remaining paths: " << candidate_token_ids.size() << std::endl;
-        }
-
         std::vector<int64_t> tokens_this_step;
         for (size_t i = 0; i < candidate_token_ids.size(); ++i) {
             if (path_pos[i] < candidate_token_ids[i].size()) {
                 tokens_this_step.push_back(candidate_token_ids[i][path_pos[i]]);
             }
-        }
-
-        if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-            std::cout << "[VALIDATE_TREE DEBUG]   candidate tokens this step: [";
-            for (size_t i = 0; i < tokens_this_step.size(); ++i) {
-                std::cout << tokens_this_step[i];
-                if (i + 1 < tokens_this_step.size())
-                    std::cout << ", ";
-            }
-            std::cout << "]" << std::endl;
         }
 
         // logits for this step
@@ -1381,18 +1152,11 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
         Token sampled_token = _greedy_sample(logit_vector, 0);
         int64_t pred_token = sampled_token.m_index;
 
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[VALIDATE_TREE DEBUG]   target model predicted token: " << pred_token
-                      << " (log_prob: " << sampled_token.m_log_prob << ")" << std::endl;
-
         bool matched = false;
 
         for (size_t i = 0; i < tokens_this_step.size(); ++i) {
             if (tokens_this_step[i] == pred_token) {
                 matched = true;
-                if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                    std::cout << "[VALIDATE_TREE DEBUG]   MATCH found: pred_token=" << pred_token
-                              << " matches candidate at position " << i << std::endl;
 
                 // find corresponding index of the pred_token in the retrieve indices
                 // for example, candidate token list[5109, 53, 20198, 3394, 1750, 1404, 55, 52, 220, 55]
@@ -1400,24 +1164,17 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
                 // candidate_token_ids =
                 // [[5109,20198],[5109,53,3394],[5109,53,1750,52],[5109,53,1404,220],[5109,53,1750,55,55]]
 
-                size_t paths_before = candidate_token_ids.size();
                 for (size_t j = 0; j < candidate_token_ids.size();) {
                     if (path_pos[j] < candidate_token_ids[j].size() &&
                         candidate_token_ids[j][path_pos[j]] == pred_token) {
                         path_pos[j]++;
                         ++j;
                     } else {
-                        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                            std::cout << "[VALIDATE_TREE DEBUG]   Pruning path[" << j
-                                      << "] (token mismatch or exhausted)" << std::endl;
                         retrieve_indices.erase(retrieve_indices.begin() + j);
                         candidate_token_ids.erase(candidate_token_ids.begin() + j);
                         path_pos.erase(path_pos.begin() + j);
                     }
                 }
-                if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                    std::cout << "[VALIDATE_TREE DEBUG]   Paths remaining after pruning: " << candidate_token_ids.size()
-                              << " (was: " << paths_before << ")" << std::endl;
                 break;
             }
         }
@@ -1425,30 +1182,17 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
         if (!matched) {
             // get the bonus token and quit the loop
             bonus_token = sampled_token;
-            if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                std::cout << "[VALIDATE_TREE DEBUG]   NO MATCH - mismatch at step " << step
-                          << ". Bonus token set to: " << bonus_token.m_index << " (log_prob: " << bonus_token.m_log_prob
-                          << ")" << std::endl;
             break;
         }
 
         token_idx_to_end = num_tokens_to_validate - retrieve_indices[0][path_pos[0] - 1];
         validated_steps++;
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout << "[VALIDATE_TREE DEBUG]   Token accepted. validated_steps now: " << validated_steps
-                      << ", next token_idx_to_end: " << token_idx_to_end << std::endl;
 
         if (validated_steps + generated_len - num_tokens_to_validate ==
             sequence->get_sequence_group_ptr()->get_max_new_tokens()) {
-            if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                std::cout << "[VALIDATE_TREE DEBUG]   Reached max_new_tokens limit. Stopping validation." << std::endl;
             break;
         }
     }
-
-    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-        std::cout << "\n[VALIDATE_TREE DEBUG] Validation loop done. Total validated_steps: " << validated_steps
-                  << std::endl;
 
     // prune the retrieve_indices to validated_steps, use the first retrieve_indice is enough
     auto& validate_path = retrieve_indices[0];
@@ -1458,71 +1202,24 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
         candidate_path.erase(candidate_path.begin() + validated_steps, candidate_path.end());
     }
 
-    if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-        std::cout << "[VALIDATE_TREE DEBUG] Final validate_path (after prune): [";
-        for (size_t i = 0; i < validate_path.size(); ++i) {
-            std::cout << validate_path[i];
-            if (i + 1 < validate_path.size())
-                std::cout << ", ";
-        }
-        std::cout << "]" << std::endl;
-
-        std::cout << "[VALIDATE_TREE DEBUG] Final candidate_path (after prune): [";
-        for (size_t i = 0; i < candidate_path.size(); ++i) {
-            std::cout << candidate_path[i];
-            if (i + 1 < candidate_path.size())
-                std::cout << ", ";
-        }
-        std::cout << "]" << std::endl;
-    }
-
     // remove tokens from sequence
     sequence->remove_last_tokens(num_tokens_to_validate);
-    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-        std::cout << "[VALIDATE_TREE DEBUG] Removed " << num_tokens_to_validate << " tokens from sequence."
-                  << std::endl;
 
     // append validated tokens back to sequence
     for (size_t i = 1; i < validated_steps; ++i) {
         sequence->append_token(candidate_path[i], 0.0f);
         logit_processor.register_new_generated_token(candidate_path[i]);
     }
-    if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-        std::cout << "[VALIDATE_TREE DEBUG] Appended " << (validated_steps - 1) << " validated tokens: [";
-        for (size_t i = 1; i < validated_steps; ++i) {
-            std::cout << candidate_path[i];
-            if (i + 1 < validated_steps)
-                std::cout << ", ";
-        }
-        std::cout << "]" << std::endl;
-    }
 
     if (bonus_token.m_index == 0) {
         // sample an extra token if all tokens are validated
-        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-            std::cout
-                << "[VALIDATE_TREE DEBUG] bonus_token.m_index == 0 (all steps matched), sampling extra bonus token "
-                   "at token_idx_to_end="
-                << token_idx_to_end << std::endl;
         auto logit_vector = _get_logit_vector(sequence_group_logits, 0, token_idx_to_end);
         logit_processor.apply(logit_vector);
         bonus_token = _greedy_sample(logit_vector, 0);
     }
 
-    if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-        std::cout << "[VALIDATE_TREE DEBUG] Bonus token: " << bonus_token.m_index
-                  << " (log_prob: " << bonus_token.m_log_prob << ")" << std::endl;
-    }
-
     sequence->append_token(bonus_token.m_index, bonus_token.m_log_prob);
     logit_processor.register_new_generated_token(bonus_token.m_index);
-
-    if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-        std::cout << "[VALIDATE_TREE DEBUG] Accepted tokens in this step (excl. bonus): " << (validate_path.size() - 1)
-                  << std::endl;
-        std::cout << "[VALIDATE_TREE DEBUG] Returning validated_steps: " << validated_steps << std::endl;
-        std::cout << "[VALIDATE_TREE DEBUG] ========== validate_tree_candidates Exit ==========" << std::endl;
-    }
 
     //  update eagle meta data
     sequence->set_eagle_metadata({{}, {}, eagle_metadata.tree_position_ids, validate_path});
@@ -1735,9 +1432,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                         m_d2t_mapping) {  // compute token offset for draft model in speculative sampling
                         ov::Tensor d2t_tensor = m_d2t_mapping->get_tensor_view();
                         auto d2t = d2t_tensor.data<int64_t>();
-                        std::cout << "D2T mapping applied before: " << sampled_token.m_index << std::endl;
                         sampled_token.m_index = sampled_token.m_index + (d2t ? d2t[sampled_token.m_index] : 0);
-                        std::cout << "D2T mapping applied after: " << sampled_token.m_index << std::endl;
                     }
                     // flag to add sampled token to generated sequence or extend logit processors only
                     bool is_extend_sequence = logit_token_offset == 0 || is_generate_n_tokens || !is_validation_passed;
@@ -1838,161 +1533,50 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             assisting_pipeline_info.min_generated_len =
                 std::min(assisting_pipeline_info.min_generated_len, running_sequences[0]->get_generated_len());
         } else {
-            if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-                std::cout << "\n[TREE_SEARCH DEBUG] ========== Tree Search Sampling ==========" << std::endl;
-                std::cout << "[TREE_SEARCH DEBUG] Request ID: " << request_id << std::endl;
-                std::cout << "[TREE_SEARCH DEBUG] Eagle tree params - branching_factor: "
-                          << sampling_params.eagle_tree_params.branching_factor
-                          << ", tree_depth: " << sampling_params.eagle_tree_params.tree_depth
-                          << ", total_tokens: " << sampling_params.eagle_tree_params.total_tokens << std::endl;
-            }
-
             // create eagle tree search info if we are on the first generate
             TreeSearcher* tree_searcher;
             {
                 std::lock_guard<std::mutex> lock(m_tree_search_info_mutex);
                 if (m_tree_search_info.find(request_id) == m_tree_search_info.end()) {
-                    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                        std::cout << "[TREE_SEARCH DEBUG] Creating new TreeSearcher for request " << request_id
-                                  << std::endl;
                     m_tree_search_info.emplace(
                         request_id,
                         TreeSearcher(sequence_group, m_d2t_mapping ? m_d2t_mapping->get_tensor_view() : ov::Tensor()));
                 } else {
-                    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                        std::cout << "[TREE_SEARCH DEBUG] Reusing existing TreeSearcher for request " << request_id
-                                  << std::endl;
                 }
                 tree_searcher = &m_tree_search_info.at(request_id);
             }
 
             if (!sequence_group->has_finished()) {
                 sg_sampling_info.sampler_output.num_generated_tokens++;
-                if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                    std::cout << "[TREE_SEARCH DEBUG] Incremented num_generated_tokens to: "
-                              << sg_sampling_info.sampler_output.num_generated_tokens << std::endl;
             } else {
-                if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                    std::cout << "[TREE_SEARCH DEBUG] Sequence group has finished" << std::endl;
             }
 
-            if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                std::cout << "[TREE_SEARCH DEBUG] Calling select_top_k..." << std::endl;
             // current algorithm already adds new tokens to running sequences and
             tree_searcher->select_top_k(sequence_group_logits, sg_sampling_info.sampler_output, logit_processor);
-            if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                std::cout << "[TREE_SEARCH DEBUG] select_top_k completed" << std::endl;
 
             // Debug: Print sequence_group information after select_top_k
-            if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                std::cout << "\n[TREE_SEARCH DEBUG] ========== Sequence Group State After select_top_k =========="
-                          << std::endl;
             auto running_sequences = sequence_group->get_running_sequences();
-            if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                std::cout << "[TREE_SEARCH DEBUG] Number of running sequences: " << running_sequences.size()
-                          << std::endl;
 
             for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
                 auto& seq = running_sequences[seq_idx];
-                if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-                    std::cout << "\n[TREE_SEARCH DEBUG] --- Sequence [" << seq_idx << "] ---" << std::endl;
-                    std::cout << "[TREE_SEARCH DEBUG]   Sequence ID: " << seq->get_id() << std::endl;
-                    std::cout << "[TREE_SEARCH DEBUG]   Grouped ID: " << seq->get_grouped_id() << std::endl;
-                    std::cout << "[TREE_SEARCH DEBUG]   Generated length: " << seq->get_generated_len() << std::endl;
-                }
 
                 // Print generated token IDs
                 auto generated_ids = seq->get_generated_ids();
-                if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-                    std::cout << "[TREE_SEARCH DEBUG]   Generated IDs (" << generated_ids.size() << " tokens): [";
-                    for (size_t i = 0; i < generated_ids.size() && i < 20; ++i) {  // Print first 20 tokens
-                        std::cout << generated_ids[i];
-                        if (i < generated_ids.size() - 1 && i < 19)
-                            std::cout << ", ";
-                    }
-                    if (generated_ids.size() > 20) {
-                        std::cout << ", ... (" << (generated_ids.size() - 20) << " more)";
-                    }
-                    std::cout << "]" << std::endl;
-                }
 
                 // Print EAGLE metadata
                 auto& eagle_metadata = seq->get_eagle_metadata();
-                if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-                    std::cout << "[TREE_SEARCH DEBUG]   EAGLE Metadata:" << std::endl;
-                    std::cout << "[TREE_SEARCH DEBUG]     - tree_mask size: " << eagle_metadata.tree_mask.size();
-                    if (!eagle_metadata.tree_mask.empty()) {
-                        std::cout << " x " << eagle_metadata.tree_mask[0].size();
-                    }
-                    std::cout << std::endl;
-                }
 
-                if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                    std::cout << "[TREE_SEARCH DEBUG]     - retrieve_indices size: "
-                              << eagle_metadata.retrieve_indices.size() << std::endl;
                 if (!eagle_metadata.retrieve_indices.empty()) {
-                    if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                        std::cout << "[TREE_SEARCH DEBUG]     - retrieve_indices paths:" << std::endl;
                     for (size_t path_idx = 0; path_idx < std::min(size_t(5), eagle_metadata.retrieve_indices.size());
                          ++path_idx) {
                         const auto& path = eagle_metadata.retrieve_indices[path_idx];
-                        if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-                            std::cout << "[TREE_SEARCH DEBUG]       Path[" << path_idx << "] (len=" << path.size()
-                                      << "): [";
-                            for (size_t i = 0; i < path.size() && i < 15; ++i) {
-                                std::cout << path[i];
-                                if (i < path.size() - 1 && i < 14)
-                                    std::cout << ", ";
-                            }
-                            if (path.size() > 15)
-                                std::cout << ", ...";
-                            std::cout << "]" << std::endl;
-                        }
                     }
                     if (eagle_metadata.retrieve_indices.size() > 5) {
-                        if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                            std::cout << "[TREE_SEARCH DEBUG]       ... ("
-                                      << (eagle_metadata.retrieve_indices.size() - 5) << " more paths)" << std::endl;
                     }
                 }
 
-                if (eagle3::EAGLE3_SAMPLER_DEBUG)
-                    std::cout << "[TREE_SEARCH DEBUG]     - tree_position_ids size: "
-                              << eagle_metadata.tree_position_ids.size() << std::endl;
                 if (!eagle_metadata.tree_position_ids.empty()) {
-                    if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-                        std::cout << "[TREE_SEARCH DEBUG]     - tree_position_ids: [";
-                        for (size_t i = 0; i < std::min(size_t(20), eagle_metadata.tree_position_ids.size()); ++i) {
-                            std::cout << eagle_metadata.tree_position_ids[i];
-                            if (i < eagle_metadata.tree_position_ids.size() - 1 && i < 19)
-                                std::cout << ", ";
-                        }
-                        if (eagle_metadata.tree_position_ids.size() > 20) {
-                            std::cout << ", ... (" << (eagle_metadata.tree_position_ids.size() - 20) << " more)";
-                        }
-                        std::cout << "]" << std::endl;
-                    }
                 }
-
-                if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-                    std::cout << "[TREE_SEARCH DEBUG]     - accepted_indices size: "
-                              << eagle_metadata.validated_indices.size() << std::endl;
-                    if (!eagle_metadata.validated_indices.empty()) {
-                        std::cout << "[TREE_SEARCH DEBUG]     - validated_indices: [";
-                        for (size_t i = 0; i < std::min(size_t(20), eagle_metadata.validated_indices.size()); ++i) {
-                            std::cout << eagle_metadata.validated_indices[i];
-                            if (i < eagle_metadata.validated_indices.size() - 1 && i < 19)
-                                std::cout << ", ";
-                        }
-                        if (eagle_metadata.validated_indices.size() > 20) {
-                            std::cout << ", ...";
-                        }
-                        std::cout << "]" << std::endl;
-                    }
-                }
-            }
-            if (eagle3::EAGLE3_SAMPLER_DEBUG) {
-                std::cout << "[TREE_SEARCH DEBUG] ========== End Sequence Group State ==========" << std::endl;
             }
         }  // end else (draft tree search)
     } else {
@@ -2090,9 +1674,8 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         sequence_group->finish_iteration();
         // decrease sequence_group context in case of candidates generated by draft_model were not accepted by main_model
         if (assisting_pipeline_info.max_removed_tokens_per_request) {
-            // std::cout << "prev processed tokens " << sequence_group->get_num_processed_tokens() << std::endl;
-            auto min_processed_tokens = sequence_group->get_prompt_len() + assisting_pipeline_info.min_generated_len - 1;
-            // std::cout << "update processed tokens to " << min_processed_tokens << std::endl;
+            auto min_processed_tokens =
+                sequence_group->get_prompt_len() + assisting_pipeline_info.min_generated_len - 1;
             sequence_group->update_processed_tokens_num(min_processed_tokens);
             auto& logit_processor = get_logit_processor(sequence_group->get_request_id());
             logit_processor.update_generated_len(min_processed_tokens);

@@ -317,10 +317,6 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
         std::vector<std::shared_ptr<CandidateNode>> get_current_layer_candidates() {
             return layer_to_nodes[current_depth];
         }
-        void print_tree() {  // for debugging purposes
-            // std::cout << "Eagle2 Candidate Tree (Depth: " << current_depth << ")\n";
-            print_node(root, 0);
-        }
 
         std::vector<Beam> get_leaf_nodes_from_candidates(const std::vector<Beam>& candidates) {
             std::vector<Beam> leaf_nodes;
@@ -386,22 +382,6 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
         int total_tokens;
         int max_depth;
         int current_depth;
-
-        void print_node(const std::shared_ptr<CandidateNode>& node, int depth) {
-            std::string indent(depth * 2, ' ');
-
-            if (node == root) {
-                std::cout << indent << "[ROOT] ID: " << node->get_id() << "\n";
-            } else {
-                std::cout << indent << "ID: " << node->get_id() << " Token: " << node->candidate_beam.m_token_id
-                          << " Score: " << node->candidate_beam.m_score
-                          << " Layer: " << node->candidate_beam.m_tree_layer << "\n";
-            }
-
-            for (const auto& child : node->children) {
-                print_node(child, depth + 1);
-            }
-        }
     };
     size_t m_tree_layer_counter = 0;
     size_t m_past_generate_len = 0;
