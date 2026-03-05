@@ -24,18 +24,16 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 Then, run the export with Optimum CLI:
 
 ```sh
-optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --weight-format int8 ltx_video_ov/INT8
+optimum-cli export openvino --model Lightricks/LTX-Video-0.9.8-13B-distilled --task text-to-video ltx_video_ov
 ```
 
-Alternatively, do it in Python code. If NNCF is installed, the model will be compressed to INT8 automatically.
+Alternatively, do it in Python code:
 
 ```python
 from optimum.intel.openvino import OVLTXPipeline
 
-output_dir = "ltx_video_ov/INT8"
-
-pipeline = OVLTXPipeline.from_pretrained("Lightricks/LTX-Video", export=True, compile=False, load_in_8bit=True)
-pipeline.save_pretrained(output_dir)
+pipeline = OVLTXPipeline.from_pretrained("Lightricks/LTX-Video-0.9.8-13B-distilled", export=True, compile=False)
+pipeline.save_pretrained("ltx_video_ov")
 ```
 
 ## Sample Descriptions
@@ -57,7 +55,7 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 - **Description:**
   Basic video generation using a text-to-video model. This sample demonstrates how to generate videos from text prompts using the OpenVINO GenAI Text2VideoPipeline. The LTX-Video model is recommended for this sample.
 
-  Recommended models: Lightricks/LTX-Video
+  Recommended models: Lightricks/LTX-Video-0.9.8-13B-distilled
 
 - **Main Feature:** Generate videos from text descriptions with customizable parameters.
 
@@ -68,7 +66,7 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 
   Example:
   ```bash
-  python text2video.py ./ltx_video_ov/INT8 "A cute golden retriever puppy running in a green grassy field on a sunny day, high quality, photorealistic"
+  python text2video.py ./ltx_video_ov "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
   ```
 
 ### LoRA Text to Video Sample (`lora_text2video.py`)
@@ -76,7 +74,12 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 - **Description:**
   Video generation with LoRA adapters using a text-to-video model. This sample demonstrates how to generate videos from text prompts while applying a LoRA adapter.
 
-  Recommended models: Lightricks/LTX-Video
+  Recommended models: Lightricks/LTX-Video-0.9.8-13B-distilled
+
+  To download the LoRA adapter used in the example below:
+  ```sh
+  huggingface-cli download Cseti/LTXV-13B-LoRA-Wallace_and_Gromit-v1 walgro_style_step_42000_comfy.safetensors
+  ```
 
 - **Main Feature:** Apply a LoRA adapter to a text-to-video pipeline for customized generation.
 
@@ -87,7 +90,7 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 
   Example:
   ```bash
-  python lora_text2video.py ./ltx_video_ov/INT8 "A cute golden retriever puppy running in a green grassy field on a sunny day, high quality, photorealistic" adapter.safetensors 1.0
+  python lora_text2video.py ./ltx_video_ov "Walgro style. A woman waits at a bus stop in the early morning, headphones resting over her blue hair, her gaze focused on her phone as she scrolls. The rising sun casts soft light across the pavement, illuminating the quiet street." walgro_style_step_42000_comfy.safetensors 1.0
   ```
 
 The sample will generate two video files, `lora_video.avi` and `baseline_video.avi`, in the current directory.
