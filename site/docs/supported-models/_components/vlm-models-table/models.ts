@@ -164,7 +164,7 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/Qwen/Qwen3-VL-32B-Instruct',
           'https://huggingface.co/Qwen/Qwen3-VL-32B-Thinking',
         ],
-        notesLink: '#qwen3_vl-notes'
+        notesLink: '#qwen3_vl-notes',
       },
     ],
   },
