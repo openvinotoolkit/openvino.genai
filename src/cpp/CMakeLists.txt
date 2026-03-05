@@ -265,6 +265,30 @@ if(ENABLE_GGUF)
   target_link_libraries(${TARGET_NAME} PRIVATE gguflib)
 endif()
 
+if(BUILD_LLAMA_CPP)
+    if(TARGET llama AND TARGET ggml)
+        set(_llama_output_dir "${CMAKE_BINARY_DIR}/openvino_genai/")
+
+        foreach(_target llama ggml)
+            set_target_properties(${_target} PROPERTIES
+                ARCHIVE_OUTPUT_DIRECTORY "${_llama_output_dir}"
+                LIBRARY_OUTPUT_DIRECTORY "${_llama_output_dir}"
+                RUNTIME_OUTPUT_DIRECTORY "${_llama_output_dir}"
+            )
+            if(WIN32)
+                set_target_properties(${_target} PROPERTIES
+                    ARCHIVE_OUTPUT_DIRECTORY_DEBUG   "${_llama_output_dir}"
+                    ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${_llama_output_dir}"
+                    LIBRARY_OUTPUT_DIRECTORY_DEBUG   "${_llama_output_dir}"
+                    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${_llama_output_dir}"
+                    RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${_llama_output_dir}"
+                    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${_llama_output_dir}"
+                )
+            endif()
+        endforeach()
+    endif()
+endif()
+
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
 
 # Add /bigobj flag for MSVC to handle large object files
