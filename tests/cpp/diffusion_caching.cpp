@@ -460,3 +460,52 @@ TEST_F(TaylorSeerStateTest, ReinitializeDoesNotLeaveStaleSchedule) {
     EXPECT_FALSE(state.should_compute(5));
     EXPECT_TRUE(state.should_compute(6));
 }
+
+TEST_F(TaylorSeerStateTest, NoUpdateInCoolDownPhase) {
+    TaylorSeerCacheConfig config{3, 2, -2};
+    TaylorSeerState state(config, 10);
+
+    EXPECT_TRUE(state.is_active());
+
+    // Warm-up phase: steps 0-1
+    auto tensor1 = CreateTestTensor({1.0f, 2.0f, 3.0f});
+    auto tensor2 = CreateTestTensor({2.0f, 4.0f, 6.0f});
+    state.update(0, tensor1);
+    state.update(1, tensor2);
+    EXPECT_EQ(state.get_last_update_step().value(), 1);
+
+    auto tensor3 = CreateTestTensor({3.0f, 6.0f, 9.0f});
+    state.update(4, tensor3);
+    EXPECT_EQ(state.get_last_update_step().value(), 4);
+
+    // Find last prediction step
+    size_t last_prediction_step = 0;
+    for (size_t step = 0; step < 10; ++step) {
+        if (!state.should_compute(step)) {
+            last_prediction_step = step;
+        }
+    }
+    EXPECT_EQ(last_prediction_step, 6);
+
+    // After last prediction step, all updates should be skipped
+    // Steps 7-9 are compute steps but update should be no-op
+    EXPECT_TRUE(state.should_compute(7));
+    EXPECT_TRUE(state.should_compute(8));
+    EXPECT_TRUE(state.should_compute(9));
+
+    // Attempt updates for steps 7-9 - all should be skipped
+    auto tensor4 = CreateTestTensor({4.0f, 8.0f, 12.0f});
+    auto tensor5 = CreateTestTensor({6.0f, 12.0f, 18.0f});
+
+    state.update(7, tensor4);
+    // Last update step should remain 4 (update at step 7 was skipped)
+    EXPECT_EQ(state.get_last_update_step().value(), 4);
+
+    state.update(9, tensor5);
+    // Last update step should still be 4
+    EXPECT_EQ(state.get_last_update_step().value(), 4);
+
+    // Taylor factors should still reflect the last real update at step 4
+    auto expected_factor_0 = CreateTestTensor({3.0f, 6.0f, 9.0f});
+    AssertTensorsEqual(state.get_taylor_factor(0), expected_factor_0);
+}

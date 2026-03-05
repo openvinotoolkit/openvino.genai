@@ -27,9 +27,9 @@ MODELS = {
 }
 
 
-@pytest.fixture(scope="module", params=[MODEL_ID])
+@pytest.fixture(scope="module")
 def image_generation_model(request):
-    model_id = request.param
+    model_id = getattr(request, "param", MODEL_ID)
     model_name = MODELS[model_id]
     models_dir = get_ov_cache_converted_models_dir()
     model_path = Path(models_dir) / model_id / model_name

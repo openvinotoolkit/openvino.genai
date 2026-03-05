@@ -73,7 +73,10 @@ public:
         m_schedule.resize(num_inference_steps);
         for (std::size_t step = 0; step < num_inference_steps; ++step) {
             m_schedule[step] = should_compute_at_step(step, *config, num_inference_steps);
-            has_predictions |= !m_schedule[step];
+            if (!m_schedule[step]) {
+                has_predictions = true;
+                m_last_prediction_step = step;  // Track the last prediction step
+            }
         }
         m_is_active = has_predictions;
 
@@ -126,8 +129,14 @@ public:
      * @param current_step The current denoising step index.
      * @param output The output tensor from the full computation.
      * @throws ov::Exception if current_step is not greater than the last update step.
+     * @note Updates are skipped if there are no future prediction steps.
      */
     void update(std::size_t current_step, const ov::Tensor& output) {
+        // Skip update if no future predictions will use these Taylor factors
+        if (m_last_prediction_step.has_value() && current_step >= *m_last_prediction_step) {
+            return;
+        }
+
         const bool is_first_update = !m_last_update_step.has_value();
 
         OPENVINO_ASSERT(is_first_update || current_step > *m_last_update_step,
@@ -226,6 +235,7 @@ private:
     void reset_state() {
         m_is_active = false;
         m_last_update_step = std::nullopt;
+        m_last_prediction_step = std::nullopt;
         m_schedule.clear();
 
         // Clear Taylor factor tensors
@@ -294,6 +304,12 @@ private:
      * @brief Whether TaylorSeer is active for this generation.
      */
     bool m_is_active = false;
+
+    /**
+     * @brief The last step index where a prediction will be made.
+     * Used to skip unnecessary updates after all predictions are complete.
+     */
+    std::optional<std::size_t> m_last_prediction_step = std::nullopt;
 };
 
 } // namespace ov::genai
