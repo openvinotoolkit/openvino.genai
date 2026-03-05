@@ -1231,7 +1231,7 @@ Adapter diffusers_adapter_normalization(const Adapter& adapter) {
 
 std::string detect_lora_prefix(const AdapterConfig& adapters) {
     auto adapters_vec = adapters.get_adapters_and_alphas();
-    if (!adapters_vec.empty()) {
+    if (!adapters_vec.empty() && adapters_vec[0].first) {
         const auto& tensors = adapters_vec[0].first.m_pimpl->get_tensors();
         if (!tensors.empty()) {
             const std::string& first_key = tensors.begin()->first;
