@@ -58,24 +58,27 @@ void ov_genai_text2video_pipeline_free(ov_genai_text2video_pipeline* pipe) {
 
 ov_status_e ov_genai_text2video_pipeline_generate(ov_genai_text2video_pipeline* pipe,
                                                   const char* prompt,
-                                                  const ov_genai_generation_config* config,
+                                                  const ov_genai_video_generation_config* config,
                                                   ov_tensor_t** video_tensor) {
     if (!pipe || !(pipe->object) || !prompt || !video_tensor) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
         std::string prompt_str(prompt);
-        ov::Tensor cpp_tensor;
+        ov::AnyMap properties;
 
-        // Call the C++ generate function using the unified config
+        // Convert the VideoGenerationConfig into the AnyMap properties expected by C++
         if (config && config->object) {
-            cpp_tensor = pipe->object->generate(prompt_str, *(config->object)); 
-        } else {
-            cpp_tensor = pipe->object->generate(prompt_str);
+            properties.insert(ov::genai::generation_config(*(config->object)));
         }
 
+        // Call generate, which returns a VideoGenerationResult object
+        auto result = pipe->object->generate(prompt_str, properties);
+
+        // Extract the first actual tensor from the result struct
+        ov::Tensor cpp_tensor = result.video;
+
         // Bridge: Convert C++ ov::Tensor to C ov_tensor_t
-        // We get the shape, type, and data pointer from the C++ tensor
         ov_shape_t shape;
         shape.rank = cpp_tensor.get_shape().size();
         shape.dims = new int64_t[shape.rank];
@@ -83,15 +86,19 @@ ov_status_e ov_genai_text2video_pipeline_generate(ov_genai_text2video_pipeline* 
             shape.dims[i] = cpp_tensor.get_shape()[i];
         }
         
-        // Use the standard OpenVINO C API to create the C tensor wrapping the data
+        // Explicitly cast the C++ type to the C enum type
+        ov_element_type_e c_type = static_cast<ov_element_type_e>(
+            static_cast<int>(static_cast<ov::element::Type_t>(cpp_tensor.get_element_type()))
+        );
+
         ov_status_e status = ov_tensor_create_from_host_ptr(
-            cpp_tensor.get_element_type(), 
+            c_type, 
             shape, 
             cpp_tensor.data(), 
             video_tensor
         );
         
-        delete[] shape.dims; // Clean up the temporary shape array
+        delete[] shape.dims; // Clean up temporary array
         
         if (status != ov_status_e::OK) {
             return status;

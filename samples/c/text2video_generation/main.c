@@ -1,6 +1,6 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
-
+#include <inttypes.h> // 1. Add this include
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,6 +8,7 @@
 #include "openvino/genai/c/text2video_pipeline.h"
 #include "openvino/genai/c/generation_config.h"
 #include "openvino/c/openvino.h"
+
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {
@@ -64,7 +65,8 @@ int main(int argc, char* argv[]) {
     printf("\nSuccess! Video tensor generated.\n");
     printf("Tensor Shape: [");
     for (size_t i = 0; i < tensor_shape.rank; ++i) {
-        printf("%lld%s", tensor_shape.dims[i], (i < tensor_shape.rank - 1) ? ", " : "");
+        // 2. Use PRId64 for portable 64-bit integer printing
+        printf("%" PRId64 "%s", tensor_shape.dims[i], (i < tensor_shape.rank - 1) ? ", " : "");
     }
     printf("]\n");
 
