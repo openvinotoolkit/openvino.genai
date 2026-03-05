@@ -21,7 +21,7 @@ def load_model(
 
     model = Qwen3OmniMoeForConditionalGeneration.from_pretrained(
         model_path,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.bfloat16,
         device_map=device,
         enable_audio_output=enable_audio,
     )
