@@ -21,7 +21,7 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 Then, run the export with Optimum CLI:
 
 ```sh
-optimum-cli export openvino --model Lightricks/LTX-Video-0.9.8-13B-distilled --task text-to-video --weight-format fp32 ltx_video_ov
+optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --weight-format fp32 ltx_video_ov
 ```
 
 Alternatively, do it in Python code:
@@ -29,7 +29,7 @@ Alternatively, do it in Python code:
 ```python
 from optimum.intel.openvino import OVLTXPipeline
 
-pipeline = OVLTXPipeline.from_pretrained("Lightricks/LTX-Video-0.9.8-13B-distilled", export=True, compile=False)
+pipeline = OVLTXPipeline.from_pretrained("Lightricks/LTX-Video", export=True, compile=False)
 pipeline.save_pretrained("ltx_video_ov")
 ```
 
@@ -47,7 +47,7 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 - **Description:**
   Basic video generation using a text-to-video model. This sample demonstrates how to generate videos from text prompts using the OpenVINO GenAI Text2VideoPipeline. The LTX-Video model is recommended for this sample.
 
-  Recommended models: Lightricks/LTX-Video-0.9.8-13B-distilled
+  Recommended models: Lightricks/LTX-Video
 
 - **Main Feature:** Generate videos from text descriptions with customizable parameters.
 
@@ -77,7 +77,7 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 
 - **Run Command:**
   ```bash
-  ./lora_text2video model_dir prompt [lora_adapter_path] [alpha] ...
+  ./lora_text2video model_dir prompt [lora_adapter_path alpha] ...
   ```
 
   Example:
