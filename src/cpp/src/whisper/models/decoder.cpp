@@ -41,8 +41,29 @@ std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& enco
 
     int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 
+    std::cout << "Output tensor stats:" << std::endl;
+    print_tensor_stats(output_tensor);
+
     std::cout << "Language detection, decoder_start_token_id: " << decoder_start_token_id
               << ", detected language token id: " << output_token << std::endl;
+
+    std::cout << "Top 10 logits for language detection: " << std::endl;
+    auto output_data = output_tensor.data<float>();
+    // sort logits and print top 10
+    std::vector<std::pair<int64_t, float>> token_logit_pairs;
+    for (size_t i = 0; i < output_tensor.get_shape()[2]; i++) {
+        token_logit_pairs.emplace_back(i, output_data[i]);
+    }
+    std::partial_sort(token_logit_pairs.begin(),
+                      token_logit_pairs.begin() + 10,
+                      token_logit_pairs.end(),
+                      [](const std::pair<int64_t, float>& a, const std::pair<int64_t, float>& b) {
+                          return a.second > b.second;
+                      });
+    for (size_t i = 0; i < 10; i++) {
+        std::cout << "Token id: " << token_logit_pairs[i].first << ", logit: " << token_logit_pairs[i].second
+                  << std::endl;
+    }
 
     reset_state();
 
