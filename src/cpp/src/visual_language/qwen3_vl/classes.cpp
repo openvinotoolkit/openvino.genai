@@ -8,6 +8,57 @@ namespace ov::genai {
 
 namespace qwen3_vl_utils {
 
+std::vector<float> calculate_timestamps(std::vector<size_t> frame_indices, float video_fps, size_t merge_size) {
+    if (frame_indices.size() % merge_size != 0) {
+        frame_indices.resize(frame_indices.size() + (merge_size - frame_indices.size() % merge_size), frame_indices.back());
+    }
+    std::vector<float> timestamps;
+    timestamps.reserve(frame_indices.size() / merge_size);
+    for (size_t i = 0; i < frame_indices.size(); i += merge_size) {
+        float timestamp = (static_cast<float>(frame_indices[i]) + static_cast<float>(frame_indices[i + merge_size - 1])) / 2.0f / video_fps;
+        timestamps.push_back(timestamp);
+    }
+    return timestamps;
+}
+
+void fill_video_metadata(EncodedVideo& encoded_video, size_t total_num_frames, const VideoProcessorConfig& video_config) {
+    OPENVINO_ASSERT(!(video_config.fps != 0 && video_config.num_frames != 0),
+        "num_frames and fps are mutually exclusive video config arguments.");
+    
+    encoded_video.metadata.total_num_frames = total_num_frames;
+
+    if (!video_config.do_sample_frames) {
+        encoded_video.metadata.frames_indices.resize(total_num_frames);
+        std::iota(encoded_video.metadata.frames_indices.begin(), encoded_video.metadata.frames_indices.end(), 0);
+        return;
+    }
+    // Sample frame indices if needed
+    size_t num_frames = video_config.num_frames;
+    
+    if (num_frames == 0 && video_config.fps != 0) {
+        OPENVINO_ASSERT(encoded_video.metadata.fps != 0,
+            "Requested to sample frames by fps but video metadata fps is not set. "
+            "Provide VideoMetadata with fps or use a fixed num_frames.");
+        num_frames = static_cast<size_t>(total_num_frames / static_cast<double>(encoded_video.metadata.fps) * video_config.fps);
+        num_frames = std::min(std::min(std::max(num_frames, video_config.min_frames), video_config.max_frames), total_num_frames);
+    }
+
+    if (num_frames == 0) {
+        num_frames = std::min(std::max(total_num_frames, video_config.min_frames), video_config.max_frames);
+    }
+
+    OPENVINO_ASSERT(num_frames > 1 && num_frames <= total_num_frames,
+        "Invalid number of frames (" + std::to_string(num_frames) +") for video sampling.");
+
+    encoded_video.metadata.frames_indices.reserve(num_frames);
+    for (size_t i = 0; i < num_frames; ++i) {
+        size_t frame_idx = static_cast<size_t>(std::round(
+            static_cast<double>(i) * static_cast<double>(total_num_frames - 1) / static_cast<double>(num_frames - 1)
+        ));
+        encoded_video.metadata.frames_indices.push_back(frame_idx);
+    }
+}
+
 std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights(
     const std::vector<std::array<size_t, 3>>& grids_thw,
     size_t num_grid_per_side
@@ -144,6 +195,28 @@ ov::Tensor create_visual_pos_masks(
 
 } // namespace qwen3_vl_utils
 
+EncodedVideo VisionEncoderQwen3VL::encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) {
+    EncodedVideo encoded_video;
+    
+    qwen3_vl_utils::fill_video_metadata(encoded_video, frames.size(), m_video_processor_config);
+
+    std::vector<ov::Tensor> sampled_frames;
+    if (!m_video_processor_config.do_sample_frames) {
+        sampled_frames = frames;
+    } else {
+        sampled_frames.reserve(encoded_video.metadata.frames_indices.size());
+        for (size_t idx : encoded_video.metadata.frames_indices) {
+            OPENVINO_ASSERT(idx < frames.size(),
+                            "Frame index ", idx, " out of range for ", frames.size(), " frames.");
+            sampled_frames.push_back(frames.at(idx));
+        }
+    }
+
+    VisionEncoderQwen2VL::encode_frames_with_config(encoded_video, sampled_frames, m_video_processor_config);
+
+    return encoded_video;
+}
+
 InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
@@ -181,6 +254,54 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
             return pos_compiled.create_infer_request();
         }
     );
+}
+
+void InputsEmbedderQwen3VL::expand_video_tags_in_prompt(
+    std::string& unified_prompt,
+    const std::vector<EncodedVideo>& encoded_videos,
+    const std::vector<size_t>& videos_sequence,
+    size_t video_base_id
+) const {
+    std::vector<std::array<size_t, 3>> video_grid_thw_list;
+    video_grid_thw_list.reserve(encoded_videos.size());
+
+    for (const auto& encoded_video : encoded_videos) {
+        size_t grid_t = encoded_video.frame_num;
+        OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
+        size_t grid_h = encoded_video.resized_source_size.height;
+        size_t grid_w = encoded_video.resized_source_size.width;
+        video_grid_thw_list.push_back({grid_t, grid_h, grid_w});
+    }
+
+    for (size_t video_id : videos_sequence) {
+        auto [grid_t, grid_h, grid_w] = video_grid_thw_list.at(video_id - video_base_id);
+        // Calculate number of video pad tokens for each frame
+        const size_t num_video_pad_tokens = calc_tokens_num(1, grid_h, grid_w);
+
+        auto encoded_video = encoded_videos.at(video_id - video_base_id);
+        size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
+        auto timestamps = qwen3_vl_utils::calculate_timestamps(
+            encoded_video.metadata.frames_indices,
+            encoded_video.metadata.fps,
+            spatial_merge_size
+        );
+        OPENVINO_ASSERT(timestamps.size() == grid_t, "Timestamps size does not match the number of frames");
+
+        std::string expanded_tag;
+        for (size_t grid_t_idx = 0; grid_t_idx < grid_t; ++grid_t_idx) {
+            std::stringstream timestamp_ss;
+            timestamp_ss << std::fixed << std::setprecision(1) << timestamps[grid_t_idx];
+            const std::string timestamp_str = "<" + timestamp_ss.str() + " seconds>";
+            expanded_tag.append(timestamp_str);
+            expanded_tag.append(m_vlm_config.vision_start_token);
+            for (int i = 0; i < num_video_pad_tokens; ++i) {
+                expanded_tag.append(m_vlm_config.video_pad_token);
+            }
+            expanded_tag.append(m_vlm_config.vision_end_token);
+        }
+
+        unified_prompt.replace(unified_prompt.find(NATIVE_VIDEO_TAG), NATIVE_VIDEO_TAG.length(), expanded_tag);
+    }
 }
 
 ov::Tensor InputsEmbedderQwen3VL::get_interpolated_pos_embeds(
@@ -299,6 +420,42 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3VL::run_video_image_embeddi
                 image_embeds.get_byte_size());
     
     return {video_embeds, image_embeds};
+}
+
+std::vector<std::array<size_t, 3>> InputsEmbedderQwen3VL::get_vision_grid_thw_for_position_ids(
+    const std::vector<std::array<size_t, 3>>& images_grid_thw,
+    const std::vector<size_t>& images_sequence,
+    const size_t image_id,
+    const std::vector<std::array<size_t, 3>>& videos_grid_thw,
+    const std::vector<size_t>& videos_sequence,
+    const size_t video_id,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) const {
+    auto reordered_vision_grid_thw = InputsEmbedderQwen2VL::get_vision_grid_thw_for_position_ids(
+        images_grid_thw,
+        images_sequence,
+        image_id,
+        videos_grid_thw,
+        videos_sequence,
+        video_id,
+        history_vision_count
+    );
+
+    // Split video grids per each frame for position_ids calculation as Qwen3-VL uses timestamp tokens between frames.
+    std::vector<std::array<size_t, 3>> flattened_vision_grid_thw;
+
+    for (const auto& vision_grid_thw : reordered_vision_grid_thw) {
+        auto [grid_t, grid_h, grid_w] = vision_grid_thw;
+
+        if (grid_t > 1) {
+            for (size_t frame_idx = 0; frame_idx < grid_t; ++frame_idx) {
+                flattened_vision_grid_thw.push_back({1, grid_h, grid_w});
+            }
+        } else {
+            flattened_vision_grid_thw.push_back(vision_grid_thw);
+        }
+    }
+    return flattened_vision_grid_thw;
 }
 
 ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(

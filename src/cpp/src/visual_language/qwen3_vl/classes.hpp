@@ -15,6 +15,8 @@ namespace ov::genai {
 class VisionEncoderQwen3VL : public VisionEncoderQwen2VL {
 public:
     using VisionEncoderQwen2VL::VisionEncoderQwen2VL;
+
+    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
 };
 
 class InputsEmbedderQwen3VL : public InputsEmbedderQwen2VL {
@@ -59,6 +61,13 @@ protected:
         {"visual_pos_masks", ov::Tensor()}
     };
 
+    void expand_video_tags_in_prompt(
+        std::string& unified_prompt,
+        const std::vector<EncodedVideo>& encoded_videos,
+        const std::vector<size_t>& videos_sequence,
+        size_t video_base_id
+    ) const override;
+
     /**
      * @brief Run vision embeddings merger with position interpolation.
      */
@@ -74,11 +83,38 @@ protected:
      * Calculates position interpolation indices and weights, runs vision_embeddings_pos model,
      * applies bilinear interpolation weights, sums corners, permutes for spatial merge.
      */
-    ov::Tensor get_interpolated_pos_embeds(
-        const std::vector<std::array<size_t, 3>>& grids_thw);
+    ov::Tensor get_interpolated_pos_embeds(const std::vector<std::array<size_t, 3>>& grids_thw);
+
+    std::vector<std::array<size_t, 3>> get_vision_grid_thw_for_position_ids(
+        const std::vector<std::array<size_t, 3>>& images_grid_thw,
+        const std::vector<size_t>& images_sequence,
+        const size_t image_id,
+        const std::vector<std::array<size_t, 3>>& videos_grid_thw,
+        const std::vector<size_t>& videos_sequence,
+        const size_t video_id,
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+    ) const override;
 };
 
 namespace qwen3_vl_utils {
+
+/**
+ * @brief Populates video metadata in encoded_video struct.
+ * Computes frame sampling indices for encoded video based on video processor config.
+ */
+void fill_video_metadata(
+    EncodedVideo& encoded_video,
+    size_t total_num_frames,
+    const VideoProcessorConfig& video_config);
+
+/**
+ * @brief Calculates timestamps for video frames based on encoded video metadata.
+ * @return Vector of float timestamps corresponding to each video frame.
+ */
+std::vector<float> calculate_timestamps(
+    std::vector<size_t> frame_indices,
+    float video_fps,
+    size_t merge_size);
 
 /**
  * @brief Computes indices and weights for bilinear position embedding interpolation.
