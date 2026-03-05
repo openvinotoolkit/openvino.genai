@@ -9,6 +9,7 @@
 #include "json_utils.hpp"
 #include "utils.hpp"
 #include "lora/helper.hpp"
+#include "lora/names_mapping.hpp"
 
 using namespace ov::genai;
 
@@ -71,7 +72,8 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     std::optional<AdapterConfig> adapters;
     auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
     if (adapters) {
-        adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("transformer"));
+        m_lora_prefix = adapters->get_tensor_name_prefix().value_or(detect_lora_prefix(*adapters));
+        adapters->set_tensor_name_prefix(m_lora_prefix);
         m_adapter_controller = AdapterController(m_model, *adapters, device);
     }
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
@@ -95,7 +97,13 @@ void LTXVideoTransformer3DModel::set_adapters(const std::optional<AdapterConfig>
     if (adapters && *adapters) {
         OPENVINO_ASSERT(m_adapter_controller,
             "Adapter controller is not initialized. Adapters must be provided during model construction or compilation to enable adapter support.");
-        m_adapter_controller.apply(m_request, *adapters);
+        if (!adapters->get_tensor_name_prefix().has_value()) {
+            AdapterConfig adapters_with_prefix = *adapters;
+            adapters_with_prefix.set_tensor_name_prefix(m_lora_prefix);
+            m_adapter_controller.apply(m_request, adapters_with_prefix);
+        } else {
+            m_adapter_controller.apply(m_request, *adapters);
+        }
     }
 }
 
