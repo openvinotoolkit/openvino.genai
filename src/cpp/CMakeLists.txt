@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2025 Intel Corporation
+# Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -120,7 +120,7 @@ if(ANDROID)
 endif()
 
 if(ENABLE_XGRAMMAR)
-    set(XGRAMMAR_VERSION v0.1.25)
+    set(XGRAMMAR_VERSION v0.1.31)
     set(XGRAMMAR_DIR ${CMAKE_BINARY_DIR}/xgrammar)
 
     FetchContent_Declare(

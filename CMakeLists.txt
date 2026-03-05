@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2025 Intel Corporation
+# Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -30,7 +30,7 @@ if(UNIX AND NOT (APPLE OR ANDROID OR CYGWIN))
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2026.0.0.0
+        VERSION 2026.1.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -12,6 +12,12 @@
 
 
 namespace ov::genai {
+
+enum class VisionType {
+    IMAGE,
+    VIDEO
+};
+
 /// @brief A pair describing image size.
 struct ImageSize {
     /// @brief Height of a corresponding image.

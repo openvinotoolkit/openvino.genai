@@ -21,17 +21,15 @@ class OPENVINO_GENAI_EXPORTS AutoencoderKLLTXVideo {
 public:
     struct OPENVINO_GENAI_EXPORTS Config {
         size_t in_channels = 3;
-        size_t latent_channels = 4;
+        size_t latent_channels = 128;
         size_t out_channels = 3;
-        float shift_factor = 0.0f;
         float scaling_factor = 1.0f;
-        std::vector<size_t> block_out_channels = { 64 };
-        
-        size_t patch_size = 4;  // TODO: read from vae_decoder/config.json
-        std::vector<bool> spatio_temporal_scaling{true, true, true, false};  // TODO: read from vae_decoder/config.json. I use it only to compute sum over it so far, so it may be removed
-        size_t patch_size_t = 1;  // TODO: read from vae_decoder/config.json
-
+        std::vector<size_t> block_out_channels = {128, 256, 512, 512};
+        size_t patch_size = 4;
+        std::vector<bool> spatio_temporal_scaling{true, true, true, false};
+        size_t patch_size_t = 1;
         std::vector<float> latents_mean_data, latents_std_data;
+        bool timestep_conditioning = false;
 
         explicit Config(const std::filesystem::path& config_path);
     };
@@ -61,7 +59,7 @@ public:
     AutoencoderKLLTXVideo& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width);
 
 private:
-    void merge_vae_image_post_processing() const;
+    void merge_vae_video_post_processing() const;
 
     Config m_config;
     ov::InferRequest m_encoder_request, m_decoder_request;

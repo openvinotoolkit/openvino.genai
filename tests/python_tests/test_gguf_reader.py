@@ -1,4 +1,4 @@
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 
@@ -14,14 +14,14 @@ import openvino as ov
 import openvino_genai as ov_genai
 
 from utils.hugging_face import (
-    generation_config_to_hf, 
-    download_gguf_model, 
-    load_hf_model_from_gguf, 
+    generation_config_to_hf,
+    download_gguf_model,
+    load_hf_model_from_gguf,
     load_hf_tokenizer_from_gguf,
 )
 from utils.ov_genai_pipelines import (
-    create_ov_pipeline, 
-    GGUF_PIPELINE_TYPES, 
+    create_ov_pipeline,
+    GGUF_PIPELINE_TYPES,
     PipelineType,
 )
 from data.models import GGUF_MODEL_LIST
@@ -59,7 +59,7 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_pipelines_with_gguf_generate(
-    model_gguf: ModelInfo, 
+    model_gguf: ModelInfo,
     pipeline_type: PipelineType,
 ):
     if sys.platform == 'darwin':
@@ -83,22 +83,21 @@ def test_pipelines_with_gguf_generate(
     generate_outputs = None
     with torch.no_grad():
         generate_outputs = opt_model.generate(
-            input_ids=input_ids, 
-            attention_mask=attention_mask, 
-            generation_config=hf_generation_config, 
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            generation_config=hf_generation_config,
             tokenizer=hf_tokenizer,
         )
- 
+
     prompt_len = 0 if ov_generation_config.echo else input_ids.numel()
     all_text_batch = hf_tokenizer.batch_decode(
-        [generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], 
-        skip_special_tokens=True
+        [generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True
     )
     res_string_input_1 = all_text_batch[0]
 
     ov_pipe_gguf = create_ov_pipeline(
-        gguf_full_path, 
-        pipeline_type=pipeline_type, 
+        gguf_full_path,
+        pipeline_type=pipeline_type,
         dynamic_quantization_group_size=dynamic_quantization_group_size,
     )
     encoded_result  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
@@ -112,27 +111,23 @@ def test_pipelines_with_gguf_generate(
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
 @pytest.mark.parametrize("enable_save_ov_model", [False, True])
 @pytest.mark.parametrize(
-    "prompt", 
+    "prompt",
     [
-        'Why is the Sun yellow?', 
+        "Why is the Sun yellow?",
         # To check that special tokens are handled correctly.
-        '<|endoftext|> <|im_end|>', 
-        '<|endoftext|><|endoftext|><|im_end|>', 
-        '<|endoftext|> Why the Sky is Blue? <|im_end|>',
+        "<|endoftext|> <|im_end|>",
+        "<|endoftext|><|endoftext|><|im_end|>",
+        "<|endoftext|> Why the Sky is Blue? <|im_end|>",
     ],
-    ids=[
-        "regular_prompt", 
-        "only_special_tokens", 
-        "multiple_special_tokens", 
-        "special_tokens_with_text"
-    ],
+    ids=["regular_prompt", "only_special_tokens", "multiple_special_tokens", "special_tokens_with_text"],
 )
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
+@pytest.mark.xfail(sys.platform == "linux", reason="CVS-179725")
 def test_full_gguf_pipeline(
-    model_gguf: ModelInfo, 
-    pipeline_type: PipelineType, 
-    enable_save_ov_model: bool, 
+    model_gguf: ModelInfo,
+    pipeline_type: PipelineType,
+    enable_save_ov_model: bool,
     prompt: str,
 ):
     if sys.platform == 'darwin':
@@ -160,9 +155,9 @@ def test_full_gguf_pipeline(
     generate_outputs = None
     with torch.no_grad():
         generate_outputs = opt_model.generate(
-            input_ids=input_ids, 
-            attention_mask=attention_mask, 
-            generation_config=hf_generation_config, 
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            generation_config=hf_generation_config,
             tokenizer=hf_tokenizer,
         )
 
@@ -173,7 +168,7 @@ def test_full_gguf_pipeline(
 
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model, dynamic_quantization_group_size=dynamic_quantization_group_size)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
-    
+
     # Check that eos_token, bos_token string representations are loaded correctly from gguf file
     assert ov_pipe_gguf.get_tokenizer().get_eos_token() == hf_tokenizer.decode([ov_pipe_gguf.get_tokenizer().get_eos_token_id()])
     assert ov_pipe_gguf.get_tokenizer().get_bos_token() == hf_tokenizer.decode([ov_pipe_gguf.get_tokenizer().get_bos_token_id()])
@@ -193,10 +188,10 @@ def test_full_gguf_pipeline(
 
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
 @pytest.mark.parametrize(
-    "model_ids", 
+    "model_ids",
     [
         {
-            "gguf_model_id": "Qwen/Qwen3-0.6B-GGUF", 
+            "gguf_model_id": "Qwen/Qwen3-0.6B-GGUF",
             "gguf_filename": "Qwen3-0.6B-Q8_0.gguf",
             "dynamic_quantization_group_size": None,
         }

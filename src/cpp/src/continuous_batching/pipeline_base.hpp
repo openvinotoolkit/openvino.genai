@@ -1,10 +1,11 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include "visual_language/vision_registry.hpp"
 
 #include "continuous_batching/cache_manager.hpp"
 #include "sampling/sampler.hpp"
@@ -67,6 +68,8 @@ protected:
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::mutex m_embeddings_mutex;
 
+    std::shared_ptr<VisionRegistry> m_vision_registry;
+
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 public:
     GenerationConfig get_config() const;
@@ -80,7 +83,8 @@ public:
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const ov::Tensor& input_ids,
                                          const GenerationConfig& sampling_params,
-                                         std::optional<ov::Tensor> token_type_ids = std::nullopt) = 0;
+                                         std::optional<ov::Tensor> token_type_ids = std::nullopt,
+                                         std::optional<ov::Tensor> prompt_ids = std::nullopt) = 0;
 
     /**
      * Adds request to running queue based on string input
@@ -127,7 +131,8 @@ public:
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
              const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
-             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt) = 0;
+             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
+             const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt) = 0;
 
     /**
      * Performs monolitic generation based on text prompts
@@ -158,6 +163,19 @@ public:
     generate(const std::vector<ChatHistory>& histories,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer);
+
+    virtual std::vector<VLMDecodedResults>
+    generate(
+             const std::vector<ChatHistory>& histories,
+             const std::vector<std::vector<ov::Tensor>>& rgbs,
+             const std::vector<GenerationConfig>& sampling_params,
+             const StreamerVariant& streamer);
+
+    virtual std::vector<VLMDecodedResults> generate(const std::vector<ChatHistory>& histories,
+                                                    const std::vector<std::vector<ov::Tensor>>& images,
+                                                    const std::vector<std::vector<ov::Tensor>>& videos,
+                                                    const std::vector<GenerationConfig>& sampling_params,
+                                                    const StreamerVariant& streamer);
 
     /**
      * Starts chat with a given system prompt

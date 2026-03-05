@@ -3,8 +3,8 @@
 This example showcases inference of Visual language models (VLMs). The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::VLMPipeline` and runs the simplest deterministic greedy sampling algorithm. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/minicpm-v-multimodal-chatbot) which provides an example of Visual-language assistant.
 
 
-There are three sample files:
- - [`visual_language_chat.cpp`](./visual_language_chat.cpp) demonstrates basic usage of the VLM pipeline.
+The following are sample files:
+ - [`visual_language_chat.cpp`](./visual_language_chat.cpp) demonstrates basic usage of the VLM pipeline which supports accelerated inference using prompt lookup decoding.
  - [`video_to_text_chat.cpp`](./video_to_text_chat.cpp) demonstrates video to text usage of the VLM pipeline.
  - [`benchmark_vlm.cpp`](./benchmark_vlm.cpp) shows how to benchmark a VLM in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text and calculating various performance metrics.
 
@@ -59,6 +59,8 @@ benchmark_vlm [OPTIONS]
 - `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
+- `-pr, --pruning_ratio`: (optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.
+- `-rw, --relevance_weight` (optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.
 
 ### Output:
 

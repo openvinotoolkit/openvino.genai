@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -21,7 +21,9 @@
 
 namespace ov::genai {
 struct VLMPerfMetrics;
-const static std::regex UNIVERSAL_PATTERN{R"(<ov_genai_image_(\d+)>)"};
+
+const static std::regex UNIVERSAL_IMAGE_PATTERN{R"(<ov_genai_image_(\d+)>)"};
+const static std::regex UNIVERSAL_VIDEO_PATTERN{R"(<ov_genai_video_(\d+)>)"};
 
 struct NormalizedPrompt {
     std::string unified_prompt;
@@ -75,6 +77,14 @@ public:
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
 
+    /**
+     * Encodes the original prompt text into token IDs for use as a lookup table in prompt lookup decoding.
+     *
+     * @param original_prompt The original prompt text to be encoded.
+     * @return An ov::Tensor containing the encoded token IDs of the prompt.
+     */
+    ov::Tensor encode_prompt(const std::string& original_prompt);
+
     void set_position_ids(const ov::Tensor& position_ids);
 
     void set_rope_delta(int64_t rope_delta);
@@ -95,6 +105,9 @@ public:
 
     // adds currently generated text to chat history
     void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
+
+    // gets last pruned prompt after vision token pruning
+    std::string get_last_pruned_prompt(const std::string& original_prompt) const;
 
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
@@ -219,6 +232,14 @@ private:
             m_apply_chat_template = apply_chat_template;
         }
 
+        /**
+         * Encodes the original prompt text into token IDs for use as a lookup table in prompt lookup decoding.
+         *
+         * @param original_prompt The original prompt text to be encoded.
+         * @return An ov::Tensor containing the encoded token IDs of the prompt.
+         */
+        ov::Tensor encode_prompt(const std::string& original_prompt);
+
         void set_add_special_tokens(bool value) {
             m_add_special_tokens = value;
             m_add_special_tokens_is_set = true;
@@ -227,6 +248,12 @@ private:
         virtual void start_chat(const std::string& system_message);
 
         virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
+
+        // Get last pruned prompt after vision token pruning.
+        virtual std::string get_last_pruned_prompt(const std::string& original_prompt) const {
+            OPENVINO_THROW_NOT_IMPLEMENTED(
+                "get_last_pruned_prompt() must be implemented by derived classes that support vision token pruning");
+        }
 
         virtual void finish_chat();
 
@@ -263,12 +290,24 @@ private:
 
         ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
 
+        /**
+         * @brief 1. Verify native and universal tags aren't mixed.
+         * 2. Replace universal tags with native and save image order.
+         * 3. If there were no universal tags, restore image order from native.
+         * 4. If no tags were found, prepend native tags and assume incremental ordering.
+         * 
+         * @param automatic_tag MiniCPM-V-2_6 inserts
+         * <image>./</image>\n per image but it only replaces
+         * <image>./</image> leaving \n untouched.
+         * automatic_tag allows to handle this by being separated from native_tag param.
+         */
         std::pair<std::string, std::vector<size_t>> normalize(
             const std::string& prompt,
             const std::string& native_tag,
             const std::string& automatic_tag,
-            size_t base_id,
-            size_t n_images
+            size_t base_idx,
+            size_t n_visions,
+            VisionType vision_type = VisionType::IMAGE
         ) const;
 
         /**
@@ -300,7 +339,10 @@ private:
          */
         std::optional<VisionTokenPruningProcessor::PruningResult> execute_pruning_pipeline(
             const PruningContext& context) {
-            return m_pruning_processor->execute(context, m_position_ids, m_kv_cache_state, m_prev_hist_length);
+            return m_pruning_processor->execute(context,
+                                                m_position_ids,
+                                                m_kv_cache_state,
+                                                m_prev_hist_length);
         }
     };
 
@@ -321,42 +363,28 @@ private:
 template <typename Func>
 std::pair<std::string, std::vector<size_t>> universal_to_native(
     const std::string& prompt,
-    const Func& write_native
+    const Func& write_native,
+    VisionType vision_type = VisionType::IMAGE
 ) {
     std::stringstream stream;
-    std::vector<size_t> image_sequence;
+    std::vector<size_t> vision_sequence;
     std::smatch match;
-    std::regex_search(prompt, match, UNIVERSAL_PATTERN);
+    auto universal_pattern = vision_type == VisionType::IMAGE ?
+        UNIVERSAL_IMAGE_PATTERN :
+        UNIVERSAL_VIDEO_PATTERN;
+    std::regex_search(prompt, match, universal_pattern);
     auto search_begin = prompt.begin();
     while (!match.empty()) {
         stream.write(&*search_begin, match.position());
-        image_sequence.push_back(std::stoul(match.str(1)));
-        write_native(stream, image_sequence.back());
+        vision_sequence.push_back(std::stoul(match.str(1)));
+        write_native(stream, vision_sequence.back());
         search_begin = match.suffix().first;
-        std::regex_search(search_begin, prompt.end(), match, UNIVERSAL_PATTERN);
+        std::regex_search(search_begin, prompt.end(), match, universal_pattern);
     }
     stream.write(&*search_begin, prompt.end() - search_begin);
-    return {stream.str(), std::move(image_sequence)};
+    return {stream.str(), std::move(vision_sequence)};
 }
 
-void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images);
-
-/// @brief 1. Verify native and universal tags aren't mixed.
-/// 2. Replace universal tags with native and save image order.
-/// 3. If there were no universal tags, restore image order from native.
-/// 4. If no tags were found, prepend native tags and assume incremental
-/// ordering.
-/// @param automatic_tag MiniCPM-V-2_6 inserts
-/// <image>./</image>\n per image but it only replaces
-/// <image>./</image> leaving \n untouched.
-/// automatic_tag allows to handle this by being separated
-/// from native_tag param.
-std::pair<std::string, std::vector<size_t>> normalize_prompt(
-    const std::string& prompt,
-    const std::string& native_tag,
-    const std::string& automatic_tag,
-    size_t base_id,
-    size_t n_images
-);
+void verify_ids(const std::vector<size_t>& vision_indices, size_t base_idx, size_t n_visions);
 
 } // namespace ov::genai

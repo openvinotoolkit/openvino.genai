@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 // Content of this file is a C++ port of the name mapping for LoRA tensors from HuggingFace diffusers/loaders/lora_conversion_utils.py

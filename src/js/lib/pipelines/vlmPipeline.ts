@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2025 Intel Corporation
+// Copyright (C) 2018-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 import util from "node:util";
@@ -227,5 +227,14 @@ export class VLMPipeline {
   setGenerationConfig(config: GenerationConfig): void {
     if (!this.pipeline) throw new Error("Pipeline is not initialized");
     this.pipeline.setGenerationConfig(config);
+  }
+
+  /**
+   * Get the current generation config (model defaults).
+   * @returns The current GenerationConfig object.
+   */
+  getGenerationConfig(): GenerationConfig {
+    if (!this.pipeline) throw new Error("Pipeline is not initialized");
+    return this.pipeline.getGenerationConfig();
   }
 }

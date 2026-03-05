@@ -376,8 +376,76 @@ TEST_P(EvictionScoreManagerRegisterScoresParameterizedTest, ScoresAndCountersAft
     }
 }
 
+
+
+
 INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerRegisterScoresParameterizedTest, ::testing::ValuesIn(REGISTER_SCORES_TEST_CASES),
                          [](const testing::TestParamInfo<EvictionScoreManagerRegisterScoresParameterizedTest::ParamType>& info) {
+                             return info.param.test_id;
+                         });
+
+
+struct EvictionScoreManagerAdaptiveRKVRegisterScoresTestStruct {
+    std::string test_id;
+    size_t block_size;
+    size_t max_pool_window_size;
+    size_t adaptive_rkv_window_size;
+
+    std::vector<std::pair<std::vector<std::vector<float>>, std::set<size_t>>> scores_and_skips;
+    std::vector<std::vector<float>> ref_scores;
+};
+
+using EvictionScoreManagerAdaptiveRKVRegisterScoresParameterizedTest = ::testing::TestWithParam<EvictionScoreManagerAdaptiveRKVRegisterScoresTestStruct>;
+
+const std::vector<EvictionScoreManagerAdaptiveRKVRegisterScoresTestStruct> ADAPTIVE_RKV_REGISTER_SCORES_TEST_CASES = {
+    // TODO(vshampor): fix
+    { "within_adaptive_rkv_window",
+      /* block_size =*/ 2, /* max_pool_window_size = */ 3, /* adaptive_rkv_window_size = */ 8,
+      {
+          { {{1.5, -0.8, 4.1, 7.7, 3.6, -7.4},
+             {-0.9, 1.4, 6.4, -9.0, 8.1, 2.6}}, {} },
+          { {{-7.4, 2.6, 8.9},
+             {-3.1, -8.2, 5.9}}, {1, 2} }
+      },
+
+      { {2.05, 3.85, 3.85, 3.85, 4.45, 4.45, 4.45},
+        {3.2, 3.2, 4.05, 4.05, 4.05, 2.95, 2.95} },
+    },
+    { "exceeding_adaptive_rkv_window",
+      /* block_size =*/ 2, /* max_pool_window_size = */ 3, /* adaptive_rkv_window_size = */ 3,
+      {
+          { {{ 1.5, -0.8,  4.1,  7.7,  3.6, -7.4},
+             {-0.9,  1.4,  6.4, -9.0,  8.1,  2.6}}, {} },
+          { {{-7.4,  2.6,  8.9},
+             {-3.1, -8.2,  5.9}}, {1, 2} },
+          { {{ 4.3, -4.1, -2.7,  8.3, -3.8,  4.9, 7.2, -6.2},
+             {-2.2,  5.8,  7.0,  7.6, -9.8, -3.7, 1.4, -1.0 }}, {} },
+          { {{ 9.8, -3.8,  1.0, -1.9,  6.2,  3.0, 0.7, -4.5, 6.7, -4.7},
+             { 4.9, -7.6,  6.5, -6.7,  0.5,  6.7, 8.8, -7.5, 8.9, -0.5}}, {} }
+      },
+
+      { {2.233333, 2.133333, 2.1333333, 2.633333, 5.6, 5.6, 5.6, 2.233333, 2.233333, -1.566666},
+        {4.5, 4.5, 4.5, 1.0, 5.366666, 5.3666666, 5.366666, 2.966666, 2.966666, -0.1666666 } },
+    },
+};
+
+TEST_P(EvictionScoreManagerAdaptiveRKVRegisterScoresParameterizedTest, ScoresAfterRegistrationAreCorrect) {
+    const auto& test_struct = GetParam();
+    ov::genai::EvictionScoreManager mgr(test_struct.block_size, DEFAULT_NUM_DECODER_LAYERS, test_struct.max_pool_window_size, ov::genai::AggregationMode::ADAPTIVE_RKV,/* ignore_first_n_blocks = */ 0, /* snapkv_window_size = */ 0, test_struct.adaptive_rkv_window_size);
+    for (const auto& score_and_skip : test_struct.scores_and_skips) {
+        mgr.register_new_token_scores(get_layer_scores_from_2d_vector(score_and_skip.first), score_and_skip.second);
+    }
+    const auto& test_scores = mgr.get_scores();
+    ASSERT_EQ(test_scores.size(), DEFAULT_NUM_DECODER_LAYERS);
+
+    float abs_tol = 1e-6;
+    for (size_t layer_idx = 0; layer_idx < DEFAULT_NUM_DECODER_LAYERS; layer_idx++) {
+        EXPECT_THAT(test_scores[layer_idx], ::testing::Pointwise(::testing::DoubleNear(abs_tol), test_struct.ref_scores[layer_idx]));
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs, EvictionScoreManagerAdaptiveRKVRegisterScoresParameterizedTest, ::testing::ValuesIn(ADAPTIVE_RKV_REGISTER_SCORES_TEST_CASES),
+                         [](const testing::TestParamInfo<EvictionScoreManagerAdaptiveRKVRegisterScoresParameterizedTest::ParamType>& info) {
                              return info.param.test_id;
                          });
 
@@ -910,6 +978,86 @@ INSTANTIATE_TEST_SUITE_P(VariousSetsOfLowScoreBlocks, CacheEvictionLowScoreBlock
                              return info.param.test_id;
                          });
 
+std::vector<float> block_diversity_to_unfiltered_token_diversity(const std::vector<float>& block_diversity, size_t block_size) {
+    std::vector<float> retval(block_diversity.size() * block_diversity.size() * block_size);
+    auto it_b = retval.begin();
+    size_t row_len = block_diversity.size();
+    size_t col_len = block_diversity.size() * block_size;
+    for (size_t row_idx = 0; row_idx < row_len; row_idx++) {
+        for (size_t col_idx = 0; col_idx < col_len; col_idx += block_size) {
+            std::fill(it_b + col_idx, it_b + col_idx + block_size, block_diversity[row_idx]);
+        }
+        it_b += col_len;
+    }
+
+    return retval;
+}
+
+struct CacheEvictionAdaptiveRKVLowScoreAndSimilarityTestStruct {
+    std::string test_id;
+    size_t tokens_over_max_cache_size;
+    ov::genai::AdaptiveRKVConfig adaptive_rkv_config;
+    std::vector<float> evictable_area_token_scores;
+    std::vector<float> evictable_area_block_diversity;
+    std::set<size_t> ref_evicted_blocks;
+};
+
+using CacheEvictionAdaptiveRKVLowScoreAndSimilarityParameterizedTest = ::testing::TestWithParam<CacheEvictionAdaptiveRKVLowScoreAndSimilarityTestStruct>;
+
+// clang-format off
+const std::vector<CacheEvictionAdaptiveRKVLowScoreAndSimilarityTestStruct> ADAPTIVE_RKV_LOW_SCORE_AND_SIMILARITY_EVICTION_TEST_CASES = {
+    // Expecting `max_cache_size - start_area - recent_area equal` to 3 blocks, block size of 2
+        // same, but with multiple blocks in evictable area
+        {
+                "three_blocks_overflow_one_hiscore_two_diverse_to_keep",
+                2 * 2 + 1,  // 2 blocks worth of overflow + 1 tokens, amounting to 3 blocks to be evicted
+                ov::genai::AdaptiveRKVConfig(0.9, 1),
+                {999.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                {10.5, 0.3, 18.5, 0.3, 23.65, 19.25},
+                {2, 3, 4}
+        },
+        {
+                "two_blocks_overflow_two_hiscore_one_diverse_to_keep",
+                2 * 2,  // 2 blocks worth of overflow
+                ov::genai::AdaptiveRKVConfig(0.9, 1),
+                {0.1, 0.2, 0.3, 0.4, 0.1, 8.3, 11.0, 0.0, 0.0, 0.0},
+                {2.15, 2.3, -20.2, 4.3, 1.15},
+                {1, 5}
+        }
+};
+// clang-format on
+
+TEST_P(CacheEvictionAdaptiveRKVLowScoreAndSimilarityParameterizedTest, EvictsLowestScoredBlocksAndKeepsDiverse) {
+    auto test_struct = GetParam();
+    size_t num_decoder_layers = DEFAULT_NUM_DECODER_LAYERS;
+    auto algo = ov::genai::CacheEvictionAlgorithm(ov::genai::CacheEvictionConfig(2, 2, 10, ov::genai::AggregationMode::ADAPTIVE_RKV, /* apply_rotation = */ false, /* snapkv_window_size = */ 0), /* block_size = */2, num_decoder_layers, /* max_pool_window_size = */ 1);
+
+    auto scores = get_mock_scores(num_decoder_layers, algo.get_max_cache_size_after_eviction() + test_struct.tokens_over_max_cache_size);
+    for (size_t layer_idx = 0; layer_idx < num_decoder_layers; layer_idx++) {
+        auto& scores_per_layer = scores[layer_idx];
+        fill_scores(scores_per_layer, 0, scores_per_layer.get_size(), 1.0);
+        for (size_t evictable_area_tok_idx = 0; evictable_area_tok_idx < test_struct.evictable_area_token_scores.size(); evictable_area_tok_idx++) {
+            scores_per_layer.data<float>()[2 + evictable_area_tok_idx] = test_struct.evictable_area_token_scores[evictable_area_tok_idx];
+        }
+    }
+    algo.register_new_token_scores(scores);
+    auto block_diversity = block_diversity_to_unfiltered_token_diversity(test_struct.evictable_area_block_diversity, /* block_size = */ 2);
+
+    auto diversity = std::vector<std::vector<float>>(DEFAULT_NUM_DECODER_LAYERS, block_diversity);
+    algo.register_block_diversity(get_layer_scores_from_2d_vector(diversity));
+
+    auto test_evicted_blocks = algo.evict_logical_blocks();
+    auto ref_evicted_blocks = test_struct.ref_evicted_blocks;
+    for (size_t layer_idx = 0; layer_idx < num_decoder_layers; layer_idx++) {
+        EXPECT_EQ(test_evicted_blocks[layer_idx], ref_evicted_blocks);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousSetsOfLowScoreAndDiverseBlocks, CacheEvictionAdaptiveRKVLowScoreAndSimilarityParameterizedTest,
+                         ::testing::ValuesIn(ADAPTIVE_RKV_LOW_SCORE_AND_SIMILARITY_EVICTION_TEST_CASES),
+                         [](const testing::TestParamInfo<CacheEvictionAdaptiveRKVLowScoreAndSimilarityParameterizedTest::ParamType>& info) {
+                             return info.param.test_id;
+                         });
 
 static constexpr size_t BLOCKS_TO_EVICT = 3;  // 3 blocks to evict
 struct NormalizationSettingTestStruct {
@@ -1104,6 +1252,16 @@ TEST_P(CacheEvictionAlgoInitializationTest, ThrowsForInvalidConfigs) {
 
 INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionAlgoInitializationTest,
                          ::testing::ValuesIn(INVALID_ALGO_INIT_PARAMS_CASES));
+
+TEST(CacheEvictionAlgoAdaptiveRKVTest, ThrowsIfEvictingWithoutSimilarityData) {
+    auto algo = ov::genai::CacheEvictionAlgorithm(ov::genai::CacheEvictionConfig(4, 4, 12, ov::genai::AggregationMode::ADAPTIVE_RKV, /* apply_rotation = */ false, /* snapkv_window_size = */ 0), DEFAULT_BLOCK_SIZE, DEFAULT_NUM_DECODER_LAYERS, DEFAULT_MAX_POOL_WINDOW_SIZE);
+    std::vector<std::vector<float>> mock_scores(2, std::vector<float>(16, 0.0));
+    std::vector<std::vector<float>> mock_diversity(2, std::vector<float>(16, 0.0));
+    algo.register_new_token_scores(get_layer_scores_from_2d_vector(mock_scores));
+    EXPECT_THROW(algo.evict_logical_blocks(), ov::Exception);
+    algo.register_block_diversity(get_layer_scores_from_2d_vector(mock_diversity));
+    EXPECT_NO_THROW(algo.evict_logical_blocks());
+}
 
 TEST(CacheRotationCalculatorTest, CanInitializeWithBasicParams) {
     EXPECT_NO_THROW(ov::genai::CacheRotationCalculator(32, 128, 64));
@@ -1455,3 +1613,186 @@ INSTANTIATE_TEST_SUITE_P(VariousPOCDumps,
                                          "cache_rotation_poc_ref_coefficients_per_block_1.txt",
                                          "cache_rotation_poc_ref_coefficients_per_block_2.txt",
                                          "cache_rotation_poc_ref_coefficients_per_block_3.txt"));
+
+struct AdaptiveRKVBlockCalculatorGetDiversityBlocksTestStruct {
+    double attention_mass;
+    size_t max_num_blocks_kept;
+    std::vector<double> evictable_area_token_scores;
+    std::set<size_t> ref_diversity_block_set;
+    size_t ref_num_blocks_kept;
+};
+
+// clang-format off
+const std::vector<AdaptiveRKVBlockCalculatorGetDiversityBlocksTestStruct> ADAPTIVE_RKV_BLOCK_CALCULATOR_GET_DIVERSITY_BLOCKS_TEST_CASES = {
+    {
+        1.0, 5,
+        { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409 },
+        {}, 5
+    },
+    {
+        1.0, 2,
+        { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409 },
+        // { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409, 2.4905, 4.7918, 1.7324, 4.2104, 2.2942 },
+        // 5.69, 6.73, 4.93, 6.52, 6.50
+        {1, 2, 4}, 2
+    },
+    {
+        0.5, 5,
+        { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409 },
+        {1, 2, 4}, 2
+    },
+    {
+        0.5, 1,
+        { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409 },
+        {0, 1, 2, 4}, 1
+    },
+    {
+        0.1, 3,
+        { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409 },
+        {0, 1, 2, 4}, 1
+    },
+    {
+        0.8, 5,
+        { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409 },
+        {1}, 4
+    },
+};
+// clang-format on
+
+using AdaptiveRKVBlockCalculatorGetDiversityBlocksParameterizedTest =
+    ::testing::TestWithParam<AdaptiveRKVBlockCalculatorGetDiversityBlocksTestStruct>;
+
+
+TEST_P(AdaptiveRKVBlockCalculatorGetDiversityBlocksParameterizedTest, GetsCorrectDiversityBlocks) {
+    const auto& test_struct = GetParam();
+
+    auto calc = ov::genai::AdaptiveRKVBlockCalculator(test_struct.attention_mass, DEFAULT_BLOCK_SIZE);
+
+    auto retval_pair = calc.get_diversity_block_set(test_struct.max_num_blocks_kept, test_struct.evictable_area_token_scores);
+
+    EXPECT_EQ(retval_pair.first, test_struct.ref_diversity_block_set);
+    EXPECT_EQ(retval_pair.second, test_struct.ref_num_blocks_kept);
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs,
+                         AdaptiveRKVBlockCalculatorGetDiversityBlocksParameterizedTest,
+                         testing::ValuesIn(ADAPTIVE_RKV_BLOCK_CALCULATOR_GET_DIVERSITY_BLOCKS_TEST_CASES));
+
+
+struct AdaptiveRKVBlockCalculatorGetFilteredDiversityTestStruct {
+    size_t eviction_size;
+    size_t block_size;
+    std::vector<double> unfiltered_diversity;
+    std::set<size_t> diversity_set;
+    std::vector<double> ref_filtered_diversity;
+};
+
+// clang-format off
+const std::vector<AdaptiveRKVBlockCalculatorGetFilteredDiversityTestStruct> ADAPTIVE_RKV_BLOCK_CALCULATOR_GET_FILTERED_DIVERSITY_TEST_CASES = {
+    {
+         8, 2,
+         {
+             -3.7740, -3.6064, -2.9294, -1.5446, -3.7901, -2.0820, -1.5273, -3.2758,
+             -2.7462, -2.7403, -3.9867, -3.2725, -3.3477, -4.9939, -0.2414, -4.5271,
+             -3.1281, -0.7258, -4.6696, -2.1654, -4.0911, -4.7095, -3.9171, -1.2475,
+             -1.0666, -3.8479, -2.1679, -3.5915, -1.2447, -4.5385, -1.1481, -0.2810
+         },
+         { 0 },
+         {
+             -3.6902,
+             -2.74325,
+             -1.92695,
+             -2.45725
+         }
+    },
+    {
+         8, 2,
+         {
+             -3.7740, -3.6064, -2.9294, -1.5446, -3.7901, -2.0820, -1.5273, -3.2758,
+             -2.7462, -2.7403, -3.9867, -3.2725, -3.3477, -4.9939, -0.2414, -4.5271,
+             -3.1281, -0.7258, -4.6696, -2.1654, -4.0911, -4.7095, -3.9171, -1.2475,
+             -1.0666, -3.8479, -2.1679, -3.5915, -1.2447, -4.5385, -1.1481, -0.2810
+         },
+         { 1, 3 },
+         {
+             -2.319275,
+             -3.006925,
+             -2.9999,
+             -1.797125
+         }
+    }
+};
+// clang-format on
+
+using AdaptiveRKVBlockCalculatorGetFilteredDiversityParameterizedTest =
+    ::testing::TestWithParam<AdaptiveRKVBlockCalculatorGetFilteredDiversityTestStruct>;
+
+
+TEST_P(AdaptiveRKVBlockCalculatorGetFilteredDiversityParameterizedTest, FiltersDiversityCorrectly) {
+    const auto& test_struct = GetParam();
+    ASSERT_EQ(test_struct.ref_filtered_diversity.size(), test_struct.eviction_size / test_struct.block_size);
+
+    auto calc = ov::genai::AdaptiveRKVBlockCalculator(0.5, test_struct.block_size);
+
+    auto test_filtered_diversity = calc.get_filtered_block_diversity(test_struct.unfiltered_diversity, test_struct.eviction_size, test_struct.diversity_set);
+
+    ASSERT_EQ(test_filtered_diversity.size(), test_struct.eviction_size / test_struct.block_size);
+    EXPECT_THAT(test_filtered_diversity, ::testing::Pointwise(::testing::DoubleNear(1e-6), test_struct.ref_filtered_diversity));
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs,
+                         AdaptiveRKVBlockCalculatorGetFilteredDiversityParameterizedTest,
+                         testing::ValuesIn(ADAPTIVE_RKV_BLOCK_CALCULATOR_GET_FILTERED_DIVERSITY_TEST_CASES));
+
+struct AdaptiveRKVBlockCalculatorGetMostDiverseBlocksTestStruct {
+    size_t num_blocks_left_to_fill;
+    std::set<size_t> diversity_set;
+    std::vector<double> filtered_diversity;
+    std::set<size_t> ref_most_diverse_blocks;
+};
+
+// clang-format off
+const std::vector<AdaptiveRKVBlockCalculatorGetMostDiverseBlocksTestStruct> ADAPTIVE_RKV_BLOCK_CALCULATOR_GET_MOST_DIVERSE_BLOCKS_TEST_CASES = {
+    {
+        1,
+        { 0, 2, 4 },
+        { -3.6685, -2.8817, -1.8225, -2.8728, -3.0952 },
+        { 2 }
+    },
+    {
+        1,
+        { 0, 3, 4 },
+        { -3.6685, -2.8817, -1.8225, -2.8728, -3.0952 },
+        { 3 }
+    },
+    {
+        3,
+        { 1, 2, 4 },
+        { -3.6685, -2.8817, -1.8225, -2.8728, -3.0952 },
+        { 1, 2, 4 }
+    },
+    {
+        2,
+        { 0, 1, 2, 4 },
+        { -3.6685, -2.8817, -1.8225, -2.8728, -3.0952 },
+        { 1, 2 }
+    }
+};
+// clang-format on
+
+using AdaptiveRKVBlockCalculatorGetMostDiverseBlocksParameterizedTest =
+    ::testing::TestWithParam<AdaptiveRKVBlockCalculatorGetMostDiverseBlocksTestStruct>;
+
+
+TEST_P(AdaptiveRKVBlockCalculatorGetMostDiverseBlocksParameterizedTest, GetsMostDiverseBlocksCorrectly) {
+    const auto& test_struct = GetParam();
+    auto calc = ov::genai::AdaptiveRKVBlockCalculator(0.5, DEFAULT_BLOCK_SIZE);
+
+    auto test_most_diverse_blocks = calc.get_most_diverse_blocks(test_struct.num_blocks_left_to_fill, test_struct.diversity_set, test_struct.filtered_diversity);
+
+    EXPECT_EQ(test_most_diverse_blocks, test_struct.ref_most_diverse_blocks);
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs,
+                         AdaptiveRKVBlockCalculatorGetMostDiverseBlocksParameterizedTest,
+                         testing::ValuesIn(ADAPTIVE_RKV_BLOCK_CALCULATOR_GET_MOST_DIVERSE_BLOCKS_TEST_CASES));

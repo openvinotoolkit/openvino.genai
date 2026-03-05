@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2024 Intel Corporation
+// Copyright (C) 2018-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -10,6 +10,7 @@ typedef Napi::Function (*Prototype)(Napi::Env);
 struct AddonData {
     Napi::FunctionReference core;
     Napi::FunctionReference vlm_pipeline;
+    Napi::FunctionReference text_rerank_pipeline;
     Napi::FunctionReference tokenizer;
     Napi::FunctionReference perf_metrics;
     Napi::FunctionReference vlm_perf_metrics;

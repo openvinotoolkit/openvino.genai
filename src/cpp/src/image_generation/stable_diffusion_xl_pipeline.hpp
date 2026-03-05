@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -209,7 +209,14 @@ public:
         m_clip_text_encoder->compile(text_encode_device, *updated_properties);
         m_clip_text_encoder_with_projection->compile(text_encode_device, *updated_properties);
         m_unet->compile(denoise_device, *updated_properties);
+
+        // EISW-176450
+        if (vae_device.find("NPU") != std::string::npos) {
+            updated_properties.fork()["NPU_COMPILATION_MODE_PARAMS"] =
+                "compute-layers-with-higher-precision=internal_MvnNormalize";
+        }
         m_vae->compile(vae_device, *updated_properties);
+        updated_properties.fork().erase("NPU_COMPILATION_MODE_PARAMS");
     }
 
     std::shared_ptr<DiffusionPipeline> clone() override {

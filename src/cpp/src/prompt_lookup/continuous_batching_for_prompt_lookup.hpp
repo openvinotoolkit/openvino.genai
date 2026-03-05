@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -18,8 +18,7 @@ public:
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& properties,
-        const ov::genai::GenerationConfig& generation_config,
-        bool is_validation_mode_enabled = false) :
+        const ov::genai::GenerationConfig& generation_config) :
     ContinuousBatchingImpl{ model,
                             tokenizer,
                             scheduler_config,
@@ -27,8 +26,24 @@ public:
                             properties,
                             generation_config,
                             true } {};
-                            
-    void generate_candidates();
+
+    ContinuousBatchingForPromptLookupImpl(const std::shared_ptr<ov::Model>& model,
+                                          std::shared_ptr<InputsEmbedder> inputs_embedder,
+                                          const Tokenizer& tokenizer,
+                                          const SchedulerConfig& scheduler_config,
+                                          const std::string& device,
+                                          const ov::AnyMap& properties,
+                                          const ov::genai::GenerationConfig& generation_config)
+        : ContinuousBatchingImpl{model,
+                                 inputs_embedder,
+                                 tokenizer,
+                                 scheduler_config,
+                                 device,
+                                 properties,
+                                 generation_config,
+                                 true} {};
+
+    void generate_candidates_for_prompt_lookup() override;
 
     // { generated_len, validation_len }
     using SequenceLen = std::pair<uint64_t, uint64_t>;

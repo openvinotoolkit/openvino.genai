@@ -66,15 +66,21 @@ AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) 
     read_json_param(data, "in_channels", in_channels);
     read_json_param(data, "latent_channels", latent_channels);
     read_json_param(data, "out_channels", out_channels);
-    read_json_param(data, "shift_factor", shift_factor);
     read_json_param(data, "scaling_factor", scaling_factor);
     read_json_param(data, "block_out_channels", block_out_channels);
-
     read_json_param(data, "patch_size", patch_size);
     read_json_param(data, "patch_size_t", patch_size_t);
     read_json_param(data, "spatio_temporal_scaling", spatio_temporal_scaling);
     read_json_param(data, "latents_mean_data", latents_mean_data);
     read_json_param(data, "latents_std_data", latents_std_data);
+    read_json_param(data, "timestep_conditioning", timestep_conditioning);
+
+    if (latents_mean_data.empty()) {
+        latents_mean_data.assign(latent_channels, 0.0f);
+    }
+    if (latents_std_data.empty()) {
+        latents_std_data.assign(latent_channels, 1.0f);
+    }
 }
 
 AutoencoderKLLTXVideo::AutoencoderKLLTXVideo(const std::filesystem::path& vae_decoder_path)
@@ -82,7 +88,7 @@ AutoencoderKLLTXVideo::AutoencoderKLLTXVideo(const std::filesystem::path& vae_de
     m_decoder_model = utils::singleton_core().read_model(vae_decoder_path / "openvino_model.xml");
     std::tie(m_transformer_patch_size, m_transformer_patch_size_t) = get_transformer_patch_size(vae_decoder_path.parent_path() / "transformer" / "config.json");
     // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
-    // merge_vae_image_post_processing(); // TODO: check if it's the same - not the same, fix!!!
+    merge_vae_video_post_processing();
 }
 
 AutoencoderKLLTXVideo::AutoencoderKLLTXVideo(const std::filesystem::path& vae_encoder_path,
@@ -176,6 +182,29 @@ size_t AutoencoderKLLTXVideo::get_vae_scale_factor() const {  // TODO: compare w
     return std::pow(2, m_config.block_out_channels.size() - 1);
 }
 
-void AutoencoderKLLTXVideo::merge_vae_image_post_processing() const {
-    // TODO
+void AutoencoderKLLTXVideo::merge_vae_video_post_processing() const {
+    ov::preprocess::PrePostProcessor ppp(m_decoder_model);
+
+    if (m_config.scaling_factor != 1.0f)
+        ppp.input().preprocess().scale(m_config.scaling_factor);
+
+    // (x / 2 + 0.5) -> clamp(0..1) -> *255 -> u8
+    ppp.output().postprocess().custom([](const ov::Output<ov::Node>& port) {
+        auto c_0_5  = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 0.5f);
+        auto c_255  = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 255.0f);
+
+        auto scaled = std::make_shared<ov::op::v1::Multiply>(port, c_0_5);
+        auto shifted = std::make_shared<ov::op::v1::Add>(scaled, c_0_5);
+        auto clamped = std::make_shared<ov::op::v0::Clamp>(shifted, 0.0f, 1.0f);
+
+        return std::make_shared<ov::op::v1::Multiply>(clamped, c_255);
+    });
+
+    ppp.output().postprocess().convert_element_type(ov::element::u8);
+
+    // [B, C, F, H, W] -> [B, F, H, W, C]
+    ppp.output().model().set_layout("NCDHW");
+    ppp.output().tensor().set_layout("NDHWC");
+
+    ppp.build();
 }

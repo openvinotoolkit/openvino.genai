@@ -1,4 +1,4 @@
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import json
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
@@ -18,6 +18,7 @@ from openvino_genai import (
     ReasoningIncrementalParser,
 )
 from transformers import AutoTokenizer
+from huggingface_hub import snapshot_download
 import re
 from io import StringIO
 
@@ -41,7 +42,8 @@ def hf_ov_genai_models(request, tmp_path_factory):
     model_dir = tmp_path_factory.getbasetemp() / model_id.replace("/", "_")
     model_dir.mkdir(exist_ok=True, parents=True)
 
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_cached)
     convert_and_save_tokenizer(hf_tokenizer, model_dir)
 
     genai_tokenizer = Tokenizer(model_dir)

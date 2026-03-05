@@ -1,3 +1,6 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import { createRequire } from "module";
 import { platform } from "node:os";
 import { join, dirname, resolve } from "node:path";
@@ -12,11 +15,18 @@ import {
   ILlama3PythonicToolParser,
   ILlama3JsonToolParser,
 } from "./parsers.js";
-import { GenerationConfig, StreamingStatus, VLMPipelineProperties } from "./utils.js";
-import { VLMPerfMetrics } from "./perfMetrics.js";
+import {
+  GenerationConfig,
+  StreamingStatus,
+  VLMPipelineProperties,
+  LLMPipelineProperties,
+} from "./utils.js";
+import { VLMPerfMetrics, PerfMetrics } from "./perfMetrics.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
+export type TextRerankResult = [index: number, score: number];
+export type TextRerankResults = TextRerankResult[];
 /**
  * Pooling strategy
  */
@@ -68,6 +78,68 @@ export interface TextEmbeddingPipelineWrapper {
   embedDocumentsSync(documents: string[]): EmbeddingResults;
 }
 
+/**
+ * Configuration parameters for TextRerankPipeline.
+ */
+export type TextRerankPipelineConfig = {
+  /**
+   * Number of documents to return sorted by score.
+   * @defaultValue 3
+   */
+  top_n?: number;
+  /** Maximum length of tokens passed to the embedding model. */
+  max_length?: number;
+  /** If 'true', model input tensors are padded to the maximum length. */
+  pad_to_max_length?: boolean;
+  /** Side to use for padding "left" or "right". */
+  padding_side?: "left" | "right";
+};
+
+export interface TextRerankPipeline {
+  new (): TextRerankPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    config: TextRerankPipelineConfig,
+    ovProperties: object,
+    callback: (err: Error | null) => void,
+  ): void;
+  rerank(
+    query: string,
+    documents: string[],
+    callback: (err: Error | null, value: TextRerankResults) => void,
+  ): void;
+}
+
+export interface LLMPipeline {
+  new (): LLMPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    ovProperties: LLMPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    inputs: string | string[] | IChatHistory,
+    generationConfig: GenerationConfig,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    callback: (
+      err: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: PerfMetrics;
+        parsed: Record<string, unknown>[];
+      },
+    ) => void,
+  ): void;
+  startChat(systemMessage: string, callback: (err: Error | null) => void): void;
+  finishChat(callback: (err: Error | null) => void): void;
+  getTokenizer(): ITokenizer;
+  getGenerationConfig(): GenerationConfig;
+  setGenerationConfig(config: GenerationConfig): void;
+}
+
 export interface VLMPipeline {
   new (): VLMPipeline;
   init(
@@ -97,11 +169,13 @@ export interface VLMPipeline {
   getTokenizer(): ITokenizer;
   setChatTemplate(template: string): void;
   setGenerationConfig(config: GenerationConfig): void;
+  getGenerationConfig(): GenerationConfig;
 }
 
 interface OpenVINOGenAIAddon {
+  TextRerankPipeline: TextRerankPipeline;
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
-  LLMPipeline: any;
+  LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
@@ -133,6 +207,7 @@ addon.setOpenvinoAddon(ovAddon);
 
 export const {
   TextEmbeddingPipeline,
+  TextRerankPipeline,
   LLMPipeline,
   VLMPipeline,
   ChatHistory,

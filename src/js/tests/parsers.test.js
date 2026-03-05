@@ -11,11 +11,14 @@ import {
   VLMPipeline,
   Phi4ReasoningParser,
   ReasoningParser,
+  StructuredOutputConfig,
 } from "../dist/index.js";
-import { models } from "./models.js";
 
-const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
-const VLM_MODEL_PATH = process.env.VLM_MODEL_PATH || `./tests/models/${models.VLM.split("/")[1]}`;
+const { LLM_PATH, VLM_PATH } = process.env;
+
+if (!LLM_PATH || !VLM_PATH) {
+  throw new Error("Please set LLM_PATH and VLM_PATH environment variables to run the tests.");
+}
 
 class PostfixParser {
   constructor(postfix) {
@@ -187,7 +190,7 @@ describe("LLMPipeline with Parser in GenerationConfig", () => {
   const postfixParser = new PostfixParser(postfix);
 
   before(async () => {
-    pipeline = await LLMPipeline(MODEL_PATH, "CPU");
+    pipeline = await LLMPipeline(LLM_PATH, "CPU");
   });
 
   it("should apply custom parser object", async () => {
@@ -281,23 +284,44 @@ describe("LLMPipeline with ReasoningParser", () => {
   let pipeline, postfixParser;
 
   before(async () => {
-    pipeline = await LLMPipeline(MODEL_PATH, "CPU");
+    pipeline = await LLMPipeline(LLM_PATH, "CPU");
     postfixParser = new PostfixParser("<think>reasoning</think>");
   });
 
   it("should accept ReasoningParser in parsers array", async () => {
     const parser = new ReasoningParser({
-      openTag: "```python\n",
-      closeTag: "```\n",
+      openTag: "<2>",
+      closeTag: "</2>",
     });
+    // Use StructuredOutputConfig to guarantee that the tags are in the output
     const config = {
       max_new_tokens: 100,
+      structured_output_config: new StructuredOutputConfig({
+        structural_tags_config: StructuredOutputConfig.Concat(
+          StructuredOutputConfig.Tag({
+            begin: "<1>",
+            content: StructuredOutputConfig.ConstString("prefix_content"),
+            end: "</1>",
+          }),
+          StructuredOutputConfig.Tag({
+            begin: "<2>",
+            content: StructuredOutputConfig.ConstString("reasoning_content"),
+            end: "</2>",
+          }),
+          StructuredOutputConfig.Tag({
+            begin: "<3>",
+            content: StructuredOutputConfig.ConstString("postfix_content"),
+            end: "</3>",
+          }),
+        ),
+      }),
       parsers: [parser],
     };
 
     const result = await pipeline.generate("Create python code to print 'Hello, World'", config);
-    assert.ok(
-      result.parsed[0].reasoning_content?.length > 0,
+    assert.strictEqual(
+      result.parsed[0].reasoning_content,
+      "reasoning_content",
       "Reasoning content should be extracted",
     );
   });
@@ -346,16 +370,18 @@ describe(
     const postfixParser = new PostfixParser(postfix);
 
     before(async () => {
-      pipeline = await VLMPipeline(VLM_MODEL_PATH, "CPU");
+      pipeline = await VLMPipeline(VLM_PATH, "CPU");
     });
 
     it("should apply custom parser object", async () => {
-      const config = {
+      const generationConfig = {
         max_new_tokens: 10,
         parsers: [postfixParser],
       };
 
-      const result = await pipeline.generate("Hello", config);
+      const result = await pipeline.generate("Hello", {
+        generationConfig,
+      });
       // VLMPipeline doesn't use parsers and always returns empty array
       assert.strictEqual(result.parsed.length, 0, "Parsed content is empty");
     });

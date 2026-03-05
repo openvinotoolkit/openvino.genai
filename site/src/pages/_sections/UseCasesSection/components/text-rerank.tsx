@@ -1,8 +1,9 @@
 import Button from '@site/src/components/Button';
-import { LanguageTabs, TabItemCpp, TabItemPython } from '@site/src/components/LanguageTabs';
+import { LanguageTabs, TabItemCpp, TabItemJS, TabItemPython } from '@site/src/components/LanguageTabs';
 import UseCaseCard from './UseCaseCard';
 
 import CodeExampleCpp from '@site/docs/use-cases/text-rerank/_sections/_run_model/_code_example_cpp.mdx';
+import CodeExampleJS from '@site/docs/use-cases/text-rerank/_sections/_run_model/_code_example_js.mdx';
 import CodeExamplePython from '@site/docs/use-cases/text-rerank/_sections/_run_model/_code_example_python.mdx';
 
 export const TextRerank = () => (
@@ -23,6 +24,9 @@ export const TextRerank = () => (
         <TabItemCpp>
           <CodeExampleCpp />
         </TabItemCpp>
+        <TabItemJS>
+          <CodeExampleJS />
+        </TabItemJS>
       </LanguageTabs>
     </UseCaseCard.Code>
     <UseCaseCard.Actions>
