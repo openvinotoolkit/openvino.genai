@@ -51,18 +51,19 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
         }
     };
     auto finalize = [context]() {
-        *context->is_generating = false;
         context->callback.Release();
         if (context->streamer.has_value()) {
             context->streamer->Release();
         }
     };
+    std::vector<std::string> streamer_exceptions;
+    ov::genai::VLMDecodedResults result;
+    // Run inference
     try {
         ov::genai::GenerationConfig config;
         config.update_generation_config(*context->generation_config);
 
         ov::genai::StreamerVariant streamer = std::monostate();
-        std::vector<std::string> streamer_exceptions;
         if (context->streamer.has_value()) {
             streamer = [context, &streamer_exceptions](std::string word) {
                 std::promise<ov::genai::StreamingStatus> resultPromise;
@@ -92,10 +93,16 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
             };
         }
 
-        ov::genai::VLMDecodedResults result;
-
         result = context->pipe->generate(context->prompt, context->images, context->videos, config, streamer);
 
+    } catch (std::exception& e) {
+        report_error(e.what());
+    }
+    // Should be called right after inference to release the flag asap
+    *context->is_generating = false;
+
+    // Call callback with result or error
+    try {
         if (!streamer_exceptions.empty()) {
             // If there were exceptions from the streamer, report them all as a single error and finish without result
             std::string combined_error = "Streamer exceptions occurred:\n";
