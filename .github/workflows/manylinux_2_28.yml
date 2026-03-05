@@ -95,8 +95,7 @@ jobs:
       with:
         platform: almalinux8
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        # latest_available_commit fails with libopenvino_intel_npu_compiler.so: cannot open shared object file on Manylinux 2_28. Ticket: 181511
-        revision: 8f1e6829dc8eecdb9fca2a95d9271f35b780ddaa
+        revision: latest_available_commit
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -517,12 +516,6 @@ jobs:
             cmd: 'python -m pytest -v ./tests/python_tests/test_video_generation.py --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).video_generation.test }}
             timeout: 60
-          - name: 'VLM (MiniCPM-o-2_6)'
-            cmd: |
-              python -m pip install transformers==4.51.3
-              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "MiniCPM-o-2_6"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 60
           - name: 'GGUF Reader tests'
             cmd: 'python -m pytest -v ./tests/python_tests/test_gguf_reader.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
@@ -543,18 +536,23 @@ jobs:
             cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
+          - name: 'EAGLE3 speculative decoding tests'
+            cmd: |
+              python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
+            timeout: 90
           - name: 'WWB tests (nanollava)'
             cmd: |
               python -m pip install transformers==4.48.0
               python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
-          - name: 'EAGLE3 speculative decoding tests'
+          - name: 'VLM (MiniCPM-o-2_6)'
             cmd: |
-              python -m pip install git+https://github.com/xufang-lisa/optimum-intel.git@ea9607daf32919024cdd4390deec9693a7b64d23
-              python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
-            timeout: 90
+              python -m pip install transformers==4.51.3
+              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "MiniCPM-o-2_6"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 60
     defaults:
       run:
         shell: bash

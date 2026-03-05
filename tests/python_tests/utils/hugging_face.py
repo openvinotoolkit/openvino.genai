@@ -12,7 +12,7 @@ from transformers import GenerationConfig as HFGenerationConfig
 from optimum.intel import OVModelForCausalLM, OVModelForSequenceClassification
 from optimum.intel.openvino.modeling import OVModel
 
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, snapshot_download
 
 from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
@@ -184,6 +184,9 @@ def get_huggingface_models(
     local_files_only=False,
     trust_remote_code=False,
 ) -> tuple[OptimizedModel, AutoTokenizer]:
+    if not local_files_only and isinstance(model_id, str):
+        model_id = snapshot_download(model_id)  # required to avoid HF rate limits
+
     def auto_tokenizer_from_pretrained() -> AutoTokenizer:
         return AutoTokenizer.from_pretrained(
             model_id, 
@@ -202,8 +205,6 @@ def get_huggingface_models(
             "local_files_only": local_files_only,
             "trust_remote_code": trust_remote_code,
         }
-        if is_eagle_model:
-            params["eagle3"] = True
         return model_class.from_pretrained(model_id, **params)
 
     opt_model = retry_request(auto_model_from_pretrained)
@@ -254,12 +255,15 @@ def sanitize_model_id(model_id: str) -> str:
     return model_id.replace("/", "_")
 
 
+TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
+
+
 def download_and_convert_model_class(
     model_id: str, 
     model_class: Type[OVModel],
-    trust_remote_code=False,
     **tokenizer_kwargs,
 ) -> OVConvertedModelSchema:
+    trust_remote_code = model_id in TRUST_REMOTE_CODE_MODELS
     dir_name = sanitize_model_id(model_id)
     if model_class.__name__ not in ["OVModelForCausalLM"]:
         dir_name = f"{dir_name}_{model_class.__name__}"
@@ -321,8 +325,10 @@ def download_gguf_model(
 
 
 def load_hf_model_from_gguf(gguf_model_id, gguf_filename):
-    return retry_request(lambda: AutoModelForCausalLM.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
+    model_cached = snapshot_download(gguf_model_id)  # required to avoid HF rate limits
+    return retry_request(lambda: AutoModelForCausalLM.from_pretrained(model_cached, gguf_file=gguf_filename))
 
 
 def load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename):
-    return retry_request(lambda: AutoTokenizer.from_pretrained(gguf_model_id, gguf_file=gguf_filename))
+    model_cached = snapshot_download(gguf_model_id)  # required to avoid HF rate limits
+    return retry_request(lambda: AutoTokenizer.from_pretrained(model_cached, gguf_file=gguf_filename))
