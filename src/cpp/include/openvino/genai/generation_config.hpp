@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -674,14 +674,14 @@ public:
     float assistant_confidence_threshold = 0.f;
     size_t num_assistant_tokens = 0;
     size_t max_ngram_size = 0;
+
     struct eagle_params {
-        // eagle/model/cnets.py
-        // total_tokens = self.total_tokens
-        // depth = self.depth
-        // top_k = self.top_k
-        size_t branching_factor = 1;  // top-k
-        size_t tree_depth = 0;  // How deep to look ahead, eagle tree depth, draft will run depth + 1(tree init) levels
-        size_t total_tokens = 1;  // Total number of tokens to generate in eagle tree
+        // Number of top-k candidates expanded at each tree node (branching factor)
+        size_t branching_factor = 1;
+        // Lookahead depth of the EAGLE tree. The draft model runs `tree_depth + 1` iterations
+        size_t tree_depth = 0;
+        // Total number of candidate tokens in the EAGLE tree
+        size_t total_tokens = 1;
     } eagle_tree_params;
 
     // Structured output parameters

@@ -90,8 +90,12 @@ public:
     void reset_state();
     void release_memory();
 
-    /// @brief Returns total sequence length (prompt + generated)
-    /// @note Currently only supports single sequence (top-1)
+    /// @brief Returns total sequence length (prompt + generated) for sequence 0.
+    ///
+    /// For the target wrapper sequence 0 is the sole sequence.
+    /// For the draft wrapper all sequences share the same history and root tokens,
+    /// so sequence 0 length equals the shared KV-cache baseline used as the
+    /// starting offset for DRAFT_ITERATION input construction.
     size_t get_sequence_length() const {
         if (auto seq = get_sequence(0)) {
             return m_sequence_group->get_prompt_len() + seq->get_generated_len();
@@ -99,8 +103,11 @@ public:
         return 0;
     }
 
-    /// @brief Returns only generated tokens
-    /// @note Currently only supports single sequence (top-1)
+    /// @brief Returns generated token ids for sequence 0.
+    ///
+    /// Intended for the target wrapper (which always holds a single sequence).
+    /// For the draft wrapper this returns the generated ids of sequence 0 only,
+    /// which is sufficient for history-length queries and debug logging.
     const std::vector<int64_t>& get_generated_tokens() const {
         static const std::vector<int64_t> empty;
         if (auto seq = get_sequence(0)) {
@@ -115,11 +122,6 @@ public:
 
     void set_sequence_group(SequenceGroup::Ptr sequence_group) {
         m_sequence_group = sequence_group;
-        if (m_sequence_group) {
-            OPENVINO_ASSERT(get_running_sequence_count() == 1,
-                            "Eagle3 only supports single sequence, got ",
-                            get_running_sequence_count());
-        }
     }
 
     /// @brief Returns number of running sequences in the group
@@ -127,9 +129,9 @@ public:
         return m_sequence_group ? m_sequence_group->get_running_sequences().size() : 0;
     }
 
-    /// @brief Returns sequence at given index with bounds checking
-    /// @param index Sequence index (0 for top-1)
-    /// @return Sequence pointer or nullptr if index out of bounds
+    /// @brief Returns the running sequence at the given index.
+    /// @param index Zero-based index into the running-sequence list.
+    /// @return Sequence pointer, or nullptr if the index is out of range.
     Sequence::Ptr get_sequence(size_t index) const {
         if (m_sequence_group) {
             auto sequences = m_sequence_group->get_running_sequences();
@@ -140,7 +142,7 @@ public:
         return nullptr;
     }
 
-    /// @brief Returns current (first) sequence
+    /// @brief Returns sequence 0 (the sole target sequence, or the shared base sequence for the draft).
     Sequence::Ptr get_current_sequence() const {
         return get_sequence(0);
     }
@@ -215,7 +217,7 @@ protected:
     SequenceGroup::Ptr m_sequence_group;
     Sampler m_sampler;
     ov::genai::RawPerfMetrics m_raw_perf_metrics;
-    bool m_verbose = true;
+    bool m_verbose = false;
 };
 
 /**
@@ -271,6 +273,13 @@ public:
  */
 class StatefulEagle3LLMPipeline : public StatefulSpeculativePipelineBase {
 public:
+    /** @brief Default branching factor (top-k candidates per tree node) when not user-specified. */
+    static constexpr size_t DEFAULT_EAGLE_BRANCHING_FACTOR = 2;
+    /** @brief Default tree depth (number of DRAFT_ITERATION passes) when not user-specified. */
+    static constexpr size_t DEFAULT_EAGLE_TREE_DEPTH = 4;
+    /** @brief Default total candidate tokens in the tree when not user-specified. */
+    static constexpr size_t DEFAULT_EAGLE_TOTAL_TOKENS = 8;
+
     StatefulEagle3LLMPipeline(const ov::genai::ModelDesc& target_model_desc,
                               const ov::genai::ModelDesc& draft_model_desc);
     ~StatefulEagle3LLMPipeline();
@@ -301,6 +310,18 @@ private:
     };
 
     SpeculativeResult run_speculative_iteration(size_t token_count, int64_t eos_token_id);
+
+    /**
+     * @brief Applies default eagle_tree_params if the user did not set them.
+     *
+     * When eagle_tree_params.tree_depth == 0 (the struct default), the parameters are
+     * populated from the compile-time defaults (DEFAULT_EAGLE_BRANCHING_FACTOR,
+     * DEFAULT_EAGLE_TREE_DEPTH, DEFAULT_EAGLE_TOTAL_TOKENS).
+     * This is analogous to ensure_num_assistant_tokens_is_set() for FastDraft.
+     *
+     * @param config Generation configuration to populate with defaults.
+     */
+    static void ensure_eagle_tree_params_is_set(GenerationConfig& config);
 
     std::unique_ptr<Eagle3DraftWrapper> m_draft;
     std::unique_ptr<Eagle3TargetWrapper> m_target;

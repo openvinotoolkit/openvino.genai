@@ -259,7 +259,7 @@ bool GenerationConfig::is_beam_search() const {
 }
 
 bool GenerationConfig::is_tree_search() const {
-    return eagle_tree_params.tree_depth > 1;
+    return eagle_tree_params.tree_depth > 0;
 }
 
 bool GenerationConfig::is_multinomial() const {

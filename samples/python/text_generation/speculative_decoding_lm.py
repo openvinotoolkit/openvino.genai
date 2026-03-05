@@ -24,31 +24,33 @@ def main():
     main_device = 'NPU'
     draft_device = 'NPU'
 
-    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device, MAX_PROMPT_LEN=1024, MIN_RESPONSE_LEN=128, NPU_COMPILER_TYPE="DRIVER")
-
-    # pipeline_config = {
-    #     "MAX_PROMPT_LEN": 2048,
-    #     "MIN_RESPONSE_LEN": 512,
-    #     "NPU_COMPILER_TYPE": "DRIVER"
-    # }
-    pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, draft_model=draft_model, MAX_PROMPT_LEN=1024, MIN_RESPONSE_LEN=128, NPU_COMPILER_TYPE="DRIVER")
-    
     config = openvino_genai.GenerationConfig()
-    config.max_new_tokens = 50
+    config.max_new_tokens = 128
+
     # Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded.
     # Add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration.
     # NOTE: ContinuousBatching backend uses `num_assistant_tokens` as is. Stateful backend uses `num_assistant_tokens`'s copy as initial
     # value and adjusts it based on recent number of accepted tokens. If `num_assistant_tokens` is not set, it defaults to `5` for both
     # backends.
-    config.num_assistant_tokens = 3
+    config.num_assistant_tokens = 4
     # Add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than
     # `assistant_confidence_threshold`.
     # NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend.
     # config.assistant_confidence_threshold = 0.4
 
-    config.eagle_tree_params.branching_factor = 3
-    config.eagle_tree_params.tree_depth = 2
+    # Add parameters to enable Eagle tree-search speculative decoding.
+    # NOTE: eagle_tree_params must be set before pipeline construction because the NPU model
+    # is compiled with a fixed validation-window size.
+    # - branching_factor: number of top-k candidates expanded at each tree node.
+    # - tree_depth: lookahead depth of the tree; the draft model runs tree_depth + 1 passes per speculative step
+    # - total_tokens: total number of candidate tokens in the tree.
+    config.eagle_tree_params.branching_factor = 2
+    config.eagle_tree_params.tree_depth = 4
     config.eagle_tree_params.total_tokens = 8
+
+    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device, generation_config=config)
+
+    pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, draft_model=draft_model)
 
     # Since the streamer is set, the results will be printed 
     # every time a new token is generated and put into the streamer queue.

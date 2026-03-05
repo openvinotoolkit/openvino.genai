@@ -120,7 +120,8 @@ ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features);
  *
  * Usage pattern:
  * - During prefill phase: attention_mask contains the causal mask, eagle_tree_mask is all zeros
- * - During generate/verify phase: attention_mask is all zeros, eagle_tree_mask constructs the EAGLE tree attention mask
+ * - During generate/verify phase: attention_mask contains the causal mask, eagle_tree_mask constructs the EAGLE tree
+ *   attention mask
  *
  * @param model Model to transform.
  */

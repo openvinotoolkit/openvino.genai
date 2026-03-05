@@ -99,6 +99,10 @@ inline void log_info(const std::string& message) {
     std::cout << "[EAGLE3-PIPELINE] " << message << std::endl;
 }
 
+/// @brief Set to false to silence all sampler-level tree-search debug prints.
+/// Both this file and all callers are temporary and will be removed before merging.
+constexpr bool EAGLE3_SAMPLER_DEBUG = false;
+
 // Tensor Logging Functions
 
 /// @brief Log tensor information (shape and type)

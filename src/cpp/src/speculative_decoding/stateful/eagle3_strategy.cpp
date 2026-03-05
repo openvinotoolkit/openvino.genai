@@ -756,8 +756,30 @@ InferResult Eagle3TargetWrapper::forward(const InferContext& ctx) {
     // 2. Infer
     auto output = infer(input_ids, attention_mask, position_ids, eagle_tree_mask);
 
-    // 3. Sample (use sample_count for number of positions to sample from)
-    auto sampled = sample_tokens(output.logits, ctx.input_token_count, ctx.sample_count, ctx.num_tokens_to_validate);
+    // 3. Sample
+    // During TARGET_PREFILL the sampler must produce exactly one greedy token.
+    // The sequence group's config still has tree_depth > 0 (needed for the subsequent
+    // speculative loop), which would make the sampler fork sequences via TreeSearcher.
+    // Temporarily zero tree_depth so the sampler takes the greedy path; restore afterwards.
+    // This is an internal detail of the prefill sampling step — callers are not affected.
+    std::vector<int64_t> sampled;
+    if (phase == InferencePhase::TARGET_PREFILL) {
+        const auto saved_config = get_sequence_group()->get_sampling_parameters();
+        auto prefill_config = saved_config;
+        prefill_config.eagle_tree_params.tree_depth = 0;
+        get_sequence_group()->set_sampling_parameters(prefill_config);
+        eagle3::log_debug(eagle3::PipelineStep::ITER,
+                          "Prefill: temporarily setting tree_depth=0 for greedy sampling (original: " +
+                              std::to_string(saved_config.eagle_tree_params.tree_depth) + ")",
+                          m_verbose);
+
+        sampled = sample_tokens(output.logits, ctx.input_token_count, ctx.sample_count, 0);
+
+        // Restore the original tree-search config for the speculative loop.
+        get_sequence_group()->set_sampling_parameters(saved_config);
+    } else {
+        sampled = sample_tokens(output.logits, ctx.input_token_count, ctx.sample_count, ctx.num_tokens_to_validate);
+    }
 
     // 4. Store hidden states to sequence for draft model to use
     get_current_sequence()->update_hidden_state(output.hidden_features);
@@ -1026,9 +1048,15 @@ InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
 StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc& target_model_desc,
                                                      const ov::genai::ModelDesc& draft_model_desc)
     : StatefulSpeculativePipelineBase(target_model_desc.tokenizer, target_model_desc.generation_config) {
-    // Initialize draft iterations from generation config
-    ensure_num_assistant_tokens_is_set(m_generation_config);
-    m_draft_iterations = m_generation_config.num_assistant_tokens;
+    // eagle_tree_params are read from draft_model_desc.generation_config
+    // m_generation_config is initialised from target_model_desc (eos_token_id, etc.)
+    m_generation_config.eagle_tree_params = draft_model_desc.generation_config.eagle_tree_params;
+
+    // Apply compile-time defaults when no eagle_tree_params were provided by the user or
+    // the draft model JSON (tree_depth == 0 is the zero-initialised struct default).
+    ensure_eagle_tree_params_is_set(m_generation_config);
+
+    OPENVINO_ASSERT(m_generation_config.is_tree_search(), "Eagle3 pipeline requires eagle_tree_params.tree_depth > 0.");
 
     // Extract hidden_layers_list from draft model properties — used only during model
     // construction to wire the target model's hidden-state extraction; no need to retain it.
@@ -1061,13 +1089,22 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     utils::eagle3::move_fc_from_draft_to_main(draft_model, target_model);
     utils::eagle3::transform_hidden_state(draft_model, {-1});
 
-    const size_t validation_window = m_draft_iterations + 1;
+    // target_validation_window: number of candidate tokens the target model validates in one
+    // step — all N tree nodes (total_tokens), including the accepted root token.
+    const size_t target_validation_window = m_generation_config.eagle_tree_params.total_tokens;
+
+    // draft_validation_window: maximum number of tokens the draft model processes in a single
+    // DRAFT_ITERATION pass.  At each iteration all running sequences each contribute one token
+    // so the worst case is at the last pass: (tree_depth - 1) * branching_factor
+    m_draft_iterations = m_generation_config.eagle_tree_params.tree_depth;
+    const size_t draft_validation_window =
+        (m_draft_iterations - 1) * m_generation_config.eagle_tree_params.branching_factor;
 
     // Configure and create draft model
     auto draft_desc = draft_model_desc;
     if (draft_desc.device == "NPU") {
         draft_desc.properties["NPUW_EAGLE"] = "TRUE";
-        draft_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = validation_window;
+        draft_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = draft_validation_window;
         draft_desc.properties["NPUW_ONLINE_PIPELINE"] = "NONE";
         draft_desc.properties["NPUW_DEVICES"] = "CPU";
     }
@@ -1079,14 +1116,15 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     auto target_desc = target_model_desc;
     if (target_desc.device == "NPU") {
         target_desc.properties["NPUW_EAGLE"] = "TRUE";
-        target_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = validation_window;
+        target_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = target_validation_window;
         target_desc.properties["NPUW_SLICE_OUT"] = "NO";
         target_desc.properties["NPUW_DEVICES"] = "CPU";
     }
     m_target = std::make_unique<Eagle3TargetWrapper>(target_desc);
 
     eagle3::log_info("Pipeline initialized: draft_iterations=" + std::to_string(m_draft_iterations) +
-                     ", validation_window=" + std::to_string(validation_window));
+                     ", target_validation_window=" + std::to_string(target_validation_window) +
+                     ", draft_validation_window=" + std::to_string(draft_validation_window));
 }
 
 StatefulEagle3LLMPipeline::~StatefulEagle3LLMPipeline() {
@@ -1094,25 +1132,20 @@ StatefulEagle3LLMPipeline::~StatefulEagle3LLMPipeline() {
     m_draft->release_memory();
 }
 
+void StatefulEagle3LLMPipeline::ensure_eagle_tree_params_is_set(GenerationConfig& config) {
+    if (!config.is_tree_search()) {
+        config.eagle_tree_params.branching_factor = DEFAULT_EAGLE_BRANCHING_FACTOR;
+        config.eagle_tree_params.tree_depth = DEFAULT_EAGLE_TREE_DEPTH;
+        config.eagle_tree_params.total_tokens = DEFAULT_EAGLE_TOTAL_TOKENS;
+    }
+}
+
 GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
     // Call base class implementation to handle common defaults
     GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(generation_config);
 
-    // Apply Eagle3 specific validations
-    const size_t prev_draft_iterations = m_draft_iterations;
-    ensure_num_assistant_tokens_is_set(config);
-    m_draft_iterations = config.num_assistant_tokens;
-
-    // Log configuration changes
-    if (m_draft_iterations != prev_draft_iterations) {
-        if (m_draft_iterations == 0) {
-            eagle3::log_info("Speculative decoding DISABLED (num_assistant_tokens=0)");
-        } else {
-            eagle3::log_debug("Draft iterations: " + std::to_string(prev_draft_iterations) + " -> " +
-                                  std::to_string(m_draft_iterations),
-                              is_verbose());
-        }
-    }
+    // Apply Eagle3 defaults: if the user did not provide eagle_tree_params
+    ensure_eagle_tree_params_is_set(config);
 
     return config;
 }
@@ -1155,25 +1188,12 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     // Prepare sampling config with extended max_new_tokens to prevent premature termination
     // during draft generation. Actual length control is in the generation loop.
     auto sampling_config = config;
-    sampling_config.max_new_tokens = config.max_new_tokens + m_draft_iterations + 1;
+    // Reserve m_draft_iterations (DRAFT_ITERATION passes) + 1 (DRAFT_INITIAL) + 1 (bonus token)
+    // extra slots to prevent premature termination during draft generation.
+    sampling_config.max_new_tokens = config.max_new_tokens + m_draft_iterations + 2;
 
     m_draft->initialize_sequence(input_ids, sampling_config);
-
-    // For tree search mode the prefill sampler must generate a single token (not a tree),
-    // so temporarily set tree_depth=0 in the target's SequenceGroup sampling parameters.
-    // After prefill the parameter is restored to the original value — the KV cache is
-    // unaffected; only the sampler behaviour changes.
-    const bool is_tree_search_mode = sampling_config.is_tree_search();
     m_target->initialize_sequence(input_ids, sampling_config);
-    if (is_tree_search_mode) {
-        auto prefill_config = sampling_config;
-        prefill_config.eagle_tree_params.tree_depth = 0;
-        m_target->get_sequence_group()->set_sampling_parameters(prefill_config);
-        eagle3::log_debug(eagle3::PipelineStep::ITER,
-                          "Prefill: using tree_depth=0 (original: " +
-                              std::to_string(sampling_config.eagle_tree_params.tree_depth) + ")",
-                          is_verbose());
-    }
 
     // Phase 1: Initial Prompt Processing (Prefill)
     eagle3::log_generation_step("PREFILL", 0, is_verbose());
@@ -1186,16 +1206,6 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
 
     // Append initial token to draft model.
     m_draft->append_tokens({initial_token});
-
-    // Restore full tree config in the target's SequenceGroup now that prefill is done.
-    // The hidden state stored on the sequence by the prefill forward pass is preserved.
-    if (is_tree_search_mode) {
-        m_target->get_sequence_group()->set_sampling_parameters(sampling_config);
-        eagle3::log_debug(eagle3::PipelineStep::ITER,
-                          "Restored full tree_depth=" + std::to_string(sampling_config.eagle_tree_params.tree_depth) +
-                              " for speculative loop",
-                          is_verbose());
-    }
 
     eagle3::log_debug("Initial token: " + std::to_string(initial_token), is_verbose());
     eagle3::log_sequence_state("after prefill",
@@ -1376,7 +1386,9 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     const auto& draft_gen_ids = m_draft->get_current_sequence()->get_generated_ids();
     const auto& draft_metadata = m_draft->get_current_sequence()->get_eagle_metadata();
     const size_t num_candidates = draft_metadata.tree_mask.size();  // N+1 (root + N nodes)
-    OPENVINO_ASSERT(num_candidates >= 2, "Expected at least root + one tree node");
+    OPENVINO_ASSERT(num_candidates >= 2,
+                    "Expected at least 2 candidates (root + at least 1 tree node), got: ",
+                    num_candidates);
     const size_t num_tree_nodes = num_candidates - 1;  // N non-root tokens used for validation
 
     // Sync EagleMetaData from DRAFT to TARGET so that build_inputs_for_target_validation can read it.
