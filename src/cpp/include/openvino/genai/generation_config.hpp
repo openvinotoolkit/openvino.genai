@@ -709,6 +709,15 @@ public:
     /// @brief checks that are no conflicting parameters, e.g. do_sample=true and num_beams > 1.
     /// @throws Exception if config is invalid.
     void validate() const;
+
+    /**
+     * Returns a human-readable string representation of the GenerationConfig.
+     * The output is a multi-line string listing each configuration field and its value.
+     * This is useful for debugging, logging, or inspecting the current configuration.
+     *
+     * @return A string describing the current GenerationConfig in a readable format.
+     */
+    std::string to_string() const;
 };
 
 /*
