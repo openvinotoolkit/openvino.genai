@@ -249,7 +249,7 @@ ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value)
     const auto& keys = object.GetPropertyNames();
 
     for (uint32_t i = 0; i < keys.Length(); ++i) {
-        const std::string& key_name = keys.Get(i).ToString();
+        const std::string key_name = keys.Get(i).ToString();
         auto value_by_key = object.Get(key_name);
         if (value_by_key.IsUndefined() || value_by_key.IsNull()) {
             continue;
@@ -289,7 +289,7 @@ std::map<std::string, int64_t> js_to_cpp<std::map<std::string, int64_t>>(const N
     const auto& object = value.ToObject();
     const auto& keys = object.GetPropertyNames();
     for (uint32_t i = 0; i < keys.Length(); ++i) {
-        const std::string& key_name = keys.Get(i).ToString();
+        const std::string key_name = keys.Get(i).ToString();
         auto value_by_key = object.Get(key_name);
         if (value_by_key.IsUndefined() || value_by_key.IsNull()) {
             continue;
