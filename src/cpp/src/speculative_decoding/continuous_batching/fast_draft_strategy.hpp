@@ -32,9 +32,11 @@ std::vector<EncodedGenerationResult> generate_common(
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer,
         std::optional<std::vector<ov::Tensor>> token_type_ids,
+        std::optional<std::vector<ov::Tensor>> prompt_ids,
         GenerateStrategy& strategy) {
 
     OPENVINO_ASSERT(!token_type_ids.has_value());
+    OPENVINO_ASSERT(!prompt_ids.has_value());
     self->perf_metrics() = ov::genai::SDPerModelsPerfMetrics();
     self->draft_pipeline()->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
@@ -158,6 +160,7 @@ public:
             const std::vector<GenerationConfig>& sampling_params,
             const StreamerVariant& streamer,
             std::optional<std::vector<ov::Tensor>> token_type_ids,
+            std::optional<std::vector<ov::Tensor>> prompt_ids,
             GenerateStrategy& strategy);
 
     SpeculativeDecodingImpl() = default;
@@ -167,6 +170,7 @@ public:
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
                                  std::optional<ov::Tensor> token_type_ids = std::nullopt,
+                                 std::optional<ov::Tensor> prompt_ids = std::nullopt,
                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
@@ -182,6 +186,7 @@ public:
              const StreamerVariant& streamer,
              const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
+             const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
 
     SpeculativeDecodingMetrics get_speculative_decoding_metrics();

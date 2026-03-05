@@ -16,6 +16,7 @@ public:
         const std::vector<GenerationConfig>&,
         const StreamerVariant&,
         std::optional<std::vector<ov::Tensor>>,
+        std::optional<std::vector<ov::Tensor>>,
         GenerateStrategy&);
 
     Eagle3DecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc, const std::vector<int>& hidden_layers_to_abstract);
@@ -26,12 +27,14 @@ public:
              const StreamerVariant& streamer,
              const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
+             const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
              const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
                                  std::optional<ov::Tensor> token_type_ids = std::nullopt,
+                                 std::optional<ov::Tensor> prompt_ids = std::nullopt,
                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
 
     GenerationHandle add_request(uint64_t request_id,
