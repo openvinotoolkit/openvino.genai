@@ -72,6 +72,7 @@ export class WhisperPipeline {
     const generationConfig = options?.generationConfig ?? {};
 
     let streamingStatus = StreamingStatus.RUNNING;
+    let handledError: Error | null;
     const queue: { done: boolean; chunk: string }[] = [];
     type ResolveFunction = (arg: { value: string; done: boolean }) => void;
     let resolvePromise: ResolveFunction | null = null;
@@ -93,7 +94,7 @@ export class WhisperPipeline {
           resolvePromise = null;
           rejectPromise = null;
         } else {
-          throw error;
+          handledError = error;
         }
       } else {
         const fullText = result.texts?.[0] ?? "";
@@ -122,6 +123,11 @@ export class WhisperPipeline {
 
     return {
       async next() {
+        if (handledError) {
+          const error = handledError;
+          handledError = null;
+          return Promise.reject(error);
+        }
         const data = queue.shift();
         if (data) {
           return { value: data.chunk, done: data.done };

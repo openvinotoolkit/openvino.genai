@@ -3,6 +3,8 @@
 
 #include "include/whisper_pipeline/init_worker.hpp"
 
+#include <filesystem>
+
 #include "include/helper.hpp"
 
 WhisperInitWorker::WhisperInitWorker(Napi::Function& callback,

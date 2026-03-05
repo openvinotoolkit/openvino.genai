@@ -4,6 +4,8 @@
 #include "include/whisper_pipeline/pipeline_wrapper.hpp"
 
 #include <future>
+#include <iostream>
+#include <memory>
 #include <optional>
 #include <thread>
 
@@ -111,16 +113,22 @@ void whisperPerformInferenceThread(WhisperTsfnContext* context) {
             }
             report_error(combined_error);
         } else {
-            napi_status status =
-                context->callback_tsfn.BlockingCall([&result, &report_error](Napi::Env env, Napi::Function js_callback) {
+            std::shared_ptr<ov::genai::WhisperDecodedResults> final_result =
+                std::make_shared<ov::genai::WhisperDecodedResults>(std::move(result));
+            std::shared_ptr<std::string> final_callback_error = std::make_shared<std::string>();
+
+            napi_status status = context->callback_tsfn.BlockingCall(
+                [final_result, final_callback_error](Napi::Env env, Napi::Function js_callback) {
                     try {
-                        js_callback.Call({env.Null(), to_whisper_decoded_result(env, result)});
+                        js_callback.Call({env.Null(), to_whisper_decoded_result(env, *final_result)});
                     } catch (const std::exception& err) {
-                        report_error("The final callback failed. Details:\n" + std::string(err.what()));
+                        *final_callback_error = "The final callback failed. Details:\n" + std::string(err.what());
                     }
                 });
             if (status != napi_ok) {
                 report_error("The final BlockingCall failed with status " + std::to_string(static_cast<int>(status)));
+            } else if (!final_callback_error->empty()) {
+                report_error(*final_callback_error);
             }
         }
     } catch (const std::exception& e) {
