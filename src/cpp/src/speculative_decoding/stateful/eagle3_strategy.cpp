@@ -172,7 +172,12 @@ void Eagle3InferWrapperBase::set_npu_sampling_result(size_t num_candidates,
 }
 
 void Eagle3InferWrapperBase::reset_state() {
+    if (m_sequence_group) {
+        m_sampler.clear_request_info(m_sequence_group->get_request_id());
+    }
     m_sequence_group = nullptr;
+
+    m_request.reset_state();
 
     m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
     m_raw_perf_metrics.m_durations.clear();
