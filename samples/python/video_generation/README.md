@@ -24,7 +24,7 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 Then, run the export with Optimum CLI:
 
 ```sh
-optimum-cli export openvino --model Lightricks/LTX-Video-0.9.8-13B-distilled --task text-to-video ltx_video_ov
+optimum-cli export openvino --model Lightricks/LTX-Video-0.9.8-13B-distilled --task text-to-video --weight-format fp32 ltx_video_ov
 ```
 
 Alternatively, do it in Python code:
