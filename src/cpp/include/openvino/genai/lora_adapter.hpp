@@ -33,6 +33,7 @@ class OPENVINO_GENAI_EXPORTS Adapter {
 
     friend Adapter flux_adapter_normalization(const Adapter& adapter);
     friend Adapter diffusers_adapter_normalization(const Adapter& adapter);
+    friend std::string detect_lora_prefix(const AdapterConfig& adapters);
 
     Adapter(const std::shared_ptr<AdapterImpl>& pimpl);
 public:

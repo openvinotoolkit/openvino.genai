@@ -62,6 +62,7 @@ private:
 
     Config m_config;
     AdapterController m_adapter_controller;
+    std::string m_lora_prefix;
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
     size_t m_expected_batch_size = 0;
