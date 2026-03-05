@@ -175,9 +175,14 @@ public:
     Tokenizer m_tokenizer;
 
     explicit Searcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer)
-        : m_sequence_group(sequence_group),
+        : m_sequence_group(std::move(sequence_group)),
           m_parameters{m_sequence_group->get_sampling_parameters()},
-          m_tokenizer(tokenizer) {}
+          m_tokenizer(std::move(tokenizer)) {}
+
+protected:
+    explicit Searcher(SequenceGroup::Ptr sequence_group)
+        : m_sequence_group(std::move(sequence_group)),
+          m_parameters{m_sequence_group->get_sampling_parameters()} {}
 };
 
 class Sampler::TreeSearcher : public Sampler::Searcher {
@@ -192,9 +197,9 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
         }
         CandidateNode(Beam beam) : candidate_beam(std::move(beam)) {}
     };
-    class Eagle2CandidateGraph {
+    class EagleCandidateGraph {
     public:
-        Eagle2CandidateGraph(Beam root_beam, int k = 0, int max_depth = 0)
+        EagleCandidateGraph(Beam root_beam, int k = 0, int max_depth = 0)
             : total_tokens(k),
               max_depth(max_depth),
               current_depth(0),
@@ -304,20 +309,6 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
 
             return result;
         }
-        int get_parent_id(uint64_t node_id) const {
-            auto it = node_map.find(node_id);
-            if (it == node_map.end())
-                return -1;
-            auto node = it->second;
-            auto parent_ptr = node->parent.lock();
-            if (!parent_ptr)
-                return -1;
-            return static_cast<int>(parent_ptr->get_id());
-        }
-        std::vector<std::shared_ptr<CandidateNode>> get_current_layer_candidates() {
-            return layer_to_nodes[current_depth];
-        }
-
         std::vector<Beam> get_leaf_nodes_from_candidates(const std::vector<Beam>& candidates) {
             std::vector<Beam> leaf_nodes;
             std::unordered_set<uint64_t> candidate_ids;
@@ -365,13 +356,8 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
                 node = parent_ptr;
             }
             std::reverse(path.begin(), path.end());
-            return {path};
+            return path;
         }
-        std::vector<std::vector<int64_t>> ss_token;
-        std::vector<std::vector<int32_t>> parents_list;
-        std::list<float> scores_list;
-        std::vector<int> topk_cs_index;
-        std::vector<std::vector<bool>> tree_mask;
 
     private:
         std::shared_ptr<CandidateNode> root;
@@ -385,15 +371,20 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
     };
     size_t m_tree_layer_counter = 0;
     size_t m_past_generate_len = 0;
-    std::shared_ptr<Eagle2CandidateGraph> m_eagle2_candidate_graph;
+    std::shared_ptr<EagleCandidateGraph> m_candidate_graph;
     std::vector<Beam> m_beams;
     uint64_t m_org_group_id = 0;
-    int64_t* m_d2t;  // Draft-to-target token ID offset
+    ov::Tensor m_d2t_tensor;  // Draft-to-target token ID offset (keeps tensor alive)
+
+    // Helpers called from select_top_k
+    auto build_top_k_frontier(const ov::Tensor& logits) -> std::vector<Beam>;
+    void advance_draft_layer(const std::vector<Beam>& candidates, SamplerOutput& sampler_output);
+    void finalize_tree(SamplerOutput& sampler_output, LogitProcessor& logit_processor);
+
 public:
     explicit TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tensor d2t);
 
     void select_top_k(const ov::Tensor& logits, SamplerOutput& sampler_output, LogitProcessor& logit_processor);
-    void finalize_eagle2_candidates(SamplerOutput& sampler_output);
 };
 
 class Sampler::GroupBeamSearcher : public Sampler::Searcher {
