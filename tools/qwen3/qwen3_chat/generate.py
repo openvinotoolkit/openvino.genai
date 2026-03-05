@@ -27,7 +27,7 @@ def generate_response(
 
     gen_kwargs: dict[str, Any] = {"thinker_do_sample": False}
     if speaker:
-        gen_kwargs["spk"] = speaker
+        gen_kwargs["speaker"] = speaker
 
     if enable_audio:
         gen_kwargs["return_audio"] = True
