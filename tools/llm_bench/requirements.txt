@@ -14,7 +14,7 @@ diffusers>=0.22.0,<=0.36.0
 optimum-intel[nncf]>=1.25.0,<=1.27.0
 packaging>=20.0,<=26.0
 psutil
-timm==1.0.24
+timm<=1.0.25
 tiktoken>=0.3.0,<=0.12.0
 librosa==0.11.0 # For Whisper
 matplotlib>=3.3.4,<=3.10.8
