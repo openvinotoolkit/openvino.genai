@@ -12,7 +12,7 @@ if(ENABLE_SAMPLES)
     add_subdirectory(c/text_generation)
     add_subdirectory(c/whisper_speech_recognition)
     add_subdirectory(c/visual_language_chat)
-    add_subdirectory(c/video_generation) # <-- YOUR NEW C SAMPLE ADDED HERE
+    add_subdirectory(c/video_generation) 
 endif()
 
 install(FILES
