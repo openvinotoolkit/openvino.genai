@@ -24,11 +24,32 @@ endif()
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 find_package(Threads REQUIRED)
 
+file(DOWNLOAD
+    https://raw.githubusercontent.com/nothings/stb/f75e8d1cad7d90d72ef7a4661f1b994ef78b4e31/stb_image.h
+    ${CMAKE_BINARY_DIR}/stb_image.h
+    EXPECTED_HASH MD5=27932e6fb3a2f26aee2fc33f2cb4e696)
+
 # end of dependencies
 
 set(TARGET_NAME continuous_batching_benchmark)
-add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
+add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp benchmark_utils.cpp ../../../samples/cpp/visual_language_chat/load_image.cpp)
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai nlohmann_json::nlohmann_json cxxopts::cxxopts Threads::Threads)
+target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_BINARY_DIR}" "${OpenVINOGenAI_SOURCE_DIR}/samples/cpp/visual_language_chat")
+
+set_target_properties(${TARGET_NAME} PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS ${TARGET_NAME}
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT tools_bin
+        EXCLUDE_FROM_ALL)
+
+set(TARGET_NAME vlm_continuous_batching_benchmark)
+add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp benchmark_utils.cpp ../../../samples/cpp/visual_language_chat/load_image.cpp)
+target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai nlohmann_json::nlohmann_json cxxopts::cxxopts Threads::Threads)
+
+target_include_directories(vlm_continuous_batching_benchmark PRIVATE "${CMAKE_BINARY_DIR}" "${OpenVINOGenAI_SOURCE_DIR}/samples/cpp/visual_language_chat")
 
 set_target_properties(${TARGET_NAME} PROPERTIES
     # Ensure out of box LC_RPATH on macOS with SIP
