@@ -60,6 +60,9 @@ public:
     size_t temporal_patch_size = 2;
     size_t merge_size = 2;
 
+    // mllama specific params
+    size_t max_image_tiles = 4;
+
     /// @brief Default constructor
     ProcessorConfig() = default;
     /// @brief Construct ProcessorConfig from values in json_path.
