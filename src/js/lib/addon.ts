@@ -180,7 +180,7 @@ export interface VLMPipeline {
     callback: (err: Error | null) => void,
   ): void;
   generate(
-    prompt: string,
+    inputs: string | IChatHistory,
     images: Tensor[] | undefined,
     videos: Tensor[] | undefined,
     streamer: ((chunk: string) => StreamingStatus) | undefined,

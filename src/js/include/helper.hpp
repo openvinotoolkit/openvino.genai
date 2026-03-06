@@ -22,6 +22,8 @@ template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
 using GenerateInputs = std::variant<ov::genai::StringInputs, ov::genai::ChatHistory>;
+/** VLM generate first argument: prompt string or ChatHistory */
+using VLMGenerateInputs = std::variant<std::string, ov::genai::ChatHistory>;
 
 #define VALIDATE_ARGS_COUNT(info, expected_count, method_name)                                 \
     if (info.Length() != expected_count) {                                                     \
@@ -82,6 +84,9 @@ std::vector<float> js_to_cpp<std::vector<float>>(const Napi::Env& env, const Nap
 /** @brief  A template specialization for TargetType GenerateInputs */
 template <>
 GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType VLMGenerateInputs */
+template <>
+VLMGenerateInputs js_to_cpp<VLMGenerateInputs>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::genai::JsonContainer */
 template <>
 ov::genai::JsonContainer js_to_cpp<ov::genai::JsonContainer>(const Napi::Env& env, const Napi::Value& value);
@@ -122,7 +127,8 @@ std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env,
 /**
  * @brief  Unwraps a C++ object from a JavaScript wrapper.
  * @tparam TargetType The C++ class type to extract.
- * @return Reference to the unwrapped C++ object.
+ * @return Reference to the unwrapped C++ object. Valid only while the JS wrapper is alive.
+ *         Callers that store the result for async use (e.g. in a variant passed to another thread) must copy.
  */
 template <typename TargetType>
 TargetType& unwrap(const Napi::Env& env, const Napi::Value& value);
@@ -132,6 +138,9 @@ ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, con
 
 template <>
 ov::genai::VLMPerfMetrics& unwrap<ov::genai::VLMPerfMetrics>(const Napi::Env& env, const Napi::Value& value);
+
+template <>
+ov::genai::ChatHistory& unwrap<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value);
 
 /**
  * @brief  Template function to convert C++ data types into Javascript data types
