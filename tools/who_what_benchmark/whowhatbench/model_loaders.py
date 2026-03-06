@@ -1,13 +1,16 @@
+import os
 from pathlib import Path
 import logging
 import torch
+
+from packaging.version import Version
 
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoModel,
-    AutoModelForVision2Seq,
     AutoTokenizer,
+    __version__,
 )
 
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
@@ -22,10 +25,14 @@ from .utils import (
     mock_torch_cuda_is_available,
     mock_AwqQuantizer_validate_environment,
     disable_diffusers_model_progress_bar,
+    get_json_config,
 )
-import os
 
-from whowhatbench.utils import get_json_config
+# hide transformers progress bar
+from transformers.utils.logging import disable_progress_bar
+
+disable_progress_bar()
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -158,7 +165,7 @@ def load_text_llamacpp_pipeline(model_dir):
 
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
-    model_kwargs = {}
+    model_kwargs = {"torch_dtype": torch.float32}
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
     if not torch.cuda.is_available or device.lower() == "cpu":
@@ -175,9 +182,6 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             if getattr(config, "quantization_config", None):
                 is_gptq = config.quantization_config["quant_method"] == "gptq"
                 is_awq = config.quantization_config["quant_method"] == "awq"
-        if is_gptq or is_awq:
-            # infer in FP32
-            model_kwargs["torch_dtype"] = torch.float32
         with mock_AwqQuantizer_validate_environment(is_awq), mock_torch_cuda_is_available(is_gptq or is_awq):
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
@@ -289,11 +293,13 @@ def load_text2image_model(
         model = load_text2image_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_hf:
         from diffusers import DiffusionPipeline
+
         logger.info("Using HF Transformers API")
+        model_kwargs = {"torch_dtype": torch.float32}
         try:
-            model = DiffusionPipeline.from_pretrained(model_id)
+            model = DiffusionPipeline.from_pretrained(model_id, **model_kwargs)
         except Exception:
-            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True)
+            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, **model_kwargs)
         if 'adapters' in kwargs and kwargs['adapters'] is not None:
             for idx, adapter in enumerate(kwargs['adapters']):
                 model.load_lora_weights(adapter, adapter_name=f"adapter_{idx}")
@@ -353,6 +359,7 @@ def load_visual_text_model(
 ):
     if use_hf:
         logger.info("Using HF Transformers API")
+
         trust_remote_code = False
         try:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
@@ -366,10 +373,23 @@ def load_visual_text_model(
 
             AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
 
+        model_kwargs = {"torch_dtype": torch.float32, "trust_remote_code": trust_remote_code}
         try:
-            model = AutoModelForVision2Seq.from_pretrained(
-                model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
-            )
+            model_cls = None
+
+            # AutoModelForVision2Seq was removed in transformers 5.0.0
+            # let's try to use AutoModelForImageTextToText instead first
+            transformers_version = Version(__version__)
+            if transformers_version < Version("5.0.0"):
+                from transformers import AutoModelForVision2Seq
+
+                model_cls = AutoModelForVision2Seq
+            else:
+                from transformers import AutoModelForImageTextToText
+
+                model_cls = AutoModelForImageTextToText
+
+            model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
         except ValueError:
             try:
                 model_cls = AutoModel
@@ -380,9 +400,7 @@ def load_visual_text_model(
                 elif config.model_type in ["gemma3"]:
                     model_cls = AutoModelForCausalLM
 
-                model = model_cls.from_pretrained(
-                    model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
-                )
+                model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
             except ValueError:
                 if config.model_type == "phi4mm" or config.model_type == "llava-qwen2":
                     if hasattr(config, "audio_processor") and "activation_checkpointing" in config.audio_processor["config"]:
@@ -394,9 +412,9 @@ def load_visual_text_model(
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
-                    trust_remote_code=trust_remote_code,
                     device_map=device.lower(),
                     **from_pretrained_kwargs,
+                    **model_kwargs,
                 )
 
                 if config.model_type == "phi4mm":
@@ -467,9 +485,8 @@ def load_imagetext2image_model(
         from diffusers import AutoPipelineForImage2Image
 
         logger.info("Using HF Transformers API")
-        model = AutoPipelineForImage2Image.from_pretrained(
-            model_id, trust_remote_code=True
-        )
+        model_kwargs = {"torch_dtype": torch.float32}
+        model = AutoPipelineForImage2Image.from_pretrained(model_id, trust_remote_code=True, **model_kwargs)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_image2image_genai_pipeline(model_id, device, ov_config)
@@ -515,10 +532,9 @@ def load_inpainting_model(
     if use_hf:
         from diffusers import AutoPipelineForInpainting
 
+        model_kwargs = {"torch_dtype": torch.float32}
         logger.info("Using HF Transformers API")
-        model = AutoPipelineForInpainting.from_pretrained(
-            model_id, trust_remote_code=True
-        )
+        model = AutoPipelineForInpainting.from_pretrained(model_id, trust_remote_code=True, **model_kwargs)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_inpainting_genai_pipeline(model_id, device, ov_config)
@@ -578,8 +594,10 @@ def load_embedding_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwa
 def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     if use_hf:
         from transformers import AutoModel
+
         logger.info("Using HF Transformers API")
-        model = AutoModel.from_pretrained(model_id, trust_remote_code=True)
+        model_kwargs = {"torch_dtype": torch.float32}
+        model = AutoModel.from_pretrained(model_id, trust_remote_code=True, **model_kwargs)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_embedding_genai_pipeline(model_id, device, ov_config, **kwargs)
@@ -632,12 +650,15 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
 
     if use_hf:
         logger.info("Using HF Transformers API")
+        model_kwargs = {"torch_dtype": torch.float32}
         if is_qwen3_causallm(config):
             from transformers import AutoModelForCausalLM
-            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
+
+            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, **model_kwargs)
         else:
             from transformers import AutoModelForSequenceClassification
-            model = AutoModelForSequenceClassification.from_pretrained(model_id, trust_remote_code=True)
+
+            model = AutoModelForSequenceClassification.from_pretrained(model_id, trust_remote_code=True, **model_kwargs)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         is_qwen3_model = is_qwen3(config)
@@ -685,10 +706,11 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
         from diffusers import LTXPipeline
 
         logger.info("Using HF Transformers API")
+        model_kwargs = {"torch_dtype": torch.float32}
         try:
-            model = LTXPipeline.from_pretrained(model_id)
+            model = LTXPipeline.from_pretrained(model_id, **model_kwargs)
         except ValueError:
-            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True)
+            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True, **model_kwargs)
     else:
         logger.info("Using Optimum API")
         from optimum.intel import OVLTXPipeline

@@ -1,26 +1,18 @@
-import os
-import shutil
-import tempfile
 import pandas as pd
 import pytest
 import logging
 import json
 import sys
 
-from transformers import AutoTokenizer
-from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfig
-
-from conftest import run_wwb
+from conftest import run_wwb, convert_model
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-model_id = "facebook/opt-125m"
-tmp_dir = tempfile.mkdtemp()
-base_model_path = os.path.join(tmp_dir, "opt125m")
-target_model_path = os.path.join(tmp_dir, "opt125m_int8")
+base_model_id = "facebook/opt-125m"
+int8_model_id = "facebook/opt-125m_int8"
 
 # awq/gptq models are skipped for now: 180586
 awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
@@ -28,31 +20,11 @@ awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
 gptq_model_id = "ybelkada/opt-125m-gptq-4bit"
 
 
-def setup_module():
-    from optimum.exporters.openvino.convert import export_tokenizer
-
-    logger.info("Create models")
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    base_model = OVModelForCausalLM.from_pretrained(model_id)
-    base_model.save_pretrained(base_model_path)
-    tokenizer.save_pretrained(base_model_path)
-    export_tokenizer(tokenizer, base_model_path)
-
-    target_model = OVModelForCausalLM.from_pretrained(
-        model_id, quantization_config=OVWeightQuantizationConfig(bits=8)
-    )
-    target_model.save_pretrained(target_model_path)
-    tokenizer.save_pretrained(target_model_path)
-    export_tokenizer(tokenizer, target_model_path)
-
-
-def teardown_module():
-    logger.info("Remove models")
-    shutil.rmtree(tmp_dir)
-
-
 @pytest.mark.skipif((sys.platform == "darwin"), reason='173169')
 def test_text_target_model():
+    base_model_path = convert_model(base_model_id)
+    target_model_path = convert_model(int8_model_id)
+
     run_wwb([
         "--base-model",
         base_model_path,
@@ -69,6 +41,8 @@ def test_text_target_model():
 
 @pytest.fixture
 def test_text_gt_data(tmp_path):
+    base_model_path = convert_model(base_model_id)
+
     temp_file_name = tmp_path / "gt.csv"
     run_wwb([
         "--base-model",
@@ -94,6 +68,9 @@ def test_text_output_directory(tmp_path):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
     temp_file_name = tmp_path / "gt.csv"
+    base_model_path = convert_model(base_model_id)
+    target_model_path = convert_model(int8_model_id)
+
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -129,6 +106,9 @@ def test_text_output_directory(tmp_path):
 def test_text_verbose():
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
+    base_model_path = convert_model(base_model_id)
+    target_model_path = convert_model(int8_model_id)
+
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -163,7 +143,7 @@ def test_text_language(tmp_path):
 
 @pytest.mark.parametrize(
     ("model_id"),
-    [(model_id)],
+    [(base_model_id)],
 )
 def test_text_hf_model(model_id, tmp_path):
     temp_file_name = tmp_path / "gt.csv"
@@ -185,6 +165,9 @@ def test_text_hf_model(model_id, tmp_path):
 def test_text_genai_model():
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
+    base_model_path = convert_model(base_model_id)
+    target_model_path = convert_model(int8_model_id)
+
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -204,6 +187,9 @@ def test_text_genai_cb_model(tmp_path):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
     config_path = tmp_path / "config.json"
+    base_model_path = convert_model(base_model_id)
+    target_model_path = convert_model(int8_model_id)
+
     with open(config_path, "w") as f:
         config = {
             "dynamic_split_fuse": True,
@@ -251,6 +237,9 @@ def test_text_genai_json_string_config():
 
     cb_json_string = "{\"max_num_batched_tokens\": 4096}"
     ov_json_string = "{\"KV_CACHE_PRECISION\":\"f16\", \"ATTENTION_BACKEND\": \"PA\"}"
+
+    base_model_path = convert_model(base_model_id)
+    target_model_path = convert_model(int8_model_id)
 
     output = run_wwb([
         "--base-model",
