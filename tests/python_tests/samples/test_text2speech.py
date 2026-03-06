@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import os
@@ -9,7 +9,7 @@ import tempfile
 import numpy as np
 import pytest
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR
 from test_utils import run_sample
 
 rng = np.random.default_rng(34231)
@@ -50,6 +50,19 @@ class TestTextToSpeechSample:
         assert "Text successfully converted to audio file" in cpp_result.stdout, "C++ sample text2speech must be successfully completed"
         assert "Text successfully converted to audio file" in py_result.stdout, "Python sample text2speech must be successfully completed"
 
+    @pytest.mark.speech_generation
+    @pytest.mark.samples
+    @pytest.mark.parametrize("convert_model", ["tiny-random-SpeechT5ForTextToSpeech"], indirect=True)
+    @pytest.mark.parametrize("input_prompt", ["Hello everyone"])
+    def test_sample_text_to_speech_c(self, convert_model, input_prompt):
+        # Run C sample
+        c_sample = SAMPLES_C_DIR / "text2speech_sample_c"
+        c_command = [c_sample, convert_model, input_prompt, self.temp_speaker_embedding_file.name]
+        c_result = run_sample(c_command)
+
+        assert "Text successfully converted to audio file" in c_result.stdout, (
+            "C sample text2speech must be successfully completed"
+        )
 
     @pytest.mark.speech_generation
     @pytest.mark.samples
