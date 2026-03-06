@@ -6,6 +6,7 @@ The following are sample files:
  - [`visual_language_chat.py`](./visual_language_chat.py) demonstrates basic usage of the VLM pipeline which supports accelerated inference using prompt lookup decoding.
  - [`video_to_text_chat.py`](./video_to_text_chat.py) demonstrates video to text usage of the VLM pipeline.
  - [`benchmark_vlm.py`](./benchmark_vlm.py) shows how to benchmark a VLM in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text and calculating various performance metrics.
+ - [`visual_language_lora.py`](./visual_language_lora.py) demonstrates how to apply one or more LoRA adapters to a VLM at runtime.
  - [`milebench_eval_vlm.py`](./milebench_eval_vlm.py) provides MileBench validation for VLMs, enabling evaluation of image–text reasoning and visual QA tasks across multiple subsets designed to assess the MultImodal Long-contExt capabilities of MLLMs.
 
 ## Download and convert the model and tokenizers
@@ -49,6 +50,38 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 `python visual_language_chat.py ./miniCPM-V-2_6/ 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg`
 
 See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
+
+## Run image-to-text sample with LoRA adapters:
+
+This sample runs generation twice for the same prompt and image: first with LoRA adapter(s) applied, then without any adapters (base model).
+
+Export `Qwen/Qwen2.5-VL-7B-Instruct` to OpenVINO as [described above for MiniCPM-V](#download-and-convert-the-model-and-tokenizers), then download LoRA `Mouad2004/qwen2.5-vl-lora-diagrams`:
+
+```sh
+wget -O adapter_model.safetensors \
+	https://huggingface.co/Mouad2004/qwen2.5-vl-lora-diagrams/resolve/main/adapter_model.safetensors
+```
+
+This OpenVINO overview diagram can be used as a convenient image input:
+
+```sh
+wget -O openvino-overview-diagram.jpg \
+	https://docs.openvino.ai/2026/_images/openvino-overview-diagram.jpg
+```
+
+`python visual_language_lora.py ./Qwen2.5-VL-7B-Instruct ./openvino-overview-diagram.jpg CPU ./adapter_model.safetensors 4.0`
+
+> You can run with multiple LoRA adapters by providing multiple `<LORA_SAFETENSORS> <ALPHA>` pairs.
+
+> [!NOTE]
+> ### LoRA `alpha` interpretation in OpenVINO GenAI
+> The OpenVINO GenAI implementation merges the traditional LoRA parameters into a **single effective scaling factor** used during inference.
+>
+> In this context, the `alpha` value already includes:
+> - normalization by LoRA rank (`alpha / rank`)
+> - any user-defined scaling factor (`weight`)
+>
+> This means `alpha` in GenAI should be treated as the **final scaling weight** applied to the LoRA update — not the raw `alpha` parameter from training.
 
 ## Run video-to-text chat sample:
 
