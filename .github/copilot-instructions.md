@@ -24,7 +24,7 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 2. Performance: avoid `dynamic_cast` in hot paths (inference loops). Use `static_cast` or redesign if the type is known.
 3. Avoid copies: large data structures (like tensors) must be passed by reference or moved, not copied.
 4. Pass non-fundamental values by `const` reference wherever possible.
-5. Exceptions: use `OPENVINO_ASSERT(condition, ...)` for checks instead of `if` + `OPENVINO_THROW()` or `throw`.
+5. Exceptions: use `OPENVINO_ASSERT(condition, ...)` for checks instead of `if` + `OPENVINO_THROW(...)` or `throw`.
 6. Formatting & Safety:
    - No `using namespace std;`.
    - No `auto` for primitive types where it obscures readability.
