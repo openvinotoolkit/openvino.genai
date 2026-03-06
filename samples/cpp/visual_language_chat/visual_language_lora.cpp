@@ -30,12 +30,14 @@ int main(int argc, char* argv[]) try {
 
     // LoRA args parsed as pairs: <LORA_SAFETENSORS> <ALPHA>
     ov::genai::AdapterConfig adapter_config;
-    for (int idx = 4; idx + 1 < argc; idx += 2) {
-        ov::genai::Adapter adapter(argv[idx]);
-        float alpha = std::stof(argv[idx + 1]);
-        adapter_config.add(adapter, alpha);
+    if (argc > 4) {
+        for (int idx = 4; idx + 1 < argc; idx += 2) {
+            ov::genai::Adapter adapter(argv[idx]);
+            float alpha = std::stof(argv[idx + 1]);
+            adapter_config.add(adapter, alpha);
+        }
+        pipeline_properties.insert({ov::genai::adapters(adapter_config)});
     }
-    pipeline_properties.insert({ov::genai::adapters(adapter_config)});
 
     ov::genai::VLMPipeline pipe(argv[1], device, pipeline_properties);
 
