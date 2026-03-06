@@ -1038,9 +1038,7 @@ class SafetensorsAdapterImpl : public AdapterImpl {
 public:
 
     SafetensorsAdapterImpl(const std::filesystem::path& path) {
-        if (!std::filesystem::exists(path)) {
-            OPENVINO_THROW("LoRA adapter path does not exist: ", path.string());
-        }
+        OPENVINO_ASSERT(std::filesystem::exists(path), "LoRA adapter path does not exist: ", path.string());
         OPENVINO_ASSERT(path.extension().string() == ".safetensors", "Expected .safetensors file, got: ", path.string());
 
         auto safetensor_content = read_safetensors(path);
