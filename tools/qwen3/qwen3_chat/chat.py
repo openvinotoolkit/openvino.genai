@@ -65,12 +65,11 @@ def chat_loop(
 
         history.append({"role": "user", "content": content})
 
-        print("Generating...", end="", flush=True)
-        with torch.no_grad():
+        print("Qwen: ", end="", flush=True)
+        with torch.inference_mode():
             text, audio = generate_response(
                 model, processor, history, enable_audio, speaker,
             )
-        print(f"\r\033[KQwen: {text}")
 
         if audio is not None:
             turn += 1
