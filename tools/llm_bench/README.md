@@ -344,7 +344,7 @@ python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --tas
 - `-mc, --memory_consumption`: Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations. If the value is 2, output the maximum memory consumption in all iterations.
 - `--memory_consumption_interval`: Interval sampling for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance.
 - `--memory_consumption_cooldown`: Time for relaxing before workload, it allows to deallocate system resources.
-- `-mc_dir, --memory_consumption_dir`: Path to store memory consamption logs and chart.
+- `-mc_dir, --memory_consumption_dir`: Path to store memory consumption logs and chart.
 
 ## 9. Additional Resources
 
