@@ -191,6 +191,7 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
         gen_fn = run_text_to_speech_generation_optimum
 
     proc_id = os.getpid()
+    mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
     if args['subsequent'] is False:
         for num in range(num_iters + 1):

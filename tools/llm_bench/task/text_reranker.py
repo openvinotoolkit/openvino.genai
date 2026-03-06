@@ -344,8 +344,7 @@ class TextRerankerGenAI(CommonPipeline):
         return iter_data, []
 
 
-def run_text_reranker_benchmark(
-    model_path: Path, framework: str, device: str, args: dict, num_iters: int, mem_consumption):
+def run_text_reranker_benchmark(model_path: Path, framework: str, device: str, args: dict, num_iters: int, mem_consumption):
     mem_consumption.update_marker("model")
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_reranker_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
@@ -357,6 +356,7 @@ def run_text_reranker_benchmark(
         text_reranker_pipeline = TextRerankerGenAI(model, tokenizer, args, model_path, mem_consumption)
 
     proc_id = os.getpid()
+    mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
     if args["subsequent"] is False:
         for num in range(num_iters + 1):
