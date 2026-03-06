@@ -434,9 +434,7 @@ void init_generation_config(py::module_& m) {
     // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
-        .def(py::init([](py::kwargs kwargs) {
-            return pyutils::update_config_from_kwargs(GenerationConfig(), kwargs);
-        }))
+        .def(py::init([](py::kwargs kwargs) { return pyutils::update_config_from_kwargs(GenerationConfig(), kwargs); }))
         .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
         .def_readwrite("max_length", &GenerationConfig::max_length)
         .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)
@@ -465,9 +463,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("assistant_confidence_threshold", &GenerationConfig::assistant_confidence_threshold)
         .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
         .def_readwrite("max_ngram_size", &GenerationConfig::max_ngram_size)
-        .def_readwrite("eagle_tree_params",
-                       &GenerationConfig::eagle_tree_params,
-                       "EAGLE tree parameters for speculative decoding")
+        .def_readwrite("eagle_tree_params", &GenerationConfig::eagle_tree_params, "EAGLE tree parameters for speculative decoding")
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def_readwrite("structured_output_config", &GenerationConfig::structured_output_config)
@@ -481,7 +477,9 @@ void init_generation_config(py::module_& m) {
         .def("is_assisting_generation", &GenerationConfig::is_assisting_generation)
         .def("is_prompt_lookup", &GenerationConfig::is_prompt_lookup)
         .def("validate", &GenerationConfig::validate)
-        .def("update_generation_config", [](ov::genai::GenerationConfig& config, const py::kwargs& kwargs) {
+        .def("update_generation_config", [](
+            ov::genai::GenerationConfig& config,
+            const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
    }

@@ -701,8 +701,8 @@ auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> st
     }
 
     // Sort the top-k candidates by score and truncate so callers can safely iterate all elements.
-    const size_t k = m_parameters.eagle_tree_params.branching_factor;
-    const size_t kept = std::min(k, candidates.size());
+    const size_t branching_factor = m_parameters.eagle_tree_params.branching_factor;
+    const size_t kept = std::min(branching_factor, candidates.size());
     std::partial_sort(candidates.begin(),
                       candidates.begin() + kept,
                       candidates.end(),
@@ -716,19 +716,19 @@ auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> st
 void Sampler::TreeSearcher::advance_draft_layer(const std::vector<CandidateBeam>& candidates,
                                                 SamplerOutput& sampler_output) {
     // candidates has been truncated to at most branching_factor entries by build_top_k_frontier.
-    const size_t k = candidates.size();
+    const size_t num_candidates = candidates.size();
 
     // Count how many times each parent sequence needs to be forked
     std::unordered_map<uint64_t, uint64_t> parent_fork_count;
     for (const DraftBeam& beam : m_frontier)
         parent_fork_count[beam.m_sequence->get_id()] = 0;
-    for (size_t i = 0; i < k; ++i)
+    for (size_t i = 0; i < num_candidates; ++i)
         parent_fork_count[candidates[i].parent_sequence->get_id()] += 1;
 
     std::vector<DraftBeam> next_frontier;
-    next_frontier.reserve(k);
+    next_frontier.reserve(num_candidates);
 
-    for (size_t i = 0; i < k; ++i) {
+    for (size_t i = 0; i < num_candidates; ++i) {
         const CandidateBeam& cand = candidates[i];
         const uint64_t parent_seq_id = cand.parent_sequence->get_id();
         uint64_t& forks_remaining = parent_fork_count[parent_seq_id];
@@ -748,7 +748,10 @@ void Sampler::TreeSearcher::advance_draft_layer(const std::vector<CandidateBeam>
         next_frontier.push_back({cand.node_id, std::move(seq), cand.score});
     }
 
-    // Retire frontier sequences that had no children selected; skip those already in next_frontier.
+    // Retire frontier sequences that had no selected children.
+    // After the fork loop, a non-zero count (always 1) means the sequence was
+    // extended in-place as its last child and already appears in next_frontier.
+    // A zero count means no children were selected; retire the sequence here.
     for (const DraftBeam& beam : m_frontier) {
         if (parent_fork_count[beam.m_sequence->get_id()] != 0)
             continue;
@@ -768,10 +771,10 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitPr
     const std::vector<EagleCandidateGraph::Node> final_nodes = m_candidate_graph->select_candidate_nodes();
 
     // Collect tree-layer position IDs
-    std::vector<int> position_ids;
+    std::vector<int64_t> position_ids;
     position_ids.reserve(final_nodes.size());
     for (const EagleCandidateGraph::Node& n : final_nodes)
-        position_ids.push_back(n.tree_layer);
+        position_ids.push_back(static_cast<int64_t>(n.tree_layer));
 
     // Build node_id -> index-in-final_nodes map for path remapping
     std::unordered_map<uint64_t, size_t> nodeid_to_index;
@@ -822,8 +825,8 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitPr
 
     OPENVINO_ASSERT(final_nodes.size() > static_cast<size_t>(m_parameters.eagle_tree_params.tree_depth),
                     "finalize_tree: fewer candidate nodes than tree_depth; tree parameters may be inconsistent");
-    const size_t diff = final_nodes.size() - static_cast<size_t>(m_parameters.eagle_tree_params.tree_depth) - 1;
-    m_sequence_group->update_processed_tokens_num(m_sequence_group->get_num_processed_tokens() + diff);
+    const size_t extra_processed_tokens = final_nodes.size() - static_cast<size_t>(m_parameters.eagle_tree_params.tree_depth) - 1;
+    m_sequence_group->update_processed_tokens_num(m_sequence_group->get_num_processed_tokens() + extra_processed_tokens);
     sequence->set_eagle_metadata({tree_mask, retrieve_indices, position_ids});
     sequence->set_status(SequenceStatus::RUNNING);
 
