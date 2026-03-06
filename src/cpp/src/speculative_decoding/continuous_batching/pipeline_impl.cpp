@@ -244,6 +244,24 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                                                                                          const GeneratedSequences& candidates,
                                                                                          bool is_update_logit_processor) {
     UpdateRequestResult result{0, 0};
+    // Check if all requests have completed pre-filling
+    bool all_prefill_finished = true;
+    bool current_finished_prefill = false;
+    for (auto& request : m_requests) {
+        const bool finished = request->has_generated_tokens();
+        if (!finished) {
+            all_prefill_finished = false;
+        }
+        if (request->get_request_id() == request_id && finished) {
+            current_finished_prefill = true;
+        }
+    }
+
+    // To ensure that `draft model` and `main model` process the same chunks.
+    // The request that completes the prefill first needs to pause and wait for other requests to complete their
+    // prefill.
+    bool pause_gen_status = !all_prefill_finished && current_finished_prefill;
+
     for (auto& request : m_requests) {
         if (request_id != request->get_request_id()) {
             continue;
@@ -330,12 +348,15 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         //    slice prompt into chunks when dynamic_split_fuse is enabled),
         //    in this case, `draft_model` can also begin processing the same portion of prompt.
         if (!m_is_validation_mode_enabled) {
-            bool pause_gen_status = false;
             generated_len -= result.removed_tokens_cnt;
             generated_len += result.inserted_tokens_cnt;
             if (generated_len >= max_new_tokens - 1 || generated_len != 0 && result.inserted_tokens_cnt == 0) {
                 pause_gen_status = true;
             }
+            request->pause_generation(pause_gen_status);
+        } else {
+            // Pause `main model` generation when other requests have not yet completed prefill.
+            // Start `main model` generation when all requests have completed prefill.
             request->pause_generation(pause_gen_status);
         }
         break;
@@ -386,7 +407,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
 
         if (eagle_mode_enabled)
             m_model_runner->enable_hidden_state_import(false);
-        to_generate = false;
         for (auto& request : m_requests) {
             const auto& sampling_params = request->get_sampling_parameters();
             if (!sampling_params.is_assisting_generation()) {
@@ -406,7 +426,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             } else if (is_stop_token_id_hit_in_sequence_group(request, sampling_params.stop_token_ids)) {
                 request->pause_generation(true);
             }
-            to_generate |= request->can_generate_tokens();
+            // To prevent `draft model` from processing chunks that the main model has not yet processed.
+            // Draft model will begin to execute multiple times after all the chunks of every prompts have been processed.
+            to_generate &= request->can_generate_tokens();
         }
     }
     if (eagle_mode_enabled)

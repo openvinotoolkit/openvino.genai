@@ -692,7 +692,7 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
     compare_generation_results([prompt], ref_gen_results, ov_gen_results, ov_generation_config)
 
 
-def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id):
+def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id, prompts):
     main_model_path = download_and_convert_model(main_model_id).models_path
     draft_model_path = download_and_convert_model(draft_model_id).models_path
 
@@ -706,7 +706,7 @@ def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id)
         scheduler_config=scheduler_config_ref,
     )
 
-    scheduler_config_target = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": 5})
+    scheduler_config_target = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": 15})
     ov_pipe_target = create_ov_pipeline(
         main_model_path,
         pipeline_type=PipelineType.SPECULATIVE_DECODING,
@@ -715,13 +715,17 @@ def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id)
     )
 
     generation_config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=4)
-    prompt = "Why is the Sun yellow?"
-    result_ref = ov_pipe_ref.generate([prompt], generation_config)
-    result_gen = ov_pipe_target.generate([prompt], generation_config)
+    result_ref = ov_pipe_ref.generate(prompts, generation_config)
+    result_gen = ov_pipe_target.generate(prompts, generation_config)
 
-    reference = result_ref.texts[0]
-    generated = result_gen.texts[0]
-    assert generated == reference
+    result_len_ref = len(result_ref.texts)
+    result_len_gen = len(result_gen.texts)
+
+    assert result_len_ref == result_len_gen
+    for i in range(0, result_len_ref):
+        reference = result_ref.texts[i]
+        generated = result_gen.texts[i]
+        assert generated == reference
 
     extended_perf_metrics_gen = result_gen.extended_perf_metrics
     total_iteration_number_main = len(extended_perf_metrics_gen.main_model_metrics.raw_metrics.m_durations)
@@ -729,9 +733,25 @@ def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id)
     assert total_iteration_number_main > 0 and total_iteration_number_main < num_generated_tokens_main
 
 
-def test_dynamic_split_fuse_for_speculative_decoding():
-    compare_results_for_dynamic_split_fuse_config("HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-135M")
+batch_prompts = [
+    ["Do you know why the Sun appears yellow to us on Earth, even though it actually emits white light?"],
+    [
+        "Do you know why the Sun appears yellow to us on Earth, even though it actually emits white light?",
+        "Please tell me something about Canada based on your knowledge, such as its geography, culture, history, or unique national characteristics.",
+    ],
+    [
+        "Do you know why the Sun appears yellow to us on Earth, even though it actually emits white light?",
+        "Please tell me something about Canada based on your knowledge, such as its geography, culture, history, or unique national characteristics.",
+        "Please tell me something about OpenVINO based on your knowledge, including its purpose, core features, typical use cases.",
+    ],
+]
 
 
-def test_dynamic_split_fuse_for_eagle3():
-    compare_results_for_dynamic_split_fuse_config("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3")
+@pytest.mark.parametrize("prompts", batch_prompts)
+def test_dynamic_split_fuse_for_speculative_decoding(prompts):
+    compare_results_for_dynamic_split_fuse_config("HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-135M", prompts)
+
+
+@pytest.mark.parametrize("prompts", batch_prompts)
+def test_dynamic_split_fuse_for_eagle3(prompts):
+    compare_results_for_dynamic_split_fuse_config("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3", prompts)
