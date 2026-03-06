@@ -5,6 +5,23 @@
 #include "visual_language/chat_history_state.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 
+namespace {
+
+std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
+    const std::unordered_map<std::string, ov::Tensor>& src
+) {
+    std::unordered_map<std::string, ov::Tensor> dst;
+    dst.reserve(src.size());
+    for (const auto& [name, tensor] : src) {
+        ov::Tensor tensor_copy(tensor.get_element_type(), tensor.get_shape());
+        tensor.copy_to(tensor_copy);
+        dst.emplace(name, std::move(tensor_copy));
+    }
+    return dst;
+}
+
+} // namespace
+
 namespace ov::genai {
 
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
@@ -332,14 +349,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[0].get_shape()[1], 0));
 
-        // Deep copy lm_extra_inputs tensors to avoid stale references and map values overriding in loop
-        std::unordered_map<std::string, ov::Tensor> lm_extra_inputs_copy;
-        for (const auto& [name, tensor] : m_inputs_embedder->get_lm_extra_inputs()) {
-            ov::Tensor tensor_copy(tensor.get_element_type(), tensor.get_shape());
-            tensor.copy_to(tensor_copy);
-            lm_extra_inputs_copy[name] = std::move(tensor_copy);
-        }
-        lm_extra_inputs_list.push_back(std::move(lm_extra_inputs_copy));
+        lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
 
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
@@ -379,14 +389,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
-            // Deep copy lm_extra_inputs tensors to avoid stale references and map values overriding in loop
-            std::unordered_map<std::string, ov::Tensor> lm_extra_inputs_copy;
-            for (const auto& [name, tensor] : m_inputs_embedder->get_lm_extra_inputs()) {
-                ov::Tensor tensor_copy(tensor.get_element_type(), tensor.get_shape());
-                tensor.copy_to(tensor_copy);
-                lm_extra_inputs_copy[name] = std::move(tensor_copy);
-            }
-            lm_extra_inputs_list.push_back(std::move(lm_extra_inputs_copy));
+            lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
         
             auto end_get_inputs_embeds = std::chrono::steady_clock::now();
             vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
@@ -530,14 +533,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
-        // Deep copy lm_extra_inputs tensors to avoid stale references and map values overriding in loop
-        std::unordered_map<std::string, ov::Tensor> lm_extra_inputs_copy;
-        for (const auto& [name, tensor] : m_inputs_embedder->get_lm_extra_inputs()) {
-            ov::Tensor tensor_copy(tensor.get_element_type(), tensor.get_shape());
-            tensor.copy_to(tensor_copy);
-            lm_extra_inputs_copy[name] = std::move(tensor_copy);
-        }
-        lm_extra_inputs_list.push_back(std::move(lm_extra_inputs_copy));
+        lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
     
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
