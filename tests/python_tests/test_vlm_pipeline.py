@@ -201,7 +201,7 @@ RETRY_MAX_DELAY_SEC = 2.0
 TEST_IMAGE_URLS = {
     'cat': 'https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11',
     'car': 'https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg',
-    'handwritten': 'https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350' #"C:\Users\SAS\Downloads\handwritten.png"
+    'handwritten': 'https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350'
 }
 
 NPU_UNSUPPORTED_MODELS = {
