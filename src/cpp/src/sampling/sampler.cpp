@@ -1,9 +1,10 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "sampling/sampler.hpp"
+
 #include <future>
 
-#include "sampling/sampler.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
 
 namespace ov::genai {
@@ -100,8 +101,6 @@ std::vector<int64_t> encode_and_process_string(const std::string& stop_string, o
 
 struct MatchStopStringResult {
     size_t to_remove = 0;
-    // int64_t last_token_id = 0;
-    // bool is_to_update_last_token = false;
     bool is_matched = false;
 };
 
@@ -207,10 +206,8 @@ void Sampler::GroupBeamSearcher::finalize(SamplerOutput& sampler_output) {
 }
 
 Sampler::GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer)
-    : m_sequence_group(sequence_group),
-        m_parameters{m_sequence_group->get_sampling_parameters()},
-        m_groups{m_parameters.num_beam_groups},
-        m_tokenizer(tokenizer) {
+    : Sampler::Searcher(sequence_group, tokenizer),
+      m_groups{m_parameters.num_beam_groups} {
     OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1);
     assert(m_parameters.num_beams % m_parameters.num_beam_groups == 0 &&
         "number of beams should be divisible by number of groups");
@@ -226,7 +223,6 @@ Sampler::GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group,
         group.ongoing.front().m_score = 0.0f;
     }
 }
-
 
 std::map<size_t, int32_t> Sampler::GroupBeamSearcher::get_beam_idxs() {
     std::map<size_t, int32_t> next_beams;
@@ -491,6 +487,379 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
         }
     }
 }
+/* tree generator logics */
+
+// ------------------------------------------------------------------
+// EagleCandidateGraph
+// ------------------------------------------------------------------
+
+EagleCandidateGraph::EagleCandidateGraph(int64_t root_token_id, float root_score, int max_tokens, int max_depth)
+    : m_max_tokens(max_tokens),
+      m_max_depth(max_depth) {
+    InternalNode root;
+    root.data = {0u, root_token_id, root_score, 0};
+    root.parent_id = 0u;
+    root.ancestor_ids = {0u};  // root is its own ancestor (self-inclusive convention)
+    m_nodes[0u] = std::move(root);
+}
+
+uint64_t EagleCandidateGraph::add_node(int64_t token_id, float score, uint64_t parent_node_id) {
+    const auto parent_it = m_nodes.find(parent_node_id);
+    OPENVINO_ASSERT(parent_it != m_nodes.end(), "EagleCandidateGraph: parent node not found");
+    const InternalNode& parent = parent_it->second;
+    if (parent.data.tree_layer >= m_max_depth)
+        return 0;  // beyond max depth; 0 serves as the invalid sentinel (valid IDs start at 1)
+
+    // Snapshot parent fields before inserting into m_nodes: operator[] may rehash and invalidate refs.
+    const int parent_layer = parent.data.tree_layer;
+    std::unordered_set<uint64_t> inherited_ancestors = parent.ancestor_ids;
+
+    const uint64_t new_id = m_next_node_id++;
+    InternalNode new_node;
+    new_node.data = {new_id, token_id, score, parent_layer + 1};
+    new_node.parent_id = parent_node_id;
+    new_node.ancestor_ids = std::move(inherited_ancestors);
+    new_node.ancestor_ids.insert(new_id);  // add self
+    m_nodes[new_id] = std::move(new_node);
+    m_nodes[parent_node_id].child_ids.push_back(new_id);
+    return new_id;
+}
+
+std::vector<EagleCandidateGraph::Node> EagleCandidateGraph::get_top_k_nodes() const {
+    if (m_max_tokens <= 0)
+        return {m_nodes.at(0u).data};
+
+    // Min-heap over non-root nodes: evicts the lowest-scoring node when over budget
+    const auto cmp_min = [](const Node& a, const Node& b) {
+        return a.score > b.score;
+    };
+    std::priority_queue<Node, std::vector<Node>, decltype(cmp_min)> min_heap(cmp_min);
+
+    for (const auto& [id, node] : m_nodes) {
+        if (id == 0u)
+            continue;
+        if (min_heap.size() < static_cast<size_t>(m_max_tokens)) {
+            min_heap.push(node.data);
+        } else if (node.data.score > min_heap.top().score) {
+            min_heap.pop();
+            min_heap.push(node.data);
+        }
+    }
+
+    std::vector<Node> result;
+    result.reserve(min_heap.size() + 1);
+    result.push_back(m_nodes.at(0u).data);  // root is always included
+    while (!min_heap.empty()) {
+        result.push_back(min_heap.top());
+        min_heap.pop();
+    }
+
+    // Sort by tree layer for deterministic node ordering
+    std::sort(result.begin(), result.end(), [](const Node& a, const Node& b) {
+        return a.tree_layer < b.tree_layer;
+    });
+    return result;
+}
+
+std::vector<EagleCandidateGraph::Node> EagleCandidateGraph::get_leaf_nodes(const std::vector<Node>& selected) const {
+    std::unordered_set<uint64_t> selected_ids;
+    selected_ids.reserve(selected.size());
+    for (const Node& n : selected)
+        selected_ids.insert(n.node_id);
+
+    std::vector<Node> leaves;
+    for (const Node& n : selected) {
+        const InternalNode& internal = m_nodes.at(n.node_id);
+        const bool has_selected_child =
+            std::any_of(internal.child_ids.begin(), internal.child_ids.end(), [&selected_ids](uint64_t child_id) {
+                return selected_ids.count(child_id) > 0;
+            });
+        if (!has_selected_child)
+            leaves.push_back(n);
+    }
+    return leaves;
+}
+
+std::vector<uint64_t> EagleCandidateGraph::get_path_to_node(uint64_t node_id) const {
+    OPENVINO_ASSERT(m_nodes.count(node_id) > 0, "EagleCandidateGraph::get_path_to_node: node_id not found in graph");
+    std::vector<uint64_t> path;
+    auto it = m_nodes.find(node_id);
+    while (it != m_nodes.end()) {
+        path.push_back(it->second.data.node_id);
+        if (it->second.data.node_id == 0u)
+            break;  // reached root
+        it = m_nodes.find(it->second.parent_id);
+    }
+    std::reverse(path.begin(), path.end());
+    return path;
+}
+
+bool EagleCandidateGraph::is_ancestor(uint64_t ancestor_id, uint64_t node_id) const {
+    const auto it = m_nodes.find(node_id);
+    if (it == m_nodes.end())
+        return false;
+    return it->second.ancestor_ids.count(ancestor_id) > 0;
+}
+
+// ------------------------------------------------------------------
+// TreeSearcher
+// ------------------------------------------------------------------
+
+Sampler::TreeSearcher::TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tensor d2t)
+    : Sampler::Searcher(sequence_group),
+      m_d2t_tensor(std::move(d2t)) {
+    OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1,
+                    "TreeSearcher must be initialized with exactly one running sequence");
+    // m_org_group_id is set authoritatively in tree_reset() at the start of each draft round.
+}
+
+void Sampler::TreeSearcher::tree_reset() {
+    m_candidate_graph.emplace(-1,
+                              0.0f,
+                              m_parameters.eagle_tree_params.total_tokens - 1,
+                              m_parameters.eagle_tree_params.tree_depth);
+    // Copy the shared_ptr by value: get_running_sequences() returns a temporary vector,
+    // so a const-ref to [0] would be dangling after the statement ends.
+    Sequence::Ptr root_seq = m_sequence_group->get_running_sequences()[0];
+    m_org_group_id = root_seq->get_grouped_id();
+    m_frontier = {{0u, std::move(root_seq), 0.0f}};  // root: node_id=0, cumulative score=0
+}
+
+auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> std::vector<CandidateBeam> {
+    const ov::Shape shape = logits.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3);
+    const size_t batch = shape[0], seq_len = shape[1], vocab_size = shape[2];
+
+    // Build seq_id -> batch-index lookup for the current frontier
+    const std::vector<Sequence::Ptr> running_seqs = m_sequence_group->get_running_sequences();
+    std::unordered_map<uint64_t, size_t> seq_id_to_batch_idx;
+    seq_id_to_batch_idx.reserve(running_seqs.size());
+    for (size_t idx = 0; idx < running_seqs.size(); ++idx)
+        seq_id_to_batch_idx[running_seqs[idx]->get_id()] = idx;
+
+    const int64_t* d2t = m_d2t_tensor ? m_d2t_tensor.data<const int64_t>() : nullptr;
+
+    std::vector<CandidateBeam> candidates;
+    candidates.reserve(m_parameters.eagle_tree_params.branching_factor * m_frontier.size());
+
+    for (const DraftBeam& draft : m_frontier) {
+        const auto idx_it = seq_id_to_batch_idx.find(draft.sequence->get_id());
+        OPENVINO_ASSERT(idx_it != seq_id_to_batch_idx.end(),
+                        "Internal error in tree search: frontier sequence not found in running set");
+        const size_t batch_idx = idx_it->second;
+        OPENVINO_ASSERT(batch_idx < batch, "Logits batch size doesn't match number of frontier sequences");
+
+        OPENVINO_ASSERT(seq_len > 0, "Logits tensor has zero sequence length");
+        const float* logit_row =
+            logits.data<const float>() + batch_idx * seq_len * vocab_size + (seq_len - 1) * vocab_size;
+
+        // Pass 1: find the max logit and collect the top-branching_factor tokens simultaneously.
+        // Fusing these two scans reduces full-vocabulary passes from 3 to 2, improving cache utilization.
+        using IndexScore = std::pair<float, size_t>;
+        const auto min_cmp = [](const IndexScore& a, const IndexScore& b) {
+            return a.first > b.first;
+        };
+        const size_t branching = m_parameters.eagle_tree_params.branching_factor;
+        float max_logit = -std::numeric_limits<float>::infinity();
+        std::priority_queue<IndexScore, std::vector<IndexScore>, decltype(min_cmp)> min_heap(min_cmp);
+        for (size_t i = 0; i < vocab_size; ++i) {
+            const float logit = logit_row[i];
+            if (logit > max_logit)
+                max_logit = logit;
+            if (min_heap.size() < branching)
+                min_heap.emplace(logit, i);
+            else if (logit > min_heap.top().first) {
+                min_heap.pop();
+                min_heap.emplace(logit, i);
+            }
+        }
+
+        // Pass 2: compute log-sum-exp over the full vocabulary using the max found above.
+        float log_sum_val = 0.0f;
+        for (size_t i = 0; i < vocab_size; ++i)
+            log_sum_val += std::exp(logit_row[i] - max_logit);
+        const float log_sum = std::log(log_sum_val);
+
+        // Drain the heap into a vector (ascending order), then iterate in reverse for descending
+        std::vector<IndexScore> top_k;
+        top_k.reserve(min_heap.size());
+        while (!min_heap.empty()) {
+            top_k.push_back(min_heap.top());
+            min_heap.pop();
+        }
+
+        for (auto it = top_k.rbegin(); it != top_k.rend(); ++it) {
+            const float log_prob = it->first - max_logit - log_sum;
+            const float cum_score = draft.score + log_prob;
+            const int64_t token_id = static_cast<int64_t>(it->second) + (d2t ? d2t[it->second] : 0);
+            const uint64_t new_node_id = m_candidate_graph->add_node(token_id, cum_score, draft.node_id);
+            if (new_node_id == 0u)
+                continue;  // beyond max depth, skip
+            candidates.push_back({new_node_id, draft.sequence, token_id, log_prob, cum_score});
+        }
+    }
+
+    // Sort the top-k candidates by score and truncate so callers can safely iterate all elements.
+    const size_t k = m_parameters.eagle_tree_params.branching_factor;
+    const size_t kept = std::min(k, candidates.size());
+    std::partial_sort(candidates.begin(),
+                      candidates.begin() + kept,
+                      candidates.end(),
+                      [](const CandidateBeam& a, const CandidateBeam& b) {
+                          return a.score > b.score;
+                      });
+    candidates.resize(kept);
+    return candidates;
+}
+
+void Sampler::TreeSearcher::advance_draft_layer(const std::vector<CandidateBeam>& candidates,
+                                                SamplerOutput& sampler_output) {
+    // candidates has been truncated to at most branching_factor entries by build_top_k_frontier.
+    const size_t k = candidates.size();
+
+    // Count how many times each parent sequence needs to be forked
+    std::unordered_map<uint64_t, uint64_t> parent_fork_count;
+    for (const DraftBeam& beam : m_frontier)
+        parent_fork_count[beam.sequence->get_id()] = 0;
+    for (size_t i = 0; i < k; ++i)
+        parent_fork_count[candidates[i].parent_sequence->get_id()] += 1;
+
+    std::vector<DraftBeam> next_frontier;
+    next_frontier.reserve(k);
+
+    for (size_t i = 0; i < k; ++i) {
+        const CandidateBeam& cand = candidates[i];
+        const uint64_t parent_seq_id = cand.parent_sequence->get_id();
+        uint64_t& forks_remaining = parent_fork_count[parent_seq_id];
+
+        Sequence::Ptr seq;
+        if (forks_remaining > 1) {
+            // Fork: allocate a new sequence sharing the parent's KV-cache
+            seq = m_sequence_group->fork_sequence(cand.parent_sequence);
+            seq->append_token(cand.token_id, cand.log_prob);
+            --forks_remaining;
+            sampler_output.m_forked_sequences[parent_seq_id].push_back(seq->get_id());
+        } else {
+            // Extend in place
+            seq = cand.parent_sequence;
+            seq->append_token(cand.token_id, cand.log_prob);
+        }
+        next_frontier.push_back({cand.node_id, std::move(seq), cand.score});
+    }
+
+    // Retire sequences not selected in this round.
+    // A non-zero forks_remaining means the sequence was extended in-place (as the last fork),
+    // so it already appears in next_frontier and must not be retired.
+    for (const DraftBeam& beam : m_frontier) {
+        if (parent_fork_count[beam.sequence->get_id()] != 0)
+            continue;
+        // Keep the original-group sequence as a caching anchor; drop all others
+        if (beam.sequence->get_grouped_id() == m_org_group_id) {
+            beam.sequence->set_status(SequenceStatus::CACHING);
+        } else {
+            sampler_output.m_dropped_sequences.push_back(beam.sequence->get_id());
+            m_sequence_group->remove_sequence(beam.sequence->get_id());
+        }
+    }
+
+    m_frontier = std::move(next_frontier);
+}
+
+void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitProcessor& logit_processor) {
+    const std::vector<EagleCandidateGraph::Node> final_nodes = m_candidate_graph->get_top_k_nodes();
+
+    // Collect tree-layer position IDs
+    std::vector<int> position_ids;
+    position_ids.reserve(final_nodes.size());
+    for (const EagleCandidateGraph::Node& n : final_nodes)
+        position_ids.push_back(n.tree_layer);
+
+    // Build node_id -> index-in-final_nodes map for path remapping
+    std::unordered_map<uint64_t, size_t> nodeid_to_index;
+    nodeid_to_index.reserve(final_nodes.size());
+    for (size_t i = 0; i < final_nodes.size(); ++i)
+        nodeid_to_index[final_nodes[i].node_id] = i;
+
+    // Build retrieve_indices: one root-to-leaf path per leaf, with node IDs replaced by indices
+    const std::vector<EagleCandidateGraph::Node> leaf_nodes = m_candidate_graph->get_leaf_nodes(final_nodes);
+    std::vector<std::vector<int64_t>> retrieve_indices;
+    retrieve_indices.reserve(leaf_nodes.size());
+    for (const EagleCandidateGraph::Node& leaf : leaf_nodes) {
+        const std::vector<uint64_t> raw_path = m_candidate_graph->get_path_to_node(leaf.node_id);
+        std::vector<int64_t> path;
+        path.reserve(raw_path.size());
+        for (uint64_t node_id : raw_path)
+            path.push_back(static_cast<int64_t>(nodeid_to_index.at(node_id)));
+        retrieve_indices.push_back(std::move(path));
+    }
+
+    // Build tree attention mask: mask[i][j] = 1 iff node j is an ancestor of node i (O(N^2) mask, O(1) each lookup)
+    std::vector<std::vector<uint8_t>> tree_mask;
+    tree_mask.reserve(final_nodes.size());
+    for (const EagleCandidateGraph::Node& node : final_nodes) {
+        std::vector<uint8_t> mask_row;
+        mask_row.reserve(final_nodes.size());
+        for (const EagleCandidateGraph::Node& other : final_nodes)
+            mask_row.push_back(m_candidate_graph->is_ancestor(other.node_id, node.node_id) ? 1u : 0u);
+        tree_mask.push_back(std::move(mask_row));
+    }
+
+    // Locate the sequence carrying the original group ID
+    Sequence::Ptr sequence = nullptr;
+    for (const auto& seq : m_sequence_group->get_sequences()) {
+        if (seq->get_grouped_id() == m_org_group_id) {
+            sequence = seq;
+            break;
+        }
+    }
+    OPENVINO_ASSERT(sequence != nullptr, "Cannot find the sequence with the original group id");
+
+    // Roll back tokens appended during drafting, then apply the final candidate tokens
+    sequence->remove_last_tokens(sequence->get_generated_len() - m_past_generate_len);
+    for (size_t t = 1; t < final_nodes.size(); ++t) {
+        sequence->append_token(final_nodes[t].token_id, 0.0f);
+        logit_processor.register_new_generated_token(final_nodes[t].token_id);
+    }
+
+    OPENVINO_ASSERT(final_nodes.size() > static_cast<size_t>(m_parameters.eagle_tree_params.tree_depth),
+                    "finalize_tree: fewer candidate nodes than tree_depth; tree parameters may be inconsistent");
+    const size_t diff = final_nodes.size() - static_cast<size_t>(m_parameters.eagle_tree_params.tree_depth) - 1;
+    m_sequence_group->update_processed_tokens_num(m_sequence_group->get_num_processed_tokens() + diff);
+    sequence->set_eagle_metadata({tree_mask, retrieve_indices, position_ids});
+    sequence->set_status(SequenceStatus::RUNNING);
+
+    // Drop all draft sequences except the original one
+    for (const Sequence::Ptr& seq : m_sequence_group->get_running_sequences()) {
+        if (seq->get_grouped_id() == m_org_group_id)
+            continue;
+        sampler_output.m_dropped_sequences.push_back(seq->get_id());
+        m_sequence_group->remove_sequence(seq->get_id());
+    }
+}
+
+void Sampler::TreeSearcher::advance_draft_step(const ov::Tensor& logits,
+                                               SamplerOutput& sampler_output,
+                                               LogitProcessor& logit_processor) {
+    if (m_phase == Phase::IDLE) {
+        // Assert before indexing: get_running_sequences()[0] is only valid when exactly one seq runs.
+        OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1,
+                        "TreeSearcher: unexpected number of running sequences at draft start");
+        m_past_generate_len = m_sequence_group->get_running_sequences()[0]->get_generated_len();
+        tree_reset();
+        m_phase = Phase::DRAFTING;
+    }
+
+    m_tree_layer_counter++;
+    const std::vector<CandidateBeam> candidates = build_top_k_frontier(logits);
+
+    if (m_tree_layer_counter < m_parameters.eagle_tree_params.tree_depth) {
+        advance_draft_layer(candidates, sampler_output);
+    } else {
+        finalize_tree(sampler_output, logit_processor);
+        m_phase = Phase::IDLE;
+        m_tree_layer_counter = 0;
+    }
+}
 
 Logits Sampler::_get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t token_idx) {
     ov::Shape logits_shape = logits.get_shape();
@@ -510,7 +879,6 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     size_t m = std::max(size_t(1), top_logprobs); // ensure m is at least 1
     std::vector<float> top_values(m, -std::numeric_limits<float>::infinity());
     std::vector<size_t> top_indexes(m, 0);
-
     for (size_t i = 0; i < logits.m_size; ++i) {
         if (logits.m_data[i] > top_values.back()) {
             top_values.back() = logits.m_data[i];
@@ -681,6 +1049,135 @@ align_all_sequence_len(SequenceGroup::Ptr& sequence_group,
     logit_processor.update_generated_len(min_generated_tokens);
 }
 
+// Validate tree results from the target model using retrieve_indices and logits
+// Returns the number of valid tokens, and truncates sequence if mismatch is found
+size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
+                                         const ov::Tensor& sequence_group_logits,
+                                         LogitProcessor& logit_processor,
+                                         size_t num_tokens_to_validate) {
+    auto& eagle_metadata = sequence->get_eagle_metadata();
+    auto retrieve_indices = eagle_metadata.retrieve_indices;
+
+    if (retrieve_indices.empty()) {
+        return 0;
+    }
+
+    // reconstruct the candidate lists from retrieve_indices
+    auto generated_len = sequence->get_generated_len();
+    auto generated_ids = sequence->get_generated_ids();
+
+    std::vector<std::vector<int64_t>> candidate_token_ids;
+    candidate_token_ids.reserve(retrieve_indices.size());
+    for (const auto& path : retrieve_indices) {
+        std::vector<int64_t> candidate_tokens;
+        candidate_tokens.reserve(path.size());
+        for (const auto& index : path) {
+            candidate_tokens.push_back(generated_ids[generated_len - num_tokens_to_validate - 1 + index]);
+        }
+        candidate_token_ids.push_back(candidate_tokens);
+    }
+
+    // found the max size of retrieve_indices
+    size_t max_retrieve_indices_size = 0;
+    for (const auto& path : retrieve_indices) {
+        max_retrieve_indices_size = std::max(max_retrieve_indices_size, path.size());
+    }
+
+    std::vector<size_t> path_pos(candidate_token_ids.size(), 1);
+    size_t validated_steps = 1;
+    size_t token_idx_to_end = num_tokens_to_validate;
+    Token bonus_token;
+
+    for (size_t step = 1;
+         step < max_retrieve_indices_size && !candidate_token_ids.empty() && validated_steps < num_tokens_to_validate;
+         ++step) {
+        std::vector<int64_t> tokens_this_step;
+        for (size_t i = 0; i < candidate_token_ids.size(); ++i) {
+            if (path_pos[i] < candidate_token_ids[i].size()) {
+                tokens_this_step.push_back(candidate_token_ids[i][path_pos[i]]);
+            }
+        }
+
+        // logits for this step
+        auto logit_vector = _get_logit_vector(sequence_group_logits, 0, token_idx_to_end);
+        logit_processor.apply(logit_vector);
+        Token sampled_token = _greedy_sample(logit_vector, 0);
+        int64_t pred_token = sampled_token.m_index;
+
+        bool matched = false;
+
+        for (size_t i = 0; i < tokens_this_step.size(); ++i) {
+            if (tokens_this_step[i] == pred_token) {
+                matched = true;
+
+                // find corresponding index of the pred_token in the retrieve indices
+                // for example, candidate token list[5109, 53, 20198, 3394, 1750, 1404, 55, 52, 220, 55]
+                // retrieve_indices = [[0,2],[0,1,3],[0,1,4,7]，[0,1,5,8], [0,1,4,6,9]]
+                // candidate_token_ids =
+                // [[5109,20198],[5109,53,3394],[5109,53,1750,52],[5109,53,1404,220],[5109,53,1750,55,55]]
+
+                for (size_t j = 0; j < candidate_token_ids.size();) {
+                    if (path_pos[j] < candidate_token_ids[j].size() &&
+                        candidate_token_ids[j][path_pos[j]] == pred_token) {
+                        path_pos[j]++;
+                        ++j;
+                    } else {
+                        retrieve_indices.erase(retrieve_indices.begin() + j);
+                        candidate_token_ids.erase(candidate_token_ids.begin() + j);
+                        path_pos.erase(path_pos.begin() + j);
+                    }
+                }
+                break;
+            }
+        }
+
+        if (!matched) {
+            // get the bonus token and quit the loop
+            bonus_token = sampled_token;
+            break;
+        }
+
+        token_idx_to_end = num_tokens_to_validate - retrieve_indices[0][path_pos[0] - 1];
+        validated_steps++;
+
+        if (validated_steps + generated_len - num_tokens_to_validate ==
+            sequence->get_sequence_group_ptr()->get_max_new_tokens()) {
+            break;
+        }
+    }
+
+    // prune the retrieve_indices to validated_steps, use the first retrieve_indice is enough
+    auto& validate_path = retrieve_indices[0];
+    auto& candidate_path = candidate_token_ids[0];
+    if (validate_path.size() > validated_steps) {
+        validate_path.erase(validate_path.begin() + validated_steps, validate_path.end());
+        candidate_path.erase(candidate_path.begin() + validated_steps, candidate_path.end());
+    }
+
+    // remove tokens from sequence
+    sequence->remove_last_tokens(num_tokens_to_validate);
+
+    // append validated tokens back to sequence
+    for (size_t i = 1; i < validated_steps; ++i) {
+        sequence->append_token(candidate_path[i], 0.0f);
+        logit_processor.register_new_generated_token(candidate_path[i]);
+    }
+
+    if (bonus_token.m_index == 0) {
+        // sample an extra token if all tokens are validated
+        auto logit_vector = _get_logit_vector(sequence_group_logits, 0, token_idx_to_end);
+        logit_processor.apply(logit_vector);
+        bonus_token = _greedy_sample(logit_vector, 0);
+    }
+
+    sequence->append_token(bonus_token.m_index, bonus_token.m_log_prob);
+    logit_processor.register_new_generated_token(bonus_token.m_index);
+
+    //  update eagle meta data
+    sequence->set_eagle_metadata({{}, {}, eagle_metadata.tree_position_ids, validate_path});
+    return validated_steps;
+}
+
 bool Sampler::validate_candidate(
     Sequence::Ptr running_sequence,
     size_t& token_idx,
@@ -793,106 +1290,152 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         if (sampling_params.is_greedy_decoding()) {
             OPENVINO_ASSERT(num_running_sequences == 1);
         }
-        for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
-            auto& running_sequence = running_sequences[running_sequence_id];
-            bool is_validation_passed = true;
-            // make `num_tokens_to_process` iteration to validate a candidate generated by `draft_model` + 1 iteration to generate one more token by `main_model`
-            for (size_t i = 0; i <= num_tokens_to_process; ++i) {
-                if (running_sequence->has_finished())
-                    break;
-                sg_sampling_info.sampler_output.num_generated_tokens++;
-                // calculate token offset from the end of logit
-                size_t logit_token_offset = num_tokens_to_process - i;
-                size_t generated_seq_token_offset = num_generated_tokens_to_validate - i;
-                // max counter of needed to be sampled tokens
-                OPENVINO_ASSERT(running_sequence->get_generated_len() >= generated_seq_token_offset);
-                size_t generated_and_verified_len = running_sequence->get_generated_len() - generated_seq_token_offset;
-                OPENVINO_ASSERT(sequence_group->get_max_new_tokens() >= generated_and_verified_len);
-                size_t max_num_sampled_token = sequence_group->get_max_new_tokens() - generated_and_verified_len;
-                if (max_num_sampled_token == 0) {
-                    stop_sample_tokens(running_sequence, generated_seq_token_offset, max_num_sampled_token, assisting_pipeline_info.max_removed_tokens_per_request);
-                    break;
-                }
-                // do sampling only for token validation/generation.
-                // continue in case of extending draft model sequences by main model generated tokens which
-                // should be taken to KV cache without validation
-                if (!is_validation_mode_enabled && generated_seq_token_offset > 0) {
-                    continue;
-                }
-
-                auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, logit_token_offset);
-                logit_processor.apply(logit_vector);
-                
-                Token sampled_token;
-                bool is_generate_n_tokens = false;
-                if (sampling_params.is_greedy_decoding()) {
-                    sampled_token = { _greedy_sample(logit_vector, sampling_params.logprobs) };
-                } else {
-                    // is_multinomial()
-                    is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
-                    const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
-                    is_generate_n_tokens &= (num_tokens_per_sequence > 1);
-                    auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence);
-                    OPENVINO_ASSERT(sampled_token_ids.size(), num_tokens_per_sequence);
-                    // to create n sequence just in case of `sequence_group->num_total_seqs() == 1` and `sampling_params.num_return_sequences > 1`
-                    if (is_generate_n_tokens) {
-                        const auto forked_seq_ids = create_n_forked_sequences(sequence_group, logit_processor, sampled_token_ids);
-                        sg_sampling_info.sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
+        if (is_validation_mode_enabled && num_generated_tokens_to_validate > 0) {
+            // tree validation mode
+            OPENVINO_ASSERT(num_running_sequences == 1);
+            size_t valid_tokens = validate_tree_candidates(running_sequences[0],
+                                                           sequence_group_logits,
+                                                           logit_processor,
+                                                           num_generated_tokens_to_validate);
+            assisting_pipeline_info.max_removed_tokens_per_request =
+                std::max(assisting_pipeline_info.max_removed_tokens_per_request,
+                         num_generated_tokens_to_validate + 1 - valid_tokens);
+            for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
+                sg_sampling_info.sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
+            }
+            sg_sampling_info.sampler_output.num_generated_tokens += valid_tokens;  // including the bonus 1
+            assisting_pipeline_info.min_generated_len =
+                std::min(assisting_pipeline_info.min_generated_len, running_sequences[0]->get_generated_len());
+        } else {
+            for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
+                auto& running_sequence = running_sequences[running_sequence_id];
+                bool is_validation_passed = true;
+                // make `num_tokens_to_process` iteration to validate a candidate generated by `draft_model` + 1
+                // iteration to generate one more token by `main_model`
+                for (size_t i = 0; i <= num_tokens_to_process; ++i) {
+                    if (running_sequence->has_finished())
+                        break;
+                    sg_sampling_info.sampler_output.num_generated_tokens++;
+                    // calculate token offset from the end of logit
+                    size_t logit_token_offset = num_tokens_to_process - i;
+                    size_t generated_seq_token_offset = num_generated_tokens_to_validate - i;
+                    // max counter of needed to be sampled tokens
+                    OPENVINO_ASSERT(running_sequence->get_generated_len() >= generated_seq_token_offset);
+                    size_t generated_and_verified_len =
+                        running_sequence->get_generated_len() - generated_seq_token_offset;
+                    OPENVINO_ASSERT(sequence_group->get_max_new_tokens() >= generated_and_verified_len);
+                    size_t max_num_sampled_token = sequence_group->get_max_new_tokens() - generated_and_verified_len;
+                    if (max_num_sampled_token == 0) {
+                        stop_sample_tokens(running_sequence,
+                                           generated_seq_token_offset,
+                                           max_num_sampled_token,
+                                           assisting_pipeline_info.max_removed_tokens_per_request);
+                        break;
                     }
-                    sampled_token = sampled_token_ids.front();
-                    // make `_speculative_sampling` in case of previous token was not accepted in speculative decoding
+                    // do sampling only for token validation/generation.
+                    // continue in case of extending draft model sequences by main model generated tokens which
+                    // should be taken to KV cache without validation
+                    if (!is_validation_mode_enabled && generated_seq_token_offset > 0) {
+                        continue;
+                    }
+
+                    auto logit_vector =
+                        _get_logit_vector(sequence_group_logits, running_sequence_id, logit_token_offset);
+                    logit_processor.apply(logit_vector);
+
+                    Token sampled_token;
+                    bool is_generate_n_tokens = false;
+                    if (sampling_params.is_greedy_decoding()) {
+                        sampled_token = {_greedy_sample(logit_vector, sampling_params.logprobs)};
+                    } else {
+                        // is_multinomial()
+                        is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
+                        const size_t num_tokens_per_sequence =
+                            is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
+                        is_generate_n_tokens &= (num_tokens_per_sequence > 1);
+                        auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence);
+                        OPENVINO_ASSERT(sampled_token_ids.size(), num_tokens_per_sequence);
+                        // to create n sequence just in case of `sequence_group->num_total_seqs() == 1` and
+                        // `sampling_params.num_return_sequences > 1`
+                        if (is_generate_n_tokens) {
+                            const auto forked_seq_ids =
+                                create_n_forked_sequences(sequence_group, logit_processor, sampled_token_ids);
+                            sg_sampling_info.sampler_output.m_forked_sequences.insert(
+                                {running_sequences[0]->get_id(), forked_seq_ids});
+                        }
+                        sampled_token = sampled_token_ids.front();
+                        // make `_speculative_sampling` in case of previous token was not accepted in speculative
+                        // decoding
+                        if (!is_validation_passed) {
+                            float p_prime =
+                                get_p_prime(running_sequence, sampled_token, generated_seq_token_offset + 1);
+                            assisting_pipeline_info.max_removed_tokens_per_request =
+                                std::max(assisting_pipeline_info.max_removed_tokens_per_request,
+                                         generated_seq_token_offset);
+                            // update prob only in case candidate prob > sampled token prob
+                            if (p_prime > 0.f) {
+                                auto prob = std::exp(sampled_token.m_log_prob);
+                                prob /= p_prime;
+                                sampled_token.m_log_prob = std::log(prob);
+                            }
+                        }
+                    }
+                    if (!is_validation_mode_enabled &&
+                        m_d2t_mapping) {  // compute token offset for draft model in speculative sampling
+                        ov::Tensor d2t_tensor = m_d2t_mapping->get_tensor_view();
+                        auto d2t = d2t_tensor.data<int64_t>();
+                        sampled_token.m_index = sampled_token.m_index + (d2t ? d2t[sampled_token.m_index] : 0);
+                    }
+                    // flag to add sampled token to generated sequence or extend logit processors only
+                    bool is_extend_sequence = logit_token_offset == 0 || is_generate_n_tokens || !is_validation_passed;
+                    if (is_validation_mode_enabled && !is_extend_sequence) {
+                        is_validation_passed =
+                            validate_candidate(running_sequences[running_sequence_id],
+                                               generated_seq_token_offset,
+                                               sampled_token,
+                                               is_extend_sequence,
+                                               assisting_pipeline_info.max_removed_tokens_per_request,
+                                               sampling_params.do_sample,
+                                               !sampling_params.is_prompt_lookup());
+
+                        // doing resample in case of non accepted tokens in speculative sampling
+                        if (!is_validation_passed && sampling_params.do_sample && !sampling_params.is_prompt_lookup()) {
+                            continue;
+                        }
+                        // update log prob just while validation process
+                        if (!is_extend_sequence) {
+                            OPENVINO_ASSERT(generated_and_verified_len <
+                                            running_sequences[running_sequence_id]->get_generated_len());
+                            running_sequence->update_generated_log_prob(generated_and_verified_len,
+                                                                        sampled_token.m_log_prob);
+                        }
+                    }
+                    register_new_token(sampled_token,
+                                       running_sequences[running_sequence_id],
+                                       logit_processor,
+                                       is_extend_sequence,
+                                       is_validation_mode_enabled);
+
+                    // to exit from sampling in case of failed token validation
                     if (!is_validation_passed) {
-                        float p_prime = get_p_prime(running_sequence, sampled_token, generated_seq_token_offset + 1);
-                        assisting_pipeline_info.max_removed_tokens_per_request = std::max(assisting_pipeline_info.max_removed_tokens_per_request, generated_seq_token_offset);
-                        // update prob only in case candidate prob > sampled token prob
-                        if (p_prime > 0.f) {
-                            auto prob = std::exp(sampled_token.m_log_prob);
-                            prob /= p_prime;
-                            sampled_token.m_log_prob = std::log(prob);
+                        break;
+                    } else {
+                        const auto& sampling_params = sequence_group->get_sampling_parameters();
+                        if (is_stop_token_id_hit(sampled_token.m_index, sampling_params.stop_token_ids) &&
+                            !sampling_params.ignore_eos) {
+                            running_sequence->set_status(SequenceStatus::FINISHED);
+                            running_sequence->set_finish_reason(GenerationFinishReason::STOP);
+                            sg_sampling_info.sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
                         }
                     }
                 }
-                if (!is_validation_mode_enabled && m_d2t_mapping) { // compute token offset for draft model in speculative sampling
-                    ov::Tensor d2t_tensor = m_d2t_mapping->get_tensor_view();
-                    auto d2t = d2t_tensor.data<int64_t>();
-                    sampled_token.m_index = sampled_token.m_index + (d2t ? d2t[sampled_token.m_index] : 0);
-                }
-                // flag to add sampled token to generated sequence or extend logit processors only
-                bool is_extend_sequence = logit_token_offset == 0 || is_generate_n_tokens || !is_validation_passed;
-                if (is_validation_mode_enabled && !is_extend_sequence) {
-                    is_validation_passed = validate_candidate(running_sequences[running_sequence_id], generated_seq_token_offset,
-                                                              sampled_token, is_extend_sequence, assisting_pipeline_info.max_removed_tokens_per_request,
-                                                              sampling_params.do_sample, !sampling_params.is_prompt_lookup());
-
-                    // doing resample in case of non accepted tokens in speculative sampling
-                    if (!is_validation_passed && sampling_params.do_sample && !sampling_params.is_prompt_lookup()) {
-                        continue;
-                    }
-                    // update log prob just while validation process
-                    if (!is_extend_sequence) {
-                        OPENVINO_ASSERT(generated_and_verified_len < running_sequences[running_sequence_id]->get_generated_len());
-                        running_sequence->update_generated_log_prob(generated_and_verified_len, sampled_token.m_log_prob);
-                    }
-                }
-                register_new_token(sampled_token, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_validation_mode_enabled);
-                               
-                // to exit from sampling in case of failed token validation
-                if (!is_validation_passed) {
-                    break;
-                } else {
-                    const auto& sampling_params = sequence_group->get_sampling_parameters();
-                    if (is_stop_token_id_hit(sampled_token.m_index, sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
-                        running_sequence->set_status(SequenceStatus::FINISHED);
-                        running_sequence->set_finish_reason(GenerationFinishReason::STOP);
-                        sg_sampling_info.sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
-                    }
-                }
+                assisting_pipeline_info.min_generated_len =
+                    std::min(assisting_pipeline_info.min_generated_len, running_sequence->get_generated_len());
             }
-            assisting_pipeline_info.min_generated_len = std::min(assisting_pipeline_info.min_generated_len, running_sequence->get_generated_len());
-        }
-        align_all_sequence_len(sequence_group, assisting_pipeline_info.min_generated_len, logit_processor);
-        for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
-            sg_sampling_info.sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
+            align_all_sequence_len(sequence_group, assisting_pipeline_info.min_generated_len, logit_processor);
+            for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
+                sg_sampling_info.sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
+            }
         }
     } else if (sampling_params.is_beam_search()) {
         uint64_t request_id = sequence_group->get_request_id();
@@ -921,8 +1464,49 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             // stop sequence by max_new_tokens
             beam_searcher->finalize(sg_sampling_info.sampler_output);
         }
+    } else if (sampling_params.is_tree_search()) {
+        uint64_t request_id = sequence_group->get_request_id();
+
+        if (is_validation_mode_enabled && num_generated_tokens_to_validate > 0) {
+            // Target-model validation pass: validate the draft tree candidates.
+            std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+            OPENVINO_ASSERT(running_sequences.size() == 1);
+            size_t valid_tokens = validate_tree_candidates(running_sequences[0],
+                                                           sequence_group_logits,
+                                                           logit_processor,
+                                                           num_generated_tokens_to_validate);
+            assisting_pipeline_info.max_removed_tokens_per_request =
+                std::max(assisting_pipeline_info.max_removed_tokens_per_request,
+                         num_generated_tokens_to_validate + 1 - valid_tokens);
+            for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
+                sg_sampling_info.sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
+            }
+            sg_sampling_info.sampler_output.num_generated_tokens += valid_tokens;
+            assisting_pipeline_info.min_generated_len =
+                std::min(assisting_pipeline_info.min_generated_len, running_sequences[0]->get_generated_len());
+        } else {
+            // Create tree searcher on the first draft step for this request
+            TreeSearcher* tree_searcher;
+            {
+                std::lock_guard<std::mutex> lock(m_tree_search_info_mutex);
+                if (m_tree_search_info.find(request_id) == m_tree_search_info.end()) {
+                    m_tree_search_info.emplace(
+                        request_id,
+                        TreeSearcher(sequence_group, m_d2t_mapping ? m_d2t_mapping->get_tensor_view() : ov::Tensor()));
+                }
+                tree_searcher = &m_tree_search_info.at(request_id);
+            }
+
+            if (!sequence_group->has_finished()) {
+                sg_sampling_info.sampler_output.num_generated_tokens++;
+            }
+
+            tree_searcher->advance_draft_step(sequence_group_logits, sg_sampling_info.sampler_output, logit_processor);
+        }  // end else (draft tree search)
+    } else {
+        OPENVINO_THROW("Unsupported sampling method");
     }
-    // Notify handle after sampling is done. 
+    // Notify handle after sampling is done.
     // For non-streaming this is effective only when the generation is finished.
     OPENVINO_ASSERT(num_generated_tokens_to_validate >= assisting_pipeline_info.max_removed_tokens_per_request);
     sequence_group->notify_handle();
@@ -974,6 +1558,7 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             // Call sample_from_sequence_group asynchronously
             sg_sampling_future_map[request_id] = m_thread_pool.submit(&Sampler::sample_from_sequence_group, this, sequence_group, sequence_group_logits,
                                                                       logit_processor, stop_strings, is_validation_mode_enabled);
+            sg_sampling_future_map[request_id].wait();
         } else {
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
         }
@@ -1013,7 +1598,8 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         sequence_group->finish_iteration();
         // decrease sequence_group context in case of candidates generated by draft_model were not accepted by main_model
         if (assisting_pipeline_info.max_removed_tokens_per_request) {
-            auto min_processed_tokens = sequence_group->get_prompt_len() + assisting_pipeline_info.min_generated_len - 1;
+            auto min_processed_tokens =
+                sequence_group->get_prompt_len() + assisting_pipeline_info.min_generated_len - 1;
             sequence_group->update_processed_tokens_num(min_processed_tokens);
             auto& logit_processor = get_logit_processor(sequence_group->get_request_id());
             logit_processor.update_generated_len(min_processed_tokens);
@@ -1043,6 +1629,10 @@ void Sampler::clear_request_info(uint64_t request_id) {
     m_beam_search_info.erase(request_id);
     m_logit_processors.erase(request_id);
     m_stop_strings.erase(request_id);
+    {
+        std::lock_guard<std::mutex> lock(m_tree_search_info_mutex);
+        m_tree_search_info.erase(request_id);
+    }
 }
 
 int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {
