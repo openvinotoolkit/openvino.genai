@@ -188,9 +188,7 @@ export type VideoGenerationConfig = {
   guidance_rescale?: number;
 };
 
-export type Text2VideoGenerateOptions = VideoGenerationConfig & {
-  callback?: (step: number, numSteps: number, latent: Tensor) => boolean;
-};
+export type Text2VideoGenerateOptions = VideoGenerationConfig;
 
 export type Text2VideoResult = {
   video: Tensor;

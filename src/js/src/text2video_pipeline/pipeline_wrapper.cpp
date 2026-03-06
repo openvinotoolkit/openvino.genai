@@ -3,8 +3,6 @@
 
 #include "include/text2video_pipeline/pipeline_wrapper.hpp"
 
-#include <future>
-
 #include "include/addon.hpp"
 #include "include/helper.hpp"
 #include "include/text2video_pipeline/init_worker.hpp"

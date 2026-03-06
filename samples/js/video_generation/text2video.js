@@ -26,10 +26,6 @@ async function main() {
         num_videos_per_prompt: 1,
         guidance_scale: 3,
         frame_rate: 25,
-        callback: (step, numSteps) => {
-            process.stdout.write(`\rGenerating step ${step + 1}/${numSteps}...`);
-            return false;
-        },
     });
 
     const shape = result.video.getShape();

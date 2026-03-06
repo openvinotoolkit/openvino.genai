@@ -94,27 +94,6 @@ describe("Text2VideoPipeline", () => {
       assert.ok(result.video, "Result should have a video tensor");
     });
 
-    it("should invoke callback during generation", async () => {
-      const steps = [];
-      const result = await pipeline.generate("A scenic landscape", {
-        num_inference_steps: 2,
-        height: 64,
-        width: 64,
-        num_frames: 9,
-        callback: (step, numSteps) => {
-          steps.push({ step, numSteps });
-          return false;
-        },
-      });
-
-      assert.ok(result, "Should return a result");
-      assert.ok(steps.length > 0, "Callback should have been called at least once");
-      assert.ok(
-        steps.every((s) => typeof s.step === "number" && typeof s.numSteps === "number"),
-        "Callback arguments should be numbers",
-      );
-    });
-
     it("should throw when generating without prompt", async () => {
       await assert.rejects(
         () => pipeline.generate(),

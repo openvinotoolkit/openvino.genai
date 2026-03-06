@@ -29,7 +29,6 @@ Node.js bindings currently support:
   - Streaming support
 - `Text2VideoPipeline`: Generate videos from text prompts using diffusion models
   - Configurable generation parameters (dimensions, inference steps, guidance scale, etc.)
-  - Step callback support for progress tracking
   - Performance metrics
 - `TextEmbeddingPipeline`: Generate text embeddings for semantic search and RAG applications
 - `TextRerankPipeline`: Rerank documents by semantic relevance for RAG applications
