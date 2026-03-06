@@ -4,13 +4,13 @@
 
 #pragma once
 
-#include <algorithm>
+#include <list>
 #include <cassert>
-#include <cmath>
 #include <cstdlib>
 #include <limits>
-#include <list>
 #include <map>
+#include <algorithm>
+#include <cmath>
 #include <numeric>
 #include <optional>
 #include <queue>
@@ -19,13 +19,14 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "continuous_batching/scheduler.hpp"
 #include "openvino/runtime/tensor.hpp"
-#include "sampling/logit_processor.hpp"
+
 #include "sampling/logit_transformers.hpp"
-#include "sampling/structured_output/structured_output_controller.hpp"
+#include "sampling/logit_processor.hpp"
+#include "continuous_batching/scheduler.hpp"
 #include "sequence_group.hpp"
 #include "threadpool.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
 
 namespace ov::genai {
 // Handle stop_token_ids
