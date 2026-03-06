@@ -144,7 +144,7 @@ class Text2VideoEvaluator(BaseEvaluator):
 
         generation_fn = gen_video_fn or default_gen_video_fn
 
-        data_keys = ["prompt", "negative_prompt", "width", "height", "guidance_scale"]
+        data_keys = ["prompt", "negative_prompt", "width", "height", "guidance_scale", "guidance_rescale"]
         if self.test_data:
             if isinstance(self.test_data, str):
                 data = pd.read_csv(self.test_data)

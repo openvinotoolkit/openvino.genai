@@ -314,7 +314,7 @@ class TestText2VideoPipelineAdvanced:
         assert captured, "Callback was never invoked"
 
         latent_tensor = ov.Tensor(captured[0])
-        # decode_timestep=0.5 corresponds to scheduler timestep 500 / 1000; ignored for non-conditioning models.
+        # decode_timestep=0.5 is a normalized value in [0, 1]; ignored for non-conditioning models.
         result = pipe.decode(latent_tensor, decode_timestep=0.5)
         assert result.video is not None
 
