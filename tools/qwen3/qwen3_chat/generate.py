@@ -1,6 +1,7 @@
 from typing import Any
 
 import torch
+import transformers
 
 from .model import SYSTEM_PROMPT
 
@@ -25,7 +26,16 @@ def generate_response(
         padding=True,
     ).to(model.device)
 
-    gen_kwargs: dict[str, Any] = {"thinker_do_sample": False}
+    gen_kwargs: dict[str, Any] = {
+        "streamer": transformers.TextStreamer(
+            processor,
+            skip_prompt=True,
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
+        ),
+        "thinker_do_sample": False,
+        "thinker_max_new_tokens": 10,
+    }
     if speaker:
         gen_kwargs["speaker"] = speaker
 
