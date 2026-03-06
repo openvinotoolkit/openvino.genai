@@ -222,7 +222,7 @@ void init_autoencoder_kl_ltx_video(py::module_& m) {
              R"(
                 Decodes latent video to pixel space.
                 latent (ov.Tensor): Latent video tensor.
-                decode_timestep (float): Last scheduler timestep normalized to [0, 1] (timestep / 1000).
+                decode_timestep (float): Last scheduler timestep normalized to [0, 1] (for example, timestep / max_timestep, where max_timestep is typically num_train_timesteps).
                     Required when the VAE config has timestep_conditioning=True (e.g., LTX-Video 0.9.1+).
                     Ignored for models without timestep conditioning.
                 Returns: Decoded video tensor.
