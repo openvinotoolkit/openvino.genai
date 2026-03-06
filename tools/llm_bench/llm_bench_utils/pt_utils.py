@@ -8,8 +8,6 @@ import json
 import logging as log
 from pathlib import Path
 from transformers import AutoConfig
-
-from llm_bench_utils.memory_monitor import MemMonitorWrapper
 import llm_bench_utils.hook_common as hook_common
 
 PYTORCH_MODEL_DTYPE_KWARG = {"torch_dtype": torch.float32}
@@ -269,7 +267,7 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
     return pipe, from_pretrain_time
 
 
-def create_text_reranker_model(model_path: Path, device: str, memory_monitor: MemMonitorWrapper, **kwargs):
+def create_text_reranker_model(model_path: Path, device: str, memory_monitor, **kwargs):
     if not model_path.exists():
         raise RuntimeError(f'==Failure ==: model path:{model_path} is not exist')
     if not device:

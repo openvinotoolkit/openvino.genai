@@ -10,9 +10,7 @@ import logging as log
 from typing import Any
 from pathlib import Path
 from abc import ABC, abstractmethod
-
 import llm_bench_utils.model_utils as model_utils
-from llm_bench_utils.memory_monitor import MemMonitorWrapper
 
 
 def execution_time_in_sec(func):
@@ -29,7 +27,7 @@ def execution_time_in_sec(func):
 class CommonPipeline(ABC):
     DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
-    def __init__(self, model, tokenizer, model_args: dict, model_path: Path, mem_consumption_meter: MemMonitorWrapper):
+    def __init__(self, model, tokenizer, model_args: dict, model_path: Path, mem_consumption_meter):
         self.mem_consumption_meter = mem_consumption_meter
         self.genai = True
 

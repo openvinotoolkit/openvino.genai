@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
-from llm_bench_utils.memory_monitor import MemoryUnit, MemMonitorWrapper
+from llm_bench_utils.memory_monitor import MemoryUnit, MemThreadHandler
 
 
 def estimate_throughput(latency, bs, ms=True):
@@ -125,12 +125,19 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         json.dump(output_result, outfile, indent=4)
 
 
-def get_pre_gen_memory_data(memory_data_collector: MemMonitorWrapper | None, print_unit: MemoryUnit | None = None):
-    no_info = MemMonitorWrapper.MEMORY_NOT_COLLECTED
-    suffix = f'({MemMonitorWrapper.DEF_MEM_UNIT})' if print_unit else ''
-    data = {f'initial_sys_mem{suffix}': no_info, f'initial_rss_mem{suffix}': no_info,
-            f'compile_max_rss_mem{suffix}': no_info, f'compile_max_sys_mem{suffix}': no_info,
-            f'compile_max_increase_rss_mem{suffix}': no_info, f'compile_max_increase_sys_mem{suffix}': no_info}
+def get_pre_gen_memory_data(memory_data_collector: MemThreadHandler | None, print_unit: MemoryUnit | None = None):
+    no_info = MemThreadHandler.MEMORY_NOT_COLLECTED
+    suffix = f"({MemThreadHandler.DEF_MEM_UNIT.value})"
+    if print_unit is not None:
+        suffix = f"({print_unit.value})"
+    data = {
+        f"initial_sys_mem{suffix}": no_info,
+        f"initial_rss_mem{suffix}": no_info,
+        f"compile_max_rss_mem{suffix}": no_info,
+        f"compile_max_sys_mem{suffix}": no_info,
+        f"compile_max_increase_rss_mem{suffix}": no_info,
+        f"compile_max_increase_sys_mem{suffix}": no_info,
+    }
     if not memory_data_collector:
         return data
 

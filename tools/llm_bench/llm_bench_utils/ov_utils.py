@@ -11,7 +11,6 @@ import json
 import copy
 import types
 from llm_bench_utils.hook_common import get_bench_hook
-from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
 from llm_bench_utils.model_utils import get_version_in_format_to_pars
 from llm_bench_utils.config_class import (
@@ -1174,7 +1173,7 @@ class OptimumChunkStreamer(BaseStreamer):
         return False
 
 
-def create_genai_text_reranker_model(model_path: Path, device: str, memory_monitor: MemMonitorWrapper, tokenizer: AutoTokenizer, **kwargs):
+def create_genai_text_reranker_model(model_path: Path, device: str, memory_monitor, tokenizer: AutoTokenizer, **kwargs):
     import openvino_genai
 
     config = openvino_genai.TextRerankPipeline.Config()
@@ -1199,7 +1198,7 @@ def create_genai_text_reranker_model(model_path: Path, device: str, memory_monit
     return pipe, tokenizer, end - start, None, True
 
 
-def create_text_reranker_model(model_path: Path, device: str, memory_monitor: MemMonitorWrapper, **kwargs):
+def create_text_reranker_model(model_path: Path, device: str, memory_monitor, **kwargs):
     if model_path.name.endswith('xml'):
         model_path = model_path.parents[2]
 
