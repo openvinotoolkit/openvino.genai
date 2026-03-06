@@ -77,13 +77,6 @@ struct GenerationFinishInfo
     GenerationStatus streaming_finish_status;
 };
 
-struct EagleMetaData {
-    std::vector<std::vector<uint8_t>> tree_mask;
-    std::vector<std::vector<int64_t>> retrieve_indices;
-    std::vector<int> tree_position_ids;
-    std::vector<int64_t> validated_indices = {};
-};
-
 Tensor init_attention_mask(const Tensor& position_ids);
 
 void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos = 0);

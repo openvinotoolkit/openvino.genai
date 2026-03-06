@@ -112,8 +112,8 @@ private:
 
     std::unordered_map<uint64_t, InternalNode> m_nodes;
     uint64_t m_next_node_id = 1;
-    int m_max_candidate_nodes;
-    int m_max_depth;
+    int m_max_candidate_nodes = 0;
+    int m_max_depth = 0;
 };
 
 class Sampler {
@@ -199,8 +199,6 @@ public:
         // beam is made on top of sequence
         float m_log_prob = 0.0f;
         int64_t m_token_id = -1;
-        int m_tree_layer = 0;
-        int64_t m_node_id = 0;
         // cumulative log probabilities
         float m_score = -std::numeric_limits<float>::infinity();
 
@@ -216,6 +214,7 @@ public:
         return left.m_score > right.m_score;
     }
 
+protected:
     SequenceGroup::Ptr m_sequence_group;
     ov::genai::GenerationConfig m_parameters;
     Tokenizer m_tokenizer;
@@ -225,7 +224,6 @@ public:
           m_parameters{m_sequence_group->get_sampling_parameters()},
           m_tokenizer(std::move(tokenizer)) {}
 
-protected:
     explicit Searcher(SequenceGroup::Ptr sequence_group)
         : m_sequence_group(std::move(sequence_group)),
           m_parameters{m_sequence_group->get_sampling_parameters()} {}
