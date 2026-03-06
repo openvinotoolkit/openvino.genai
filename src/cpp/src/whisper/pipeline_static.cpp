@@ -1038,7 +1038,7 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     
     ov::Core core = utils::singleton_core();
 
-    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties_copy);
+    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, std::as_const(properties_copy));
     reshape_to_static_encoder(encoder_model, m_feature_extractor.feature_size);
     auto last_hidden_state_shape = get_encoder_hidden_state_shape(encoder_model);
 
@@ -1046,10 +1046,10 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     std::shared_ptr<ov::Model> decoder_with_past_model;
 
     if (std::filesystem::exists(models_path / "openvino_decoder_with_past_model.xml") ) {
-        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties_copy);
-        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, properties_copy);
+        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(properties_copy));
+        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, std::as_const(properties_copy));
     } else {
-        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties_copy);
+        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(properties_copy));
         ov::pass::StatefulToStateless().run_on_model(model);
 
         decoder_model = prepare_decoder_model(model);

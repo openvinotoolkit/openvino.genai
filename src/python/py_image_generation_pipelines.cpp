@@ -170,13 +170,24 @@ public:
             if (e.matches(PyExc_ModuleNotFoundError)) {
                 throw std::runtime_error("The 'torch' package is not installed. Please, call 'pip install torch' or use 'rng_seed' parameter.");
             } else {
-                // Re-throw other exceptions
                 throw;
             }
         }
 
         m_float32 = m_torch.attr("float32");
         create_torch_generator(seed);
+    }
+
+    ~TorchGenerator() {
+        if (Py_IsInitialized()) {
+            try {
+                py::gil_scoped_acquire acquire;
+                m_torch_generator = py::object();
+                m_float32 = py::object();
+                m_torch = py::module_();
+            } catch (...) {
+            }
+        }
     }
 
     float next() override {
@@ -259,16 +270,6 @@ public:
         create_torch_generator(new_seed);
     }
 };
-
-bool params_have_torch_generator(ov::AnyMap params) {
-    std::shared_ptr<ov::genai::Generator> generator = nullptr;
-    ov::genai::utils::read_anymap_param(params, "generator", generator);
-    if (std::dynamic_pointer_cast<::TorchGenerator>(generator)) {
-        return true;
-    }
-    return false;
-}
-
 
 } // namespace
 
