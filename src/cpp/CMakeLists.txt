@@ -181,6 +181,14 @@ if(NOT ENABLE_GGUF)
     list(REMOVE_ITEM SOURCE_FILES ${GGUF_SOURCES})
 endif()
 
+if(BUILD_LLAMA_CPP)
+    list(REMOVE_ITEM SOURCE_FILES 
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_quants.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/gguf_modeling.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gguf_utils/building_blocks.cpp"
+    )
+endif()
+
 set(TARGET_NAME openvino_genai)
 set(TARGET_NAME_OBJ ${TARGET_NAME}_obj)
 
@@ -195,9 +203,8 @@ if(ENABLE_XGRAMMAR)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE xgrammar)
 endif()
 
-if(ENABLE_GGUF)
-    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE gguflib)
-    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_GGUF)
+if(ENABLE_GGUF AND NOT BUILD_LLAMA_CPP)
+  target_link_libraries(${TARGET_NAME} PRIVATE gguflib)
 endif()
 
 target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
@@ -261,8 +268,54 @@ if(ENABLE_XGRAMMAR)
     target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)
 endif()
 
-if(ENABLE_GGUF)
-  target_link_libraries(${TARGET_NAME} PRIVATE gguflib)
+if(ENABLE_GGUF AND NOT BUILD_LLAMA_CPP)
+    FetchContent_Declare(
+      gguflib
+      URL https://github.com/Lourdle/gguf-tools/archive/bac796ada809ac293e685db59b075971181cb008.zip
+      URL_HASH SHA256=4d6eab5055468d222833f3f83fe2f7909ccd06114278c2c0b468570ef002c22d)
+    FetchContent_MakeAvailable(gguflib)
+    set_target_properties(gguf-tools PROPERTIES EXCLUDE_FROM_ALL ON)
+
+    add_library(gguflib STATIC ${gguflib_SOURCE_DIR}/fp16.c ${gguflib_SOURCE_DIR}/gguflib.c)
+    set_target_properties(gguflib PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_include_directories(gguflib PUBLIC "${gguflib_SOURCE_DIR}")
+endif()
+
+if(BUILD_LLAMA_CPP)
+    target_compile_definitions(${TARGET_NAME_OBJ} PUBLIC HAS_LLAMA_CPP)
+
+    target_include_directories(${TARGET_NAME_OBJ} PRIVATE
+        "${OpenVINOGenAI_SOURCE_DIR}/thirdparty/llama.cpp/include"
+        "${OpenVINOGenAI_SOURCE_DIR}/thirdparty/llama.cpp/ggml/include"
+    )
+
+    if(TARGET llama)
+        target_link_libraries(${TARGET_NAME} PRIVATE llama)
+        add_dependencies(${TARGET_NAME} llama)
+    endif()
+
+    foreach(_tgt llama ggml ggml-base ggml-cpu ggml-openvino)
+        if(TARGET ${_tgt})
+            get_target_property(_inc_dirs ${_tgt} INTERFACE_INCLUDE_DIRECTORIES)
+            if(_inc_dirs)
+                set(_new_inc_dirs "")
+                foreach(_dir IN LISTS _inc_dirs)
+                    if(IS_ABSOLUTE "${_dir}")
+                        list(APPEND _new_inc_dirs "$<BUILD_INTERFACE:${_dir}>")
+                    else()
+                        list(APPEND _new_inc_dirs "${_dir}")
+                    endif()
+                endforeach()
+                set_target_properties(${_tgt} PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${_new_inc_dirs}")
+            endif()
+
+            install(TARGETS ${_tgt} EXPORT OpenVINOGenAITargets
+                LIBRARY DESTINATION ${LIBRARY_DESTINATION} COMPONENT core_genai
+                RUNTIME DESTINATION ${RUNTIME_DESTINATION} COMPONENT core_genai
+                ARCHIVE DESTINATION ${ARCHIVE_DESTINATION} COMPONENT core_genai
+            )
+        endif()
+    endforeach()
 endif()
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
@@ -317,11 +370,12 @@ if(rpaths)
 endif()
 
 install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
-        LIBRARY DESTINATION ${LIBRARY_DESTINATION} COMPONENT core_genai
-            NAMELINK_COMPONENT core_genai_dev
-        ARCHIVE DESTINATION ${ARCHIVE_DESTINATION} COMPONENT core_genai_dev
-        RUNTIME DESTINATION ${RUNTIME_DESTINATION} COMPONENT core_genai
-        INCLUDES DESTINATION runtime/include)
+    LIBRARY DESTINATION ${LIBRARY_DESTINATION} COMPONENT core_genai
+        NAMELINK_COMPONENT core_genai_dev
+    ARCHIVE DESTINATION ${ARCHIVE_DESTINATION} COMPONENT core_genai_dev
+    RUNTIME DESTINATION ${RUNTIME_DESTINATION} COMPONENT core_genai
+    INCLUDES DESTINATION runtime/include
+)
 
 # development files do not need to be built for NPM package
 if(CPACK_GENERATOR STREQUAL "NPM")
