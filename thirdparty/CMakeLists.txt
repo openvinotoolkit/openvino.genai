@@ -26,9 +26,16 @@ if(BUILD_LLAMA_CPP)
 
     # Save and restore to avoid polluting global scope
     set(_orig_build_shared_libs ${BUILD_SHARED_LIBS})
-    set(BUILD_SHARED_LIBS ON CACHE BOOL "Build llama.cpp as shared library" FORCE)
+    
+    # --- GSOC INTEGRATION: Force static build ---
+    # We build llama.cpp statically so it gets absorbed into the openvino_genai 
+    # binary, hiding it from downstream users.
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build llama.cpp as static library" FORCE)
 
-    add_subdirectory(llama.cpp "${CMAKE_BINARY_DIR}/llama_cpp/")
+    # EXCLUDE_FROM_ALL prevents building llama.cpp's standalone executables 
+    # (like the server or main binary) which saves massive compile time.
+    add_subdirectory(llama.cpp "${CMAKE_BINARY_DIR}/llama_cpp/" EXCLUDE_FROM_ALL)
 
+    # Restore global scope
     set(BUILD_SHARED_LIBS ${_orig_build_shared_libs} CACHE BOOL "" FORCE)
 endif()
