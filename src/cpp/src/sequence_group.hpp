@@ -11,8 +11,8 @@
 #include <memory>
 #include <optional>
 
-#include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/generation_handle.hpp"
+#include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
 #include "utils.hpp"
 
