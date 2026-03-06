@@ -9,7 +9,7 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../requirements.txt
+pip install --upgrade-strategy eager -r <GENAI_ROOT_DIR>/samples/requirements.txt
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
 ```
 
@@ -58,10 +58,11 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 ```javascript
 import { WhisperPipeline } from 'openvino-genai-node';
 import { readFileSync } from 'node:fs';
-
+import { decode } from 'node-wav';
 
 const pipeline = await WhisperPipeline(modelDir, "CPU");
-const rawSpeech = readWav('how_are_you_doing_today.wav');
+const rawSpeechBuffer = readFileSync(audioFilePath);
+const rawSpeech = decode(rawSpeechBuffer).channelData[0];
 const result = await pipeline.generate(rawSpeech);
 console.log(result.texts[0]);
 //  How are you doing today?
