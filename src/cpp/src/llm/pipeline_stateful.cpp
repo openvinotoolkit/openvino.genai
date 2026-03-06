@@ -565,16 +565,44 @@ std::vector<float> StatefulLLMPipeline::get_next_token_log_probs(
     // Run inference ONCE
     m_model_runner.infer();
     
-    // Get logits - with slice optimization, we only get last position
+    // Get logits; models may return either [B, S, V] or sliced [B, V].
     ov::Tensor logits_tensor = m_model_runner.get_tensor("logits");
     auto logits_shape = logits_tensor.get_shape();
     const float* logits_data = logits_tensor.data<const float>();
-    size_t vocab_size = logits_shape.back();
-    size_t logits_seq_len = logits_shape[1];
-    
-    // Use the LAST position's logits (predicts what comes after prompt)
-    size_t logits_pos = logits_seq_len - 1;
-    const float* position_logits = logits_data + logits_pos * vocab_size;
+    OPENVINO_ASSERT(logits_shape.size() == 2 || logits_shape.size() == 3,
+                    "Unexpected logits rank in StatefulLLMPipeline::get_next_token_log_probs: expected 2 or 3, got ",
+                    logits_shape.size());
+
+    const float* position_logits = nullptr;
+    size_t vocab_size = 0;
+
+    if (logits_shape.size() == 2) {
+        // Sliced logits path: [B, V].
+        OPENVINO_ASSERT(logits_shape[0] == batch_size,
+                        "Unexpected batch dimension in logits for rank-2 tensor: expected ",
+                        batch_size,
+                        ", got ",
+                        logits_shape[0]);
+        vocab_size = logits_shape[1];
+        OPENVINO_ASSERT(vocab_size > 0, "Logits vocabulary dimension must be > 0");
+        // batch_size is asserted to 1 above, so first row is the only valid row.
+        position_logits = logits_data;
+    } else {
+        // Full logits path: [B, S, V].
+        OPENVINO_ASSERT(logits_shape[0] == batch_size,
+                        "Unexpected batch dimension in logits for rank-3 tensor: expected ",
+                        batch_size,
+                        ", got ",
+                        logits_shape[0]);
+        size_t logits_seq_len = logits_shape[1];
+        vocab_size = logits_shape[2];
+        OPENVINO_ASSERT(logits_seq_len > 0, "Logits sequence dimension must be > 0");
+        OPENVINO_ASSERT(vocab_size > 0, "Logits vocabulary dimension must be > 0");
+
+        // Use the LAST position's logits (predicts what comes after prompt).
+        size_t logits_pos = logits_seq_len - 1;
+        position_logits = logits_data + logits_pos * vocab_size;
+    }
     
     // Compute log softmax normalization ONCE for all tokens
     float max_val = -std::numeric_limits<float>::infinity();
