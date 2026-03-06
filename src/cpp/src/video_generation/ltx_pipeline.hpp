@@ -641,14 +641,19 @@ public:
             callback_ptr->end();
         }
 
+        // Normalize last scheduler timestep to [0, 1] for VAE timestep conditioning (LTX-Video 0.9.1+)
+        float decode_timestep = 0.0f;
+        if (!timesteps.empty()) {
+            const float max_timestep = static_cast<float>(timesteps.front());
+            if (max_timestep > 0.0f) {
+                decode_timestep = static_cast<float>(timesteps.back()) / max_timestep;
+            }
+        }
+
         latent = postprocess_latents(latent);
 
-        // TODO: support timestep_conditioning for AutoencoderKLLTX
-        OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
-                            "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, contact OpenVINO GenAI developers.");
-
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(latent);
+        ov::Tensor video = m_vae->decode(latent, decode_timestep);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -659,11 +664,11 @@ public:
         return VideoGenerationResult{video, m_perf_metrics};
     }
 
-    VideoGenerationResult decode(const ov::Tensor& latent) {
+    VideoGenerationResult decode(const ov::Tensor& latent, float decode_timestep = 0.0f) {
         ov::Tensor postprocessed = postprocess_latents(latent);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(postprocessed);
+        ov::Tensor video = m_vae->decode(postprocessed, decode_timestep);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();

@@ -308,6 +308,9 @@ class AutoencoderKLLTXVideo:
         @property
         def scaling_factor(self) -> float:
             ...
+        @property
+        def timestep_conditioning(self) -> bool:
+            ...
     @typing.overload
     def __init__(self, vae_decoder_path: os.PathLike | str | bytes) -> None:
         """
@@ -344,10 +347,13 @@ class AutoencoderKLLTXVideo:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def decode(self, latent: openvino._pyopenvino.Tensor, decode_timestep: typing.SupportsFloat = 0.0) -> openvino._pyopenvino.Tensor:
         """
                         Decodes latent video to pixel space.
                         latent (ov.Tensor): Latent video tensor.
+                        decode_timestep (float): Last scheduler timestep normalized to [0, 1] (timestep / max_timestep).
+                            Only used when the VAE config has timestep_conditioning=True (e.g. LTX-Video 0.9.1+).
+                            Defaults to 0.0.
                         Returns: Decoded video tensor.
         """
     def get_config(self) -> AutoencoderKLLTXVideo.Config:
@@ -3517,6 +3523,15 @@ class Text2VideoPipeline:
     @typing.overload
     def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
         ...
+    def decode(self, latent: openvino._pyopenvino.Tensor, decode_timestep: typing.SupportsFloat = 0.0) -> VideoGenerationResult:
+        """
+                        Decodes a latent tensor into a VideoGenerationResult.
+                        latent (ov.Tensor): Latent video tensor produced by generate() via callback.
+                        decode_timestep (float): Last scheduler timestep normalized to [0, 1] (timestep / max_timestep).
+                            Only has effect for models with timestep_conditioning=True (e.g. LTX-Video 0.9.1+).
+                            Defaults to 0.0.
+                        Returns: VideoGenerationResult with the decoded video tensor.
+        """
     def generate(self, prompt: str, **kwargs) -> VideoGenerationResult:
         ...
     def get_generation_config(self) -> VideoGenerationConfig:

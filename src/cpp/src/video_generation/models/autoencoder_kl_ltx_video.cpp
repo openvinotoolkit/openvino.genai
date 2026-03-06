@@ -160,16 +160,30 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
     width /= (spatial_compression_ratio * m_transformer_patch_size);
 
     ov::PartialShape input_shape = m_decoder_model->input(0).get_partial_shape();
-    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], num_frames, height, width}}};
-    m_decoder_model->reshape(idx_to_shape);
+    std::map<std::string, ov::PartialShape> name_to_shape;
+    for (const auto& input : m_decoder_model->inputs()) {
+        name_to_shape[input.get_any_name()] = input.get_partial_shape();
+    }
+    name_to_shape[m_decoder_model->input(0).get_any_name()] = {batch_size, input_shape[1], num_frames, height, width};
+    if (m_config.timestep_conditioning) {
+        OPENVINO_ASSERT(name_to_shape.count("timestep") > 0,
+                        "VAE decoder model has timestep_conditioning=true but no 'timestep' input found");
+        name_to_shape["timestep"] = {1};
+    }
+    m_decoder_model->reshape(name_to_shape);
 
     return *this;
 }
 
-ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent) {
+ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent, float decode_timestep) {
     OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
 
     m_decoder_request.set_input_tensor(latent);
+    if (m_config.timestep_conditioning) {
+        ov::Tensor ts(ov::element::f32, {1});
+        ts.data<float>()[0] = decode_timestep;
+        m_decoder_request.set_tensor("timestep", ts);
+    }
     m_decoder_request.infer();
     return m_decoder_request.get_output_tensor();
 }
