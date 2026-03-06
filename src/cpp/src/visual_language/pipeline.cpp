@@ -23,6 +23,7 @@
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
 #include "lm_encoding.hpp"
+#include "lora/helper.hpp"
 
 using namespace ov::genai;
 
@@ -93,7 +94,8 @@ public:
         } {
         m_is_npu = device.find("NPU") != std::string::npos;
 
-        auto properties_copy = properties;
+        auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+        auto properties_copy = filtered_properties.fork();
         auto language_model_path = models_dir / "openvino_language_model.xml";
         auto language_model =  utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
@@ -110,6 +112,11 @@ public:
         auto lm_properties = device_properties.empty()
             ? properties_copy
             : utils::pop_or_default<ov::AnyMap>(device_properties, device, {});
+
+        if (m_generation_config.adapters) {
+            m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
+            m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
+        }
 
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
@@ -167,17 +174,31 @@ public:
         OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
 
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties);
+        auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+        auto properties_copy = filtered_properties.fork();
+
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
 
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
         auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
+        auto language_model = utils::singleton_core().read_model(m_language_pair.first, m_language_pair.second);
+        auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
+
+        if (m_generation_config.adapters) {
+            m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
+            m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
+        }
+
         m_language = utils::singleton_core().compile_model(
-            m_language_pair.first, m_language_pair.second, device, properties
+            m_language_pair.first, m_language_pair.second, device, properties_copy
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
+
+        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        kv_cache_state.seq_length_axis = kv_pos.seq_len;
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
@@ -211,7 +232,16 @@ public:
         auto& raw_counters = perf_metrics.raw_metrics;
 
         if (!m_is_chat_conversation) {
-            m_language.reset_state();
+            if (m_adapter_controller) {
+                // Preserve adapter-owned state variables
+                for (auto& state : m_language.query_state()) {
+                    if (!m_adapter_controller->has_state_name(state.get_name())) {
+                        state.reset();
+                    }
+                }
+            } else {
+                m_language.reset_state();
+            }
             m_language.get_tensor("attention_mask").set_shape({1, 0});
         }
 
@@ -380,7 +410,15 @@ public:
         bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
 
         if (use_full_history) {
-            m_language.reset_state();
+            if (m_adapter_controller) {
+                for (auto& state : m_language.query_state()) {
+                    if (!m_adapter_controller->has_state_name(state.get_name())) {
+                        state.reset();
+                    }
+                }
+            } else {
+                m_language.reset_state();
+            }
             m_language.get_tensor("attention_mask").set_shape({1, 0});
             m_inputs_embedder->start_chat("");
         }
@@ -481,7 +519,15 @@ public:
         m_image_id = 0;
         m_video_id = 0;
         // Resetting state may be slow.
-        m_language.reset_state();
+        if (m_adapter_controller) {
+            for (auto& state : m_language.query_state()) {
+                if (!m_adapter_controller->has_state_name(state.get_name())) {
+                    state.reset();
+                }
+            }
+        } else {
+            m_language.reset_state();
+        }
         m_language.get_tensor("attention_mask").set_shape({0, 0});
         // clear all chat history
         m_inputs_embedder->finish_chat();
@@ -586,11 +632,23 @@ private:
         if (m_is_chat_conversation) {
             if (m_use_full_chat_history) {
                 kv_cache_state.reset_state();
-                m_language.reset_state();
+                if (m_adapter_controller) {
+                    for (auto& state : m_language.query_state()) {
+                        if (!m_adapter_controller->has_state_name(state.get_name())) {
+                            state.reset();
+                        }
+                    }
+                } else {
+                    m_language.reset_state();
+                }
                 m_language.get_tensor("attention_mask").set_shape({1, 0});
             } else {
-                utils::trim_kv_cache(m_language, kv_cache_state, std::nullopt);
+                utils::trim_kv_cache(m_language, kv_cache_state, m_adapter_controller);
             }
+        }
+
+        if (m_adapter_controller) {
+            m_adapter_controller->apply(m_language, generation_config.adapters);
         }
 
         std::vector<SequenceGroup::Ptr> requests;
