@@ -153,7 +153,9 @@ text_encoder = openvino_genai.CLIPTextModel(
     text_encoder_weights,
     openvino_genai.CLIPTextModel.Config(model_dir / "text_encoder" / "config.json"),
     text_encoder_tokenizer, device, **config)
+
 ...
+
 # Initialize stable diffusion xl pipeline
 pipe = openvino_genai.Text2ImagePipeline.stable_diffusion_xl(
     scheduler=openvino_genai.Scheduler.from_config(model_dir / "scheduler" / "scheduler_config.json"),

@@ -212,7 +212,7 @@ The resulting image is:
 
 Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeline` are applicable for `InpaintingPipeline`.
 
-## benchmarking sample for image generation pipelines
+## Benchmarking sample for image generation pipelines
 
 This `benchmark_image_gen.cpp` sample script demonstrates how to benchmark the text to image pipeline, image to image pipeline and inpainting pipeline. The script includes functionality for warm-up iterations, generating image, and calculating various performance metrics.
 
