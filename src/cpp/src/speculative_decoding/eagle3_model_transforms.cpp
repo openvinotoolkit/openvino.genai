@@ -13,7 +13,9 @@
 #include "openvino/op/gather.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
+#include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
+#include "openvino/op/scaled_dot_product_attention.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -296,6 +298,70 @@ ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features) 
 
     auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 1, seq_len - 1, seq_len);
     return ov::Tensor(hidden_features, start_coord, end_coord);
+}
+
+void apply_eagle3_attention_mask_transform(std::shared_ptr<ov::Model>& model) {
+    constexpr size_t SDPA_ATTENTION_MASK_INPUT_INDEX = 3;
+
+    // 1. Find all SDPA nodes in the model
+    std::vector<std::shared_ptr<ov::op::v13::ScaledDotProductAttention>> sdpa_nodes;
+    for (const auto& node : model->get_ordered_ops()) {
+        if (auto sdpa = std::dynamic_pointer_cast<ov::op::v13::ScaledDotProductAttention>(node)) {
+            sdpa_nodes.push_back(sdpa);
+        }
+    }
+
+    OPENVINO_ASSERT(!sdpa_nodes.empty(), "Eagle3AttentionMaskTransform: No SDPA nodes found in model");
+
+    // 2. Verify all SDPA nodes have the same attention_mask source node
+    std::shared_ptr<ov::Node> attention_mask_source_node = nullptr;
+    for (const auto& sdpa : sdpa_nodes) {
+        // SDPA typically has inputs: [query, key, value, attention_mask, scale(optional)]
+        OPENVINO_ASSERT(sdpa->get_input_size() > SDPA_ATTENTION_MASK_INPUT_INDEX,
+                        "Eagle3AttentionMaskTransform: SDPA node ",
+                        sdpa->get_friendly_name(),
+                        " does not have attention_mask input at index ",
+                        SDPA_ATTENTION_MASK_INPUT_INDEX);
+
+        auto current_mask_node = sdpa->get_input_node_shared_ptr(SDPA_ATTENTION_MASK_INPUT_INDEX);
+        if (!attention_mask_source_node) {
+            attention_mask_source_node = current_mask_node;
+        } else {
+            OPENVINO_ASSERT(attention_mask_source_node.get() == current_mask_node.get(),
+                            "Eagle3AttentionMaskTransform: SDPA nodes have different attention_mask source nodes. ",
+                            "Expected all SDPA nodes to share the same attention_mask source.");
+        }
+    }
+
+    OPENVINO_ASSERT(attention_mask_source_node != nullptr,
+                    "Eagle3AttentionMaskTransform: Could not find attention_mask input in SDPA nodes");
+
+    // Get the shape and element type from the attention mask being used by SDPA
+    auto attention_mask_shape = attention_mask_source_node->get_output_partial_shape(0);
+    auto attention_mask_type = attention_mask_source_node->get_output_element_type(0);
+
+    // 3. Create a new parameter for eagle_tree_mask with the same shape and type
+    auto eagle_tree_mask_param = std::make_shared<ov::op::v0::Parameter>(attention_mask_type, attention_mask_shape);
+    eagle_tree_mask_param->set_friendly_name("eagle_tree_mask");
+    eagle_tree_mask_param->output(0).set_names({"eagle_tree_mask"});
+
+    // 4. Create an Add operation to combine attention_mask with eagle_tree_mask
+    // We need to add this Add op before the attention_mask reaches SDPA
+    auto add_op =
+        std::make_shared<ov::op::v1::Add>(attention_mask_source_node->output(0), eagle_tree_mask_param->output(0));
+    add_op->set_friendly_name("eagle_tree_mask_add");
+
+    // 5. Replace the attention_mask input in all SDPA nodes with the output of Add operation
+    // We've already verified all SDPAs use the same attention_mask source, so we can safely replace all
+    for (auto& sdpa : sdpa_nodes) {
+        sdpa->input(SDPA_ATTENTION_MASK_INPUT_INDEX).replace_source_output(add_op->output(0));
+    }
+
+    // 6. Add the new parameter to the model
+    model->add_parameters({eagle_tree_mask_param});
+
+    // 7. Validate the model
+    model->validate_nodes_and_infer_types();
 }
 
 }  // namespace eagle3

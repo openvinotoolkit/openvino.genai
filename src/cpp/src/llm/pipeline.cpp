@@ -98,7 +98,18 @@ std::pair<std::string, Any> draft_model(
     std::filesystem::path openvino_model_name = "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
     utils::eagle3::apply_eagle3_rt_info(model, plugin_config);
+
     auto generation_config = utils::from_config_json_if_exists(models_path);
+    // If the user supplied a GenerationConfig, overlay the speculative-decoding parameters
+    // so the pipeline constructor can read them from draft_model_desc.generation_config:
+    //   - eagle_tree_params: used by Eagle3 pipeline
+    //   - num_assistant_tokens: used by FastDraft pipeline
+    const auto config_it = properties.find(utils::CONFIG_ARG_NAME);
+    if (config_it != properties.end()) {
+        generation_config.eagle_tree_params = config_it->second.as<GenerationConfig>().eagle_tree_params;
+        generation_config.num_assistant_tokens = config_it->second.as<GenerationConfig>().num_assistant_tokens;
+    }
+
     auto tokenizer = ov::genai::Tokenizer(models_path);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
