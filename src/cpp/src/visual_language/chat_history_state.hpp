@@ -34,11 +34,12 @@ enum ChatHistoryFormat {
 struct MessageMetadata {
     // Original message for change detection
     JsonContainer original_message;
-    
+
     // Contains vision placeholders after prompt normalization.
+    // Updated with pruned content after vision token pruning (if applicable).
     // Empty for system/assistant messages.
     std::string normalized_content;
-    
+
     // Global indices provided with corresponding message (input order)
     std::vector<size_t> provided_image_indices;
     std::vector<size_t> provided_video_indices;

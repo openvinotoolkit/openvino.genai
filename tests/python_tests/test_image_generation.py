@@ -18,18 +18,31 @@ logger = logging.getLogger(__name__)
 MODEL_ID = "tiny-random-latent-consistency"
 MODEL_NAME = "echarlaix/tiny-random-latent-consistency"
 
+FLUX_MODEL_ID = "tiny-random-flux"
+FLUX_MODEL_NAME = "optimum-intel-internal-testing/tiny-random-flux"
+
+MODELS = {
+    MODEL_ID: MODEL_NAME,
+    FLUX_MODEL_ID: FLUX_MODEL_NAME,
+}
+
 
 @pytest.fixture(scope="module")
-def image_generation_model():
+def image_generation_model(request):
+    model_id = getattr(request, "param", MODEL_ID)
+    model_name = MODELS[model_id]
     models_dir = get_ov_cache_converted_models_dir()
-    model_path = Path(models_dir) / MODEL_ID / MODEL_NAME
+    model_path = Path(models_dir) / model_id / model_name
     
     manager = AtomicDownloadManager(model_path)
     
     def convert_model(temp_path: Path) -> None:
         command = [
-            "optimum-cli", "export", "openvino",
-            "--model", MODEL_NAME,
+            "optimum-cli",
+            "export",
+            "openvino",
+            "--model",
+            model_name,
             "--trust-remote-code",
             "--weight-format", "fp16",
             str(temp_path)
@@ -196,3 +209,31 @@ class TestImageGenerationCallback:
         
         assert len(callback_calls) > 0
         assert image is not None
+
+
+class TestTaylorSeerImageGeneration:
+    @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
+    def test_flux_text2image_taylorseer_with_callback(self, image_generation_model):
+        """Test Flux text2image with TaylorSeer and callback."""
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+
+        # Configure TaylorSeer
+        taylorseer_config = ov_genai.TaylorSeerCacheConfig()
+        taylorseer_config.cache_interval = 5
+        taylorseer_config.disable_cache_before_step = 2
+        taylorseer_config.disable_cache_after_step = -1
+
+        generation_config = pipe.get_generation_config()
+        generation_config.taylorseer_config = taylorseer_config
+        pipe.set_generation_config(generation_config)
+
+        callback_calls = []
+
+        def callback(step, num_steps, latent):
+            callback_calls.append((step, num_steps))
+            return False
+
+        image = pipe.generate("test prompt", width=64, height=64, num_inference_steps=5, callback=callback)
+
+        assert image is not None
+        assert len(callback_calls) > 0
