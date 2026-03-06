@@ -3,17 +3,17 @@
 
 #pragma once
 
+#include <vector>
 #include <cassert>
+#include <set>
 #include <cstdlib>
+#include <string_view>
 #include <memory>
 #include <optional>
-#include <set>
-#include <string_view>
-#include <vector>
 
-#include "generation_stream.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/generation_handle.hpp"
+#include "generation_stream.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -35,6 +35,14 @@ enum class SequenceGroupType {
 
 using TokenIds = std::vector<int64_t>;
 using LogProbs = std::vector<float>;
+
+struct EagleMetaData {
+    std::vector<std::vector<uint8_t>> tree_mask;
+    std::vector<std::vector<int64_t>> retrieve_indices;
+    std::vector<int64_t> tree_position_ids;
+    std::vector<int64_t> validated_indices;
+};
+
 class SequenceGroup;
 
 class Sequence {
@@ -45,7 +53,6 @@ class Sequence {
         return m_counter++;
     }
 
-    ov::genai::utils::EagleMetaData m_eagle_metadata;
     TokenIds m_generated_ids;
     LogProbs m_generated_log_probs;
     uint64_t m_grouped_id;
@@ -62,6 +69,7 @@ class Sequence {
     size_t m_hidden_size;
     std::vector<ov::Tensor> m_position_ids_list;
     int64_t m_rope_delta;
+    EagleMetaData m_eagle_metadata;
 
     // Embeddings hash calculation params
     static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
@@ -162,11 +170,11 @@ public:
         return m_hidden_state;
     }
 
-    void set_eagle_metadata(const ov::genai::utils::EagleMetaData& metadata) {
+    void set_eagle_metadata(const EagleMetaData& metadata) {
         m_eagle_metadata = metadata;
     }
 
-    const ov::genai::utils::EagleMetaData& get_eagle_metadata() const {
+    const EagleMetaData& get_eagle_metadata() const {
         return m_eagle_metadata;
     }
 
