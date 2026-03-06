@@ -251,17 +251,20 @@ size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
 }
 
 bool GenerationConfig::is_greedy_decoding() const {
-    return !do_sample && !is_beam_search();
+    return !do_sample && !is_beam_search() && !is_tree_search();
 }
 
 bool GenerationConfig::is_beam_search() const {
     return num_beams > 1;
 }
 
+bool GenerationConfig::is_tree_search() const {
+    return eagle_tree_params.tree_depth > 0;
+}
+
 bool GenerationConfig::is_multinomial() const {
     return do_sample;
 }
-
 
 bool GenerationConfig::is_assisting_generation() const {
     return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
