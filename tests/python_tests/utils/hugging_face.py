@@ -182,6 +182,7 @@ def get_huggingface_models(
     model_id: str | Path,
     model_class: Type[OVModel],
     local_files_only=False,
+    trust_remote_code=False,
 ) -> tuple[OptimizedModel, AutoTokenizer]:
     def auto_tokenizer_from_pretrained() -> AutoTokenizer:
         return AutoTokenizer.from_pretrained(
@@ -198,9 +199,8 @@ def get_huggingface_models(
             "load_in_8bit": False,
             "ov_config": get_default_llm_properties(),
             "local_files_only": local_files_only,
+            "trust_remote_code": trust_remote_code,
         }
-        if is_eagle_model:
-            params["eagle3"] = True
         return model_class.from_pretrained(model_id, **params)
 
     opt_model = retry_request(auto_model_from_pretrained)
@@ -251,11 +251,15 @@ def sanitize_model_id(model_id: str) -> str:
     return model_id.replace("/", "_")
 
 
+TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
+
+
 def download_and_convert_model_class(
     model_id: str, 
     model_class: Type[OVModel], 
     **tokenizer_kwargs,
 ) -> OVConvertedModelSchema:
+    trust_remote_code = model_id in TRUST_REMOTE_CODE_MODELS
     dir_name = sanitize_model_id(model_id)
     if model_class.__name__ not in ["OVModelForCausalLM"]:
         dir_name = f"{dir_name}_{model_class.__name__}"
@@ -265,9 +269,9 @@ def download_and_convert_model_class(
     manager = AtomicDownloadManager(models_path)
 
     if manager.is_complete() or (models_path / OV_MODEL_FILENAME).exists():
-        opt_model, hf_tokenizer = get_huggingface_models(models_path, model_class, local_files_only=True)
+        opt_model, hf_tokenizer = get_huggingface_models(models_path, model_class, local_files_only=True, trust_remote_code=trust_remote_code)
     else:
-        opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
+        opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False, trust_remote_code=trust_remote_code)
         if "padding_side" in tokenizer_kwargs:
             hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
