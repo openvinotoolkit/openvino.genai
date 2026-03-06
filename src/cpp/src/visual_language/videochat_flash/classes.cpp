@@ -548,7 +548,7 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
     //     });
 
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
-    auto compiled_model_vision = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
+    auto compiled_model_vision = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, properties);
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model_vision.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model_vision]() -> ov::InferRequest {
