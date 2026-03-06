@@ -14,7 +14,6 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
-#include "utils.hpp"
 
 namespace ov::genai {
 enum class SequenceStatus {
