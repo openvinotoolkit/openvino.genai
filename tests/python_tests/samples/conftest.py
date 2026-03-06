@@ -173,6 +173,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-flux",
         "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
     },
+    "stable-diffusion-3-tiny-random": {
+        "name": "optimum-intel-internal-testing/stable-diffusion-3-tiny-random",
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
+    },
 }
 
 TEST_FILES = {

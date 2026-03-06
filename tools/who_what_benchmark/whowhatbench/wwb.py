@@ -210,6 +210,14 @@ def parse_args():
         help="Text-to-image specific parameter that defines the seed value.",
     )
     parser.add_argument(
+        "--taylorseer-config",
+        type=str,
+        default=None,
+        help="Path to a JSON file/string with TaylorSeer configuration for GenAI text-to-image/video pipelines. "
+        "Supported keys: 'cache_interval', 'disable_cache_before_step', 'disable_cache_after_step'. "
+        "All keys are optional; defaults are used if not provided.",
+    )
+    parser.add_argument(
         "--from-onnx",
         action="store_true",
         help="If True, the model will be loaded from ONNX format. It's converted to OpenVINO format in runtime.",
@@ -896,6 +904,16 @@ def main():
             logger.info(f"draft_cb_config: {draft_cb_config}")
         kwargs["draft_cb_config"] = draft_cb_config
 
+    # Create TaylorSeerCacheConfig for text-to-image and text-to-video pipelines
+    taylorseer_config = None
+    if args.taylorseer_config and args.genai and args.model_type in ["text-to-image", "text-to-video"]:
+        ts_cfg = get_json_config(args.taylorseer_config)
+        taylorseer_config = openvino_genai.TaylorSeerCacheConfig()
+        taylorseer_config.cache_interval = ts_cfg.get("cache_interval", 3)
+        taylorseer_config.disable_cache_before_step = ts_cfg.get("disable_cache_before_step", 6)
+        taylorseer_config.disable_cache_after_step = ts_cfg.get("disable_cache_after_step", -2)
+        logger.info(f"TaylorSeer config: {taylorseer_config}")
+
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
     else:
@@ -908,6 +926,13 @@ def main():
             args.genai,
             **kwargs,
         )
+
+        # Set TaylorSeer config via generation config if applicable
+        if taylorseer_config is not None and base_model is not None:
+            generation_config = base_model.get_generation_config()
+            generation_config.taylorseer_config = taylorseer_config
+            base_model.set_generation_config(generation_config)
+
         evaluator = create_evaluator(base_model, args)
 
         if args.gt_data:
@@ -932,6 +957,13 @@ def main():
                 args.llamacpp,
                 **kwargs
             )
+
+            # Set TaylorSeer config via generation config if applicable
+            if taylorseer_config is not None and target_model is not None:
+                generation_config = target_model.get_generation_config()
+                generation_config.taylorseer_config = taylorseer_config
+                target_model.set_generation_config(generation_config)
+
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,
                 evaluator.get_generation_fn() if args.genai or args.llamacpp else None,
