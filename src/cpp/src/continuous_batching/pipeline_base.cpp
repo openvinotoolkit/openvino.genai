@@ -184,19 +184,29 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     input_ids.reserve(histories.size());
 
     std::vector<MicroSeconds> tokenization_durations;
+    std::vector<MicroSeconds> template_durations;
     static ManualTimer timer("tokenize");
     timer.start();
 
     for (size_t i = 0; i < histories.size(); i++) {
         OPENVINO_ASSERT(sampling_params[i].apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
         OPENVINO_ASSERT(!histories[i].empty(), "Chat history must not be empty when using ChatHistory in generate method.");
-        const auto encode_start = std::chrono::steady_clock::now();
+        
         constexpr bool add_generation_prompt = true;
+        
+        const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(histories[i], add_generation_prompt);
+        const auto template_end = std::chrono::steady_clock::now();
+        
+        const auto encode_start = std::chrono::steady_clock::now();
         input_ids.push_back(
             m_tokenizer.encode(templated_history, add_special_tokens(false)).input_ids
         );
-        tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
+        const auto encode_end = std::chrono::steady_clock::now();
+        
+        tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_end - encode_start));
+        // Store chat template duration for metrics tracking
+        template_durations.emplace_back(PerfMetrics::get_microsec(template_end - template_start));
     }
     
     timer.end();
@@ -211,6 +221,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         auto& perf_metrics = encoded_result.perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
         raw_counters.tokenization_durations.emplace_back(tokenization_durations[i]);
+        raw_counters.chat_template_durations.emplace_back(template_durations[i]);
 
         std::vector<std::string> decoded_outputs;
         decoded_outputs.reserve(encoded_result.m_generation_ids.size());

@@ -90,6 +90,11 @@ MeanStdPair PerfMetrics::get_detokenization_duration() {
     return detokenization_duration;
 }
 
+MeanStdPair PerfMetrics::get_chat_template_duration() {
+    evaluate_statistics();
+    return chat_template_duration;
+}
+
 MeanStdPair PerfMetrics::get_inference_duration() {
     evaluate_statistics();
     return inference_duration;
@@ -153,6 +158,7 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     generate_duration = calc_mean_and_std(raw_metrics.generate_durations);
     tokenization_duration = calc_mean_and_std(raw_metrics.tokenization_durations);
     detokenization_duration = calc_mean_and_std(raw_metrics.detokenization_durations);
+    chat_template_duration = calc_mean_and_std(raw_metrics.chat_template_durations);
     inference_duration = calc_mean_and_std(raw_metrics.m_inference_durations);
 
     // tokens per second

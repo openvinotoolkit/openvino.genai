@@ -135,6 +135,16 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_perf_metrics_get_detokenization_duration(const ov_genai_perf_metrics* metrics, float* mean, float* std);
 
 /**
+ * @brief Get chat template application duration (in ms) from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics instance.
+ * @param mean Mean of chat template application duration.
+ * @param std Standard deviation of chat template application duration.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_perf_metrics_get_chat_template_duration(const ov_genai_perf_metrics* metrics, float* mean, float* std);
+
+/**
  * @brief C interface for PerfMetrics& operator+=(const PerfMetrics& right)
  *
  * This function adds the PerfMetrics from 'right' to 'left' in place. Equivalent to ov::genai::PerfMetrics&
