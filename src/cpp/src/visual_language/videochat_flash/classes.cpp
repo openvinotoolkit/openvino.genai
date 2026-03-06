@@ -189,7 +189,7 @@ ov::Tensor insert_image_placeholders(
     ov::Tensor merged{ov::element::i64, {1, merged_length}};
     size_t offset = 0;
     for (const std::variant<ov::Tensor, size_t>& chunk : chunks) {
-        offset += std::visit(utils::overloaded{
+        const size_t written = std::visit(utils::overloaded{
             [&](const ov::Tensor& chunk) {
                 size_t length = chunk.get_shape().at(1);
                 std::copy_n(
@@ -209,6 +209,7 @@ ov::Tensor insert_image_placeholders(
                 return tokens_per_images.at(image_id);
             }
         }, chunk);
+        offset += written;
     }
     return merged;
 }
@@ -263,7 +264,9 @@ ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t m
     OPENVINO_ASSERT(
         src_shape[0] % mm_local_num_frames == 0,
         "Batch N must be divisible by mm_local_num_frames. N=", src_shape[0],
-        ", mm_local_num_frames=", mm_local_num_frames
+        ", mm_local_num_frames=", mm_local_num_frames,
+        ".\nPlease adjust the batch size to be divisible by mm_local_num_frames.\n"
+        "reference: https://huggingface.co/OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B/blob/main/modeling_videochat_flash.py#L152"
     );
 
     const size_t n = src_shape[0];
@@ -305,26 +308,34 @@ ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t m
 
 ov::Tensor remove_second_dim_first_element(const ov::Tensor& input) {
     const ov::Shape& input_shape = input.get_shape();
-    if (input_shape.size() < 2) {
-        throw std::invalid_argument("Input tensor must have at least 2 dimensions");
-    }
-    if (input_shape[1] < 1) {
-        throw std::invalid_argument("Second dimension of input tensor must be at least 1");
-    }
-    auto input_data = input.data<float>();
+    OPENVINO_ASSERT(input_shape.size() == 3, "Input tensor must be 3D [batch, seq, hidden], got ", input_shape.size(), "D.");
+    OPENVINO_ASSERT(input_shape[1] >= 1, "Second dimension of input tensor must be at least 1.");
+
+    const auto element_type = input.get_element_type();
+    const size_t element_size = element_type.size();
+    OPENVINO_ASSERT(element_size > 0, "Unsupported tensor element type in remove_second_dim_first_element.");
+
+    const uint8_t* input_data = input.data<const uint8_t>();
     ov::Shape output_shape = input_shape;
     const size_t org_seq_len = output_shape[1];
     output_shape[1] -= 1;
     const size_t seq_len = output_shape[1];
     const size_t head_elements = input_shape[2];
-    ov::Tensor output(input.get_element_type(), output_shape);
-    auto output_data = output.data<float>();
+    ov::Tensor output(element_type, output_shape);
+    uint8_t* output_data = output.data<uint8_t>();
 
-    for(int i=0; i < input_shape[0]; i++) {
-        std::copy(
-            input_data + i * org_seq_len * head_elements + head_elements,
-            input_data + (i + 1) * org_seq_len * head_elements,
-            output_data + i * seq_len * head_elements
+    const size_t src_frame_elements = org_seq_len * head_elements;
+    const size_t dst_frame_elements = seq_len * head_elements;
+    const size_t skip_first_token_elements = head_elements;
+
+    for (size_t batch_idx = 0; batch_idx < input_shape[0]; ++batch_idx) {
+        const size_t src_offset_elements = batch_idx * src_frame_elements + skip_first_token_elements;
+        const size_t dst_offset_elements = batch_idx * dst_frame_elements;
+        const size_t copy_elements = dst_frame_elements;
+        std::memcpy(
+            output_data + dst_offset_elements * element_size,
+            input_data + src_offset_elements * element_size,
+            copy_elements * element_size
         );
     }
     return output;
@@ -444,7 +455,7 @@ ov::Tensor merge_tokens(const ov::Tensor& input, ov::InferRequest& merge_embeddi
     }
 
     const ov::Shape size_shape = {b, p, 1};
-    ov::Tensor size_tensor(input.get_element_type(), size_shape);
+    ov::Tensor size_tensor(ov::element::f32, size_shape);
     float* size_data = size_tensor.data<float>();
     size_t num_elements = size_tensor.get_size();
     std::fill(size_data, size_data + num_elements, 1.0f);
@@ -489,86 +500,6 @@ ov::Tensor efficient_flatten(ov::Tensor& original_tensor) {
     return new_tensor;
 }
 
-std::vector<float> get_1d_sincos_pos_embed_from_grid(int embed_dim, const std::vector<float>& pos) {
-    assert(embed_dim % 2 == 0);
-    int M = pos.size();
-    int half_dim = embed_dim / 2;
-
-    std::vector<float> omega(half_dim);
-    for (int i = 0; i < half_dim; ++i) {
-        omega[i] = 1.0f / std::pow(10000.0f, (float)i / (embed_dim / 2.0f));
-    }
-
-    std::vector<float> emb(M * embed_dim);
-    for (int m = 0; m < M; ++m) {
-        for (int d = 0; d < half_dim; ++d) {
-            float out = pos[m] * omega[d];
-            emb[m * embed_dim + d] = std::sin(out);            // 前一半是 sin
-            emb[m * embed_dim + d + half_dim] = std::cos(out); // 后一半是 cos
-        }
-    }
-    return emb;
-}
-
-std::vector<float> get_2d_sincos_pos_embed_from_grid(int embed_dim, const std::vector<std::vector<float>>& grid) {
-    assert(embed_dim % 2 == 0);
-    int half_dim = embed_dim / 2;
-    int num_points = grid[0].size();
-
-    auto emb_h = get_1d_sincos_pos_embed_from_grid(half_dim, grid[0]);
-    auto emb_w = get_1d_sincos_pos_embed_from_grid(half_dim, grid[1]);
-
-    std::vector<float> emb(num_points * embed_dim);
-    for (int i = 0; i < num_points; ++i) {
-        std::copy(emb_h.begin() + i * half_dim, emb_h.begin() + (i + 1) * half_dim, emb.begin() + i * embed_dim);
-        std::copy(emb_w.begin() + i * half_dim, emb_w.begin() + (i + 1) * half_dim, emb.begin() + i * embed_dim + half_dim);
-    }
-    return emb;
-}
-
-ov::Tensor get_3d_sincos_pos_embed(int embed_dim, int grid_size, int t_size, bool cls_token = false) {
-    assert(embed_dim % 4 == 0);
-    int embed_dim_spatial = (embed_dim / 4) * 3;
-    int embed_dim_temporal = embed_dim / 4;
-    int hw = grid_size * grid_size;
-    int total_tokens = t_size * hw;
-    int num_rows = (cls_token ? 1 : 0) + total_tokens;
-
-    ov::Shape output_shape = {1, static_cast<size_t>(num_rows), static_cast<size_t>(embed_dim)};
-    ov::Tensor pos_tensor(ov::element::f32, output_shape);
-
-    float* out_ptr = pos_tensor.data<float>();
-    std::fill(out_ptr, out_ptr + pos_tensor.get_size(), 0.0f);
-
-    std::vector<std::vector<float>> grid(2, std::vector<float>(hw));
-    for (int h = 0; h < grid_size; ++h) {
-        for (int w = 0; w < grid_size; ++w) {
-            grid[0][h * grid_size + w] = (float)w;
-            grid[1][h * grid_size + w] = (float)h;
-        }
-    }
-    auto pos_embed_spatial = get_2d_sincos_pos_embed_from_grid(embed_dim_spatial, grid);
-
-    std::vector<float> grid_t(t_size);
-    std::iota(grid_t.begin(), grid_t.end(), 0.0f);
-    auto pos_embed_temporal = get_1d_sincos_pos_embed_from_grid(embed_dim_temporal, grid_t);
-
-    int output_offset = cls_token ? 1 : 0;
-    for (int t = 0; t < t_size; ++t) {
-        for (int i = 0; i < hw; ++i) {
-            float* token_ptr = out_ptr + (output_offset + t * hw + i) * embed_dim;
-            std::memcpy(token_ptr, 
-                        &pos_embed_temporal[t * embed_dim_temporal], 
-                        embed_dim_temporal * sizeof(float));
-            std::memcpy(token_ptr + embed_dim_temporal, 
-                        &pos_embed_spatial[i * embed_dim_spatial], 
-                        embed_dim_spatial * sizeof(float));
-        }
-    }
-
-    return pos_tensor;
-}
-
 ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
     if (tensors.empty()) return ov::Tensor();
 
@@ -590,7 +521,8 @@ ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
     return merged_tensor;
 }
 
-ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings, ov::Tensor& m_pos_emb) {
+ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings) {
+    std::cout << "Running cyclic ViT inference on transposed features with shape: " << transpose_features.get_shape() << std::endl;
     OPENVINO_ASSERT(
         transpose_features.get_element_type() == ov::element::f32,
         "vision_embeddings input pixel_values must be f32."
@@ -651,14 +583,6 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
             return compiled_merge_model.create_infer_request();
         });
     
-    // init 3d_sincos_pos_embed
-    size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
-    size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
-    // Can not obtain this from config for now
-    const size_t img_size = 224;
-    const size_t patch_size = 14;
-    size_t grid_size = img_size / patch_size; // 16
-    m_pos_emb = videochat_flash_utils::get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
 }
 
 VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
@@ -685,14 +609,6 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
             return compiled_merge_model.create_infer_request();
         });
     
-    // init 3d_sincos_pos_embed
-    size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
-    size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
-    // Can not obtain this from config for now
-    const size_t img_size = 224;
-    const size_t patch_size = 14;
-    size_t grid_size = img_size / patch_size; // 16
-    m_pos_emb = videochat_flash_utils::get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
 }
 
 EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
@@ -705,27 +621,20 @@ ov::Tensor infer_visual_features(
     ov::Tensor& transpose_features,
     ov::InferRequest& vision_embeddings,
     ov::InferRequest& merge_embeddings,
-    ov::InferRequest& vision_projection,
-    ov::Tensor& pos_emb,
-    const bool use_batch_vit
+    ov::InferRequest& vision_projection
 ) {
-    OPENVINO_ASSERT(pos_emb.get_element_type() == ov::element::f32, "rotary_pos_emb must be f32.");
-
-    ov::Tensor processed_vision_embeds;
-    if (!use_batch_vit) {
-        processed_vision_embeds = videochat_flash_utils::cyclic_vit_infer(transpose_features, vision_embeddings, pos_emb);
-    } else {
-        vision_embeddings.set_tensor("pixel_values", transpose_features);
-        vision_embeddings.infer();
-        processed_vision_embeds = vision_embeddings.get_output_tensor();
-    }
+    std::cout << "Starting inference with transpose_features shape: " << transpose_features.get_shape() << std::endl;
+    std::cout << "Using cyclic ViT inference." << std::endl;
+    ov::Tensor processed_vision_embeds = videochat_flash_utils::cyclic_vit_infer(transpose_features, vision_embeddings);
 
     ov::Tensor clipped_vision_embeds = videochat_flash_utils::remove_second_dim_first_element(processed_vision_embeds);
+    std::cout << "Clipped vision embeds shape: " << clipped_vision_embeds.get_shape() << std::endl;
     ov::Tensor merged_vision_features = videochat_flash_utils::merge_tokens(clipped_vision_embeds, merge_embeddings);
-
+    std::cout << "Merged vision features shape: " << merged_vision_features.get_shape() << std::endl;
     vision_projection.set_tensor("input", merged_vision_features);
     vision_projection.infer();
     ov::Tensor proj_features = vision_projection.get_output_tensor();
+    std::cout << "Projected features shape: " << proj_features.get_shape() << std::endl;
 
     return videochat_flash_utils::efficient_flatten(proj_features);
 }
@@ -733,15 +642,16 @@ ov::Tensor infer_visual_features(
 
 
 std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChat_Flash::encode_videos(const std::vector<ov::Tensor>& videos) {
-
+    std::cout << "Encoding " << videos.size() << std::endl;
     auto vision_encoder = std::static_pointer_cast<VisionEncoderVideoChat_Flash>(m_vision_encoder);
     std::vector<EncodedVideo> embeds;
     for (const ov::Tensor& video : videos) {
+        std::cout << "Processing video with shape: " << video.get_shape() << " and element type: " << video.get_element_type() << std::endl;
         auto video_nchw_f32 = videochat_flash_utils::preprocess(video, 224, 224, {0.485f, 0.456f, 0.406f}, {0.229f, 0.224f, 0.225f});
-
         const size_t mm_local_num_frames = vision_encoder->get_mm_local_num_frames();
-        auto transpose_features = videochat_flash_utils::transpose_video_features(video_nchw_f32, mm_local_num_frames);
 
+        auto transpose_features = videochat_flash_utils::transpose_video_features(video_nchw_f32, mm_local_num_frames);
+        std::cout << "Transposed features shape: " << transpose_features.get_shape() << std::endl;
         CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(vision_encoder->get_vision_encoder());
         CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(vision_encoder->get_merge_model());
         CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(vision_encoder->get_vision_projection());
@@ -750,9 +660,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChat_Flash::encode_video
             transpose_features,
             vision_guard.get(),
             merge_guard.get(),
-            projection_guard.get(),
-            vision_encoder->get_pos_emb(),
-            m_use_batch_vit
+            projection_guard.get()
         );
         EncodedVideo encoded_video;
         encoded_video.video_features = final_features;
@@ -767,9 +675,7 @@ InputsEmbedderVideoChat_Flash::InputsEmbedderVideoChat_Flash(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap device_config
-) : IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-    utils::read_anymap_param(device_config, "use_batch_vit", m_use_batch_vit);
-}
+) : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
 
 InputsEmbedderVideoChat_Flash::InputsEmbedderVideoChat_Flash(
     const VLMConfig& vlm_config,
@@ -778,9 +684,7 @@ InputsEmbedderVideoChat_Flash::InputsEmbedderVideoChat_Flash(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    utils::read_anymap_param(device_config, "use_batch_vit", m_use_batch_vit);
-}
+    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
 
 NormalizedPrompt InputsEmbedderVideoChat_Flash::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
