@@ -6,6 +6,7 @@
 #include "../utils/model_yaml.hpp"
 #include "../utils/load_image.hpp"
 
+namespace VideoPreprocessModuleTest {
 struct ExpectedOutput {
     std::vector<float> pixel_values;
     ov::Shape pixel_values_shape;
@@ -153,8 +154,6 @@ TEST_P(VideoPreprocessModuleTest, ModuleTest) {
     run();
 }
 
-namespace VideoPreprocessModuleTestParams {
-
 auto test_video_types = std::vector<bool>{true};  // true: single video, false: batch video
 auto test_devices = std::vector<std::string>{TEST_MODEL::get_device()};
 
@@ -171,11 +170,12 @@ ExpectedOutput qwen3_5_expected_output = {
     /*rotary_sin_shape=*/{1056, 64}};
 // <models_type, models_path, expected_output>
 std::vector<std::tuple<std::string, std::string, ExpectedOutput>> test_models = {{"qwen3_5", TEST_MODEL::Qwen3_5_0_8B(), qwen3_5_expected_output}};
-}  // namespace VideoPreprocessModuleTestParams
 
 INSTANTIATE_TEST_SUITE_P(ModuleTestSuite,
                          VideoPreprocessModuleTest,
-                         ::testing::Combine(::testing::ValuesIn(VideoPreprocessModuleTestParams::test_video_types),
-                                            ::testing::ValuesIn(VideoPreprocessModuleTestParams::test_devices),
-                                            ::testing::ValuesIn(VideoPreprocessModuleTestParams::test_models)),
+                         ::testing::Combine(::testing::ValuesIn(test_video_types),
+                                            ::testing::ValuesIn(test_devices),
+                                            ::testing::ValuesIn(test_models)),
                          VideoPreprocessModuleTest::get_test_case_name);
+
+}  // namespace VideoPreprocessModuleTest

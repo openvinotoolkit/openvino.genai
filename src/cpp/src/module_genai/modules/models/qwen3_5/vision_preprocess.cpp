@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "module_genai/modules/model/qwen3_5/vision_preprocess.hpp"
+#include "module_genai/modules/models/qwen3_5/vision_preprocess.hpp"
 
 #include <utility>
 

@@ -3,8 +3,8 @@
 
 #include "vision_preprocess.hpp"
 
-#include "module_genai/modules/model/qwen3_5/vision_preprocess.hpp"
-#include "module_genai/modules/model/qwen3_vl/vision_preprocess.hpp"
+#include "module_genai/modules/models/qwen3_5/vision_preprocess.hpp"
+#include "module_genai/modules/models/qwen3_vl/vision_preprocess.hpp"
 
 namespace ov::genai::module {
 

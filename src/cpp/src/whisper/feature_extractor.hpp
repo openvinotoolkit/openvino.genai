@@ -51,6 +51,14 @@ public:
      */
     WhisperFeatures extract(const std::vector<float>& raw_speech);
 
+    /**
+     * @brief Same as extract(), but optionally disables 30s minimum-length padding.
+     *
+     * When pad_to_30s is false, the spectrogram length follows the input waveform length
+     * (matching the typical torch.stft(center=true) + drop-last-frame path).
+     */
+    WhisperFeatures extract(const std::vector<float>& raw_speech, bool pad_to_30s);
+
 private:
     std::vector<float> sin_vals;
     std::vector<float> cos_vals;

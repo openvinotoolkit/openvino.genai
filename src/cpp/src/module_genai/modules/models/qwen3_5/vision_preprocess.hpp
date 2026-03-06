@@ -9,7 +9,7 @@
 
 #include "module_genai/modules/md_vision_preprocess/vision_preprocess.hpp"
 #include "module_genai/utils/vision_preprocess.hpp"
-#include "module_genai/modules/model/qwen3_5/qwen3_5preprocessor.hpp"
+#include "module_genai/modules/models/qwen3_5/qwen3_5preprocessor.hpp"
 
 namespace ov::genai::module {
 

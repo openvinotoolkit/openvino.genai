@@ -154,4 +154,14 @@ std::string img_dog_120_120() {
     OPENVINO_ASSERT(check_file_exists(full_path), "File does not exist: " + full_path);
     return full_path;
 }
+
+ov::Tensor audio_dummy_data(float duration, int sample_rate) {
+    int total_samples = static_cast<int>(sample_rate * duration);
+    auto audio = ov::Tensor(ov::element::f32, ov::Shape{(size_t)total_samples});
+    float* audio_data = audio.data<float>();
+    for (int i = 0; i < total_samples; ++i) {
+        audio_data[i] = i / static_cast<float>(total_samples);
+    }
+    return audio;
+}
 }  // namespace TEST_DATA

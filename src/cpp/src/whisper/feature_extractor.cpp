@@ -342,6 +342,7 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
                                               const size_t feature_size,
                                               const size_t n_fft,
                                               const size_t hop_length,
+                                              const size_t minimum_length_samples,
                                               const size_t n_threads,
                                               const std::vector<float>& mel_filter,
                                               const std::vector<float>& sin_vals,
@@ -353,7 +354,7 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
     hann_window(n_fft, true, hann);
 
     const size_t reflect_pad_size = n_fft / 2;
-    auto padded_raw_speech = pad(raw_speech, sampling_rate * 30, reflect_pad_size);
+    auto padded_raw_speech = pad(raw_speech, minimum_length_samples, reflect_pad_size);
 
     WhisperFeatures features;
     features.feature_size = feature_size;
@@ -486,6 +487,22 @@ WhisperFeatures WhisperFeatureExtractor::extract(const std::vector<float>& raw_s
                                          feature_size,
                                          n_fft,
                                          hop_length,
+                                         sampling_rate * 30,
+                                         n_threads,
+                                         mel_filter,
+                                         sin_vals,
+                                         cos_vals);
+}
+
+WhisperFeatures WhisperFeatureExtractor::extract(const std::vector<float>& raw_speech, bool pad_to_30s) {
+    size_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
+    const size_t minimum_length_samples = pad_to_30s ? (sampling_rate * 30) : raw_speech.size();
+    return mel_spectrogram_convert_audio(raw_speech,
+                                         sampling_rate,
+                                         feature_size,
+                                         n_fft,
+                                         hop_length,
+                                         minimum_length_samples,
                                          n_threads,
                                          mel_filter,
                                          sin_vals,

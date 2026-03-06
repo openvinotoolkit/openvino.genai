@@ -37,6 +37,10 @@ std::string Qwen3_5_0_8B() {
     return get_model_path() + "/Qwen3.5-0.8B/";
 }
 
+std::string Qwen3_Omni_4B_Instruct_Multilingual() {
+    return get_model_path() + "/Qwen3-Omni-4B-Instruct-multilingual/";
+}
+
 std::string get_qwen2_5_vl_config_yaml(const std::string& model_path, const std::string& device) {
     YAML::Node config;
 

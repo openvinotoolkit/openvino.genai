@@ -20,4 +20,5 @@ ov::Tensor create_countdown_frames();
 namespace TEST_DATA {
     std::string img_cat_120_100();
     std::string img_dog_120_120();
+    ov::Tensor audio_dummy_data(float duration, int sample_rate = 16000);
 };

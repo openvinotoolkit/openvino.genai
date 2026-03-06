@@ -27,6 +27,7 @@ namespace module {
         X(ParameterModule, 0) \
         X(ImagePreprocessModule, 10) \
         X(VideoPreprocessModule, 13) \
+        X(AudioPreprocessModule, 14) \
         X(TextEncoderModule, 11) \
         X(RandomLatentImageModule, 12) \
         X(VisionEncoderModule, 20) \
