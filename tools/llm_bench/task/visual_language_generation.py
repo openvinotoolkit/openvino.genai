@@ -306,6 +306,7 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
         gen_fn = run_visual_language_generation_optimum
 
     proc_id = os.getpid()
+    mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, image_text_list, prompt_idx_list)
     if args['subsequent'] is False:
         for num in range(num_iters + 1):

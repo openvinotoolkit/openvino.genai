@@ -578,6 +578,7 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
         text_gen_fn = run_text_generation_genai
 
     proc_id = os.getpid()
+    mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
     if args['subsequent'] is False:
         for num in range(num_iters + 1):

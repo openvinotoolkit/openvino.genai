@@ -151,6 +151,7 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         whisper_hook.new_text_encoder_request(pipe)
         whisper_hook.new_generate(pipe)
         whisper_hook.new_text_sample(pipe)
+    mem_consumption.activate_cooldown("after model compilation")
     for num in range(num_iters + 1):
         for idx, speech_param in enumerate(speech_list):
             mem_consumption.update_marker(f"step-{num}-{idx}")

@@ -226,6 +226,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
+    mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, image_list, prompt_idx_list)
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
