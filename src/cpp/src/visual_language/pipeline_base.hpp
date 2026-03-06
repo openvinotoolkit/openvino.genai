@@ -80,41 +80,8 @@ public:
         const std::string& prompt,
         const ov::AnyMap& config_map
     ) {
-        auto image = config_map.find(ov::genai::image.name());
-        auto images = config_map.find(ov::genai::images.name());
-        auto videos = config_map.find(ov::genai::videos.name());
-
-        ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
-        GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
-        config.update_generation_config(config_map);
-
-        std::vector<ov::Tensor> images_vector = {};
-        std::vector<ov::Tensor> videos_vector = {};
-        if (config_map.end() != image) {
-            images_vector = {image->second.as<ov::Tensor>()};
-        }
-
-        if (config_map.end() != images) {
-            if (images->second.is<std::vector<ov::Tensor>>()) {
-                auto imgs = images->second.as<std::vector<ov::Tensor>>();
-                images_vector.insert(images_vector.end(), imgs.begin(), imgs.end());
-            } else if (images->second.is<ov::Tensor>()) {
-                images_vector.push_back(std::move(images->second.as<ov::Tensor>()));
-            } else {
-                OPENVINO_THROW("Unknown images type.");
-            }
-        }
-
-        if (config_map.end() != videos) {
-            if (videos->second.is<std::vector<ov::Tensor>>()) {
-                videos_vector = videos->second.as<std::vector<ov::Tensor>>();
-            } else if (videos->second.is<ov::Tensor>()) {
-                videos_vector = {videos->second.as<ov::Tensor>()};
-            } else {
-                OPENVINO_THROW("Unknown videos type.");
-            }
-        }
-
+        auto [images_vector, videos_vector] = extract_images_and_videos_from_config_map(config_map);
+        GenerationConfig config = resolve_generation_config(config_map);
         return generate(prompt, images_vector, videos_vector, config, utils::get_streamer_from_map(config_map));
     }
 
