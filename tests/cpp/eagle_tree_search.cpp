@@ -8,7 +8,7 @@
 #include <gtest/gtest.h>
 #include "sampling/sampler.hpp"
 
-using namespace ov::genai;
+using ov::genai::EagleCandidateGraph;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -169,21 +169,22 @@ TEST(EagleCandidateGraphTest, LeafNodesWithGrandchildren) {
 }
 
 TEST(EagleCandidateGraphTest, LeafNodesWhenBudgetExcludesGrandchildren) {
-    // Budget = 2: only root + 2 children fit; grandchildren are excluded.
-    // When grandchildren are not in selected, their parents ARE leaves.
+    // Budget = 2: root + c1 + c2 fit; the grandchild (score -3.0) is outscored
+    // by c1 (-1.0) and c2 (-2.0) and is excluded.  With no grandchild in the
+    // selected set, c1 and c2 are both leaves.
     EagleCandidateGraph g(0, 0.0f, /*max_tokens=*/2, /*max_depth=*/3);
     const uint64_t c1 = g.add_node(1, -1.0f, 0u);
     const uint64_t c2 = g.add_node(2, -2.0f, 0u);
-    g.add_node(3, -0.1f, c1);  // grandchild, but budget is full; won't appear in selected
+    g.add_node(3, -3.0f, c1);  // grandchild scores lower than c2; excluded by budget
 
     const auto selected = g.select_candidate_nodes();
-    ASSERT_EQ(selected.size(), 3u);  // root + c1 + c2 (or root + grandchild + one of c1/c2)
+    ASSERT_EQ(selected.size(), 3u);  // root + c1 + c2
 
     const auto leaves = g.get_leaf_nodes(selected);
+    ASSERT_EQ(leaves.size(), 2u);
     const auto leaf_ids = node_ids(leaves);
-    // Whatever is in selected without selected children is a leaf.
-    // Important: no crash or infinite loop.
-    EXPECT_FALSE(leaves.empty());
+    EXPECT_NE(std::find(leaf_ids.begin(), leaf_ids.end(), c1), leaf_ids.end()) << "c1 must be a leaf";
+    EXPECT_NE(std::find(leaf_ids.begin(), leaf_ids.end(), c2), leaf_ids.end()) << "c2 must be a leaf";
 }
 
 // ---------------------------------------------------------------------------
