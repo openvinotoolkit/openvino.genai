@@ -240,6 +240,14 @@ class TestTaylorSeerImageGeneration:
         assert len(callback_calls) > 0
 
 
+def construct_reshape(model_dir):
+    pipe = ov_genai.Text2ImagePipeline(model_dir)
+    pipe.reshape(
+        num_images_per_prompt=1, height=64, width=64, guidance_scale=pipe.get_generation_config().guidance_scale
+    )
+    return pipe
+
+
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
