@@ -29,6 +29,8 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
     read_anymap_param(properties, "num_inference_steps", config.num_inference_steps);
     read_anymap_param(properties, "max_sequence_length", config.max_sequence_length);
 
+    read_anymap_param(properties, "adapters", config.adapters);
+
     // 'generator' has higher priority than 'seed' parameter
     const bool have_generator_param =
         properties.find(ov::genai::generator.name()) != properties.end();

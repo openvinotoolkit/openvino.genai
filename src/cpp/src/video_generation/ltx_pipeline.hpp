@@ -19,6 +19,7 @@
 #include "image_generation/numpy_utils.hpp"
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "image_generation/threaded_callback.hpp"
+#include "lora/helper.hpp"
 #include "logger.hpp"
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
 #include "generation_config_utils.hpp"
@@ -410,6 +411,7 @@ public:
         m_vae_device = device;
         m_compile_properties = properties;
         m_is_compiled = true;
+        update_adapters_from_properties(properties, m_generation_config.adapters);
         const std::filesystem::path model_index_path = models_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -422,9 +424,9 @@ public:
     }
 
     void rebuild_models() {
-        m_t5_text_encoder = std::make_shared<T5EncoderModel>(m_models_dir / "text_encoder");
-        m_transformer = std::make_shared<LTXVideoTransformer3DModel>(m_models_dir / "transformer");
-        m_vae = std::make_shared<AutoencoderKLLTXVideo>(m_models_dir / "vae_decoder");
+        m_t5_text_encoder = std::make_shared<T5EncoderModel>(m_models_dir / "text_encoder", m_text_encode_device, m_compile_properties);
+        m_transformer = std::make_shared<LTXVideoTransformer3DModel>(m_models_dir / "transformer", m_denoise_device, m_compile_properties);
+        m_vae = std::make_shared<AutoencoderKLLTXVideo>(m_models_dir / "vae_decoder", m_vae_device, m_compile_properties);
     }
 
     void reshape_models(const VideoGenerationConfig& generation_config, size_t batch_size_multiplier) {
@@ -498,6 +500,8 @@ public:
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
         check_inputs(merged_generation_config, vae_scale_factor);
+
+        m_transformer->set_adapters(merged_generation_config.adapters);
 
         // use callback if defined
         std::shared_ptr<ThreadedCallbackWrapper> callback_ptr = nullptr;
@@ -697,6 +701,7 @@ public:
                  const std::string& denoise_device,
                  const std::string& vae_device,
                  const ov::AnyMap& properties) {
+        update_adapters_from_properties(properties, m_generation_config.adapters);
         m_t5_text_encoder->compile(text_encode_device, properties);
         m_vae->compile(vae_device, properties);
         m_transformer->compile(denoise_device, properties);
