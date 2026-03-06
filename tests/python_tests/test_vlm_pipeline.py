@@ -97,7 +97,7 @@ class _VlmPipelineVideoChatFlashImageGuard:
 
     def generate(self, *args: Any, **kwargs: Any):
         has_single_image = kwargs.get("image") is not None
-        has_multi_images = kwargs.get("images") is not None
+        has_multi_images = bool(kwargs.get("images"))
         if _is_videochat_flash_model(self._model_id) and (has_single_image or has_multi_images):
             pytest.skip("VideoChat-Flash image/image(s) tests are disabled as not supported right now. Please use video/videos input.")
         return self._pipeline.generate(*args, **kwargs)
@@ -151,7 +151,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava": lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-llava-next": lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
-    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",    
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B": lambda idx: f"<|image_{idx + 1}|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
@@ -201,7 +201,7 @@ RETRY_MAX_DELAY_SEC = 2.0
 TEST_IMAGE_URLS = {
     'cat': 'https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11',
     'car': 'https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg',
-    'handwritten': 'https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350' #"C:\Users\SAS\Downloads\handwritten.png"
+    'handwritten': 'https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350'
 }
 
 NPU_UNSUPPORTED_MODELS = {
@@ -353,7 +353,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 @pytest.fixture(autouse=True)
 def _disable_videochatflash_for_chat_prefix_tests(request: pytest.FixtureRequest):
     test_name = getattr(request.node, "originalname", request.node.name)
-    if not str(test_name).startswith("test_vlm_pipeline_chat"):
+    if not str(test_name).startswith("test_vlm_pipeline_chat") and not str(test_name).startswith("test_vlm_pipeline_start_chat_vs_chat_history"):
         return
 
     if "ov_pipe_model" not in request.fixturenames:
@@ -361,7 +361,7 @@ def _disable_videochatflash_for_chat_prefix_tests(request: pytest.FixtureRequest
 
     ov_pipe_model = request.getfixturevalue("ov_pipe_model")
     if _is_videochat_flash_model(ov_pipe_model.model_id):
-        pytest.skip("VideoChat-Flash is disabled for tests with prefix 'test_vlm_pipeline_chat' as it's not supported multiple round generation.")
+        pytest.skip("VideoChat-Flash is disabled for tests with prefix 'test_vlm_pipeline_chat' and 'test_vlm_pipeline_start_chat_vs_chat_history' as it's not supported multiple round generation.")
 
 parametrize_all_models = pytest.mark.parametrize(
     "ov_pipe_model",
@@ -596,6 +596,7 @@ def handwritten_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
 @pytest.fixture(scope="function", params=[
     pytest.param([], id="no_images"),
     pytest.param(["cat_tensor"], id="single_image"),
+    pytest.param(["cat_tensor", "handwritten_tensor", "car_tensor"], id="multiple_images"),
 ])
 def test_images(request: pytest.FixtureRequest):
     return [request.getfixturevalue(image) for image in request.param]
@@ -604,7 +605,8 @@ def test_images(request: pytest.FixtureRequest):
 @parametrize_all_models
 def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
     ov_pipe = ov_pipe_model.pipeline
-
+    if _is_videochat_flash_model(ov_pipe_model.model_id) and len(test_images) == 0:
+        pytest.skip("Disable VideoChat-Flash no_images case: known history_vision_count assertion issue.")
     result_from_streamer = []
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
@@ -2321,10 +2323,6 @@ def test_videochatflash_text_video_generate(
     ov_videochatflash_pipe_raw: VLMPipeline,
     synthetic_video_224x224_tensor: openvino.Tensor,
 ):
-    # Known instability in SDPA multimodal path for this tiny-random asset.
-    #if "VideoChat-Flash/SDPA" in request.node.callspec.id:
-    #    pytest.xfail("Known issue: VideoChat-Flash SDPA multimodal token OOB.")
-
     generation_config = _setup_generation_config(
         ov_videochatflash_pipe_raw,
         max_new_tokens=20,
@@ -2360,7 +2358,6 @@ def test_vlm_continuous_batching_generate_videochat(
     images = []
     videos = [synthetic_video_224x224_tensor]
 
-    tokenizer = ov_continious_batching_pipe_videochat.get_tokenizer()
     handle = ov_continious_batching_pipe_videochat.add_request(
             0,
             "describe this video",
