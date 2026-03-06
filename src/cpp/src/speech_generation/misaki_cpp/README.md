@@ -22,6 +22,7 @@ Current status:
   - `basic_usage.cpp` — minimal API usage + token output
   - `fallback_and_unknown.cpp` — fallback hook + unknown-token behavior
 - `tools/gen_golden.py` — Python golden corpus generator
+- `tools/run_parity_dataset_misaki_cpp_vs_python.py` — dataset-driven parity runner (`misaki_cpp` vs Python `misaki`)
 - `data/`
   - English lexicon data (`us_*.json`, `gb_*.json`)
 
@@ -50,6 +51,36 @@ If your configured build enables these tests, run from build directory:
 ctest --test-dir ../openvino.genai-build --output-on-failure -R "English|misaki|speech"
 ```
 
+## Standalone Python Bindings (for G2P parity work)
+
+To compare `misaki_cpp` directly against Python `misaki` without going through the OpenVINO GenAI speech pipeline,
+build the optional `misaki_cpp_py` module.
+
+From workspace root (standalone configure of embedded project):
+
+```powershell
+cmake -S openvino.genai/src/cpp/src/speech_generation/misaki_cpp -B misaki_cpp-build -DMISAKI_CPP_BUILD_PYTHON_BINDINGS=ON
+cmake --build misaki_cpp-build --config Release --target misaki_cpp_py
+```
+
+Then point `PYTHONPATH` at the built module folder and import `misaki_cpp_py` in Python.
+
+Minimal usage:
+
+```python
+import misaki_cpp_py
+
+engine = misaki_cpp_py.Engine("en", "en-us")
+phonemes = engine.phonemize("[Kokoro](/kˈOkəɹO/) is a model.")
+result = engine.phonemize_with_tokens("Hello world")
+```
+
+If lexicon JSON files are not auto-located in your environment, set data root explicitly:
+
+```python
+engine.set_lexicon_data_root("/path/to/misaki_data")
+```
+
 ## Regenerating Golden Corpora
 
 Use this when refreshing corpus-driven parity cases.
@@ -64,6 +95,49 @@ python tools/gen_golden.py --profile english-gb --english-sample-size 200 --engl
 Supported profiles:
 - `english`
 - `english-gb`
+
+## Dataset-driven parity check (`misaki_cpp` vs Python `misaki`)
+
+Run the parity harness in single-dataset mode (default: `wikitext/wikitext-103-raw-v1`):
+
+```powershell
+python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile single --variant en-us --max-items 300
+```
+
+Or use curated profiles for more realistic TTS-style prompts:
+
+```powershell
+python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile realistic --variant en-us --max-items 300
+python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile mixed --variant en-us --max-items 300
+python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile chatty --variant en-us --max-items 300
+python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile adversarial --variant en-us --max-items 300
+```
+
+The preset profiles currently use text-only datasets (`xsum`, `ag_news`, `yelp_polarity`, `tweet_eval/sentiment`, `glue/sst2`, `wikitext`) to avoid audio/script loader dependencies.
+
+Useful options:
+- `--profile single|realistic|chatty|adversarial|mixed`
+- `--dataset`, `--config`, `--split`, `--field`
+- `--variant en-us|en-gb`
+- `--max-items`, `--seed`, `--min-chars`, `--normalize-input-escapes`, `--show-diffs`
+- `--analyze-normalization` (strict/basic/loose/unknown-collapsed normalization stats)
+- `--analyze-categories` and `--analyze-example-limit` (mismatch category summary + examples)
+
+If your source text includes escaped Unicode literals (e.g. `\u2019`, `\u002c`), use:
+
+```powershell
+python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile chatty --variant en-us --normalize-input-escapes
+```
+
+For deeper diagnostics in a single run:
+
+```powershell
+python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile adversarial --variant en-us --analyze-normalization --analyze-categories
+```
+
+The parity output reports both:
+- character-level metrics (`Exact matches`, `Average ratio`)
+- token-level metrics (`Token Exact Match`, `Avg Token Ratio`)
 
 ## Public API (current)
 

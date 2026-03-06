@@ -4,6 +4,8 @@ project(misaki_cpp VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(MISAKI_CPP_BUILD_PYTHON_BINDINGS "Build Python bindings for misaki_cpp" OFF)
+
 include(FetchContent)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -74,6 +76,18 @@ target_link_libraries(sample_basic_usage PRIVATE misaki_cpp)
 
 add_executable(sample_fallback_and_unknown samples/fallback_and_unknown.cpp)
 target_link_libraries(sample_fallback_and_unknown PRIVATE misaki_cpp)
+
+if(MISAKI_CPP_BUILD_PYTHON_BINDINGS)
+  FetchContent_Declare(
+    pybind11
+    GIT_REPOSITORY https://github.com/pybind/pybind11.git
+    GIT_TAG v2.13.6
+  )
+  FetchContent_MakeAvailable(pybind11)
+
+  pybind11_add_module(misaki_cpp_py python/misaki_cpp_py.cpp)
+  target_link_libraries(misaki_cpp_py PRIVATE misaki_cpp)
+endif()
 
 install(
   TARGETS misaki_cpp

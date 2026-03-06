@@ -92,7 +92,7 @@ private:
 
   // Python mapping: preprocess/tokenize/retokenize entry point for C++.
   static std::vector<Token> preprocess_and_tokenize(const std::string &text) {
-    std::string normalized = text;
+    std::string normalized = decode_unicode_escapes(text);
     replace_all(normalized, "\xE2\x80\x99", "'");
     replace_all(normalized, "\xE2\x80\x98", "'");
     return tokenize(normalized);
@@ -354,6 +354,91 @@ private:
       value.replace(pos, from.size(), to);
       pos += to.size();
     }
+  }
+
+  static int hex_digit(char c) {
+    if (c >= '0' && c <= '9') {
+      return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+      return 10 + (c - 'a');
+    }
+    if (c >= 'A' && c <= 'F') {
+      return 10 + (c - 'A');
+    }
+    return -1;
+  }
+
+  static bool append_utf8_codepoint(std::string& out, std::uint32_t cp) {
+    if (cp <= 0x7F) {
+      out.push_back(static_cast<char>(cp));
+      return true;
+    }
+    if (cp <= 0x7FF) {
+      out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+      out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+      return true;
+    }
+    if (cp <= 0xFFFF) {
+      if (cp >= 0xD800 && cp <= 0xDFFF) {
+        return false;
+      }
+      out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+      out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+      out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+      return true;
+    }
+    if (cp <= 0x10FFFF) {
+      out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+      out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+      out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+      out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+      return true;
+    }
+    return false;
+  }
+
+  static std::string decode_unicode_escapes(const std::string& input) {
+    std::string out;
+    out.reserve(input.size());
+
+    std::size_t i = 0;
+    while (i < input.size()) {
+      if (input[i] != '\\' || i + 1 >= input.size() || (input[i + 1] != 'u' && input[i + 1] != 'U')) {
+        out.push_back(input[i]);
+        ++i;
+        continue;
+      }
+
+      const bool wide = input[i + 1] == 'U';
+      const std::size_t digits = wide ? 8 : 4;
+      if (i + 2 + digits > input.size()) {
+        out.push_back(input[i]);
+        ++i;
+        continue;
+      }
+
+      std::uint32_t codepoint = 0;
+      bool ok = true;
+      for (std::size_t j = 0; j < digits; ++j) {
+        const int v = hex_digit(input[i + 2 + j]);
+        if (v < 0) {
+          ok = false;
+          break;
+        }
+        codepoint = (codepoint << 4) | static_cast<std::uint32_t>(v);
+      }
+
+      if (!ok || !append_utf8_codepoint(out, codepoint)) {
+        out.push_back(input[i]);
+        ++i;
+        continue;
+      }
+
+      i += 2 + digits;
+    }
+
+    return out;
   }
 
   static std::string demote_primary_stress(std::string pronunciation) {
@@ -645,6 +730,57 @@ private:
 
     const auto prev_word = find_prev_word_index(tokens, index);
     const auto next_word = find_next_word_index(tokens, index);
+
+    if (key == "tear" && next_word) {
+      const auto next = ascii_lower(tokens[*next_word].text);
+      if (next == "a" || next == "an" || next == "the" ||
+          next == "my" || next == "your" || next == "his" || next == "her" ||
+          next == "our" || next == "their" ||
+          next == "this" || next == "that" || next == "these" || next == "those") {
+        return std::string{"VERB"};
+      }
+    }
+
+    if (key == "content" && next_word) {
+      const auto next = ascii_lower(tokens[*next_word].text);
+      if (next == "with") {
+        if (!prev_word) {
+          return std::string{"NOUN"};
+        }
+        const auto prev = ascii_lower(tokens[*prev_word].text);
+        if (prev == "feel" || prev == "feels" || prev == "felt") {
+          return std::string{"NOUN"};
+        }
+        return std::string{"VERB"};
+      }
+    }
+
+    if (key == "content" && prev_word) {
+      const auto prev = ascii_lower(tokens[*prev_word].text);
+      if (prev == "and" || prev == "feel" || prev == "feels" || prev == "felt" ||
+          prev == "stay" || prev == "stays" || prev == "stayed" ||
+          prev == "be" || prev == "being" || prev == "been" ||
+          prev == "very") {
+        return std::string{"NOUN"};
+      }
+    }
+
+    if (key == "wound") {
+      if (prev_word) {
+        const auto prev = ascii_lower(tokens[*prev_word].text);
+        if (prev == "am" || prev == "is" || prev == "are" || prev == "was" || prev == "were" ||
+            prev == "be" || prev == "been" || prev == "being") {
+          return std::string{"VERB"};
+        }
+      }
+      if (next_word) {
+        const auto next = ascii_lower(tokens[*next_word].text);
+        if (next == "me" || next == "him" || next == "her" || next == "us" || next == "them" ||
+            next == "you" || next == "it" || next == "up") {
+          return std::string{"VERB"};
+        }
+      }
+    }
 
     if (key == "there") {
       const bool existential_there = next_word.has_value() && [&]() {
@@ -1089,6 +1225,13 @@ private:
         continue;
       }
 
+      if (i + 2 < text.size() && text[i] == '@' && text[i + 2] == '@' &&
+          (text[i + 1] == '-' || text[i + 1] == ',' || text[i + 1] == '.')) {
+        out.push_back({TokenKind::Word, text.substr(i, 3), ""});
+        i += 3;
+        continue;
+      }
+
       if (std::isalnum(c)) {
         std::size_t j = i;
         while (j < text.size()) {
@@ -1337,6 +1480,32 @@ private:
       return "ˌI";
     }
 
+    const bool starts_with_upper = !token.text.empty() && std::isupper(static_cast<unsigned char>(token.text.front()));
+    if (starts_with_upper) {
+      if (key == "we") {
+        return "wˌiː";
+      }
+      if (key == "you") {
+        return "jˌuː";
+      }
+      if (key == "your" || key == "you're") {
+        return "jˌɔː";
+      }
+      if (key == "he") {
+        return "hˌiː";
+      }
+      if (key == "his") {
+        return "hˌɪz";
+      }
+      if (key == "he's") {
+        return "hˌiːz";
+      }
+    }
+
+    if (key == "his" && !has_future_word) {
+      return "hˌɪz";
+    }
+
     if (key == "to") {
       if (!has_future_word) {
         if (const auto *from_lexicon = detail::find_english_lexicon_entry(token.text, variant_)) {
@@ -1350,24 +1519,19 @@ private:
       return has_future_word ? "ɪn" : "ˈɪn";
     }
 
-    if (key == "this") {
-      return has_future_word ? "ðɪs" : "ðˌɪs";
+    if (key == "at") {
+      if (token.text == "At") {
+        return "ˌat";
+      }
+      return std::nullopt;
     }
 
-    if (key == "that") {
-      return has_future_word ? "ðæt" : "ðˈæt";
+    if (key == "through") {
+      return has_future_word ? "θɹuː" : "θɹˈuː";
     }
 
-    if (key == "these") {
-      return has_future_word ? "ðiz" : "ðˌiz";
-    }
-
-    if (key == "you") {
-      return has_future_word ? "ju" : "jˌu";
-    }
-
-    if (key == "and") {
-      return has_future_word ? "ænd" : "ˌænd";
+    if (key == "won't") {
+      return has_future_word ? "wQnt" : "wˈQnt";
     }
 
     if (key == "a") {
@@ -1603,7 +1767,7 @@ private:
         return std::nullopt;
       }
       std::string normalized = normalize_pronunciation(*part_pron);
-      if (i > 0) {
+      if (i + 1 < parts.size()) {
         replace_all(normalized, "ˈ", "ˌ");
       }
       combined += normalized;
@@ -1629,12 +1793,42 @@ private:
     });
   }
 
+  static std::optional<long long> parse_i64(const std::string &text) {
+    try {
+      std::size_t consumed = 0;
+      const auto value = std::stoll(text, &consumed);
+      if (consumed != text.size()) {
+        return std::nullopt;
+      }
+      return value;
+    } catch (...) {
+      return std::nullopt;
+    }
+  }
+
+  static std::optional<int> parse_i32(const std::string &text) {
+    try {
+      std::size_t consumed = 0;
+      const auto value = std::stoi(text, &consumed);
+      if (consumed != text.size()) {
+        return std::nullopt;
+      }
+      return value;
+    } catch (...) {
+      return std::nullopt;
+    }
+  }
+
   std::optional<std::string> pronounce_integer_token(const std::string &digits) const {
     if (!is_all_digits(digits)) {
       return std::nullopt;
     }
+    const auto parsed_value = parse_i64(digits);
+    if (!parsed_value.has_value()) {
+      return std::nullopt;
+    }
     std::vector<std::string> words;
-    std::istringstream iss(integer_to_words(std::stoll(digits)));
+    std::istringstream iss(integer_to_words(*parsed_value));
     for (std::string w; iss >> w;) {
       words.push_back(w);
     }
@@ -1876,8 +2070,17 @@ private:
       const std::string major = currency_symbol == "$" ? "dollar" : (currency_symbol == "£" ? "pound" : "euro");
       const std::string minor = currency_symbol == "£" ? "pence" : "cent";
 
-      const auto major_value = std::stoll(parsed.whole.empty() ? "0" : parsed.whole);
-      const auto minor_value = parsed.fractional.empty() ? 0 : std::stoi((parsed.fractional + "00").substr(0, 2));
+      const auto major_value_opt = parse_i64(parsed.whole.empty() ? "0" : parsed.whole);
+      if (!major_value_opt.has_value()) {
+        return std::nullopt;
+      }
+      const auto minor_digits = parsed.fractional.empty() ? std::string{"0"} : (parsed.fractional + "00").substr(0, 2);
+      const auto minor_value_opt = parse_i32(minor_digits);
+      if (!minor_value_opt.has_value()) {
+        return std::nullopt;
+      }
+      const auto major_value = *major_value_opt;
+      const auto minor_value = *minor_value_opt;
 
       if (major_value != 0 || minor_value == 0) {
         std::istringstream iss(integer_to_words(major_value));
@@ -1903,7 +2106,11 @@ private:
     const bool ordinal_suffix = is_ordinal_suffix(parsed.suffix);
     const bool morph_suffix = is_numeric_word_suffix(parsed.suffix);
     if (ordinal_suffix) {
-      std::istringstream iss(integer_to_ordinal_words(std::stoll(parsed.whole.empty() ? "0" : parsed.whole)));
+      const auto whole_value = parse_i64(parsed.whole.empty() ? "0" : parsed.whole);
+      if (!whole_value.has_value()) {
+        return std::nullopt;
+      }
+      std::istringstream iss(integer_to_ordinal_words(*whole_value));
       for (std::string w; iss >> w;) {
         words.push_back(w);
       }
@@ -1961,8 +2168,12 @@ private:
       const bool is_year = !parsed.negative && parsed.original_core.size() == 4 &&
                            std::all_of(parsed.original_core.begin(), parsed.original_core.end(),
                                        [](char c) { return std::isdigit(static_cast<unsigned char>(c)); });
-      const auto number_text = is_year ? year_to_words(std::stoi(parsed.whole.empty() ? "0" : parsed.whole))
-                                       : integer_to_words(std::stoll(parsed.whole.empty() ? "0" : parsed.whole));
+      const auto whole_value = parse_i64(parsed.whole.empty() ? "0" : parsed.whole);
+      if (!whole_value.has_value()) {
+        return std::nullopt;
+      }
+      const auto number_text = is_year ? year_to_words(static_cast<int>(*whole_value))
+                                       : integer_to_words(*whole_value);
       std::istringstream iss(number_text);
       for (std::string w; iss >> w;) {
         words.push_back(w);
@@ -1989,7 +2200,11 @@ private:
       fractional.pop_back();
     }
 
-    std::istringstream iss(integer_to_words(std::stoll(parsed.whole.empty() ? "0" : parsed.whole)));
+    const auto whole_value = parse_i64(parsed.whole.empty() ? "0" : parsed.whole);
+    if (!whole_value.has_value()) {
+      return std::nullopt;
+    }
+    std::istringstream iss(integer_to_words(*whole_value));
     for (std::string w; iss >> w;) {
       words.push_back(w);
     }
@@ -2008,6 +2223,20 @@ private:
     // Order intentionally mirrors Python: linked overrides -> special cases -> contextual forms ->
     // symbol/number expansion -> dictionary lookup (with POS hint) -> morphology fallback.
     const auto &token = tokens[index];
+
+    if (token.text == "@-@" || token.text == "@,@" || token.text == "@.@") {
+      const auto at_pron = lookup_word_pronunciation("at");
+      if (!at_pron) {
+        return "❓";
+      }
+      const auto normalized_at = normalize_pronunciation(*at_pron);
+      if (token.text == "@-@") {
+        return normalized_at + normalized_at;
+      }
+      const char separator = token.text[1];
+      return normalized_at + std::string(1, separator) + normalized_at;
+    }
+
     const auto key = ascii_lower(token.text);
     if (!token.linked_pronunciation.empty()) {
       return token.linked_pronunciation;
@@ -2024,20 +2253,6 @@ private:
       }
     }
 
-    if (key == "and") {
-      std::optional<std::size_t> next_non_ws;
-      for (std::size_t j = index + 1; j < tokens.size(); ++j) {
-        if (tokens[j].kind == TokenKind::Whitespace) {
-          continue;
-        }
-        next_non_ws = j;
-        break;
-      }
-      if (next_non_ws && tokens[*next_non_ws].kind == TokenKind::Punctuation && tokens[*next_non_ws].text == ",") {
-        return "ænd";
-      }
-    }
-
     if (key == "to") {
       const auto next_word = find_next_word_index(tokens, index);
       if (next_word) {
@@ -2045,6 +2260,34 @@ private:
         if (next == "a" || next == "an") {
           return "tə";
         }
+      }
+    }
+
+    if (key == "that's") {
+      return "ðˈats";
+    }
+
+    if (key == "that") {
+      const auto prev_word = find_prev_word_index(tokens, index);
+      if (prev_word && ascii_lower(tokens[*prev_word].text) == "at") {
+        return "ðˈat";
+      }
+      const auto next_word = find_next_word_index(tokens, index);
+      if (!next_word) {
+        return "ðat";
+      }
+      const auto next = ascii_lower(tokens[*next_word].text);
+      if (next == "i" || next == "you" || next == "he" || next == "she" || next == "it" ||
+          next == "we" || next == "they") {
+        return "ðat";
+      }
+      return "ðˈat";
+    }
+
+    if (key == "this") {
+      const bool starts_with_upper = !token.text.empty() && std::isupper(static_cast<unsigned char>(token.text.front()));
+      if (starts_with_upper) {
+        return "ðˌɪs";
       }
     }
 
