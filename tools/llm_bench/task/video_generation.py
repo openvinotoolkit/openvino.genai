@@ -13,7 +13,6 @@ import llm_bench_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
 
-from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from llm_bench_utils.hook_forward import StableDiffusionHook
 from llm_bench_utils.prompt_utils import get_video_gen_prompt
 from task.pipeline_utils import CommonPipeline, execution_time_in_sec, collect_prompts_step, iteration_step
@@ -63,7 +62,7 @@ class TextToVideoOptimum(CommonPipeline):
         tokenizer: object | None,
         args: dict,
         model_path: Path,
-        mem_consumption_meter: MemMonitorWrapper,
+        mem_consumption_meter,
         time_collection_hook: StableDiffusionHook,
     ):
         super().__init__(model, tokenizer, args, model_path, mem_consumption_meter)
@@ -225,7 +224,7 @@ class TextToVideoGenAI(CommonPipeline):
         tokenizer,
         args: dict,
         model_path: Path,
-        mem_consumption_meter: MemMonitorWrapper,
+        mem_consumption_meter,
     ):
         super().__init__(model, tokenizer, args, model_path, mem_consumption_meter)
         self.genai = True
