@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "include/addon.hpp"
 #include "include/helper.hpp"
 #include "include/tokenizer.hpp"
