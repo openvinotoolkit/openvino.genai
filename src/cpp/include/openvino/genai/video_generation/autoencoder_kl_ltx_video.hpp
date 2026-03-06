@@ -51,7 +51,8 @@ public:
     AutoencoderKLLTXVideo& compile(const std::string& device, const ov::AnyMap& properties = {});
 
     // When timestep_conditioning is enabled in the config, decode_timestep must be
-    // the last scheduler timestep normalized to [0, 1] (i.e., timestep / 1000).
+    // the last scheduler timestep normalized to [0, 1], i.e., timestep / max_timestep,
+    // where max_timestep is typically the scheduler's num_train_timesteps.
     // For models without timestep_conditioning, the value is ignored.
     ov::Tensor decode(const ov::Tensor& latent, float decode_timestep = 0.0f);
 
