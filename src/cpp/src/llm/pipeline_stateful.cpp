@@ -65,7 +65,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     if (!m_use_full_chat_history)
         m_kv_cache_state.seq_length_axis = kv_pos.seq_len;
 
-    auto [filtered_properties_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties);
+    // This constructor consumes only the sanitized AnyMap; save-related GGUF options are intentionally not used here.
+    auto filtered_properties_without_gguf = std::get<0>(utils::extract_gguf_properties(properties));
     auto filtered_properties = extract_adapters_from_properties(filtered_properties_without_gguf, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");

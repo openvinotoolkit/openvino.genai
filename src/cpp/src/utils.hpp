@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <optional>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 #include "openvino/genai/llm_pipeline.hpp"
@@ -134,7 +135,9 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
 
 ov::Core& singleton_core();
 
-std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties);
+std::tuple<ov::AnyMap, bool, ov::genai::OVModelQuantizeMode> extract_gguf_properties(const ov::AnyMap& external_properties);
+
+std::string get_ov_model_subdir_name(ov::genai::OVModelQuantizeMode quantize_mode);
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 

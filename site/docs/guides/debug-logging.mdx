@@ -79,10 +79,22 @@ Request_id: 0 ||| 40 0 40 20 0 0 40 40 0 20 20 20 0 40 0 0 20 80 0 80 20 0 0 0 4
 
 When a GGUF model is passed to the pipeline, the detailed debug info will also be printed.
 
-```sh title="Output:"
-[GGUF Reader]: Loading and unpacking model from: gguf_models/qwen2.5-0.5b-instruct-q4_0.gguf
-[GGUF Reader]: Loading and unpacking model done. Time: 196ms
-[GGUF Reader]: Start generating OpenVINO model...
-[GGUF Reader]: Save generated OpenVINO model to: gguf_models/openvino_model.xml done. Time: 466 ms
-[GGUF Reader]: Model generation done. Time: 757ms
+For example, when the pipeline is configured with:
+
+```cpp
+pipe_config["enable_save_ov_model"] = true;
+pipe_config["save_ov_model_quantize_mode"] = "GPU_OPTIMIZED";
 ```
+
+```sh title="Output:"
+[GGUF Reader]: Save generated OpenVINO model to: <gguf_dir>/ov_model_gpu_optimized/openvino_tokenizer.xml done. Time: 8 ms
+[GGUF Reader]: Save generated OpenVINO model to: <gguf_dir>/ov_model_gpu_optimized/openvino_detokenizer.xml done. Time: 1 ms
+[GGUF Reader]: Loading and unpacking model from: <gguf_path>/<model_name>.gguf
+[GGUF Reader]: OVModelQuantizeMode: quantization_mode=GPU_OPTIMIZED, save_file=YES
+[GGUF Reader]: Loading and unpacking model done. Time: 8787ms
+[GGUF Reader]: Start generating OpenVINO model...
+[GGUF Reader]: Save generated OpenVINO model to: <gguf_dir>/ov_model_gpu_optimized/openvino_model.xml done. Time: 457 ms
+[GGUF Reader]: Model generation done. Time: 538ms
+```
+
+For GGUF usage and configuration details, see [GGUF Reader](./gguf-reader).
