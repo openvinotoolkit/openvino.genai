@@ -113,7 +113,6 @@ public:
 
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
-
         if (m_is_npu) {
             embedder_device = "AUTO";
             utils::KVDesc kv_desc;
