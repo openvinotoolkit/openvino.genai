@@ -623,6 +623,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
+    // token_type_ids is not supported for video inputs
+    std::optional<ov::Tensor> token_type_ids;
+    // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
+    std::optional<ov::Tensor> prompt_ids;
+    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
@@ -631,8 +636,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
 
         const auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, metrics, true, image_sequence, video_sequence);
+        lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
     }
-    return add_request(request_id, inputs, std::move(sampling_params));
+    return add_request(request_id, inputs, std::move(sampling_params), token_type_ids, prompt_ids, lm_extra_inputs);
 }
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
