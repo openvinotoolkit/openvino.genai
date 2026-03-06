@@ -213,6 +213,21 @@ void init_autoencoder_kl_ltx_video(py::module_& m) {
                 height (int): Video height.
                 width (int): Video width.
             )")
+        .def("encode",
+             [](ov::genai::AutoencoderKLLTXVideo& self,
+                const ov::Tensor& video,
+                std::shared_ptr<ov::genai::Generator> generator) {
+                 py::gil_scoped_release rel;
+                 return self.encode(video, generator);
+             },
+             py::arg("video"),
+             py::arg("generator"),
+             R"(
+                Encodes a video tensor to latent space.
+                video (ov.Tensor): Input video tensor [B, C, F, H, W].
+                generator (Generator): Random generator for sampling from latent distribution.
+                Returns: Normalized latent tensor.
+            )")
         .def("decode",
              &ov::genai::AutoencoderKLLTXVideo::decode,
              py::call_guard<py::gil_scoped_release>(),
