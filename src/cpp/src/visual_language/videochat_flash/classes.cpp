@@ -57,7 +57,6 @@ ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8,
     const size_t in_h = in_shape[1];
     const size_t in_w = in_shape[2];
     const size_t channels = in_shape[3];
-    std::cout << "Preprocessing video features with original shape: [" << batch << ", " << in_h << ", " << in_w << ", " << channels << "] to target size: [" << target_h << ", " << target_w << "]" << std::endl;
     ov::Tensor output_nchw_f32(ov::element::f32, ov::Shape{batch, channels, target_h, target_w});
     float* out_ptr = output_nchw_f32.data<float>();
 
@@ -94,7 +93,6 @@ ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8,
         OPENVINO_ASSERT(clip_norm.buf.size() == out_frame_elems, "Unexpected preprocessed frame size.");
         std::memcpy(out_ptr + b * out_frame_elems, clip_norm.buf.data(), out_frame_elems * sizeof(float));
     }
-    std::cout << "Preprocessed video features shape (NCHW): [" << batch << ", " << channels << ", " << target_h << ", " << target_w << "]" << std::endl;
     return output_nchw_f32;
 }
 
@@ -189,7 +187,6 @@ ov::Tensor insert_image_placeholders(
     ov::Tensor merged{ov::element::i64, {1, merged_length}};
     size_t offset = 0;
     for (const std::variant<ov::Tensor, size_t>& chunk : chunks) {
-        //offset += std::visit(utils::overloaded{
         const size_t written = std::visit(utils::overloaded{
             [&](const ov::Tensor& chunk) {
                 size_t length = chunk.get_shape().at(1);
@@ -275,8 +272,6 @@ ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t m
     const size_t h = src_shape[2];
     const size_t w = src_shape[3];
     const size_t n_prime = n / mm_local_num_frames;
-    std::cout << "Transposing video features with original shape: [" << n << ", " << c << ", " << h << ", " << w << "] and mm_local_num_frames: " << mm_local_num_frames << std::endl;
-    
     const ov::Shape dst_shape{n_prime, c, mm_local_num_frames, h, w};
     ov::Tensor dst_tensor(src_tensor.get_element_type(), dst_shape);
 
@@ -306,7 +301,6 @@ ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t m
 
 ov::Tensor remove_second_dim_first_element(const ov::Tensor& input) {
     const ov::Shape& input_shape = input.get_shape();
-    std::cout<< "Removing first element of the second dimension. Original shape: " << input_shape << " and element type: " << input.get_element_type() << std::endl;
     OPENVINO_ASSERT(input_shape.size() == 3, "Input tensor must be 3D [batch, seq, hidden], got ", input_shape.size(), "D.");
     OPENVINO_ASSERT(input_shape[1] >= 1, "Second dimension of input tensor must be at least 1.");
     const auto element_type = input.get_element_type();
@@ -511,7 +505,6 @@ ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
 }
 
 ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings) {
-    std::cout << "Running cyclic ViT inference on transposed features with shape: " << transpose_features.get_shape() << " and element type: " << transpose_features.get_element_type() << std::endl;
     OPENVINO_ASSERT(
         transpose_features.get_element_type() == ov::element::f32,
         "vision_embeddings input pixel_values must be f32."
@@ -532,9 +525,7 @@ ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vi
         out_tensor.copy_to(copy_tensor);
         results_list.push_back(copy_tensor);
     }
-    std::cout << "Cyclic ViT inference completed. Concatenating results." << std::endl;
     ov::Tensor final_processed_embeds = concatenate_tensors(results_list);
-    std::cout << "Final concatenated vision embeds shape: " << final_processed_embeds.get_shape() << " and element type: " << final_processed_embeds.get_element_type() << std::endl;
     return final_processed_embeds;
 }
 
@@ -613,18 +604,13 @@ ov::Tensor infer_visual_features(
     ov::InferRequest& merge_embeddings,
     ov::InferRequest& vision_projection
 ) {
-    std::cout << "Starting inference with transpose_features shape: " << transpose_features.get_shape() << std::endl;
-    std::cout << "Using cyclic ViT inference." << std::endl;
     ov::Tensor processed_vision_embeds = videochat_flash_utils::cyclic_vit_infer(transpose_features, vision_embeddings);
 
     ov::Tensor clipped_vision_embeds = videochat_flash_utils::remove_second_dim_first_element(processed_vision_embeds);
-    std::cout << "Clipped vision embeds shape: " << clipped_vision_embeds.get_shape() << " element type: " << clipped_vision_embeds.get_element_type() << std::endl;
     ov::Tensor merged_vision_features = videochat_flash_utils::merge_tokens(clipped_vision_embeds, merge_embeddings);
-    std::cout << "Merged vision features shape: " << merged_vision_features.get_shape() << " element type: " << merged_vision_features.get_element_type() << std::endl;
     vision_projection.set_tensor("input", merged_vision_features);
     vision_projection.infer();
     ov::Tensor proj_features = vision_projection.get_output_tensor();
-    std::cout << "Projected features shape: " << proj_features.get_shape() << " element type: " << proj_features.get_element_type() << std::endl;
 
     return videochat_flash_utils::efficient_flatten(proj_features);
 }
@@ -632,16 +618,12 @@ ov::Tensor infer_visual_features(
 
 
 std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChat_Flash::encode_videos(const std::vector<ov::Tensor>& videos) {
-    std::cout << "Encoding " << videos.size() << std::endl;
     auto vision_encoder = std::static_pointer_cast<VisionEncoderVideoChat_Flash>(m_vision_encoder);
     std::vector<EncodedVideo> embeds;
     for (const ov::Tensor& video : videos) {
-        std::cout << "Processing video with shape: " << video.get_shape() << " and element type: " << video.get_element_type() << std::endl;
         auto video_nchw_f32 = videochat_flash_utils::preprocess(video, 224, 224, {0.485f, 0.456f, 0.406f}, {0.229f, 0.224f, 0.225f});
         const size_t mm_local_num_frames = vision_encoder->get_mm_local_num_frames();
-        std::cout << "Preprocessed video shape: " << video_nchw_f32.get_shape() << " element type: " << video_nchw_f32.get_element_type() << std::endl;
         auto transpose_features = videochat_flash_utils::transpose_video_features(video_nchw_f32, mm_local_num_frames);
-        std::cout << "Transposed features shape: " << transpose_features.get_shape() << " element type: " << transpose_features.get_element_type() << std::endl;
         CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(vision_encoder->get_vision_encoder());
         CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(vision_encoder->get_merge_model());
         CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(vision_encoder->get_vision_projection());
