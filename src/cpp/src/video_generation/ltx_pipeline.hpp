@@ -19,6 +19,7 @@
 #include "image_generation/numpy_utils.hpp"
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "image_generation/threaded_callback.hpp"
+#include "diffusion_caching/taylorseer_lite.hpp"
 #include "logger.hpp"
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
 #include "generation_config_utils.hpp"
@@ -40,7 +41,8 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     128,           // max_sequence_length
     0.0,           // guidance_rescale
     161,           // num_frames
-    25.0f          // frame_rate
+    25.0f,         // frame_rate
+    std::nullopt   // taylorseer_config
 };
 
 // Some defaults aren't special values so it's not possible to distinguish
@@ -562,6 +564,9 @@ public:
         latent_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
+        // Initialize TaylorSeer if configured
+        TaylorSeerState ts_state(merged_generation_config.taylorseer_config, timesteps.size());
+
         // Denoising loop
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
@@ -590,7 +595,18 @@ public:
             timestep_data[0] = timesteps[inference_step];
 
             auto infer_start = std::chrono::steady_clock::now();
-            ov::Tensor noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
+
+            ov::Tensor noise_pred_tensor;
+            // Use TaylorSeer if enabled and caching is appropriate
+            if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
+                noise_pred_tensor = ts_state.predict(inference_step);
+            } else {
+                noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
+                if (ts_state.is_active()) {
+                    ts_state.update(inference_step, noise_pred_tensor);
+                }
+            }
+
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 

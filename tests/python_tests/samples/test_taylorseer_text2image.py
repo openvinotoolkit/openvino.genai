@@ -24,11 +24,11 @@ class TestTaylorSeerText2Image:
     PROMPT = "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
 
     @pytest.mark.samples
-    @pytest.mark.tiny_random_flux
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
-            pytest.param("tiny-random-flux", PROMPT),
+            pytest.param("tiny-random-flux", PROMPT, marks=pytest.mark.tiny_random_flux),
+            pytest.param("stable-diffusion-3-tiny-random", PROMPT, marks=pytest.mark.stable_diffusion_3_tiny_random),
         ],
         indirect=["convert_model"],
     )
