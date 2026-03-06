@@ -240,7 +240,7 @@ class TestTaylorSeerImageGeneration:
         assert len(callback_calls) > 0
 
 
-def construct_reshape(model_dir):
+def _construct_reshaped(model_dir):
     pipe = ov_genai.Text2ImagePipeline(model_dir)
     pipe.reshape(
         num_images_per_prompt=1, height=64, width=64, guidance_scale=pipe.get_generation_config().guidance_scale
@@ -255,11 +255,11 @@ def construct_reshape(model_dir):
 def test_image_generation_cpu_vs_npuw_cpu(image_generation_model):
     generation_args = {"prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69}
 
-    cpu_pipe = construct_reshape(image_generation_model)
+    cpu_pipe = _construct_reshaped(image_generation_model)
     cpu_pipe.compile("CPU")
     cpu_image = cpu_pipe.generate(**generation_args)
 
-    npuw_pipe = construct_reshape(image_generation_model)
+    npuw_pipe = _construct_reshaped(image_generation_model)
     npuw_pipe.compile("NPU", **{"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"})
     npuw_image = npuw_pipe.generate(**generation_args)
 
