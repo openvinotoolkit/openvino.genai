@@ -535,15 +535,18 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 m_inputs_embedder->set_rope_delta(*rope_delta);
             }
         }
-        bool has_valid_token = token_type_ids.has_value() && request_id < token_type_ids->size();
+        const bool has_valid_token_type_ids = token_type_ids.has_value() && request_id < token_type_ids->size();
+        const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
+        const bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
+
         generations.push_back(
             add_request(
                 request_id,
                 input_ids[request_id],
                 sampling_params[request_id],
-                has_valid_token ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
-                prompt_ids.has_value() ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
-                lm_extra_inputs_list.has_value() ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt
+                has_valid_token_type_ids ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
+                has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+                has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt
             )
         );
     }
