@@ -1,9 +1,10 @@
 import Button from '@site/src/components/Button';
-import { LanguageTabs, TabItemCpp, TabItemPython } from '@site/src/components/LanguageTabs';
+import { LanguageTabs, TabItemCpp, TabItemJS, TabItemPython } from '@site/src/components/LanguageTabs';
 
 import UseCaseCard from './UseCaseCard';
 
 import CodeExampleCpp from '@site/docs/use-cases/video-generation/_sections/_run_model/_text2video_cpp.mdx';
+import CodeExampleJS from '@site/docs/use-cases/video-generation/_sections/_run_model/_text2video_js.mdx';
 import CodeExamplePython from '@site/docs/use-cases/video-generation/_sections/_run_model/_text2video_python.mdx';
 
 export const VideoGeneration = () => (
@@ -26,6 +27,9 @@ export const VideoGeneration = () => (
         <TabItemCpp>
           <CodeExampleCpp />
         </TabItemCpp>
+        <TabItemJS>
+          <CodeExampleJS />
+        </TabItemJS>
       </LanguageTabs>
     </UseCaseCard.Code>
     <UseCaseCard.Actions>

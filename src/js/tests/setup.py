@@ -8,6 +8,7 @@ Setup script to download and convert models for JS tests.
 
 import argparse
 import os
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from optimum.intel import (
@@ -22,6 +23,7 @@ tests_utils_path = Path(__file__).parent.parent.parent.parent / "tests" / "pytho
 sys.path.insert(0, str(tests_utils_path))
 
 from utils import hugging_face
+from utils.constants import get_ov_cache_converted_models_dir
 
 TEST_MODELS = {
     "LLM": {
@@ -39,6 +41,14 @@ TEST_MODELS = {
     "RERANK_MODEL": {
         "model_id": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "model_class": OVModelForSequenceClassification,
+    },
+}
+
+# Models that require optimum-cli export instead of OVModel class
+CLI_EXPORT_MODELS = {
+    "T2V": {
+        "model_id": "optimum-intel-internal-testing/tiny-random-ltx-video",
+        "extra_args": ["--trust-remote-code"],
     },
 }
 
@@ -64,6 +74,28 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error processing model '{model_name}': {e}")
             raise
+
+    for model_name, model_info in CLI_EXPORT_MODELS.items():
+        try:
+            model_id = model_info["model_id"]
+            extra_args = model_info.get("extra_args", [])
+            dir_name = model_id.replace("/", "_")
+            models_path = get_ov_cache_converted_models_dir() / dir_name
+
+            if not models_path.exists():
+                command = [
+                    "optimum-cli", "export", "openvino",
+                    "--model", model_id,
+                    str(models_path),
+                ] + extra_args
+                print(f"Converting model '{model_name}': {' '.join(command)}")
+                subprocess.run(command, check=True, text=True)
+
+            env_vars[f"{model_name}_PATH"] = str(models_path)
+        except Exception as e:
+            print(f"Error processing model '{model_name}': {e}")
+            raise
+
     print(f"All models downloaded and converted successfully!")
 
     # Write environment variables to .env file
