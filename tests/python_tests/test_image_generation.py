@@ -11,7 +11,7 @@ import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
 
-from utils.constants import get_ov_cache_converted_models_dir
+from utils.constants import get_ov_cache_converted_models_dir, NPUW_CPU_PROPERTIES
 from utils.atomic_download import AtomicDownloadManager
 from utils.network import retry_request
 
@@ -260,7 +260,7 @@ def test_image_generation_cpu_vs_npuw_cpu(image_generation_model):
     cpu_image = cpu_pipe.generate(**generation_args)
 
     npuw_pipe = _construct_reshaped(image_generation_model)
-    npuw_pipe.compile("NPU", **{"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"})
+    npuw_pipe.compile("NPU", **NPUW_CPU_PROPERTIES)
     npuw_image = npuw_pipe.generate(**generation_args)
 
     assert cpu_image.data.shape == npuw_image.data.shape
