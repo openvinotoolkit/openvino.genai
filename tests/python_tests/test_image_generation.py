@@ -263,4 +263,5 @@ def test_image_generation_cpu_vs_npuw_cpu(image_generation_model):
     npuw_pipe.compile("NPU", **{"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"})
     npuw_image = npuw_pipe.generate(**generation_args)
 
+    assert cpu_image.data.shape == npuw_image.data.shape
     assert (cpu_image.data == npuw_image.data).all()
