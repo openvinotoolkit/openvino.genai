@@ -12,6 +12,7 @@ import inspect
 
 PROMPTS_FILE = 'text_prompts.yaml'
 LONG_PROMPTS_FILE = 'text_long_prompts.yaml'
+CUSTOM_PROMPTS_FILE = 'text_long_prompts_custom.yaml'
 
 
 @register_evaluator(
@@ -177,7 +178,7 @@ class TextEvaluator(BaseEvaluator):
                     data = {"prompts": list(self.test_data)}
                 data = pd.DataFrame.from_dict(data)
         else:
-            prompts_file_path = LONG_PROMPTS_FILE if self.long_prompt else PROMPTS_FILE
+            prompts_file_path = CUSTOM_PROMPTS_FILE if self.long_prompt else PROMPTS_FILE
             data_path = files('whowhatbench.prompts').joinpath(prompts_file_path)
             prompt_data = yaml.safe_load(data_path.read_text(encoding='utf-8'))
             data = pd.DataFrame.from_dict(prompt_data[self.language])
