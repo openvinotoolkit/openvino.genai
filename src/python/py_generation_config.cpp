@@ -412,19 +412,20 @@ void init_generation_config(py::module_& m) {
             }
         );
 
-    // Binding for eagle_params
-    py::class_<GenerationConfig::eagle_params>(m, "EagleParams", "EAGLE speculative decoding parameters")
+    // Binding for EagleParams
+    py::class_<GenerationConfig::EagleParams>(m, "EagleParams", "EAGLE speculative decoding parameters")
         .def(py::init<>())
         .def_readwrite("branching_factor",
-                       &GenerationConfig::eagle_params::branching_factor,
+                       &GenerationConfig::EagleParams::branching_factor,
                        "Number of branches (top-k) at each level of the EAGLE tree")
         .def_readwrite("tree_depth",
-                       &GenerationConfig::eagle_params::tree_depth,
+                       &GenerationConfig::EagleParams::tree_depth,
                        "How deep to look ahead in the EAGLE tree")
         .def_readwrite("total_tokens",
-                       &GenerationConfig::eagle_params::total_tokens,
-                       "Total number of tokens to generate in the EAGLE tree")
-        .def("__repr__", [](const GenerationConfig::eagle_params& self) {
+                       &GenerationConfig::EagleParams::total_tokens,
+                       "Number of nodes selected from the built EAGLE tree after reranking, "
+                       "used as the final set of draft token candidates submitted to the target model for verification")
+        .def("__repr__", [](const GenerationConfig::EagleParams& self) {
             return "EagleParams(branching_factor=" + std::to_string(self.branching_factor) +
                    ", tree_depth=" + std::to_string(self.tree_depth) +
                    ", total_tokens=" + std::to_string(self.total_tokens) + ")";

@@ -79,7 +79,7 @@ struct SequenceGroupSamplingInfo {
 class EagleCandidateGraph {
 public:
     struct Node {
-        uint64_t node_id = 0;
+        uint64_t id = 0;
         int64_t token_id = -1;
         float score = -std::numeric_limits<float>::infinity();
         int tree_layer = 0;
@@ -90,8 +90,8 @@ public:
     // Adds a child of parent_node_id. Returns the new node's ID, or 0 if beyond max_depth.
     uint64_t add_node(int64_t token_id, float score, uint64_t parent_node_id);
 
-    // Returns at most (max_tokens + 1) top-scoring nodes (root always included), sorted by tree layer.
-    std::vector<Node> get_top_k_nodes() const;
+    // Returns at most (max_candidate_nodes + 1) top-scoring nodes (root always included), sorted by tree layer.
+    std::vector<Node> select_candidate_nodes() const;
 
     // From a set of nodes, returns those with no children present in the set (leaf nodes).
     std::vector<Node> get_leaf_nodes(const std::vector<Node>& selected) const;
@@ -112,7 +112,7 @@ private:
 
     std::unordered_map<uint64_t, InternalNode> m_nodes;
     uint64_t m_next_node_id = 1;
-    int m_max_tokens;
+    int m_max_candidate_nodes;
     int m_max_depth;
 };
 
@@ -127,7 +127,7 @@ class Sampler {
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
 
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
-                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probolities);
+                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probabilities);
 
     // Validate tree results from the target model using retrieve_indices and logits
     // Returns the number of valid tokens, and truncates sequence if mismatch is found
@@ -157,7 +157,7 @@ class Sampler {
     Tokenizer m_tokenizer;
 
     ThreadPool m_thread_pool;
-    std::shared_ptr<ov::op::v0::Constant> m_d2t_mapping; // Tensor to store draft_id_to_target_id mapping for eagle model, adding offsets to draft tokens after sampling
+    std::shared_ptr<ov::op::v0::Constant> m_d2t_mapping;  // vocab index offset from draft to target token space (EAGLE)
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
@@ -199,7 +199,7 @@ public:
         // beam is made on top of sequence
         float m_log_prob = 0.0f;
         int64_t m_token_id = -1;
-        int m_tree_layer = 0;  // layer in the tree structure
+        int m_tree_layer = 0;
         int64_t m_node_id = 0;
         // cumulative log probabilities
         float m_score = -std::numeric_limits<float>::infinity();
@@ -235,8 +235,8 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
     // A branch in the current draft frontier: tracks which sequence is executing which graph node.
     struct DraftBeam {
         uint64_t node_id;
-        Sequence::Ptr sequence;
-        float score = 0.0f;  // cumulative log-probability score accumulated to this node
+        Sequence::Ptr m_sequence;
+        float score = 0.0f;  // cumulative log-probability
     };
 
     // A newly sampled child candidate, carrying all information needed for forking.
@@ -253,9 +253,9 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
     Phase m_phase = Phase::IDLE;
     std::optional<EagleCandidateGraph> m_candidate_graph;
     std::vector<DraftBeam> m_frontier;
-    size_t m_tree_layer_counter = 0;
-    size_t m_past_generate_len = 0;
-    uint64_t m_org_group_id = 0;
+    size_t m_current_draft_layer = 0;
+    size_t m_pre_draft_generated_len = 0;
+    uint64_t m_original_grouped_id = 0;
     ov::Tensor m_d2t_tensor;  // keeps draft-to-target vocab offset tensor alive
 
     void tree_reset();
