@@ -1,6 +1,8 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import platform
+import sys
 import pytest
 import subprocess  # nosec B404
 import logging
@@ -71,7 +73,6 @@ def get_mask_image(height: int = 64, width: int = 64) -> ov.Tensor:
 
 
 class TestImageGenerationCallback:
-    
     def test_text2image_with_simple_callback(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
         
@@ -237,3 +238,21 @@ class TestTaylorSeerImageGeneration:
 
         assert image is not None
         assert len(callback_calls) > 0
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
+    reason="NPU plugin is available only on Linux and Windows x86_64",
+)
+def test_image_generation_cpu_vs_npuw_cpu(image_generation_model):
+    generation_args = {"prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69}
+
+    cpu_pipe = construct_reshape(image_generation_model)
+    cpu_pipe.compile("CPU")
+    cpu_image = cpu_pipe.generate(**generation_args)
+
+    npuw_pipe = construct_reshape(image_generation_model)
+    npuw_pipe.compile("NPU", **{"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"})
+    npuw_image = npuw_pipe.generate(**generation_args)
+
+    assert (cpu_image.data == npuw_image.data).all()
