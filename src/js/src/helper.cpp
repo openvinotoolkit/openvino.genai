@@ -795,6 +795,18 @@ ov::genai::VLMPerfMetrics& unwrap<ov::genai::VLMPerfMetrics>(const Napi::Env& en
 }
 
 template <>
+ov::genai::WhisperPerfMetrics& unwrap<ov::genai::WhisperPerfMetrics>(const Napi::Env& env,
+                                                                      const Napi::Value& value) {
+    const auto obj = value.As<Napi::Object>();
+    const auto& prototype = env.GetInstanceData<AddonData>()->whisper_perf_metrics;
+    OPENVINO_ASSERT(prototype, "Invalid pointer to prototype.");
+    OPENVINO_ASSERT(obj.InstanceOf(prototype.Value().As<Napi::Function>()),
+                    "Passed argument is not of type WhisperPerfMetrics");
+    const auto js_metrics = Napi::ObjectWrap<WhisperPerfMetricsWrapper>::Unwrap(obj);
+    return js_metrics->get_value();
+}
+
+template <>
 ov::genai::ChatHistory& unwrap<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value) {
     OPENVINO_ASSERT(value.IsObject(), "Passed argument must be an object.");
     const auto obj = value.As<Napi::Object>();

@@ -140,6 +140,10 @@ template <>
 ov::genai::VLMPerfMetrics& unwrap<ov::genai::VLMPerfMetrics>(const Napi::Env& env, const Napi::Value& value);
 
 template <>
+ov::genai::WhisperPerfMetrics& unwrap<ov::genai::WhisperPerfMetrics>(const Napi::Env& env,
+                                                                      const Napi::Value& value);
+
+template <>
 ov::genai::ChatHistory& unwrap<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value);
 
 /**
