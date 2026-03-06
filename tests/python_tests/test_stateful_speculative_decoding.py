@@ -211,6 +211,11 @@ def add(a, b):
 
 Question: Can you please add 2 and 3
 A:""",
+    ),
+    (
+        "Qwen/Qwen3-1.7B",
+        "AngelSlim/Qwen3-1.7B_eagle3",
+        "What is the capital of Ireland?/no_think",
     )
 ]
 
