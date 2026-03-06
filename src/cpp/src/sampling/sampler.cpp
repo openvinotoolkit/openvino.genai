@@ -225,6 +225,7 @@ Sampler::GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group,
     }
 }
 
+
 std::map<size_t, int32_t> Sampler::GroupBeamSearcher::get_beam_idxs() {
     std::map<size_t, int32_t> next_beams;
 
@@ -619,9 +620,13 @@ Sampler::TreeSearcher::TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tenso
 }
 
 void Sampler::TreeSearcher::tree_reset() {
+    const size_t total_tokens = m_parameters.eagle_tree_params.total_tokens;
+    OPENVINO_ASSERT(total_tokens > 1,
+                    "eagle_tree_params.total_tokens must be greater than 1, got ", total_tokens);
+    const int max_candidate_nodes = static_cast<int>(total_tokens - 1);
     m_candidate_graph.emplace(-1,
                               0.0f,
-                              m_parameters.eagle_tree_params.total_tokens - 1,
+                              max_candidate_nodes,
                               m_parameters.eagle_tree_params.tree_depth);
     // Copy the shared_ptr by value: get_running_sequences() returns a temporary vector,
     // so a const-ref to [0] would be dangling after the statement ends.
@@ -670,6 +675,7 @@ auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> st
             return a.first > b.first;
         };
         const size_t branching = m_parameters.eagle_tree_params.branching_factor;
+        OPENVINO_ASSERT(branching > 0, "eagle_tree_params.branching_factor must be positive");
         float max_logit = -std::numeric_limits<float>::infinity();
         std::priority_queue<IndexScore, std::vector<IndexScore>, decltype(min_cmp)> min_heap(min_cmp);
         for (size_t i = 0; i < vocab_size; ++i) {
@@ -1209,7 +1215,7 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
     std::optional<Token> bonus_token;
 
     for (size_t step = 1;
-         step < max_retrieve_indices_size && !candidate_token_ids.empty() && validated_steps < num_tokens_to_validate;
+         step < max_retrieve_indices_size && !candidate_token_ids.empty() && validated_steps <= num_tokens_to_validate;
          ++step) {
         std::vector<int64_t> tokens_this_step;
         for (size_t i = 0; i < candidate_token_ids.size(); ++i) {
@@ -1257,7 +1263,12 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
             break;
         }
 
-        token_idx_to_end = num_tokens_to_validate - retrieve_indices[0][path_pos[0] - 1];
+        const int64_t retrieve_index = retrieve_indices[0][path_pos[0] - 1];
+        OPENVINO_ASSERT(retrieve_index >= 0, "retrieve_index must be non-negative");
+        const size_t retrieve_index_u = static_cast<size_t>(retrieve_index);
+        OPENVINO_ASSERT(retrieve_index_u <= num_tokens_to_validate,
+                        "retrieve_index must not exceed num_tokens_to_validate");
+        token_idx_to_end = num_tokens_to_validate - retrieve_index_u;
         validated_steps++;
 
         if (validated_steps + generated_len - num_tokens_to_validate ==
@@ -1509,7 +1520,6 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                                    logit_processor,
                                    is_extend_sequence,
                                    is_validation_mode_enabled);
-
                 // to exit from sampling in case of failed token validation
                 if (!is_validation_passed) {
                     break;
