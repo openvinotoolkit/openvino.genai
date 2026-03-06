@@ -348,7 +348,7 @@ def generate_and_compare(
 
 def should_skip_npuw_tests():
     """
-    Don't query OpenVINO available devices directly to detect OpenVINO build without NPU.
+    Don't query OpenVINO available devices directly in order to detect OpenVINO build without NPU.
     """
     return dict(
         condition=sys.platform == "darwin" or platform.machine() in {"aarch64", "arm64", "ARM64"},
