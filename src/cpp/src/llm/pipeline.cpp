@@ -404,6 +404,13 @@ void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& confi
     m_pimpl->set_generation_config(config);
 }
 
+std::vector<float> ov::genai::LLMPipeline::get_next_token_log_probs(
+    const std::string& prompt,
+    const std::vector<int64_t>& token_ids
+) {
+    return m_pimpl->get_next_token_log_probs(prompt, token_ids);
+}
+
 ov::genai::LLMPipeline::~LLMPipeline() {
     m_pimpl.reset();
     utils::release_core_plugin(m_device);

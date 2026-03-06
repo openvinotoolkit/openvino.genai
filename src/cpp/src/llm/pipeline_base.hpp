@@ -60,6 +60,13 @@ public:
     virtual void start_chat(const std::string& system_message) = 0;
     virtual void finish_chat() = 0;
 
+    virtual std::vector<float> get_next_token_log_probs(
+        const std::string& prompt,
+        const std::vector<int64_t>& token_ids
+    ) {
+        OPENVINO_THROW("get_next_token_log_probs is not implemented for this pipeline type");
+    }
+
     virtual ~LLMPipelineImplBase() = default;
 
     void save_load_time(std::chrono::steady_clock::time_point start_time) {
