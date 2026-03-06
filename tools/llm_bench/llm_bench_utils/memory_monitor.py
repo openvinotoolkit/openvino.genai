@@ -36,15 +36,18 @@ import sys
 # CUSTOM FIX TO AVOID ISSUE: RuntimeError: main thread is not in main loop
 matplotlib.use("Agg")
 
+
 class MonitorLevel(Enum):
     DISABLED = 0
     WARMUP = 1
     FULL = 2
 
+
 class MonitorType(Enum):
     DISABLED = 0
     THREAD = 1
     PROCESS = 2
+
 
 class MonitorMode(Enum):
     NO_MONITORING = (MonitorLevel.DISABLED, MonitorType.DISABLED)
@@ -152,11 +155,15 @@ class MemoryMonitorHandler:
         if self.mth:
             return self.mth.stop()
 
-    def iter_stop_and_collect_data(self, iter_num, dict_format=True):
+    def activate_cooldown(self, label):
         cooldown = self.args.memory_consumption_cooldown
         if cooldown is not None:
             self.mmh.update_marker("cooldown")
+            log.info(f"MemoryMonitor: {label}: {cooldown}")
             time.sleep(cooldown)
+
+    def iter_stop_and_collect_data(self, iter_num, dict_format=True):
+        self.activate_cooldown("iter cooldown")
         self.last_iter_number = iter_num
         if self.mode.is_process or not self.mode.is_enabled:
             return {} if dict_format else [""] * 4
@@ -171,7 +178,7 @@ class MemoryMonitorHandler:
 
 
 ######################################################
-### Memory Monitoring (in separated thread)
+# Memory Monitoring (in separated thread)
 
 class MemoryType(Enum):
     RSS = "rss"
@@ -452,7 +459,6 @@ class MemThreadHandler:
         self.memory_monitors = {}
         self.create_monitors()
 
-
     def create_monitors(self):
         for memory_type in self.memory_types:
             self.memory_monitors[memory_type] = MemoryMonitor(
@@ -506,11 +512,15 @@ class MemThreadHandler:
         for mm in self.memory_monitors.values():
             mm.stop()
 
-    def log_curent_memory_data(self, prefix : str = ""):
-        mem_status = MemStatus(cast_bytes_to(MemoryMonitor.get_rss_memory(), self.memory_unit),
-                               cast_bytes_to(MemoryMonitor.get_system_memory(), self.memory_unit))
-        log.info(f"{prefix} RSS memory {mem_status.rss:.2f}{self.memory_unit.value}, "
-                 f"{prefix} System memory {mem_status.sys:.2f}{self.memory_unit.value}")
+    def log_curent_memory_data(self, prefix: str = ""):
+        mem_status = MemStatus(
+            cast_bytes_to(MemoryMonitor.get_rss_memory(), self.memory_unit),
+            cast_bytes_to(MemoryMonitor.get_system_memory(), self.memory_unit),
+        )
+        log.info(
+            f"{prefix} RSS memory {mem_status.rss:.2f}{self.memory_unit.value}, "
+            f"{prefix} System memory {mem_status.sys:.2f}{self.memory_unit.value}"
+        )
         return mem_status
 
     def log_data(self, compilation: bool = False):
@@ -523,10 +533,12 @@ class MemThreadHandler:
             self.compilation_mem_info["increase_mem"].sys = sys_increase
             self.compilation_mem_info["increase_mem"].rss = rss_increase
 
-        msg = (f"Max RSS memory {comment}: {max_rss_mem:.2f}{self.memory_unit.value}, "
-               f"RSS memory increase {comment}: {rss_increase:.2f}{self.memory_unit.value}, "
-               f"Max System memory {comment}: {max_sys_mem:.2f}{self.memory_unit.value}, "
-               f"System memory increase {comment}: {sys_increase:.2f}{self.memory_unit.value}")
+        msg = (
+            f"Max RSS memory {comment}: {max_rss_mem:.2f}{self.memory_unit.value}, "
+            f"RSS memory increase {comment}: {rss_increase:.2f}{self.memory_unit.value}, "
+            f"Max System memory {comment}: {max_sys_mem:.2f}{self.memory_unit.value}, "
+            f"System memory increase {comment}: {sys_increase:.2f}{self.memory_unit.value}"
+        )
         log.info(msg)
 
     def get_data(self, dict_format=False):
@@ -625,21 +637,51 @@ def _subtract_first_element(data):
 
 
 ######################################################
-### Memory Marker Monitoring (in separated process)
+# Memory Marker Monitoring (in separated process)
 
-class MemorySampler5(dict):
-    chunk_size = 8192
-    metrics = OrderedDict([
-        ("rss", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
-        ("uss", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
-        ("priv", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
-        ("sys", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
-        ("nsys", {"denom": 1, "unit": "%", "digits": 1, "cv": False}),
-    ])
 
-    def __init__(self, process_id):
+class SamplerTiming:
+    def __init__(self):
+        self.total_number = 0
+        self.perf_dcounter_mass = 0
+        self.last_perf_counter = None
+        self.mass_by_markers = {}
+
+    def timing(self, perf_counter, marker):
+        if marker not in self.mass_by_markers:
+            self.mass_by_markers[marker] = 0.0
+
+        if self.last_perf_counter is None:
+            self.last_perf_counter = perf_counter
+            self.total_number = 0
+            return
+
+        self.total_number += 1
+        pc = perf_counter - self.last_perf_counter
+        self.last_perf_counter = perf_counter
+        self.mass_by_markers[marker] += pc
+        self.perf_dcounter_mass += pc
+
+    def get_real_interval(self):
+        if self.total_number > 1:
+            ti = self.perf_dcounter_mass / self.total_number
+            return round(ti, 3)
+        return 0.0
+
+    def get_real_interval_for_marker(self, marker, count):
+        if count > 1 and marker in self.mass_by_markers:
+            ti = self.mass_by_markers[marker] / count
+            return round(ti, 3)
+        return 0.0
+
+
+class MemorySampler(dict, SamplerTiming):
+    chunk_size = None
+    metrics = {}
+
+    def __init__(self):
         dict.__init__(self)
-        self.process_id = process_id
+        SamplerTiming.__init__(self)
         self.header = self.make_header()
 
     def make_header(self):
@@ -687,13 +729,17 @@ class MemorySampler5(dict):
         return f"{out}\n"
 
     def __str__(self):
-        outstr = "MemorySampler5 summarize:\n"
+        outstr = "MemorySampler summarize:\n"
+        ti = self.get_real_interval()
+        outstr += f"Real interval: {ti} s\n"
         for marker in self:
             if marker in ("start", "stop"):
                 continue
             count = self[marker]["cnt"]
             outstr += f"Marker: {marker}\n"
             outstr += f"\tsamples: {count}\n"
+            mti = self.get_real_interval_for_marker(marker, count)
+            outstr += f"\treal interval: {mti}\n"
             if count == 0:
                 return outstr
             for metric in self.metrics:
@@ -705,12 +751,16 @@ class MemorySampler5(dict):
             **extra,
             "chunks_number": chunks,
             "chunk_size": self.chunk_size,
+            "real_interval": self.get_real_interval(),
             "metrics": dict(self.metrics),
             "markers": {},
         }
         for marker in self:
             out["markers"][marker] = {}
-            out["markers"][marker]["samples"] = self[marker]["cnt"]
+            cnt = self[marker]["cnt"]
+            out["markers"][marker]["samples"] = cnt
+            mti = self.get_real_interval_for_marker(marker, cnt)
+            out["markers"][marker]["real_interval"] = mti
             out["markers"][marker]["stats"] = {}
             for metric in self.metrics:
                 mx, mn, ave, cv = self.calc_metric_stats(marker, metric)
@@ -749,6 +799,23 @@ class MemorySampler5(dict):
         mapargs = zip(self.metrics.keys(), values)
         return tuple(map(self.format_to_export, mapargs))
 
+
+class MemorySampler5(MemorySampler):
+    chunk_size = 8192
+    metrics = OrderedDict(
+        [
+            ("rss", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
+            ("uss", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
+            ("priv", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
+            ("sys", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
+            ("nsys", {"denom": 1, "unit": "%", "digits": 3, "cv": False}),
+        ]
+    )
+
+    def __init__(self, process_id):
+        MemorySampler.__init__(self)
+        self.process_id = process_id
+
     def collect(self, marker):
         parent_process = psutilProcess(self.process_id)
         mem_info = parent_process.memory_full_info()
@@ -771,7 +838,8 @@ class MemorySampler5(dict):
 
 
 class MemoryMarkerMonitor(list):
-    def __init__(self, conn, process_id, sampling_interval, path_prefix):
+    def __init__(self, marker_queue, process_id, sampling_interval, path_prefix):
+        log.info("Memory worker: MemorySampler5 init...")
         self.sampler = MemorySampler5(process_id)
         self.sampling_interval = float(sampling_interval)
         self.process_id = int(process_id)
@@ -779,13 +847,17 @@ class MemoryMarkerMonitor(list):
         self.start_perf = time.perf_counter()
         self.start_time_ns = time.time_ns()
         self.marker = "start"
-        self.conn = conn
+        self.marker_queue = marker_queue
+        self.should_stop = False
 
         self.path_prefix = Path(path_prefix)
-        if not self.path_prefix.exists():
-            self.path_prefix.mkdir(parents=True)
-        self.collect_samples()
+        self.path_prefix.mkdir(parents=True, exist_ok=True)
         self.file_counter = 0
+
+        try:
+            self.collect_samples()
+        except Exception as e:
+            print(f"Warning: Initial sample collection failed: {e}")
 
     def deduce_filename(self, report_json=False):
         def fnfunc(path_prefix, process_id, file_counter):
@@ -797,18 +869,44 @@ class MemoryMarkerMonitor(list):
             self.file_counter += 1
         return fnfunc(self.path_prefix, self.process_id, self.file_counter)
 
+    def check_for_markers(self):
+        latest_marker = None
+        stop_received = False
+        try:
+            while True:
+                try:
+                    marker = self.marker_queue.get_nowait()
+                    latest_marker = marker
+                    if marker == "stop":
+                        stop_received = True
+                        break
+                except queue.Empty:
+                    break
+            if latest_marker is not None:
+                self.marker = latest_marker
+            if stop_received:
+                self.should_stop = True
+                return True
+        except Exception as e:
+            print(f"Error checking markers: {e}")
+        return False
+
     def loop(self, metadata):
-        while True:
-            if self.conn.poll():
-                marker = self.conn.recv()
-                self.marker = marker
-                if self.marker == "stop":
-                    print("Memory worker: Received stop signal")
+        while not self.should_stop:
+            if self.check_for_markers():
+                print("Memory worker: Received stop signal")
+                try:
                     self.collect_samples()
                     print(self.sampler)
-                    break
+                except Exception as e:
+                    print(f"Final sample failed: {e}")
+                break
+
             if len(self) >= self.sampler.chunk_size:
-                self.write_chunk()
+                try:
+                    self.write_chunk()
+                except Exception as e:
+                    print(f"Error writing chunk: {e}")
             try:
                 self.collect_samples()
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -816,12 +914,16 @@ class MemoryMarkerMonitor(list):
                 break
             except Exception as e:
                 print(f"Error collecting samples: {e}")
+
             elapsed = time.perf_counter() - self.last_ts
             sleep_time = self.sampling_interval - elapsed
             if sleep_time > 0:
                 time.sleep(min(sleep_time, 0.001))
-        self.write_report(metadata)
-        self.write_chunk()
+        try:
+            self.write_report(metadata)
+            self.write_chunk()
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
 
     def write_report(self, extra):
         fname = self.deduce_filename(report_json=True)
@@ -829,6 +931,7 @@ class MemoryMarkerMonitor(list):
             saved_chunks = self.file_counter + 1
             data = self.sampler.report_summary(saved_chunks, extra)
             json.dump(data, fd, indent=2)
+        log.info(f"MemoryMonitor: save summary: {fname}")
 
     def write_chunk(self):
         if not self:
@@ -838,10 +941,10 @@ class MemoryMarkerMonitor(list):
         fname = self.deduce_filename()
         with open(fname, "w", encoding="utf-8") as fd:
             fd.write(f"#ts marker {self.sampler.header}\n")
-             lines = []
-             while self:
-                 row = self.pop(0)
-                 lines.append(" ".join(map(str, row)))
+            lines = []
+            while self:
+                row = self.pop(0)
+                lines.append(" ".join(map(str, row)))
             fd.write("\n".join(lines))
             fd.write(f"\n#number of samples: {counter}\n")
 
@@ -849,6 +952,7 @@ class MemoryMarkerMonitor(list):
         try:
             vals = self.sampler.collect(self.marker)
             self.last_ts = time.perf_counter()
+            self.sampler.timing(self.last_ts, self.marker)
 
             elapsed_seconds = self.last_ts - self.start_perf
             elapsed_ns = int(elapsed_seconds * 1_000_000_000)
@@ -856,6 +960,7 @@ class MemoryMarkerMonitor(list):
             self.append((ts, self.marker, *vals))
         except Exception as err:
             raise Exception(err)
+
 
 class MemoryMarkerHandler:
     def __init__(self, args):
@@ -865,28 +970,65 @@ class MemoryMarkerHandler:
         report_path = args.memory_consumption_dir
 
         parent_pid = os.getpid()
-        self.parent_conn, child_conn = multiprocessing.Pipe(duplex=False)
-        pargs = child_conn, parent_pid, interval, report_path, mode, cooldown
+        self.marker_queue = multiprocessing.Queue(maxsize=1000)
+
+        self.s_event = multiprocessing.Event()
+        pargs = self.marker_queue, parent_pid, interval, report_path, mode, cooldown, self.s_event
         self.background_process = mProcess(target=self.background_worker, args=pargs)
         self.background_process.start()
+        if not self.wait_for_background_process():
+            raise RuntimeError("Failed to start memory monitoring process")
         self.set_high_priority()
         if cooldown is not None:
             self.update_marker("cooldown")
+            log.info(f"MemoryMonitor: initial cooldown: {cooldown}")
             time.sleep(cooldown)
 
+    def wait_for_background_process(self, timeout=30.0):
+        start_time = time.perf_counter()
+        check_interval = 0.01  # Check every 10ms
+
+        while time.perf_counter() - start_time < timeout:
+            if not self.background_process.is_alive():
+                print("Background process failed to start or died")
+                return False
+
+            if self.s_event.wait(timeout=check_interval):
+                print(f"Background process ready (PID: {self.background_process.pid})")
+                return True
+            try:
+                proc = psutil.Process(self.background_process.pid)
+                if proc.status() == psutil.STATUS_ZOMBIE:
+                    print("Background process became zombie")
+                    return False
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                print("Background process not accessible")
+                return False
+
+        print(f"Timeout waiting for background process (waited {timeout}s)")
+        return False
+
     def set_high_priority(self):
+        if not self.background_process or not self.background_process.is_alive():
+            return
+
         priority = psutil.HIGH_PRIORITY_CLASS if sys.platform == "win32" else -10
-        try:
-            time.sleep(0.1)
-            psutilproc = psutilProcess(self.background_process.pid)
-            psutilproc.nice(priority)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            print(f"Could not set process priority")
-        except PermissionError:
-            print(f"No permission to set process priority")
+        for attempt in range(3):
+            try:
+                psutil_proc = psutil.Process(self.background_process.pid)
+                psutil_proc.nice(priority)
+                return
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as e:
+                print(f"Could not set process priority (attempt {attempt + 1}): {e}")
+            except PermissionError:
+                print(f"No permission to set process priority (attempt {attempt + 1})")
+            except Exception as e:
+                print(f"Unexpected error setting priority (attempt {attempt + 1}): {e}")
+            if attempt < 2:
+                time.sleep(0.1)
 
     @staticmethod
-    def background_worker(conn, pid, interval, path, mode, cooldown):
+    def background_worker(conn, pid, interval, path, mode, cooldown, s_event):
         mmm = MemoryMarkerMonitor(conn, pid, interval, path)
         metadata = {
             "mode": mode,
@@ -896,6 +1038,7 @@ class MemoryMarkerHandler:
             "path": path,
         }
 
+        s_event.set()
         try:
             mmm.loop(metadata)
             conn.close()
@@ -905,32 +1048,62 @@ class MemoryMarkerHandler:
             traceback.print_exc()
 
     def update_marker(self, marker):
+        if not self.background_process or not self.background_process.is_alive():
+            print(f"Warning: Cannot send marker '{marker}' - process not alive")
+            return False
+
         try:
-            if marker == "stop":
-                self.parent_conn.send("stop")
-                self.background_process.join()
-                self.parent_conn.close()
-            else:
-                self.parent_conn.send(marker)
-        except OSError:
-            if marker != "stop":
-                log.warning(f"{marker}: markers are not longer accepted!")
+            if not isinstance(marker, str) or len(marker) > 100:
+                print(f"Warning: Invalid marker '{marker}'")
+                return False
+
+            # Non-blocking put with timeout
+            log.info(f"MemoryMonitor: try to send new marker: {marker}")
+            self.marker_queue.put(marker, timeout=0.1)
+            return True
+
+        except queue.Full:
+            print(f"Warning: Marker queue full, dropping marker: {marker}")
+            return False
+        except Exception as e:
+            print(f"Unexpected error sending marker '{marker}': {e}")
+            return False
 
     def stop(self):
+        if not self.background_process:
+            return
+        time.sleep(2)
         try:
             if self.background_process.is_alive():
-                self.parent_conn.send("stop")
-            self.background_process.join(timeout=5.0)
+                self.update_marker("stop")
+                # wait for statistic estimation
+                self.background_process.join(timeout=60.0)
+
             if self.background_process.is_alive():
+                print("Force terminating background process...")
                 self.background_process.terminate()
-                self.background_process.join(timeout=2.0)
+                self.background_process.join(timeout=3.0)
+
             if self.background_process.is_alive():
+                print("Killing background process...")
                 self.background_process.kill()
-                self.background_process.join()
-        except (BrokenPipeError, OSError):
-            pass
+                self.background_process.join(timeout=1.0)
+
+        except Exception as e:
+            print(f"Error during stop: {e}")
         finally:
             try:
-                self.parent_conn.close()
-            except:
+                while not self.marker_queue.empty():
+                    try:
+                        self.marker_queue.get_nowait()
+                    except queue.Empty:
+                        break
+            except Exception:
                 pass
+        self.background_process = None
+
+    def __del__(self):
+        try:
+            self.stop()
+        except Exception:
+            pass

@@ -88,6 +88,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
+    mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, image_list, prompt_idx_list)
     for num in range(num_iters + 1):
         for image_id, img in enumerate(image_list):

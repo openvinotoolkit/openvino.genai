@@ -366,6 +366,7 @@ class TextToVideoGenAI(CommonPipeline):
 
 def run_video_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     text_list, prompt_idx_list = collect_prompts_step(args, get_video_gen_prompt)
+    mem_consumption.update_marker("model")
 
     if args.get("static_reshape", False):
         input_args = collect_input_args(
@@ -373,7 +374,6 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
         )
         args |= input_args
 
-    mem_consumption.update_marker("model")
     pipe, tokenizer, pretrain_time, _, use_genai = FW_UTILS[framework].create_video_gen_model(
         model_path, device, mem_consumption, **args
     )
@@ -393,6 +393,7 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
             pipe, tokenizer, args, model_path, mem_consumption, stable_diffusion_hook
         )
 
+    mem_consumption.activate_cooldown("after model compilation")
     iter_data_list, iter_timestamp = iteration_step(
         video_gen_pipeline, num_iters, text_list, prompt_idx_list, bench_hook=None, subsequent=args["subsequent"]
     )

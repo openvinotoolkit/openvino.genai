@@ -98,12 +98,12 @@ def output_avg_min_median(iter_data_list):
 
 
 def gen_data_to_csv(
-        result: dict,
-        iter_data: dict,
-        pretrain_time: int,
-        iter_timestamp: dict,
-        memory_data_collector: MemThreadHandler | None,
-        mem_unit: MemoryUnit,
+    result: dict,
+    iter_data: dict,
+    pretrain_time: int,
+    iter_timestamp: dict,
+    memory_data_collector: MemThreadHandler | None,
+    mem_unit: MemoryUnit,
 ):
     generation_time = iter_data["generation_time"]
     latency = iter_data["latency"]
@@ -153,8 +153,16 @@ def gen_data_to_csv(
 
 
 def write_result(
-        report_file, model, framework, device, model_args, iter_data_list,
-        pretrain_time, model_precision, iter_timestamp, memory_data_collector,
+    report_file,
+    model,
+    framework,
+    device,
+    model_args,
+    iter_data_list,
+    pretrain_time,
+    model_precision,
+    iter_timestamp,
+    memory_data_collector,
 ):
     mem_unit = MemThreadHandler.DEF_MEM_UNIT
     if memory_data_collector.mth:

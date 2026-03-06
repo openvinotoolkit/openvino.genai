@@ -493,8 +493,10 @@ def main():
                     else:
                         half_nums_of_torch_threads = int(half_nums_of_torch_threads) if int(half_nums_of_torch_threads) else 1
                         torch.set_num_threads(int(half_nums_of_torch_threads))
-            log.info(f"The num_beams is {model_args['num_beams']}, update Torch thread num from {original_torch_thread_nums}"
-                     f" to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.")
+            log.info(
+                f"The num_beams is {model_args['num_beams']}, update Torch thread num from {original_torch_thread_nums}"
+                f" to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference."
+            )
     log.info(out_str)
 
     try:
