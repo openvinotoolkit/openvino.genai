@@ -4,7 +4,13 @@
 import assert from "node:assert";
 import { describe, it, before } from "node:test";
 import { createTestImageTensor, createTestVideoTensor } from "./utils.js";
-import { Tokenizer, VLMPipeline, DecodedResults, VLMDecodedResults } from "../dist/index.js";
+import {
+  Tokenizer,
+  VLMPipeline,
+  DecodedResults,
+  VLMDecodedResults,
+  ChatHistory,
+} from "../dist/index.js";
 
 const { VLM_PATH } = process.env;
 
@@ -46,6 +52,17 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
     });
 
     assert.strictEqual(result.texts.length, 1, "Should generate comparison");
+  });
+
+  it("should generate text with ChatHistory", async () => {
+    const history = new ChatHistory();
+    history.push({ role: "user", content: "What is in the image?" });
+    const result = await pipeline.generate(history, {
+      images: [testImage1],
+      generationConfig: { max_new_tokens: 20 },
+    });
+    assert.ok(result instanceof VLMDecodedResults);
+    assert.strictEqual(result.texts.length, 1);
   });
 
   it("should generate text with video input", async () => {
@@ -107,6 +124,28 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
     }
 
     assert.ok(chunks.length > 0, "Should receive streaming chunks");
+    const fullOutput = chunks.join("");
+    assert.ok(fullOutput.length > 0, "Combined chunks should form output");
+  });
+
+  it("should support streaming generation with ChatHistory", async () => {
+    const history = new ChatHistory();
+    history.push({ role: "user", content: "What do you see?" });
+    const chunks = [];
+
+    const stream = pipeline.stream(history, {
+      images: [testImage1],
+      generationConfig: {
+        max_new_tokens: 15,
+        temperature: 0,
+      },
+    });
+
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+
+    assert.ok(chunks.length > 0, "Should receive streaming chunks with ChatHistory");
     const fullOutput = chunks.join("");
     assert.ok(fullOutput.length > 0, "Combined chunks should form output");
   });
