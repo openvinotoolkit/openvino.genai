@@ -412,6 +412,25 @@ void init_generation_config(py::module_& m) {
             }
         );
 
+    // Binding for EagleParams
+    py::class_<GenerationConfig::EagleParams>(m, "EagleParams", "EAGLE speculative decoding parameters")
+        .def(py::init<>())
+        .def_readwrite("branching_factor",
+                       &GenerationConfig::EagleParams::branching_factor,
+                       "Number of branches (top-k) at each level of the EAGLE tree")
+        .def_readwrite("tree_depth",
+                       &GenerationConfig::EagleParams::tree_depth,
+                       "How deep to look ahead in the EAGLE tree")
+        .def_readwrite("total_tokens",
+                       &GenerationConfig::EagleParams::total_tokens,
+                       "Number of nodes selected from the built EAGLE tree after reranking, "
+                       "used as the final set of draft token candidates submitted to the target model for verification")
+        .def("__repr__", [](const GenerationConfig::EagleParams& self) {
+            return "EagleParams(branching_factor=" + std::to_string(self.branching_factor) +
+                   ", tree_depth=" + std::to_string(self.tree_depth) +
+                   ", total_tokens=" + std::to_string(self.total_tokens) + ")";
+        });
+
     // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
@@ -444,6 +463,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("assistant_confidence_threshold", &GenerationConfig::assistant_confidence_threshold)
         .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
         .def_readwrite("max_ngram_size", &GenerationConfig::max_ngram_size)
+        .def_readwrite("eagle_tree_params", &GenerationConfig::eagle_tree_params, "EAGLE tree parameters for speculative decoding")
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def_readwrite("structured_output_config", &GenerationConfig::structured_output_config)

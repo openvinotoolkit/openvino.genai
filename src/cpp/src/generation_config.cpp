@@ -158,6 +158,9 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     // CDPruner
     read_anymap_param(properties, "pruning_ratio", pruning_ratio);
     read_anymap_param(properties, "relevance_weight", relevance_weight);
+
+    // EAGLE tree search
+    read_anymap_param(properties, "eagle_tree_params", eagle_tree_params);
 }
 
 
@@ -251,17 +254,20 @@ size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
 }
 
 bool GenerationConfig::is_greedy_decoding() const {
-    return !do_sample && !is_beam_search();
+    return !do_sample && !is_beam_search() && !is_tree_search();
 }
 
 bool GenerationConfig::is_beam_search() const {
     return num_beams > 1;
 }
 
+bool GenerationConfig::is_tree_search() const {
+    return eagle_tree_params.tree_depth > 0;
+}
+
 bool GenerationConfig::is_multinomial() const {
     return do_sample;
 }
-
 
 bool GenerationConfig::is_assisting_generation() const {
     return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
@@ -344,6 +350,23 @@ void GenerationConfig::validate() const {
         // OPENVINO_ASSERT(no_repeat_ngram_size == std::numeric_limits<size_t>::max(), "'no_repeat_ngram_size' is supported only by beam search, otherwise should be set to max of size_t, but got ", no_repeat_ngram_size);
         // OPENVINO_ASSERT(diversity_penalty == 0.0f, "'diversity_penalty' is set to ", diversity_penalty, " (default is 0.0f), which is supported only by beam search sampling");
         // OPENVINO_ASSERT(length_penalty == 1.0f, "'length_penalty' is set to ", length_penalty, " (default is 1.0f), which is supported only by beam search sampling");
+    }
+
+    // tree search (EAGLE)
+    if (is_tree_search()) {
+        OPENVINO_ASSERT(eagle_tree_params.branching_factor > 0,
+                        "'branching_factor' must be > 0 when tree search is enabled, but got ",
+                        eagle_tree_params.branching_factor);
+        OPENVINO_ASSERT(
+            eagle_tree_params.total_tokens > 1,
+            "'total_tokens' must be > 1 when tree search is enabled (root + at least one draft node), but got ",
+            eagle_tree_params.total_tokens);
+        OPENVINO_ASSERT(eagle_tree_params.total_tokens > eagle_tree_params.tree_depth,
+                        "'total_tokens' (",
+                        eagle_tree_params.total_tokens,
+                        ") must be greater than 'tree_depth' (",
+                        eagle_tree_params.tree_depth,
+                        ") to allow at least one branching node");
     }
 
     // assistant generation
