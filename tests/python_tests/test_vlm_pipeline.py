@@ -64,6 +64,7 @@ from utils.generation_config import (
 )
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
+from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 import logging
 logger = logging.getLogger(__name__)
@@ -1005,10 +1006,7 @@ def iteration_images_npu(request):
 
 @parametrize_all_models_npu
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_pipeline_chat_npu(ov_npu_pipe_model: VlmModelInfo, system_message, iteration_images_npu):
     def run_chat(ov_pipe, system_message, iteration_images):
         result_from_streamer = []
@@ -1183,10 +1181,7 @@ def test_perf_metrics(
 
 
 @parametrize_all_models_npu
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_no_exception(ov_npu_pipe_model: VlmModelInfo, cat_tensor):
     ov_pipe = ov_npu_pipe_model.pipeline
 
@@ -1207,10 +1202,7 @@ def image_sequence(request):
 
 
 @parametrize_one_model_npu
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
     ov_pipe = ov_npu_pipe_model.pipeline
 
@@ -1221,10 +1213,7 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
     )
 
 
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_auto_config(cat_tensor):
     models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
     properties = {
@@ -1242,10 +1231,7 @@ def test_vlm_npu_auto_config(cat_tensor):
 
 
 @parametrize_one_model_npu
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_multiple_images(
     ov_npu_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, handwritten_tensor: openvino.Tensor
 ):

@@ -1,8 +1,6 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import platform
-import sys
 import pytest
 import subprocess  # nosec B404
 import logging
@@ -14,6 +12,7 @@ import openvino_genai as ov_genai
 from utils.constants import get_ov_cache_converted_models_dir, NPUW_CPU_PROPERTIES
 from utils.atomic_download import AtomicDownloadManager
 from utils.network import retry_request
+from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 logger = logging.getLogger(__name__)
 
@@ -248,10 +247,7 @@ def _construct_reshaped(model_dir):
     return pipe
 
 
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_image_generation_cpu_vs_npuw_cpu(image_generation_model):
     generation_args = {"prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69}
 
