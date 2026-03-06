@@ -14,7 +14,6 @@ import llm_bench_utils.metrics_print as metrics_print
 from llm_bench_utils.prompt_utils import get_text_prompt
 import llm_bench_utils.gen_output_data as gen_output_data
 from task.pipeline_utils import CommonPipeline, execution_time_in_sec, collect_prompts_step
-from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +22,7 @@ FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 
 
 class TextRerankerOptimum(CommonPipeline):
-    def __init__(self, model: object, tokenizer: object | None, args: dict, model_path: Path, mem_consumption_meter: MemMonitorWrapper):
+    def __init__(self, model: object, tokenizer: object | None, args: dict, model_path: Path, mem_consumption_meter):
         super().__init__(model, tokenizer, args, model_path, mem_consumption_meter)
         self.genai = False
 
@@ -211,7 +210,7 @@ class TextRerankerOptimum(CommonPipeline):
 
 
 class TextRerankerGenAI(CommonPipeline):
-    def __init__(self, model: object, tokenizer: object | None, args: dict, model_path: Path, mem_consumption_meter: MemMonitorWrapper):
+    def __init__(self, model: object, tokenizer: object | None, args: dict, model_path: Path, mem_consumption_meter):
         super().__init__(model, tokenizer, args, model_path, mem_consumption_meter)
 
         if self.batch_size != 1:
@@ -346,8 +345,7 @@ class TextRerankerGenAI(CommonPipeline):
 
 
 def run_text_reranker_benchmark(
-    model_path: Path, framework: str, device: str, args: dict, num_iters: int, mem_consumption: MemMonitorWrapper
-) -> tuple[list, float, dict]:
+    model_path: Path, framework: str, device: str, args: dict, num_iters: int, mem_consumption):
     mem_consumption.update_marker("model")
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_reranker_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
