@@ -52,10 +52,6 @@ public:
     size_t get_mm_local_num_frames() const {
         return m_vlm_config.mm_local_num_frames;
     }
-
-    ov::Tensor& get_pos_emb() {
-        return m_pos_emb;
-    }
 protected:
     /// @brief  Infer requests queue for video projection model.
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_projection;
@@ -65,9 +61,6 @@ protected:
 
     /// @brief A config to follow.
     VLMConfig m_vlm_config;
-
-    /// @brief pos_emb Tensor.
-    ov::Tensor m_pos_emb;
 };
 
 class InputsEmbedderVideoChat_Flash : public InputsEmbedder::IInputsEmbedder {
@@ -119,7 +112,6 @@ public:
         const std::vector<EncodedVideo>& videos) const override;
 
 private:
-    bool m_use_batch_vit = false;
     std::vector<size_t> m_tokens_per_images;
     std::vector<size_t> m_prev_tokens_per_images;
 };
