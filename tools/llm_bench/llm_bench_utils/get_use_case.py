@@ -105,6 +105,7 @@ def normalize_model_ids(model_ids_list):
 
 def get_use_case_by_model_id(model_id, task=None):
     possible_use_cases = sum(list(USE_CASES.values()), [])
+
     if task:
         if task in list(UseCaseImageGen.TASK.keys()):
             possible_use_cases = USE_CASES["image_gen"]
