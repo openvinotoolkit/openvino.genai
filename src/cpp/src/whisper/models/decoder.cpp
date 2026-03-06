@@ -5,6 +5,7 @@
 
 #include <filesystem>
 
+#include "debug_utils.hpp"
 #include "statefull_decoder.hpp"
 #include "whisper/whisper_utils.hpp"
 
@@ -23,6 +24,9 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
 
 std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& encoder_hidden_state,
                                                           const int64_t decoder_start_token_id) {
+    std::cout << "Detecting language..." << std::endl;
+    std::cout << "Encoder hidden state stats" << std::endl;
+    print_tensor_stats(encoder_hidden_state);
     Tensor input_ids_tensor = create_host_tensor(ov::element::i64, {1, 1});
     input_ids_tensor.data<int64_t>()[0] = decoder_start_token_id;
 
@@ -36,6 +40,30 @@ std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& enco
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
 
     int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
+
+    std::cout << "Output tensor stats:" << std::endl;
+    print_tensor_stats(output_tensor);
+
+    std::cout << "Language detection, decoder_start_token_id: " << decoder_start_token_id
+              << ", detected language token id: " << output_token << std::endl;
+
+    std::cout << "Top 10 logits for language detection: " << std::endl;
+    auto output_data = output_tensor.data<float>();
+    // sort logits and print top 10
+    std::vector<std::pair<int64_t, float>> token_logit_pairs;
+    for (size_t i = 0; i < output_tensor.get_shape()[2]; i++) {
+        token_logit_pairs.emplace_back(i, output_data[i]);
+    }
+    std::partial_sort(token_logit_pairs.begin(),
+                      token_logit_pairs.begin() + 10,
+                      token_logit_pairs.end(),
+                      [](const std::pair<int64_t, float>& a, const std::pair<int64_t, float>& b) {
+                          return a.second > b.second;
+                      });
+    for (size_t i = 0; i < 10; i++) {
+        std::cout << "Token id: " << token_logit_pairs[i].first << ", logit: " << token_logit_pairs[i].second
+                  << std::endl;
+    }
 
     reset_state();
 

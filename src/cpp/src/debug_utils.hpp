@@ -237,6 +237,37 @@ inline float max_diff(const ov::Tensor& lhs, const ov::Tensor& rhs) {
 
 #define print(x) std::cerr << #x << x << '\n';
 
+
+/**
+ * @brief Utility function to print basic statistics of a tensor (min, max, mean, first and last n elements).
+ * @param tensor The tensor for which to compute and print statistics.
+ * @param num_elements_to_print The number of elements to print from the beginning and end of the tensor.
+ */
+inline void print_tensor_stats(const ov::Tensor& tensor, size_t num_elements_to_print = 10) {
+    const auto* data = tensor.data<const float>();
+    float max_value = std::numeric_limits<float>::lowest();
+    float min_value = std::numeric_limits<float>::max();
+    double sum = 0.0;
+    std::cout << "Tensor shape: " << tensor.get_shape() << ", element type: " << tensor.get_element_type() << std::endl;
+    std::cout << "First " << num_elements_to_print << " elements: ";
+    for (size_t i = 0; i < std::min(num_elements_to_print, tensor.get_size()); ++i) {
+        std::cout << data[i] << " ";
+    }
+    std::cout << "\nLast " << num_elements_to_print << " elements: ";
+    for (size_t i = (tensor.get_size() > num_elements_to_print) ? (tensor.get_size() - num_elements_to_print) : 0; i < tensor.get_size(); ++i) {
+        std::cout << data[i] << " ";
+    }
+    std::cout << std::endl;
+    for (size_t i = 0; i < tensor.get_size(); ++i) {
+        max_value = std::max(max_value, data[i]);
+        min_value = std::min(min_value, data[i]);
+        sum += data[i];
+    }
+    double mean = sum / tensor.get_size();
+    std::cout << "Tensor stats - min: " << min_value << ", max: " << max_value << ", mean: " << mean << std::endl;
+}
+
+
 namespace std {
 inline ostream& operator<<(ostream& os, const vector<float>& floats) {
     os << "<float>[" << floats.size();
