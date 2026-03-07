@@ -6,8 +6,8 @@ import types
 import torch
 import openvino as ov
 from openvino.frontend.pytorch.patch_model import __make_16bit_traceable
-from transformers import Qwen3OmniMoeForConditionalGeneration
-from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import (
+from transformers import Qwen3OmniForConditionalGeneration
+from transformers.models.qwen3_omni.modeling_qwen3_omni import (
     apply_rotary_pos_emb_vision,
 )
 
@@ -72,7 +72,7 @@ def _merger_forward(
     return (merged, *deepstack_features)
 
 
-def convert_vision_patcher(model: Qwen3OmniMoeForConditionalGeneration, output_dir: Path) -> None:
+def convert_vision_patcher(model: Qwen3OmniForConditionalGeneration, output_dir: Path) -> None:
     output_path = output_dir / VISION_PATCHER_NAME
     if output_path.exists():
         return
@@ -97,7 +97,7 @@ def convert_vision_patcher(model: Qwen3OmniMoeForConditionalGeneration, output_d
     print("Vision patcher model successfully converted")
 
 
-def convert_vision_merger(model: Qwen3OmniMoeForConditionalGeneration, output_dir: Path) -> None:
+def convert_vision_merger(model: Qwen3OmniForConditionalGeneration, output_dir: Path) -> None:
     output_path = output_dir / VISION_MERGER_NAME
     if output_path.exists():
         return

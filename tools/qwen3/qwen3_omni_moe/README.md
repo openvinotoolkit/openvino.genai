@@ -5,7 +5,7 @@ Converts Qwen3-Omni-MOE and Qwen3-Omni models to OpenVINO IR format.
 ## Prerequisites
 
 - Python 3.12+
-- transformers >= 5.3.0.dev0 (install from git: `pip install git+https://github.com/huggingface/transformers.git`)
+- transformers: `pip install git+https://github.com/huggingface/transformers@3d1a4f5e34753e51cb85052539c6ef10cab9a5c1`
 - openvino
 - torch
 - nncf (for int8/int4 quantization)
@@ -45,8 +45,6 @@ python3 -m tools.qwen3.qwen3_omni_moe.convert \
 
 ### Dense (non-MoE) variant
 
-The converter auto-detects dense Qwen3-Omni models and applies compatibility patches.
-
 ```bash
 python3 -m tools.qwen3.qwen3_omni_moe.convert \
     --model_id /path/to/Qwen3-Omni-4B-Instruct \
@@ -82,4 +80,4 @@ Config files: `config.json`, `tokenizer.json`, `tokenizer_config.json`, `process
 
 - Quantization (int8/int4) only applies to language models (thinker, talker, code predictor)
 - The converter skips already-converted models (checks for existing .xml files)
-- Dense models (e.g. Qwen3-Omni-4B) are auto-patched to work with MoE model classes
+- Dense models (e.g. Qwen3-Omni-4B) are supported natively via `Qwen3OmniForConditionalGeneration`

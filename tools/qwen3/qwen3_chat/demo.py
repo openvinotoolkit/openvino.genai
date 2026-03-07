@@ -22,7 +22,11 @@ def run_demo(model: Any, processor: Any) -> None:
 
         with torch.no_grad():
             text, _ = generate_response(
-                model, processor, history, enable_audio=False, speaker=None,
+                model,
+                processor,
+                history,
+                enable_audio=False,
+                speaker=None,
             )
 
         print(f"You:  {prompt}")

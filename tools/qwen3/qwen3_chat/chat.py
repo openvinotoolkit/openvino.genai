@@ -68,7 +68,11 @@ def chat_loop(
         print("Qwen: ", end="", flush=True)
         with torch.inference_mode():
             text, audio = generate_response(
-                model, processor, history, enable_audio, speaker,
+                model,
+                processor,
+                history,
+                enable_audio,
+                speaker,
             )
 
         if audio is not None:

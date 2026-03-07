@@ -4,7 +4,7 @@ import types
 
 import torch
 from torch.export import Dim
-from transformers import Qwen3OmniMoeForConditionalGeneration
+from transformers import Qwen3OmniForConditionalGeneration
 from .constants import (
     ATTENTION_MASK,
     CACHE_POSITION,
@@ -57,7 +57,7 @@ def _forward_wrap_thinker(
 
 
 def convert_thinker_language(
-    model: Qwen3OmniMoeForConditionalGeneration,
+    model: Qwen3OmniForConditionalGeneration,
     output_dir: Path,
     quantization_config: dict[str, Any] | None = None,
 ) -> None:
