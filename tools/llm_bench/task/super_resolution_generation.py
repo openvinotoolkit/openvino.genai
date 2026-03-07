@@ -32,18 +32,12 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     )
     low_res_img = Image.open(img['prompt']).convert('RGB')
     low_res_img = low_res_img.resize((resize_image_width, resize_image_height))
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start()
+    mem_consumption.start(num)
     start = time.perf_counter()
     res = pipe(low_res_img, num_inference_steps=nsteps, tm_list=tm_list)
     end = time.perf_counter()
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
+
     result_md5_list = []
     if framework == 'ov':
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(res[0], args, image_id, num, None, proc_id, '.png')
@@ -55,11 +49,8 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         infer_count=nsteps,
         gen_time=generation_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=image_id,
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -75,6 +66,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
 def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     if args["genai"]:
         log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
+    mem_consumption.update_marker("model")
     pipe, pretrain_time = FW_UTILS[framework].create_ldm_super_resolution_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
     tm_list = []
@@ -96,10 +88,12 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
+    mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, image_list, prompt_idx_list)
     for num in range(num_iters + 1):
         for image_id, img in enumerate(image_list):
             p_idx = prompt_idx_list[image_id]
+            mem_consumption.update_marker(f"step-{num}-{image_id}")
             if num == 0:
                 if args["output_dir"] is not None:
                     llm_bench_utils.output_file.output_image_input_text(str(img['prompt']), args, p_idx, None, proc_id)
