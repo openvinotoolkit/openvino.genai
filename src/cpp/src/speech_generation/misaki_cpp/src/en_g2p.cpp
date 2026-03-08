@@ -121,8 +121,9 @@ private:
         if (should_skip_punctuation_output(tokens, i)) {
           continue;
         }
-        out += tk.text;
-        output_tokens.push_back(make_output_token(tk.text, "PUNCT", "", tk.text, 4));
+        const auto punct_phonemes = punctuation_to_phonemes(tk.text);
+        out += punct_phonemes;
+        output_tokens.push_back(make_output_token(tk.text, "PUNCT", "", punct_phonemes, 4));
         needs_space = false;
         continue;
       }
@@ -266,7 +267,7 @@ private:
     }
 
     if (all_upper) {
-      return raw_prev.size() <= 4;
+      return raw_prev.size() > 1 && raw_prev.size() <= 4;
     }
 
     static const std::unordered_set<std::string> title_abbrev_without_dot = {
@@ -396,6 +397,29 @@ private:
       return true;
     }
     return false;
+  }
+
+  // Python parity: punctuation fallback retains only symbols from Python
+  // Misaki PUNCTS set and drops unsupported punctuation.
+  static std::string punctuation_to_phonemes(const std::string &punct_text) {
+    std::string filtered;
+    filtered.reserve(punct_text.size());
+    for (const char c : punct_text) {
+      switch (c) {
+      case ';':
+      case ':':
+      case ',':
+      case '.':
+      case '!':
+      case '?':
+      case '"':
+        filtered.push_back(c);
+        break;
+      default:
+        break;
+      }
+    }
+    return filtered;
   }
 
   static std::string decode_unicode_escapes(const std::string& input) {
