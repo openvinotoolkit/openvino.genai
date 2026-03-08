@@ -66,6 +66,7 @@ private:
     Config m_config;
     ov::InferRequest m_encoder_request, m_decoder_request;
     std::shared_ptr<ov::Model> m_encoder_model = nullptr, m_decoder_model = nullptr;
+    std::string m_encoder_output_name;
 
     int64_t m_transformer_patch_size = -1, m_transformer_patch_size_t = -1;
 };

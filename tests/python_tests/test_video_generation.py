@@ -228,8 +228,11 @@ class TestAutoEncoderKLLTXVideoEncoder:
     @pytest.fixture
     def require_encoder(self, video_generation_model):
         encoder_path = Path(video_generation_model) / "vae_encoder"
+        decoder_path = Path(video_generation_model) / "vae_decoder"
         if not encoder_path.exists():
             pytest.skip("vae_encoder not available in test model")
+        if not decoder_path.exists():
+            pytest.skip("vae_decoder not available in test model")
 
     def test_constructor_with_encoder(self, video_generation_model, require_encoder):
         encoder_path = Path(video_generation_model) / "vae_encoder"

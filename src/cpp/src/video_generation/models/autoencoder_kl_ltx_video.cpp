@@ -72,6 +72,9 @@ public:
         OPENVINO_ASSERT(generator, "Generator must not be nullptr");
 
         ov::Tensor rand_tensor = generator->randn_tensor(m_mean.get_shape());
+        OPENVINO_ASSERT(rand_tensor.get_element_type() == ov::element::f32,
+            "Generator::randn_tensor() must return an f32 tensor, got ",
+            rand_tensor.get_element_type());
 
         float* rand_tensor_data = rand_tensor.data<float>();
         const float* mean_data = m_mean.data<float>();
@@ -187,6 +190,9 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::compile(const std::string& device,
     if (m_encoder_model) {
         ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, *filtered_properties));
         ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL LTX video encoder model");
+        auto enc_outputs = encoder_compiled_model.outputs();
+        OPENVINO_ASSERT(enc_outputs.size() == 1, "AutoencoderKLLTXVideo encoder model is expected to have a single output");
+        m_encoder_output_name = enc_outputs[0].get_any_name();
         m_encoder_request = encoder_compiled_model.create_infer_request();
         m_encoder_model.reset();
     }
@@ -258,17 +264,12 @@ ov::Tensor AutoencoderKLLTXVideo::encode(const ov::Tensor& video, std::shared_pt
 
     ov::Tensor output = m_encoder_request.get_output_tensor(), latent;
 
-    ov::CompiledModel compiled_model = m_encoder_request.get_compiled_model();
-    auto outputs = compiled_model.outputs();
-    OPENVINO_ASSERT(outputs.size() == 1, "AutoencoderKLLTXVideo encoder model is expected to have a single output");
-
-    const std::string output_name = outputs[0].get_any_name();
-    if (output_name == "latent_sample") {
+    if (m_encoder_output_name == "latent_sample") {
         latent = output;
-    } else if (output_name == "latent_parameters") {
+    } else if (m_encoder_output_name == "latent_parameters") {
         latent = DiagonalGaussianDistribution(output).sample(generator);
     } else {
-        OPENVINO_THROW("Unexpected output name for AutoencoderKLLTXVideo encoder '", output_name, "'");
+        OPENVINO_THROW("Unexpected output name for AutoencoderKLLTXVideo encoder '", m_encoder_output_name, "'");
     }
 
     // normalize latents channel-wise: (latents - latents_mean) * scaling_factor / latents_std
