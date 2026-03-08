@@ -1,0 +1,53 @@
+// Copyright (C) 2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+#pragma once
+
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#ifndef OV_GENAI_C_API
+#    ifdef _WIN32
+#        define OV_GENAI_C_API __declspec(dllexport)
+#    else
+#        define OV_GENAI_C_API __attribute__((visibility("default")))
+#    endif
+#endif
+
+typedef struct {
+    int width;
+    int height;
+    int num_frames;
+    int frame_rate;
+} ov_genai_video_generation_config;
+
+typedef struct {
+    void* data;
+    size_t size;
+    size_t height;
+    size_t width;
+} text2video_custom_tensor;
+
+typedef struct ov_genai_text2video_pipeline ov_genai_text2video_pipeline;
+
+OV_GENAI_C_API int ov_genai_text2video_pipeline_create(
+    const char* model_path,
+    const char* device,
+    ov_genai_text2video_pipeline** pipeline);
+
+OV_GENAI_C_API void ov_genai_text2video_pipeline_destroy(ov_genai_text2video_pipeline* pipeline);
+
+OV_GENAI_C_API void ov_genai_text2video_pipeline_generate(
+    ov_genai_text2video_pipeline* pipeline,
+    const char* prompt,
+    const char* negative_prompt,
+    const ov_genai_video_generation_config* config,
+    text2video_custom_tensor* output_tensor);
+
+OV_GENAI_C_API void ov_genai_text2video_free_tensor(text2video_custom_tensor* tensor);
+
+#ifdef __cplusplus
+}
+#endif
