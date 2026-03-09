@@ -910,6 +910,8 @@ def main():
     taylorseer_config = None
     if args.taylorseer_config and args.genai and args.model_type in ["text-to-image", "text-to-video"]:
         ts_cfg = get_json_config(args.taylorseer_config)
+        if not isinstance(ts_cfg, dict):
+            raise ValueError(f"--taylorseer-config must be a JSON object, got {type(ts_cfg).__name__}")
         taylorseer_config = openvino_genai.TaylorSeerCacheConfig()
         taylorseer_config.cache_interval = ts_cfg.get("cache_interval", 3)
         taylorseer_config.disable_cache_before_step = ts_cfg.get("disable_cache_before_step", 6)
