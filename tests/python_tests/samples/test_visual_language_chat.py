@@ -112,7 +112,7 @@ class TestVisualLanguageChat:
         assert image_path.exists(), f"Missing sample image: {image_path}"
 
         # Test CPP sample
-        cpp_sample = SAMPLES_CPP_DIR / 'visual_language_lora'
+        cpp_sample = SAMPLES_CPP_DIR / "visual_language_lora"
         cpp_command = [cpp_sample, convert_model, str(image_path), "CPU", adapter_path, alpha]
         cpp_result = run_sample(cpp_command, prompt)
 

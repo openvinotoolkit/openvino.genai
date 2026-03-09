@@ -45,9 +45,7 @@ def read_images(path: str) -> list[Tensor]:
 
 def parse_lora_pairs(raw):
     if len(raw) % 2 != 0:
-        raise argparse.ArgumentTypeError(
-            "LoRA args must come in pairs: <LORA_SAFETENSORS> <ALPHA> ..."
-        )
+        raise argparse.ArgumentTypeError("LoRA args must come in pairs: <LORA_SAFETENSORS> <ALPHA> ...")
 
     pairs = []
     for i in range(0, len(raw), 2):
@@ -55,9 +53,7 @@ def parse_lora_pairs(raw):
         try:
             alpha = float(raw[i + 1])
         except ValueError as e:
-            raise argparse.ArgumentTypeError(
-                f"Invalid alpha '{raw[i+1]}' for LoRA '{path}'"
-            ) from e
+            raise argparse.ArgumentTypeError(f"Invalid alpha '{raw[i + 1]}' for LoRA '{path}'") from e
         pairs.append((path, alpha))
     return pairs
 

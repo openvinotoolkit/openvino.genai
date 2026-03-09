@@ -118,7 +118,7 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
 
     adapter_config = openvino_genai.AdapterConfig()
     if kwargs.get("adapters") is not None:
-        for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
+        for adapter, alpha in zip(kwargs["adapters"], kwargs["alphas"]):
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
 
@@ -340,7 +340,14 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
-        pipeline = openvino_genai.VLMPipeline(model_dir, device=device, adapters=adapter_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA", **ov_config)
+        pipeline = openvino_genai.VLMPipeline(
+            model_dir,
+            device=device,
+            adapters=adapter_config,
+            scheduler_config=scheduler_config,
+            ATTENTION_BACKEND="PA",
+            **ov_config,
+        )
     else:
         logger.info("Using OpenVINO GenAI VLMPipeline API")
         pipeline = openvino_genai.VLMPipeline(model_dir, device=device, adapters=adapter_config, **ov_config)
@@ -417,13 +424,14 @@ def load_visual_text_model(
                         model.set_lora_adapter = lambda _: None
                     if hasattr(model.model, "_require_grads_hook"):
                         model.model.disable_input_require_grads()
-        
+
         # Common LoRA support via PEFT
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
 
             from peft import PeftModel
+
             adapter_names = ["adapter_0"]
             model = PeftModel.from_pretrained(model, adapters[0], adapter_name=adapter_names[0])
 
@@ -452,7 +460,8 @@ def load_visual_text_model(
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVModelForVisualCausalLM
-        if 'adapters' in kwargs and kwargs['adapters'] is not None:
+
+        if "adapters" in kwargs and kwargs["adapters"] is not None:
             raise ValueError("Adapters are not supported for OVModelForVisualCausalLM.")
         try:
             model = OVModelForVisualCausalLM.from_pretrained(
