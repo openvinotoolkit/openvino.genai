@@ -190,7 +190,7 @@ ChatHistory ChatHistoryInternalState::build_normalized_history(const ChatHistory
         if (normalized_msg["role"].get_string() == "user") {
             normalized_msg["content"] = m_messages_metadata[i].normalized_content;
         }
-        
+
         normalized_history.push_back(std::move(normalized_msg));
     }
     return normalized_history;

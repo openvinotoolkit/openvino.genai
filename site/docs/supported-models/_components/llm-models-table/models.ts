@@ -204,6 +204,17 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'Exaone4ForCausalLM',
+    models: [
+      {
+        name: 'Exaone 4.0',
+        links: [
+          'https://huggingface.co/LGAI-EXAONE/EXAONE-4.0-1.2B',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'FalconForCausalLM',
     models: [
       {
