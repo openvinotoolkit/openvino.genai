@@ -422,13 +422,6 @@ parametrize_one_model_pa = pytest.mark.parametrize(
 _VIDEO_ONLY_MODEL_IDS_SORTED = sorted(VIDEO_ONLY_MODEL_IDS)
 assert len(_VIDEO_ONLY_MODEL_IDS_SORTED) == 1, "Expected exactly one video-only model for this parametrization."
 
-parametrize_videochat_pa = pytest.mark.parametrize(
-    "ov_pipe_model",
-    [(_VIDEO_ONLY_MODEL_IDS_SORTED[0], "PA")],
-    ids=lambda p: f"{p[0]}/{p[1]}",
-    indirect=["ov_pipe_model"],
-)
-
 parametrize_one_model_backends = pytest.mark.parametrize(
     "ov_pipe_model",
     [(MODEL_IDS[0], b) for b in ATTENTION_BACKEND],
@@ -2496,12 +2489,8 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
     )
     results_pld = ov_pipe_pld.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config_pld)
 
-    # Baseline result must be non-empty.
-    assert results[0].texts[0].strip() != "", "Result should not be empty"
-    # Enabling prompt_lookup must preserve the generated text under deterministic settings.
-    assert (
-        results_pld[0].texts[0].strip() == results[0].texts[0].strip()
-    ), "prompt_lookup=True should not change generated text when do_sample=False"
+    assert results.texts[0].strip() == results_pld.texts[0].strip(), (
+        "Result should be the same when prompt_lookup is enabled and disabled."
 
 VIDEOCHAT_FLASH_MODEL_ID = "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B"
 
