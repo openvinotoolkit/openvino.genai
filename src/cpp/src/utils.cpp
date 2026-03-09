@@ -436,6 +436,19 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
 }
 
 
+bool has_linear_attention_states(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
+    return get_cache_types(*read_model(models_path, properties)).has_linear();
+}
+
+bool has_linear_attention_states(const std::shared_ptr<ov::Model>& model) {
+    return get_cache_types(*model).has_linear();
+}
+
+bool has_linear_attention_states(const ModelsMap& models_map) {
+    const auto& [model_str, weights] = get_model_weights_pair(models_map, "language");
+    return get_cache_types(*singleton_core().read_model(model_str, weights)).has_linear();
+}
+
 CacheTypes get_cache_types(const ov::Model& model) {
     // "ReadValue" node is cache representation in stateful model
     const std::string state_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);

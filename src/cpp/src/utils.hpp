@@ -160,6 +160,11 @@ private:
 
 CacheTypes get_cache_types(const ov::Model& model);
 
+// Returns true when the model contains linear attention states (conv/SSM caches) that require SDPA backend.
+bool has_linear_attention_states(const std::filesystem::path& models_path, const ov::AnyMap& properties);
+bool has_linear_attention_states(const std::shared_ptr<ov::Model>& model);
+bool has_linear_attention_states(const ModelsMap& models_map);
+
 struct KVAxesPosition {
     size_t batch;
     size_t seq_len;

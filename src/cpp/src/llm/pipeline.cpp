@@ -183,17 +183,6 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
 }
 };
 
-// PA backend does not support models with linear attention states (conv/SSM caches).
-// Auto-switch to SDPA when linear states are detected and user did not explicitly set ATTENTION_BACKEND.
-bool needs_sdpa_for_linear_attention(const std::filesystem::path& models_path, const ov::AnyMap& properties) {
-    auto model = utils::read_model(models_path, properties);
-    return utils::get_cache_types(*model).has_linear();
-}
-
-bool needs_sdpa_for_linear_attention(const std::shared_ptr<ov::Model>& model) {
-    return utils::get_cache_types(*model).has_linear();
-}
-
 // Public LLMPipeline
 
 ov::genai::LLMPipeline::LLMPipeline(
@@ -216,11 +205,15 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
 
-    // Auto-switch to SDPA for models with linear attention states when user did not explicitly request a backend
-    if (attention_backend == PA_BACKEND && user_properties.find("ATTENTION_BACKEND") == user_properties.end()
-        && !is_npu_requested && !utils::explicitly_requires_paged_attention(user_properties)
-        && needs_sdpa_for_linear_attention(models_path, properties)) {
-        attention_backend = SDPA_BACKEND;
+    // PA backend does not support linear attention states (conv/SSM caches).
+    if (attention_backend == PA_BACKEND && !is_npu_requested
+        && utils::has_linear_attention_states(models_path, properties)) {
+        if (utils::explicitly_requires_paged_attention(user_properties)
+            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
+            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
+        } else {
+            attention_backend = SDPA_BACKEND;
+        }
     }
 
     if (is_npu_requested) {
@@ -261,11 +254,15 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
 
-    // Auto-switch to SDPA for models with linear attention states when user did not explicitly request a backend
-    if (attention_backend == PA_BACKEND && user_properties.find("ATTENTION_BACKEND") == user_properties.end()
-        && !is_npu_requested && !utils::explicitly_requires_paged_attention(user_properties)
-        && needs_sdpa_for_linear_attention(models_path, properties)) {
-        attention_backend = SDPA_BACKEND;
+    // PA backend does not support linear attention states (conv/SSM caches).
+    if (attention_backend == PA_BACKEND && !is_npu_requested
+        && utils::has_linear_attention_states(models_path, properties)) {
+        if (utils::explicitly_requires_paged_attention(user_properties)
+            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
+            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
+        } else {
+            attention_backend = SDPA_BACKEND;
+        }
     }
 
     if (is_npu_requested) {
@@ -309,16 +306,21 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
 
-    // Auto-switch to SDPA for models with linear attention states when user did not explicitly request a backend
-    if (attention_backend == PA_BACKEND && user_properties.find("ATTENTION_BACKEND") == user_properties.end()
-        && !is_npu_requested && !utils::explicitly_requires_paged_attention(user_properties)
-        && needs_sdpa_for_linear_attention(utils::singleton_core().read_model(model_str, weights_tensor))) {
-        attention_backend = SDPA_BACKEND;
+    // PA backend does not support linear attention states (conv/SSM caches).
+    const auto model_for_check = utils::singleton_core().read_model(model_str, weights_tensor);
+    if (attention_backend == PA_BACKEND && !is_npu_requested
+        && utils::has_linear_attention_states(model_for_check)) {
+        if (utils::explicitly_requires_paged_attention(user_properties)
+            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
+            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
+        } else {
+            attention_backend = SDPA_BACKEND;
+        }
     }
 
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(
-            utils::singleton_core().read_model(model_str, weights_tensor),
+            model_for_check,
             tokenizer,
             device,
             properties,
@@ -346,7 +348,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         // FIXME: Switch to StatefulPipeline::create after resolving issues
         //        with GPU and CPU for StatefulSpeculativeLLMPipeline
         m_pimpl = std::make_unique<StatefulLLMPipeline>(
-            utils::singleton_core().read_model(model_str, weights_tensor),
+            model_for_check,
             tokenizer,
             device,
             properties,

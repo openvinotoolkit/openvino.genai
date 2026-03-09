@@ -23,6 +23,7 @@
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
 #include "lm_encoding.hpp"
+#include "logger.hpp"
 
 using namespace ov::genai;
 
@@ -666,6 +667,17 @@ VLMPipeline::VLMPipeline(
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
     } else {
+        // PA backend does not support linear attention states (conv/SSM caches).
+        if (attention_backend == PA_BACKEND
+            && utils::has_linear_attention_states(models_dir, properties)) {
+            if (utils::explicitly_requires_paged_attention(user_properties)
+                || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
+                GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
+            } else {
+                attention_backend = SDPA_BACKEND;
+            }
+        }
+
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(user_properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -710,6 +722,17 @@ VLMPipeline::VLMPipeline(
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
     } else {
+        // PA backend does not support linear attention states (conv/SSM caches).
+        if (attention_backend == PA_BACKEND
+            && utils::has_linear_attention_states(models_map)) {
+            if (utils::explicitly_requires_paged_attention(user_properties)
+                || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
+                GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
+            } else {
+                attention_backend = SDPA_BACKEND;
+            }
+        }
+
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(user_properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
