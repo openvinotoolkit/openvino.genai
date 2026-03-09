@@ -589,15 +589,15 @@ private:
                 " config option to increase the limit.");
         }
 
-        utils::CacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        utils::CacheState& cache_state = m_inputs_embedder->get_kv_cache_state();
 
         if (m_is_chat_conversation) {
             if (m_use_full_chat_history) {
-                kv_cache_state.reset_state();
+                cache_state.reset_state();
                 m_language.reset_state();
                 m_language.get_tensor("attention_mask").set_shape({1, 0});
             } else {
-                utils::trim_kv_cache(m_language, kv_cache_state, std::nullopt);
+                utils::trim_kv_cache(m_language, cache_state, std::nullopt);
             }
         }
 
@@ -605,10 +605,10 @@ private:
         size_t request_id = 0;
         size_t block_size = 1; // not used
 
-        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - kv_cache_state.num_tokens_to_trim;
+        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - cache_state.num_tokens_to_trim;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
 
-        std::vector<int64_t> tokenized_history = kv_cache_state.get_state();
+        std::vector<int64_t> tokenized_history = cache_state.get_state();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
         OPENVINO_ASSERT(prompt_ids.get_size() >= tokenized_history.size(), "Prompt ids size is less than tokenized history size");
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), m_tokenizer.get_pad_token_id());
@@ -639,7 +639,7 @@ private:
 
         return ov::genai::get_lm_encoded_results(
             m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
-            position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
+            position_ids, token_type_ids, cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
             use_intermediate_remote_tensor
         );
     }
