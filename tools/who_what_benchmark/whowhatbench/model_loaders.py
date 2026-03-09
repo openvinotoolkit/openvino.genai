@@ -268,7 +268,7 @@ def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None, **kw
 
     adapter_config = openvino_genai.AdapterConfig()
     if "adapters" in kwargs and kwargs["adapters"] is not None:
-        for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
+        for adapter, alpha in zip(kwargs["adapters"], kwargs["alphas"]):
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
 
@@ -333,7 +333,7 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
 
     adapter_config = openvino_genai.AdapterConfig()
     if kwargs.get("adapters") is not None:
-        for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
+        for adapter, alpha in zip(kwargs["adapters"], kwargs["alphas"]):
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
 
