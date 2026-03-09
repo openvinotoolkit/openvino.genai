@@ -18,14 +18,20 @@ import openvino_genai as ov_genai
 from utils.constants import extra_generate_kwargs
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model, OVConvertedModelSchema
 # model_tmp_path fixture import required
-from utils.tokenizers import delete_rt_info, model_tmp_path
-from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, MAIN_PIPELINE_TYPES, PipelineType, GenerationChatInputsType
+from utils.tokenizers import (
+    delete_rt_info, 
+    model_tmp_path,  # noqa: F401
+)
+from utils.ov_genai_pipelines import LINEAR_ATTENTION_PIPELINE_TYPES, create_ov_pipeline, generate_and_compare, MAIN_PIPELINE_TYPES, PipelineType, GenerationChatInputsType
 from data.models import get_models_list, CHAT_MODELS_LIST, LINEAR_ATTENTION_MODELS_LIST
 
 
-def assert_hf_equals_genai(hf_reference, genai_output):
+def assert_hf_equals_genai(hf_reference, genai_output, **kwargs) -> None:
     __tracebackhide__ = True
-    assert hf_reference == genai_output, f"HF reference:\n{hf_reference}\nGenAI output:\n{genai_output}"
+    assert hf_reference == genai_output, (
+        f"HF reference:\n{hf_reference}\nGenAI output:\n{genai_output}"
+        + (f"\nAdditional info: {json.dumps(kwargs, indent=4)}" if kwargs else "")
+    )
 
 
 #
@@ -214,6 +220,24 @@ def test_batch_string_inputs(
     )
 
 
+@pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
+@pytest.mark.parametrize("generation_config_dict", TEST_CONFIGS[:1])
+@pytest.mark.parametrize("prompts", BATCHED_PROMPTS)
+def test_linear_attention_batch_string_inputs(
+    llm_model: OVConvertedModelSchema,
+    generation_config_dict: dict,
+    prompts: list[str],
+    pipeline_type: PipelineType,
+) -> None:
+    generate_and_compare(
+        model_schema=llm_model,
+        prompts=prompts,
+        generation_config=generation_config_dict,
+        pipeline_type=pipeline_type,
+    )
+
+
 @pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
 def test_batch_size_switch(ov_pipe: ov_genai.LLMPipeline) -> None:
     ov_pipe.generate(["a"], max_new_tokens=2)
@@ -252,10 +276,10 @@ def test_different_input_types_works_same_and_change_nothing(
 
 
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL])
+@pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 def test_linear_model_deterministic(llm_model: OVConvertedModelSchema, pipeline_type: PipelineType) -> None:
     ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
-    prompt = "The capital of France is"
+    prompt = "The capital of France is "
     config = ov_genai.GenerationConfig(max_new_tokens=20, apply_chat_template=False, do_sample=False)
     result1 = ov_pipe.generate(prompt, generation_config=config)
     result2 = ov_pipe.generate(prompt, generation_config=config)
@@ -264,7 +288,7 @@ def test_linear_model_deterministic(llm_model: OVConvertedModelSchema, pipeline_
 #
 # Chat scenario
 #
-@pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("inputs", CHAT_INPUTS)
 @pytest.mark.parametrize("input_type", [
     GenerationChatInputsType.STRING,
@@ -349,7 +373,6 @@ def test_chat_scenario_several_chats_in_series(
     llm_model: OVConvertedModelSchema,
     ov_pipe: ov_genai.LLMPipeline,
 ) -> None:
-
     generation_config_kwargs, _ = CHAT_INPUTS[0]
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(llm_model.opt_model.generation_config, ov_generation_config)
@@ -376,6 +399,41 @@ def test_chat_scenario_several_chats_in_series(
         ov_pipe.finish_chat()
 
         assert_hf_equals_genai(chat_history_hf, chat_history_ov)
+
+
+
+@pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
+def test_chat_scenario_several_chats_in_series_linear_cache(
+    llm_model: OVConvertedModelSchema, pipeline_type: PipelineType,
+) -> None:
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
+    generation_config_kwargs, _ = CHAT_INPUTS[0]
+    ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
+    hf_generation_config = generation_config_to_hf(llm_model.opt_model.generation_config, ov_generation_config)
+
+    for i in range(2):
+        chat_history_hf = []
+        chat_history_ov = []
+        ov_pipe.start_chat()
+        for prompt in QUESTIONS[:2]:
+            chat_history_hf.append({'role': 'user', 'content': prompt})
+            chat_history_ov.append({'role': 'user', 'content': prompt})
+
+            chat_prompt = llm_model.hf_tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
+            tokenized = llm_model.hf_tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
+            prompt_len = tokenized['input_ids'].numel()
+    
+            answer = llm_model.opt_model.generate(**tokenized, generation_config=hf_generation_config, **extra_generate_kwargs()).sequences[0]
+            answer_str = llm_model.hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
+            chat_history_hf.append({'role': 'assistant', 'content': answer_str})
+    
+            answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
+            chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
+
+        ov_pipe.finish_chat()
+
+        assert_hf_equals_genai(chat_history_hf, chat_history_ov, chat_number=i)
 
 
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
@@ -409,16 +467,13 @@ def test_generate_works_same_before_and_after_chat(ov_pipe: ov_genai.LLMPipeline
 
 
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL])
-def test_linear_attention_chat_matches_last_answer_after_cache_reset(llm_model, pipeline_type):
+@pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
+def test_linear_attention_chat_matches_last_answer_after_cache_reset(llm_model, pipeline_type):    
     questions = ["1+1=", "What was my previous question?"]
     
     ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
-
-    config = ov_genai.GenerationConfig()
-    config.max_new_tokens = 20
-    config.do_sample = False
-
+    
+    config = ov_genai.GenerationConfig(max_new_tokens=20, do_sample=False)
     chat_history = ov_genai.ChatHistory()
     for question in questions:
         chat_history.append({"role": "user", "content": question})
@@ -536,18 +591,11 @@ def test_callback_terminate_by_status(ov_pipe: ov_genai.LLMPipeline) -> None:
     assert len(ov_output.tokens[0]) < max_new_tokens
 
 
-@pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 def test_chat_scenario_callback_cancel(
     llm_model: OVConvertedModelSchema,
     ov_pipe: ov_genai.LLMPipeline,
 ) -> None:
-    callback_questions = [
-        '1+1=',
-        'Why is the Sun yellow?',
-        'What is the previous answer?',
-        'What was my first question?'
-    ]
-
     generation_config_kwargs = {'max_new_tokens': 20}
 
     chat_history_hf = []
@@ -694,7 +742,7 @@ def load_genai_pipe_with_configs(configs: list[tuple], temp_path):
     return ov_pipe
 
 
-def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
+def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):  # noqa: F811
     _, temp_path = model_tmp_path
     ov_pipe = load_genai_pipe_with_configs([({"eos_token_id": 37}, "config.json")], temp_path)
 
