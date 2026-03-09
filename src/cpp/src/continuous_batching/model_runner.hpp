@@ -435,7 +435,6 @@ public:
                         "Unexpected deepstack_visual_embeds shape when no vision tokens are scheduled");
                     std::fill_n(deepstack_visual_embeds.data<float>(), deepstack_visual_embeds.get_size(), 0.0f);
                 } else if (deepstack_group_data.scheduled_vision_tokens_num > 0) {
-                    const auto& mask = sequence_group->get_visual_pos_masks();
                     const auto& deepstack = sequence_group->get_deepstack_visual_embeds();
                     
                     const float* src = deepstack.data<const float>();
