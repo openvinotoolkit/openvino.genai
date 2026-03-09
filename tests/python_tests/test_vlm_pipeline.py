@@ -90,7 +90,7 @@ class VlmModelInfo:
 
 
 def _is_videochat_flash_model(model_id: str) -> bool:
-    return "VideoChat-Flash" in model_id
+    return "videochat-flash" in model_id
 
 class _VlmPipelineVideoChatFlashImageGuard:
     def __init__(self, pipeline: VLMPipeline, model_id: str):
