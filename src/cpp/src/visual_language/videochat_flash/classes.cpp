@@ -587,7 +587,7 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
 
     auto merge_dim = m_vlm_config.mm_hidden_size / 16;
     auto merge_model = videochat_flash_utils::build_bipartite_soft_matching_merge_opt_model(merge_dim);
-    auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", {});
+    auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", properties);
     m_ireq_queue_merge_model = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_merge_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_merge_model]() -> ov::InferRequest {
