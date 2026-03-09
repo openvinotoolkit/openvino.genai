@@ -1,6 +1,8 @@
 # Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import sys
+import platform
 from enum import Enum
 import os
 from pathlib import Path
@@ -343,6 +345,16 @@ def generate_and_compare(
             )
         else:
             compare_generation_results_vs_ref(ov_prompts[i], ref[i], ov_results)
+
+
+def should_skip_npuw_tests():
+    """
+    Don't query OpenVINO available devices directly in order to detect OpenVINO build without NPU.
+    """
+    return dict(
+        condition=sys.platform == "darwin" or platform.machine() in {"aarch64", "arm64", "ARM64"},
+        reason="NPU plugin is only available on Linux and Windows x86_64",
+    )
 
 
 def get_custom_add_extension_path() -> Path | None:
