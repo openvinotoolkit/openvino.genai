@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import argparse
 import numpy as np
 import openvino_genai as ov_genai
