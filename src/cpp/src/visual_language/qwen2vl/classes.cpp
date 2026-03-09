@@ -1015,15 +1015,15 @@ void InputsEmbedderQwen2VL::expand_video_tags_in_prompt(
     video_grid_thw_list.reserve(encoded_videos.size());
 
     for (const auto& encoded_video : encoded_videos) {
-        size_t grid_t = encoded_video.frame_num;
+        const size_t grid_t = encoded_video.frame_num;
         OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
-        size_t grid_h = encoded_video.resized_source_size.height;
-        size_t grid_w = encoded_video.resized_source_size.width;
+        const size_t grid_h = encoded_video.resized_source_size.height;
+        const size_t grid_w = encoded_video.resized_source_size.width;
         video_grid_thw_list.push_back({grid_t, grid_h, grid_w});
     }
 
     for (size_t video_id : videos_sequence) {
-        auto [grid_t, grid_h, grid_w] = video_grid_thw_list.at(video_id - video_base_id);
+        const auto [grid_t, grid_h, grid_w] = video_grid_thw_list.at(video_id - video_base_id);
         const size_t num_video_pad_tokens = calc_tokens_num(grid_t, grid_h, grid_w);
 
         std::string expanded_tag;
