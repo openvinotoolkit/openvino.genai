@@ -658,9 +658,21 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*,genai_tests_Release}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
+
+      - name: Resolve tests_continuous_batching path
+        if: ${{ matrix.test.run_condition }}
+        run: |
+          tests_binary_path=$(find "${{ env.INSTALL_DIR }}" -type f -name tests_continuous_batching | head -n 1 || true)
+          if [ -n "$tests_binary_path" ]; then
+            tests_dir=$(dirname "$tests_binary_path")
+            custom_extension_path=$(find "$tests_dir" -maxdepth 1 -type f \( -name 'openvino_custom_add_extension.so' -o -name 'openvino_custom_add_extension.dylib' -o -name 'openvino_custom_add_extension.dll' \) | head -n 1 || true)
+            if [ -n "$custom_extension_path" ]; then
+              echo "OPENVINO_CUSTOM_ADD_EXTENSION_PATH=$custom_extension_path" >> "$GITHUB_ENV"
+            fi
+          fi
 
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}

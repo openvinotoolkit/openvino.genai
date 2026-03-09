@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from enum import Enum
+import os
 from pathlib import Path
 from typing import Callable
 
@@ -342,6 +343,30 @@ def generate_and_compare(
             )
         else:
             compare_generation_results_vs_ref(ov_prompts[i], ref[i], ov_results)
+
+
+def get_custom_add_extension_path() -> Path | None:
+    env_path = os.getenv("OPENVINO_CUSTOM_ADD_EXTENSION_PATH")
+    if env_path:
+        candidate = Path(env_path)
+        if candidate.exists():
+            return candidate
+
+    repo_root = Path(__file__).resolve().parents[3]
+    print("repo_root:", repo_root)
+    local_candidates = [
+        repo_root / "build" / "bin" / "openvino_custom_add_extension.so",
+        repo_root / "build" / "bin" / "openvino_custom_add_extension.dylib",
+        repo_root / "build" / "bin" / "openvino_custom_add_extension.dll",
+        repo_root / "bin" / "openvino_custom_add_extension.so",
+        repo_root / "bin" / "libopenvino_custom_add_extension.so",
+    ]
+
+    for candidate in local_candidates:
+        if candidate.exists():
+            return candidate
+
+    return None
 
 
 class GenerationChatInputsType(Enum):
