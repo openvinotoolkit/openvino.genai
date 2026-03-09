@@ -605,7 +605,7 @@ private:
         size_t request_id = 0;
         size_t block_size = 1; // not used
 
-        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - cache_state.num_tokens_to_trim;
+        size_t history_size = cache_state.get_state().size() - cache_state.num_tokens_to_trim;
         size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
 
         std::vector<int64_t> tokenized_history = cache_state.get_state();
