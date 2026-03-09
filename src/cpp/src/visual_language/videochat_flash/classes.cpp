@@ -303,17 +303,20 @@ ov::Tensor remove_second_dim_first_element(const ov::Tensor& input) {
     const ov::Shape& input_shape = input.get_shape();
     OPENVINO_ASSERT(input_shape.size() == 3, "Input tensor must be 3D [batch, seq, hidden], got ", input_shape.size(), "D.");
     OPENVINO_ASSERT(input_shape[1] >= 1, "Second dimension of input tensor must be at least 1.");
-    const auto element_type = input.get_element_type();
-    const size_t element_size = element_type.size();
 
+    const auto element_type = input.get_element_type();
+    OPENVINO_ASSERT(element_type == ov::element::f32, "Input tensor element type must be f32.");
+
+    const size_t element_size = element_type.size();
     OPENVINO_ASSERT(element_size > 0, "Unsupported tensor element type in remove_second_dim_first_element.");
+
     auto input_data = input.data<float>();
     ov::Shape output_shape = input_shape;
     const size_t org_seq_len = output_shape[1];
     output_shape[1] -= 1;
     const size_t seq_len = output_shape[1];
     const size_t head_elements = input_shape[2];
-    ov::Tensor output(input.get_element_type(), output_shape);
+    ov::Tensor output(element_type, output_shape);
     auto output_data = output.data<float>();
 
     for(int i=0; i < input_shape[0]; i++) {
@@ -474,9 +477,7 @@ ov::Tensor efficient_flatten(ov::Tensor& original_tensor) {
         original_shape[2]                      // W
     };
     ov::Tensor new_tensor(dtype, new_shape);
-    if (original_tensor.get_size() != new_tensor.get_size()) {
-         OPENVINO_THROW("Flatten error: Element count mismatch during reshape.");
-    }
+    OPENVINO_ASSERT(original_tensor.get_size() == new_tensor.get_size(), "Flatten error: Element count mismatch during reshape.");
     const void* src_data = original_tensor.data();
     void* dst_data = new_tensor.data();
     std::memcpy(dst_data, src_data, original_tensor.get_byte_size());
@@ -487,7 +488,10 @@ ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
     if (tensors.empty()) return ov::Tensor();
 
     ov::Shape single_shape = tensors[0].get_shape();
+    OPENVINO_ASSERT(!single_shape.empty(), "Input tensors must have rank >= 1.");
+    OPENVINO_ASSERT(single_shape[0] == 1, "Each tensor must have shape[0] == 1 for concatenation.");
     auto type = tensors[0].get_element_type();
+    const size_t single_tensor_byte_size = tensors[0].get_byte_size();
 
     ov::Shape final_shape = single_shape;
     final_shape[0] = tensors.size();
@@ -496,7 +500,15 @@ ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
     uint8_t* dst_ptr = static_cast<uint8_t*>(merged_tensor.data());
 
     for (const auto& t : tensors) {
+        OPENVINO_ASSERT(t.get_element_type() == type, "All tensors must have the same element type.");
+        const ov::Shape& shape = t.get_shape();
+        OPENVINO_ASSERT(shape.size() == single_shape.size(), "All tensors must have the same rank.");
+        OPENVINO_ASSERT(shape[0] == 1, "Each tensor must have shape[0] == 1 for concatenation.");
+        OPENVINO_ASSERT(std::equal(shape.begin() + 1, shape.end(), single_shape.begin() + 1),
+                        "All tensors must have identical dimensions except dim0.");
         size_t byte_size = t.get_byte_size();
+        OPENVINO_ASSERT(byte_size == single_tensor_byte_size,
+                        "All tensors must have the same byte size for concatenation.");
         std::memcpy(dst_ptr, t.data(), byte_size);
         dst_ptr += byte_size;
     }
@@ -511,7 +523,9 @@ ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vi
     );
 
     ov::Shape full_shape = transpose_features.get_shape();
+    OPENVINO_ASSERT(full_shape.size() == 5, "transpose_features must be 5D [N, C, T, H, W].");
     size_t N = full_shape[0];
+    OPENVINO_ASSERT(N > 0, "transpose_features batch size N must be greater than 0.");
     size_t single_sample_size = transpose_features.get_size() / N;
     float* src_ptr = transpose_features.data<float>();
     std::vector<ov::Tensor> results_list;
@@ -536,19 +550,9 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap properties) : VisionEncoder(model_dir, device, properties) {
-    // auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
-
-    // auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
-    // ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
-
-    // m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-    //     compiled_model.get_property(ov::optimal_number_of_infer_requests),
-    //     [&compiled_model]() -> ov::InferRequest {
-    //         return compiled_model.create_infer_request();
-    //     });
 
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
-    auto compiled_model_vision = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
+    auto compiled_model_vision = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, properties);
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model_vision.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model_vision]() -> ov::InferRequest {
@@ -557,7 +561,7 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
 
     auto merge_dim = m_vlm_config.mm_hidden_size / 16;
     auto merge_model = videochat_flash_utils::build_bipartite_soft_matching_merge_opt_model(merge_dim);
-    auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", {});
+    auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", properties);
     m_ireq_queue_merge_model = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_merge_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_merge_model]() -> ov::InferRequest {
@@ -727,6 +731,11 @@ ov::Tensor InputsEmbedderVideoChat_Flash::get_inputs_embeds(const std::string& i
                 return text_length;
             },
             [&](size_t image_id) {
+                OPENVINO_ASSERT(
+                    image_id >= base_id,
+                    "VideoChat-Flash does not support resolving visual placeholders from previous rounds. "
+                    "Expected image_id >= base_id, got image_id=", image_id, ", base_id=", base_id, "."
+                );
                 const ov::Tensor& image_embeds = images_features_proj.at(image_id - base_id);
                 size_t im_length = image_embeds.get_shape().at(1);
                 std::copy_n(

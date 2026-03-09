@@ -139,7 +139,7 @@ MODEL_IDS: list[str] = [
     "optimum-intel-internal-testing/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
-    *[m for m in VIDEO_MODEL_IDS],
+    *VIDEO_MODEL_IDS,
 ]
 
 
@@ -154,7 +154,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next": lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
-    "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B": lambda idx: f"<|image_{idx + 1}|>",
+    "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
@@ -168,7 +168,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
-    "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B": lambda idx: f"<|image_{idx + 1}|>",
+    "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B": lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
 
@@ -2514,15 +2514,6 @@ def ov_videochatflash_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeline:
     model_path = _get_ov_model(VIDEOCHAT_FLASH_MODEL_ID)
     return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_backend)
 
-@pytest.fixture(scope="module", ids=lambda b: f"VideoChat-Flash/{b}")
-def ov_videochatflash_pipe_PA(request: pytest.FixtureRequest) -> VLMPipeline:
-    """
-    Raw VideoChat-Flash pipeline without _VlmPipelineImageAdapter.
-    Used for input-contract tests that must not auto-pad frames.
-    """
-    model_path = _get_ov_model(VIDEOCHAT_FLASH_MODEL_ID)
-    return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND="PA")
-
 def test_videochatflash_rejects_image_input(ov_videochatflash_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor):
     generation_config = _setup_generation_config(ov_videochatflash_pipe_raw, max_new_tokens=5, do_sample=False)
     with pytest.raises(RuntimeError):
@@ -2578,3 +2569,25 @@ def test_vlm_continuous_batching_generate_videochat(
     while handle.get_status() != GenerationStatus.FINISHED:
         ov_continious_batching_pipe_videochat.step()
     outputs = handle.read_all()
+
+    assert isinstance(outputs, collections.abc.Sequence)
+    assert len(outputs) > 0
+    non_empty_text_found = False
+    for output in outputs:
+        if isinstance(output, str):
+            if output.strip():
+                non_empty_text_found = True
+                break
+        elif hasattr(output, "text"):
+            text = getattr(output, "text")
+            if isinstance(text, str) and text.strip():
+                non_empty_text_found = True
+                break
+        elif hasattr(output, "texts"):
+            texts = getattr(output, "texts")
+            if isinstance(texts, collections.abc.Sequence) and any(
+                isinstance(t, str) and t.strip() for t in texts
+            ):
+                non_empty_text_found = True
+                break
+    assert non_empty_text_found
