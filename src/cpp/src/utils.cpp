@@ -461,7 +461,10 @@ CacheTypes get_cache_types(const ov::Model& model) {
 
         if (rank == 4 && dynamic_axis_count == 1 && zero_axis_count == 1) {
             cache_types.add_kvcache();
-        } else if (rank == 3 && dynamic_axis_count == 1) {
+        } else if (
+            (rank == 3 && dynamic_axis_count == 1)  // conv state
+            || (rank == 4 && dynamic_axis_count == 1 && zero_axis_count == 0)  // ssm state
+        ) {  
             cache_types.add_linear();
         } else {
             continue;

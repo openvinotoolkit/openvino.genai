@@ -313,7 +313,10 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state) {
     TokenizedInputs encoded_input;
     size_t cache_len = cache_state.get_state().size();
-    if (cache_len == 0) {
+    if (
+        cache_len == 0 
+        || cache_state.needs_reset()  // models with linear attention needs full input if prefix is altered
+    ) {
         encoded_input.input_ids = new_chat_tokens;
         ov::Tensor new_attention_mask(ov::element::i64, new_chat_tokens.get_shape());
         std::fill_n(new_attention_mask.data<int64_t>(), new_chat_tokens.get_shape()[1], 1);
