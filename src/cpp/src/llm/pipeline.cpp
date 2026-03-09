@@ -153,7 +153,7 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
         ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
     OPENVINO_ASSERT(main_model_descr.model, "Model descriptor must contain a valid model");
 
-    if (draft_model_descr.model != nullptr) {
+    if (draft_model_descr.model) {
         // FIXME: Add support for StatefulSpeculativeLLMPipeline for non-NPU devices for both models.
         OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",
                         "Stateful FastDraft and Stateful Eagle3 Speculative Decoding require NPU to be "
