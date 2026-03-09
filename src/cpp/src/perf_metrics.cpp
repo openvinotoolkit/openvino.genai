@@ -191,17 +191,20 @@ PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
     auto& new_token_infer_durations = res.raw_metrics.m_token_infer_durations;
     auto& new_batch_sizes = res.raw_metrics.m_batch_sizes;
     auto& new_times_to_first_token = res.raw_metrics.m_times_to_first_token;
+    auto& new_chat_template_durations = res.raw_metrics.chat_template_durations;
     auto& right_inference_durations = right.raw_metrics.m_inference_durations;
     auto& right_token_infer_durations = right.raw_metrics.m_token_infer_durations;
     auto& right_durations = right.raw_metrics.m_durations;
     auto& right_batch_sizes = right.raw_metrics.m_batch_sizes;
     auto& right_times_to_first_token = right.raw_metrics.m_times_to_first_token;
-
+    auto& right_chat_template_durations = right.raw_metrics.chat_template_durations;
+    
     new_durations.insert(new_durations.end(), right_durations.begin(), right_durations.end());
     new_inference_durations.insert(new_inference_durations.end(), right_inference_durations.begin(), right_inference_durations.end());
     new_token_infer_durations.insert(new_token_infer_durations.end(), right_token_infer_durations.begin(), right_token_infer_durations.end());
     new_times_to_first_token.insert(new_times_to_first_token.end(), right_times_to_first_token.begin(), right_times_to_first_token.end());
     new_batch_sizes.insert(new_batch_sizes.end(), right_batch_sizes.begin(), right_batch_sizes.end());
+    new_chat_template_durations.insert(new_chat_template_durations.end(), right_chat_template_durations.begin(), right_chat_template_durations.end());
 
     // Concatenate tokenization/detokenization and total generation times.
     auto& new_tok_durations = res.raw_metrics.tokenization_durations;
