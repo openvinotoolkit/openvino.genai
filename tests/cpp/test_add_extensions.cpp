@@ -4,29 +4,31 @@
 
 #include <gtest/gtest.h>
 
+#include <openvino/frontend/extension.hpp>
+#include <openvino/openvino.hpp>
+
 #include "openvino/genai/extensions.hpp"
 #include "utils.hpp"
 
 using namespace ov::genai::utils;
 
 TEST(TestAddExtensions, test_extract_extensions) {
-    ov::AnyMap properties1 = {
-        ov::genai::extensions(std::vector<std::filesystem::path>{"path_extension1", "path_extension2"})};
-    ov::AnyMap properties2 = {
-        ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{nullptr, nullptr})};
-    ov::genai::ExtensionList extensionList1{"path_extension1", "path_extension2"};
-    ov::genai::ExtensionList extensionList2{nullptr, nullptr};
+    ov::AnyMap properties_path = {ov::genai::extensions(std::vector<std::filesystem::path>{"non_existent_path"})};
+    auto op = std::make_shared<ov::frontend::OpExtension<>>("Relu", "MyRelu");
+    ov::AnyMap properties_op = {ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{op})};
+    ov::genai::ExtensionList extensionList_path{"non_existent_path"};
+    ov::genai::ExtensionList extensionList_op{op};
 
-    EXPECT_EQ(extract_extensions(properties1), extensionList1);
-    EXPECT_EQ(extract_extensions(properties2), extensionList2);
+    EXPECT_EQ(extract_extensions(properties_path), extensionList_path);
+    EXPECT_EQ(extract_extensions(properties_op), extensionList_op);
 }
 
 TEST(TestAddExtensions, test_extract_extensions_to_core) {
     // Use intentionally non-existent, platform-agnostic extension paths to trigger error handling.
-    ov::AnyMap properties1 = {ov::genai::extensions(
-        std::vector<std::filesystem::path>{"non_existent_extension1", "non_existent_extension2"})};
-    ov::AnyMap properties2 = {ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{})};
+    ov::AnyMap properties_path = {ov::genai::extensions(std::vector<std::filesystem::path>{"non_existent_path"})};
+    ov::AnyMap properties_op = {ov::genai::extensions(
+        std::vector<std::shared_ptr<ov::Extension>>{std::make_shared<ov::frontend::OpExtension<>>("Relu", "MyRelu")})};
 
-    EXPECT_THROW(extract_extensions_to_core(properties1), ov::Exception);
-    EXPECT_NO_THROW(extract_extensions_to_core(properties2));
+    EXPECT_THROW(extract_extensions_to_core(properties_path), ov::Exception);
+    EXPECT_NO_THROW(extract_extensions_to_core(properties_op));
 }
