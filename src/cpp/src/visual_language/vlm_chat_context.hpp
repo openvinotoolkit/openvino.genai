@@ -51,6 +51,8 @@ public:
 
     void rollback();
 
+    void apply_pruning_to_last_message();
+
 private:
     const ChatHistory& m_history;
     const std::shared_ptr<VisionRegistry>& m_vision_registry;

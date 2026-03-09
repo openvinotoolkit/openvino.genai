@@ -205,8 +205,6 @@ def get_huggingface_models(
             "local_files_only": local_files_only,
             "trust_remote_code": trust_remote_code,
         }
-        if is_eagle_model:
-            params["eagle3"] = True
         return model_class.from_pretrained(model_id, **params)
 
     opt_model = retry_request(auto_model_from_pretrained)
@@ -257,12 +255,15 @@ def sanitize_model_id(model_id: str) -> str:
     return model_id.replace("/", "_")
 
 
+TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
+
+
 def download_and_convert_model_class(
     model_id: str, 
     model_class: Type[OVModel],
-    trust_remote_code=False,
     **tokenizer_kwargs,
 ) -> OVConvertedModelSchema:
+    trust_remote_code = model_id in TRUST_REMOTE_CODE_MODELS
     dir_name = sanitize_model_id(model_id)
     if model_class.__name__ not in ["OVModelForCausalLM"]:
         dir_name = f"{dir_name}_{model_class.__name__}"

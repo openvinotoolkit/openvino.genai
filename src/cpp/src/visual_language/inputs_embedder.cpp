@@ -149,6 +149,11 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_encoded_input_ids(const std::str
     return new_input_ids;
 }
 
+// For prompt lookup, encode original prompt as lookup table.
+ov::Tensor InputsEmbedder::IInputsEmbedder::encode_prompt(const std::string& original_prompt) {
+    return m_tokenizer.encode(original_prompt).input_ids;
+}
+
 std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors(const std::vector<ov::Tensor>& images) {
     std::vector<ov::Tensor> single_image_tensors;
     for (const auto& image : images) {
@@ -382,6 +387,10 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(c
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
 }
 
+ov::Tensor InputsEmbedder::encode_prompt(const std::string& original_prompt) {
+    return m_impl->encode_prompt(original_prompt);
+}
+
 void InputsEmbedder::set_position_ids(const ov::Tensor& position_ids) {
     m_impl->set_position_ids(position_ids);
 }
@@ -424,6 +433,10 @@ void InputsEmbedder::finish_chat() {
 
 void InputsEmbedder::set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
     return m_impl->set_vision_token_pruning_config(pruning_ratio, relevance_weight);
+}
+
+std::string InputsEmbedder::get_last_pruned_prompt(const std::string& original_prompt) const {
+    return m_impl->get_last_pruned_prompt(original_prompt);
 }
 
 NormalizedPrompt InputsEmbedder::normalize_prompt(
