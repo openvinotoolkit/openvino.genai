@@ -373,6 +373,26 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 } // namespace
 
+ov::AnyMap inherit_cache_properties(const ov::AnyMap& sub_properties,
+                                    const ov::AnyMap& main_properties) {
+    const std::array<std::string, 3> inheritable_keys = {
+        ov::cache_dir.name(),
+        ov::cache_mode.name(),
+        ov::cache_encryption_callbacks.name(),
+    };
+    ov::AnyMap result = sub_properties;
+    for (const auto& key : inheritable_keys) {
+        if (result.find(key) != result.end()) {
+            continue;
+        }
+        auto it = main_properties.find(key);
+        if (it != main_properties.end()) {
+            result[key] = it->second;
+        }
+    }
+    return result;
+}
+
 std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
     bool enable_save_ov_model = false;
     ov::AnyMap properties = external_properties;

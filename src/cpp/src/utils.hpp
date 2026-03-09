@@ -142,6 +142,15 @@ ov::Core& singleton_core();
 
 std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties);
 
+/// @brief Inherit cache-related properties from main properties into a sub-model
+/// property map when they are not explicitly set.
+///
+/// Copies ov::cache_dir, ov::cache_mode, and ov::cache_encryption_callbacks from
+/// @p main_properties into @p sub_properties only if the sub map does not already
+/// define them, so explicit sub-model overrides are preserved.
+ov::AnyMap inherit_cache_properties(const ov::AnyMap& sub_properties,
+                                    const ov::AnyMap& main_properties);
+
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config);
