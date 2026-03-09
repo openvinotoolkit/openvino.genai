@@ -341,7 +341,7 @@ private:
             const PruningContext& context) {
             return m_pruning_processor->execute(context,
                                                 m_position_ids,
-                                                m_kv_cache_state,
+                                                m_cache_state,
                                                 m_prev_hist_length);
         }
     };
