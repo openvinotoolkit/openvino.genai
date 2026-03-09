@@ -114,7 +114,9 @@ public:
             : utils::pop_or_default<ov::AnyMap>(device_properties, device, {});
 
         if (m_generation_config.adapters) {
-            m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
+            m_generation_config.adapters->set_tensor_name_prefix(
+                m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
+            );
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
@@ -187,7 +189,9 @@ public:
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
         if (m_generation_config.adapters) {
-            m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
+            m_generation_config.adapters->set_tensor_name_prefix(
+                m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
+            );
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
