@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Literal, Callable
 from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
+from openvino.frontend import OpExtension
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -877,6 +878,13 @@ def test_pipelines_generate_with_streaming(
         mock_streamer.assert_not_called()
     else:
         mock_streamer.assert_called()
+
+def test_llm_pipeline_add_extension_custom_op():
+    model_id = "katuni4ka/tiny-random-phi3"
+    models_path = download_and_convert_model(model_id).models_path
+
+    properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
+    ov_genai.LLMPipeline(models_path, "CPU", **properties)
 
 
 def test_llm_pipeline_add_extension():

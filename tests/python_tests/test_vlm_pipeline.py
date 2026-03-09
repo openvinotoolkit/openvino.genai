@@ -42,6 +42,7 @@ import sys
 import os
 import numpy as np
 import transformers
+from openvino.frontend import OpExtension
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
 from huggingface_hub import snapshot_download
@@ -2431,18 +2432,6 @@ def test_cdpruner_continuous_batching_chat_history(
     assert baseline3 == pruned3, f"Turn 3 mismatch: baseline='{baseline3}', pruned='{pruned3}'"
 
 
-def test_vlm_pipeline_add_extension():
-    models_path = _get_ov_model(MODEL_IDS[0])
-
-    properties = {"extensions": [str(openvino_tokenizers._ext_path)]}
-    VLMPipeline(models_path, "CPU", config=properties)
-
-    properties = {"extensions": ["fake_path"]}
-    with pytest.raises(RuntimeError) as exc_info:
-        VLMPipeline(models_path, "CPU", config=properties)
-    assert "Cannot find entry point to the extension library" in str(exc_info.value)
-
-
 def test_vlm_prompt_lookup_functionality(cat_tensor):
     """Test prompt_lookup functionality for Qwen2VL model."""
     model_id = "optimum-intel-internal-testing/tiny-random-qwen2vl"
@@ -2461,3 +2450,22 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
     assert results.texts[0].strip() == results_pld.texts[0].strip(), (
         "Result should be the same when prompt_lookup is enabled and disabled."
     )
+
+
+def test_vlm_pipeline_add_extension_custom_op():
+    models_path = _get_ov_model(MODEL_IDS[0])
+
+    properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
+    VLMPipeline(models_path, "CPU", config=properties)
+
+
+def test_vlm_pipeline_add_extension():
+    models_path = _get_ov_model(MODEL_IDS[0])
+
+    properties = {"extensions": [str(openvino_tokenizers._ext_path)]}
+    VLMPipeline(models_path, "CPU", config=properties)
+
+    properties = {"extensions": ["fake_path"]}
+    with pytest.raises(RuntimeError) as exc_info:
+        VLMPipeline(models_path, "CPU", config=properties)
+    assert "Cannot find entry point to the extension library" in str(exc_info.value)
