@@ -19,7 +19,7 @@ using ov::genai::CallbackTypeVariant;
 using ov::genai::StreamingStatus;
 using ov::genai::TextStreamer;
 using ov::genai::TextParserStreamer;
-using ov::genai::IncrementalParser;
+using ov::genai::Parser;
 using ov::genai::JsonContainer;
 using ov::genai::Tokenizer;
 
@@ -43,7 +43,7 @@ auto text_parser_streamer_docstring = R"(
 Base class for text streamers which works with parsed messages. In order to use inherit from this class and implement write method which takes a dict as input parameter.
 
 tokenizer: Tokenizer object to decode tokens into text.
-parsers: vector of IncrementalParser to process the text stream incrementally.
+parsers: vector of Parser to process the text stream incrementally.
 )";
 
 class ConstructableStreamer: public StreamerBase {
@@ -133,11 +133,11 @@ void init_streamers(py::module_& m) {
         
     py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>, TextStreamer>(m, "TextParserStreamer", text_parser_streamer_docstring)
         .def(py::init([](const Tokenizer& tokenizer,
-                         std::vector<std::shared_ptr<IncrementalParser>> parsers) {
+                         std::vector<std::shared_ptr<Parser>> parsers) {
                 return std::make_shared<ConstructableTextParserStreamer>(tokenizer, parsers);
             }),
             py::arg("tokenizer"),
-            py::arg("parsers") = std::vector<std::shared_ptr<IncrementalParser>>(),
+            py::arg("parsers") = std::vector<std::shared_ptr<Parser>>(),
             py::keep_alive<1, 3>())
         
         // If we inherit and implement 'write' in Python and try to call write with text chunks or integer tokens 
