@@ -31,7 +31,7 @@ import collections
 from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Generator
+from typing import Any, Callable, Generator
 import openvino_tokenizers
 import openvino
 import PIL
@@ -2496,10 +2496,12 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
     )
     results_pld = ov_pipe_pld.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config_pld)
 
-    assert results.texts[0].strip() == results_pld.texts[0].strip(), (
-        "Result should be the same when prompt_lookup is enabled and disabled."
-    )
+    # Baseline result must be non-empty.
     assert results[0].texts[0].strip() != "", "Result should not be empty"
+    # Enabling prompt_lookup must preserve the generated text under deterministic settings.
+    assert (
+        results_pld[0].texts[0].strip() == results[0].texts[0].strip()
+    ), "prompt_lookup=True should not change generated text when do_sample=False"
 
 VIDEOCHAT_FLASH_MODEL_ID = "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B"
 
