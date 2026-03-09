@@ -450,6 +450,135 @@ std::vector<std::string> phonemize_single_text(misaki::G2P& g2p,
     OPENVINO_ASSERT(!phoneme_chunks.empty(), "Kokoro preprocessing produced no phoneme chunks for input text");
     return phoneme_chunks;
 }
+
+std::vector<std::string> chunk_phonemes_from_tokens(const std::vector<ov::genai::SpeechToken>& tokens,
+                                                    const ov::genai::SpeechGenerationConfig& generation_config) {
+    auto rstrip_spaces = [](std::string value) {
+        while (!value.empty() && value.back() == ' ') {
+            value.pop_back();
+        }
+        return value;
+    };
+
+    auto lstrip_spaces = [](std::string value) {
+        std::size_t first = 0;
+        while (first < value.size() && value[first] == ' ') {
+            ++first;
+        }
+        return value.substr(first);
+    };
+
+    auto token_piece = [&](const ov::genai::SpeechToken& token) {
+        return token.phonemes + (token.whitespace ? " " : "");
+    };
+
+    auto tokens_to_ps = [&](const std::vector<ov::genai::SpeechToken>& token_seq) {
+        std::string result;
+        for (const auto& token : token_seq) {
+            result += token_piece(token);
+        }
+        return rstrip_spaces(result);
+    };
+
+    auto sanitize_utf8 = [](const std::string& value) {
+        return truncate_utf8_codepoints(value, utf8_codepoint_length(value));
+    };
+
+    auto in_set = [](const std::string& value, const std::string& set_chars) {
+        return value.size() == 1 && set_chars.find(value[0]) != std::string::npos;
+    };
+
+    auto waterfall_last = [&](const std::vector<ov::genai::SpeechToken>& token_seq, std::size_t next_count) {
+        static const std::vector<std::string> waterfall = {"!.?…", ":;", ",—"};
+        static const std::vector<std::string> bumps = {")", "”"};
+
+        for (const auto& marks : waterfall) {
+            std::optional<std::size_t> split_index;
+            for (std::size_t i = token_seq.size(); i-- > 0;) {
+                if (in_set(token_seq[i].phonemes, marks)) {
+                    split_index = i;
+                    break;
+                }
+            }
+            if (!split_index.has_value()) {
+                continue;
+            }
+
+            std::size_t z = *split_index + 1;
+            if (z < token_seq.size()) {
+                for (const auto& bump : bumps) {
+                    if (token_seq[z].phonemes == bump) {
+                        ++z;
+                        break;
+                    }
+                }
+            }
+
+            std::vector<ov::genai::SpeechToken> prefix(token_seq.begin(), token_seq.begin() + static_cast<std::ptrdiff_t>(z));
+            const auto prefix_len = utf8_codepoint_length(tokens_to_ps(prefix));
+            if (next_count >= prefix_len && (next_count - prefix_len) <= generation_config.max_phoneme_length) {
+                return z;
+            }
+        }
+
+        return token_seq.size();
+    };
+
+    std::vector<std::string> phoneme_chunks;
+    std::vector<ov::genai::SpeechToken> tks;
+    std::size_t pcount = 0;
+
+    for (const auto& token : tokens) {
+        std::string next_piece = token_piece(token);
+        if (next_piece.empty()) {
+            continue;
+        }
+
+        const std::size_t next_pcount = pcount + utf8_codepoint_length(rstrip_spaces(next_piece));
+
+        if (next_pcount > generation_config.max_phoneme_length) {
+            const std::size_t z = waterfall_last(tks, next_pcount);
+            if (z > 0) {
+                std::vector<ov::genai::SpeechToken> prefix(tks.begin(), tks.begin() + static_cast<std::ptrdiff_t>(z));
+                auto chunk = tokens_to_ps(prefix);
+                if (!chunk.empty()) {
+                    phoneme_chunks.push_back(sanitize_utf8(chunk));
+                }
+                tks.erase(tks.begin(), tks.begin() + static_cast<std::ptrdiff_t>(z));
+                pcount = utf8_codepoint_length(tokens_to_ps(tks));
+                if (tks.empty()) {
+                    next_piece = lstrip_spaces(next_piece);
+                }
+            }
+        }
+
+        if (tks.empty() && utf8_codepoint_length(next_piece) > generation_config.max_phoneme_length) {
+            std::string limited_piece = truncate_utf8_codepoints(next_piece, generation_config.max_phoneme_length);
+            limited_piece = rstrip_spaces(limited_piece);
+            if (!limited_piece.empty()) {
+                phoneme_chunks.push_back(sanitize_utf8(limited_piece));
+            }
+            continue;
+        }
+
+        if (next_piece.empty()) {
+            continue;
+        }
+
+        tks.push_back(token);
+        pcount += utf8_codepoint_length(next_piece);
+    }
+
+    if (!tks.empty()) {
+        auto chunk = tokens_to_ps(tks);
+        if (!chunk.empty()) {
+            phoneme_chunks.push_back(sanitize_utf8(chunk));
+        }
+    }
+
+    OPENVINO_ASSERT(!phoneme_chunks.empty(), "Kokoro token preprocessing produced no phoneme chunks");
+    return phoneme_chunks;
+}
 #endif
 
 }  // namespace
@@ -578,22 +707,6 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
     (void)generation_config;
     OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
 #else
-    // Python -> C++ quick map for side-by-side debugging:
-    // - `KPipeline.__init__` (`ALIASES`/G2P selection) -> `normalize_language_variant` + `misaki::make_engine(...)`
-    // - `KPipeline.en_tokenize` / `tokens_to_ps` -> newline segmentation + token loop building phoneme chunks
-    // - `examples/export.py::ps[:510]` -> `truncate_utf8_codepoints(..., max_phoneme_length)`
-    // - `KPipeline.load_voice` (including multi-voice averaging) -> `split_voice_list` + `load_voice_binary` + averaging
-    // - `KModel.forward` phoneme->vocab->`[0, *ids, 0]` + length assert -> token-id build + context check below
-    // - `KPipeline.infer` / `load_voice(pack[len(ps)-1])` -> `length_index` style-row selection
-    // - `KModelForONNX.forward(input_ids, ref_s, speed)` -> OV request tensors (`input_ids`, `ref_s`, `speed`) + infer
-    const bool has_external_speaker_embedding = static_cast<bool>(speaker_embedding);
-    if (has_external_speaker_embedding) {
-        OPENVINO_ASSERT(speaker_embedding.get_element_type() == ov::element::f32,
-                        "Kokoro backend expects speaker_embedding element type f32");
-    }
-
-    const auto generation_start = std::chrono::steady_clock::now();
-
     const std::string language_variant = normalize_language_variant(generation_config.language);
     if (language_variant != m_runtime->language_variant()) {
         m_runtime->set_language_variant(language_variant);
@@ -602,60 +715,121 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
         install_espeak_fallback_if_available(m_g2p, language_variant);
     }
 
+    std::vector<std::vector<std::string>> all_phoneme_chunks;
+    all_phoneme_chunks.reserve(texts.size());
+    for (const auto& text : texts) {
+        const auto text_tokenize_start = std::chrono::steady_clock::now();
+        auto phoneme_chunks = phonemize_single_text(*m_g2p, text, generation_config);
+        const auto text_tokenize_end = std::chrono::steady_clock::now();
+        all_phoneme_chunks.push_back(std::move(phoneme_chunks));
+    }
+
+    auto result = synthesize_from_phoneme_chunks(all_phoneme_chunks, speaker_embedding, generation_config);
+    m_perf_metrics = result.perf_metrics;
+    return result;
+#endif
+}
+
+Text2SpeechDecodedResults KokoroTTSImpl::generate_from_phonemes(
+    const std::vector<std::vector<std::string>>& phoneme_chunks,
+    const ov::Tensor& speaker_embedding,
+    const SpeechGenerationConfig& generation_config) {
+#if !OPENVINO_GENAI_HAS_MISAKI_CPP
+    (void)phoneme_chunks;
+    (void)speaker_embedding;
+    (void)generation_config;
+    OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
+#else
+    auto result = synthesize_from_phoneme_chunks(phoneme_chunks, speaker_embedding, generation_config);
+    m_perf_metrics = result.perf_metrics;
+    return result;
+#endif
+}
+
+Text2SpeechDecodedResults KokoroTTSImpl::generate_from_tokens(
+    const std::vector<std::vector<SpeechToken>>& token_batches,
+    const ov::Tensor& speaker_embedding,
+    const SpeechGenerationConfig& generation_config) {
+#if !OPENVINO_GENAI_HAS_MISAKI_CPP
+    (void)token_batches;
+    (void)speaker_embedding;
+    (void)generation_config;
+    OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
+#else
+    std::vector<std::vector<std::string>> all_phoneme_chunks;
+    all_phoneme_chunks.reserve(token_batches.size());
+    for (const auto& tokens : token_batches) {
+        all_phoneme_chunks.push_back(chunk_phonemes_from_tokens(tokens, generation_config));
+    }
+
+    auto result = synthesize_from_phoneme_chunks(all_phoneme_chunks, speaker_embedding, generation_config);
+    m_perf_metrics = result.perf_metrics;
+    return result;
+#endif
+}
+
+Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
+    const std::vector<std::vector<std::string>>& all_phoneme_chunks,
+    const ov::Tensor& speaker_embedding,
+    const SpeechGenerationConfig& generation_config) {
+#if !OPENVINO_GENAI_HAS_MISAKI_CPP
+    (void)all_phoneme_chunks;
+    (void)speaker_embedding;
+    (void)generation_config;
+    OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
+#else
+    const bool has_external_speaker_embedding = static_cast<bool>(speaker_embedding);
+    if (has_external_speaker_embedding) {
+        OPENVINO_ASSERT(speaker_embedding.get_element_type() == ov::element::f32,
+                        "Kokoro backend expects speaker_embedding element type f32");
+    }
+
     Text2SpeechDecodedResults result;
     result.output_sample_rate = 24000;
+    const auto generation_start = std::chrono::steady_clock::now();
 
-    for (const auto& text : texts) {
+    ov::Shape speaker_shape;
+    const float* external_speaker_ptr = nullptr;
+    if (has_external_speaker_embedding) {
+        speaker_shape = speaker_embedding.get_shape();
+        OPENVINO_ASSERT(speaker_shape.size() == 2,
+                        "Kokoro backend expects speaker_embedding shape [num_lengths, style_dim]");
+        OPENVINO_ASSERT(speaker_shape[1] > 0, "Kokoro speaker_embedding second dimension must be > 0");
+        external_speaker_ptr = speaker_embedding.data<const float>();
+    }
+
+    std::vector<const std::vector<float>*> loaded_voices;
+    if (!has_external_speaker_embedding) {
+        OPENVINO_ASSERT(!generation_config.voice.empty(),
+                        "Kokoro backend requires either speaker_embedding tensor or non-empty voice config");
+        const auto requested_voices = split_voice_list(generation_config.voice);
+        OPENVINO_ASSERT(!requested_voices.empty(), "No valid Kokoro voice ids were parsed from voice config");
+
+        for (const auto& voice_id : requested_voices) {
+            auto it = m_voice_cache.find(voice_id);
+            if (it == m_voice_cache.end()) {
+                it = m_voice_cache.emplace(voice_id, load_voice_binary(m_models_path, voice_id)).first;
+            }
+            OPENVINO_ASSERT((it->second.size() % 256) == 0,
+                            "Kokoro voice binary must have float32 length divisible by 256 for voice: ",
+                            voice_id);
+            loaded_voices.push_back(&it->second);
+        }
+
+        const size_t rows = loaded_voices[0]->size() / 256;
+        OPENVINO_ASSERT(rows > 0, "Kokoro voice binary has no rows for the requested voice(s)");
+        for (size_t idx = 1; idx < loaded_voices.size(); ++idx) {
+            OPENVINO_ASSERT((loaded_voices[idx]->size() / 256) == rows,
+                            "All Kokoro voices in a mixed request must have matching row count");
+        }
+        speaker_shape = ov::Shape{rows, 256};
+    }
+
+    const auto& vocab = m_runtime->vocab();
+    const uint32_t context_length = m_runtime->context_length();
+
+    for (const auto& phoneme_chunks : all_phoneme_chunks) {
         std::vector<float> merged_audio;
-        const auto text_tokenize_start = std::chrono::steady_clock::now();
-        const auto phoneme_chunks = phonemize_single_text(*m_g2p, text, generation_config);
-
-        const auto text_tokenize_end = std::chrono::steady_clock::now();
-        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(
-            MicroSeconds(text_tokenize_end - text_tokenize_start));
-
-        ov::Shape speaker_shape;
-        const float* external_speaker_ptr = nullptr;
-        if (has_external_speaker_embedding) {
-            speaker_shape = speaker_embedding.get_shape();
-            OPENVINO_ASSERT(speaker_shape.size() == 2,
-                            "Kokoro backend expects speaker_embedding shape [num_lengths, style_dim]");
-            OPENVINO_ASSERT(speaker_shape[1] > 0, "Kokoro speaker_embedding second dimension must be > 0");
-            external_speaker_ptr = speaker_embedding.data<const float>();
-        }
-
-        const auto& vocab = m_runtime->vocab();
-        const uint32_t context_length = m_runtime->context_length();
-
-        std::vector<std::string> requested_voices;
-        std::vector<const std::vector<float>*> loaded_voices;
-        if (!has_external_speaker_embedding) {
-            OPENVINO_ASSERT(!generation_config.voice.empty(),
-                            "Kokoro backend requires either speaker_embedding tensor or non-empty voice config");
-            requested_voices = split_voice_list(generation_config.voice);
-            OPENVINO_ASSERT(!requested_voices.empty(), "No valid Kokoro voice ids were parsed from voice config");
-
-            for (const auto& voice_id : requested_voices) {
-                auto it = m_voice_cache.find(voice_id);
-                if (it == m_voice_cache.end()) {
-                    it = m_voice_cache.emplace(voice_id, load_voice_binary(m_models_path, voice_id)).first;
-                }
-                OPENVINO_ASSERT((it->second.size() % 256) == 0,
-                                "Kokoro voice binary must have float32 length divisible by 256 for voice: ",
-                                voice_id);
-                loaded_voices.push_back(&it->second);
-            }
-
-            const size_t rows = loaded_voices[0]->size() / 256;
-            OPENVINO_ASSERT(rows > 0, "Kokoro voice binary has no rows for voice: ", requested_voices[0]);
-            for (size_t idx = 1; idx < loaded_voices.size(); ++idx) {
-                OPENVINO_ASSERT((loaded_voices[idx]->size() / 256) == rows,
-                                "All Kokoro voices in a mixed request must have matching row count");
-            }
-            speaker_shape = ov::Shape{rows, 256};
-            // Python parity: if multiple voices are provided, equivalent to
-            // `torch.mean(torch.stack(packs), dim=0)` in `KPipeline.load_voice`.
-        }
 
         for (const auto& phonemes : phoneme_chunks) {
             std::vector<int64_t> token_ids;
@@ -673,9 +847,6 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
             token_ids.push_back(0);
             const size_t text_len = token_ids.size();
 
-            // Python parity: mirrors `KModel.forward` path:
-            // `input_ids = [0, *mapped_vocab_ids, 0]` and context-length assertion.
-
             OPENVINO_ASSERT(token_ids.size() <= context_length,
                             "Kokoro tokenized length exceeds model context length: ", token_ids.size(),
                             " > ", context_length);
@@ -683,9 +854,6 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
             const size_t num_tokens = token_ids.size() >= 2 ? token_ids.size() - 2 : 0;
             const size_t length_index = std::min<size_t>(num_tokens > 0 ? num_tokens - 1 : 0,
                                                          speaker_shape[0] > 0 ? speaker_shape[0] - 1 : 0);
-
-            // Python parity: equivalent to selecting `pack[len(ps) - 1]` in
-            // `KPipeline.infer` / `examples/export.py::load_voice`.
 
             std::vector<float> style_slice(speaker_shape[1]);
             const size_t offset = length_index * speaker_shape[1];
@@ -714,7 +882,6 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
                 OPENVINO_ASSERT(token_ids.size() <= m_static_input_ids_length,
                                 "Kokoro tokenized length exceeds static input length: ", token_ids.size(),
                                 " > ", m_static_input_ids_length);
-                // Align with static NPU path from Python reference: use non-zero padding token.
                 static_token_ids.assign(m_static_input_ids_length, 16);
                 std::copy(token_ids.begin(), token_ids.end(), static_token_ids.begin());
                 input_ids_tensor = ov::Tensor(ov::element::i64,
@@ -767,7 +934,6 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
     result.perf_metrics.raw_metrics.generate_durations.emplace_back(
         MicroSeconds(std::chrono::steady_clock::now() - generation_start));
     result.perf_metrics.evaluate_statistics();
-    m_perf_metrics = result.perf_metrics;
     return result;
 #endif
 }

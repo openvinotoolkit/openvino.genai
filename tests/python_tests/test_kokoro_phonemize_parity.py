@@ -42,6 +42,13 @@ LONG_TEXT_CASES = [
 MAX_PHONEME_LENGTH = 510
 
 
+def _get_speech_token_type():
+    token_type = getattr(openvino_genai, "SpeechToken", None)
+    if token_type is None:
+        pytest.skip("SpeechToken is not exported by openvino_genai in this build")
+    return token_type
+
+
 @pytest.mark.speech_generation
 @pytest.mark.parametrize("language,lang_code", [("en-us", "a"), ("en-gb", "b")])
 @pytest.mark.parametrize("text", LONG_TEXT_CASES)
@@ -130,3 +137,51 @@ def test_kokoro_phonemize_batch_api_shape():
     assert len(chunk_lists) == len(texts)
     assert all(isinstance(chunks, list) for chunks in chunk_lists)
     assert all(len(chunks) > 0 for chunks in chunk_lists)
+
+
+@pytest.mark.speech_generation
+def test_kokoro_generate_from_tokens_single_sequence():
+    model_dir = _get_kokoro_model_dir()
+
+    ov_pipe = openvino_genai.Text2SpeechPipeline(model_dir, "CPU")
+    token_type = _get_speech_token_type()
+    if token_type is None:
+        pytest.skip("SpeechToken is not available in this build")
+
+    tokens = [
+        token_type("həlˈoʊ", True, "Hello"),
+        token_type("wˈɝld", False, "world"),
+    ]
+
+    result = ov_pipe.generate_from_tokens(tokens, None, voice="af_heart", language="en-us")
+
+    assert len(result.speeches) == 1
+    assert result.output_sample_rate > 0
+    assert result.speeches[0].get_size() > 0
+
+
+@pytest.mark.speech_generation
+def test_kokoro_generate_from_tokens_batch_shape():
+    model_dir = _get_kokoro_model_dir()
+
+    ov_pipe = openvino_genai.Text2SpeechPipeline(model_dir, "CPU")
+    token_type = _get_speech_token_type()
+    if token_type is None:
+        pytest.skip("SpeechToken is not available in this build")
+
+    token_batches = [
+        [
+            token_type("həlˈoʊ", True, "Hello"),
+            token_type("wˈɝld", False, "world"),
+        ],
+        [
+            token_type("ðæŋks", True, "Thanks"),
+            token_type("aʊt", False, "out"),
+        ],
+    ]
+
+    result = ov_pipe.generate_from_tokens(token_batches, None, voice="af_heart", language="en-us")
+
+    assert len(result.speeches) == len(token_batches)
+    assert result.output_sample_rate > 0
+    assert all(speech.get_size() > 0 for speech in result.speeches)

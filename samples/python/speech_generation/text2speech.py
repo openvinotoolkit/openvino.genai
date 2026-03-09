@@ -13,14 +13,11 @@ import soundfile as sf
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir", help="Path to the model directory")
-    parser.add_argument("text", help="Input text for which to generate speech")
+    parser.add_argument("text", help="Input text for speech generation")
     parser.add_argument("--speaker_embedding_file_path", default=None,
                         help="Path to the binary file with a speaker embedding")
-    parser.add_argument("--voice", default="", help="Kokoro voice id, e.g. af_heart")
-    parser.add_argument("--language", default="", help="Kokoro language, e.g. en-us or en-gb")
-    parser.add_argument("--speed", type=float, default=1.0, help="Speech speed multiplier")
-    parser.add_argument("--sample_rate", type=int, default=0,
-                        help="Output wav sample rate override (default: 16000 for SpeechT5, 24000 for Kokoro)")
+    parser.add_argument("--voice", default="", help="Optional voice id (required by Kokoro when no speaker embedding)")
+    parser.add_argument("--language", default="", help="Optional language, e.g. en-us or en-gb")
     parser.add_argument("--device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
     args = parser.parse_args()
 
@@ -31,28 +28,20 @@ def main():
         speaker_embedding = ov.Tensor(speaker_embedding)
 
     pipe = openvino_genai.Text2SpeechPipeline(args.model_dir, args.device)
+
     generation_properties = {}
     if args.voice:
         generation_properties["voice"] = args.voice
     if args.language:
         generation_properties["language"] = args.language
-    if args.speed != 1.0:
-        generation_properties["speed"] = args.speed
 
-    if speaker_embedding is not None:
-        result = pipe.generate(args.text, speaker_embedding, **generation_properties)
-    else:
-        result = pipe.generate(args.text, None, **generation_properties)
+    result = pipe.generate(args.text, speaker_embedding, **generation_properties)
 
     assert len(result.speeches) == 1, "Expected only one waveform for the requested input text"
     speech = result.speeches[0]
     speech_data = np.array(speech.data).reshape(-1)
     output_file_name = "output_audio.wav"
-    if args.sample_rate > 0:
-        sample_rate = args.sample_rate
-    else:
-        sample_rate = result.output_sample_rate
-    sf.write(output_file_name, speech_data, samplerate=sample_rate)
+    sf.write(output_file_name, speech_data, samplerate=result.output_sample_rate)
 
     print("[Info] Text successfully converted to audio file \"", output_file_name, "\".")
 

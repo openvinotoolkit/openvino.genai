@@ -29,8 +29,21 @@ public:
                                        const ov::Tensor& speaker_embedding,
                                        const SpeechGenerationConfig& generation_config) override;
 
+    Text2SpeechDecodedResults generate_from_phonemes(const std::vector<std::vector<std::string>>& phoneme_chunks,
+                                                     const ov::Tensor& speaker_embedding,
+                                                     const SpeechGenerationConfig& generation_config) override;
+
+    Text2SpeechDecodedResults generate_from_tokens(const std::vector<std::vector<SpeechToken>>& token_batches,
+                                                   const ov::Tensor& speaker_embedding,
+                                                   const SpeechGenerationConfig& generation_config) override;
+
     std::vector<std::vector<std::string>> phonemize(const std::vector<std::string>& texts,
                                                     const SpeechGenerationConfig& generation_config) override;
+
+private:
+    Text2SpeechDecodedResults synthesize_from_phoneme_chunks(const std::vector<std::vector<std::string>>& all_phoneme_chunks,
+                                                             const ov::Tensor& speaker_embedding,
+                                                             const SpeechGenerationConfig& generation_config);
 
 private:
     std::filesystem::path m_models_path;

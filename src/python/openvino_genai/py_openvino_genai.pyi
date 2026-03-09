@@ -3357,6 +3357,31 @@ class Text2ImagePipeline:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
+class SpeechToken:
+    """
+    Lightweight speech token used by generate_from_tokens.
+    """
+    def __init__(self, phonemes: str = ..., whitespace: bool = ..., text: str = ...) -> None:
+        ...
+    @property
+    def phonemes(self) -> str:
+        ...
+    @phonemes.setter
+    def phonemes(self, arg0: str) -> None:
+        ...
+    @property
+    def whitespace(self) -> bool:
+        ...
+    @whitespace.setter
+    def whitespace(self, arg0: bool) -> None:
+        ...
+    @property
+    def text(self) -> str:
+        ...
+    @text.setter
+    def text(self, arg0: str) -> None:
+        ...
+
 class Text2SpeechDecodedResults:
     """
     
@@ -3460,6 +3485,34 @@ class Text2SpeechPipeline:
     def phonemize(self, texts: collections.abc.Sequence[str], **kwargs) -> list[list[str]]:
         """
             Runs Kokoro text preprocessing and returns phoneme chunks used before acoustic inference.
+        """
+    @typing.overload
+    def generate_from_phonemes(self, phoneme_chunks: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+        """
+            Generates speech directly from precomputed Kokoro phoneme chunks.
+
+            NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+        """
+    @typing.overload
+    def generate_from_phonemes(self, phoneme_chunks: collections.abc.Sequence[collections.abc.Sequence[str]], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+        """
+            Generates speech directly from precomputed Kokoro phoneme chunks.
+
+            NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+        """
+    @typing.overload
+    def generate_from_tokens(self, tokens: collections.abc.Sequence[SpeechToken], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+        """
+            Generates speech directly from lightweight token stream(s).
+
+            NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+        """
+    @typing.overload
+    def generate_from_tokens(self, token_batches: collections.abc.Sequence[collections.abc.Sequence[SpeechToken]], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+        """
+            Generates speech directly from lightweight token stream(s).
+
+            NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
         """
     def get_generation_config(self) -> SpeechGenerationConfig:
         ...

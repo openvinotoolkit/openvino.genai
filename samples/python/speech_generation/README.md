@@ -1,8 +1,9 @@
-# Text-to-speech pipeline sample
+# Text-to-speech pipeline samples
 
-This example demonstrates how to use the openvino_genai.Text2SpeechPipeline in Python to convert input text into speech.
-You can specify a target voice using a speaker embedding vector that captures the desired voice characteristics.
-Additionally, you can choose the inference device (e.g., CPU, GPU) to control where the model runs.
+This folder provides multiple Python samples around `openvino_genai.Text2SpeechPipeline`:
+
+- `text2speech.py`: minimal end-to-end text → audio example
+- `kokoro_generate_from_tokens.py`: Kokoro token-based generation via `generate_from_tokens`
 
 ## Download and convert the model and tokenizers
 
@@ -57,20 +58,37 @@ To run the script:
 python create_speaker_embedding.py
 ```
 
-## Run Text-to-speech sample
+## Run text-to-speech samples
 
 Install [deployment-requirements.txt](../../deployment-requirements.txt)
-via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
+via `pip install -r ../../deployment-requirements.txt` and then run one of the following samples.
 
-SpeechT5 example:
+### 1) Minimal E2E sample (`text2speech.py`)
+
+SpeechT5 example (with speaker embedding):
 
 `python text2speech.py --speaker_embedding_file_path speaker_embedding.bin speecht5_tts "Hello OpenVINO GenAI"`
 
-Kokoro example (voice-based, no speaker embedding file):
+Kokoro example (plain text input):
 
-`python text2speech.py --voice af_heart --language en-us standalone_python_ov/Kokoro-82M "Hello from Kokoro in OpenVINO GenAI"`
+`python text2speech.py --voice af_heart --language en-us  Kokoro-82M "Hello from Kokoro in OpenVINO GenAI"`
 
-It generates `output_audio.wav` file containing the spoken phrase.
+### 2) Kokoro token sample (`kokoro_generate_from_tokens.py`)
+
+**Note:** `generate_from_tokens` is supported only by Kokoro backend. SpeechT5 backend does not support this API.
+
+This sample demonstrates the intended application flow: run Python Misaki G2P first, map Misaki tokens into
+`openvino_genai.SpeechToken`, then call `generate_from_tokens`.
+
+Install Misaki (if not already installed):
+
+`pip install misaki`
+
+Single sequence token synthesis using `generate_from_tokens`:
+
+`python kokoro_generate_from_tokens.py Kokoro-82M "Hello from Kokoro via Misaki tokens"`
+
+All samples generate WAV output files.
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-generation-models) for more details.
 
@@ -82,8 +100,16 @@ import openvino_genai
 pipe = openvino_genai.Text2SpeechPipeline(model_dir, device)
 result = pipe.generate("Hello OpenVINO GenAI", speaker_embedding)
 
-# Kokoro voice-based generation (speaker embedding not required)
+# Kokoro voice-based text generation (speaker embedding not required)
 result = pipe.generate("Hello from Kokoro", None, voice="af_heart", language="en-us")
+
+# Kokoro generation from token
+# NOTE: generate_from_tokens is supported only by Kokoro backend.
+tokens = [
+    openvino_genai.SpeechToken(phonemes="həlˈoʊ", whitespace=True, text="Hello"),
+    openvino_genai.SpeechToken(phonemes="wˈɝld", whitespace=False, text="world"),
+]
+result = pipe.generate_from_tokens(tokens, None, voice="af_heart", language="en-us")
 speech = result.speeches[0]
 # speech tensor contains the waveform of the spoken phrase
 ```
