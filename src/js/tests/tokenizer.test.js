@@ -1,24 +1,26 @@
 import { LLMPipeline, ChatHistory, Tokenizer } from "../dist/index.js";
 
 import assert from "node:assert/strict";
-import { describe, it, before, after } from "node:test";
-import { models } from "./models.js";
+import { describe, it, before } from "node:test";
 import fs from "node:fs/promises";
 import { join } from "node:path";
 import { addon as ovAddon } from "openvino-node";
 
-const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
+const { LLM_PATH } = process.env;
+
+if (!LLM_PATH) {
+  throw new Error("Please set LLM_PATH environment variable to run the tests.");
+}
 
 describe("tokenizer constructors", () => {
   it("tokenizer constructors with one argument", () => {
-    const tokenizer = new Tokenizer(MODEL_PATH);
-
+    const tokenizer = new Tokenizer(LLM_PATH);
     assert.ok(tokenizer);
   });
 
   it("tokenizer constructors with multiple arguments", async () => {
-    const tokenizerName = join(MODEL_PATH, "openvino_tokenizer");
-    const detokenizerName = join(MODEL_PATH, "openvino_detokenizer");
+    const tokenizerName = join(LLM_PATH, "openvino_tokenizer");
+    const detokenizerName = join(LLM_PATH, "openvino_detokenizer");
     const tokenizerModel = await fs.readFile(`${tokenizerName}.xml`, "utf8");
     const tokenizerWeights = await fs.readFile(`${tokenizerName}.bin`);
     const detokenizerModel = await fs.readFile(`${detokenizerName}.xml`, "utf8");
@@ -47,14 +49,8 @@ describe("tokenizer functions", async () => {
   let tokenizer = null;
 
   before(async () => {
-    pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-
-    await pipeline.startChat();
+    pipeline = await LLMPipeline(LLM_PATH, "CPU");
     tokenizer = pipeline.getTokenizer();
-  });
-
-  after(async () => {
-    await pipeline.finishChat();
   });
 
   it("applyChatTemplate return string", () => {
@@ -359,7 +355,7 @@ describe.skip("tokenizer with paired input", () => {
   let tokenizer = null;
 
   before(async () => {
-    tokenizer = new Tokenizer(MODEL_PATH, { add_second_input: true, number_of_inputs: 2 });
+    tokenizer = new Tokenizer(LLM_PATH, { add_second_input: true, number_of_inputs: 2 });
   });
 
   it("supportsPairedInput return boolean", () => {

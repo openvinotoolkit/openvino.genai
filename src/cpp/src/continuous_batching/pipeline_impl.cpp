@@ -113,6 +113,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
     }
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::generate_candidates_for_prompt_lookup() {}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
     m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
@@ -263,7 +265,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
-    std::optional<ov::Tensor> token_type_ids) {
+    std::optional<ov::Tensor> token_type_ids,
+    std::optional<ov::Tensor> prompt_ids) {
     auto sampling_params_copy = sampling_params;
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (sampling_params_copy.stop_token_ids.empty())
@@ -289,7 +292,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
                                                          m_block_size, 
                                                          token_type_ids, 
                                                          position_ids, 
-                                                         rope_delta);
+                                                         rope_delta,
+                                                         prompt_ids);
     }
     else {
         sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params_copy, m_block_size, token_type_ids);
@@ -346,6 +350,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         scheduler_output = m_scheduler->schedule(m_requests);
         scheduling_timer.end();
 
+        m_pipeline_metrics.kv_cache_size_in_bytes = scheduler_output.m_cache_size_in_bytes;
         m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
         m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
         m_pipeline_metrics.max_cache_usage = std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
@@ -436,7 +441,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
         free_fork_timer.end();
     }
-    
+
+    {
+        static ManualTimer candidates_timer("generate_candidates_for_prompt_lookup()");
+        candidates_timer.start();
+        generate_candidates_for_prompt_lookup();
+        candidates_timer.end();
+    }
+
     auto append_embedding = [&] () -> bool {
         if (!m_is_validation_mode_enabled) { // always for draft mode
             return true;
@@ -483,7 +495,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer,
                                                              const std::optional<std::vector<ov::Tensor>>& token_type_ids,
-                                                             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list) {
+                                                             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list,
+                                                             const std::optional<std::vector<ov::Tensor>>& prompt_ids) {
 
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
@@ -662,6 +675,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reset_cache_usage_stat
     m_previous_step_cache_usages.clear();
     m_pipeline_metrics.max_cache_usage = 0.0;
     m_pipeline_metrics.avg_cache_usage = 0.0;
+    m_pipeline_metrics.kv_cache_size_in_bytes = 0;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {

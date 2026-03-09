@@ -14,19 +14,20 @@ npm install openvino-genai-node
 Use the **openvino-genai-node** package:
 
 ```js
-import { LLMPipeline } from "openvino-genai-node";
+import { LLMPipeline, ChatHistory } from "openvino-genai-node";
 
 const pipe = await LLMPipeline(MODEL_PATH, device);
 
 const input = "What is the meaning of life?";
 const config = { max_new_tokens: 100 };
 
-await pipe.startChat();
-const result = await pipe.generate(input, config, streamer);
-await pipe.finishChat();
+const chatHistory = new ChatHistory();
+chatHistory.push({ role: "user", content: input });
+const decodedResults = await pipe.generate(chatHistory, config, streamer);
+chatHistory.push({ role: "assistant", content: decodedResults.toString() });
 
 // Output all generation result
-console.log(result);
+console.log(decodedResults.toString());
 
 function streamer(subword) {
   process.stdout.write(subword);
