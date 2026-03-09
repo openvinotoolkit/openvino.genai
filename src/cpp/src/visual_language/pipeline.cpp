@@ -236,16 +236,7 @@ public:
         auto& raw_counters = perf_metrics.raw_metrics;
 
         if (!m_is_chat_conversation) {
-            if (m_adapter_controller) {
-                // Preserve adapter-owned state variables
-                for (auto& state : m_language.query_state()) {
-                    if (!m_adapter_controller->has_state_name(state.get_name())) {
-                        state.reset();
-                    }
-                }
-            } else {
-                m_language.reset_state();
-            }
+            reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
         }
 
@@ -414,15 +405,7 @@ public:
         bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
 
         if (use_full_history) {
-            if (m_adapter_controller) {
-                for (auto& state : m_language.query_state()) {
-                    if (!m_adapter_controller->has_state_name(state.get_name())) {
-                        state.reset();
-                    }
-                }
-            } else {
-                m_language.reset_state();
-            }
+            reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
             m_inputs_embedder->start_chat("");
         }
@@ -523,15 +506,7 @@ public:
         m_image_id = 0;
         m_video_id = 0;
         // Resetting state may be slow.
-        if (m_adapter_controller) {
-            for (auto& state : m_language.query_state()) {
-                if (!m_adapter_controller->has_state_name(state.get_name())) {
-                    state.reset();
-                }
-            }
-        } else {
-            m_language.reset_state();
-        }
+        reset_language_state();
         m_language.get_tensor("attention_mask").set_shape({0, 0});
         // clear all chat history
         m_inputs_embedder->finish_chat();
@@ -568,6 +543,19 @@ public:
     }
 
 private:
+    void reset_language_state() {
+        if (m_adapter_controller) {
+            // Preserve adapter-owned state variables
+            for (auto& state : m_language.query_state()) {
+                if (!m_adapter_controller->has_state_name(state.get_name())) {
+                    state.reset();
+                }
+            }
+        } else {
+            m_language.reset_state();
+        }
+    }
+
     void setup_generation_config(GenerationConfig& generation_config) {
         // If stop_token_ids were not provided, take value from default m_generation_config
         if (generation_config.stop_token_ids.empty())
@@ -636,15 +624,7 @@ private:
         if (m_is_chat_conversation) {
             if (m_use_full_chat_history) {
                 kv_cache_state.reset_state();
-                if (m_adapter_controller) {
-                    for (auto& state : m_language.query_state()) {
-                        if (!m_adapter_controller->has_state_name(state.get_name())) {
-                            state.reset();
-                        }
-                    }
-                } else {
-                    m_language.reset_state();
-                }
+                reset_language_state();
                 m_language.get_tensor("attention_mask").set_shape({1, 0});
             } else {
                 utils::trim_kv_cache(m_language, kv_cache_state, m_adapter_controller);
