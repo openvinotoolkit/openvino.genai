@@ -879,6 +879,7 @@ def test_pipelines_generate_with_streaming(
     else:
         mock_streamer.assert_called()
 
+
 def test_llm_pipeline_add_extension_custom_op():
     model_id = "katuni4ka/tiny-random-phi3"
     models_path = download_and_convert_model(model_id).models_path
