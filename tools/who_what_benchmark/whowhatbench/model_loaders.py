@@ -331,26 +331,49 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
-    adapter_config = openvino_genai.AdapterConfig()
-    if kwargs.get("adapters") is not None:
-        for adapter, alpha in zip(kwargs["adapters"], kwargs["alphas"]):
+    adapter_config = None
+    adapters = kwargs.get("adapters")
+    if adapters:
+        adapter_config = openvino_genai.AdapterConfig()
+        for adapter, alpha in zip(adapters, kwargs["alphas"]):
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
 
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
-        pipeline = openvino_genai.VLMPipeline(
-            model_dir,
-            device=device,
-            adapters=adapter_config,
-            scheduler_config=scheduler_config,
-            ATTENTION_BACKEND="PA",
-            **ov_config,
-        )
+        if adapter_config is not None:
+            pipeline = openvino_genai.VLMPipeline(
+                model_dir,
+                device=device,
+                adapters=adapter_config,
+                scheduler_config=scheduler_config,
+                ATTENTION_BACKEND="PA",
+                **ov_config,
+            )
+        else:
+            pipeline = openvino_genai.VLMPipeline(
+                model_dir,
+                device=device,
+                scheduler_config=scheduler_config,
+                ATTENTION_BACKEND="PA",
+                **ov_config,
+            )
     else:
         logger.info("Using OpenVINO GenAI VLMPipeline API")
-        pipeline = openvino_genai.VLMPipeline(model_dir, device=device, adapters=adapter_config, **ov_config)
+        if adapter_config is not None:
+            pipeline = openvino_genai.VLMPipeline(
+                model_dir,
+                device=device,
+                adapters=adapter_config,
+                **ov_config,
+            )
+        else:
+            pipeline = openvino_genai.VLMPipeline(
+                model_dir,
+                device=device,
+                **ov_config,
+            )
 
     return GenAIModelWrapper(
         pipeline,
