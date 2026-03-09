@@ -17,7 +17,10 @@ import numpy as np
 import pytest
 import platform
 import sys
+import time
 import logging
+from contextlib import contextmanager
+from datetime import datetime, timezone
 
 from utils.constants import get_default_llm_properties
 from utils.tokenizers import model_tmp_path
@@ -29,6 +32,25 @@ from utils.generation_config import                     \
     get_multinomial_temperature_and_presence_penalty,   \
     get_beam_search
 from data.models import get_models_list
+
+
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    print(f"[{_ts()}] [llm-static] {message}", flush=True)
+
+
+@contextmanager
+def _stage(name: str):
+    _log(f"START {name}")
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        dt = time.perf_counter() - start
+        _log(f"END   {name} dt={dt:.3f}s")
 
 
 if sys.platform == 'darwin' or platform.machine() in ["aarch64", "arm64", "ARM64"]:
@@ -55,16 +77,18 @@ MODELS_LIST = get_models_list()
 
 @pytest.fixture(scope="module")
 def llm_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
-    return download_and_convert_model(request.param)
+    with _stage(f"download_and_convert_model({request.param})"):
+        return download_and_convert_model(request.param)
 
 
 @pytest.fixture(scope="module")
 def ov_model(llm_model: OVConvertedModelSchema) -> LLMPipeline:
-    return LLMPipeline(
-        llm_model.models_path, 
-        "CPU", 
-        **get_default_llm_properties(),
-    )
+    with _stage(f"LLMPipeline(CPU, {llm_model.models_path})"):
+        return LLMPipeline(
+            llm_model.models_path, 
+            "CPU", 
+            **get_default_llm_properties(),
+        )
 
 
 @pytest.fixture(scope="module")
@@ -74,11 +98,12 @@ def npu_config(request: pytest.FixtureRequest) -> LLMPipeline:
 
 @pytest.fixture(scope="module")
 def npu_model(llm_model: OVConvertedModelSchema, npu_config: dict) -> LLMPipeline:
-    return LLMPipeline(
-        llm_model.models_path, 
-        "NPU", 
-        **npu_config,
-    )
+    with _stage(f"LLMPipeline(NPU, {llm_model.models_path})"):
+        return LLMPipeline(
+            llm_model.models_path, 
+            "NPU", 
+            **npu_config,
+        )
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
@@ -91,6 +116,7 @@ def test_pipeline_from_blob(
     model_tmp_path: tuple[str, Path],
     with_weights: bool
 ):
+    _log(f"test_pipeline_from_blob: with_weights={with_weights}")
     prompt = 'What is OpenVINO?'
     model_path = llm_model.models_path
     _, temp_path = model_tmp_path
@@ -138,6 +164,7 @@ def test_generation_compare_with_stateful_list_input(
     npu_model: LLMPipeline,
     generation_config: GenerationConfig,
 ):
+    _log("test_generation_compare_with_stateful_list_input")
     input_data = ['What is OpenVINO?']
     ref_out = ov_model.generate(input_data, generation_config)
     actual_out = npu_model.generate(input_data, generation_config)

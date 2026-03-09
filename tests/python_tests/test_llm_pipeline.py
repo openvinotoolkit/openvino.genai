@@ -9,9 +9,12 @@ import sys
 import os
 import json
 import logging
+import time
 import numpy as np
 from pathlib import Path
 from typing import Literal, Callable
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
 
@@ -24,6 +27,25 @@ from utils.hugging_face import generation_config_to_hf, download_and_convert_mod
 from utils.tokenizers import delete_rt_info, model_tmp_path
 from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, MAIN_PIPELINE_TYPES, PipelineType, GenerationChatInputsType
 from data.models import get_models_list, CHAT_MODELS_LIST
+
+
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    print(f"[{_ts()}] [llm-pipeline] {message}", flush=True)
+
+
+@contextmanager
+def _stage(name: str):
+    _log(f"START {name}")
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        dt = time.perf_counter() - start
+        _log(f"END   {name} dt={dt:.3f}s")
 
 
 def assert_hf_equals_genai(hf_reference, genai_output):
@@ -131,12 +153,14 @@ CALLBACK_FUNCTIONS = [
 
 @pytest.fixture(scope="module")
 def llm_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
-    return download_and_convert_model(request.param)
+    with _stage(f"download_and_convert_model({request.param})"):
+        return download_and_convert_model(request.param)
 
 
 @pytest.fixture(scope="module")
 def ov_pipe(llm_model: OVConvertedModelSchema) -> ov_genai.LLMPipeline:
-    return create_ov_pipeline(llm_model.models_path)
+    with _stage(f"create_ov_pipeline({llm_model.models_path})"):
+        return create_ov_pipeline(llm_model.models_path)
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
@@ -148,12 +172,14 @@ def test_string_inputs(
     prompt: str, 
     pipeline_type: PipelineType,
 ) -> None:
-    generate_and_compare(
-        model_schema=llm_model, 
-        prompts=[prompt], 
-        generation_config=generation_config_dict, 
-        pipeline_type=pipeline_type,
-    )
+    _log(f"test_string_inputs: pipeline_type={pipeline_type}")
+    with _stage("generate_and_compare"):
+        generate_and_compare(
+            model_schema=llm_model, 
+            prompts=[prompt], 
+            generation_config=generation_config_dict, 
+            pipeline_type=pipeline_type,
+        )
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
@@ -163,6 +189,7 @@ def test_encoded_inputs(
     ov_pipe: ov_genai.LLMPipeline,
     inputs: tuple[np.ndarray, np.ndarray | None],
 ) -> None:
+    _log("test_encoded_inputs")
     ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=20)
     hf_generation_config = generation_config_to_hf(llm_model.opt_model.generation_config, ov_generation_config)
 
@@ -176,8 +203,10 @@ def test_encoded_inputs(
         inputs_hf = {'inputs': torch.tensor(input_ids)}
         inputs_ov = ov.Tensor(input_ids)
 
-    hf_output = llm_model.opt_model.generate(**inputs_hf, generation_config=hf_generation_config, **extra_generate_kwargs()).sequences[0]
-    ov_output = ov_pipe.generate(inputs_ov, ov_generation_config)
+    with _stage("hf_generate"):
+        hf_output = llm_model.opt_model.generate(**inputs_hf, generation_config=hf_generation_config, **extra_generate_kwargs()).sequences[0]
+    with _stage("ov_generate"):
+        ov_output = ov_pipe.generate(inputs_ov, ov_generation_config)
 
     hf_res = hf_output[prompt_len:].numpy()
     ov_res = np.array(ov_output.tokens, dtype=np.int64)
@@ -209,12 +238,14 @@ def test_batch_string_inputs(
     prompts: list[str],
     pipeline_type: PipelineType,
 ) -> None:
-    generate_and_compare(
-        model_schema=llm_model,
-        prompts=prompts,
-        generation_config=generation_config_dict,
-        pipeline_type=pipeline_type,
-    )
+    _log(f"test_batch_string_inputs: pipeline_type={pipeline_type} batch_size={len(prompts)}")
+    with _stage("generate_and_compare"):
+        generate_and_compare(
+            model_schema=llm_model,
+            prompts=prompts,
+            generation_config=generation_config_dict,
+            pipeline_type=pipeline_type,
+        )
 
 
 @pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
@@ -267,6 +298,7 @@ def test_chat_scenario(
     inputs: tuple[dict, str],
     input_type: GenerationChatInputsType,
 ) -> None:
+    _log(f"test_chat_scenario: input_type={input_type}")
     chat_history_hf = []
     chat_history_ov = ov_genai.ChatHistory() if input_type == GenerationChatInputsType.CHAT_HISTORY else []
 
@@ -727,9 +759,11 @@ def test_perf_metrics(
     prompt: str,
     pipeline_type: PipelineType,
 ) -> None:
+    _log(f"test_perf_metrics: pipeline_type={pipeline_type}")
     import time
     start_time = time.perf_counter()
-    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type)
+    with _stage("create_ov_pipeline"):
+        ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type)
     load_time_in_test = (time.perf_counter() - start_time) * 1000
     start_generate = time.perf_counter()
     
@@ -855,6 +889,7 @@ def test_pipelines_generate_with_streaming(
     pipeline_type: PipelineType,
     stop_str: bool,
 ) -> None:
+    _log(f"test_pipelines_generate_with_streaming: pipeline_type={pipeline_type} stop_str={stop_str}")
     mock_streamer = MagicMock(return_value=False)
     
     prompt = "Prompt example is"

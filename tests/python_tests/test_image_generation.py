@@ -4,7 +4,10 @@
 import pytest
 import subprocess  # nosec B404
 import logging
+import time
 from pathlib import Path
+from contextlib import contextmanager
+from datetime import datetime, timezone
 import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
@@ -15,6 +18,26 @@ from utils.network import retry_request
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 logger = logging.getLogger(__name__)
+
+
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    print(f"[{_ts()}] [image-gen] {message}", flush=True)
+
+
+@contextmanager
+def _stage(name: str):
+    _log(f"START {name}")
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        dt = time.perf_counter() - start
+        _log(f"END   {name} dt={dt:.3f}s")
+
 
 MODEL_ID = "tiny-random-latent-consistency"
 MODEL_NAME = "echarlaix/tiny-random-latent-consistency"
@@ -32,6 +55,7 @@ MODELS = {
 def image_generation_model(request):
     model_id = getattr(request, "param", MODEL_ID)
     model_name = MODELS[model_id]
+    _log(f"image_generation_model fixture: model_id={model_id}")
     models_dir = get_ov_cache_converted_models_dir()
     model_path = Path(models_dir) / model_id / model_name
     
@@ -52,7 +76,8 @@ def image_generation_model(request):
         retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
     
     try:
-        manager.execute(convert_model)
+        with _stage(f"convert_model({model_name})"):
+            manager.execute(convert_model)
     except subprocess.CalledProcessError as error:
         logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
         raise
@@ -73,6 +98,7 @@ def get_mask_image(height: int = 64, width: int = 64) -> ov.Tensor:
 
 class TestImageGenerationCallback:
     def test_text2image_with_simple_callback(self, image_generation_model):
+        _log("test_text2image_with_simple_callback")
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
         
         callback_calls = []
@@ -249,6 +275,7 @@ def _construct_reshaped(model_dir):
 
 @pytest.mark.skipif(**should_skip_npuw_tests())
 def test_image_generation_cpu_vs_npuw_cpu(image_generation_model):
+    _log("test_image_generation_cpu_vs_npuw_cpu")
     generation_args = {"prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69}
 
     cpu_pipe = _construct_reshaped(image_generation_model)
