@@ -369,44 +369,56 @@ def download_test_content(request):
 
     test_data = request.config.cache.get("TEST_DATA", None)
 
-    file_name = request.param
-    file_url = TEST_FILES[file_name]
-    file_path = os.path.join(test_data, file_name)
+    def download_one(file_name: str):
+        file_url = TEST_FILES[file_name]
+        file_path = os.path.join(test_data, file_name)
 
-    if not os.path.exists(file_path):
-        logger.info(f"Downloading test content from {file_url} to {file_path}...")
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        response = requests.get(file_url, stream=True)
-        response.raise_for_status()
-        with open(file_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        logger.info(f"Downloaded test content to {file_path}")
-    else:
-        logger.info(f"Test content already exists at {file_path}")
-
-    # If the file is a tarball, extract it
-    extracted_dir = None
-    if file_name.endswith(".tar.gz"):
-        extracted_dir = os.path.join(test_data, os.path.splitext(file_name)[0])
-        if not os.path.exists(extracted_dir):
-            os.makedirs(extracted_dir, exist_ok=True)
-            shutil.unpack_archive(file_path, extracted_dir)
-            logger.info(f"Extracted tarball to {extracted_dir}")
+        if not os.path.exists(file_path):
+            logger.info(f"Downloading test content from {file_url} to {file_path}...")
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            response = requests.get(file_url, stream=True)
+            response.raise_for_status()
+            with open(file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            logger.info(f"Downloaded test content to {file_path}")
         else:
-            logger.info(f"Extracted folder already exists at {extracted_dir}")
-        yield extracted_dir
-    else:
-        yield file_path
+            logger.info(f"Test content already exists at {file_path}")
 
-    # Cleanup the test content after tests
+        extracted_dir = None
+        if file_name.endswith(".tar.gz"):
+            extracted_dir = os.path.join(test_data, os.path.splitext(file_name)[0])
+            if not os.path.exists(extracted_dir):
+                os.makedirs(extracted_dir, exist_ok=True)
+                shutil.unpack_archive(file_path, extracted_dir)
+                logger.info(f"Extracted tarball to {extracted_dir}")
+            else:
+                logger.info(f"Extracted folder already exists at {extracted_dir}")
+            return extracted_dir, file_path, extracted_dir
+
+        return file_path, file_path, extracted_dir
+
+    request_param = request.param
+    is_multi = isinstance(request_param, (list, tuple))
+    file_names = request_param if is_multi else [request_param]
+
+    downloaded_paths = []
+    cleanup_items = []
+    for file_name in file_names:
+        downloaded_path, file_path, extracted_dir = download_one(file_name)
+        downloaded_paths.append(downloaded_path)
+        cleanup_items.append((file_path, extracted_dir))
+
+    yield downloaded_paths if is_multi else downloaded_paths[0]
+
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
-        if extracted_dir and os.path.exists(extracted_dir):
-            logger.info(f"Removing extracted folder: {extracted_dir}")
-            shutil.rmtree(extracted_dir)
-        if os.path.exists(file_path):
-            logger.info(f"Removing test content: {file_path}")
-            os.remove(file_path)
+        for file_path, extracted_dir in cleanup_items:
+            if extracted_dir and os.path.exists(extracted_dir):
+                logger.info(f"Removing extracted folder: {extracted_dir}")
+                shutil.rmtree(extracted_dir)
+            if os.path.exists(file_path):
+                logger.info(f"Removing test content: {file_path}")
+                os.remove(file_path)
 
 
 @pytest.fixture(scope="session")
