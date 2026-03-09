@@ -28,7 +28,6 @@ FW_UTILS = {
 def run_visual_language_generation_optimum(
         inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index,
         bench_hook, model_precision, proc_id, mem_consumption):
-    from optimum.intel.utils.import_utils import is_transformers_version
     set_seed(args['seed'])
     if args['batch_size'] != 1:
         log.warning("Only batch size 1 available for benchmarking")
@@ -66,9 +65,7 @@ def run_visual_language_generation_optimum(
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
-    additional_args = {}
-    if is_transformers_version(">=", "4.51"):
-        additional_args["use_model_defaults"] = False
+    additional_args = model_utils.setup_gen_config_use_custom_args()
     start = time.perf_counter()
     if args['infer_count'] is not None and args['end_token_stopping'] is False:
         model.generation_config.eos_token_id = None
