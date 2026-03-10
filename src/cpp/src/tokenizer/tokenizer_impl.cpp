@@ -427,11 +427,15 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
         {
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
             // Use any string which is stored outside of this scope so that after async is run it will not be deallocated
-            auto warmup_prompt = add_second_input.name();
-            auto warmup_input = ov::Tensor(ov::element::i32, ov::Shape{1}, warmup_prompt);
+            auto warmup_input = ov::Tensor(ov::element::string, ov::Shape{1}, add_second_input.name());
             
             CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_tokenizer.get());
             infer_request_guard.get().set_input_tensor(0, warmup_input);
+            if (is_paired_input) {
+                // Set the second input tensor to an empty tensor to avoid errors.
+                // The subgraph within the ov::Model will handle this scenario, ensuring the output remains correct.
+                infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {0}});
+            }
             infer_request_guard.get().start_async();
         }
     }
