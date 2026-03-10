@@ -183,9 +183,7 @@ public:
     explicit CacheState(CacheTypes cache_types) : cache_types(cache_types) {}
 
     // Construct from model by detecting cache types inside the model
-    explicit CacheState(const std::shared_ptr<const ov::Model>& model) {
-        cache_types = get_cache_types(*model);
-    }
+    explicit CacheState(const std::shared_ptr<const ov::Model>& model) : cache_types(get_cache_types(*model)) {}
 
     size_t num_tokens_to_trim = 0;
     size_t seq_length_axis = 2;
