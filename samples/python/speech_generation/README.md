@@ -4,6 +4,7 @@ This folder provides multiple Python samples around `openvino_genai.Text2SpeechP
 
 - `text2speech.py`: minimal end-to-end text → audio example
 - `kokoro_generate_from_tokens.py`: Kokoro token-based generation via `generate_from_tokens`
+- `kokoro_phonemize_fallback.py`: Kokoro phonemize/G2P fallback selection using `phonemize_fallback_model_dir`
 
 ## Download and convert the model and tokenizers
 
@@ -88,6 +89,42 @@ Single sequence token synthesis using `generate_from_tokens`:
 
 `python kokoro_generate_from_tokens.py Kokoro-82M "Hello from Kokoro via Misaki tokens"`
 
+### 3) Kokoro phonemize fallback sample (`kokoro_phonemize_fallback.py`)
+
+What "fallback" means in this sample:
+
+- During Kokoro phonemize (G2P), out-of-dictionary words are sent to a fallback phonemizer.
+- By default, this fallback is `espeak-ng`.
+- `espeak-ng` is GPL-licensed and is not distributed with OpenVINO GenAI, so users must install it separately.
+- As an alternative, you can use an OpenVINO-exported BART fallback model via `phonemize_fallback_model_dir`.
+- This requires extra model preparation, but can simplify app distribution because no GPL component is required.
+
+Prepare fallback model(s) with Optimum CLI:
+
+US:
+
+`optimum-cli export openvino --model PeterReid/graphemes_to_phonemes_en_us --task text2text-generation graphemes_to_phonemes_en_us-ov`
+
+GB:
+
+`optimum-cli export openvino --model PeterReid/graphemes_to_phonemes_en_gb --task text2text-generation graphemes_to_phonemes_en_gb-ov`
+
+Use OpenVINO fallback model during phonemize/G2P fallback:
+
+US model + US language:
+
+`python kokoro_phonemize_fallback.py Kokoro-82M "Hello qzxypt" --voice af_heart --language en-us --phonemize_fallback_model_dir graphemes_to_phonemes_en_us-ov`
+
+GB model + GB language:
+
+`python kokoro_phonemize_fallback.py Kokoro-82M "Hello qzxypt" --voice af_heart --language en-gb --phonemize_fallback_model_dir graphemes_to_phonemes_en_gb-ov`
+
+Set `--language` to match the fallback model variant (`en-us` with `..._en_us-ov`, `en-gb` with `..._en_gb-ov`).
+
+Use default espeak-ng fallback (omit `--phonemize_fallback_model_dir`):
+
+`python kokoro_phonemize_fallback.py Kokoro-82M "Hello qzxypt" --voice af_heart --language en-us`
+
 All samples generate WAV output files.
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-generation-models) for more details.
@@ -112,4 +149,14 @@ tokens = [
 result = pipe.generate_from_tokens(tokens, None, voice="af_heart", language="en-us")
 speech = result.speeches[0]
 # speech tensor contains the waveform of the spoken phrase
+
+# Kokoro fallback via API
+# Here "fallback" means handling unknown words during phonemize/G2P.
+cfg = pipe.get_generation_config()
+# If set -> OV fallback is used
+cfg.phonemize_fallback_model_dir = "graphemes_to_phonemes_en_us-ov"
+# If unset (None) -> espeak-ng fallback is used
+# cfg.phonemize_fallback_model_dir = None
+pipe.set_generation_config(cfg)
+result = pipe.generate("A rare OOV token: qzxypt", None, voice="af_heart", language="en-us")
 ```

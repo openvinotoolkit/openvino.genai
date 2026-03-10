@@ -6,11 +6,13 @@
 #include <algorithm>
 #include <chrono>
 #include <codecvt>
+#include <cctype>
 #include <cstdlib>
 #include <fstream>
 #include <locale>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <sstream>
 #include <unordered_map>
 
@@ -18,10 +20,239 @@
 
 #include "openvino/genai/perf_metrics.hpp"
 #include "utils.hpp"
+#include "logger.hpp"
 
 #if OPENVINO_GENAI_HAS_MISAKI_CPP
 #include "misaki/g2p.hpp"
 #include "misaki/fallbacks.hpp"
+
+std::optional<std::filesystem::path> resolve_ov_fallback_model_dir(const std::string& language_variant,
+                                                                    const ov::genai::SpeechGenerationConfig& generation_config) {
+    if (!generation_config.phonemize_fallback_model_dir.has_value()) {
+        return std::nullopt;
+    }
+    (void)language_variant;
+    return std::filesystem::path(*generation_config.phonemize_fallback_model_dir);
+}
+
+static inline void dump_compiled_model_inputs_outputs(const ov::CompiledModel& model) {
+    const auto inputs = model.inputs();
+    const auto outputs = model.outputs();
+
+    std::cout << "\tInputs: " << std::endl;
+    for (const auto& input : inputs) {
+        const std::string name = input.get_any_name();
+        const ov::element::Type type = input.get_element_type();
+        const ov::PartialShape shape = input.get_partial_shape();
+        const ov::Layout layout = ov::layout::get_layout(input);
+
+        std::cout << "\t\t" << name << ", " << type << ", " << shape << ", " << layout.to_string() << std::endl;
+    }
+
+    std::cout << "\tOutputs: " << std::endl;
+    for (const auto& output : outputs) {
+        const std::string name = output.get_any_name();
+        const ov::element::Type type = output.get_element_type();
+        const ov::PartialShape shape = output.get_partial_shape();
+        const ov::Layout layout = ov::layout::get_layout(output);
+
+        std::cout << "\t\t" << name << ", " << type << ", " << shape << ", " << layout.to_string() << std::endl;
+    }
+}
+class OpenVINOFallbackNetwork {
+public:
+    OpenVINOFallbackNetwork(const std::filesystem::path& model_dir, ov::Core& core) {
+        const auto config_path = model_dir / "config.json";
+        const auto encoder_path = model_dir / "openvino_encoder_model.xml";
+        const auto decoder_path = model_dir / "openvino_decoder_model.xml";
+
+        OPENVINO_ASSERT(std::filesystem::exists(config_path), "Missing fallback config.json at ", config_path);
+        OPENVINO_ASSERT(std::filesystem::exists(encoder_path), "Missing fallback encoder model at ", encoder_path);
+        OPENVINO_ASSERT(std::filesystem::exists(decoder_path), "Missing fallback decoder model at ", decoder_path);
+
+        std::ifstream config_file(config_path);
+        OPENVINO_ASSERT(config_file.is_open(), "Failed to open fallback config at ", config_path);
+
+        nlohmann::json cfg;
+        config_file >> cfg;
+
+        m_bos_token_id = cfg.value("bos_token_id", 1);
+        m_decoder_start_token_id = cfg.value("decoder_start_token_id", m_bos_token_id);
+        m_eos_token_id = cfg.value("eos_token_id", 2);
+        m_unk_token_id = cfg.value("unk_token_id", 3);
+        m_max_decode_length = static_cast<size_t>(std::max<int64_t>(8, cfg.value("max_position_embeddings", 64)));
+
+        const std::u32string graphemes = utf8_to_u32(cfg.at("grapheme_chars").get<std::string>());
+        for (size_t index = 0; index < graphemes.size(); ++index) {
+            m_grapheme_to_token[graphemes[index]] = static_cast<int64_t>(index);
+        }
+
+        const std::u32string phonemes = utf8_to_u32(cfg.at("phoneme_chars").get<std::string>());
+        m_token_to_phoneme.reserve(phonemes.size());
+        for (char32_t cp : phonemes) {
+            m_token_to_phoneme.push_back(u32_to_utf8(cp));
+        }
+
+        // These fallback BART models are typically *very* small (< 1M params),
+        // so we just force them to use CPU for now.
+        auto encoder_compiled_model = core.compile_model(encoder_path, "CPU");
+        auto decoder_compiled_model = core.compile_model(decoder_path, "CPU");
+
+        if (ov::genai::get_cur_log_level() >= ov::log::Level::INFO) {
+            std::cout << "Fallback encoder model info:" << std::endl;
+            dump_compiled_model_inputs_outputs(encoder_compiled_model);
+            std::cout << "Fallback decoder model info:" << std::endl;
+            dump_compiled_model_inputs_outputs(decoder_compiled_model);
+        }
+
+        OPENVINO_ASSERT(encoder_compiled_model.inputs().size() >= 2,
+                        "Unexpected fallback encoder signature in ",
+                        encoder_path);
+        OPENVINO_ASSERT(decoder_compiled_model.inputs().size() >= 3,
+                        "Unexpected fallback decoder signature in ",
+                        decoder_path);
+
+        m_encoder_input_ids_index = find_input_index(encoder_compiled_model, "input_ids").value_or(0);
+        m_encoder_attention_mask_index = find_input_index(encoder_compiled_model, "attention_mask").value_or(1);
+
+        m_decoder_input_ids_index = find_input_index(decoder_compiled_model, "input_ids").value_or(0);
+        m_decoder_attention_mask_index = find_input_index(decoder_compiled_model, "encoder_attention_mask").value_or(1);
+        const auto encoder_state_index = find_input_index(decoder_compiled_model, "encoder_hidden_states");
+
+        OPENVINO_ASSERT(encoder_state_index.has_value(), "Fallback decoder is missing encoder_hidden_states input");
+        m_decoder_encoder_state_index = *encoder_state_index;
+
+        m_encoder_request = encoder_compiled_model.create_infer_request();
+        m_decoder_request = decoder_compiled_model.create_infer_request();
+    }
+
+    std::optional<std::string> infer_token(const misaki::MToken& token) {
+        if (token.text.empty()) {
+            return std::nullopt;
+        }
+
+        const auto graphemes = utf8_to_u32(token.text);
+        std::vector<int64_t> input_ids;
+        input_ids.reserve(graphemes.size() + 2);
+        input_ids.push_back(m_bos_token_id);
+        for (char32_t cp : graphemes) {
+            const auto it = m_grapheme_to_token.find(cp);
+            input_ids.push_back(it == m_grapheme_to_token.end() ? m_unk_token_id : it->second);
+        }
+        input_ids.push_back(m_eos_token_id);
+
+        std::vector<int64_t> attention_mask(input_ids.size(), 1);
+
+        ov::Tensor encoder_input_ids(ov::element::i64, ov::Shape{1, input_ids.size()}, input_ids.data());
+        ov::Tensor encoder_attention_mask(ov::element::i64, ov::Shape{1, attention_mask.size()}, attention_mask.data());
+
+        m_encoder_request.set_input_tensor(m_encoder_input_ids_index, encoder_input_ids);
+        m_encoder_request.set_input_tensor(m_encoder_attention_mask_index, encoder_attention_mask);
+        m_encoder_request.infer();
+        const ov::Tensor encoder_hidden_states = m_encoder_request.get_output_tensor(0);
+
+        m_decoder_request.set_input_tensor(m_decoder_attention_mask_index, encoder_attention_mask);
+        m_decoder_request.set_input_tensor(m_decoder_encoder_state_index, encoder_hidden_states);
+
+        std::vector<int64_t> decoder_tokens = {m_decoder_start_token_id};
+        for (size_t step = 0; step < m_max_decode_length; ++step) {
+            ov::Tensor decoder_input_ids(ov::element::i64, ov::Shape{1, decoder_tokens.size()}, decoder_tokens.data());
+            m_decoder_request.set_input_tensor(m_decoder_input_ids_index, decoder_input_ids);
+            m_decoder_request.infer();
+
+            const ov::Tensor logits = m_decoder_request.get_output_tensor(0);
+            OPENVINO_ASSERT(logits.get_element_type() == ov::element::f32,
+                            "Fallback decoder logits are expected to have f32 element type");
+
+            const auto logits_shape = logits.get_shape();
+            OPENVINO_ASSERT(logits_shape.size() == 3,
+                            "Fallback decoder logits are expected to have rank 3 [batch, seq, vocab]");
+            OPENVINO_ASSERT(logits_shape[0] == 1, "Fallback decoder logits batch size must be 1");
+
+            const size_t seq_len = logits_shape[1];
+            const size_t vocab_size = logits_shape[2];
+            const float* logits_ptr = logits.data<const float>();
+            const size_t offset = (seq_len - 1) * vocab_size;
+
+            // simple greedy decoding step: index of highest logit in the last time step is the next token id
+            int64_t next_id = 0;
+            float max_logit = logits_ptr[offset];
+            for (size_t vocab_index = 1; vocab_index < vocab_size; ++vocab_index) {
+                const float score = logits_ptr[offset + vocab_index];
+                if (score > max_logit) {
+                    max_logit = score;
+                    next_id = static_cast<int64_t>(vocab_index);
+                }
+            }
+
+            if (next_id == m_eos_token_id) {
+                break;
+            }
+            decoder_tokens.push_back(next_id);
+        }
+
+        std::string phonemes;
+        for (int64_t token_id : decoder_tokens) {
+            if (token_id <= 3) {
+                continue;
+            }
+            if (token_id >= 0 && static_cast<size_t>(token_id) < m_token_to_phoneme.size()) {
+                phonemes += m_token_to_phoneme[static_cast<size_t>(token_id)];
+            }
+        }
+        if (phonemes.empty()) {
+            return std::nullopt;
+        }
+        return phonemes;
+    }
+
+private:
+    static std::u32string utf8_to_u32(const std::string& input) {
+        std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> convert;
+        try {
+            return convert.from_bytes(input);
+        } catch (...) {
+            std::u32string output;
+            output.reserve(input.size());
+            for (unsigned char c : input) {
+                output.push_back(static_cast<char32_t>(c));
+            }
+            return output;
+        }
+    }
+
+    static std::string u32_to_utf8(char32_t codepoint) {
+        std::u32string input(1, codepoint);
+        std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> convert;
+        return convert.to_bytes(input);
+    }
+
+    static std::optional<size_t> find_input_index(const ov::CompiledModel& model, const std::string& expected_name) {
+        const auto& inputs = model.inputs();
+        for (size_t index = 0; index < inputs.size(); ++index) {
+            const std::string& name = inputs[index].get_any_name();
+            if (name.find(expected_name) != std::string::npos) {
+                return index;
+            }
+        }
+        return std::nullopt;
+    }
+
+    ov::InferRequest m_encoder_request;
+    ov::InferRequest m_decoder_request;
+    std::unordered_map<char32_t, int64_t> m_grapheme_to_token;
+    std::vector<std::string> m_token_to_phoneme;
+    int64_t m_bos_token_id = 1;
+    int64_t m_decoder_start_token_id = 1;
+    int64_t m_eos_token_id = 2;
+    int64_t m_unk_token_id = 3;
+    size_t m_max_decode_length = 64;
+    size_t m_encoder_input_ids_index = 0;
+    size_t m_encoder_attention_mask_index = 1;
+    size_t m_decoder_input_ids_index = 0;
+    size_t m_decoder_attention_mask_index = 1;
+    size_t m_decoder_encoder_state_index = 2;
+};
 
 bool has_required_misaki_lexicon_files(const std::filesystem::path& root) {
     return std::filesystem::exists(root / "us_gold.json") &&
@@ -280,8 +511,9 @@ std::vector<float> load_voice_binary(const std::filesystem::path& models_path, c
 }
 
 #if OPENVINO_GENAI_HAS_MISAKI_CPP
-void install_espeak_fallback_if_available(std::unique_ptr<misaki::G2P>& g2p,
-                                          const std::string& language_variant) {
+void install_fallback_if_available(std::unique_ptr<misaki::G2P>& g2p,
+                                   const std::string& language_variant,
+                                   const ov::genai::SpeechGenerationConfig& generation_config) {
     if (!g2p) {
         return;
     }
@@ -289,6 +521,27 @@ void install_espeak_fallback_if_available(std::unique_ptr<misaki::G2P>& g2p,
     // Python parity: `KPipeline` wires `en.G2P(..., fallback=EspeakFallback(...))`
     // for English variants (`a`/`b` -> `en-us`/`en-gb`).
     const bool british = (language_variant == "en-gb");
+
+    // Reset any previously installed fallback hook before applying the new policy.
+    // This guarantees failed backend selection does not retain stale fallback behavior.
+    g2p->set_fallback_hook({});
+
+    if (generation_config.phonemize_fallback_model_dir.has_value()) {
+        try {
+            if (const auto model_dir = resolve_ov_fallback_model_dir(language_variant, generation_config); model_dir.has_value()) {
+                ov::Core core = ov::genai::utils::singleton_core();
+                auto ov_fallback = std::make_shared<OpenVINOFallbackNetwork>(*model_dir, core);
+                g2p->set_fallback_hook([ov_fallback](const misaki::MToken& token) {
+                    return ov_fallback->infer_token(token);
+                });
+                return;
+            }
+        } catch (const std::exception& error) {
+            std::cout << "Warning: failed to initialize OpenVINO fallback network for Kokoro G2P: " << error.what()
+                      << std::endl;
+            return;
+        }
+    }
 
     const char* library_hint = std::getenv("MISAKI_ESPEAK_LIBRARY");
     const char* version_hint = std::getenv("MISAKI_ESPEAK_VERSION");
@@ -673,7 +926,10 @@ KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
 
     // Python reference: same engine family as `KPipeline(...).g2p` for English variants.
     m_g2p = misaki::make_engine("en", m_runtime->language_variant());
-    install_espeak_fallback_if_available(m_g2p, m_runtime->language_variant());
+    const SpeechGenerationConfig default_config;
+    install_fallback_if_available(m_g2p, m_runtime->language_variant(), default_config);
+    m_fallback_initialized = true;
+    m_phonemize_fallback_model_dir = default_config.phonemize_fallback_model_dir;
 
     for (size_t idx = 0; idx < compiled.inputs().size(); ++idx) {
         const auto input_name = compiled.input(static_cast<int>(idx)).get_any_name();
@@ -708,11 +964,19 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
     OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
 #else
     const std::string language_variant = normalize_language_variant(generation_config.language);
+    const bool fallback_config_changed = !m_fallback_initialized ||
+                                         generation_config.phonemize_fallback_model_dir != m_phonemize_fallback_model_dir;
     if (language_variant != m_runtime->language_variant()) {
         m_runtime->set_language_variant(language_variant);
         // Python parity: language change rebinds G2P behavior (see `KPipeline.__init__`).
         m_g2p = misaki::make_engine("en", language_variant);
-        install_espeak_fallback_if_available(m_g2p, language_variant);
+        install_fallback_if_available(m_g2p, language_variant, generation_config);
+        m_fallback_initialized = true;
+        m_phonemize_fallback_model_dir = generation_config.phonemize_fallback_model_dir;
+    } else if (fallback_config_changed) {
+        install_fallback_if_available(m_g2p, language_variant, generation_config);
+        m_fallback_initialized = true;
+        m_phonemize_fallback_model_dir = generation_config.phonemize_fallback_model_dir;
     }
 
     std::vector<std::vector<std::string>> all_phoneme_chunks;
@@ -946,10 +1210,18 @@ std::vector<std::vector<std::string>> KokoroTTSImpl::phonemize(const std::vector
     OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
 #else
     const std::string language_variant = normalize_language_variant(generation_config.language);
+    const bool fallback_config_changed = !m_fallback_initialized ||
+                                         generation_config.phonemize_fallback_model_dir != m_phonemize_fallback_model_dir;
     if (language_variant != m_runtime->language_variant()) {
         m_runtime->set_language_variant(language_variant);
         m_g2p = misaki::make_engine("en", language_variant);
-        install_espeak_fallback_if_available(m_g2p, language_variant);
+        install_fallback_if_available(m_g2p, language_variant, generation_config);
+        m_fallback_initialized = true;
+        m_phonemize_fallback_model_dir = generation_config.phonemize_fallback_model_dir;
+    } else if (fallback_config_changed) {
+        install_fallback_if_available(m_g2p, language_variant, generation_config);
+        m_fallback_initialized = true;
+        m_phonemize_fallback_model_dir = generation_config.phonemize_fallback_model_dir;
     }
 
     std::vector<std::vector<std::string>> all_chunks;

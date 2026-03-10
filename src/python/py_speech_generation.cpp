@@ -53,6 +53,13 @@ auto speech_generation_config_docstring = R"(
 
     :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
     :type max_phoneme_length: int
+
+    :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                         This applies only to fallback during phonemize / G2P
+                                         (graphemes to phonemes), before acoustic model inference.
+                                         If set, this OpenVINO G2P fallback is used.
+                                         If unset (None), espeak-ng G2P fallback is used.
+    :type phonemize_fallback_model_dir: str | None
 )";
 
 auto speech_generation_perf_metrics_docstring = R"(
@@ -187,6 +194,7 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def_readwrite("language", &SpeechGenerationConfig::language)
         .def_readwrite("voice", &SpeechGenerationConfig::voice)
         .def_readwrite("max_phoneme_length", &SpeechGenerationConfig::max_phoneme_length)
+        .def_readwrite("phonemize_fallback_model_dir", &SpeechGenerationConfig::phonemize_fallback_model_dir)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
