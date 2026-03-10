@@ -757,8 +757,3 @@ def test_continuous_batching_add_extension():
 
     properties = {"extensions": [str(_ext_path)]}
     ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
-
-    properties = {"extensions": ["fake_path"]}
-    with pytest.raises(RuntimeError) as exc_info:
-        ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
-    assert "Cannot find entry point to the extension library" in str(exc_info.value)

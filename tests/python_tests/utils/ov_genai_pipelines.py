@@ -4,7 +4,6 @@
 import sys
 import platform
 from enum import Enum
-import os
 from pathlib import Path
 from typing import Callable
 
@@ -355,30 +354,6 @@ def should_skip_npuw_tests():
         condition=sys.platform == "darwin" or platform.machine() in {"aarch64", "arm64", "ARM64"},
         reason="NPU plugin is only available on Linux and Windows x86_64",
     )
-
-
-def get_custom_add_extension_path() -> Path | None:
-    env_path = os.getenv("OPENVINO_CUSTOM_ADD_EXTENSION_PATH")
-    if env_path:
-        candidate = Path(env_path)
-        if candidate.exists():
-            return candidate
-
-    repo_root = Path(__file__).resolve().parents[3]
-    print("repo_root:", repo_root)
-    local_candidates = [
-        repo_root / "build" / "bin" / "openvino_custom_add_extension.so",
-        repo_root / "build" / "bin" / "openvino_custom_add_extension.dylib",
-        repo_root / "build" / "bin" / "openvino_custom_add_extension.dll",
-        repo_root / "bin" / "openvino_custom_add_extension.so",
-        repo_root / "bin" / "libopenvino_custom_add_extension.so",
-    ]
-
-    for candidate in local_candidates:
-        if candidate.exists():
-            return candidate
-
-    return None
 
 
 class GenerationChatInputsType(Enum):

@@ -56,7 +56,7 @@ from openvino_genai import (
     GenerationFinishReason,
     ChatHistory,
 )
-from utils.ov_genai_pipelines import get_custom_add_extension_path
+
 from utils.network import retry_request
 from utils.generation_config import (
     get_beam_search,
@@ -2438,20 +2438,15 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
     )
 
 
-def test_vlm_pipeline_add_extension_path():
-    models_path = _get_ov_model(MODEL_IDS[0])
-
-    custom_extension_path = get_custom_add_extension_path()
-    print("custom_extension_path: ", custom_extension_path)
-    if custom_extension_path is not None:
-        properties = {"extensions": [str(custom_extension_path)]}
-    else:
-        assert "Cannot find custom_extension_path"
-    VLMPipeline(models_path, "CPU", config=properties)
-
-
-def test_vlm_pipeline_add_extension_op():
+def test_vlm_pipeline_add_extension_custom_op():
     models_path = _get_ov_model(MODEL_IDS[0])
 
     properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
+    VLMPipeline(models_path, "CPU", config=properties)
+
+
+def test_vlm_pipeline_add_extension():
+    models_path = _get_ov_model(MODEL_IDS[0])
+
+    properties = {"extensions": [str(openvino_tokenizers._ext_path)]}
     VLMPipeline(models_path, "CPU", config=properties)

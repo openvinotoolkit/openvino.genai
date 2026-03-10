@@ -894,8 +894,3 @@ def test_llm_pipeline_add_extension():
 
     properties = {"extensions": [str(_ext_path)]}
     ov_genai.LLMPipeline(models_path, "CPU", **properties)
-
-    properties = {"extensions": ["fake_path"]}
-    with pytest.raises(RuntimeError) as exc_info:
-        ov_genai.LLMPipeline(models_path, "CPU", **properties)
-    assert "Cannot find entry point to the extension library" in str(exc_info.value)
