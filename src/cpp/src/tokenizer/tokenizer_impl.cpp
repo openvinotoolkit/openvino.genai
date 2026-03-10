@@ -467,8 +467,25 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
             m_bos_token = decode(std::vector{m_bos_token_id}, {ov::genai::skip_special_tokens(false)});
         if (m_eos_token_id != -1 && m_eos_token.empty())
             m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::skip_special_tokens(false)});
+            
         // Initialize detokenizer's cache to save time later.
-        decode({1, 33, 199, 42, 42});
+        {
+            int idx = m_ireq_queue_detokenizer->get_idle().get();
+            auto& req = m_ireq_queue_detokenizer->get(idx);
+            
+            // keep input data alive until callback
+            auto warmup_tokens = std::make_shared<std::vector<int64_t>>(
+                std::initializer_list<int64_t>{1, 33, 199, 42, 42}
+            );
+            
+            auto warmup_tensor = ov::Tensor(ov::element::i64, ov::Shape{1, warmup_tokens->size()}, warmup_tokens->data());
+            req.set_input_tensor(0, warmup_tensor);
+
+            req.set_callback([queue = m_ireq_queue_detokenizer.get(), idx, warmup_tokens](std::exception_ptr) {
+                queue->return_to(idx);
+            });
+            req.start_async();
+        }
 
         m_vocab = read_vocab_from_detokenizer_model(ov_detokenizer);
     }
