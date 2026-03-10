@@ -483,9 +483,8 @@ def test_generate_works_same_before_and_after_chat(ov_pipe: ov_genai.LLMPipeline
 
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
-def test_linear_attention_chat_matches_last_answer_after_cache_reset(llm_model, pipeline_type):
-    questions = ["1+1=", "What was my previous question?"]
-
+@pytest.mark.parametrize("questions", [QUESTIONS[:2]])
+def test_linear_attention_chat_matches_last_answer_after_cache_reset(llm_model, pipeline_type, questions):
     ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
 
     config = ov_genai.GenerationConfig(max_new_tokens=20, do_sample=False)
