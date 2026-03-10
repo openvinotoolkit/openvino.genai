@@ -104,7 +104,7 @@ def main() -> int:
     gen_cfg = pipe.get_generation_config()
     gen_cfg.max_new_tokens = 100
 
-    print("Generating answer with LoRA adapters applied:\n")
+    print("Generating answer with LoRA adapters applied:")
     pipe.generate(
         prompt,
         images=rgbs,
@@ -112,7 +112,7 @@ def main() -> int:
         streamer=streamer,
     )
 
-    print("\n----------\nGenerating answer without LoRA adapters applied:\n")
+    print("\n----------\nGenerating answer without LoRA adapters applied:")
     pipe.generate(
         prompt,
         images=rgbs,
