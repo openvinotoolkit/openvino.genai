@@ -90,7 +90,7 @@ def main() -> int:
 
     pipe_kwargs = {}
     if args.device == "GPU":
-        pipe_kwargs["ov_config"] = {"CACHE_DIR": "vlm_cache"}
+        pipe_kwargs["CACHE_DIR"] = "vlm_cache"
 
     # Configure LoRA adapters with weights (alphas)
     if loras:
