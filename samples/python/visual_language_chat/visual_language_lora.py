@@ -74,6 +74,7 @@ def main() -> int:
     p.add_argument("model_dir", help="Path to model directory")
     p.add_argument("images_path", help="Image file OR directory with images")
     p.add_argument("device", choices=["CPU", "GPU"], help='Device, e.g. "CPU", "GPU"')
+    p.add_argument("prompt", help="Prompt/question to ask")
     p.add_argument(
         "lora_pairs",
         nargs="+",
@@ -82,6 +83,7 @@ def main() -> int:
     )
 
     args = p.parse_args()
+    prompt = args.prompt
     loras = parse_lora_pairs(args.lora_pairs)
 
     rgbs = read_images(args.images_path)
@@ -102,9 +104,7 @@ def main() -> int:
     gen_cfg = pipe.get_generation_config()
     gen_cfg.max_new_tokens = 100
 
-    prompt = input("question:\n")
-
-    print("----------\nGenerating answer with LoRA adapters applied:\n")
+    print("Generating answer with LoRA adapters applied:\n")
     pipe.generate(
         prompt,
         images=rgbs,

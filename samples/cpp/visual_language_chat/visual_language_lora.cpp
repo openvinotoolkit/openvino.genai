@@ -16,12 +16,10 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
     return ov::genai::StreamingStatus::RUNNING;
 }
 int main(int argc, char* argv[]) try {
-    // Usage: app <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...]
- 
     // At least one LoRA adapter must be provided.
-    OPENVINO_ASSERT(argc >= 6 && ((argc - 4) % 2) == 0,
+    OPENVINO_ASSERT(argc >= 7 && ((argc - 5) % 2) == 0,
                    "Usage: ", argv[0],
-                   " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...]");
+                   " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE> <PROMPT> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...]");
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
 
@@ -33,9 +31,11 @@ int main(int argc, char* argv[]) try {
         pipeline_properties.insert({ov::cache_dir("vlm_cache")});
     }
 
+    const std::string prompt = argv[4];
+
     // LoRA args parsed as pairs: <LORA_SAFETENSORS> <ALPHA>
     ov::genai::AdapterConfig adapter_config;
-    for (int idx = 4; idx + 1 < argc; idx += 2) {
+    for (int idx = 5; idx + 1 < argc; idx += 2) {
         ov::genai::Adapter adapter(argv[idx]);
         float alpha = std::stof(argv[idx + 1]);
         adapter_config.add(adapter, alpha);
@@ -47,12 +47,7 @@ int main(int argc, char* argv[]) try {
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
 
-    std::string prompt;
-
-    std::cout << "question:\n";
-    std::getline(std::cin, prompt);
-
-    std::cout << "----------\nGenerating answer with LoRA adapters applied:\n";
+    std::cout << "Generating answer with LoRA adapters applied:\n";
     pipe.generate(prompt,
                   ov::genai::images(rgbs),
                   ov::genai::generation_config(generation_config),

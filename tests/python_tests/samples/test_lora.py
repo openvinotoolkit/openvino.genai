@@ -40,13 +40,13 @@ class TestLora:
 
         # Test CPP sample
         cpp_sample = SAMPLES_CPP_DIR / "visual_language_lora"
-        cpp_command = [cpp_sample, convert_model, image_path, "CPU", adapter_path, alpha]
-        cpp_result = run_sample(cpp_command, prompt)
+        cpp_command = [cpp_sample, convert_model, image_path, "CPU", prompt, adapter_path, alpha]
+        cpp_result = run_sample(cpp_command)
 
         # Test Python sample
         py_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_lora.py"
-        py_command = [sys.executable, py_script, convert_model, image_path, "CPU", adapter_path, alpha]
-        py_result = run_sample(py_command, prompt)
+        py_command = [sys.executable, py_script, convert_model, image_path, "CPU", prompt, adapter_path, alpha]
+        py_result = run_sample(py_command)
 
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"

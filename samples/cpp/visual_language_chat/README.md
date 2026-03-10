@@ -51,7 +51,7 @@ wget -O openvino-overview-diagram.jpg \
 	https://docs.openvino.ai/2026/_images/openvino-overview-diagram.jpg
 ```
 
-`visual_language_lora ./Qwen2.5-VL-7B-Instruct ./openvino-overview-diagram.jpg CPU ./adapter_model.safetensors 4.0`
+`visual_language_lora ./Qwen2.5-VL-7B-Instruct ./openvino-overview-diagram.jpg CPU "What is shown in this diagram?" ./adapter_model.safetensors 4.0`
 
 > You can run with multiple LoRA adapters by providing multiple `<LORA_SAFETENSORS> <ALPHA>` pairs.
 
