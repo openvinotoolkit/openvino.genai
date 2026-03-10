@@ -1,4 +1,3 @@
-import os
 import pandas as pd
 import pytest
 import logging
@@ -26,6 +25,7 @@ gptq_model_id = "ybelkada/opt-125m-gptq-4bit"
 def _convert_base(model_id, temp_path):
     from optimum.exporters.openvino.convert import export_tokenizer
     from huggingface_hub import snapshot_download
+
     model_local = snapshot_download(model_id)
     tokenizer = AutoTokenizer.from_pretrained(model_local)
     base_model = OVModelForCausalLM.from_pretrained(model_local)
@@ -37,6 +37,7 @@ def _convert_base(model_id, temp_path):
 def _convert_int8(model_id, temp_path):
     from optimum.exporters.openvino.convert import export_tokenizer
     from huggingface_hub import snapshot_download
+
     model_local = snapshot_download(model_id)
     tokenizer = AutoTokenizer.from_pretrained(model_local)
     target_model = OVModelForCausalLM.from_pretrained(
