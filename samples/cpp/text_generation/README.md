@@ -27,7 +27,7 @@ huggingface-cli download <model> --local-dir <output_folder>
 
 To run any samples with a GGUF model, simply provide the path to the .gguf file via the `<MODEL_DIR>` parameter.
 
-This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models 
+This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models
 and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
 
 ## Sample Descriptions
@@ -104,7 +104,7 @@ Recommended models: meta-llama/Llama-2-7b-hf, etc
   ```
 
 ### 5. Prompt Lookup Decoding LM (`prompt_lookup_decoding_lm`)
-- **Description:** 
+- **Description:**
 [Prompt Lookup decoding](https://github.com/apoorvumang/prompt-lookup-decoding) is [assested-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) technique where the draft model is replaced with simple string matching the prompt to generate candidate token sequences. This method highly effective for input grounded generation (summarization, document QA, multi-turn chat, code editing), where there is high n-gram overlap between LLM input (prompt) and LLM output. This could be entity names, phrases, or code chunks that the LLM directly copies from the input while generating the output. Prompt lookup exploits this pattern to speed up autoregressive decoding in LLMs. This results in significant speedups with no effect on output quality.
 Recommended models: meta-llama/Llama-2-7b-hf, etc
 - **Main Feature:** Specialized prompt-based inference.
@@ -114,7 +114,7 @@ Recommended models: meta-llama/Llama-2-7b-hf, etc
   ```
 
 ### 6. Speculative Decoding LM (`speculative_decoding_lm`)
-- **Description:** 
+- **Description:**
 Speculative decoding (or [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) in HF terminology) is a recent technique, that allows to speed up token generation when an additional smaller draft model is used alongside with the main model.
 
 Speculative decoding works the following way. The draft model predicts the next K tokens one by one in an autoregressive manner, while the main model validates these predictions and corrects them if necessary. We go through each predicted token, and if a difference is detected between the draft and main model, we stop and keep the last token predicted by the main model. Then the draft model gets the latest main prediction and again tries to predict the next K tokens, repeating the cycle.
@@ -150,8 +150,8 @@ This sample demonstrates greedy decoding using Low-Rank Adaptation (LoRA) fine-t
 > This means `alpha` in GenAI should be treated as the **final scaling weight** applied to the LoRA update — not the raw `alpha` parameter from training.
 
 ### 8. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
-- **Description:** 
-LLMPipeline and Tokenizer objects can be initialized directly from the memory buffer, e.g. when user stores only encrypted files and decrypts them on-the-fly. 
+- **Description:**
+LLMPipeline and Tokenizer objects can be initialized directly from the memory buffer, e.g. when user stores only encrypted files and decrypts them on-the-fly.
 The following code snippet demonstrates how to load the model from the memory buffer:
 ```cpp
 auto [model_str, weights_tensor] = decrypt_model(models_path + "/openvino_model.xml", models_path + "/openvino_model.bin");
@@ -167,7 +167,7 @@ The sample also demonstrates how to enable user defined encryption for plugin ca
   ```
 
 ### 9. LLMs benchmarking sample (`benchmark_genai`)
-- **Description:** 
+- **Description:**
 This sample script demonstrates how to benchmark an LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
 
 For more information how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).
@@ -186,7 +186,7 @@ For more information how performance metrics are calculated please follow [perfo
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 
 ### 10. Structured Output Sample (`structured_output_sample`)
-- **Description:**  
+- **Description:**
 This sample demonstrates how to use OpenVINO GenAI to generate structured outputs, such as JSON, from text prompts. It showcases step-by-step reasoning, allowing a language model to break down tasks (e.g., solving equations) and present each step in a structured format.
 
 The sample uses the following JSON schema for structured output:
@@ -216,9 +216,9 @@ Recommended models: `meta-llama/Llama-3.2-1B-Instruct`, `meta-llama/Llama-3.2-8B
   ```
   After running the command, an interactive dialog starts. You can prompt the model to solve equations step by step. For example:
 
-1. **Step-by-step reasoning:**  
-   If you prompt:  
-   `Solve the equation 8x + 7 = -23 step by step`  
+1. **Step-by-step reasoning:**
+   If you prompt:
+   `Solve the equation 8x + 7 = -23 step by step`
    The model might output:
    ```json
    {
@@ -234,7 +234,7 @@ Recommended models: `meta-llama/Llama-3.2-1B-Instruct`, `meta-llama/Llama-3.2-8B
    }
    ```
 
-**Note:**  
+**Note:**
 Structured output enforcement ensures valid JSON formatting, but does not guarantee factual accuracy or meaningfulness. The model may generate plausible-looking JSON with incorrect or nonsensical data (e.g., `{"explanation": "John", "output": 200000}` or `{"final_answer": "AbrakaKadabra9999######4242"}`). For best results, use the latest or fine-tuned models to improve output quality and relevance.
 
 ## Troubleshooting

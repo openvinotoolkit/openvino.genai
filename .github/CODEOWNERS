@@ -10,11 +10,27 @@
 /src/js/ @Retribution98 @yatarkan
 /samples/js/ @Retribution98 @yatarkan
 
+# samples
+/samples/cpp/image_generation/ @likholat
+/samples/cpp/video_generation/ @likholat @sgonorov
+/samples/cpp/speech_generation/ @rkazants
+/samples/cpp/whisper_speech_recognition/ @as-suvorov
+/samples/cpp/rag/ @as-suvorov
+/samples/cpp/visual_language_chat/ @yatarkan
+
+/samples/python/image_generation/ @likholat
+/samples/python/video_generation/ @likholat @sgonorov
+/samples/python/speech_generation/ @rkazants
+/samples/python/whisper_speech_recognition/ @as-suvorov
+/samples/python/rag/ @as-suvorov
+/samples/python/visual_language_chat/ @yatarkan
+
 # Documentation
 /site/ @yatarkan
 
 # C++
 /src/cpp/include/openvino/genai/image_generation/ @likholat
+/src/cpp/include/openvino/genai/video_generation/ @likholat @sgonorov
 /src/cpp/include/openvino/genai/rag/ @as-suvorov
 /src/cpp/include/openvino/genai/speculative_decoding/ @sbalandi
 /src/cpp/include/openvino/genai/speech_generation/ @rkazants @as-suvorov
@@ -23,6 +39,7 @@
 /src/cpp/src/continuous_batching/ @popovaan
 /src/cpp/src/gguf_utils/ @TianmengChen
 /src/cpp/src/image_generation/ @likholat
+/src/cpp/src/video_generation/ @likholat @sgonorov
 /src/cpp/src/llm/ @pavel-esir
 /src/cpp/src/lora/ @likholat
 /src/cpp/src/prompt_lookup/ @sgonorov

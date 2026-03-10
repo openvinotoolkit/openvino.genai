@@ -58,7 +58,7 @@ class InpaintingEvaluator(Text2ImageEvaluator):
         test_data: Union[str, list] = None,
         metrics="similarity",
         similarity_model_id: str = "openai/clip-vit-large-patch14",
-        num_inference_steps=4,
+        num_inference_steps=None,
         crop_prompts=True,
         num_samples=None,
         gen_image_fn=None,
@@ -72,7 +72,7 @@ class InpaintingEvaluator(Text2ImageEvaluator):
         self.metrics = metrics
         self.crop_prompt = crop_prompts
         self.num_samples = num_samples
-        self.num_inference_steps = num_inference_steps
+        self.num_inference_steps = num_inference_steps or self.DEFAULT_NUM_INFERENCE_STEPS
         self.seed = seed
         self.similarity = None
         self.similarity = ImageSimilarity(similarity_model_id)
@@ -127,7 +127,11 @@ class InpaintingEvaluator(Text2ImageEvaluator):
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)
 
-        for i, (prompt, image, mask) in tqdm(enumerate(zip(prompts, images, masks)), desc="Evaluate pipeline"):
+        for i, (prompt, image, mask) in tqdm(
+            enumerate(zip(prompts, images, masks)),
+            total=min(len(prompts), len(images), len(masks)),
+            desc="Evaluate pipeline",
+        ):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
             output = generation_fn(

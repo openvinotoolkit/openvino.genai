@@ -46,7 +46,7 @@ huggingface-cli download <model> --local-dir <output_folder>
 
 To run any samples with a GGUF model, simply provide the path to the .gguf file via the `model_dir` parameter.
 
-This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models 
+This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models
 and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
 
 ### Sample Descriptions
@@ -59,7 +59,7 @@ Multi-turn conversations with an interactive chat interface powered by OpenVINO.
 ```
 
 #### LLMs benchmarking sample(`benchmark_genai_c`)
-The sample demonstrates how to benchmark LLMs in OpenVINO GenAI by using C language. 
+The sample demonstrates how to benchmark LLMs in OpenVINO GenAI by using C language.
 - **Run Command:**
 ```sh
 ./benchmark_gena_c  [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
@@ -75,7 +75,7 @@ The sample demonstrates how to benchmark LLMs in OpenVINO GenAI by using C langu
 
 #### Greedy Causal LM(`greedy_causal_lm`)
 
-Basic text generation using a causal language model. 
+Basic text generation using a causal language model.
 - **Run Command:**
 ```sh
 ./greedy_causal_lm_c  model_dir prompt
@@ -85,4 +85,3 @@ Basic text generation using a causal language model.
 ## Support and Contribution
 - For troubleshooting, consult the [OpenVINO documentation](https://docs.openvino.ai).
 - To report issues or contribute, visit the [GitHub repository](https://github.com/openvinotoolkit/openvino.genai).
-

@@ -163,9 +163,7 @@ public:
     }
 
     void add_inputs(const ov::Tensor& inputs_ids) {
-        OPENVINO_SUPPRESS_DEPRECATED_START
-        std::copy_n(inputs_ids.data<int64_t>(), inputs_ids.get_size(), std::back_inserter(state));
-        OPENVINO_SUPPRESS_DEPRECATED_END
+        std::copy_n(inputs_ids.data<const int64_t>(), inputs_ids.get_size(), std::back_inserter(state));
     }
 
     void reset_state() {
@@ -291,6 +289,8 @@ SchedulerConfig get_latency_oriented_scheduler_config();
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested = false);
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);
+
+void clear_false_prompt_lookup_from_config(ov::AnyMap& properties);
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 

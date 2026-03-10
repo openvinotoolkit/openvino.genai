@@ -1,11 +1,13 @@
 import { LLMPipeline, StructuredOutputConfig } from "../dist/index.js";
-import { models } from "./models.js";
 import assert from "node:assert/strict";
 import { describe, it, before } from "node:test";
 import os from "node:os";
 
-const INSTRUCT_MODEL_PATH =
-  process.env.INSTRUCT_MODEL_PATH || `./tests/models/${models.InstructLLM.split("/")[1]}`;
+const { LLM_PATH } = process.env;
+
+if (!LLM_PATH) {
+  throw new Error("Please set LLM_PATH environment variable to run the tests.");
+}
 
 describe(
   "LLMPipeline.generate() with generation config",
@@ -14,36 +16,28 @@ describe(
   () => {
     let pipeline = null;
 
+    const person = {
+      properties: {
+        name: { pattern: "^[A-Z][a-z]{1,20}$", type: "string" },
+        age: { maximum: 128, minimum: 0, type: "integer" },
+        city: { enum: ["Dublin", "Dubai", "Munich"], type: "string" },
+      },
+      required: ["name", "age", "city"],
+      type: "object",
+    };
+
     before(async function () {
-      pipeline = await LLMPipeline(INSTRUCT_MODEL_PATH, "CPU");
+      pipeline = await LLMPipeline(LLM_PATH, "CPU");
     });
 
     it("generate with json schema in structured_output_config", async () => {
       const generationConfig = {
         max_new_tokens: 50,
         structured_output_config: {
-          json_schema: JSON.stringify({
-            type: "object",
-            properties: {
-              name: { type: "string" },
-              age: { type: "number" },
-              city: { type: "string" },
-            },
-            required: ["name", "age", "city"],
-          }),
+          json_schema: JSON.stringify(person),
         },
       };
-      const prompt = `Generate a JSON object with the following properties:
-    - name: a random name
-    - age: a random age between 1 and 100
-    - city: a random city
-    The JSON object should be in the following format:
-    {
-      "name": "John Doe",
-      "age": 30,
-      "city": "New York"
-    }
-    `;
+      const prompt = "Generate a json about a person.";
       const res = await pipeline.generate(prompt, generationConfig);
       const text = res.texts[0];
       let parsed;
@@ -62,17 +56,7 @@ describe(
       const generationConfig = {
         max_new_tokens: 50,
         structured_output_config: {
-          structural_tags_config: StructuredOutputConfig.JSONSchema(
-            JSON.stringify({
-              type: "object",
-              properties: {
-                name: { type: "string" },
-                age: { type: "number" },
-                city: { type: "string" },
-              },
-              required: ["name", "age", "city"],
-            }),
-          ),
+          structural_tags_config: StructuredOutputConfig.JSONSchema(JSON.stringify(person)),
         },
       };
       const prompt = `Generate a JSON object with the following properties:
@@ -146,31 +130,36 @@ describe(
       const generationConfig = {
         max_new_tokens: 50,
         structured_output_config: {
-          grammar: `root::= "SELECT " column (", " column)? " from " table ";"
-column::= "name" | "username" | "email" | "postcode" | "*"
-table::= "users" | "orders" | "products"`,
+          grammar: `root ::= date
+date ::= year "-" month "-" day
+year ::= digit digit digit digit
+month ::= digit digit
+day ::= digit digit
+digit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"`,
         },
       };
-      const prompt = `"Respond with a SQL query using the grammar. Generate an SQL query to show the 'username' and 'email' from the 'users' table."`;
+      const prompt = "Generate a date of first day of 21st century";
       const res = await pipeline.generate(prompt, generationConfig);
       const text = res.texts[0].trim();
-      assert.equal(text, "SELECT username, email from users;", `Unexpected format: ${text}`);
+      assert.ok(/^(\d{4})-(\d{2})-(\d{2})$/.test(text), `Unexpected format: ${text}`);
     });
 
     it("generate with StructuredOutputConfig.EBNF in structured_output_config", async () => {
       const generationConfig = {
         max_new_tokens: 50,
         structured_output_config: {
-          structural_tags_config:
-            StructuredOutputConfig.EBNF(`root::= "SELECT " column (", " column)? " from " table ";"
-column::= "name" | "username" | "email" | "postcode" | "*"
-table::= "users" | "orders" | "products"`),
+          structural_tags_config: StructuredOutputConfig.EBNF(`root ::= date
+date ::= year "-" month "-" day
+year ::= digit digit digit digit
+month ::= digit digit
+day ::= digit digit
+digit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"`),
         },
       };
-      const prompt = `"Respond with a SQL query using the grammar. Generate an SQL query to show the 'username' and 'email' from the 'users' table."`;
+      const prompt = "Generate a date of first day of 21st century";
       const res = await pipeline.generate(prompt, generationConfig);
       const text = res.texts[0].trim();
-      assert.equal(text, "SELECT username, email from users;", `Unexpected format: ${text}`);
+      assert.ok(/^(\d{4})-(\d{2})-(\d{2})$/.test(text), `Unexpected format: ${text}`);
     });
 
     it("generate with StructuredOutputConfig.Concat in structured_output_config", async () => {
@@ -178,20 +167,10 @@ table::= "users" | "orders" | "products"`),
         max_new_tokens: 50,
         structured_output_config: {
           structural_tags_config: StructuredOutputConfig.Concat(
-            StructuredOutputConfig.JSONSchema(
-              JSON.stringify({
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  age: { type: "number" },
-                  city: { type: "string" },
-                },
-                required: ["name", "age", "city"],
-              }),
-            ),
+            StructuredOutputConfig.JSONSchema(JSON.stringify(person)),
             StructuredOutputConfig.Union(
-              StructuredOutputConfig.Regex("A"),
-              StructuredOutputConfig.Regex("B"),
+              StructuredOutputConfig.Regex("a"),
+              StructuredOutputConfig.Regex("b"),
             ),
           ),
         },
@@ -211,7 +190,7 @@ table::= "users" | "orders" | "products"`),
       const text = res.texts[0].trim();
 
       const postfix = text[text.length - 1];
-      assert.ok(postfix === "A" || postfix === "B", `Unexpected postfix: ${postfix}`);
+      assert.ok(postfix === "a" || postfix === "b", `Unexpected postfix: ${postfix}`);
 
       const jsonPart = text.substring(0, text.length - 1);
       let parsed;

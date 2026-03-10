@@ -8,6 +8,8 @@
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "openvino/runtime/properties.hpp"
+#include "openvino/runtime/auto/properties.hpp"
 
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/inputs_embedder.hpp"
@@ -30,11 +32,18 @@ void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& 
     switch (vlm_config.model_type) {
         case VLMModelType::GEMMA3:
             properties.insert({"NPUW_LLM_PREFILL_HINT", "STATIC"});
-            properties.insert({"NPUW_F16IC", "NO"});
             break;
         default:
             break;
     }
+}
+
+void npu_auto_default_properties(ov::AnyMap& device_properties) {
+    auto auto_properties = utils::pop_or_default<ov::AnyMap>(device_properties, "AUTO", {});
+    auto_properties.insert(ov::device::priorities("CPU"));
+    auto_properties.insert(ov::intel_auto::enable_startup_fallback(false));
+
+    device_properties["AUTO"] = auto_properties;
 }
 }
 
@@ -94,23 +103,24 @@ public:
         //     ov::device::properties("NPU", ...),
         //     ov::device::properties("CPU", ...)
         // }
-        auto device_propertes = utils::pop_or_default<ov::AnyMap>(
+        auto device_properties = utils::pop_or_default<ov::AnyMap>(
             properties_copy, ov::device::properties.name(), { }
         );
         // Otherwise, the same properties are used for all models and devices
-        auto lm_properties = device_propertes.empty()
+        auto lm_properties = device_properties.empty()
             ? properties_copy
-            : utils::pop_or_default<ov::AnyMap>(device_propertes, device, {});
+            : utils::pop_or_default<ov::AnyMap>(device_properties, device, {});
 
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
         if (m_is_npu) {
-            embedder_device = "CPU";
+            embedder_device = "AUTO";
             utils::KVDesc kv_desc;
             update_npu_properties(models_dir, lm_properties);
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
+            npu_auto_default_properties(device_properties);
         } else {
             compiled_language_model = utils::singleton_core().compile_model(language_model, device, lm_properties);
         }
@@ -119,9 +129,9 @@ public:
         m_language = compiled_language_model.create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
-        auto embedder_properties = device_propertes.empty()
+        auto embedder_properties = device_properties.empty()
             ? properties_copy
-            : utils::pop_or_default<ov::AnyMap>(device_propertes, embedder_device, {});
+            : utils::pop_or_default<ov::AnyMap>(device_properties, embedder_device, {});
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
         m_tokenizer = m_inputs_embedder->get_tokenizer();
@@ -207,8 +217,10 @@ public:
 
         setup_generation_config(generation_config);
 
+        bool intermediate_remote_tensor = true;
         if (m_is_npu) {
             validate_inputs_for_npu(images, videos, generation_config);
+            intermediate_remote_tensor = false;
         }
 
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
@@ -250,7 +262,8 @@ public:
             video_sequence,
             generation_config,
             perf_metrics,
-            streamer
+            streamer,
+            intermediate_remote_tensor
         );
 
         EncodedResults& encoded_result = finish_info.results;
@@ -265,6 +278,18 @@ public:
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
+            // Update m_history with pruned content if pruning is enabled
+            if (generation_config.pruning_ratio > 0) {
+                auto history_state = ChatHistoryInternalState::get_or_create(m_history, m_vision_registry);
+                size_t last_user_idx = history_state->get_last_user_message_index();
+
+                // Replace the original prompt with the pruned prompt after CDPruner
+                auto user_message = m_history[last_user_idx];
+                std::string original_prompt = user_message["content"].get_string();
+                user_message["content"] = m_inputs_embedder->get_last_pruned_prompt(original_prompt);
+                m_history[last_user_idx] = user_message;
+            }
+
             m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
 
             if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
@@ -339,9 +364,14 @@ public:
 
         setup_generation_config(generation_config);
 
+        bool intermediate_remote_tensor = true;
         if (m_is_npu) {
             validate_inputs_for_npu(images, videos, generation_config);
+            intermediate_remote_tensor = false;
         }
+
+        m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
+                                                           generation_config.relevance_weight);
 
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
@@ -383,10 +413,16 @@ public:
             video_seq,
             generation_config,
             perf_metrics,
-            streamer
+            streamer,
+            intermediate_remote_tensor
         );
 
         EncodedResults& encoded_result = generation_finish_info.results;
+        
+        // Update pruned content after generation (CDPruner has run during prepare_inputs_and_generate)
+        if (generation_config.pruning_ratio > 0) {
+            chat_context.apply_pruning_to_last_message();
+        }
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;
@@ -514,7 +550,8 @@ private:
         const std::vector<size_t>& video_sequence,
         GenerationConfig& generation_config,
         VLMPerfMetrics& perf_metrics,
-        const StreamerVariant& streamer
+        const StreamerVariant& streamer,
+        const bool use_intermediate_remote_tensor
     ) {
         ov::Tensor inputs_embeds;
         std::optional<ov::Tensor> token_type_ids;
@@ -594,7 +631,8 @@ private:
 
         return ov::genai::get_lm_encoded_results(
             m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
-            position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size
+            position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
+            use_intermediate_remote_tensor
         );
     }
 };
@@ -615,6 +653,7 @@ VLMPipeline::VLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    utils::clear_false_prompt_lookup_from_config(properties);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
@@ -658,6 +697,7 @@ VLMPipeline::VLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    utils::clear_false_prompt_lookup_from_config(properties);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");

@@ -9,7 +9,7 @@ The sparse attention prefill algorithms enable speedups during the prompt proces
 During the prefill stage, the attention operation could only be applied to the subset of blocks determined to be most "important" for the current generation context, with importance estimation method determined by the algorithm.
 
 The KV-cache blocks that are deemed "unimportant" at a certain stage of prefill are not discarded entirely, but are preserved as-is so that they may still be considered for usage in the attention computation in latter stages of prompt processing.
-Moreover, the sparse prefill algorithms do not apply during the generation stage. 
+Moreover, the sparse prefill algorithms do not apply during the generation stage.
 The sparse prefill algorithms therefore do not lead to decreased maximum and average memory consumption throughout the generation process, but they do lead to the decreased total generation and first token latency times due to enabling faster prefills.
 
 To achieve overall memory savings and generation stage memory and compute optimizations, the [cache eviction algorithm](./kvcache-eviction-algorithm.md) can be used along with sparse prefill algorithms, or separately.

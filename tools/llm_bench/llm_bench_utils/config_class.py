@@ -199,6 +199,8 @@ USE_CASES = {
                 "granitemoe",
                 "gptj",
                 "yi-",
+                "lfm2-moe",
+                "afmoe",
             ]
         ),
         UseCaseTextGen(["t5"], ov_cls=OVModelForSeq2SeqLM, pt_cls=T5ForConditionalGeneration),

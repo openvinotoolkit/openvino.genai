@@ -22,7 +22,8 @@ def save_video(filename: str, video_tensor, fps: int = 25):
         writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
         for f in range(num_frames):
-            writer.write(video_data[b, f])
+            frame_bgr = cv2.cvtColor(video_data[b, f], cv2.COLOR_RGB2BGR)
+            writer.write(frame_bgr)
 
         writer.release()
         print(f"Wrote {output_path} ({num_frames} frames, {width}x{height} @ {fps} fps)")
@@ -58,11 +59,10 @@ def main():
     save_video("genai_video.avi", output.video, frame_rate)
 
     print(f"\nPerformance metrics:")
-    print(f"  Load time: {output.perf_metrics.load_time:.2f} ms")
-    print(f"  Generate duration: {output.perf_metrics.get_generate_duration().mean:.2f} ms")
-    print(f"  Text encoder duration: {output.perf_metrics.get_text_encoder_duration().mean:.2f} ms")
-    print(f"  Denoising duration: {output.perf_metrics.get_denoising_duration().mean:.2f} ms")
-    print(f"  Decoding duration: {output.perf_metrics.get_decoding_duration().mean:.2f} ms")
+    print(f"  Load time: {output.perf_metrics.get_load_time():.2f} ms")
+    print(f"  Generate duration: {output.perf_metrics.get_generate_duration():.2f} ms")
+    print(f"  Transformer duration: {output.perf_metrics.get_transformer_infer_duration().mean:.2f} ms")
+    print(f"  VAE decoder duration: {output.perf_metrics.get_vae_decoder_infer_duration():.2f} ms")
 
 
 if __name__ == "__main__":
