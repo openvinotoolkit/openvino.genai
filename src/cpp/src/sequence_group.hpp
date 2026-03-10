@@ -424,8 +424,7 @@ public:
                         m_deepstack_visual_embeds = ov::Tensor(tensor.get_element_type(), tensor.get_shape());
                         tensor.copy_to(m_deepstack_visual_embeds);
                     } else if (input_name == "visual_pos_masks") {
-                        m_visual_pos_masks = std::vector<bool>(tensor.get_size());
-                        std::copy_n(tensor.data<const bool>(), tensor.get_size(), m_visual_pos_masks->begin());
+                        m_visual_pos_masks = std::vector<bool>(tensor.data<const bool>(), tensor.data<const bool>() + tensor.get_size());
                     }
                 }
             }
