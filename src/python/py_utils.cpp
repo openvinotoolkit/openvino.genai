@@ -467,6 +467,7 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
             }
             params[key] = utils::py_object_to_any(value, key);
         }
+
     }
     return params;
 }

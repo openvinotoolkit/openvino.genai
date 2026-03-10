@@ -193,8 +193,13 @@ char generation_config_docstring[] = R"(
     top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
     do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
     num_return_sequences: the number of sequences to generate from a single prompt.
-)";
 
+    EAGLE tree search parameters:
+    eagle_tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
+    eagle_tree_params.tree_depth:       lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations.
+    eagle_tree_params.total_tokens:     number of nodes selected from the built EAGLE tree after reranking,
+                                        used as the final set of draft token candidates submitted to the target model for verification.
+)";
 
 template <typename PyClass>
 void add_grammar_operators(PyClass& py_cls) {

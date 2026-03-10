@@ -362,6 +362,12 @@ void GenerationConfig::validate() const {
 
     // tree search (EAGLE)
     if (is_tree_search()) {
+        OPENVINO_ASSERT(!do_sample,
+                        "Tree search (EAGLE) is incompatible with do_sample=true; "
+                        "set eagle_tree_params.tree_depth=0 or do_sample=false");
+        OPENVINO_ASSERT(num_beams == 1,
+                        "Tree search (EAGLE) is incompatible with beam search; "
+                        "set eagle_tree_params.tree_depth=0 or num_beams=1");
         OPENVINO_ASSERT(eagle_tree_params.branching_factor > 0,
                         "'branching_factor' must be > 0 when tree search is enabled, but got ",
                         eagle_tree_params.branching_factor);
