@@ -315,7 +315,7 @@ TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils:
     size_t cache_len = cache_state.get_state().size();
     if (
         cache_len == 0 
-        || cache_state.needs_reset()  // models with linear attention needs full input if prefix is altered
+        || cache_state.needs_reset()  // models with linear attention need full input if prefix is altered
     ) {
         encoded_input.input_ids = new_chat_tokens;
         ov::Tensor new_attention_mask(ov::element::i64, new_chat_tokens.get_shape());

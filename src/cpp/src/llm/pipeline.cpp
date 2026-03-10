@@ -315,9 +315,9 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
 
     // PA backend does not support linear attention states (conv/SSM caches).
-    const auto model_for_check = utils::singleton_core().read_model(model_str, weights_tensor);
+    const auto model = utils::singleton_core().read_model(model_str, weights_tensor);
     if (attention_backend == PA_BACKEND && !is_npu_requested
-        && utils::has_linear_attention_states(model_for_check)) {
+        && utils::has_linear_attention_states(model)) {
         if (utils::explicitly_requires_paged_attention(user_properties)
             || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
             GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
@@ -328,7 +328,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(
-            model_for_check,
+            model,
             tokenizer,
             device,
             properties,
@@ -356,7 +356,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         // FIXME: Switch to StatefulPipeline::create after resolving issues
         //        with GPU and CPU for StatefulSpeculativeLLMPipeline
         m_pimpl = std::make_unique<StatefulLLMPipeline>(
-            model_for_check,
+            model,
             tokenizer,
             device,
             properties,
