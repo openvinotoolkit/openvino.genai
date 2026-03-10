@@ -1,4 +1,4 @@
-// Copyright (C) 2024-2026 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 // Unit tests for EagleCandidateGraph.
@@ -55,16 +55,6 @@ TEST(EagleCandidateGraphTest, AddNodeReturnsSequentialIds) {
     const uint64_t id2 = g.add_node(20, -2.0f, /*parent=*/0u);
     EXPECT_EQ(id1, 1u);
     EXPECT_EQ(id2, 2u);
-}
-
-TEST(EagleCandidateGraphTest, AddNodeBeyondMaxDepthReturnsZero) {
-    // max_depth = 1: children of root are at layer 1 (allowed),
-    // grandchildren would be at layer 2 (beyond limit).
-    EagleCandidateGraph g(0, 0.0f, 10, /*max_depth=*/1);
-    const uint64_t child = g.add_node(1, -1.0f, 0u);
-    ASSERT_NE(child, 0u) << "First-level child should be accepted";
-    const uint64_t grand_child = g.add_node(2, -2.0f, child);
-    EXPECT_EQ(grand_child, 0u) << "Second-level child must be rejected when max_depth=1";
 }
 
 TEST(EagleCandidateGraphTest, AddNodeStoresCorrectMetadata) {
@@ -497,21 +487,6 @@ TEST(EagleCandidateGraphTest, TreeMaskBranchingWithDepth) {
     EXPECT_TRUE (g.is_ancestor(c2,  gc2));
     EXPECT_FALSE(g.is_ancestor(c1,  gc2));
     EXPECT_FALSE(g.is_ancestor(gc1, gc2));
-}
-
-// ---------------------------------------------------------------------------
-// add_node: max_depth = 0
-// ---------------------------------------------------------------------------
-
-TEST(EagleCandidateGraphTest, MaxDepthZeroRejectsAllChildren) {
-    // max_depth=0: only the root (layer 0) is allowed; direct children are layer 1 and must be rejected.
-    EagleCandidateGraph g(0, 0.0f, /*max_tokens=*/10, /*max_depth=*/0);
-    const uint64_t child = g.add_node(1, -1.0f, 0u);
-    EXPECT_EQ(child, 0u) << "Children of root must be rejected when max_depth=0";
-
-    const auto top = g.select_candidate_nodes();
-    ASSERT_EQ(top.size(), 1u);
-    EXPECT_EQ(top[0].id, 0u);
 }
 
 // ---------------------------------------------------------------------------

@@ -639,7 +639,7 @@ void Sampler::TreeSearcher::tree_reset() {
     OPENVINO_ASSERT(total_tokens > 1,
                     "eagle_tree_params.total_tokens must be greater than 1, got ", total_tokens);
     const int max_non_root_candidate_nodes = static_cast<int>(total_tokens - 1);
-    m_candidate_graph.emplace(-1, 0.0f, max_non_root_candidate_nodes, m_parameters.eagle_tree_params.tree_depth);
+    m_candidate_graph.emplace(-1, 0.0f, max_non_root_candidate_nodes, static_cast<int>(m_parameters.eagle_tree_params.tree_depth));
 
     const std::vector<Sequence::Ptr> running = m_sequence_group->get_running_sequences();
     OPENVINO_ASSERT(!running.empty(), "tree_reset: sequence group has no running sequences");
@@ -1218,9 +1218,9 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
     auto& eagle_metadata = sequence->get_eagle_metadata();
     auto retrieve_indices = eagle_metadata.retrieve_indices;
 
-    if (retrieve_indices.empty()) {
-        return 0;
-    }
+    OPENVINO_ASSERT(!retrieve_indices.empty(),
+                    "verify_draft_tree: retrieve_indices is empty; "
+                    "finalize_tree() must be called before validation");
 
     // Reconstruct per-path token sequences from retrieve_indices.
     // retrieve_indices[i] is a sequence of flat-tree node indices for path i;
