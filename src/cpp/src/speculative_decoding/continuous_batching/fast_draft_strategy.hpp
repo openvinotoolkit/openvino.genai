@@ -59,7 +59,7 @@ std::vector<EncodedGenerationResult> generate_common(
 
     std::vector<GenerationHandle> main_generations;
     {
-        std::lock_guard<std::mutex> lock(self->draft_generations_mutex());
+        std::lock_guard<std::mutex> lock(self->m_draft_generations_mutex);
         for (size_t rid = 0; rid < input_ids.size(); ++rid) {
             GenerationConfig main_cfg = sampling_params[rid];
             GenerationConfig draft_cfg = main_cfg;
@@ -196,7 +196,6 @@ public:
     Tokenizer& tokenizer() { return m_tokenizer; }
     const Tokenizer& tokenizer() const { return m_tokenizer; }
 
-    std::mutex& draft_generations_mutex() { return m_draft_generations_mutex; }
 };
 
 }  // namespace ov::genai
