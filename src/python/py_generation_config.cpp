@@ -474,6 +474,7 @@ void init_generation_config(py::module_& m) {
         .def("is_beam_search", &GenerationConfig::is_beam_search)
         .def("is_greedy_decoding", &GenerationConfig::is_greedy_decoding)
         .def("is_multinomial", &GenerationConfig::is_multinomial)
+        .def("is_tree_search", &GenerationConfig::is_tree_search)
         .def("is_assisting_generation", &GenerationConfig::is_assisting_generation)
         .def("is_prompt_lookup", &GenerationConfig::is_prompt_lookup)
         .def("validate", &GenerationConfig::validate)
