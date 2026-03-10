@@ -6,7 +6,7 @@ import Streaming from '@site/docs/use-cases/_shared/_streaming.mdx';
 ## Additional Usage Options
 
 :::tip
-Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/whisper_speech_recognition) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/whisper_speech_recognition) Whisper speech recognition samples.
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/whisper_speech_recognition), [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/whisper_speech_recognition), and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/whisper_speech_recognition) Whisper speech recognition samples.
 :::
 
 ### Use Different Generation Parameters
@@ -55,6 +55,29 @@ Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master
           }
           ```
       </TabItemCpp>
+      <TabItemJS>
+          ```javascript
+          import { WhisperPipeline } from 'openvino-genai-node';
+
+          const pipeline = await WhisperPipeline(modelPath, "CPU");
+
+          // Get default configuration
+          const config = pipeline.getGenerationConfig();
+
+          // Modify parameters
+          const generationConfig = {
+            ...config,
+            max_new_tokens: 100,
+            temperature: 0.7,
+            top_k: 50,
+            top_p: 0.9,
+            repetition_penalty: 1.2
+          };
+
+          // Generate text with custom configuration
+          const result = await pipeline.generate(rawSpeech, { generationConfig });
+          ```
+      </TabItemJS>
   </LanguageTabs>
 </BasicGenerationConfiguration>
 
@@ -98,6 +121,26 @@ Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master
           }
           ```
       </TabItemCpp>
+      <TabItemJS>
+          ```javascript
+          const pipeline = await WhisperPipeline(modelPath, "CPU");
+
+          // Get default generation config
+          const config = pipeline.getGenerationConfig();
+
+          // Modify parameters
+          const generationConfig = {
+            ...config,
+            max_new_tokens: 256,
+            num_beams: 15,
+            num_beam_groups: 3,
+            diversity_penalty: 1.0
+          };
+
+          // Generate text with custom configuration
+          const result = await pipeline.generate(rawSpeech, { generationConfig });
+          ```
+      </TabItemJS>
   </LanguageTabs>
 </BeamSearchGeneration>
 
@@ -139,6 +182,22 @@ Whisper models can automatically detect the language of the input audio, or you 
         }
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        const pipeline = await WhisperPipeline(modelPath, "CPU");
+
+        // Automatic language detection
+        let result = await pipeline.generate(rawSpeech);
+
+        // Explicitly specify language (English)
+        let generationConfig = { language: "<|en|>" };
+        result = await pipeline.generate(rawSpeech, { generationConfig });
+
+        // French speech sample
+        generationConfig = { language: "<|fr|>" };
+        result = await pipeline.generate(frenchRawSpeech, { generationConfig });
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 ### Translation
@@ -167,6 +226,15 @@ To translate non-English speech to English, use the `translate` task:
         }
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        const pipeline = await WhisperPipeline(modelPath, "CPU");
+
+        // Translate French audio to English
+        const generationConfig = { task: "translate" };
+        const result = await pipeline.generate(rawSpeech, { generationConfig });
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 ### Timestamps Prediction
@@ -202,6 +270,20 @@ Whisper can predict timestamps for each segment of speech, which is useful for s
         }
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        const pipeline = await WhisperPipeline(modelPath, "CPU");
+
+        // Enable timestamp prediction
+        const generationConfig = { return_timestamps: true, language: "<|en|>", task: "transcribe" };
+        const result = await pipeline.generate(rawSpeech, { generationConfig });
+
+        // Print timestamps and text segments
+        for (const chunk of result.chunks ?? []) {
+          console.log(`timestamps: [${chunk.startTs.toFixed(2)}, ${chunk.endTs.toFixed(2)}] text: ${chunk.text}`);
+        }
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 ### Word-level Timestamps Prediction
@@ -241,6 +323,22 @@ Whisper can predict timestamps for each word of speech, which provides more gran
         }
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        // Word timestamps require decomposition of cross-attention decoder SDPA layers,
+        // so word_timestamps must be passed to the pipeline constructor (not just in generation config)
+        const pipeline = await WhisperPipeline(modelPath, "CPU", { word_timestamps: true });
+
+        // Enable word-level timestamp prediction
+        const generationConfig = { return_timestamps: true, word_timestamps: true, language: "<|en|>", task: "transcribe" };
+        const result = await pipeline.generate(rawSpeech, { generationConfig });
+
+        // Print word-level timestamps
+        for (const w of result.words ?? []) {
+          console.log(`[${w.startTs.toFixed(2)}, ${w.endTs.toFixed(2)}]: ${w.word}`);
+        }
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 :::info
@@ -295,6 +393,18 @@ Such prompts can be used to steer the model to use particular spellings or style
         }
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        const pipeline = await WhisperPipeline(modelPath, "CPU");
+
+        let result = await pipeline.generate(rawSpeech);
+        // He has gone and gone for good answered Paul Icrom who...
+
+        const generationConfig = { initial_prompt: "Polychrome" };
+        result = await pipeline.generate(rawSpeech, { generationConfig });
+        // He has gone and gone for good answered Polychrome who...
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 :::info
