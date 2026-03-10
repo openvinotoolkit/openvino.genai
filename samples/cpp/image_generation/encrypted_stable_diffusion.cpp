@@ -66,7 +66,7 @@ auto get_config_for_cache_encryption() {
 }
 
 int32_t main(int32_t argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc >= 3 && argc <= 4, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' <DEVICE>");
+    OPENVINO_ASSERT(argc >= 3 && argc <= 4, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [ <DEVICE> ]");
 
     const std::filesystem::path models_path = argv[1];
     const std::string prompt = argv[2];
@@ -85,7 +85,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     const ov::genai::CLIPTextModel text_encoder = ov::genai::CLIPTextModel(
             text_encoder_model_str, 
             text_encoder_model_weights, 
-            ov::genai::CLIPTextModel::Config::Config(models_path / "text_encoder" / "config.json"), 
+            ov::genai::CLIPTextModel::Config(models_path / "text_encoder" / "config.json"), 
             text_tokenizer, device, config);
 
     auto [text_encoder_2_model_str, text_encoder_2_model_weights] = decrypt_model(models_path / "text_encoder_2", "openvino_model.xml", "openvino_model.bin");
@@ -93,21 +93,21 @@ int32_t main(int32_t argc, char* argv[]) try {
     const ov::genai::CLIPTextModelWithProjection text_encoder_2 = ov::genai::CLIPTextModelWithProjection(
             text_encoder_2_model_str, 
             text_encoder_2_model_weights, 
-            ov::genai::CLIPTextModelWithProjection::Config::Config(models_path / "text_encoder_2" / "config.json"), 
+            ov::genai::CLIPTextModelWithProjection::Config(models_path / "text_encoder_2" / "config.json"), 
             text_tokenizer_2, device, config);
 
     auto [vae_decoder_model_str, vae_decoder_model_weights] = decrypt_model(models_path / "vae_decoder", "openvino_model.xml", "openvino_model.bin");
     const ov::genai::AutoencoderKL vae_decoder = ov::genai::AutoencoderKL(
             vae_decoder_model_str, 
             vae_decoder_model_weights, 
-            ov::genai::AutoencoderKL::Config::Config(models_path / "vae_decoder" / "config.json"),
+            ov::genai::AutoencoderKL::Config(models_path / "vae_decoder" / "config.json"),
             device, config);
     
     auto [unet_model_str, unet_model_weights] = decrypt_model(models_path / "unet", "openvino_model.xml", "openvino_model.bin");
     const ov::genai::UNet2DConditionModel unet = ov::genai::UNet2DConditionModel(
             unet_model_str, 
             unet_model_weights,
-            ov::genai::UNet2DConditionModel::Config::Config(models_path / "unet" / "config.json"),
+            ov::genai::UNet2DConditionModel::Config(models_path / "unet" / "config.json"),
             vae_decoder.get_vae_scale_factor(),
             device, config);
 
