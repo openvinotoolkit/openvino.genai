@@ -4,6 +4,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Type
+import subprocess
 
 from optimum.modeling_base import OptimizedModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -257,6 +258,30 @@ def sanitize_model_id(model_id: str) -> str:
 
 TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
 
+# Some linear-attention models are exported incorrectly via OVModelForCausalLM.from_pretrained(..., export=True)
+# in the Python API path. Use optimum-cli export for these models to match stable CLI behavior.
+FORCE_OPTIMUM_CLI_EXPORT_MODELS = (
+    "optimum-intel-internal-testing/tiny-random-lfm2",
+)
+
+
+def export_with_optimum_cli(model_id: str, output_dir: Path, trust_remote_code: bool) -> None:
+    command = [
+        "optimum-cli",
+        "export",
+        "openvino",
+        "-m",
+        model_id,
+        "--task",
+        "text-generation-with-past",
+        str(output_dir),
+    ]
+
+    if trust_remote_code:
+        command.append("--trust-remote-code")
+
+    retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True))
+
 
 def download_and_convert_model_class(
     model_id: str, 
@@ -277,16 +302,27 @@ def download_and_convert_model_class(
             models_path, model_class, local_files_only=True, trust_remote_code=trust_remote_code
         )
     else:
-        opt_model, hf_tokenizer = get_huggingface_models(
-            model_id, model_class, local_files_only=False, trust_remote_code=trust_remote_code
-        )
-        if "padding_side" in tokenizer_kwargs:
-            hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
+        force_cli_export = model_class.__name__ in ["OVModelForCausalLM"] and model_id in FORCE_OPTIMUM_CLI_EXPORT_MODELS
 
-        def convert_to_temp(temp_path: Path) -> None:
-            convert_models(opt_model, hf_tokenizer, temp_path)
+        if force_cli_export:
+            def convert_to_temp(temp_path: Path) -> None:
+                export_with_optimum_cli(model_id, temp_path, trust_remote_code=trust_remote_code)
 
-        manager.execute(convert_to_temp)
+            manager.execute(convert_to_temp)
+            opt_model, hf_tokenizer = get_huggingface_models(
+                models_path, model_class, local_files_only=True, trust_remote_code=trust_remote_code
+            )
+        else:
+            opt_model, hf_tokenizer = get_huggingface_models(
+                model_id, model_class, local_files_only=False, trust_remote_code=trust_remote_code
+            )
+            if "padding_side" in tokenizer_kwargs:
+                hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
+
+            def convert_to_temp(temp_path: Path) -> None:
+                convert_models(opt_model, hf_tokenizer, temp_path)
+
+            manager.execute(convert_to_temp)
 
     if "padding_side" in tokenizer_kwargs:
         hf_tokenizer.padding_side = tokenizer_kwargs["padding_side"]

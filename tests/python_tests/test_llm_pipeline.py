@@ -156,7 +156,24 @@ def test_string_inputs(
     )
 
 
-@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("generation_config_dict,prompt", INPUTS_TEST_CASES)
+@pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
+def test_linear_attention_string_inputs(
+    llm_model: OVConvertedModelSchema,
+    generation_config_dict: dict,
+    prompt: str,
+    pipeline_type: PipelineType,
+) -> None:
+    generate_and_compare(
+        model_schema=llm_model,
+        prompts=[prompt],
+        generation_config=generation_config_dict,
+        pipeline_type=pipeline_type,
+    )
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("inputs", INPUT_TENSORS_LIST)
 def test_encoded_inputs(
     llm_model: OVConvertedModelSchema,
@@ -221,7 +238,7 @@ def test_batch_string_inputs(
 
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
-@pytest.mark.parametrize("generation_config_dict", TEST_CONFIGS[:1])
+@pytest.mark.parametrize("generation_config_dict", TEST_CONFIGS)
 @pytest.mark.parametrize("prompts", BATCHED_PROMPTS)
 def test_linear_attention_batch_string_inputs(
     llm_model: OVConvertedModelSchema,
@@ -275,14 +292,30 @@ def test_different_input_types_works_same_and_change_nothing(
 
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
-def test_linear_model_deterministic(llm_model: OVConvertedModelSchema, pipeline_type: PipelineType) -> None:
+@pytest.mark.parametrize("prompt", [prompt for prompts in BATCHED_PROMPTS for prompt in prompts])
+def test_linear_model_deterministic(llm_model: OVConvertedModelSchema, pipeline_type: PipelineType, prompt: str) -> None:
     ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
-    prompt = "The capital of France is "
     config = ov_genai.GenerationConfig(max_new_tokens=20, apply_chat_template=False, do_sample=False)
     result1 = ov_pipe.generate(prompt, generation_config=config)
     result2 = ov_pipe.generate(prompt, generation_config=config)
     assert result1 == result2
 
+
+@pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
+def test_linear_attention_batch_input_same_as_individual(
+    llm_model: OVConvertedModelSchema,
+    pipeline_type: PipelineType,
+) -> None:
+    prompts = ["table is made", "They sky is blue because", "Difference between Jupiter and Mars is that"]
+    generation_config_dict = {"max_new_tokens": 20}
+    
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
+    
+    batch_result = ov_pipe.generate(prompts, generation_config=ov_genai.GenerationConfig(**generation_config_dict))
+    for i, prompt in enumerate(prompts):
+        individual_result = ov_pipe.generate(prompt, generation_config=ov_genai.GenerationConfig(**generation_config_dict))
+        assert batch_result.texts[i] == individual_result, f"Idx: {i}, Batch result: {batch_result.texts[i]}, Individual result: {individual_result}, Prompt: {prompt}"
 
 #
 # Chat scenario
