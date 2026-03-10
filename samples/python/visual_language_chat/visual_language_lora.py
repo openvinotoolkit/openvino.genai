@@ -101,7 +101,7 @@ def main() -> int:
 
     pipe = ov_genai.VLMPipeline(args.model_dir, args.device, **pipe_kwargs)
 
-    gen_cfg = pipe.get_generation_config()
+    gen_cfg = ov_genai.GenerationConfig()
     gen_cfg.max_new_tokens = 100
 
     print("Generating answer with LoRA adapters applied:")

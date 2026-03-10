@@ -325,9 +325,9 @@ def load_text2image_model(
             model = DiffusionPipeline.from_pretrained(model_id)
         except Exception:
             model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True)
-        if kwargs.get('adapters') is not None:
-            adapters = kwargs['adapters']
-            alphas = kwargs.get('alphas', None)
+        if kwargs.get("adapters") is not None:
+            adapters = kwargs["adapters"]
+            alphas = kwargs.get("alphas", None)
             adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
 
             for idx, adapter in enumerate(adapters):
@@ -338,7 +338,7 @@ def load_text2image_model(
         from optimum.intel import OVPipelineForText2Image
         TEXT2IMAGEPipeline = OVPipelineForText2Image
 
-        if 'adapters' in kwargs and kwargs['adapters'] is not None:
+        if "adapters" in kwargs and kwargs["adapters"] is not None:
             raise ValueError("Adapters are not supported for OVPipelineForText2Image.")
 
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
