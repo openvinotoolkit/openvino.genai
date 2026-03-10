@@ -76,7 +76,7 @@ struct SequenceGroupSamplingInfo {
 };
 
 // Tree of draft token candidates for EAGLE speculative decoding.
-// Stores token IDs and cumulative scores without any KV-cache or Sequence references.
+// Stores token IDs and cumulative scores without Sequence references.
 class EagleCandidateGraph {
 public:
     struct Node {
@@ -88,8 +88,12 @@ public:
 
     EagleCandidateGraph(int64_t root_token_id, float root_score, int max_tokens, int max_depth);
 
-    // Adds a child of parent_node_id. Returns the new node's ID, or 0 if beyond max_depth.
+    // Adds a child of parent_node_id. Returns the new node's ID.
+    // Precondition: the parent node must not be at max_depth (check with can_expand first).
     uint64_t add_node(int64_t token_id, float score, uint64_t parent_node_id);
+
+    // Returns true if node_id can accept children (its tree_layer < max_depth).
+    bool can_expand(uint64_t node_id) const;
 
     // Returns at most (max_candidate_nodes + 1) top-scoring nodes (root always included), sorted by tree layer.
     std::vector<Node> select_candidate_nodes() const;
@@ -130,12 +134,13 @@ class Sampler {
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
                             bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probabilities);
 
-    // Validate tree results from the target model using retrieve_indices and logits
-    // Returns the number of valid tokens, and truncates sequence if mismatch is found
-    size_t validate_tree_candidates(Sequence::Ptr& running_sequence,
-                                    const ov::Tensor& sequence_group_logits,
-                                    LogitProcessor& logit_processor,
-                                    size_t num_tokens_to_validate);
+    // Verify the draft tree against target-model logits: greedily accept the longest
+    // matching prefix across all tree paths, then append a bonus token.
+    // Returns accepted_steps = number of accepted draft tokens + 1 (for the bonus token).
+    size_t verify_draft_tree(Sequence::Ptr& sequence,
+                             const ov::Tensor& sequence_group_logits,
+                             LogitProcessor& logit_processor,
+                             size_t num_tokens_to_validate);
 
     SequenceGroupSamplingInfo sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits,
                                                         LogitProcessor& logit_processor, const std::pair<size_t, std::set<std::string>>& stop_strings,
@@ -146,7 +151,7 @@ class Sampler {
     std::mutex m_beam_search_info_mutex;
 
     // request ID => tree search tracking information
-    std::map<uint64_t, TreeSearcher> m_tree_search_info;
+    std::map<uint64_t, std::shared_ptr<TreeSearcher>> m_tree_search_info;
     std::mutex m_tree_search_info_mutex;
     std::mt19937 rng_engine;
     size_t seed = rng_engine.default_seed;
@@ -260,12 +265,12 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
     void tree_reset();
     auto build_top_k_frontier(const ov::Tensor& logits) -> std::vector<CandidateBeam>;
     void advance_draft_layer(const std::vector<CandidateBeam>& candidates, SamplerOutput& sampler_output);
-    void finalize_tree(SamplerOutput& sampler_output, LogitProcessor& logit_processor);
+    void finalize_tree(SamplerOutput& sampler_output);
 
 public:
     explicit TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tensor d2t);
 
-    void advance_draft_step(const ov::Tensor& logits, SamplerOutput& sampler_output, LogitProcessor& logit_processor);
+    void advance_draft_step(const ov::Tensor& logits, SamplerOutput& sampler_output);
 };
 
 class Sampler::GroupBeamSearcher : public Sampler::Searcher {
