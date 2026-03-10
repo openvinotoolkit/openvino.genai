@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "load_image.hpp"
+#include <openvino/core/except.hpp>
 #include <openvino/genai/visual_language/pipeline.hpp>
 #include <cstdlib>
 #include <filesystem>
@@ -15,13 +16,12 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
     return ov::genai::StreamingStatus::RUNNING;
 }
 int main(int argc, char* argv[]) try {
-    // Usage: app <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE> [<LORA_SAFETENSORS> <ALPHA> ...]
-    if (argc < 4 || ((argc - 4) % 2) != 0) {
-        throw std::runtime_error(
-            std::string{"Usage "} + argv[0] +
-            " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE> [<LORA_SAFETENSORS> <ALPHA> ...]"
-        );
-    }
+    // Usage: app <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...]
+ 
+    // At least one LoRA adapter must be provided.
+    OPENVINO_ASSERT(argc >= 6 && ((argc - 4) % 2) == 0,
+                   "Usage: ", argv[0],
+                   " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...]");
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
 
@@ -35,14 +35,12 @@ int main(int argc, char* argv[]) try {
 
     // LoRA args parsed as pairs: <LORA_SAFETENSORS> <ALPHA>
     ov::genai::AdapterConfig adapter_config;
-    if (argc > 4) {
-        for (int idx = 4; idx + 1 < argc; idx += 2) {
-            ov::genai::Adapter adapter(argv[idx]);
-            float alpha = std::stof(argv[idx + 1]);
-            adapter_config.add(adapter, alpha);
-        }
-        pipeline_properties.insert({ov::genai::adapters(adapter_config)});
+    for (int idx = 4; idx + 1 < argc; idx += 2) {
+        ov::genai::Adapter adapter(argv[idx]);
+        float alpha = std::stof(argv[idx + 1]);
+        adapter_config.add(adapter, alpha);
     }
+    pipeline_properties.insert({ov::genai::adapters(adapter_config)});
 
     ov::genai::VLMPipeline pipe(argv[1], device, pipeline_properties);
 

@@ -48,6 +48,10 @@ def read_images(path: str) -> list[Tensor]:
 
 
 def parse_lora_pairs(raw):
+    if len(raw) < 2:
+        raise argparse.ArgumentTypeError(
+            "At least one LoRA adapter pair is required: <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...]"
+        )
     if len(raw) % 2 != 0:
         raise argparse.ArgumentTypeError("LoRA args must come in pairs: <LORA_SAFETENSORS> <ALPHA> ...")
 
