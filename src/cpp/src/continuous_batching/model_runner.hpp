@@ -101,14 +101,14 @@ struct HiddenStateRange {
  */
 struct DeepstackContext {
     struct DeepstackGroupData {
-        size_t scheduled_vision_tokens_num;
-        size_t vision_tokens_offset;
+        size_t scheduled_vision_tokens_num = 0;
+        size_t vision_tokens_offset = 0;
     };
 
     std::vector<DeepstackGroupData> deepstack_group_data_list;
     size_t deepstack_layers_num = 0;
     size_t total_scheduled_vision_tokens = 0;
-    size_t deepstack_vision_token_offset = 0;
+    size_t deepstack_embeds_write_offset = 0;
     bool have_deepstack_visual_inputs = false;
 
     void aggregate_deepstack_data(const SequenceGroup::CPtr& sequence_group, size_t num_sequence_groups) {
@@ -131,7 +131,7 @@ struct DeepstackContext {
         }
 
         // Count scheduled vision tokens based on visual_pos_masks to sync with deepstack_visual_embeds
-        DeepstackGroupData deepstack_group_data{0, 0};
+        DeepstackGroupData deepstack_group_data{};
         if (const auto& mask = sequence_group->get_visual_pos_masks()) {
             const size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
             const size_t group_position_id = sequence_group->get_num_processed_tokens();
@@ -187,11 +187,11 @@ struct DeepstackContext {
                     const size_t src_offset = layer * src_vision_tokens_num * hidden_size
                                             + deepstack_group_data.vision_tokens_offset * hidden_size;
                     const size_t dst_offset = layer * total_scheduled_vision_tokens * hidden_size
-                                            + (deepstack_vision_token_offset + seq_idx * vision_tokens_copy_num) * hidden_size;
+                                            + (deepstack_embeds_write_offset + seq_idx * vision_tokens_copy_num) * hidden_size;
                     std::copy_n(src + src_offset, vision_tokens_copy_num * hidden_size, dst + dst_offset);
                 }
             }
-            deepstack_vision_token_offset += vision_tokens_copy_num * num_running_sequences;
+            deepstack_embeds_write_offset += vision_tokens_copy_num * num_running_sequences;
         }
     }
 };
@@ -468,8 +468,6 @@ public:
         size_t current_token_idx = 0;
         std::map<size_t, std::set<size_t>> seq_id_to_skipped_blocks_map;
         size_t position_ids_idx = 0;
-
-        size_t deepstack_vision_token_offset = 0;
 
         for (size_t i = 0; i < num_sequence_groups; ++i) {
             const size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
