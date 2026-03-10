@@ -304,11 +304,11 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
  *   - a std::shared_ptr<ov::Extension> representing an already constructed OpenVINO extension.
  *
  * @param properties Properties map that may contain the "extensions" key with a vector of extension specifications.
- * @return A PathExtensions object representing the extracted extensions.
+ * @return An ExtensionList object representing the extracted extensions.
  */
-PathExtensions extract_extensions(ov::AnyMap& properties);
+ExtensionList extract_extensions(ov::AnyMap& properties);
 
-void add_extensions_to_core(const PathExtensions& extensions);
+void add_extensions_to_core(const ExtensionList& extensions);
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 

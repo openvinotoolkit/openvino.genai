@@ -14,11 +14,11 @@ TEST(TestAddExtensions, test_extract_extensions) {
         ov::genai::extensions(std::vector<std::filesystem::path>{"path_extension1", "path_extension2"})};
     ov::AnyMap properties2 = {
         ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{nullptr, nullptr})};
-    ov::genai::PathExtensions pathExtensions1{"path_extension1", "path_extension2"};
-    ov::genai::PathExtensions pathExtensions2{nullptr, nullptr};
+    ov::genai::ExtensionList ExtensionList1{"path_extension1", "path_extension2"};
+    ov::genai::ExtensionList ExtensionList2{nullptr, nullptr};
 
-    EXPECT_EQ(extract_extensions(properties1), pathExtensions1);
-    EXPECT_EQ(extract_extensions(properties2), pathExtensions2);
+    EXPECT_EQ(extract_extensions(properties1), ExtensionList1);
+    EXPECT_EQ(extract_extensions(properties2), ExtensionList2);
 }
 
 TEST(TestAddExtensions, test_add_extensions_to_core) {
