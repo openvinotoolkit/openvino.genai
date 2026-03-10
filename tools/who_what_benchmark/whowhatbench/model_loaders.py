@@ -339,41 +339,23 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
 
+    pipeline_kwargs = {
+        "device": device,
+        **ov_config,
+    }
+
+    if adapter_config is not None:
+        pipeline_kwargs["adapters"] = adapter_config
+
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
-        if adapter_config is not None:
-            pipeline = openvino_genai.VLMPipeline(
-                model_dir,
-                device=device,
-                adapters=adapter_config,
-                scheduler_config=scheduler_config,
-                ATTENTION_BACKEND="PA",
-                **ov_config,
-            )
-        else:
-            pipeline = openvino_genai.VLMPipeline(
-                model_dir,
-                device=device,
-                scheduler_config=scheduler_config,
-                ATTENTION_BACKEND="PA",
-                **ov_config,
-            )
+        pipeline_kwargs["scheduler_config"] = scheduler_config
+        pipeline_kwargs["ATTENTION_BACKEND"] = "PA"
+        pipeline = openvino_genai.VLMPipeline(model_dir, **pipeline_kwargs)
     else:
         logger.info("Using OpenVINO GenAI VLMPipeline API")
-        if adapter_config is not None:
-            pipeline = openvino_genai.VLMPipeline(
-                model_dir,
-                device=device,
-                adapters=adapter_config,
-                **ov_config,
-            )
-        else:
-            pipeline = openvino_genai.VLMPipeline(
-                model_dir,
-                device=device,
-                **ov_config,
-            )
+        pipeline = openvino_genai.VLMPipeline(model_dir, **pipeline_kwargs)
 
     return GenAIModelWrapper(
         pipeline,
@@ -453,6 +435,13 @@ def load_visual_text_model(
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
 
+            if not isinstance(adapters, (list, tuple)) or len(adapters) == 0:
+                raise ValueError("`adapters` must be a non-empty list/tuple")
+            if not isinstance(alphas, (list, tuple)):
+                raise ValueError("`alphas` must be a list/tuple with one value per adapter")
+            if len(alphas) != len(adapters):
+                raise ValueError("`alphas` must be the same length as `adapters`")
+
             from peft import PeftModel
 
             adapter_names = ["adapter_0"]
@@ -462,7 +451,6 @@ def load_visual_text_model(
                 model.load_adapter(adapter, adapter_name=f"adapter_{idx}")
                 adapter_names.append(f"adapter_{idx}")
 
-            assert len(alphas) == len(adapter_names), "`alphas` must be the same length as `adapters`"
             model.add_weighted_adapter(adapter_names, alphas, "merged_lora")
 
             model.set_adapter("merged_lora")

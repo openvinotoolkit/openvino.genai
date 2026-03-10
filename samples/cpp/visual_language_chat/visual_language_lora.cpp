@@ -3,7 +3,12 @@
 
 #include "load_image.hpp"
 #include <openvino/genai/visual_language/pipeline.hpp>
+#include <cstdlib>
 #include <filesystem>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 ov::genai::StreamingStatus print_subword(std::string&& subword) {
     std::cout << subword << std::flush;
@@ -49,13 +54,13 @@ int main(int argc, char* argv[]) try {
     std::cout << "question:\n";
     std::getline(std::cin, prompt);
 
-    std::cout << "----------\nGenerating answer with LoRA adapters applied:\n\n";
+    std::cout << "----------\nGenerating answer with LoRA adapters applied:\n";
     pipe.generate(prompt,
                   ov::genai::images(rgbs),
                   ov::genai::generation_config(generation_config),
                   ov::genai::streamer(print_subword));
 
-    std::cout << "\n----------\nGenerating answer without LoRA adapters applied:\n\n";
+    std::cout << "\n----------\nGenerating answer without LoRA adapters applied:\n";
     pipe.generate(prompt,
                   ov::genai::images(rgbs),
                   ov::genai::generation_config(generation_config),
