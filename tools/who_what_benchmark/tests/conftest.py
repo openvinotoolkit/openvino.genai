@@ -5,7 +5,7 @@ import shutil
 import subprocess  # nosec B404
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 from ov_utils import AtomicDownloadManager, get_ov_cache_dir, retry_request  # noqa
 
@@ -65,7 +65,7 @@ def get_ov_cache_converted_models_dir():
 def convert_text_model(
     model_id: str,
     dir_name: str,
-    convert_fn,
+    convert_fn: Callable[[str, Path], None],
 ) -> str:
     models_dir = get_ov_cache_converted_models_dir()
     model_path = Path(models_dir) / f"wwb_{dir_name}"
@@ -78,7 +78,7 @@ def convert_text_model(
         return str(model_path)
 
     def convert(temp_path: Path) -> None:
-        convert_fn(model_id, temp_path)
+        retry_request(lambda: convert_fn(model_id, temp_path))
 
     manager.execute(convert)
     return str(model_path)

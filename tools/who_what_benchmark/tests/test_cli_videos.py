@@ -1,11 +1,7 @@
 import sys
 import pytest
-import logging
 from test_cli_image import get_similarity
 from conftest import convert_model, run_wwb
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 @pytest.mark.xfail(sys.platform == "darwin", reason="Not enough memory on macOS CI runners. Ticket CVS-179749")
