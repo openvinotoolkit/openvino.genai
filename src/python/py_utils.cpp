@@ -497,6 +497,7 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
             OPENVINO_ASSERT(!value.is_none(), "Property \"", key, "\" can't be None.");
             params[key] = utils::py_object_to_any(value, key);
         }
+
     }
     return params;
 }
