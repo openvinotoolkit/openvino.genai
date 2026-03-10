@@ -92,6 +92,14 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "num_assistant_tokens", num_assistant_tokens);
     read_json_param(data, "max_ngram_size", max_ngram_size);
 
+    // EAGLE tree search
+    if (data.contains("eagle_tree_params")) {
+        const auto& eagle = data["eagle_tree_params"];
+        read_json_param(eagle, "branching_factor", eagle_tree_params.branching_factor);
+        read_json_param(eagle, "tree_depth", eagle_tree_params.tree_depth);
+        read_json_param(eagle, "total_tokens", eagle_tree_params.total_tokens);
+    }
+
     // append EOS to stop_token_ids
     if (eos_token_id != -1)
         set_eos_token_id(eos_token_id);

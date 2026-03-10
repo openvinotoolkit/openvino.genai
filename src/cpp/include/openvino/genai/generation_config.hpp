@@ -770,6 +770,8 @@ static constexpr ov::Property<float> assistant_confidence_threshold{"assistant_c
 static constexpr ov::Property<size_t> num_assistant_tokens{"num_assistant_tokens"};
 static constexpr ov::Property<size_t> max_ngram_size{"max_ngram_size"};
 
+static constexpr ov::Property<GenerationConfig::EagleParams> eagle_tree_params{"eagle_tree_params"};
+
 static constexpr ov::Property<StructuredOutputConfig> structured_output_config{"structured_output_config"};
 static constexpr ov::Property<std::string> regex{"regex"};
 static constexpr ov::Property<std::string> json_schema{"json_schema"};
