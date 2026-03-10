@@ -423,8 +423,17 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
         m_chat_template = remap_template(m_chat_template);
 
         // Initialize tokenizer's cache to save time later.
-        // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
-        encode("non empty string");
+        // Run in async mode for speed to improve TTFT
+        {
+            // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
+            // Use any string which is stored outside of this scope so that after async is run it will not be deallocated
+            auto warmup_prompt = add_second_input.name();
+            auto warmup_input = ov::Tensor(ov::element::i32, ov::Shape{1}, warmup_prompt);
+            
+            CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_tokenizer.get());
+            infer_request_guard.get().set_input_tensor(0, warmup_input);
+            infer_request_guard.get().start_async();
+        }
     }
 
     if (ov_detokenizer) {
