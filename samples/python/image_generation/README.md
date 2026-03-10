@@ -186,7 +186,7 @@ python encrypted_stable_diffusion.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk ci
 ## Run image to image pipeline
 
 The `image2mage.py` sample demonstrates basic image to image generation pipeline. The difference with text to image pipeline is that final image is denoised from initial image converted to latent space and noised with image noise according to `strength` parameter. `strength` should be in range of `[0., 1.]` where `1.` means initial image is fully noised and it is an equivalent to text to image generation.
-Also, `strength` parameter linearly affects a number of inferenece steps, because lower `strength` values means initial latent already has some structure and it requires less steps to denoise it.
+Also, `strength` parameter linearly affects a number of inference steps, because lower `strength` values means initial latent already has some structure and it requires less steps to denoise it.
 
 To run the sample, download initial image first:
 
