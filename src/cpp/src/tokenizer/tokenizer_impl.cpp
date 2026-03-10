@@ -426,17 +426,24 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
         // Run in async mode for speed to improve TTFT
         {
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
-            // Use any string which is stored outside of this scope so that after async is run it will not be deallocated
-            auto warmup_input = ov::Tensor(ov::element::string, ov::Shape{1}, add_second_input.name());
-            
-            CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_tokenizer.get());
-            infer_request_guard.get().set_input_tensor(0, warmup_input);
+            int idx = m_ireq_queue_tokenizer->get_idle().get();
+            auto& req = m_ireq_queue_tokenizer->get(idx);
+
+            // keep input data alive until callback
+            auto warmup_text = std::make_shared<std::string>("non empty string");
+            auto warmup_tensor = ov::Tensor(ov::element::string, ov::Shape{1}, warmup_text.get());
+
+            req.set_input_tensor(0, warmup_tensor);
             if (is_paired_input) {
-                // Set the second input tensor to an empty tensor to avoid errors.
+                // Set to an empty tensor to avoid errors.
                 // The subgraph within the ov::Model will handle this scenario, ensuring the output remains correct.
-                infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {0}});
+                req.set_input_tensor(1, ov::Tensor{ov::element::string, {0}});
             }
-            infer_request_guard.get().start_async();
+
+            req.set_callback([queue = m_ireq_queue_tokenizer.get(), idx, warmup_text](std::exception_ptr) {
+                queue->return_to(idx);
+            });
+            req.start_async();
         }
     }
 
