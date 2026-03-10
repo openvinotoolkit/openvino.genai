@@ -186,6 +186,7 @@ RESOLUTION_BY_VIDEO_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 32,
 }
 
+VIDEOCHAT_FLASH_MODEL_ID = "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B"
 
 DEFAULT_RESOLUTION = 336
 
@@ -368,19 +369,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
         ov_prompt_lookup,
     )
 
-@pytest.fixture(autouse=True)
-def _disable_videochatflash_for_chat_prefix_tests(request: pytest.FixtureRequest):
-    test_name = getattr(request.node, "originalname", request.node.name)
-    if not str(test_name).startswith("test_vlm_pipeline_chat") and not str(test_name).startswith("test_vlm_pipeline_start_chat_vs_chat_history"):
-        return
-
-    if "ov_pipe_model" not in request.fixturenames:
-        return
-
-    ov_pipe_model = request.getfixturevalue("ov_pipe_model")
-    if _is_videochat_flash_model(ov_pipe_model.model_id):
-        pytest.skip("VideoChat-Flash is disabled for tests with prefix 'test_vlm_pipeline_chat' and 'test_vlm_pipeline_start_chat_vs_chat_history' as it's not supported multiple round generation.")
-
 parametrize_all_models = pytest.mark.parametrize(
     "ov_pipe_model",
     [(m, b, pl) for m in MODEL_IDS for b in ATTENTION_BACKEND for pl in PROMPT_LOOKUP if b == "PA" or pl is False],
@@ -418,9 +406,6 @@ parametrize_one_model_pa = pytest.mark.parametrize(
     indirect=["ov_pipe_model"],
 )
 
-# Keep set for membership checks, but use a deterministic sequence for parametrization
-_VIDEO_ONLY_MODEL_IDS_SORTED = sorted(VIDEO_ONLY_MODEL_IDS)
-assert len(_VIDEO_ONLY_MODEL_IDS_SORTED) == 1, "Expected exactly one video-only model for this parametrization."
 
 parametrize_one_model_backends = pytest.mark.parametrize(
     "ov_pipe_model",
@@ -505,7 +490,7 @@ def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
 
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe_videochat() -> ContinuousBatchingPipeline:
-    models_path = _get_ov_model(MODEL_IDS[12])
+    models_path = _get_ov_model(VIDEOCHAT_FLASH_MODEL_ID)
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
 def download_image(link: str) -> PIL.Image:
@@ -2491,9 +2476,6 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
 
     assert results.texts[0].strip() == results_pld.texts[0].strip(), (
         "Result should be the same when prompt_lookup is enabled and disabled."
-
-VIDEOCHAT_FLASH_MODEL_ID = "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B"
-
 
 @pytest.fixture(scope="module", params=ATTENTION_BACKEND, ids=lambda b: f"VideoChat-Flash/{b}")
 def ov_videochatflash_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeline:
