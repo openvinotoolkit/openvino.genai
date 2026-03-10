@@ -142,11 +142,10 @@ ov::genai::CLIPTextModel text_encoder(
 
 ...
 
-// Initialize stable diffusion xl pipeline
-auto pipe = ov::genai::Text2ImagePipeline::stable_diffusion_xl(
+// Initialize stable diffusion pipeline
+auto pipe = ov::genai::Text2ImagePipeline::stable_diffusion(
     ov::genai::Scheduler::from_config(models_path / "scheduler" / "scheduler_config.json"),
     text_encoder,
-    text_encoder_2,
     unet,
     vae_decoder
 );

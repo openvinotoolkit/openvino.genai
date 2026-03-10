@@ -80,11 +80,6 @@ def main():
     )
     text_encoder_tokenizer = read_tokenizer(model_dir / "tokenizer")
 
-    text_encoder_2_model, text_encoder_2_weights = decrypt_model(
-        model_dir / "text_encoder_2", "openvino_model.xml", "openvino_model.bin"
-    )
-    text_encoder_2_tokenizer = read_tokenizer(model_dir / "tokenizer_2")
-
     unet_model, unet_weights = decrypt_model(model_dir / "unet", "openvino_model.xml", "openvino_model.bin")
     vae_decoder_model, vae_decoder_weights = decrypt_model(
         model_dir / "vae_decoder", "openvino_model.xml", "openvino_model.bin"
@@ -95,14 +90,6 @@ def main():
         text_encoder_weights,
         openvino_genai.CLIPTextModel.Config(model_dir / "text_encoder" / "config.json"),
         text_encoder_tokenizer,
-        device,
-        **config,
-    )
-    text_encoder_2 = openvino_genai.CLIPTextModelWithProjection(
-        text_encoder_2_model,
-        text_encoder_2_weights,
-        openvino_genai.CLIPTextModelWithProjection.Config(model_dir / "text_encoder_2" / "config.json"),
-        text_encoder_2_tokenizer,
         device,
         **config,
     )
@@ -124,10 +111,9 @@ def main():
         **config,
     )
 
-    pipe = openvino_genai.Text2ImagePipeline.stable_diffusion_xl(
+    pipe = openvino_genai.Text2ImagePipeline.stable_diffusion(
         scheduler=openvino_genai.Scheduler.from_config(model_dir / "scheduler" / "scheduler_config.json"),
         clip_text_model=text_encoder,
-        clip_text_model_with_projection=text_encoder_2,
         unet=unet,
         vae=vae,
     )

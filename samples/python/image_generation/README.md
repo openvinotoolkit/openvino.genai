@@ -156,11 +156,10 @@ text_encoder = openvino_genai.CLIPTextModel(
 
 ...
 
-# Initialize stable diffusion xl pipeline
-pipe = openvino_genai.Text2ImagePipeline.stable_diffusion_xl(
+# Initialize stable diffusion pipeline
+pipe = openvino_genai.Text2ImagePipeline.stable_diffusion(
     scheduler=openvino_genai.Scheduler.from_config(model_dir / "scheduler" / "scheduler_config.json"),
     clip_text_model=text_encoder,
-    clip_text_model_with_projection=text_encoder_2,
     unet=unet,
     vae=vae,
 )

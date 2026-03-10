@@ -88,14 +88,6 @@ int32_t main(int32_t argc, char* argv[]) try {
             ov::genai::CLIPTextModel::Config(models_path / "text_encoder" / "config.json"), 
             text_tokenizer, device, config);
 
-    auto [text_encoder_2_model_str, text_encoder_2_model_weights] = decrypt_model(models_path / "text_encoder_2", "openvino_model.xml", "openvino_model.bin");
-    ov::genai::Tokenizer text_tokenizer_2 = decrypt_tokenizer(models_path / "tokenizer_2");
-    const ov::genai::CLIPTextModelWithProjection text_encoder_2 = ov::genai::CLIPTextModelWithProjection(
-            text_encoder_2_model_str, 
-            text_encoder_2_model_weights, 
-            ov::genai::CLIPTextModelWithProjection::Config(models_path / "text_encoder_2" / "config.json"), 
-            text_tokenizer_2, device, config);
-
     auto [vae_decoder_model_str, vae_decoder_model_weights] = decrypt_model(models_path / "vae_decoder", "openvino_model.xml", "openvino_model.bin");
     const ov::genai::AutoencoderKL vae_decoder = ov::genai::AutoencoderKL(
             vae_decoder_model_str, 
@@ -111,10 +103,9 @@ int32_t main(int32_t argc, char* argv[]) try {
             vae_decoder.get_vae_scale_factor(),
             device, config);
 
-    ov::genai::Text2ImagePipeline pipe = ov::genai::Text2ImagePipeline::stable_diffusion_xl(
+    ov::genai::Text2ImagePipeline pipe = ov::genai::Text2ImagePipeline::stable_diffusion(
         ov::genai::Scheduler::from_config(models_path / "scheduler" / "scheduler_config.json"),
         text_encoder,
-        text_encoder_2,
         unet,
         vae_decoder
     );
