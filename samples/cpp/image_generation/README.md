@@ -158,7 +158,7 @@ ov::genai::Tokenizer text_tokenizer = decrypt_tokenizer(models_path / "tokenizer
 ov::genai::CLIPTextModel text_encoder(
     text_encoder_model_str,
     text_encoder_model_weights,
-    ov::genai::CLIPTextModel::Config::Config(models_path / "text_encoder" / "config.json"),
+    ov::genai::CLIPTextModel::Config(models_path / "text_encoder" / "config.json"),
     text_tokenizer, device, config);
 
 ...
@@ -181,7 +181,7 @@ The sample also demonstrates how to enable user-defined encryption for plugin ca
 
 **Run Command:**
 ```bash
-./encrypted_stable_diffusion <MODEL_DIR> "<PROMPT>" [DEVICE]
+./encrypted_stable_diffusion <MODEL_DIR> "<PROMPT>" [<DEVICE>]
 ```
 
 **Example:**
@@ -200,7 +200,7 @@ To run the sample, download initial image first:
 
 And then run the sample:
 
-`./image2mage ./dreamlike_anime_1_0_ov/FP16 'cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k' cat.png`
+`./image2image ./dreamlike_anime_1_0_ov/FP16 'cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k' cat.png`
 
 The resulting image is:
 
