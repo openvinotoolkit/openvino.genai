@@ -19,7 +19,7 @@ public:
     size_t max_frames = 0;
     size_t min_frames = 0;
     size_t num_frames = 0;
-    float fps = 0;
+    float fps = 0.0f;
 
     VideoProcessorConfig() = default;
 
