@@ -359,7 +359,7 @@ std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim
     auto shape_x = std::make_shared<ov::op::v3::ShapeOf>(x_p, ov::element::i64);
     auto axis_0 = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
     auto p_node = std::make_shared<ov::op::v1::Gather>(shape_x,
-                                                       std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{}, std::vector<int32_t>{1}),
+                                                       std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{}, std::vector<int64_t>{1}),
                                                        axis_0);
 
     // range(0, p, 2) and range(1, p, 2)
@@ -778,7 +778,6 @@ ov::Tensor InputsEmbedderVideoChat_Flash::get_inputs_embeds(
     const std::vector<size_t>& videos_sequence,
     const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     OPENVINO_ASSERT(videos_sequence.empty(), "VideoChat-Flash does not use separate video tags. Use image tags for visuals.");
-    OPENVINO_ASSERT(history_vision_count.empty(), "VideoChat-Flash does not support history_vision_count.");
 
     std::vector<ov::genai::EncodedImage> combined_images = images;
     combined_images.reserve(images.size() + videos.size());
