@@ -424,25 +424,22 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
 
         // Initialize tokenizer's cache to save time later.
         // Run in async mode for speed to improve TTFT
+        auto req = tokenizer.create_infer_request();
         {
+            
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
-            int idx = m_ireq_queue_tokenizer->get_idle().get();
-            auto& req = m_ireq_queue_tokenizer->get(idx);
-
-            // keep input data alive until callback
             auto warmup_text = std::make_shared<std::string>("non empty string");
             auto warmup_tensor = ov::Tensor(ov::element::string, ov::Shape{1}, warmup_text.get());
-
+            
             req.set_input_tensor(0, warmup_tensor);
             if (is_paired_input) {
                 // Set to an empty tensor to avoid errors.
                 // The subgraph within the ov::Model will handle this scenario, ensuring the output remains correct.
                 req.set_input_tensor(1, ov::Tensor{ov::element::string, {0}});
             }
-
-            req.set_callback([queue = m_ireq_queue_tokenizer.get(), idx, warmup_text](std::exception_ptr) {
-                queue->return_to(idx);
-            });
+            
+            // this is a placeholder to keep input data alive until callback
+            req.set_callback([queue = m_ireq_queue_tokenizer.get(), warmup_text](std::exception_ptr) {});
             req.start_async();
         }
     }
@@ -470,9 +467,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
             
         // Initialize detokenizer's cache to save time later.
         {
-            int idx = m_ireq_queue_detokenizer->get_idle().get();
-            auto& req = m_ireq_queue_detokenizer->get(idx);
-            
+            auto req = detokenizer.create_infer_request();
             // keep input data alive until callback
             auto warmup_tokens = std::make_shared<std::vector<int64_t>>(
                 std::initializer_list<int64_t>{1, 33, 199, 42, 42}
@@ -481,9 +476,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
             auto warmup_tensor = ov::Tensor(ov::element::i64, ov::Shape{1, warmup_tokens->size()}, warmup_tokens->data());
             req.set_input_tensor(0, warmup_tensor);
 
-            req.set_callback([queue = m_ireq_queue_detokenizer.get(), idx, warmup_tokens](std::exception_ptr) {
-                queue->return_to(idx);
-            });
+            req.set_callback([queue = m_ireq_queue_detokenizer.get(), warmup_tokens](std::exception_ptr) {});
             req.start_async();
         }
 
