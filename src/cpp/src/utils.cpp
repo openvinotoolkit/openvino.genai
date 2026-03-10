@@ -454,7 +454,7 @@ CacheTypes get_cache_types(const ov::Model& model) {
     const std::string state_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
     CacheTypes cache_types;
 
-    for (const auto op : model.get_ops()) {
+    for (const auto& op : model.get_ops()) {
         // check input size, as in LoRA adapters case it could be 0
         if (op->get_type_name() != state_node_type_name || op->get_input_size() < 1) {
             continue;
@@ -494,7 +494,7 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     // "ReadValue" node is KV cache representation in stateful model
     const std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
 
-    for (const auto op : model->get_ops()) {
+    for (const auto& op : model->get_ops()) {
         // check input size, as in LoRA adapters case it could be 0
         if (op->get_type_name() != kv_node_type_name || op->get_input_size() < 1) {
             continue;

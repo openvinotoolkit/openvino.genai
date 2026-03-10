@@ -205,9 +205,11 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
 
+    const auto model = utils::read_model(models_path, properties);
+
     // PA backend does not support linear attention states (conv/SSM caches).
     if (attention_backend == PA_BACKEND && !is_npu_requested
-        && utils::has_linear_attention_states(models_path, properties)) {
+        && utils::has_linear_attention_states(model)) {
         if (utils::explicitly_requires_paged_attention(user_properties)
             || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
             GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
@@ -216,8 +218,9 @@ ov::genai::LLMPipeline::LLMPipeline(
         }
     }
 
+    const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (is_npu_requested) {
-        m_pimpl = StatefulPipeline::create(models_path, tokenizer, device, properties);
+        m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -238,7 +241,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     if (m_pimpl == nullptr) {
         // FIXME: Switch to StatefulPipeline::create after resolving issues
         //        with GPU and CPU for StatefulSpeculativeLLMPipeline
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, properties, generation_config);
     }
 
     m_pimpl->save_load_time(start_time);
@@ -254,9 +257,13 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
 
+    // Read model and create tokenizer once to avoid double I/O during pipeline construction.
+    const auto model = utils::read_model(models_path, properties);
+    const Tokenizer tokenizer(models_path, properties);
+
     // PA backend does not support linear attention states (conv/SSM caches).
     if (attention_backend == PA_BACKEND && !is_npu_requested
-        && utils::has_linear_attention_states(models_path, properties)) {
+        && utils::has_linear_attention_states(model)) {
         if (utils::explicitly_requires_paged_attention(user_properties)
             || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
             GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
@@ -265,8 +272,9 @@ ov::genai::LLMPipeline::LLMPipeline(
         }
     }
 
+    const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (is_npu_requested) {
-        m_pimpl = StatefulPipeline::create(models_path, device, properties);
+        m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -287,7 +295,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     if (m_pimpl == nullptr) {
         // FIXME: Switch to StatefulPipeline::create after resolving issues
         //        with GPU and CPU for StatefulSpeculativeLLMPipeline
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, device, properties);
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, properties, generation_config);
     }
 
     m_pimpl->save_load_time(start_time);
