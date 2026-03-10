@@ -31,6 +31,32 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def normalize_lora_adapters_and_alphas(adapters, alphas):
+    if adapters is None:
+        return None, None
+
+    if isinstance(adapters, (str, Path, os.PathLike)):
+        adapters = [adapters]
+    elif not isinstance(adapters, (list, tuple)):
+        raise ValueError("`adapters` must be a non-empty list/tuple, or a single adapter path")
+
+    if len(adapters) == 0:
+        raise ValueError("`adapters` must be a non-empty list/tuple")
+
+    if alphas is None:
+        raise ValueError("`alphas` must be provided and match the number of adapters")
+
+    if isinstance(alphas, (int, float)):
+        alphas = [alphas]
+    elif not isinstance(alphas, (list, tuple)):
+        raise ValueError("`alphas` must be a list/tuple with one value per adapter, or a single float")
+
+    if len(alphas) != len(adapters):
+        raise ValueError("`alphas` must be the same length as `adapters`")
+
+    return list(adapters), list(alphas)
+
+
 class GenAIModelWrapper:
     """
     A helper class to store additional attributes for GenAI models
@@ -117,8 +143,11 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         pipeline_path = os.path.join(model_dir, kwargs['gguf_file'])
 
     adapter_config = openvino_genai.AdapterConfig()
-    if kwargs.get("adapters") is not None:
-        for adapter, alpha in zip(kwargs["adapters"], kwargs["alphas"]):
+    adapters = kwargs.get("adapters")
+    if adapters is not None:
+        alphas = kwargs.get("alphas", None)
+        adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+        for adapter, alpha in zip(adapters, alphas):
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
 
@@ -196,6 +225,8 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
         adapters = kwargs["adapters"]
         alphas = kwargs.get("alphas", None)
 
+        adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+
         from peft import PeftModel
         adapter_names = ["adapter_0"]
         model = PeftModel.from_pretrained(model, adapters[0], adapter_name=adapter_names[0])
@@ -204,7 +235,6 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             model.load_adapter(adapter, adapter_name=f"adapter_{idx}")
             adapter_names.append(f"adapter_{idx}")
 
-        assert len(alphas) == len(adapter_names), "`alphas` must be the same length as `adapters`"
         model.add_weighted_adapter(adapter_names, alphas, "merged_lora")
 
         model.set_adapter("merged_lora")
@@ -267,8 +297,11 @@ def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None, **kw
         exit(-1)
 
     adapter_config = openvino_genai.AdapterConfig()
-    if "adapters" in kwargs and kwargs["adapters"] is not None:
-        for adapter, alpha in zip(kwargs["adapters"], kwargs["alphas"]):
+    adapters = kwargs.get("adapters")
+    if adapters is not None:
+        alphas = kwargs.get("alphas", None)
+        adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+        for adapter, alpha in zip(adapters, alphas):
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
 
@@ -292,10 +325,14 @@ def load_text2image_model(
             model = DiffusionPipeline.from_pretrained(model_id)
         except Exception:
             model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True)
-        if 'adapters' in kwargs and kwargs['adapters'] is not None:
-            for idx, adapter in enumerate(kwargs['adapters']):
+        if kwargs.get('adapters') is not None:
+            adapters = kwargs['adapters']
+            alphas = kwargs.get('alphas', None)
+            adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+
+            for idx, adapter in enumerate(adapters):
                 model.load_lora_weights(adapter, adapter_name=f"adapter_{idx}")
-            model.set_adapters([f"adapter_{idx}" for idx in range(len(kwargs['adapters']))], adapter_weights=kwargs['alphas'])
+            model.set_adapters([f"adapter_{idx}" for idx in range(len(adapters))], adapter_weights=alphas)
     else:
         logger.info("Using Optimum API")
         from optimum.intel import OVPipelineForText2Image
@@ -333,9 +370,11 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
 
     adapter_config = None
     adapters = kwargs.get("adapters")
-    if adapters:
+    if adapters is not None:
+        alphas = kwargs.get("alphas", None)
+        adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
         adapter_config = openvino_genai.AdapterConfig()
-        for adapter, alpha in zip(adapters, kwargs["alphas"]):
+        for adapter, alpha in zip(adapters, alphas):
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
 
@@ -435,12 +474,7 @@ def load_visual_text_model(
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
 
-            if not isinstance(adapters, (list, tuple)) or len(adapters) == 0:
-                raise ValueError("`adapters` must be a non-empty list/tuple")
-            if not isinstance(alphas, (list, tuple)):
-                raise ValueError("`alphas` must be a list/tuple with one value per adapter")
-            if len(alphas) != len(adapters):
-                raise ValueError("`alphas` must be the same length as `adapters`")
+            adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
 
             from peft import PeftModel
 
