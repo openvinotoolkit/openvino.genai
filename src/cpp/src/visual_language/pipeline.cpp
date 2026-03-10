@@ -95,7 +95,7 @@ public:
         m_is_npu = device.find("NPU") != std::string::npos;
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
-        auto properties_copy = filtered_properties.fork();
+        auto& properties_copy = filtered_properties.fork();
         auto language_model_path = models_dir / "openvino_language_model.xml";
         auto language_model =  utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
@@ -177,7 +177,7 @@ public:
             "VLMPipeline initialization from string isn't supported for NPU device");
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
-        auto properties_copy = filtered_properties.fork();
+        auto& properties_copy = filtered_properties.fork();
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
 

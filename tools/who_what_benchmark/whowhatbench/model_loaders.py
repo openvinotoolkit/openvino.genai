@@ -57,6 +57,25 @@ def normalize_lora_adapters_and_alphas(adapters, alphas):
     return list(adapters), list(alphas)
 
 
+def apply_peft_adapters(model, adapters, alphas, merged_adapter_name="merged_lora"):
+    adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+
+    from peft import PeftModel
+
+    adapter_names = ["adapter_0"]
+    model = PeftModel.from_pretrained(model, adapters[0], adapter_name=adapter_names[0])
+
+    for idx, adapter in enumerate(adapters[1:], start=1):
+        adapter_name = f"adapter_{idx}"
+        model.load_adapter(adapter, adapter_name=adapter_name)
+        adapter_names.append(adapter_name)
+
+    model.add_weighted_adapter(adapter_names, alphas, merged_adapter_name)
+    model.set_adapter(merged_adapter_name)
+
+    return model
+
+
 class GenAIModelWrapper:
     """
     A helper class to store additional attributes for GenAI models
@@ -222,22 +241,7 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             )
 
     if kwargs.get("adapters") is not None:
-        adapters = kwargs["adapters"]
-        alphas = kwargs.get("alphas", None)
-
-        adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
-
-        from peft import PeftModel
-        adapter_names = ["adapter_0"]
-        model = PeftModel.from_pretrained(model, adapters[0], adapter_name=adapter_names[0])
-
-        for idx, adapter in enumerate(adapters[1:], start=1):
-            model.load_adapter(adapter, adapter_name=f"adapter_{idx}")
-            adapter_names.append(f"adapter_{idx}")
-
-        model.add_weighted_adapter(adapter_names, alphas, "merged_lora")
-
-        model.set_adapter("merged_lora")
+        model = apply_peft_adapters(model, kwargs["adapters"], kwargs.get("alphas", None))
 
     model.eval()
     return model
@@ -471,23 +475,7 @@ def load_visual_text_model(
 
         # Common LoRA support via PEFT
         if kwargs.get("adapters") is not None:
-            adapters = kwargs["adapters"]
-            alphas = kwargs.get("alphas", None)
-
-            adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
-
-            from peft import PeftModel
-
-            adapter_names = ["adapter_0"]
-            model = PeftModel.from_pretrained(model, adapters[0], adapter_name=adapter_names[0])
-
-            for idx, adapter in enumerate(adapters[1:], start=1):
-                model.load_adapter(adapter, adapter_name=f"adapter_{idx}")
-                adapter_names.append(f"adapter_{idx}")
-
-            model.add_weighted_adapter(adapter_names, alphas, "merged_lora")
-
-            model.set_adapter("merged_lora")
+            model = apply_peft_adapters(model, kwargs["adapters"], kwargs.get("alphas", None))
 
         model.eval()
         try:
