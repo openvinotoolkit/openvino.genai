@@ -735,7 +735,7 @@ public:
         return m_deepstack_visual_embeds;
     }
 
-    std::optional<std::vector<bool>> get_visual_pos_masks() const {
+    const std::optional<std::vector<bool>>& get_visual_pos_masks() const {
         OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
         return m_visual_pos_masks;
     }
