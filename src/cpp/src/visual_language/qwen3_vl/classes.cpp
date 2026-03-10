@@ -6,10 +6,14 @@
 
 namespace ov::genai {
 
-namespace qwen3_vl_utils {
+namespace {
 
+/**
+ * @brief Calculates timestamps for video frames based on encoded video metadata.
+ * @return Vector of float timestamps corresponding to each video frame.
+ */
 std::vector<float> calculate_timestamps(const VideoMetadata& video_metadata, size_t merge_size) {
-    OPENVINO_ASSERT(video_metadata.fps > 0, "Video metadata fps must be positive for timestamp calculation.");
+    OPENVINO_ASSERT(video_metadata.fps > 0.0f, "Video metadata fps must be positive for timestamp calculation.");
 
     // Copy frame_indices since padding may be needed
     std::vector<size_t> frame_indices = video_metadata.frames_indices;
@@ -24,17 +28,21 @@ std::vector<float> calculate_timestamps(const VideoMetadata& video_metadata, siz
     timestamps.reserve(frame_indices.size() / merge_size);
     for (size_t i = 0; i < frame_indices.size(); i += merge_size) {
         const float timestamp = (static_cast<float>(frame_indices[i] + frame_indices[i + merge_size - 1]))
-            / 2.0f / static_cast<float>(video_metadata.fps);
+            / 2.0f / video_metadata.fps;
         timestamps.push_back(timestamp);
     }
     return timestamps;
 }
 
+/**
+ * @brief Populates video metadata in encoded_video struct.
+ * Computes frame sampling indices for encoded video based on video processor config.
+ */
 void fill_video_metadata(EncodedVideo& encoded_video, size_t total_num_frames, const VideoProcessorConfig& video_config) {
-    OPENVINO_ASSERT(!(video_config.fps != 0 && video_config.num_frames != 0),
+    OPENVINO_ASSERT(!(video_config.fps != 0.0f && video_config.num_frames != 0),
         "num_frames and fps are mutually exclusive video config arguments.");
     
-    encoded_video.metadata.total_num_frames = total_num_frames;
+    encoded_video.metadata.original_frames_num = total_num_frames;
 
     if (!video_config.do_sample_frames) {
         encoded_video.metadata.frames_indices.resize(total_num_frames);
@@ -44,8 +52,8 @@ void fill_video_metadata(EncodedVideo& encoded_video, size_t total_num_frames, c
     // Sample frame indices if needed
     size_t num_frames = video_config.num_frames;
     
-    if (num_frames == 0 && video_config.fps != 0) {
-        OPENVINO_ASSERT(encoded_video.metadata.fps != 0,
+    if (num_frames == 0 && video_config.fps != 0.0f) {
+        OPENVINO_ASSERT(encoded_video.metadata.fps != 0.0f,
             "Requested to sample frames by fps but video metadata fps is not set. "
             "Provide VideoMetadata with fps or use a fixed num_frames.");
 
@@ -69,6 +77,12 @@ void fill_video_metadata(EncodedVideo& encoded_video, size_t total_num_frames, c
     }
 }
 
+/**
+ * @brief Computes indices and weights for bilinear position embedding interpolation.
+ * @return Pair of:
+ *   - indices tensor [4, num_positions] - input for vision_embeddings_pos model
+ *   - weights tensor [4, num_positions] - bilinear interpolation weights
+ */
 std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights(
     const std::vector<std::array<size_t, 3>>& grids_thw,
     size_t num_grid_per_side
@@ -138,6 +152,14 @@ std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights
     return {indices, weights};
 }
 
+/**
+ * @brief Reorders position embeddings according to spatial merge pattern in vision encoder.
+ * 
+ * @param pos_embeds Interpolated position embeddings [num_positions, embed_dim]
+ * @param grids_thw Grid dimensions for permutation
+ * @param spatial_merge_size Spatial merge size from processor config
+ * @return Permuted position embeddings [num_merged_positions, embed_dim]
+ */
 ov::Tensor permute_with_spatial_merge(
     const ov::Tensor& pos_embeds,
     const std::vector<std::array<size_t, 3>>& grids_thw,
@@ -184,6 +206,10 @@ ov::Tensor permute_with_spatial_merge(
     return result;
 }
 
+/**
+ * @brief Create visual position mask from input_ids by finding vision pad tokens.
+ * @return Boolean tensor [batch, seq_len] with true at vision token positions
+ */
 ov::Tensor create_visual_pos_masks(
     const ov::Tensor& input_ids,
     int64_t image_pad_token_id,
@@ -199,12 +225,12 @@ ov::Tensor create_visual_pos_masks(
     return result;
 }
 
-} // namespace qwen3_vl_utils
+} // namespace
 
 EncodedVideo VisionEncoderQwen3VL::encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) {
     EncodedVideo encoded_video;
     
-    qwen3_vl_utils::fill_video_metadata(encoded_video, frames.size(), m_video_processor_config);
+    fill_video_metadata(encoded_video, frames.size(), m_video_processor_config);
 
     std::vector<ov::Tensor> sampled_frames;
     if (!m_video_processor_config.do_sample_frames) {
@@ -286,7 +312,7 @@ void InputsEmbedderQwen3VL::expand_video_tags_in_prompt(
 
         const auto& encoded_video = encoded_videos.at(video_id - video_base_id);
         const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
-        auto timestamps = qwen3_vl_utils::calculate_timestamps(encoded_video.metadata, spatial_merge_size);
+        auto timestamps = calculate_timestamps(encoded_video.metadata, spatial_merge_size);
         OPENVINO_ASSERT(timestamps.size() == grid_t, "Timestamps size does not match the number of frames");
 
         std::string expanded_tag;
@@ -312,7 +338,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_interpolated_pos_embeds(
     const size_t num_grid_per_side = static_cast<size_t>(
         std::sqrt(static_cast<double>(m_vlm_config.vision_config_num_position_embeddings)));
     
-    auto [indices, weights] = qwen3_vl_utils::get_position_interpolation_indices_and_weights(grids_thw, num_grid_per_side);
+    auto [indices, weights] = get_position_interpolation_indices_and_weights(grids_thw, num_grid_per_side);
     
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_vision_embeddings_pos.get());
     ov::InferRequest& vision_embeddings_pos = infer_request_guard.get();
@@ -345,7 +371,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_interpolated_pos_embeds(
     }
     
     size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
-    return qwen3_vl_utils::permute_with_spatial_merge(weighted_sum, grids_thw, spatial_merge_size);
+    return permute_with_spatial_merge(weighted_sum, grids_thw, spatial_merge_size);
 }
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3VL::run_video_image_embeddings_merger(
@@ -531,7 +557,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
             run_video_image_embeddings_merger(images, images_sequence, videos, videos_sequence);
     }
 
-    m_lm_extra_inputs["visual_pos_masks"] = qwen3_vl_utils::create_visual_pos_masks(input_ids, image_pad_token_id, video_pad_token_id);
+    m_lm_extra_inputs["visual_pos_masks"] = create_visual_pos_masks(input_ids, image_pad_token_id, video_pad_token_id);
 
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(
         input_ids, text_embeds, m_merged_image_embeddings, m_merged_video_embeddings,
