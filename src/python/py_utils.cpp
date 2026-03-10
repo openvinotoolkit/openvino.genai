@@ -425,13 +425,14 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
             params.insert(map.begin(), map.end());
         } else if (py::isinstance<ov::genai::StructuredOutputConfig>(value)) {
             params[key] = py::cast<ov::genai::StructuredOutputConfig>(value);
+        } else if (py::isinstance<ov::genai::GenerationConfig::EagleParams>(value)) {
+            params[key] = py::cast<ov::genai::GenerationConfig::EagleParams>(value);
         } else {
             if (py::isinstance<py::none>(value)) {
                 OPENVINO_ASSERT(!py::isinstance<py::none>(value), "Property \"", key, "\" can't be None.");
             }
             params[key] = utils::py_object_to_any(value, key);
         }
-
     }
     return params;
 }
