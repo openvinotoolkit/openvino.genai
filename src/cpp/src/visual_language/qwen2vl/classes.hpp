@@ -24,7 +24,7 @@ public:
 
 protected:
     /**
-     * @brief Encodes video frames by grouping them into chunks of temporal_patch_size adjacent frames
+     * @brief Encodes video frames by grouping them into chunks of config.temporal_patch_size adjacent frames
      * and saves results into the encoded_video struct.
      * The config can be ProcessorConfig or a derived class (e.g. VideoProcessorConfig for Qwen3-VL).
      */
