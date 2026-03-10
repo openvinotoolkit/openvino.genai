@@ -2438,15 +2438,11 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
     )
 
 
-def test_vlm_pipeline_add_extension_custom_op():
-    models_path = _get_ov_model(MODEL_IDS[0])
-
-    properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
-    VLMPipeline(models_path, "CPU", config=properties)
-
-
 def test_vlm_pipeline_add_extension():
     models_path = _get_ov_model(MODEL_IDS[0])
 
     properties = {"extensions": [str(openvino_tokenizers._ext_path)]}
+    VLMPipeline(models_path, "CPU", config=properties)
+
+    properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
     VLMPipeline(models_path, "CPU", config=properties)

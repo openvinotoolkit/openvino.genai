@@ -739,21 +739,14 @@ def test_dynamic_split_fuse_for_eagle3():
     compare_results_for_dynamic_split_fuse_config("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3")
 
 
-def test_continuous_batching_add_extension_custom_op():
-    model_id = "katuni4ka/tiny-random-phi3"
-    models_path = download_and_convert_model(model_id).models_path
-
-    scheduler_config = SchedulerConfig()
-
-    properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
-    ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
-
-
 def test_continuous_batching_add_extension():
     model_id = "katuni4ka/tiny-random-phi3"
-    models_path = download_and_convert_model(model_id).models_path
 
+    models_path = download_and_convert_model(model_id).models_path
     scheduler_config = SchedulerConfig()
 
     properties = {"extensions": [str(_ext_path)]}
+    ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
+
+    properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
     ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)

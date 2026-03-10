@@ -16,11 +16,11 @@ TEST(TestAddExtensions, test_extract_extensions) {
     ov::AnyMap properties_path = {ov::genai::extensions(std::vector<std::filesystem::path>{"non_existent_path"})};
     auto op = std::make_shared<ov::frontend::OpExtension<>>("Relu", "MyRelu");
     ov::AnyMap properties_op = {ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{op})};
-    ov::genai::ExtensionList extensionList_path{"non_existent_path"};
-    ov::genai::ExtensionList extensionList_op{op};
+    ov::genai::ExtensionList extension_path{"non_existent_path"};
+    ov::genai::ExtensionList extension_op{op};
 
-    EXPECT_EQ(extract_extensions(properties_path), extensionList_path);
-    EXPECT_EQ(extract_extensions(properties_op), extensionList_op);
+    EXPECT_EQ(extract_extensions(properties_path), extension_path);
+    EXPECT_EQ(extract_extensions(properties_op), extension_op);
 }
 
 TEST(TestAddExtensions, test_extract_extensions_to_core) {
