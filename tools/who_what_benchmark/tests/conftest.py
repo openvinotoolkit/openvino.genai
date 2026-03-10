@@ -14,6 +14,14 @@ logger = logging.getLogger(__name__)
 
 
 MODELS: Dict[str, Dict[str, Any]] = {
+    "opt-125m": {
+        "name": "facebook/opt-125m",
+        "convert_args": ["--trust-remote-code", "--task", "text-generation-with-past"],
+    },
+    "opt-125m_int8": {
+        "name": "facebook/opt-125m",
+        "convert_args": ["--trust-remote-code", "--task", "text-generation-with-past", "--weight-format", "int8"],
+    },
     "bge-small-en-v1.5": {
         "name": "BAAI/bge-small-en-v1.5",
         "convert_args": ["--trust-remote-code", "--task", "feature-extraction"],
@@ -82,14 +90,14 @@ def convert_model(model_name: str) -> str:
         return model_path
 
     def convert(temp_path: Path) -> None:
+        if "--weight-format" not in convert_args:
+            convert_args.extend(["--weight-format", "fp16"])
         command = [
             "optimum-cli",
             "export",
             "openvino",
             "--model",
-            model_name,
-            "--weight-format",
-            "fp16",
+            MODELS[model_id]["name"],
             *convert_args,
             str(temp_path),
         ]
