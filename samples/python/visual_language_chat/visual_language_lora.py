@@ -78,7 +78,7 @@ def main() -> int:
     p.add_argument(
         "lora_pairs",
         nargs="+",
-        metavar=("LORA", "ALPHA"),
+        metavar="LORA_ALPHA",
         help="Pairs: <LORA_SAFETENSORS> <ALPHA> ...",
     )
 
