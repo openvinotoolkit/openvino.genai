@@ -440,9 +440,11 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
                 req.set_input_tensor(1, ov::Tensor{ov::element::string, {0}});
             }
 
-            req.set_callback([warmup_text](std::exception_ptr) {
+            req.set_callback([queue = m_ireq_queue_tokenizer.get(), idx, warmup_text](std::exception_ptr) {
                 // this empty placeholder keeps input data alive until request is finished
-                (void) warmup_text;               
+                (void) warmup_text;
+                queue->return_to(idx);
+
             });
             req.start_async();
         }
@@ -474,7 +476,6 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
             int idx = m_ireq_queue_detokenizer->get_idle().get();
             auto& req = m_ireq_queue_detokenizer->get(idx);
 
-            // auto req = std::make_shared<ov::InferRequest>(detokenizer.create_infer_request());
             // shared_ptr to keep input data alive until async request is finished
             auto warmup_tokens = std::make_shared<std::vector<int64_t>>(
                 std::initializer_list<int64_t>{1, 33, 199, 42, 42}
@@ -483,9 +484,10 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
             auto warmup_tensor = ov::Tensor(ov::element::i64, ov::Shape{1, warmup_tokens->size()}, warmup_tokens->data());
             req.set_input_tensor(0, warmup_tensor);
 
-            req.set_callback([warmup_tokens](std::exception_ptr) {
+            req.set_callback([queue = m_ireq_queue_detokenizer.get(), idx, warmup_tokens](std::exception_ptr) {
                 // this empty placeholder keeps input data alive until request is finished
                 (void) warmup_tokens;
+                queue->return_to(idx);
             });
             req.start_async();
         }
