@@ -32,6 +32,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=False):
+    import openvino_genai
+
+    adapter_config = openvino_genai.AdapterConfig()
+    if adapters is None:
+        return None if none_if_empty else adapter_config
+
+    adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+    for adapter, alpha in zip(adapters, alphas):
+        ov_adapter = openvino_genai.Adapter(adapter)
+        adapter_config.add(ov_adapter, alpha)
+
+    return adapter_config
+
+
 class GenAIModelWrapper:
     """
     A helper class to store additional attributes for GenAI models
@@ -117,14 +132,10 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     if kwargs.get('gguf_file'):
         pipeline_path = os.path.join(model_dir, kwargs['gguf_file'])
 
-    adapter_config = openvino_genai.AdapterConfig()
-    adapters = kwargs.get("adapters")
-    if adapters is not None:
-        alphas = kwargs.get("alphas", None)
-        adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
-        for adapter, alpha in zip(adapters, alphas):
-            ov_adapter = openvino_genai.Adapter(adapter)
-            adapter_config.add(ov_adapter, alpha)
+    adapter_config = _create_genai_adapter_config(
+        adapters=kwargs.get("adapters"),
+        alphas=kwargs.get("alphas", None),
+    )
 
     draft_model_path = kwargs.get("draft_model", '')
     if draft_model_path:
@@ -256,14 +267,10 @@ def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None, **kw
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
 
-    adapter_config = openvino_genai.AdapterConfig()
-    adapters = kwargs.get("adapters")
-    if adapters is not None:
-        alphas = kwargs.get("alphas", None)
-        adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
-        for adapter, alpha in zip(adapters, alphas):
-            ov_adapter = openvino_genai.Adapter(adapter)
-            adapter_config.add(ov_adapter, alpha)
+    adapter_config = _create_genai_adapter_config(
+        adapters=kwargs.get("adapters"),
+        alphas=kwargs.get("alphas", None),
+    )
 
     return GenAIModelWrapper(
         openvino_genai.Text2ImagePipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
@@ -328,15 +335,11 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
-    adapter_config = None
-    adapters = kwargs.get("adapters")
-    if adapters is not None:
-        alphas = kwargs.get("alphas", None)
-        adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
-        adapter_config = openvino_genai.AdapterConfig()
-        for adapter, alpha in zip(adapters, alphas):
-            ov_adapter = openvino_genai.Adapter(adapter)
-            adapter_config.add(ov_adapter, alpha)
+    adapter_config = _create_genai_adapter_config(
+        adapters=kwargs.get("adapters"),
+        alphas=kwargs.get("alphas", None),
+        none_if_empty=True,
+    )
 
     pipeline_kwargs = {
         "device": device,
