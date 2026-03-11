@@ -98,7 +98,7 @@ public:
     Tokenizer get_tokenizer() const;
 
     // get reflection of tokens contained in the kv cache
-    utils::CacheState& get_kv_cache_state();
+    utils::CacheState& get_cache_state();
 
     // starts chat and adds optional system_message to chat history
     void start_chat(const std::string& system_message);

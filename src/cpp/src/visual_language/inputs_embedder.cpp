@@ -402,7 +402,7 @@ EmbeddingsModel::Ptr InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
 }
 
-ov::genai::utils::CacheState& InputsEmbedder::get_kv_cache_state() {
+ov::genai::utils::CacheState& InputsEmbedder::get_cache_state() {
     return  m_impl->get_kv_cache_state();
 }
 

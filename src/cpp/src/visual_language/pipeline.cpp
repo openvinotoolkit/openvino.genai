@@ -107,7 +107,7 @@ private:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
-        utils::CacheState& cache_state = m_inputs_embedder->get_kv_cache_state();
+        utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
         cache_state.set_cache_types(utils::get_cache_types(*language_model));
         cache_state.seq_length_axis = kv_pos.seq_len;
 
@@ -371,8 +371,8 @@ public:
                 }
             }
         } else {
-            utils::CacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
-            kv_cache_state.reset_state();
+            utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
+            cache_state.reset_state();
         }
 
         if (!(m_is_chat_conversation && m_use_full_chat_history))
@@ -644,7 +644,7 @@ private:
                 " config option to increase the limit.");
         }
 
-        utils::CacheState& cache_state = m_inputs_embedder->get_kv_cache_state();
+        utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
 
         if (m_is_chat_conversation) {
             if (m_use_full_chat_history) {
@@ -660,8 +660,8 @@ private:
         size_t request_id = 0;
         size_t block_size = 1; // not used
 
-        size_t history_size = cache_state.get_state().size() - cache_state.num_tokens_to_trim;
-        size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
+        const size_t history_size = cache_state.get_state().size();
+        const size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
 
         std::vector<int64_t> tokenized_history = cache_state.get_state();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
