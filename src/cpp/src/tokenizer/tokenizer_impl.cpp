@@ -427,20 +427,23 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
         auto req = std::make_shared<ov::InferRequest>(tokenizer.create_infer_request());
 
         {
-            
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
+            // shared_ptr to keep input data alive until async request is finished
             auto warmup_text = std::make_shared<std::string>("non empty string");
             auto warmup_tensor = ov::Tensor(ov::element::string, ov::Shape{1}, warmup_text.get());
-            
+
             req->set_input_tensor(0, warmup_tensor);
             if (is_paired_input) {
                 // Set to an empty tensor to avoid errors.
                 // The subgraph within the ov::Model will handle this scenario, ensuring the output remains correct.
                 req->set_input_tensor(1, ov::Tensor{ov::element::string, {0}});
             }
-            
-            // this is a placeholder to keep input data alive until callback
-            req->set_callback([req, warmup_text](std::exception_ptr) {});
+
+            req->set_callback([req, warmup_text](std::exception_ptr) {
+                // this empty placeholder keeps input data and req alive until request is finished
+                (void) req;
+                (void) warmup_text;               
+            });
             req->start_async();
         }
     }
@@ -468,17 +471,21 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
             
         // Initialize detokenizer's cache to save time later.
         {
-            auto warmup_req = std::make_shared<ov::InferRequest>(detokenizer.create_infer_request());
-            // keep input data alive until callback
+            auto req = std::make_shared<ov::InferRequest>(detokenizer.create_infer_request());
+            // shared_ptr to keep input data alive until async request is finished
             auto warmup_tokens = std::make_shared<std::vector<int64_t>>(
                 std::initializer_list<int64_t>{1, 33, 199, 42, 42}
             );
 
             auto warmup_tensor = ov::Tensor(ov::element::i64, ov::Shape{1, warmup_tokens->size()}, warmup_tokens->data());
-            warmup_req->set_input_tensor(0, warmup_tensor);
+            req->set_input_tensor(0, warmup_tensor);
 
-            warmup_req->set_callback([warmup_req, warmup_tokens](std::exception_ptr) {});
-            warmup_req->start_async();
+            req->set_callback([req, warmup_tokens](std::exception_ptr) {
+                // this empty placeholder keeps input data and req alive until request is finished
+                (void) req;
+                (void) warmup_tokens;
+            });
+            req->start_async();
         }
 
         m_vocab = read_vocab_from_detokenizer_model(ov_detokenizer);
