@@ -7,6 +7,7 @@
 #include <openvino/openvino.hpp>
 #include <thread>
 
+#include "debug_utils.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
@@ -230,11 +231,14 @@ std::vector<int64_t> prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
         return std::vector<int64_t>{config.decoder_start_token_id};
     }
 
+    std::cout << "Config provided language: " << (config.language.has_value() ? *config.language : "None") << std::endl;
+
     int64_t language_token_id = 0;
     if (config.language.has_value()) {
         std::string language = *config.language;
         if (config.lang_to_id.count(language)) {
             language_token_id = config.lang_to_id.at(language);
+            std::cout << "Using provided language token id from lang_to_id map: " << language_token_id << std::endl;
         }
     } else {
         auto [language_token, infer_ms] = decoder->detect_language(encoder_hidden_state, config.decoder_start_token_id);
@@ -276,11 +280,19 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
     result.perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations = {{MicroSeconds(0.0f)}};
-
+    std::cout << "Raw speech stats:" << std::endl;
+    ov::Tensor raw_speech_tensor(ov::element::f32, {raw_speech.size()}, raw_speech.data());
+    print_tensor_stats(raw_speech_tensor);
     const auto infer_start = std::chrono::steady_clock::now();
     auto input_features = feature_extractor.extract(raw_speech);
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
     result.perf_metrics.whisper_raw_metrics.features_extraction_durations.emplace_back(infer_ms);
+
+    std::cout << "Input features stats:" << std::endl;
+    ov::Tensor input_features_tensor(ov::element::f32,
+                                     {input_features.n_frames, feature_extractor.feature_size},
+                                     input_features.data.data());
+    print_tensor_stats(input_features_tensor);
 
     const bool is_shortform = input_features.n_frames <= feature_extractor.nb_max_frames;
     // long-form audio processing requires timestamps to be enabled
@@ -324,6 +336,12 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, chunk_sot_tokens, config, 1);
 
+        std::cout << "Chunk SOT tokens: ";
+        for (const auto& token : chunk_sot_tokens) {
+            std::cout << token << ", ";
+        }
+        std::cout << std::endl;
+
         auto [chunk_result, cancelled] = decode(decoder,
                                                 chunk_sot_tokens,
                                                 hidden_state_tensor,
@@ -357,10 +375,24 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                 break;
             }
 
+            // print chunk output tokens
+            std::cout << "Chunk output tokens (return timestamps): ";
+            for (const auto& token : extracted_segments.non_timestamp_tokens) {
+                std::cout << token << ", ";
+            }
+            std::cout << std::endl;
+
             segment_offset = extracted_segments.last_offset;
         } else {
             output_tokens.insert(output_tokens.end(), chunk_output_tokens.begin(), chunk_output_tokens.end());
             segment_offset = input_features.n_frames;
+
+            // print chunk output tokens
+            std::cout << "Chunk output tokens: ";
+            for (const auto& token : chunk_output_tokens) {
+                std::cout << token << ", ";
+            }
+            std::cout << std::endl;
         }
 
         if (cancelled) {
