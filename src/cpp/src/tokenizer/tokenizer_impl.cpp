@@ -425,8 +425,8 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
         // Initialize tokenizer's cache to save time later.
         // Run in async mode for speed to improve TTFT
         {
-            int idx = m_ireq_queue_detokenizer->get_idle().get();
-            auto& req = m_ireq_queue_detokenizer->get(idx);
+            int idx = m_ireq_queue_tokenizer->get_idle().get();
+            auto& req = m_ireq_queue_tokenizer->get(idx);
 
             // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
             // shared_ptr to keep input data alive until async request is finished
