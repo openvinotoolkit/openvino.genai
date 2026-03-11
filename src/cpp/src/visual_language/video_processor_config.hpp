@@ -19,6 +19,8 @@ public:
     size_t max_frames = 0;
     size_t min_frames = 0;
     size_t num_frames = 0;
+    // Target sampling rate in frames per second if do_sample_frames is true. Mutually exclusive with num_frames.
+    // Used to compute the number of frames to extract from the original video.
     float fps = 0.0f;
 
     VideoProcessorConfig() = default;
