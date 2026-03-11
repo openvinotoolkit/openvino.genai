@@ -46,6 +46,10 @@ private:
                                                              const ov::Tensor& speaker_embedding,
                                                              const SpeechGenerationConfig& generation_config);
 
+#if OPENVINO_GENAI_HAS_MISAKI_CPP
+    void ensure_g2p_initialized(const SpeechGenerationConfig& generation_config);
+#endif
+
 private:
     std::filesystem::path m_models_path;
     ov::InferRequest m_request;

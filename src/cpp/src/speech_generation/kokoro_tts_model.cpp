@@ -924,13 +924,6 @@ KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
 
     m_request = compiled.create_infer_request();
 
-    // Python reference: same engine family as `KPipeline(...).g2p` for English variants.
-    m_g2p = misaki::make_engine("en", m_runtime->language_variant());
-    const SpeechGenerationConfig default_config;
-    install_fallback_if_available(m_g2p, m_runtime->language_variant(), default_config);
-    m_fallback_initialized = true;
-    m_phonemize_fallback_model_dir = default_config.phonemize_fallback_model_dir;
-
     for (size_t idx = 0; idx < compiled.inputs().size(); ++idx) {
         const auto input_name = compiled.input(static_cast<int>(idx)).get_any_name();
         if (input_name.find("input") != std::string::npos || input_name.find("ids") != std::string::npos) {
@@ -954,6 +947,29 @@ KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
 #endif
 }
 
+#if OPENVINO_GENAI_HAS_MISAKI_CPP
+void KokoroTTSImpl::ensure_g2p_initialized(const SpeechGenerationConfig& generation_config) {
+    const std::string language_variant = normalize_language_variant(generation_config.language);
+
+    const bool requires_new_engine = !m_g2p || language_variant != m_runtime->language_variant();
+    if (requires_new_engine) {
+        m_runtime->set_language_variant(language_variant);
+        // Python parity: language change rebinds G2P behavior (see `KPipeline.__init__`).
+        m_g2p = misaki::make_engine("en", language_variant);
+        // Ensure fallback policy is applied for a newly created engine.
+        m_fallback_initialized = false;
+    }
+
+    const bool fallback_config_changed = !m_fallback_initialized ||
+                                         generation_config.phonemize_fallback_model_dir != m_phonemize_fallback_model_dir;
+    if (requires_new_engine || fallback_config_changed) {
+        install_fallback_if_available(m_g2p, language_variant, generation_config);
+        m_fallback_initialized = true;
+        m_phonemize_fallback_model_dir = generation_config.phonemize_fallback_model_dir;
+    }
+}
+#endif
+
 Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>& texts,
                                                    const ov::Tensor& speaker_embedding,
                                                    const SpeechGenerationConfig& generation_config) {
@@ -963,21 +979,7 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
     (void)generation_config;
     OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
 #else
-    const std::string language_variant = normalize_language_variant(generation_config.language);
-    const bool fallback_config_changed = !m_fallback_initialized ||
-                                         generation_config.phonemize_fallback_model_dir != m_phonemize_fallback_model_dir;
-    if (language_variant != m_runtime->language_variant()) {
-        m_runtime->set_language_variant(language_variant);
-        // Python parity: language change rebinds G2P behavior (see `KPipeline.__init__`).
-        m_g2p = misaki::make_engine("en", language_variant);
-        install_fallback_if_available(m_g2p, language_variant, generation_config);
-        m_fallback_initialized = true;
-        m_phonemize_fallback_model_dir = generation_config.phonemize_fallback_model_dir;
-    } else if (fallback_config_changed) {
-        install_fallback_if_available(m_g2p, language_variant, generation_config);
-        m_fallback_initialized = true;
-        m_phonemize_fallback_model_dir = generation_config.phonemize_fallback_model_dir;
-    }
+    ensure_g2p_initialized(generation_config);
 
     std::vector<std::vector<std::string>> all_phoneme_chunks;
     all_phoneme_chunks.reserve(texts.size());
@@ -1209,20 +1211,7 @@ std::vector<std::vector<std::string>> KokoroTTSImpl::phonemize(const std::vector
     (void)generation_config;
     OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
 #else
-    const std::string language_variant = normalize_language_variant(generation_config.language);
-    const bool fallback_config_changed = !m_fallback_initialized ||
-                                         generation_config.phonemize_fallback_model_dir != m_phonemize_fallback_model_dir;
-    if (language_variant != m_runtime->language_variant()) {
-        m_runtime->set_language_variant(language_variant);
-        m_g2p = misaki::make_engine("en", language_variant);
-        install_fallback_if_available(m_g2p, language_variant, generation_config);
-        m_fallback_initialized = true;
-        m_phonemize_fallback_model_dir = generation_config.phonemize_fallback_model_dir;
-    } else if (fallback_config_changed) {
-        install_fallback_if_available(m_g2p, language_variant, generation_config);
-        m_fallback_initialized = true;
-        m_phonemize_fallback_model_dir = generation_config.phonemize_fallback_model_dir;
-    }
+    ensure_g2p_initialized(generation_config);
 
     std::vector<std::vector<std::string>> all_chunks;
     all_chunks.reserve(texts.size());
