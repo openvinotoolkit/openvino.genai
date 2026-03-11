@@ -467,17 +467,17 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
             
         // Initialize detokenizer's cache to save time later.
         {
-            auto req = detokenizer.create_infer_request();
+            auto warmup_req = std::make_shared<ov::InferRequest>(detokenizer.create_infer_request());
             // keep input data alive until callback
             auto warmup_tokens = std::make_shared<std::vector<int64_t>>(
                 std::initializer_list<int64_t>{1, 33, 199, 42, 42}
             );
-            
-            auto warmup_tensor = ov::Tensor(ov::element::i64, ov::Shape{1, warmup_tokens->size()}, warmup_tokens->data());
-            req.set_input_tensor(0, warmup_tensor);
 
-            req.set_callback([queue = m_ireq_queue_detokenizer.get(), warmup_tokens](std::exception_ptr) {});
-            req.start_async();
+            auto warmup_tensor = ov::Tensor(ov::element::i64, ov::Shape{1, warmup_tokens->size()}, warmup_tokens->data());
+            warmup_req->set_input_tensor(0, warmup_tensor);
+
+            warmup_req->set_callback([warmup_req, warmup_tokens](std::exception_ptr) {});
+            warmup_req->start_async();
         }
 
         m_vocab = read_vocab_from_detokenizer_model(ov_detokenizer);
