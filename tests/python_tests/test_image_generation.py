@@ -9,9 +9,10 @@ import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
 
-from utils.constants import get_ov_cache_converted_models_dir
+from utils.constants import get_ov_cache_converted_models_dir, NPUW_CPU_PROPERTIES
 from utils.atomic_download import AtomicDownloadManager
 from utils.network import retry_request
+from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,6 @@ def get_mask_image(height: int = 64, width: int = 64) -> ov.Tensor:
 
 
 class TestImageGenerationCallback:
-    
     def test_text2image_with_simple_callback(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
         
@@ -237,3 +237,27 @@ class TestTaylorSeerImageGeneration:
 
         assert image is not None
         assert len(callback_calls) > 0
+
+
+def _construct_reshaped(model_dir):
+    pipe = ov_genai.Text2ImagePipeline(model_dir)
+    pipe.reshape(
+        num_images_per_prompt=1, height=64, width=64, guidance_scale=pipe.get_generation_config().guidance_scale
+    )
+    return pipe
+
+
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_image_generation_cpu_vs_npuw_cpu(image_generation_model):
+    generation_args = {"prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69}
+
+    cpu_pipe = _construct_reshaped(image_generation_model)
+    cpu_pipe.compile("CPU")
+    cpu_image = cpu_pipe.generate(**generation_args)
+
+    npuw_pipe = _construct_reshaped(image_generation_model)
+    npuw_pipe.compile("NPU", **NPUW_CPU_PROPERTIES)
+    npuw_image = npuw_pipe.generate(**generation_args)
+
+    assert cpu_image.data.shape == npuw_image.data.shape
+    assert (cpu_image.data == npuw_image.data).all()

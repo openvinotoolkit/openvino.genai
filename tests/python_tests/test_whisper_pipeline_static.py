@@ -1,6 +1,7 @@
 # Copyright (C) 2024-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+from utils.constants import NPUW_CPU_PROPERTIES
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
 from test_whisper_pipeline import get_whisper_models_list, sample_from_dataset, get_fixture_params_for_n_whisper_dataset_samples
@@ -15,10 +16,7 @@ import pathlib
 
 # This test suite is designed specifically to validate the functionality 
 # and robustness of the WhisperStaticPipeline on NPUW:CPU.
-config = {"NPU_USE_NPUW" : "YES",
-          "NPUW_DEVICES" : "CPU",
-          "NPUW_ONLINE_PIPELINE" : "NONE",
-          "STATIC_PIPELINE": True}
+config = {**NPUW_CPU_PROPERTIES, "STATIC_PIPELINE": True}
 
 def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
     model_id, path = params

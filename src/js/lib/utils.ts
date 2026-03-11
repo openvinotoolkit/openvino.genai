@@ -20,6 +20,13 @@ export enum StopCriteria {
   NEVER,
 }
 
+/** Unsigned integer value represented as JS `number` whenever possible; if the value is too large for `number`, `bigint` is used.
+ *
+ * For size_t-like fields this corresponds to a maximum of `2^32 - 1` on 32-bit systems
+ * and `2^64 - 1` on 64-bit systems.
+ */
+export type Uint = number | bigint;
+
 export declare namespace StructuredOutputConfig {
   export type StructuralTag =
     | string
@@ -223,12 +230,12 @@ export type BeamSearchGenerationConfig = {
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  num_beams?: number | bigint;
+  num_beams?: Uint;
   /** number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  num_beam_groups?: number | bigint;
+  num_beam_groups?: Uint;
   /** value is subtracted from a beam's score if it generates the same token as any beam from other group at a particular time. */
   diversity_penalty?: number;
   /** exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
@@ -240,12 +247,12 @@ export type BeamSearchGenerationConfig = {
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  num_return_sequences?: number | bigint;
+  num_return_sequences?: Uint;
   /** if set to int > 0, all ngrams of that size can only occur once.
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  no_repeat_ngram_size?: number | bigint;
+  no_repeat_ngram_size?: Uint;
   /** controls the stopping condition for grouped beam search. It accepts the following values?:
     - "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
     - "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
@@ -262,14 +269,14 @@ export type RandomSamplingsGenerationConfig = {
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  top_k?: number | bigint;
+  top_k?: Uint;
   /** if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation. */
   top_p?: number;
   /** initializes random generator.
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  rng_seed?: number | bigint;
+  rng_seed?: Uint;
 };
 
 export type AssistingGenerationConfig = {
@@ -279,12 +286,12 @@ export type AssistingGenerationConfig = {
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  num_assistant_tokens?: number | bigint;
+  num_assistant_tokens?: Uint;
   /** is maximum ngram to use when looking for matches in the prompt.
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  max_ngram_size?: number | bigint;
+  max_ngram_size?: Uint;
   /** whether to apply chat_template for non-chat scenarios */
   apply_chat_template?: boolean;
 };
@@ -304,7 +311,7 @@ export type GenericGenerationConfig = {
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  eos_token_id?: number | bigint;
+  eos_token_id?: Uint;
   /** reduces absolute log prob as many times as the token was generated. */
   frequency_penalty?: number;
   /** if set to true, then generation will not stop even if <eos> token is met. */
@@ -316,24 +323,24 @@ export type GenericGenerationConfig = {
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  logprobs?: number | bigint;
+  logprobs?: Uint;
   /** Maximum length the generated tokens can have. Corresponds to the length of the input prompt max_new_tokens.
    * Its effect is overridden by `max_new_tokens`, if also set.
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  max_length?: number | bigint;
+  max_length?: Uint;
   /** Maximum numbers of tokens to generate, excluding the number of tokens in the prompt.
    * `max_new_tokens` has priority over `max_length`.
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  max_new_tokens?: number | bigint;
+  max_new_tokens?: Uint;
   /** set 0 probability for eos_token_id for the first eos_token_id generated tokens.
    *
    * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
    * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
-  min_new_tokens?: number | bigint;
+  min_new_tokens?: Uint;
   /** reduces absolute log prob if the token was generated at least once. */
   presence_penalty?: number;
   /** the parameter for repetition penalty. 1.0 means no penalty. */
@@ -341,7 +348,7 @@ export type GenericGenerationConfig = {
   /** a set of strings that will cause pipeline to stop generating further tokens. */
   stop_strings?: Set<string>;
   /** a set of tokens that will cause pipeline to stop generating further tokens. */
-  stop_token_ids?: Set<number | bigint>;
+  stop_token_ids?: Set<Uint>;
 };
 
 export type StructuredOutputGenerationConfig = {
@@ -362,6 +369,88 @@ export type GenerationConfig = GenericGenerationConfig &
   AssistingGenerationConfig &
   StructuredOutputGenerationConfig &
   ParserGenerationConfig;
+
+/** Generation config for WhisperPipeline. Extends GenerationConfig with Whisper-specific options. */
+export type WhisperGenerationConfig = GenerationConfig & {
+  /** Language token for generation (e.g. "<|en|>"). For multilingual models only. */
+  language?: string;
+  /** Task: "translate" or "transcribe". For multilingual models only. */
+  task?: string;
+  /** If true, return timestamps for text segments. */
+  return_timestamps?: boolean;
+  /** If true, return word-level timestamps (requires word_timestamps in pipeline constructor). */
+  word_timestamps?: boolean;
+  /** Initial prompt to steer spelling or style. */
+  initial_prompt?: string;
+  /** Hotwords to steer spelling or style. */
+  hotwords?: string;
+  /** Encoder attention alignment heads for word-level timestamps. Each pair is [layer_index, head_index].
+   *
+   * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
+   * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
+  alignment_heads?: [Uint, Uint][];
+  /** Decoder start token id (e.g. startoftranscript).
+   *
+   * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
+   * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems.
+   */
+  decoder_start_token_id?: Uint;
+  /** Padding token id.
+   *
+   * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
+   * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems.
+   */
+  pad_token_id?: Uint;
+  /** No timestamps token id.
+   *
+   * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
+   * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems.
+   */
+  no_timestamps_token_id?: Uint;
+  /** Transcribe task token id.
+   *
+   * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
+   * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems.
+   */
+  transcribe_token_id?: Uint;
+  /** Translate task token id.
+   *
+   * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
+   * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems.
+   */
+  translate_token_id?: Uint;
+  /** Start of previous segment token id.
+   *
+   * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
+   * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems.
+   */
+  prev_sot_token_id?: Uint;
+  /** Language token to id map (from generation_config.json).
+   *
+   * @type Map values use `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
+   * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems.
+   */
+  lang_to_id?: Record<string, Uint>;
+  /** Max initial timestamp index.
+   *
+   * @type Uses `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
+   * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems. */
+  max_initial_timestamp_index?: Uint;
+  /** Whether the model is multilingual. */
+  is_multilingual?: boolean;
+  /** Token ids to suppress at the beginning.
+   *
+   * @type Array elements use `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
+   * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems.
+   */
+  begin_suppress_tokens?: Uint[];
+  /** Token ids to suppress.
+   *
+   * @type Array elements use `number` whenever possible; if an integer value is too large for `number`, `bigint` is returned.
+   * Maximum value is `2^32 - 1` on 32-bit systems and `2^64 - 1` on 64-bit systems.
+   */
+  suppress_tokens?: Uint[];
+};
 
 export type SchedulerConfig = {
   /** a maximum number of tokens to batch
@@ -393,5 +482,9 @@ export type LLMPipelineProperties = {
 } & Record<string, unknown>;
 
 export type VLMPipelineProperties = {
+  schedulerConfig?: SchedulerConfig;
+} & Record<string, unknown>;
+
+export type WhisperPipelineProperties = {
   schedulerConfig?: SchedulerConfig;
 } & Record<string, unknown>;
