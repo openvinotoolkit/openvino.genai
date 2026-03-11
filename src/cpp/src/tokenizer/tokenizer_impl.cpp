@@ -424,7 +424,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
 
         // Initialize tokenizer's cache to save time later.
         // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
-        // encode("non empty string");
+        encode("non empty string");
     }
 
     if (ov_detokenizer) {
@@ -448,7 +448,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
         if (m_eos_token_id != -1 && m_eos_token.empty())
             m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::skip_special_tokens(false)});
         // Initialize detokenizer's cache to save time later.
-        // decode({1, 33, 199, 42, 42});
+        decode({1, 33, 199, 42, 42});
 
         m_vocab = read_vocab_from_detokenizer_model(ov_detokenizer);
     }
