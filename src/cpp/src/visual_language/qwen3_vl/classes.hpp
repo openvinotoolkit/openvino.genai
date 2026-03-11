@@ -1,4 +1,4 @@
-// Copyright (C) 2026 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -15,6 +15,8 @@ namespace ov::genai {
 class VisionEncoderQwen3VL : public VisionEncoderQwen2VL {
 public:
     using VisionEncoderQwen2VL::VisionEncoderQwen2VL;
+
+    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
 };
 
 class InputsEmbedderQwen3VL : public InputsEmbedderQwen2VL {
@@ -59,6 +61,13 @@ protected:
         {"visual_pos_masks", ov::Tensor()}
     };
 
+    void expand_video_tags_in_prompt(
+        std::string& unified_prompt,
+        const std::vector<EncodedVideo>& encoded_videos,
+        const std::vector<size_t>& videos_sequence,
+        size_t video_base_id
+    ) const override;
+
     /**
      * @brief Run vision embeddings merger with position interpolation.
      */
@@ -74,44 +83,17 @@ protected:
      * Calculates position interpolation indices and weights, runs vision_embeddings_pos model,
      * applies bilinear interpolation weights, sums corners, permutes for spatial merge.
      */
-    ov::Tensor get_interpolated_pos_embeds(
-        const std::vector<std::array<size_t, 3>>& grids_thw);
+    ov::Tensor get_interpolated_pos_embeds(const std::vector<std::array<size_t, 3>>& grids_thw);
+
+    std::vector<std::array<size_t, 3>> get_vision_grid_thw_for_position_ids(
+        const std::vector<std::array<size_t, 3>>& images_grid_thw,
+        const std::vector<size_t>& images_sequence,
+        const size_t image_id,
+        const std::vector<std::array<size_t, 3>>& videos_grid_thw,
+        const std::vector<size_t>& videos_sequence,
+        const size_t video_id,
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+    ) const override;
 };
-
-namespace qwen3_vl_utils {
-
-/**
- * @brief Computes indices and weights for bilinear position embedding interpolation.
- * @return Pair of:
- *   - indices tensor [4, num_positions] - input for vision_embeddings_pos model
- *   - weights tensor [4, num_positions] - bilinear interpolation weights
- */
-std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights(
-    const std::vector<std::array<size_t, 3>>& grids_thw,
-    size_t num_grid_per_side);
-
-/**
- * @brief Reorders position embeddings according to spatial merge pattern in vision encoder.
- * 
- * @param pos_embeds Interpolated position embeddings [num_positions, embed_dim]
- * @param grids_thw Grid dimensions for permutation
- * @param spatial_merge_size Spatial merge size from processor config
- * @return Permuted position embeddings [num_merged_positions, embed_dim]
- */
-ov::Tensor permute_with_spatial_merge(
-    const ov::Tensor& pos_embeds,
-    const std::vector<std::array<size_t, 3>>& grids_thw,
-    size_t spatial_merge_size);
-
-/**
- * @brief Create visual position mask from input_ids by finding vision pad tokens.
- * @return Boolean tensor [batch, seq_len] with true at vision token positions
- */
-ov::Tensor create_visual_pos_masks(
-    const ov::Tensor& input_ids,
-    int64_t image_pad_token_id,
-    int64_t video_pad_token_id);
-
-} // namespace qwen3_vl_utils
 
 } // namespace ov::genai

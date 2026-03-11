@@ -27,10 +27,6 @@ namespace ov::genai {
 
 namespace {
 
-// Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
-const std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
-const std::string NATIVE_VIDEO_TAG = "<|vision_start|><|video_pad|><|vision_end|>";
-
 std::shared_ptr<ov::Node> create_f32_nchw_input(std::shared_ptr<ov::Node> input) {
     auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(input, ov::element::f32);
     auto img_trans = std::make_shared<ov::op::v1::Transpose>(
@@ -681,14 +677,13 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
 
 // keep both implementations for comparison and testing, here is the cpp version
 void VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& images,
-                                                           const ov::AnyMap& config_map,
+                                                           const ProcessorConfig& config,
                                                            ov::Tensor& out_tensor,
                                                            ImageSize& out_rsz_size,
                                                            size_t frame_num,
                                                            size_t frame_id) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     // The default value of temporal_patch_size for original QWen2-VL and QWen2.5-VL is 2.
     // If images.size() == 1: means processing image.
@@ -773,14 +768,13 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov:
  * @param images size == 1 means image input;  size == 2, means 2 frames from video
  */
 void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::Tensor>& images,
-                                                          const ov::AnyMap& config_map,
+                                                          const ProcessorConfig& config,
                                                           ov::Tensor& out_tensor,
                                                           ImageSize& out_rsz_size,
                                                           size_t frame_num,
                                                           size_t frame_id) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     OPENVINO_ASSERT(images.size() == 1 || images.size() == 2);
     if (images.size() == 2) {
@@ -878,50 +872,54 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::
     out_rsz_size = ImageSize{grid_h, grid_w};
 }
 
+VisionEncoderQwen2VL::EncodeFunc VisionEncoderQwen2VL::get_encode_func() {
+    if (use_ov_vision_preprocess) {
+        return [this](const std::vector<ov::Tensor>& images, const ProcessorConfig& config, ov::Tensor& out_tensor, ImageSize& out_rsz_size, size_t frame_num, size_t frame_id) {
+            this->encode_with_imagepreprocess_ov(images, config, out_tensor, out_rsz_size, frame_num, frame_id);
+        };
+    } else {
+        return [this](const std::vector<ov::Tensor>& images, const ProcessorConfig& config, ov::Tensor& out_tensor, ImageSize& out_rsz_size, size_t frame_num, size_t frame_id) {
+            this->encode_with_imagepreprocess_cpp(images, config, out_tensor, out_rsz_size, frame_num, frame_id);
+        };
+    }
+}
+
 EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     EncodedImage encoded_img;
-    if (use_ov_vision_preprocess == false) {
-        encode_with_imagepreprocess_cpp({image}, config_map, encoded_img.resized_source, encoded_img.resized_source_size);
-        return encoded_img;
-    }
-    encode_with_imagepreprocess_ov({image}, config_map, encoded_img.resized_source, encoded_img.resized_source_size);
+    auto encode_func = get_encode_func();
+    encode_func({image}, m_processor_config, encoded_img.resized_source, encoded_img.resized_source_size, 1, 0);
     return encoded_img;
 }
 
 EncodedVideo VisionEncoderQwen2VL::encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) {
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
     EncodedVideo encoded_video;
-    size_t i = 0;
-    size_t image_num = frames.size();
+    encode_frames_with_config(encoded_video, frames, m_processor_config);
+    return encoded_video;
+}
 
-    size_t frame_id = 0;
-    encoded_video.frame_num = (image_num + config.temporal_patch_size - 1) / config.temporal_patch_size;
+void VisionEncoderQwen2VL::encode_frames_with_config(
+    EncodedVideo& encoded_video,
+    const std::vector<ov::Tensor>& frames,
+    const ProcessorConfig& config
+) {
+    size_t frames_size = frames.size();
+    encoded_video.frame_num = (frames_size + config.temporal_patch_size - 1) / config.temporal_patch_size;
 
-    using EncodeFunc = std::function<void(const std::vector<ov::Tensor>&, const ov::AnyMap&, ov::genai::EncodedVideo&, size_t, size_t)>;
-    EncodeFunc encode_func;
-    if (use_ov_vision_preprocess == false) {
-        encode_func = [this](const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map, ov::genai::EncodedVideo& encoded_video, size_t frm_num, size_t frm_id) {
-            this->encode_with_imagepreprocess_cpp(image, config_map, encoded_video.video_features, encoded_video.resized_source_size, frm_num, frm_id);
-        };
-    } else {
-        encode_func = [this](const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map, ov::genai::EncodedVideo& encoded_video, size_t frm_num, size_t frm_id) {
-            this->encode_with_imagepreprocess_ov(image, config_map, encoded_video.video_features, encoded_video.resized_source_size, frm_num, frm_id);
-        };
-    }
+    auto encode_func = get_encode_func();
 
     // Regarding Qwen-VL's video processing, it needs to merge `config.temporal_patch_size` adjacent frames for processing.
     // For video frames that are fewer than `config.temporal_patch_size`, they will be processed like images.
-    for (; i + config.temporal_patch_size <= image_num; i += config.temporal_patch_size) {
+    size_t frame_id = 0;
+    size_t i = 0;
+    for (; i + config.temporal_patch_size <= frames_size; i += config.temporal_patch_size) {
         encode_func(std::vector<ov::Tensor>(frames.begin() + i, frames.begin() + i + config.temporal_patch_size),
-                    config_map, encoded_video, encoded_video.frame_num, frame_id);
+                    config, encoded_video.video_features, encoded_video.resized_source_size, encoded_video.frame_num, frame_id);
         frame_id++;
     }
-    for (; i < image_num; i++) {
-        encode_func({frames[i]}, config_map, encoded_video, encoded_video.frame_num, frame_id);
+    for (; i < frames_size; i++) {
+        encode_func({frames[i]}, config, encoded_video.video_features, encoded_video.resized_source_size, encoded_video.frame_num, frame_id);
         frame_id++;
     }
-
-    return encoded_video;
 }
 
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
@@ -1001,11 +999,46 @@ size_t InputsEmbedderQwen2VL::calc_tokens_num(size_t grid_t, size_t grid_h, size
 
 size_t InputsEmbedderQwen2VL::calc_vec_tokens_num(const std::vector<std::array<size_t, 3UL>>& vec_grid_thw) const {
     size_t token_num = 0;
-    for (auto grid_thw : vec_grid_thw) {
+    for (const auto& grid_thw : vec_grid_thw) {
         token_num += calc_tokens_num(grid_thw[0], grid_thw[1], grid_thw[2]);
     }
     return token_num;
-};
+}
+
+void InputsEmbedderQwen2VL::expand_video_tags_in_prompt(
+    std::string& unified_prompt,
+    const std::vector<EncodedVideo>& encoded_videos,
+    const std::vector<size_t>& videos_sequence,
+    size_t video_base_id
+) const {
+    std::vector<std::array<size_t, 3>> video_grid_thw_list;
+    video_grid_thw_list.reserve(encoded_videos.size());
+
+    for (const auto& encoded_video : encoded_videos) {
+        const size_t grid_t = encoded_video.frame_num;
+        OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
+        const size_t grid_h = encoded_video.resized_source_size.height;
+        const size_t grid_w = encoded_video.resized_source_size.width;
+        video_grid_thw_list.push_back({grid_t, grid_h, grid_w});
+    }
+
+    for (size_t video_id : videos_sequence) {
+        const auto [grid_t, grid_h, grid_w] = video_grid_thw_list.at(video_id - video_base_id);
+        const size_t num_video_pad_tokens = calc_tokens_num(grid_t, grid_h, grid_w);
+
+        std::string expanded_tag;
+        expanded_tag.reserve(m_vlm_config.vision_start_token.length() +
+                             m_vlm_config.video_pad_token.length() * num_video_pad_tokens +
+                             m_vlm_config.vision_end_token.length());
+        expanded_tag.append(m_vlm_config.vision_start_token);
+        for (size_t i = 0; i < num_video_pad_tokens; ++i) {
+            expanded_tag.append(m_vlm_config.video_pad_token);
+        }
+        expanded_tag.append(m_vlm_config.vision_end_token);
+
+        unified_prompt.replace(unified_prompt.find(NATIVE_VIDEO_TAG), NATIVE_VIDEO_TAG.length(), expanded_tag);
+    }
+}
 
 NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prompt,
                                                          size_t image_base_id,
@@ -1033,7 +1066,7 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
                              m_vlm_config.image_pad_token.length() * num_image_pad_tokens +
                              m_vlm_config.vision_end_token.length());
         expanded_tag.append(m_vlm_config.vision_start_token);
-        for (int i = 0; i < num_image_pad_tokens; ++i) {
+        for (size_t i = 0; i < num_image_pad_tokens; ++i) {
             expanded_tag.append(m_vlm_config.image_pad_token);
         }
         expanded_tag.append(m_vlm_config.vision_end_token);
@@ -1045,33 +1078,8 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
     std::vector<size_t> videos_sequence;
     std::tie(unified_prompt, videos_sequence) =
         normalize(unified_prompt, NATIVE_VIDEO_TAG, NATIVE_VIDEO_TAG, video_base_id, videos.size(), VisionType::VIDEO);
-    std::vector<std::array<size_t, 3>> video_grid_thw;
-    video_grid_thw.reserve(videos.size());
-
-    for (const auto& encoded_vd : videos) {
-        size_t grid_t = encoded_vd.frame_num;
-        OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
-        size_t grid_h = encoded_vd.resized_source_size.height;
-        size_t grid_w = encoded_vd.resized_source_size.width;
-        video_grid_thw.push_back({grid_t, grid_h, grid_w});
-    }
-
-    for (size_t new_image_id : videos_sequence) {
-        auto [grid_t, grid_h, grid_w] = video_grid_thw.at(new_image_id - video_base_id);
-        const size_t num_video_pad_tokens = calc_tokens_num(grid_t, grid_h, grid_w);
-
-        std::string expanded_tag;
-        expanded_tag.reserve(m_vlm_config.vision_start_token.length() +
-                             m_vlm_config.video_pad_token.length() * num_video_pad_tokens +
-                             m_vlm_config.vision_end_token.length());
-        expanded_tag.append(m_vlm_config.vision_start_token);
-        for (size_t i = 0; i < num_video_pad_tokens; ++i) {
-            expanded_tag.append(m_vlm_config.video_pad_token);
-        }
-        expanded_tag.append(m_vlm_config.vision_end_token);
-
-        unified_prompt.replace(unified_prompt.find(NATIVE_VIDEO_TAG), NATIVE_VIDEO_TAG.length(), expanded_tag);
-    }
+    
+    expand_video_tags_in_prompt(unified_prompt, videos, videos_sequence, video_base_id);
 
     return {std::move(unified_prompt), std::move(images_sequence), std::move(videos_sequence)};
 }
@@ -1265,6 +1273,21 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_generat
     return {position_ids, rope_delta};
 }
 
+std::string InputsEmbedderQwen2VL::get_last_pruned_prompt(const std::string& original_prompt) const {
+    std::string pruned_prompt = original_prompt;
+
+    // Remove pruned vision pad tokens from the last prompt if CDPruner is active
+    if (is_cdpruner_active()) {
+        pruned_prompt = m_pruning_processor->get_last_pruned_prompt(pruned_prompt,
+                                                                    m_vlm_config.vision_start_token,
+                                                                    m_vlm_config.vision_end_token,
+                                                                    m_vlm_config.image_pad_token,
+                                                                    m_vlm_config.video_pad_token);
+    }
+
+    return pruned_prompt;
+}
+
 void InputsEmbedderQwen2VL::start_chat(const std::string& system_message) {
     IInputsEmbedder::start_chat(system_message);
     m_position_ids = ov::Tensor();
@@ -1314,8 +1337,8 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2VL::run_video_image_embeddi
     auto out_vision_shape = processed_vision_embeds.get_shape();
 
     // Split Video and Image's features.
-    auto video_fea_num = calc_vec_tokens_num(reordered_videos_grid_thw);
-    auto image_fea_num = calc_vec_tokens_num(reordered_images_grid_thw);
+    const size_t video_fea_num = calc_vec_tokens_num(reordered_videos_grid_thw);
+    const size_t image_fea_num = calc_vec_tokens_num(reordered_images_grid_thw);
     size_t video_fea_count = 0;
     if ((video_fea_num + image_fea_num) != 0) {
         video_fea_count = out_vision_shape.at(0) * video_fea_num / (video_fea_num + image_fea_num);
@@ -1407,6 +1430,42 @@ ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::arra
     return rotary_pos_emb;
 }
 
+std::vector<std::array<size_t, 3>> InputsEmbedderQwen2VL::get_vision_grid_thw_for_position_ids(
+    const std::vector<std::array<size_t, 3>>& images_grid_thw,
+    const std::vector<size_t>& images_sequence,
+    const size_t image_id,
+    const std::vector<std::array<size_t, 3>>& videos_grid_thw,
+    const std::vector<size_t>& videos_sequence,
+    const size_t video_id,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) const {
+    std::vector<std::array<size_t, 3>> reordered_vision_grid_thw;
+
+    if (history_vision_count.size() > 0) {
+        size_t vid_idx = 0;
+        size_t img_idx = 0;
+        for (size_t i = 0; i < history_vision_count.size(); i++) {
+            size_t ed = vid_idx + history_vision_count[i].first;
+            for (; vid_idx < ed; vid_idx++) {
+                reordered_vision_grid_thw.push_back(videos_grid_thw.at(vid_idx - video_id));
+            }
+            ed = img_idx + history_vision_count[i].second;
+            for (; img_idx < ed; img_idx++) {
+                reordered_vision_grid_thw.push_back(images_grid_thw.at(img_idx - image_id));
+            }
+        }
+    } else {
+        for (size_t new_frame_id : videos_sequence) {
+            reordered_vision_grid_thw.push_back(videos_grid_thw.at(new_frame_id - video_id));
+        }
+        for (size_t new_image_id : images_sequence) {
+            reordered_vision_grid_thw.push_back(images_grid_thw.at(new_image_id - image_id));
+        }
+    }
+
+    return reordered_vision_grid_thw;
+}
+
 ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
     const ov::Tensor& input_ids_tensor,
     const std::vector<std::array<size_t, 3>>& images_grid_thw,
@@ -1416,32 +1475,20 @@ ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
     const std::vector<size_t>& videos_sequence,
     const size_t video_id,
     const int64_t vision_start_token_id,
-    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) {
     const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
     const size_t tokens_per_second = m_vlm_config.vision_config_tokens_per_second;
-    std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
 
-    if (history_vision_count.size() > 0) {
-        size_t vid_idx = 0;
-        size_t img_idx = 0;
-        for (size_t i = 0; i < history_vision_count.size(); i++) {
-            size_t ed = vid_idx + history_vision_count[i].first;
-            for (; vid_idx < ed; vid_idx++) {
-                reordered_images_grid_thw.push_back(videos_grid_thw.at(vid_idx - video_id));
-            }
-            ed = img_idx + history_vision_count[i].second;
-            for (; img_idx < ed; img_idx++) {
-                reordered_images_grid_thw.push_back(images_grid_thw.at(img_idx - image_id));
-            }
-        }
-    } else {
-        for (size_t new_frame_id : videos_sequence) {
-            reordered_images_grid_thw.push_back(videos_grid_thw.at(new_frame_id - video_id));
-        }
-        for (size_t new_image_id : images_sequence) {
-            reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id - image_id));
-        }
-    }
+    auto reordered_vision_grid_thw = get_vision_grid_thw_for_position_ids(
+        images_grid_thw,
+        images_sequence,
+        image_id,
+        videos_grid_thw,
+        videos_sequence,
+        video_id,
+        history_vision_count
+    );
 
     const int64_t* input_ids = input_ids_tensor.data<int64_t>();
     size_t batch_size = input_ids_tensor.get_shape().at(0);
@@ -1482,8 +1529,8 @@ ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
         ed++;
 
         // Process image token with grid
-        if (grid_idx < reordered_images_grid_thw.size()) {
-            const auto& grid = reordered_images_grid_thw.at(grid_idx);
+        if (grid_idx < reordered_vision_grid_thw.size()) {
+            const auto& grid = reordered_vision_grid_thw.at(grid_idx);
             size_t llm_grid_t = grid.at(0);
             size_t llm_grid_h = grid.at(1) / spatial_merge_size;
             size_t llm_grid_w = grid.at(2) / spatial_merge_size;

@@ -22,19 +22,34 @@ public:
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
     EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
 
+protected:
+    /**
+     * @brief Encodes video frames by grouping them into chunks of config.temporal_patch_size adjacent frames
+     * and saves results into the encoded_video struct.
+     * The config can be ProcessorConfig or a derived class (e.g. VideoProcessorConfig for Qwen3-VL).
+     */
+    void encode_frames_with_config(EncodedVideo& encoded_video, const std::vector<ov::Tensor>& frames, const ProcessorConfig& config);
+
 private:
-    void encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& image,
-                                                 const ov::AnyMap& config_map,
-                                                 ov::Tensor& out_tensor,
-                                                 ImageSize& out_rsz_size,
-                                                 size_t frame_num = 1,
-                                                 size_t frame_id = 0);
-    void encode_with_imagepreprocess_ov(const std::vector<ov::Tensor>& image,
-                                        const ov::AnyMap& config_map,
-                                        ov::Tensor& out_tensor,
-                                        ImageSize& out_rsz_size,
-                                        size_t frame_num = 1,
-                                        size_t frame_id = 0);
+    using EncodeFunc = std::function<void(const std::vector<ov::Tensor>&, const ProcessorConfig&, ov::Tensor&, ImageSize&, size_t, size_t)>;
+
+    EncodeFunc get_encode_func();
+
+    void encode_with_imagepreprocess_cpp(
+        const std::vector<ov::Tensor>& image,
+        const ProcessorConfig& config,
+        ov::Tensor& out_tensor,
+        ImageSize& out_rsz_size,
+        size_t frame_num = 1,
+        size_t frame_id = 0);
+
+    void encode_with_imagepreprocess_ov(
+        const std::vector<ov::Tensor>& image,
+        const ProcessorConfig& config,
+        ov::Tensor& out_tensor,
+        ImageSize& out_rsz_size,
+        size_t frame_num = 1,
+        size_t frame_id = 0);
 
     bool use_ov_vision_preprocess = true; // default use ov vision preprocess, control by env VISION_PREPROCESS=CPP to use cpp vision preprocess
 };
@@ -75,6 +90,8 @@ public:
 
     void start_chat(const std::string& system_message) override;
 
+    std::string get_last_pruned_prompt(const std::string& original_prompt) const override;
+
     void finish_chat() override;
 
     NormalizedPrompt normalize_prompt(
@@ -93,6 +110,10 @@ public:
         const std::vector<EncodedVideo>& videos) const override;
 
 protected:
+    // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
+    inline static const std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
+    inline static const std::string NATIVE_VIDEO_TAG = "<|vision_start|><|video_pad|><|vision_end|>";
+
     // A model for merging image embeddings (hidden states), rotary_pos_emb and attension_mask.
     // Inputs:
     //  - hidden_states: [N, embed_dim]
@@ -107,6 +128,13 @@ protected:
 
     bool m_with_cu_seqlens_input = false;
 
+    virtual void expand_video_tags_in_prompt(
+        std::string& unified_prompt,
+        const std::vector<EncodedVideo>& encoded_videos,
+        const std::vector<size_t>& videos_sequence,
+        size_t video_base_id
+    ) const;
+
     virtual std::pair<ov::Tensor, ov::Tensor> run_video_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 
         const std::vector<size_t>& images_sequence,
@@ -114,6 +142,16 @@ protected:
         const std::vector<size_t>& videos_sequence);
 
     virtual ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) const;
+
+    virtual std::vector<std::array<size_t, 3>> get_vision_grid_thw_for_position_ids(
+        const std::vector<std::array<size_t, 3>>& images_grid_thw,
+        const std::vector<size_t>& images_sequence,
+        const size_t image_id,
+        const std::vector<std::array<size_t, 3>>& videos_grid_thw,
+        const std::vector<size_t>& videos_sequence,
+        const size_t video_id,
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+    ) const;
 
     ov::Tensor create_position_ids(
         const ov::Tensor& input_ids_tensor,

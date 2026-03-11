@@ -29,6 +29,7 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::
             return compiled_model.create_infer_request();
         });
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
+    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(model_dir, "video_preprocessor_config.json");
 }
 
 VisionEncoder::VisionEncoder(
@@ -46,6 +47,7 @@ VisionEncoder::VisionEncoder(
             return compiled_model.create_infer_request();
         });
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "preprocessor_config.json");
+    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, "video_preprocessor_config.json");
 }
 
 ProcessorConfig VisionEncoder::get_processor_config() const {

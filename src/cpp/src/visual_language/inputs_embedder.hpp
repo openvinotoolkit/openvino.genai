@@ -79,6 +79,14 @@ public:
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
 
+    /**
+     * Encodes the original prompt text into token IDs for use as a lookup table in prompt lookup decoding.
+     *
+     * @param original_prompt The original prompt text to be encoded.
+     * @return An ov::Tensor containing the encoded token IDs of the prompt.
+     */
+    ov::Tensor encode_prompt(const std::string& original_prompt);
+
     void set_position_ids(const ov::Tensor& position_ids);
 
     void set_rope_delta(int64_t rope_delta);
@@ -99,6 +107,9 @@ public:
 
     // adds currently generated text to chat history
     void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
+
+    // gets last pruned prompt after vision token pruning
+    std::string get_last_pruned_prompt(const std::string& original_prompt) const;
 
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
@@ -225,6 +236,14 @@ private:
             m_apply_chat_template = apply_chat_template;
         }
 
+        /**
+         * Encodes the original prompt text into token IDs for use as a lookup table in prompt lookup decoding.
+         *
+         * @param original_prompt The original prompt text to be encoded.
+         * @return An ov::Tensor containing the encoded token IDs of the prompt.
+         */
+        ov::Tensor encode_prompt(const std::string& original_prompt);
+
         void set_add_special_tokens(bool value) {
             m_add_special_tokens = value;
             m_add_special_tokens_is_set = true;
@@ -233,6 +252,12 @@ private:
         virtual void start_chat(const std::string& system_message);
 
         virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
+
+        // Get last pruned prompt after vision token pruning.
+        virtual std::string get_last_pruned_prompt(const std::string& original_prompt) const {
+            OPENVINO_THROW_NOT_IMPLEMENTED(
+                "get_last_pruned_prompt() must be implemented by derived classes that support vision token pruning");
+        }
 
         virtual void finish_chat();
 
@@ -318,7 +343,10 @@ private:
          */
         std::optional<VisionTokenPruningProcessor::PruningResult> execute_pruning_pipeline(
             const PruningContext& context) {
-            return m_pruning_processor->execute(context, m_position_ids, m_kv_cache_state, m_prev_hist_length);
+            return m_pruning_processor->execute(context,
+                                                m_position_ids,
+                                                m_kv_cache_state,
+                                                m_prev_hist_length);
         }
     };
 

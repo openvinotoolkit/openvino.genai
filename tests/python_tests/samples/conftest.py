@@ -159,7 +159,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "qwen3_1.7b_eagle3": {
         "name": "AngelSlim/Qwen3-1.7B_eagle3",
-        "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code", "--eagle3"],
+        "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code"],
     },
     "tiny-random-llava-next-video": {
         "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
@@ -168,6 +168,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "tiny-random-ltx-video": {
         "name": "optimum-intel-internal-testing/tiny-random-ltx-video",
         "convert_args": ["--trust-remote-code"],
+    },
+    "tiny-random-flux": {
+        "name": "optimum-intel-internal-testing/tiny-random-flux",
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
     },
 }
 

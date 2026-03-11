@@ -253,8 +253,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                     ov::Tensor new_deepstack_visual_embeds{tensor.get_element_type(), new_shape};
                     std::fill_n(new_deepstack_visual_embeds.data<float>(), new_deepstack_visual_embeds.get_size(), 0.0f);
                     m_llm.set_tensor(name, new_deepstack_visual_embeds);
-                }
-                if (name == "visual_pos_masks") {
+                } else if (name == "visual_pos_masks") {
                     ov::Tensor new_visual_pos_masks{tensor.get_element_type(), {batch_size, 1}};
                     std::fill_n(new_visual_pos_masks.data<bool>(), new_visual_pos_masks.get_size(), false);
                     m_llm.set_tensor(name, new_visual_pos_masks);
