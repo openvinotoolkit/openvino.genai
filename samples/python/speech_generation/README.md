@@ -3,7 +3,7 @@
 This folder contains Python examples for `openvino_genai.Text2SpeechPipeline`:
 
 - `text2speech.py`: basic text → audio generation (SpeechT5 and Kokoro)
-- `kokoro_generate_from_tokens.py`: Kokoro `generate_from_tokens` flow
+- `kokoro_generate_from_phonemes.py`: Kokoro `generate_from_tokens` / `generate_from_phonemes` flow
 - `kokoro_phonemize_fallback.py`: Kokoro unknown-word fallback behavior
 
 ## Supported Models
@@ -61,15 +61,20 @@ Kokoro:
 
 `python text2speech.py --voice af_heart --language en-us Kokoro-82M "Hello from Kokoro in OpenVINO GenAI"`
 
-### 2) `kokoro_generate_from_tokens.py` (Kokoro only)
+### 2) `kokoro_generate_from_phonemes.py` (Kokoro only)
 
-Install Misaki if needed:
+Install Kokoro if needed:
 
-`pip install misaki`
+`pip install kokoro`
 
 Run:
 
-`python kokoro_generate_from_tokens.py Kokoro-82M "Hello from Kokoro via Misaki tokens"`
+`python kokoro_generate_from_phonemes.py Kokoro-82M --language es --api auto`
+
+This sample uses predefined texts per language and initializes Misaki for the selected `--language`.
+`--api auto` prefers `generate_from_tokens` when Misaki returns token objects, and falls back to
+`generate_from_phonemes` for languages where tokens are unavailable (for example, `ja`).
+If `--voice` is omitted, the sample picks a language-appropriate default voice.
 
 ### 3) `kokoro_phonemize_fallback.py` (Kokoro only)
 
