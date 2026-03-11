@@ -738,7 +738,11 @@ std::vector<std::string> phonemize_single_text(misaki::G2P& g2p,
             }
         }
 
-        OPENVINO_ASSERT(!phoneme_chunks.empty(), "Kokoro non-English preprocessing produced no phoneme chunks for input text");
+        OPENVINO_ASSERT(!phoneme_chunks.empty(),
+                        "Kokoro non-English preprocessing produced no phoneme chunks for input text. "
+                        "Check that espeak-ng is installed and supports requested language variant '",
+                        language_variant,
+                        "'. You may need MISAKI_ESPEAK_LIBRARY to point at libespeak-ng.");
         return phoneme_chunks;
     }
 

@@ -317,8 +317,21 @@ std::optional<std::string> phonemize_with_espeak_api(EspeakApi &api,
                                                      const std::string &text,
                                                      bool british,
                                                      const std::string &version) {
-  const std::string voice_name = british ? "en-gb" : "en-us";
-  auto raw = raw_espeak_phonemize(api, text, voice_name);
+  std::vector<std::string> voice_candidates;
+  if (british) {
+    voice_candidates = {"en-gb", "en", "en-us"};
+  } else {
+    voice_candidates = {"en-us", "en", "en-gb"};
+  }
+
+  std::optional<std::string> raw;
+  for (const auto& voice_name : voice_candidates) {
+    raw = raw_espeak_phonemize(api, text, voice_name);
+    if (raw.has_value()) {
+      break;
+    }
+  }
+
   if (!raw.has_value()) {
     return std::nullopt;
   }
@@ -334,12 +347,63 @@ std::optional<std::string> phonemize_generic_with_espeak_api(EspeakApi &api,
                                                              std::string text,
                                                              const std::string &language,
                                                              const std::string &version) {
+  auto lower_copy = [](std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+      return static_cast<char>(std::tolower(c));
+    });
+    return value;
+  };
+
+  auto build_voice_candidates = [&](const std::string& variant) {
+    std::vector<std::string> candidates;
+    const std::string normalized = lower_copy(variant);
+
+    auto add = [&](const std::string& candidate) {
+      if (candidate.empty()) {
+        return;
+      }
+      if (std::find(candidates.begin(), candidates.end(), candidate) == candidates.end()) {
+        candidates.push_back(candidate);
+      }
+    };
+
+    add(normalized);
+
+    if (normalized == "fr-fr") {
+      add("fr");
+      add("fr_fr");
+    } else if (normalized == "pt-br") {
+      add("pt");
+      add("pt_br");
+    } else if (normalized == "en-gb") {
+      add("en");
+      add("en-gb-x-gbclan");
+    } else if (normalized == "en-us") {
+      add("en");
+      add("en-us");
+    } else {
+      const auto dash = normalized.find('-');
+      if (dash != std::string::npos) {
+        add(normalized.substr(0, dash));
+      }
+    }
+
+    return candidates;
+  };
+
   replace_all(text, as_utf8(u8"«"), as_utf8(u8"“"));
   replace_all(text, as_utf8(u8"»"), as_utf8(u8"”"));
   replace_all(text, "(", as_utf8(u8"«"));
   replace_all(text, ")", as_utf8(u8"»"));
 
-  auto raw = raw_espeak_phonemize(api, text, language);
+  std::optional<std::string> raw;
+  for (const auto& voice_candidate : build_voice_candidates(language)) {
+    raw = raw_espeak_phonemize(api, text, voice_candidate);
+    if (raw.has_value()) {
+      break;
+    }
+  }
+
   if (!raw.has_value()) {
     return std::nullopt;
   }
