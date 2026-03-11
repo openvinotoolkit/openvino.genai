@@ -72,7 +72,7 @@ int main(int argc, char* argv[]) try {
         args.size() >= 3,
         "Usage: ",
         args[0],
-        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>] [--voice <VOICE_ID>] [--language <en-us|en-gb>] [--speed <FLOAT>] [--sample_rate <INT>]");
+        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>] [--voice <VOICE_ID>] [--language <en-us|en-gb|es|fr-fr|hi|it|pt-br>] [--speed <FLOAT>] [--sample_rate <INT>]");
 
     const std::string models_path = args[1], prompt = args[2];
     const std::string device = "CPU";

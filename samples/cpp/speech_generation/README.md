@@ -10,7 +10,7 @@ This folder contains C++ examples for `ov::genai::Text2SpeechPipeline`.
 - **Kokoro**
 	- Uses a Kokoro model directory.
 	- Uses `--voice` and `--language` options.
-	- For end-to-end Kokoro pipeline, only english (en-us, en-gb) language is supported.
+	- For end-to-end Kokoro pipeline, initial language support includes english (`en-us`, `en-gb`) and non-english espeak path (`es`, `fr-fr`, `hi`, `it`, `pt-br`).
 
 ## SpeechT5 setup
 
@@ -48,6 +48,10 @@ Text-to-speech sample (SpeechT5):
 Text-to-speech sample (Kokoro):
 
 `text-to-speech standalone_python_ov/Kokoro-82M "Hello from Kokoro in OpenVINO GenAI" --voice af_heart --language en-us`
+
+Text-to-speech sample (Kokoro, non-English initial testing):
+
+`text-to-speech standalone_python_ov/Kokoro-82M "Los partidos políticos tradicionales compiten con los populismos." --voice ef_dora --language es`
 
 Kokoro fallback sample with OV fallback model:
 

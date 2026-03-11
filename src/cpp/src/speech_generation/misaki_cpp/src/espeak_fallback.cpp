@@ -242,12 +242,10 @@ std::string normalize_espeak_to_misaki(std::string ps, bool british, const std::
   return trim(ps);
 }
 
-std::optional<std::string> phonemize_with_espeak_api(EspeakApi &api,
-                                                     const std::string &text,
-                                                     bool british,
-                                                     const std::string &version) {
-  const char *voice_name = british ? "en-gb" : "en-us";
-  if (api.set_voice_by_name(voice_name) != kEspeakOk) {
+std::optional<std::string> raw_espeak_phonemize(EspeakApi &api,
+                                                const std::string &text,
+                                                const std::string &voice_name) {
+  if (api.set_voice_by_name(voice_name.c_str()) != kEspeakOk) {
     return std::nullopt;
   }
 
@@ -268,7 +266,85 @@ std::optional<std::string> phonemize_with_espeak_api(EspeakApi &api,
     return std::nullopt;
   }
 
-  const auto normalized = normalize_espeak_to_misaki(raw, british, version);
+  return raw;
+}
+
+std::string normalize_espeak_generic_to_misaki(std::string ps, const std::string &version) {
+  static const std::vector<std::pair<std::string, std::string>> kE2M = {
+      {as_utf8(u8"a^ɪ"), as_utf8(u8"I")},  {as_utf8(u8"a^ʊ"), as_utf8(u8"W")},
+      {as_utf8(u8"d^z"), as_utf8(u8"ʣ")},  {as_utf8(u8"d^ʒ"), as_utf8(u8"ʤ")},
+      {as_utf8(u8"e^ɪ"), as_utf8(u8"A")},  {as_utf8(u8"o^ʊ"), as_utf8(u8"O")},
+      {as_utf8(u8"ə^ʊ"), as_utf8(u8"Q")},  {as_utf8(u8"s^s"), as_utf8(u8"S")},
+      {as_utf8(u8"t^s"), as_utf8(u8"ʦ")},  {as_utf8(u8"t^ʃ"), as_utf8(u8"ʧ")},
+      {as_utf8(u8"ɔ^ɪ"), as_utf8(u8"Y")},
+  };
+
+  static const std::vector<std::pair<std::string, std::string>> kE2M_v20 = {
+      {as_utf8(u8"œ̃"), as_utf8(u8"B")}, {as_utf8(u8"ɔ̃"), as_utf8(u8"C")},
+      {as_utf8(u8"ɑ̃"), as_utf8(u8"D")}, {as_utf8(u8"ɛ̃"), as_utf8(u8"E")},
+      {as_utf8(u8"ʊ̃"), as_utf8(u8"V")}, {as_utf8(u8"ũ"), as_utf8(u8"U")},
+      {as_utf8(u8"õ"), as_utf8(u8"X")}, {as_utf8(u8"ɐ̃"), as_utf8(u8"Z")},
+  };
+
+  replace_all(ps, as_utf8(u8"«"), as_utf8(u8"“"));
+  replace_all(ps, as_utf8(u8"»"), as_utf8(u8"”"));
+
+  for (const auto &mapping : kE2M) {
+    replace_all(ps, mapping.first, mapping.second);
+  }
+  if (version == "2.0") {
+    for (const auto &mapping : kE2M_v20) {
+      replace_all(ps, mapping.first, mapping.second);
+    }
+  }
+
+  replace_all(ps, "^", "");
+
+  if (version == "2.0") {
+    replace_all(ps, as_utf8(u8"\u0329"), "");
+    replace_all(ps, as_utf8(u8"\u032A"), "");
+    ps = reorder_syllabic_marker(ps);
+  } else {
+    replace_all(ps, "-", "");
+  }
+
+  replace_all(ps, as_utf8(u8"«"), "(");
+  replace_all(ps, as_utf8(u8"»"), ")");
+  return trim(ps);
+}
+
+std::optional<std::string> phonemize_with_espeak_api(EspeakApi &api,
+                                                     const std::string &text,
+                                                     bool british,
+                                                     const std::string &version) {
+  const std::string voice_name = british ? "en-gb" : "en-us";
+  auto raw = raw_espeak_phonemize(api, text, voice_name);
+  if (!raw.has_value()) {
+    return std::nullopt;
+  }
+
+  const auto normalized = normalize_espeak_to_misaki(*raw, british, version);
+  if (normalized.empty()) {
+    return std::nullopt;
+  }
+  return normalized;
+}
+
+std::optional<std::string> phonemize_generic_with_espeak_api(EspeakApi &api,
+                                                             std::string text,
+                                                             const std::string &language,
+                                                             const std::string &version) {
+  replace_all(text, as_utf8(u8"«"), as_utf8(u8"“"));
+  replace_all(text, as_utf8(u8"»"), as_utf8(u8"”"));
+  replace_all(text, "(", as_utf8(u8"«"));
+  replace_all(text, ")", as_utf8(u8"»"));
+
+  auto raw = raw_espeak_phonemize(api, text, language);
+  if (!raw.has_value()) {
+    return std::nullopt;
+  }
+
+  const auto normalized = normalize_espeak_generic_to_misaki(*raw, version);
   if (normalized.empty()) {
     return std::nullopt;
   }
@@ -311,6 +387,43 @@ bool EspeakFallback::backend_available() const {
 }
 
 std::optional<std::string> EspeakFallback::backend_error() const {
+  static std::mutex api_mutex;
+  std::scoped_lock lock(api_mutex);
+  const auto &state = get_cached_load_state(library_path_);
+  if (state.api.has_value() || state.error.empty()) {
+    return std::nullopt;
+  }
+  return state.error;
+}
+
+EspeakG2P::EspeakG2P(std::string language, std::string version, std::string library_path)
+    : language_(std::move(language)), version_(std::move(version)), library_path_(std::move(library_path)) {
+}
+
+std::optional<std::string> EspeakG2P::phonemize(const std::string &text) const {
+  const std::string input = trim(text);
+  if (input.empty()) {
+    return std::nullopt;
+  }
+
+  static std::mutex api_mutex;
+  std::scoped_lock lock(api_mutex);
+
+  auto &state = get_cached_load_state(library_path_);
+  if (!state.api.has_value()) {
+    return std::nullopt;
+  }
+
+  return phonemize_generic_with_espeak_api(*(state.api), input, language_, version_);
+}
+
+bool EspeakG2P::backend_available() const {
+  static std::mutex api_mutex;
+  std::scoped_lock lock(api_mutex);
+  return get_cached_load_state(library_path_).api.has_value();
+}
+
+std::optional<std::string> EspeakG2P::backend_error() const {
   static std::mutex api_mutex;
   std::scoped_lock lock(api_mutex);
   const auto &state = get_cached_load_state(library_path_);

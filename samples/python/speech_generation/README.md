@@ -14,7 +14,7 @@ This folder contains Python examples for `openvino_genai.Text2SpeechPipeline`:
 - **Kokoro**
     - Uses a Kokoro model directory.
     - Uses `--voice` and `--language` options.
-    - For end-to-end Kokoro pipeline, only english (`en-us`, `en-gb`) language is supported.
+    - For end-to-end Kokoro pipeline, initial language support includes english (`en-us`, `en-gb`) and non-english espeak path (`es`, `fr-fr`, `hi`, `it`, `pt-br`).
 
 ## Install dependencies
 
@@ -60,6 +60,10 @@ SpeechT5:
 Kokoro:
 
 `python text2speech.py --voice af_heart --language en-us Kokoro-82M "Hello from Kokoro in OpenVINO GenAI"`
+
+Kokoro (non-English initial testing):
+
+`python text2speech.py --language es Kokoro-82M "Los partidos políticos tradicionales compiten con los populismos."`
 
 ### 2) `kokoro_generate_from_phonemes.py` (Kokoro only)
 

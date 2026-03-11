@@ -19,6 +19,7 @@ if(ENABLE_MISAKI_CPP)
         add_library(openvino_genai_misaki_cpp STATIC
             "${MISAKI_CPP_ROOT}/src/en_g2p.cpp"
             "${MISAKI_CPP_ROOT}/src/espeak_fallback.cpp"
+            "${MISAKI_CPP_ROOT}/src/espeak_g2p.cpp"
             "${MISAKI_CPP_ROOT}/src/english_lexicon.cpp"
             "${MISAKI_CPP_ROOT}/src/factory_stub.cpp")
 

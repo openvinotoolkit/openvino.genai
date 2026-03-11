@@ -348,7 +348,29 @@ std::string normalize_language_variant(const std::string& language) {
         return "en-gb";
     }
 
-    OPENVINO_THROW("Unsupported Kokoro language '", language, "'. Supported values: en-us, en-gb, a, b");
+    if (normalized == "e" || normalized == "es") {
+        return "es";
+    }
+    if (normalized == "f" || normalized == "fr-fr") {
+        return "fr-fr";
+    }
+    if (normalized == "h" || normalized == "hi") {
+        return "hi";
+    }
+    if (normalized == "i" || normalized == "it") {
+        return "it";
+    }
+    if (normalized == "p" || normalized == "pt-br") {
+        return "pt-br";
+    }
+
+    OPENVINO_THROW("Unsupported Kokoro language '",
+                   language,
+                   "'. Supported values: en-us, en-gb, es, fr-fr, hi, it, pt-br (aliases: a, b, e, f, h, i, p)");
+}
+
+bool is_english_variant(const std::string& language_variant) {
+    return language_variant == "en-us" || language_variant == "en-gb";
 }
 
 std::string to_utf8(char32_t codepoint) {
@@ -470,6 +492,58 @@ std::vector<std::string> split_by_newline_groups(const std::string& text) {
     return segments;
 }
 
+std::vector<std::string> split_non_english_chunks(const std::string& graphemes, const size_t chunk_size = 400) {
+    std::vector<std::string> chunks;
+    if (graphemes.empty()) {
+        return chunks;
+    }
+
+    std::vector<std::string> sentences;
+    std::string current;
+    auto is_sentence_punct = [](char c) {
+        return c == '.' || c == '!' || c == '?';
+    };
+
+    for (size_t i = 0; i < graphemes.size(); ++i) {
+        const char c = graphemes[i];
+        current.push_back(c);
+        if (is_sentence_punct(c)) {
+            while (i + 1 < graphemes.size() && is_sentence_punct(graphemes[i + 1])) {
+                current.push_back(graphemes[++i]);
+            }
+            sentences.push_back(current);
+            current.clear();
+        }
+    }
+    if (!current.empty()) {
+        sentences.push_back(current);
+    }
+
+    std::string chunk;
+    for (const auto& sentence : sentences) {
+        if (chunk.size() + sentence.size() <= chunk_size) {
+            chunk += sentence;
+        } else {
+            if (!chunk.empty()) {
+                chunks.push_back(chunk);
+            }
+            chunk = sentence;
+        }
+    }
+    if (!chunk.empty()) {
+        chunks.push_back(chunk);
+    }
+
+    if (!chunks.empty()) {
+        return chunks;
+    }
+
+    for (size_t i = 0; i < graphemes.size(); i += chunk_size) {
+        chunks.push_back(graphemes.substr(i, chunk_size));
+    }
+    return chunks;
+}
+
 std::vector<std::string> split_voice_list(const std::string& voice) {
     // Python parity: mirrors `KPipeline.load_voice(..., delimiter=",")` behavior,
     // where multiple voices can be requested and blended.
@@ -561,7 +635,8 @@ void install_fallback_if_available(std::unique_ptr<misaki::G2P>& g2p,
 
 std::vector<std::string> phonemize_single_text(misaki::G2P& g2p,
                                                const std::string& text,
-                                               const ov::genai::SpeechGenerationConfig& generation_config) {
+                                               const ov::genai::SpeechGenerationConfig& generation_config,
+                                               const std::string& language_variant) {
     auto rstrip_spaces = [](std::string value) {
         while (!value.empty() && value.back() == ' ') {
             value.pop_back();
@@ -635,6 +710,37 @@ std::vector<std::string> phonemize_single_text(misaki::G2P& g2p,
 
     const auto segments = split_by_newline_groups(text);
     std::vector<std::string> phoneme_chunks;
+
+    if (!is_english_variant(language_variant)) {
+        for (const auto& segment : segments) {
+            if (segment.empty()) {
+                continue;
+            }
+
+            const auto chunks = split_non_english_chunks(segment);
+            for (const auto& chunk : chunks) {
+                if (chunk.empty()) {
+                    continue;
+                }
+
+                std::string ps = g2p.phonemize(chunk);
+                if (ps.empty()) {
+                    continue;
+                }
+
+                if (utf8_codepoint_length(ps) > generation_config.max_phoneme_length) {
+                    ps = truncate_utf8_codepoints(ps, generation_config.max_phoneme_length);
+                }
+
+                if (!ps.empty()) {
+                    phoneme_chunks.push_back(sanitize_utf8(ps));
+                }
+            }
+        }
+
+        OPENVINO_ASSERT(!phoneme_chunks.empty(), "Kokoro non-English preprocessing produced no phoneme chunks for input text");
+        return phoneme_chunks;
+    }
 
     for (const auto& segment : segments) {
         if (segment.empty()) {
@@ -955,17 +1061,24 @@ void KokoroTTSImpl::ensure_g2p_initialized(const SpeechGenerationConfig& generat
     if (requires_new_engine) {
         m_runtime->set_language_variant(language_variant);
         // Python parity: language change rebinds G2P behavior (see `KPipeline.__init__`).
-        m_g2p = misaki::make_engine("en", language_variant);
+        if (is_english_variant(language_variant)) {
+            m_g2p = misaki::make_engine("en", language_variant);
+        } else {
+            m_g2p = misaki::make_engine("espeak", language_variant);
+        }
         // Ensure fallback policy is applied for a newly created engine.
         m_fallback_initialized = false;
     }
 
     const bool fallback_config_changed = !m_fallback_initialized ||
                                          generation_config.phonemize_fallback_model_dir != m_phonemize_fallback_model_dir;
-    if (requires_new_engine || fallback_config_changed) {
+    if (is_english_variant(language_variant) && (requires_new_engine || fallback_config_changed)) {
         install_fallback_if_available(m_g2p, language_variant, generation_config);
         m_fallback_initialized = true;
         m_phonemize_fallback_model_dir = generation_config.phonemize_fallback_model_dir;
+    } else if (!is_english_variant(language_variant)) {
+        m_fallback_initialized = false;
+        m_phonemize_fallback_model_dir.reset();
     }
 }
 #endif
@@ -983,9 +1096,10 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
 
     std::vector<std::vector<std::string>> all_phoneme_chunks;
     all_phoneme_chunks.reserve(texts.size());
+    const std::string language_variant = normalize_language_variant(generation_config.language);
     for (const auto& text : texts) {
         const auto text_tokenize_start = std::chrono::steady_clock::now();
-        auto phoneme_chunks = phonemize_single_text(*m_g2p, text, generation_config);
+        auto phoneme_chunks = phonemize_single_text(*m_g2p, text, generation_config, language_variant);
         const auto text_tokenize_end = std::chrono::steady_clock::now();
         all_phoneme_chunks.push_back(std::move(phoneme_chunks));
     }
@@ -1215,8 +1329,9 @@ std::vector<std::vector<std::string>> KokoroTTSImpl::phonemize(const std::vector
 
     std::vector<std::vector<std::string>> all_chunks;
     all_chunks.reserve(texts.size());
+    const std::string language_variant = normalize_language_variant(generation_config.language);
     for (const auto& text : texts) {
-        all_chunks.push_back(phonemize_single_text(*m_g2p, text, generation_config));
+        all_chunks.push_back(phonemize_single_text(*m_g2p, text, generation_config, language_variant));
     }
     return all_chunks;
 #endif

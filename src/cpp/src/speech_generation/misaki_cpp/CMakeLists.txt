@@ -38,6 +38,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 add_library(misaki_cpp STATIC
   src/en_g2p.cpp
   src/espeak_fallback.cpp
+  src/espeak_g2p.cpp
   src/english_lexicon.cpp
   src/factory_stub.cpp
 )
@@ -79,6 +80,12 @@ target_link_libraries(test_english_gb_exactness PRIVATE
 )
 target_compile_definitions(test_english_gb_exactness PRIVATE
   MISAKI_ENGLISH_GB_GOLDEN_CASES_PATH="${CMAKE_SOURCE_DIR}/tests/english_gb_golden_cases.jsonl"
+)
+
+add_executable(test_espeak_g2p tests/test_espeak_g2p.cpp)
+target_link_libraries(test_espeak_g2p PRIVATE
+  misaki_cpp
+  Catch2::Catch2WithMain
 )
 
 
@@ -165,3 +172,5 @@ else()
   catch_discover_tests(test_english_exactness)
   catch_discover_tests(test_english_gb_exactness)
 endif()
+
+catch_discover_tests(test_espeak_g2p)

@@ -189,6 +189,10 @@ engine->set_unknown_token("<UNK>");
 - `start_ts`, `end_ts`
 - `_` metadata (`is_head`, `alias`, `stress`, `currency`, `num_flags`, `prespace`, `rating`)
 
+Token behavior notes:
+- English backend (`make_engine("en", "en-us|en-gb")`) returns populated token streams.
+- Non-English espeak backend (`make_engine("espeak", "es|fr-fr|hi|it|pt-br")`) is parity-aligned with Python `misaki.espeak.EspeakG2P` and returns phonemes with an empty token list.
+
 Inline directives are propagated similarly to Python preprocessing:
 - `[word](/phonemes/)`
 - `[word](<number>)`
