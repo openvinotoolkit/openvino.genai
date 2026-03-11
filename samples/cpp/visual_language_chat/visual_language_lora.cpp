@@ -17,25 +17,21 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
 }
 int main(int argc, char* argv[]) try {
     // At least one LoRA adapter must be provided.
-    OPENVINO_ASSERT(argc >= 7 && ((argc - 5) % 2) == 0,
+    OPENVINO_ASSERT(argc >= 6 && ((argc - 4) % 2) == 0,
                    "Usage: ", argv[0],
-                   " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE> <PROMPT> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...]");
+                   " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...]",
+                   "\nNote: device is fixed to CPU for this sample.");
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
 
-    std::string device = argv[3];
+    const std::string device = "CPU";  // GPU can be used as well
     ov::AnyMap pipeline_properties;
-    if (device == "GPU") {
-        // Cache compiled models on disk for GPU to save time on the
-        // next run. It's not beneficial for CPU.
-        pipeline_properties.insert({ov::cache_dir("vlm_cache")});
-    }
 
-    const std::string prompt = argv[4];
+    const std::string prompt = argv[3];
 
     // LoRA args parsed as pairs: <LORA_SAFETENSORS> <ALPHA>
     ov::genai::AdapterConfig adapter_config;
-    for (int idx = 5; idx + 1 < argc; idx += 2) {
+    for (int idx = 4; idx + 1 < argc; idx += 2) {
         ov::genai::Adapter adapter(argv[idx]);
         float alpha = std::stof(argv[idx + 1]);
         adapter_config.add(adapter, alpha);

@@ -73,7 +73,6 @@ def main() -> int:
     )
     p.add_argument("model_dir", help="Path to model directory")
     p.add_argument("images_path", help="Image file OR directory with images")
-    p.add_argument("device", choices=["CPU", "GPU"], help='Device, e.g. "CPU", "GPU"')
     p.add_argument("prompt", help="Prompt/question to ask")
     p.add_argument(
         "lora_pairs",
@@ -88,9 +87,9 @@ def main() -> int:
 
     rgbs = read_images(args.images_path)
 
+    device = "CPU"  # GPU can be used as well
+
     pipe_kwargs = {}
-    if args.device == "GPU":
-        pipe_kwargs["CACHE_DIR"] = "vlm_cache"
 
     # Configure LoRA adapters with weights (alphas)
     if loras:
@@ -99,7 +98,7 @@ def main() -> int:
             adapter_config.add(ov_genai.Adapter(lora_path), alpha)
         pipe_kwargs["adapters"] = adapter_config
 
-    pipe = ov_genai.VLMPipeline(args.model_dir, args.device, **pipe_kwargs)
+    pipe = ov_genai.VLMPipeline(args.model_dir, device, **pipe_kwargs)
 
     gen_cfg = ov_genai.GenerationConfig()
     gen_cfg.max_new_tokens = 100
