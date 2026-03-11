@@ -42,8 +42,6 @@ void fill_video_metadata(EncodedVideo& encoded_video, size_t total_num_frames, c
     OPENVINO_ASSERT(!(video_config.fps != 0.0f && video_config.num_frames != 0),
         "num_frames and fps are mutually exclusive video config arguments.");
     
-    encoded_video.metadata.original_frames_num = total_num_frames;
-
     if (!video_config.do_sample_frames) {
         encoded_video.metadata.frames_indices.resize(total_num_frames);
         std::iota(encoded_video.metadata.frames_indices.begin(), encoded_video.metadata.frames_indices.end(), 0);

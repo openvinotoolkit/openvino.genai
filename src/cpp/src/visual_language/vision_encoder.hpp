@@ -70,7 +70,6 @@ struct EncodedImage {
 
 /// @brief A struct describing video metadata of a given video.
 struct VideoMetadata {
-    size_t original_frames_num;
     float fps = 24.0f;
     std::vector<size_t> frames_indices;
 };
