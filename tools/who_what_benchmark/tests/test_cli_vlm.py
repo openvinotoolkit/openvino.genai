@@ -1,7 +1,7 @@
 import pytest
 import logging
 from pathlib import Path
-import subprocess
+import subprocess  # nosec B404
 import sys
 
 from conftest import convert_model, run_wwb
@@ -104,9 +104,11 @@ def _download_hf_file_to_cache(repo_id: str, cache_dir: Path, filename: str):
             "--local-dir",
             str(temp_path),
         ]
-        retry_request(
-            lambda: subprocess.run(command, check=True, text=True, capture_output=True)
-        )
+
+        def _run_download() -> None:
+            subprocess.run(command, check=True, text=True, capture_output=True)
+
+        retry_request(_run_download)
 
     manager.execute(download_to_temp)
     downloaded = dest_dir / filename
