@@ -65,6 +65,10 @@ struct EncodedImage {
 
     /// @brief Number of image tokens required to append to a normalized prompt
     size_t num_image_tokens = 0;
+
+    /// @brief cross-kv states from vision encoder, used only by mllama
+    std::vector<std::pair<std::string, ov::Tensor>> cross_kv_states;
+    size_t num_tiles;
 };
 
 /// @brief Embeddings of a given video. 
