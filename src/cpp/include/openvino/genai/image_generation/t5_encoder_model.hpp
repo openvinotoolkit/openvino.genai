@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -71,14 +71,19 @@ public:
     ov::Tensor infer(const std::string& pos_prompt,
                      const std::string& neg_prompt,
                      bool do_classifier_free_guidance,
-                     int max_sequence_length);
+                     int max_sequence_length,
+                     const ov::AnyMap& tokenization_params = {});
 
     ov::Tensor get_output_tensor(const size_t idx);
+
+    ov::Tensor get_prompt_attention_mask() const;
 
 private:
     AdapterController m_adapter_controller;
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
+    //TODO: skip filling when pipeline doesn't use attention mask
+    ov::Tensor m_prompt_attention_mask;
 
     Tokenizer m_tokenizer;
 };

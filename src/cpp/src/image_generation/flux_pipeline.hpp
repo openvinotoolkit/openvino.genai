@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -8,14 +8,13 @@
 #include "image_generation/diffusion_pipeline.hpp"
 #include "image_generation/numpy_utils.hpp"
 #include "image_generation/threaded_callback.hpp"
+#include "diffusion_caching/taylorseer_lite.hpp"
 
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "utils.hpp"
 
-namespace {
-
-ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_channels_latents, size_t height, size_t width) {
+inline ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_channels_latents, size_t height, size_t width) {
     size_t h_half = height / 2, w_half = width / 2;
 
     // Reshape to (batch_size, (height // 2) * (width // 2), num_channels_latents * 4)
@@ -47,7 +46,7 @@ ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_
     return permuted_latents;
 }
 
-ov::Tensor unpack_latents(const ov::Tensor& latents, size_t height, size_t width, size_t vae_scale_factor) {
+inline ov::Tensor unpack_latents(const ov::Tensor& latents, size_t height, size_t width, size_t vae_scale_factor) {
     ov::Shape latents_shape = latents.get_shape();
     size_t batch_size = latents_shape[0], channels = latents_shape[2];
 
@@ -88,7 +87,7 @@ ov::Tensor unpack_latents(const ov::Tensor& latents, size_t height, size_t width
     return permuted_latents;
 }
 
-ov::Tensor prepare_latent_image_ids(size_t batch_size, size_t height, size_t width) {
+inline ov::Tensor prepare_latent_image_ids(size_t batch_size, size_t height, size_t width) {
     ov::Tensor latent_image_ids(ov::element::f32, {height * width, 3});
     auto* data = latent_image_ids.data<float>();
 
@@ -103,8 +102,6 @@ ov::Tensor prepare_latent_image_ids(size_t batch_size, size_t height, size_t wid
 
     return latent_image_ids;
 }
-
-}  // namespace
 
 namespace ov {
 namespace genai {
@@ -512,12 +509,26 @@ public:
         ov::Tensor timestep(ov::element::f32, {1});
         float* timestep_data = timestep.data<float>();
 
+        // Initialize TaylorSeer if configured
+        TaylorSeerState ts_state(m_custom_generation_config.taylorseer_config, timesteps.size());
+
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             auto step_start = std::chrono::steady_clock::now();
             timestep_data[0] = timesteps[inference_step] / 1000.0f;
 
             auto infer_start = std::chrono::steady_clock::now();
-            ov::Tensor noise_pred_tensor = m_transformer->infer(latents, timestep);
+
+            ov::Tensor noise_pred_tensor;
+            // Use TaylorSeer if enabled and caching is appropriate
+            if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
+                noise_pred_tensor = ts_state.predict(inference_step);
+            } else {
+                noise_pred_tensor = m_transformer->infer(latents, timestep);
+                if (ts_state.is_active()) {
+                    ts_state.update(inference_step, noise_pred_tensor);
+                }
+            }
+
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 

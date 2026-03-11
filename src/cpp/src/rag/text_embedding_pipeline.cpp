@@ -8,12 +8,10 @@
 
 #include "json_utils.hpp"
 #include "logger.hpp"
+#include "npu/text_embedding_pipeline.hpp"
 #include "openvino/core/except.hpp"
 #include "openvino/genai/tokenizer.hpp"
-#include "openvino/opsets/opset.hpp"
-#include "openvino/opsets/opset1.hpp"
-#include "openvino/opsets/opset3.hpp"
-#include "openvino/opsets/opset8.hpp"
+#include "text_embedding_utils.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -33,121 +31,6 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(padding_side.name());
 
     return properties_copy;
-}
-
-template <typename T>
-bool has_token_type_ids_input(const T& inputs) {
-    for (const auto& input : inputs) {
-        if (input.get_any_name() == "token_type_ids") {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * CLS pooling slices first element from seq_length dimension
- * [batch_size, seq_length, hidden_size] -> [batch_size, seq_length[0], hidden_size]
- * [10, 5, 768] -> [10, 768]
- */
-std::shared_ptr<op::Op> get_cls_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node) {
-    auto start = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
-    auto stop = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-    auto step = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-    auto axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-
-    auto slice = std::make_shared<op::v8::Slice>(last_hidden_state_node, start, stop, step, axis);
-
-    auto squeeze_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-    return std::make_shared<op::v15::Squeeze>(slice, squeeze_axis);
-}
-
-std::shared_ptr<op::Op> get_mean_pooling_op(std::shared_ptr<Model> model,
-                                            const ov::Output<ov::Node>& last_hidden_state_node) {
-    auto shape_of = std::make_shared<op::v3::ShapeOf>(last_hidden_state_node);
-
-    auto attention_mask = model->input("attention_mask").get_node()->outputs()[0];
-
-    auto unsqueze_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
-
-    auto unsqueze = std::make_shared<op::v0::Unsqueeze>(attention_mask, unsqueze_axis);
-
-    auto input_mask_expanded = std::make_shared<op::v3::Broadcast>(unsqueze, shape_of);
-
-    auto input_mask_expanded_convert =
-        std::make_shared<op::v0::Convert>(input_mask_expanded, last_hidden_state_node.get_element_type());
-
-    auto last_hidden_node_with_applied_attention_mask =
-        std::make_shared<op::v1::Multiply>(last_hidden_state_node, input_mask_expanded_convert->outputs()[0]);
-
-    auto axis_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-    auto sum_hidden_state = std::make_shared<op::v1::ReduceSum>(last_hidden_node_with_applied_attention_mask, axis_1);
-
-    // f32 overflow possible
-    // ReduceMean might help with overflow but its precision diverges from LlamaIndex
-    auto sum_expanded_mask = std::make_shared<op::v1::ReduceSum>(input_mask_expanded_convert, axis_1);
-
-    auto nearest_to_zero =
-        std::make_shared<op::v0::Constant>(ov::element::f32, ov::Shape{1}, std::vector<float>{1e-12});
-    auto max_expanded_mask = std::make_shared<op::v1::Maximum>(sum_expanded_mask, nearest_to_zero);
-
-    // shape: [batch_size, hidden_state_size]
-    return std::make_shared<op::v1::Divide>(sum_hidden_state, max_expanded_mask);
-}
-
-std::shared_ptr<op::Op> get_last_token_pooling_op(std::shared_ptr<Model> model,
-                                                  const ov::Output<ov::Node>& last_hidden_state_node,
-                                                  const TextEmbeddingPipeline::Config& config) {
-    const auto left_padding = config.padding_side.has_value() && config.padding_side.value() == "left";
-
-    // shortcut for left padding. We can slice last token directly
-    if (left_padding) {
-        auto start = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
-        auto stop = std::make_shared<op::v0::Constant>(ov::element::i64,
-                                                       ov::Shape{1},
-                                                       std::vector<int64_t>{std::numeric_limits<int64_t>::max()});
-        auto step = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-        auto axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-
-        auto slice = std::make_shared<op::v8::Slice>(last_hidden_state_node, start, stop, step, axis);
-
-        auto squeeze_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-        return std::make_shared<op::v15::Squeeze>(slice, squeeze_axis);
-    }
-
-    auto attention_mask = model->input("attention_mask").get_node()->outputs()[0];
-
-    auto axis_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-    auto reduce_sum = std::make_shared<op::v1::ReduceSum>(attention_mask, axis_1);
-    auto subtract_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
-    auto subtract = std::make_shared<op::v1::Subtract>(reduce_sum, subtract_1);
-
-    return std::make_shared<op::v8::Gather>(last_hidden_state_node, subtract, axis_1, 1);
-}
-
-std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const TextEmbeddingPipeline::Config& config) {
-    ov::preprocess::PrePostProcessor processor(model);
-
-    processor.output().postprocess().custom([model, &config](const ov::Output<ov::Node>& node) {
-        if (config.pooling_type == TextEmbeddingPipeline::PoolingType::CLS) {
-            return get_cls_pooling_op(node);
-        } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::MEAN) {
-            return get_mean_pooling_op(model, node);
-        } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::LAST_TOKEN) {
-            return get_last_token_pooling_op(model, node, config);
-        }
-
-        OPENVINO_THROW("Pooling type is not supported");
-    });
-
-    if (config.normalize) {
-        processor.output().postprocess().custom([](const ov::Output<ov::Node>& node) {
-            auto axis_const = std::make_shared<op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
-            return std::make_shared<op::v0::NormalizeL2>(node, axis_const, 1e-12, op::EpsMode::MAX);
-        });
-    }
-
-    return processor.build();
 }
 
 std::optional<size_t> read_max_position_embeddings(const std::filesystem::path& models_path) {
@@ -211,35 +94,40 @@ public:
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
 
-        const bool should_reshape = m_config.batch_size.has_value() || m_config.max_length.has_value();
-        if (should_reshape) {
-            reshape_model(model);
-        }
-
-        if (device == "NPU") {
-            OPENVINO_ASSERT(!model->is_dynamic(),
-                            "NPU device does not support dynamic shapes. In order to fix model shape, set batch_size, "
-                            "max_length and pad_to_max_length in the configuration.");
-        }
-
-        model = apply_postprocessing(model, m_config);
-
+        bool is_seq_len_fixed = true;
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
+        } else {
+            is_seq_len_fixed = false;
         }
 
         if (m_config.pad_to_max_length) {
             m_tokenization_params.insert({pad_to_max_length.name(), *m_config.pad_to_max_length});
+            is_seq_len_fixed &= m_config.pad_to_max_length.value();
+        } else {
+            is_seq_len_fixed = false;
         }
 
         if (m_config.padding_side) {
             m_tokenization_params.insert({padding_side.name(), *m_config.padding_side});
         }
 
-        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
-
-        utils::print_compiled_model_properties(compiled_model, "text embedding model");
-        m_request = compiled_model.create_infer_request();
+        if (device == "NPU") {
+            m_request = create_text_embedding_npu_request(model,
+                                                          m_config,
+                                                          properties,
+                                                          m_max_position_embeddings,
+                                                          is_seq_len_fixed);
+            m_post_request = create_text_embedding_npu_post_request(model, m_config);
+        } else {
+            if (m_config.batch_size.has_value() || m_config.max_length.has_value()) {
+                utils::reshape_model(model, m_config, m_max_position_embeddings);
+            }
+            model = utils::apply_postprocessing(model, m_config);
+            auto compiled_model = core.compile_model(model, device, properties);
+            utils::print_compiled_model_properties(compiled_model, "text embedding model");
+            m_request = compiled_model.create_infer_request();
+        }
     };
 
     EmbeddingResults embed_documents(const std::vector<std::string>& texts) {
@@ -281,44 +169,49 @@ public:
 private:
     Tokenizer m_tokenizer;
     InferRequest m_request;
+    InferRequest m_post_request;
     Config m_config;
     AnyMap m_tokenization_params;
     std::optional<size_t> m_max_position_embeddings;
+    ov::Tensor m_attention_mask;
 
-    void reshape_model(std::shared_ptr<Model>& model) {
-        ov::PartialShape target_shape{ov::Dimension::dynamic(), ov::Dimension::dynamic()};
-
-        if (m_config.batch_size.has_value()) {
-            target_shape[0] = ov::Dimension(*m_config.batch_size);
+    ov::Tensor post_model_infer(const ov::Tensor& input) {
+        if (!m_post_request) {
+            return input;
         }
 
-        if (m_config.max_length.has_value()) {
-            if (m_max_position_embeddings.has_value() && *m_config.max_length > *m_max_position_embeddings) {
-                std::stringstream message;
-                message << "max_length is set to " << *m_config.max_length
-                        << " which is greater than models max_position_embeddings (" << *m_max_position_embeddings
-                        << ")."
-                        << " Some models may fail with such configuration."
-                        << " Remove max_position_embeddings from config.json to silence this warning.";
-                GENAI_WARN(message.str());
-            }
+        const auto input_shape = input.get_shape();
+        const size_t sequence_length = input_shape[1];
+        const size_t original_mask_size = m_attention_mask.get_size();
+        OPENVINO_ASSERT(sequence_length >= original_mask_size,
+                        "Attention mask size mismatch: expected at least ",
+                        original_mask_size,
+                        " elements, but got ",
+                        sequence_length);
 
-            if (m_config.pad_to_max_length.has_value() && *m_config.pad_to_max_length) {
-                target_shape[1] = ov::Dimension(*m_config.max_length);
-            } else {
-                target_shape[1] = ov::Dimension{1, static_cast<int64_t>(*m_config.max_length)};
-            }
+        // Create attention mask tensor matching the embedding output shape
+        ov::Tensor attention_mask_tensor{ov::element::i64, {1, sequence_length}};
+
+        // Copy original attention mask
+        std::copy_n(m_attention_mask.data<int64_t>(), original_mask_size, attention_mask_tensor.data<int64_t>());
+
+        // When prefill-chunk is enabled, the input sequence length is aligned to the chunk size.
+        // For example, if the input sequence length is 3800 and the chunk size is 1024, the input
+        // sequence length will be reset to 4096. In this case, the attention_mask_tensor size is 4096,
+        // which is greater than the original m_attention_mask size of 3800. We need to zero-fill
+        // the remaining elements in the attention_mask_tensor to ensure correct masking behavior.
+        if (sequence_length > original_mask_size) {
+            std::fill_n(attention_mask_tensor.data<int64_t>() + original_mask_size,
+                        sequence_length - original_mask_size,
+                        0);
         }
 
-        std::map<std::string, ov::PartialShape> input_name_to_shape;
-        input_name_to_shape["input_ids"] = target_shape;
-        input_name_to_shape["attention_mask"] = target_shape;
+        // Run post-processing inference
+        m_post_request.set_tensor("attention_mask", attention_mask_tensor);
+        m_post_request.set_tensor("embedding_hidden_state", input);
+        m_post_request.infer();
 
-        if (has_token_type_ids_input(model->inputs())) {
-            input_name_to_shape["token_type_ids"] = target_shape;
-        }
-
-        model->reshape(input_name_to_shape);
+        return m_post_request.get_tensor("last_hidden_state");
     }
 
     void start_embed_async(std::vector<std::string>& texts) {
@@ -332,13 +225,14 @@ private:
         }
 
         const auto encoded = m_tokenizer.encode(texts, m_tokenization_params);
-
         m_request.set_tensor("input_ids", encoded.input_ids);
         m_request.set_tensor("attention_mask", encoded.attention_mask);
 
+        m_attention_mask = encoded.attention_mask;
+
         // fill token_type_ids
         // todo: pass token_type_ids from tokenizer
-        if (has_token_type_ids_input(m_request.get_compiled_model().inputs())) {
+        if (utils::has_token_type_ids_input(m_request.get_compiled_model().inputs())) {
             ov::Tensor token_type_ids{ov::element::i64, encoded.input_ids.get_shape()};
             std::fill_n(token_type_ids.data<int64_t>(), encoded.input_ids.get_size(), 0);
             m_request.set_tensor("token_type_ids", token_type_ids);
@@ -351,9 +245,8 @@ private:
         m_request.wait();
 
         // [batch_size, hidden_size]
-        const Tensor last_hidden_state = m_request.get_tensor("last_hidden_state");
-
-        return to_embedding_result(last_hidden_state);
+        const auto last_hidden_state = m_request.get_tensor("last_hidden_state");
+        return to_embedding_result(post_model_infer(last_hidden_state));
     };
 
     std::vector<std::string> format_texts(const std::vector<std::string>& texts) {

@@ -177,7 +177,7 @@ class RerankingEvaluator(BaseEvaluator):
 
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
-        for i, data in tqdm(enumerate(inputs), desc="Evaluate pipeline"):
+        for i, data in tqdm(enumerate(inputs), total=len(inputs), desc="Evaluate pipeline"):
             query = data[0]
             documents = data[1]
             if is_qwen3(model.config):

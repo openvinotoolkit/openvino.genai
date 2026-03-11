@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2025 Intel Corporation
+# Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import openvino.properties.hint as hints
@@ -30,6 +30,7 @@ def extra_generate_kwargs():
 OV_MODEL_FILENAME = "openvino_model.xml"
 OV_TOKENIZER_FILENAME = "openvino_tokenizer.xml"
 OV_DETOKENIZER_FILENAME = "openvino_detokenizer.xml"
+NPUW_CPU_PROPERTIES = {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
 
 
 def get_disabled_mmap_ov_config():

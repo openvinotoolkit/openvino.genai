@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -65,6 +65,17 @@ public:
     // Note that a segment of text refers to a sequence of one or more words, rather than individual words.
     bool return_timestamps = false;
 
+    // If `true` the pipeline will return word-level timestamps.
+    // When enabled ov::genai::word_timestamps(true) property should be passed to WhisperPipeline constructor:
+    // WhisperPipeline("model_path", "CPU", ov::genai::word_timestamps(true));
+    bool word_timestamps = false;
+
+    /**
+     * @brief Encoder attention alignment heads used for word-level timestamps prediction.
+     * Each pair represents (layer_index, head_index).
+     */
+    std::vector<std::pair<size_t, size_t>> alignment_heads;
+
     /*
      * Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
      * window. Can be used to steer the model to use particular spellings or styles.
@@ -125,6 +136,8 @@ static constexpr ov::Property<int64_t> prev_sot_token_id{"prev_sot_token_id"};
 static constexpr ov::Property<std::string> language{"language"};
 static constexpr ov::Property<std::string> task{"task"};
 static constexpr ov::Property<bool> return_timestamps{"return_timestamps"};
+static constexpr ov::Property<bool> word_timestamps{"word_timestamps"};
+static constexpr ov::Property<std::vector<std::pair<size_t, size_t>>> alignment_heads{"alignment_heads"};
 static constexpr ov::Property<std::string> initial_prompt{"initial_prompt"};
 static constexpr ov::Property<std::string> hotwords{"hotwords"};
 static constexpr ov::Property<std::map<std::string, int64_t>> lang_to_id{"lang_to_id"};

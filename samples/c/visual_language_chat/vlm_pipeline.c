@@ -68,6 +68,7 @@ int main(int argc, char* argv[]) {
         if (strlen(prompt) == 0) {
             continue; 
         }
+        // New images and videos can be passed at each turn
         ov_genai_vlm_pipeline_generate(pipeline, prompt, NULL, 0, config, &callback, &results);
         printf("\n----------\nquestion:\n");
     }

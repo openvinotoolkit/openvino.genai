@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -47,18 +47,8 @@ parsers: vector of IncrementalParser to process the text stream incrementally.
 )";
 
 class ConstructableStreamer: public StreamerBase {
-    OPENVINO_SUPPRESS_DEPRECATED_START
-    bool put(int64_t token) override {
-        PYBIND11_OVERRIDE(
-            bool,  // Return type
-            StreamerBase,  // Parent class
-            put,  // Name of function in C++ (must match Python name)
-            token  // Argument(s)
-        );
-    }
-    OPENVINO_SUPPRESS_DEPRECATED_END
     StreamingStatus write(int64_t token) override {
-        PYBIND11_OVERRIDE(
+        PYBIND11_OVERRIDE_PURE(
             StreamingStatus,  // Return type
             StreamerBase,  // Parent class
             write,  // Name of function in C++ (must match Python name)
@@ -120,9 +110,6 @@ void init_streamers(py::module_& m) {
             "Write is called every time new token or vector of tokens is decoded. Returns a StreamingStatus flag to indicate whether generation should be stopped or cancelled",
             py::arg("token"))
         .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
-    OPENVINO_SUPPRESS_DEPRECATED_START
-    streamer.def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stopped, if return true generation stops", py::arg("token"));
-    OPENVINO_SUPPRESS_DEPRECATED_END
 
     py::class_<TextStreamer, std::shared_ptr<TextStreamer>, StreamerBase>(m, "TextStreamer", text_streamer_docstring)
         .def(py::init([](const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string)> callback, const std::map<std::string, py::object>& detokenization_params) {

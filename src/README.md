@@ -218,11 +218,11 @@ class CustomStreamer(ov_genai.StreamerBase):
         super().__init__()
         # Initialization logic.
 
-    def put(self, token_id) -> bool:
+    def write(self, token_id) -> ov_genai.StreamingStatus:
         # Custom decoding/tokens processing logic.
 
-        # Returns a flag whether generation should be stopped, if true generation stops.
-        return False
+        # Returns a status whether generation should be stopped or continue.
+        return ov_genai.StreamingStatus.RUNNING
 
     def end(self):
         # Custom finalization logic.
@@ -292,7 +292,7 @@ This will generate a JSON object matching the `Person` schema, for example:
   "city": "Dublin"
 }
 ```
-**Note:**  
+**Note:**
 Structured output enforcement guarantees correct JSON formatting, but does not ensure the factual correctness or sensibility of the content. The model may generate implausible or nonsensical data, such as `{"name": "John", "age": 200000}` or `{"model": "AbrakaKadabra9999######4242"}`. These are valid JSONs but may not make sense. For best results, use the latest or fine-tuned models for this task to improve the quality and relevance of the generated output.
 
 

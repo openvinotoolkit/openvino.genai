@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -9,6 +9,8 @@
 
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include "circular_buffer_queue.hpp"
+#include "visual_language/cdpruner/cdpruner.hpp"
 
 namespace ov::genai {
 
@@ -72,6 +74,8 @@ public:
     std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) override;
 
     void start_chat(const std::string& system_message) override;
+
+    std::string get_last_pruned_prompt(const std::string& original_prompt) const override;
 
     void finish_chat() override;
 

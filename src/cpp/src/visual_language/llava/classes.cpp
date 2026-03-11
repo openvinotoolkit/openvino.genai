@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/llava/classes.hpp"
@@ -8,7 +8,6 @@
 #include "utils.hpp"
 
 namespace ov::genai {
-
 clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const ProcessorConfig& config) {
     // Resize
     clip_image_u8 resized_image;
@@ -16,8 +15,11 @@ clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const Pro
     float scale = static_cast<float>(target_size) / std::min(image.nx, image.ny);
     int new_width = static_cast<int>(image.nx * scale);
     int new_height = static_cast<int>(image.ny * scale);
+    int crop_height = config.crop_size_height;
+    int crop_width = config.crop_size_width;
+    new_width = std::max(new_width, crop_width);
+    new_height = std::max(new_height, crop_height);
     bicubic_resize(image, resized_image, new_width, new_height);
-
     // Center crop
     clip_image_u8 cropped_image = center_crop(resized_image, config.crop_size_height, config.crop_size_width);
 

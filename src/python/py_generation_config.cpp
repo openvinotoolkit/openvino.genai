@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -435,6 +435,8 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id)
         .def_readwrite("presence_penalty", &GenerationConfig::presence_penalty)
         .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
+        .def_readwrite("pruning_ratio", &GenerationConfig::pruning_ratio)
+        .def_readwrite("relevance_weight", &GenerationConfig::relevance_weight)
         .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
         .def_readwrite("stop_strings", &GenerationConfig::stop_strings)
         .def_readwrite("echo", &GenerationConfig::echo)

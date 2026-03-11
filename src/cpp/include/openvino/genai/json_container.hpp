@@ -79,7 +79,16 @@ public:
      * @throw ov::Exception if parsing fails
      */
     static JsonContainer from_json_string(const std::string& json_str);
-    
+       
+    /**
+     * @brief Concatenates JsonContainers.
+     * 
+     * Concatenates text fields from src into this JsonContainer. If field is not textual then it throws exception.
+     * @param other Source JsonContainer to concatenate into this container
+     * @throw ov::Exception if keys in both containers are not strings.
+     */
+    void concatenate(JsonContainer& other);
+
     /**
      * @brief Create JsonContainer as an empty JSON object.
      */

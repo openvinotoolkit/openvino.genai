@@ -74,7 +74,7 @@ JsonContainer::JsonContainer(std::shared_ptr<JsonContainerImpl> impl, const std:
 
 JsonContainer::JsonContainer(const JsonContainer& other) :
     m_impl(std::make_shared<JsonContainerImpl>(*other.m_impl->get_json_value_ptr(other.m_path, AccessMode::Read))),
-    m_path(other.m_path) {}
+    m_path("") {}
 
 JsonContainer::JsonContainer(JsonContainer&& other) noexcept :
     m_impl(std::move(other.m_impl)),
@@ -409,5 +409,43 @@ void* JsonContainer::_get_json_value_ptr() const {
     return m_impl->get_json_value_ptr(m_path, AccessMode::Read);
 }
 
+
+void JsonContainer::concatenate(JsonContainer& other) {
+    auto dst_ = static_cast<nlohmann::ordered_json*>(this->_get_json_value_ptr());
+    auto src_ = static_cast<const nlohmann::ordered_json*>(other._get_json_value_ptr());
+
+    std::function<void(nlohmann::ordered_json&, const nlohmann::ordered_json&)> recursive_concat;
+    recursive_concat = [&recursive_concat](nlohmann::ordered_json& lvalue, const nlohmann::ordered_json& rvalue) {
+        for (auto it = rvalue.begin(); it != rvalue.end(); ++it) {
+            const auto& src_val = it.value();
+            
+            if (!lvalue.contains(it.key())) {
+                lvalue[it.key()] = src_val;
+                continue;
+            }
+            
+            auto& dst_val = lvalue[it.key()];
+            
+            // If both are objects, recursively concatenate
+            if (src_val.is_object() && dst_val.is_object()) {
+                recursive_concat(dst_val, src_val);
+            }
+            // If both are strings, concatenate them
+            else if (src_val.is_string() && dst_val.is_string()) {
+                dst_val = dst_val.get<std::string>() + src_val.get<std::string>();
+            }
+            // Otherwise, type mismatch error
+            else {
+                OPENVINO_THROW(
+                    "JsonContainer concatenate type mismatch for key '", it.key(), 
+                    "'. Source type: '", src_val.type_name(), 
+                    "', destination type: '", dst_val.type_name(), "'."
+                );
+            }
+        }
+    };
+    
+    recursive_concat(*dst_, *src_);
+}
 } // namespace genai
 } // namespace ov

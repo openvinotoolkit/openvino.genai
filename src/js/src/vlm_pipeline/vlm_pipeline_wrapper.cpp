@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2025 Intel Corporation
+// Copyright (C) 2018-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "include/vlm_pipeline/vlm_pipeline_wrapper.hpp"
@@ -14,8 +14,8 @@
 #include "include/vlm_pipeline/start_chat_worker.hpp"
 
 struct VLMTsfnContext {
-    VLMTsfnContext(std::string prompt, std::shared_ptr<bool> is_generating)
-        : prompt(prompt),
+    VLMTsfnContext(VLMGenerateInputs inputs, std::shared_ptr<bool> is_generating)
+        : inputs(std::move(inputs)),
           is_generating(is_generating) {};
     ~VLMTsfnContext() {};
 
@@ -23,7 +23,7 @@ struct VLMTsfnContext {
     Napi::ThreadSafeFunction callback;
     std::optional<Napi::ThreadSafeFunction> streamer;
 
-    std::string prompt;
+    VLMGenerateInputs inputs;
     std::vector<ov::Tensor> images;
     std::vector<ov::Tensor> videos;
     std::shared_ptr<bool> is_generating;
@@ -51,18 +51,18 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
         }
     };
     auto finalize = [context]() {
-        *context->is_generating = false;
         context->callback.Release();
         if (context->streamer.has_value()) {
             context->streamer->Release();
         }
     };
+    std::vector<std::string> streamer_exceptions;
+    ov::genai::VLMDecodedResults result;
     try {
         ov::genai::GenerationConfig config;
         config.update_generation_config(*context->generation_config);
 
         ov::genai::StreamerVariant streamer = std::monostate();
-        std::vector<std::string> streamer_exceptions;
         if (context->streamer.has_value()) {
             streamer = [context, &streamer_exceptions](std::string word) {
                 std::promise<ov::genai::StreamingStatus> resultPromise;
@@ -92,25 +92,40 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
             };
         }
 
-        ov::genai::VLMDecodedResults result;
+        std::visit(
+            overloaded{[context, &config, &streamer, &result](const std::string& prompt) {
+                           result = context->pipe->generate(prompt, context->images, context->videos, config, streamer);
+                       },
+                       [context, &config, &streamer, &result](const ov::genai::ChatHistory& history) {
+                           result =
+                               context->pipe->generate(history, context->images, context->videos, config, streamer);
+                       }},
+            context->inputs);
 
-        result = context->pipe->generate(context->prompt, context->images, context->videos, config, streamer);
+    } catch (std::exception& e) {
+        report_error(e.what());
+        *context->is_generating = false;
+        finalize();
+        return;
+    }
+    // should be called right after inference to release the flag asap
+    *context->is_generating = false;
 
+    // Call callback with result or error
+    try {
         if (!streamer_exceptions.empty()) {
-            // If there were exceptions from the streamer, report them all as a single error and finish without result
             std::string combined_error = "Streamer exceptions occurred:\n";
             for (size_t i = 0; i < streamer_exceptions.size(); ++i) {
                 combined_error += "[" + std::to_string(i + 1) + "] " + streamer_exceptions[i] + "\n";
             }
             report_error(combined_error);
         } else {
-            // If no exceptions from streamer, call the final callback with the result
             napi_status status =
                 context->callback.BlockingCall([result, &report_error](Napi::Env env, Napi::Function jsCallback) {
                     try {
                         jsCallback.Call({
-                            env.Null(),                         // Error should be null in normal case
-                            to_vlm_decoded_result(env, result)  // Return DecodedResults as the final result
+                            env.Null(),
+                            to_vlm_decoded_result(env, result),
                         });
                     } catch (std::exception& err) {
                         report_error("The final callback failed. Details:\n" + std::string(err.what()));
@@ -121,11 +136,10 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
                 report_error("The final BlockingCall failed with status " + status);
             }
         }
-        finalize();
     } catch (std::exception& e) {
         report_error(e.what());
-        finalize();
     }
+    finalize();
 }
 
 VLMPipelineWrapper::VLMPipelineWrapper(const Napi::CallbackInfo& info) : Napi::ObjectWrap<VLMPipelineWrapper>(info) {};
@@ -139,6 +153,7 @@ Napi::Function VLMPipelineWrapper::get_class(Napi::Env env) {
                         InstanceMethod("startChat", &VLMPipelineWrapper::start_chat),
                         InstanceMethod("finishChat", &VLMPipelineWrapper::finish_chat),
                         InstanceMethod("setChatTemplate", &VLMPipelineWrapper::set_chat_template),
+                        InstanceMethod("getGenerationConfig", &VLMPipelineWrapper::get_generation_config),
                         InstanceMethod("setGenerationConfig", &VLMPipelineWrapper::set_generation_config)});
 }
 
@@ -172,17 +187,17 @@ Napi::Value VLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         VALIDATE_ARGS_COUNT(info, 6, "generate()");
         VLMTsfnContext* context = nullptr;
 
-        // Arguments: prompt, images, videos, streamer, generationConfig, callback
-        auto prompt = js_to_cpp<std::string>(env, info[0]);
+        // Arguments: prompt or ChatHistory, images, videos, streamer, generationConfig, callback
+        auto inputs = js_to_cpp<VLMGenerateInputs>(env, info[0]);
         auto images = js_to_cpp<std::vector<ov::Tensor>>(env, info[1]);
         auto videos = js_to_cpp<std::vector<ov::Tensor>>(env, info[2]);
-        OPENVINO_ASSERT(info[3].IsFunction() || info[3].IsUndefined(), "generate callback is not a function");
-        auto streamer = info[3].As<Napi::Function>();
+        auto streamer = info[3];
+        OPENVINO_ASSERT(streamer.IsFunction() || streamer.IsUndefined(), "streamer must be a function or undefined");
         auto generation_config = js_to_cpp<ov::AnyMap>(env, info[4]);
         OPENVINO_ASSERT(info[5].IsFunction(), "generate callback is not a function");
         auto callback = info[5].As<Napi::Function>();
 
-        context = new VLMTsfnContext(prompt, this->is_generating);
+        context = new VLMTsfnContext(std::move(inputs), this->is_generating);
         context->images = std::move(images);
         context->videos = std::move(videos);
         context->pipe = this->pipe;
@@ -199,11 +214,12 @@ Napi::Value VLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
                                               delete context;
                                           });
         if (!streamer.IsUndefined()) {
-            context->streamer = Napi::ThreadSafeFunction::New(env,
-                                                              streamer,  // JavaScript function called asynchronously
-                                                              "VLM_generate_streamer",  // Name
-                                                              0,                        // Unlimited queue
-                                                              1);  // Only one thread will use this initially
+            context->streamer = Napi::ThreadSafeFunction::New(
+                env,
+                streamer.As<Napi::Function>(),  // JavaScript function called asynchronously
+                "VLM_generate_streamer",        // Name
+                0,                              // Unlimited queue
+                1);                             // Only one thread will use this initially
         }
         context->native_thread = std::thread(vlmPerformInferenceThread, context);
     } catch (const std::exception& ex) {
@@ -276,10 +292,20 @@ Napi::Value VLMPipelineWrapper::set_generation_config(const Napi::CallbackInfo& 
     try {
         OPENVINO_ASSERT(this->pipe, "VLMPipeline is not initialized");
         VALIDATE_ARGS_COUNT(info, 1, "setGenerationConfig()");
-        auto config_map = js_to_cpp<ov::AnyMap>(env, info[0]);
-        ov::genai::GenerationConfig config;
-        config.update_generation_config(config_map);
+        ov::genai::GenerationConfig config = js_to_cpp<ov::genai::GenerationConfig>(env, info[0]);
         this->pipe->set_generation_config(config);
+    } catch (const std::exception& ex) {
+        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
+    }
+    return env.Undefined();
+}
+
+Napi::Value VLMPipelineWrapper::get_generation_config(const Napi::CallbackInfo& info) {
+    auto env = info.Env();
+    try {
+        OPENVINO_ASSERT(this->pipe, "VLMPipeline is not initialized");
+        ov::genai::GenerationConfig config = this->pipe->get_generation_config();
+        return cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(env, config);
     } catch (const std::exception& ex) {
         Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
     }

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "py_utils.hpp"
@@ -17,6 +17,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/taylorseer_config.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
@@ -364,6 +365,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::GenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::ImageGenerationConfig>(py_obj)) {
         return py::cast<ov::genai::ImageGenerationConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::TaylorSeerCacheConfig>(py_obj)) {
+        return py::cast<ov::genai::TaylorSeerCacheConfig>(py_obj);
     } else if (py::isinstance<ov::genai::WhisperGenerationConfig>(py_obj)) {
         return py::cast<ov::genai::WhisperGenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::TextEmbeddingPipeline::PoolingType>(py_obj)) {
@@ -399,14 +402,6 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<std::filesystem::path>(py_obj);
     }
     OPENVINO_THROW(py::str(py_obj.get_type()), " isn't supported for argument ", property_name);
-}
-
-void add_deprecation_warning_for_chunk_streamer(std::shared_ptr<StreamerBase> streamer) {
-    OPENVINO_SUPPRESS_DEPRECATED_START
-    if (auto chunk_streamer = std::dynamic_pointer_cast<ov::genai::ChunkStreamerBase>(streamer)) {
-        PyErr_WarnEx(PyExc_DeprecationWarning, "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.", 1);
-    }
-    OPENVINO_SUPPRESS_DEPRECATED_END
 }
 
 ov::AnyMap properties_to_any_map(const std::map<std::string, py::object>& properties) {
@@ -467,7 +462,7 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
                 }
             );
 
-            auto callback_wrapped = [shared_callback](std::string subword) -> ov::genai::StreamingStatus {
+            auto callback_wrapped = [shared_callback = std::move(shared_callback)](std::string subword) -> ov::genai::StreamingStatus {
                 py::gil_scoped_acquire acquire;
                 PyObject* py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
                 if (!py_str) {
@@ -493,7 +488,6 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
             streamer = callback_wrapped;
         },
         [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
-            add_deprecation_warning_for_chunk_streamer(streamer_cls);
             streamer = streamer_cls;
         },
         [](std::monostate none){ /*streamer is already a monostate */ }

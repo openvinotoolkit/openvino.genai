@@ -1,5 +1,5 @@
 
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -52,6 +52,12 @@ public:
         size_t m_xattention_block_size = 0;
         size_t m_xattention_stride = 0;
 
+        size_t m_adaptive_rkv_start_size = 0;
+        // A value of 0 means that Adaptive R-KV similarity computation is not to be applied
+        std::map<uint64_t, size_t> m_adaptive_rkv_evictable_sizes;
+
+        // Reserved for future use
+        std::vector<std::map<size_t, std::vector<size_t>>> m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence;
 
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
@@ -59,6 +65,8 @@ public:
         bool is_prompt = false;
         // current cache usage
         float m_cache_usage = 0.0;
+        // cache usage size in bytes
+        size_t m_cache_size_in_bytes = 0;
     };
 
     Scheduler(size_t block_size, std::shared_ptr<CacheManager> cache_manager, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true, size_t snapkv_window_size = 1) :
@@ -108,6 +116,7 @@ public:
         m_cache_manager->allocate_cache_if_needed(m_block_manager->get_total_number_of_kv_blocks());
         _clear_waiting_sequences(sequence_groups);
         scheduler_output.m_cache_usage = m_block_manager->get_used_percentage();
+        scheduler_output.m_cache_size_in_bytes = m_block_manager->get_total_number_of_kv_blocks() * m_cache_manager->get_block_size_in_bytes();
 
         static ManualTimer copy_blocks_timer("copy block");
         copy_blocks_timer.start();
@@ -334,6 +343,9 @@ private:
                         scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
                         scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
                         scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
+
+                        scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
+                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
                     }
                 }
 
@@ -402,8 +414,13 @@ private:
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
 
                         scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
+
+                        scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
                         scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
                         scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
+
+                        scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
+                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
                     }
 
 
@@ -476,8 +493,6 @@ private:
 
                 // add scheduling information
                 {
-                    Sequence::Ptr sequence = (*sequence_group)[0];
-                    uint64_t seq_id = sequence->get_id();
                     // and schedule tokens
                     sequence_group->schedule_tokens(sequence_len);
 
@@ -490,10 +505,15 @@ private:
                         uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
+
                         scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
+
                         scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
                         scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
                         scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
+
+                        scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
+                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
                     }
 
                     // update "is_prompt" flag
@@ -587,6 +607,30 @@ private:
         return m_config.sparse_attention_config.xattention_threshold;
     }
 
+    size_t _schedule_adaptive_rkv_evictable_size(SequenceGroup::Ptr sequence_group) {
+        if (!(m_config.use_cache_eviction && m_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV)) {
+            return 0;
+        }
+        if (!sequence_group->can_generate_tokens()) {
+            // Won't evict during prefill
+            return 0;
+        }
+
+        // First similarity/diversity calculation will be scheduled when at least `max_cache_size` tokens are filled
+        if (sequence_group->get_num_processed_tokens() < m_config.cache_eviction_config.get_max_cache_size()) {
+            return 0;
+        }
+
+        if (sequence_group->get_num_cached_tokens() % get_block_size() != 0) {
+            // Only request similarity computation once every block since eviction can only occur with a block granularity
+            return 0;
+        }
+
+        size_t non_evictable_size = m_config.cache_eviction_config.get_max_cache_size() - m_config.cache_eviction_config.get_evictable_size();
+        OPENVINO_ASSERT(sequence_group->get_num_logical_blocks() * get_block_size() >= non_evictable_size);
+
+        return sequence_group->get_num_logical_blocks() * get_block_size() - non_evictable_size;
+    }
 };
 
 }

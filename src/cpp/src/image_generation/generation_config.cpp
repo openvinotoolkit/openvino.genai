@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/image_generation/generation_config.hpp"
@@ -66,6 +66,7 @@ void ImageGenerationConfig::update_generation_config(const ov::AnyMap& propertie
     read_anymap_param(properties, "strength", strength);
     read_anymap_param(properties, "adapters", adapters);
     read_anymap_param(properties, "max_sequence_length", max_sequence_length);
+    read_anymap_param(properties, "taylorseer_config", taylorseer_config);
 
     // 'generator' has higher priority than 'seed' parameter
     const bool have_generator_param = properties.find(ov::genai::generator.name()) != properties.end();

@@ -49,29 +49,41 @@ def read_images(path: str) -> list[Tensor]:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir', help="Path to the model directory")
-    parser.add_argument('image_dir', help="Image file or dir with images")
-    parser.add_argument('device', nargs='?', default='CPU', help="Device to run the model on (default: CPU)")
+    parser.add_argument("model_dir", help="Path to the model directory")
+    parser.add_argument("image_dir", help="Image file or dir with images")
+    parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
+    parser.add_argument(
+        "prompt_lookup", nargs="?", default="false", help="Enable prompt lookup decoding (default: false)"
+    )
     args = parser.parse_args()
 
     rgbs = read_images(args.image_dir)
 
     # GPU and NPU can be used as well.
     # Note: If NPU is selected, only the language model will be run on the NPU.
-    enable_compile_cache = dict()
+    # Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
+    prompt_lookup = args.prompt_lookup == "true"
+    properties = {"prompt_lookup": prompt_lookup}
     if args.device == "GPU":
         # Cache compiled models on disk for GPU to save time on the next run.
         # It's not beneficial for CPU.
-        enable_compile_cache["CACHE_DIR"] = "vlm_cache"
+        properties["CACHE_DIR"] = "vlm_cache"
 
-    pipe = openvino_genai.VLMPipeline(args.model_dir, args.device, **enable_compile_cache)
+    pipe = openvino_genai.VLMPipeline(args.model_dir, args.device, **properties)
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
+    if prompt_lookup:
+        # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates per iteration
+        config.num_assistant_tokens = 5
+        # Define max_ngram_size
+        config.max_ngram_size = 3
 
-    pipe.start_chat()
+    history = openvino_genai.ChatHistory()
     prompt = input('question:\n')
-    pipe.generate(prompt, images=rgbs, generation_config=config, streamer=streamer)
+    history.append({"role": "user", "content": prompt})
+    decoded_results = pipe.generate(history, images=rgbs, generation_config=config, streamer=streamer)
+    history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
     while True:
         try:
@@ -79,8 +91,11 @@ def main():
                 "question:\n")
         except EOFError:
             break
-        pipe.generate(prompt, generation_config=config, streamer=streamer)
-    pipe.finish_chat()
+
+        history.append({"role": "user", "content": prompt})
+        # New images and videos can be passed at each turn
+        decoded_results = pipe.generate(history, generation_config=config, streamer=streamer)
+        history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
 
 if '__main__' == __name__:
