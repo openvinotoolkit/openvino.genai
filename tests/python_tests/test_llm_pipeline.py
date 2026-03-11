@@ -319,9 +319,9 @@ def test_linear_attention_batch_input_same_as_individual(
         individual_result = ov_pipe.generate(
             prompt, generation_config=ov_genai.GenerationConfig(**generation_config_dict)
         )
-        assert (
-            batch_result.texts[i] == individual_result
-        ), f"Idx: {i}, Batch result: {batch_result.texts[i]}, Individual result: {individual_result}, Prompt: {prompt}"
+        assert batch_result.texts[i] == individual_result, (
+            f"Idx: {i}, Batch result: {batch_result.texts[i]}, Individual result: {individual_result}, Prompt: {prompt}"
+        )
 
 
 #
