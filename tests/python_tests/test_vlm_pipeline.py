@@ -154,7 +154,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next": lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
-    "xf2022/tiny-videochat-flash-qwen": lambda idx: f"<|image_{idx + 1}|>",
+    "xf2022/tiny-videochat-flash-qwen": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
@@ -168,7 +168,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
-    "xf2022/tiny-videochat-flash-qwen": lambda idx: f"<|image_{idx + 1}|>",
+    "xf2022/tiny-videochat-flash-qwen": lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
 
@@ -2474,9 +2474,13 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
         ov_pipe_pld, max_new_tokens=20, do_sample=False, prompt_lookup=True
     )
     results_pld = ov_pipe_pld.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config_pld)
+    # Baseline result must be non-empty.
+    assert results[0].texts[0].strip() != "", "Result should not be empty"
+    # Enabling prompt_lookup must preserve the generated text under deterministic settings.
+    assert (
+        results_pld[0].texts[0].strip() == results[0].texts[0].strip()
+    ), "prompt_lookup=True should not change generated text when do_sample=False"
 
-    assert results.texts[0].strip() == results_pld.texts[0].strip(), (
-        "Result should be the same when prompt_lookup is enabled and disabled."
 
 @pytest.fixture(scope="module", params=ATTENTION_BACKEND, ids=lambda b: f"VideoChat-Flash/{b}")
 def ov_videochatflash_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeline:
