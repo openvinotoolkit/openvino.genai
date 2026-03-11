@@ -62,6 +62,8 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // position_ids[N, conversation length], beam_idx[N].
     // Output shape: logits[N, conversation length, vocab_size].
     ov::InferRequest m_language;
+    // LoRA adapter controller
+    std::optional<AdapterController> m_adapter_controller;
     // True if chat mode is activated to save conversation
     // history between generate() calls.
     bool m_is_chat_conversation = false;

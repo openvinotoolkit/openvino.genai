@@ -3,9 +3,6 @@
 
 #pragma once
 
-#include <optional>
-
-#include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "utils.hpp"
 
@@ -131,8 +128,5 @@ public:
     float get_load_time() {
         return m_load_time_ms;
     }
-
-protected:
-    std::optional<AdapterController> m_adapter_controller;
 };
-}
+}  // namespace ov::genai

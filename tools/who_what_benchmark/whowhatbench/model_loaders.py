@@ -19,61 +19,17 @@ from .reranking_evaluator import (
     is_qwen3,
 )
 from .utils import (
+    apply_peft_adapters,
     mock_torch_cuda_is_available,
     mock_AwqQuantizer_validate_environment,
     disable_diffusers_model_progress_bar,
+    get_json_config,
+    normalize_lora_adapters_and_alphas,
 )
 import os
 
-from whowhatbench.utils import get_json_config
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-def normalize_lora_adapters_and_alphas(adapters, alphas):
-    if adapters is None:
-        return None, None
-
-    if isinstance(adapters, (str, Path, os.PathLike)):
-        adapters = [adapters]
-    elif not isinstance(adapters, (list, tuple)):
-        raise ValueError("`adapters` must be a non-empty list/tuple, or a single adapter path")
-
-    if len(adapters) == 0:
-        raise ValueError("`adapters` must be a non-empty list/tuple")
-
-    if alphas is None:
-        raise ValueError("`alphas` must be provided and match the number of adapters")
-
-    if isinstance(alphas, (int, float)):
-        alphas = [alphas]
-    elif not isinstance(alphas, (list, tuple)):
-        raise ValueError("`alphas` must be a list/tuple with one value per adapter, or a single float")
-
-    if len(alphas) != len(adapters):
-        raise ValueError("`alphas` must be the same length as `adapters`")
-
-    return list(adapters), list(alphas)
-
-
-def apply_peft_adapters(model, adapters, alphas, merged_adapter_name="merged_lora"):
-    adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
-
-    from peft import PeftModel
-
-    adapter_names = ["adapter_0"]
-    model = PeftModel.from_pretrained(model, adapters[0], adapter_name=adapter_names[0])
-
-    for idx, adapter in enumerate(adapters[1:], start=1):
-        adapter_name = f"adapter_{idx}"
-        model.load_adapter(adapter, adapter_name=adapter_name)
-        adapter_names.append(adapter_name)
-
-    model.add_weighted_adapter(adapter_names, alphas, merged_adapter_name)
-    model.set_adapter(merged_adapter_name)
-
-    return model
 
 
 class GenAIModelWrapper:
