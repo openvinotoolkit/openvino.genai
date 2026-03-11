@@ -14,7 +14,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(ov::InferRequest& 
                                                               std::optional<int64_t> rope_delta = std::nullopt, const size_t max_kv_cache_size = std::numeric_limits<size_t>::max(), const bool use_intermediate_remote_tensor = true);
 
 
-void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::CacheState& kv_cache_state);
+void align_cache_and_history(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state);
 
 
 TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state);

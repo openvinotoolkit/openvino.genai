@@ -224,7 +224,7 @@ private:
             m_pruning_processor->set_config(config);
         }
 
-        utils::CacheState& get_kv_cache_state() {
+        utils::CacheState& get_cache_state() {
             return m_cache_state;
         }
 

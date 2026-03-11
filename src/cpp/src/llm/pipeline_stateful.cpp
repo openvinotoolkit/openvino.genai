@@ -165,7 +165,7 @@ DecodedResults StatefulLLMPipeline::generate(
             if (m_use_full_chat_history) {
                 encoded_input = new_chat_tokens;
             } else {
-                ov::genai::align_kv_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
+                ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
                 encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
             }
         } else if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
@@ -193,7 +193,7 @@ DecodedResults StatefulLLMPipeline::generate(
             if (m_use_full_chat_history) {
                 encoded_input = new_chat_tokens;
             } else {
-                ov::genai::align_kv_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
+                ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
                 encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
             }
             // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
@@ -275,7 +275,7 @@ DecodedResults StatefulLLMPipeline::generate(
     if (m_use_full_chat_history) {
         encoded_input = new_chat_tokens;
     } else {
-        ov::genai::align_kv_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
+        ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
         encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
     }
     return get_decoded_results(encoded_input, config, streamer, start_time);
@@ -343,7 +343,7 @@ EncodedResults StatefulLLMPipeline::generate(
     // Tail of previous output in chat mode is missing in KV cache.
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
         ov::Tensor new_chat_tokens = ov::Tensor{ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data()};
-        ov::genai::align_kv_cache_and_history(new_chat_tokens, m_cache_state);
+        ov::genai::align_cache_and_history(new_chat_tokens, m_cache_state);
 
         auto encoded_input = get_chat_encoded_input(new_chat_tokens, m_cache_state);
         input_ids = encoded_input.input_ids;

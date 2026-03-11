@@ -340,7 +340,7 @@ TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils:
 }
 
 
-void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state) {
+void align_cache_and_history(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state) {
     // KV cache in model already contains prompts and answers from previous iterations.
     // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
     // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,

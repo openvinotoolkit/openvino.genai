@@ -130,7 +130,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
 ov::Tensor InputsEmbedder::IInputsEmbedder::update_history(const ov::Tensor& new_chat_tokens) {
     ov::Tensor encoded_inputs;
     if (m_is_chat_conversation) {
-        ov::genai::align_kv_cache_and_history(new_chat_tokens, m_cache_state);
+        ov::genai::align_cache_and_history(new_chat_tokens, m_cache_state);
         encoded_inputs = get_chat_encoded_input(new_chat_tokens, m_cache_state).input_ids;
     } else {
         encoded_inputs = new_chat_tokens;
@@ -403,7 +403,7 @@ EmbeddingsModel::Ptr InputsEmbedder::get_embedding_model() const {
 }
 
 ov::genai::utils::CacheState& InputsEmbedder::get_cache_state() {
-    return  m_impl->get_kv_cache_state();
+    return  m_impl->get_cache_state();
 }
 
 Tokenizer InputsEmbedder::get_tokenizer() const {
