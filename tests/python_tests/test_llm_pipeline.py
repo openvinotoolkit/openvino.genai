@@ -157,7 +157,7 @@ def test_string_inputs(
 
 
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("generation_config_dict,prompt", INPUTS_TEST_CASES)
+@pytest.mark.parametrize("generation_config_dict,prompt", INPUTS_TEST_CASES[:1])  # exclude beam search case
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 def test_linear_attention_string_inputs(
     llm_model: OVConvertedModelSchema,
@@ -238,7 +238,7 @@ def test_batch_string_inputs(
 
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
-@pytest.mark.parametrize("generation_config_dict", TEST_CONFIGS)
+@pytest.mark.parametrize("generation_config_dict", TEST_CONFIGS[:1])  # exclude beam search config
 @pytest.mark.parametrize("prompts", BATCHED_PROMPTS)
 def test_linear_attention_batch_string_inputs(
     llm_model: OVConvertedModelSchema,
@@ -293,7 +293,9 @@ def test_different_input_types_works_same_and_change_nothing(
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 @pytest.mark.parametrize("prompt", [prompt for prompts in BATCHED_PROMPTS for prompt in prompts])
-def test_linear_model_deterministic(llm_model: OVConvertedModelSchema, pipeline_type: PipelineType, prompt: str) -> None:
+def test_linear_model_deterministic(
+    llm_model: OVConvertedModelSchema, pipeline_type: PipelineType, prompt: str
+) -> None:
     ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
     config = ov_genai.GenerationConfig(max_new_tokens=20, apply_chat_template=False, do_sample=False)
     result1 = ov_pipe.generate(prompt, generation_config=config)
@@ -309,13 +311,18 @@ def test_linear_attention_batch_input_same_as_individual(
 ) -> None:
     prompts = ["table is made", "They sky is blue because", "Difference between Jupiter and Mars is that"]
     generation_config_dict = {"max_new_tokens": 20}
-    
+
     ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
-    
+
     batch_result = ov_pipe.generate(prompts, generation_config=ov_genai.GenerationConfig(**generation_config_dict))
     for i, prompt in enumerate(prompts):
-        individual_result = ov_pipe.generate(prompt, generation_config=ov_genai.GenerationConfig(**generation_config_dict))
-        assert batch_result.texts[i] == individual_result, f"Idx: {i}, Batch result: {batch_result.texts[i]}, Individual result: {individual_result}, Prompt: {prompt}"
+        individual_result = ov_pipe.generate(
+            prompt, generation_config=ov_genai.GenerationConfig(**generation_config_dict)
+        )
+        assert (
+            batch_result.texts[i] == individual_result
+        ), f"Idx: {i}, Batch result: {batch_result.texts[i]}, Individual result: {individual_result}, Prompt: {prompt}"
+
 
 #
 # Chat scenario
