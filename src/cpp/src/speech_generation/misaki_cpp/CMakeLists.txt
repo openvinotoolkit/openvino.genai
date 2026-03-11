@@ -6,6 +6,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(MISAKI_CPP_BUILD_PYTHON_BINDINGS "Build Python bindings for misaki_cpp" OFF)
 
+set(_MISAKI_DEFAULT_LEXICON_DIR "")
+if(EXISTS "${CMAKE_SOURCE_DIR}/data/us_gold.json" AND
+   EXISTS "${CMAKE_SOURCE_DIR}/data/us_silver.json" AND
+   EXISTS "${CMAKE_SOURCE_DIR}/data/gb_gold.json" AND
+   EXISTS "${CMAKE_SOURCE_DIR}/data/gb_silver.json")
+  set(_MISAKI_DEFAULT_LEXICON_DIR "${CMAKE_SOURCE_DIR}/data")
+endif()
+
+set(MISAKI_ENGLISH_LEXICON_DATA_DIR "${_MISAKI_DEFAULT_LEXICON_DIR}" CACHE PATH
+    "Directory containing required Misaki English lexicon files (us/gb gold/silver JSON)")
+
 include(FetchContent)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -140,6 +151,17 @@ install(
 
 include(CTest)
 include(Catch)
-catch_discover_tests(test_english)
-catch_discover_tests(test_english_exactness)
-catch_discover_tests(test_english_gb_exactness)
+
+if(MISAKI_ENGLISH_LEXICON_DATA_DIR)
+  set(_MISAKI_TEST_ENV "MISAKI_DATA_DIR=${MISAKI_ENGLISH_LEXICON_DATA_DIR}")
+  catch_discover_tests(test_english PROPERTIES ENVIRONMENT "${_MISAKI_TEST_ENV}")
+  catch_discover_tests(test_english_exactness PROPERTIES ENVIRONMENT "${_MISAKI_TEST_ENV}")
+  catch_discover_tests(test_english_gb_exactness PROPERTIES ENVIRONMENT "${_MISAKI_TEST_ENV}")
+else()
+  message(WARNING
+    "MISAKI_ENGLISH_LEXICON_DATA_DIR is not set and bundled data/ files were not found. "
+    "Standalone misaki_cpp tests require lexicon files via MISAKI_DATA_DIR or set_english_lexicon_data_root(...).")
+  catch_discover_tests(test_english)
+  catch_discover_tests(test_english_exactness)
+  catch_discover_tests(test_english_gb_exactness)
+endif()

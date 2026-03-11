@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 import argparse
 import difflib
+import os
 import random
 import re
 import codecs
 import sys
+from pathlib import Path
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from statistics import mean
@@ -16,9 +18,26 @@ def _build_python_misaki_engine(variant: str):
     return en.G2P(trf=False, british=british, fallback=None, unk="❓")
 
 
-def _build_cpp_misaki_engine(variant: str):
+def _validate_lexicon_data_root(path: str) -> str:
+    root = Path(path)
+    required = ["us_gold.json", "us_silver.json", "gb_gold.json", "gb_silver.json"]
+    missing = [name for name in required if not (root / name).exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"Lexicon data root '{root}' is missing required files: {', '.join(missing)}"
+        )
+    return str(root)
+
+
+def _build_cpp_misaki_engine(variant: str, lexicon_data_root: str | None = None):
     import misaki_cpp_py
-    return misaki_cpp_py.Engine("en", variant)
+    engine = misaki_cpp_py.Engine("en", variant)
+
+    resolved_root = lexicon_data_root or os.getenv("MISAKI_DATA_DIR")
+    if resolved_root:
+        engine.set_lexicon_data_root(_validate_lexicon_data_root(resolved_root))
+
+    return engine
 
 
 @dataclass(frozen=True)
@@ -183,6 +202,8 @@ def main():
     parser.add_argument("--split", default="train", help="HF split")
     parser.add_argument("--field", default="text", help="Text field name")
     parser.add_argument("--variant", default="en-us", choices=["en-us", "en-gb"], help="English variant")
+    parser.add_argument("--lexicon-data-root", default=None,
+                        help="Directory containing us/gb gold/silver lexicon JSON files for misaki_cpp")
     parser.add_argument("--max-items", type=int, default=300, help="Max prompts to evaluate")
     parser.add_argument("--seed", type=int, default=1337, help="Random seed")
     parser.add_argument("--min-chars", type=int, default=20, help="Minimum normalized prompt length")
@@ -220,7 +241,7 @@ def main():
         raise RuntimeError("No usable texts were loaded from dataset")
 
     py_g2p = _build_python_misaki_engine(args.variant)
-    cpp_g2p = _build_cpp_misaki_engine(args.variant)
+    cpp_g2p = _build_cpp_misaki_engine(args.variant, args.lexicon_data_root)
 
     exact = 0
     ratios = []

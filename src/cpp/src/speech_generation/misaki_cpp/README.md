@@ -26,6 +26,21 @@ Current status:
 - `data/`
   - English lexicon data (`us_*.json`, `gb_*.json`)
 
+## Required Lexical Data Files
+
+The English C++ backend requires the following lexicon JSON files at runtime:
+
+- `us_gold.json`
+- `us_silver.json`
+- `gb_gold.json`
+- `gb_silver.json`
+
+These files are required for both `en-us` and `en-gb` phonemization behavior.
+
+You can obtain these files from the official Misaki repository: https://github.com/hexgrad/misaki/tree/main/misaki/data
+
+If needed, point the engine to the directory containing these files via `set_lexicon_data_root(...)`.
+
 ## Typical Workflow in OpenVINO GenAI
 
 ### Build OpenVINO GenAI (includes embedded Misaki)
@@ -43,6 +58,12 @@ If you only want to rebuild the embedded Misaki library target:
 cmake --build ../openvino.genai-build --config Release --target openvino_genai_misaki_cpp
 ```
 
+For standalone `misaki_cpp` tests, set lexicon data root at configure time if `data/` is not present:
+
+```powershell
+cmake -S openvino.genai/src/cpp/src/speech_generation/misaki_cpp -B misaki_cpp-build -DMISAKI_ENGLISH_LEXICON_DATA_DIR="<path-to-lexicon-data>"
+```
+
 ### Run tests
 
 If your configured build enables these tests, run from build directory:
@@ -50,6 +71,11 @@ If your configured build enables these tests, run from build directory:
 ```powershell
 ctest --test-dir ../openvino.genai-build --output-on-failure -R "English|misaki|speech"
 ```
+
+For standalone `misaki_cpp` test builds (without bundled `data/`), provide lexicon data via either:
+
+- `-DMISAKI_ENGLISH_LEXICON_DATA_DIR="<path>"` at CMake configure time, or
+- `MISAKI_DATA_DIR=<path>` in the environment.
 
 ## Standalone Python Bindings (for G2P parity work)
 
@@ -101,16 +127,16 @@ Supported profiles:
 Run the parity harness in single-dataset mode (default: `wikitext/wikitext-103-raw-v1`):
 
 ```powershell
-python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile single --variant en-us --max-items 300
+python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile single --variant en-us --max-items 300 --lexicon-data-root "<path-to-lexicon-data>"
 ```
 
 Or use curated profiles for more realistic TTS-style prompts:
 
 ```powershell
-python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile realistic --variant en-us --max-items 300
-python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile mixed --variant en-us --max-items 300
-python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile chatty --variant en-us --max-items 300
-python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile adversarial --variant en-us --max-items 300
+python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile realistic --variant en-us --max-items 300 --lexicon-data-root "<path-to-lexicon-data>"
+python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile mixed --variant en-us --max-items 300 --lexicon-data-root "<path-to-lexicon-data>"
+python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile chatty --variant en-us --max-items 300 --lexicon-data-root "<path-to-lexicon-data>"
+python tools/run_parity_dataset_misaki_cpp_vs_python.py --profile adversarial --variant en-us --max-items 300 --lexicon-data-root "<path-to-lexicon-data>"
 ```
 
 The preset profiles currently use text-only datasets (`xsum`, `ag_news`, `yelp_polarity`, `tweet_eval/sentiment`, `glue/sst2`, `wikitext`) to avoid audio/script loader dependencies.
@@ -119,6 +145,7 @@ Useful options:
 - `--profile single|realistic|chatty|adversarial|mixed`
 - `--dataset`, `--config`, `--split`, `--field`
 - `--variant en-us|en-gb`
+- `--lexicon-data-root`
 - `--max-items`, `--seed`, `--min-chars`, `--normalize-input-escapes`, `--show-diffs`
 - `--analyze-normalization` (strict/basic/loose/unknown-collapsed normalization stats)
 - `--analyze-categories` and `--analyze-example-limit` (mismatch category summary + examples)
