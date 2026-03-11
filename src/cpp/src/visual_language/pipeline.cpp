@@ -23,6 +23,7 @@
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
 #include "lm_encoding.hpp"
+#include "lora/helper.hpp"
 
 using namespace ov::genai;
 
@@ -93,7 +94,8 @@ public:
         } {
         m_is_npu = device.find("NPU") != std::string::npos;
 
-        auto properties_copy = properties;
+        auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+        auto properties_copy = filtered_properties.fork();
         auto language_model_path = models_dir / "openvino_language_model.xml";
         auto language_model =  utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
@@ -110,6 +112,11 @@ public:
         auto lm_properties = device_properties.empty()
             ? properties_copy
             : utils::pop_or_default<ov::AnyMap>(device_properties, device, {});
+
+        if (m_generation_config.adapters) {
+            m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
+            m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
+        }
 
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
@@ -216,6 +223,10 @@ public:
         }
 
         setup_generation_config(generation_config);
+
+        if(m_adapter_controller) {
+            m_adapter_controller->apply(m_language, generation_config.adapters);
+        }
 
         bool intermediate_remote_tensor = true;
         if (m_is_npu) {
@@ -625,6 +636,8 @@ private:
         std::optional<int64_t> rope_delta;
         std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
 
+        const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
+
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
         }
@@ -632,7 +645,7 @@ private:
         return ov::genai::get_lm_encoded_results(
             m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
             position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
-            use_intermediate_remote_tensor
+            use_intermediate_remote_tensor, lm_extra_inputs
         );
     }
 };
@@ -642,6 +655,7 @@ bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     return vlm_config.model_type == VLMModelType::QWEN2_VL ||
            vlm_config.model_type == VLMModelType::QWEN2_5_VL ||
+           vlm_config.model_type == VLMModelType::QWEN3_VL ||
            vlm_config.model_type == VLMModelType::GEMMA3;
 }
 
