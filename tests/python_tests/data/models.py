@@ -22,7 +22,7 @@ LINEAR_ATTENTION_MODELS_LIST = (
     # "optimum-intel-internal-testing/tiny-mamba",  # beam_idx is not connected
     # "optimum-intel-internal-testing/tiny-random-zamba2",  # no chat template
     "optimum-intel-internal-testing/tiny-random-granitemoehybrid",
-    "optimum-intel-internal-testing/tiny-random-qwen3-next",
+    # "optimum-intel-internal-testing/tiny-random-qwen3-next",  # uncomment after transformers>=4.57.0 update
 )
 
 
