@@ -4,7 +4,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Type
-import subprocess
+import subprocess  # nosec B404
 
 from optimum.modeling_base import OptimizedModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
