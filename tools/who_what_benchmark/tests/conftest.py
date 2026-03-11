@@ -5,7 +5,7 @@ import shutil
 import subprocess  # nosec B404
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 from ov_utils import AtomicDownloadManager, get_ov_cache_dir, retry_request  # noqa
 
@@ -54,11 +54,34 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "stable-diffusion-3-tiny-random": {"name": "yujiepan/stable-diffusion-3-tiny-random", "convert_args": []},
     "tiny-random-flux": {"name": "optimum-intel-internal-testing/tiny-random-flux", "convert_args": []},
     "tiny-random-flux-fill": {"name": "optimum-intel-internal-testing/tiny-random-flux-fill", "convert_args": []},
+    "tiny-random-ltx-video": {"name": "optimum-intel-internal-testing/tiny-random-ltx-video", "convert_args": []},
 }
 
 
 def get_ov_cache_converted_models_dir():
     return get_ov_cache_dir() / "converted_models"
+
+
+def convert_text_model(
+    model_id: str,
+    dir_name: str,
+    convert_fn: Callable[[str, Path], None],
+) -> str:
+    models_dir = get_ov_cache_converted_models_dir()
+    model_path = Path(models_dir) / f"wwb_{dir_name}"
+
+    manager = AtomicDownloadManager(model_path)
+
+    logger.info(f"Start conversion of: {model_id} -> {dir_name}")
+    if manager.is_complete():
+        logger.info("Conversion is already completed")
+        return str(model_path)
+
+    def convert(temp_path: Path) -> None:
+        retry_request(lambda: convert_fn(model_id, temp_path))
+
+    manager.execute(convert)
+    return str(model_path)
 
 
 def convert_model(model_name: str) -> str:
