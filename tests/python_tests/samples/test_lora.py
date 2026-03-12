@@ -66,7 +66,9 @@ class TestLora:
         ],
         indirect=["convert_model", "download_test_content"],
     )
-    def test_sample_visual_language_lora_multi_alpha_zero_matches_single(self, convert_model, download_test_content, prompt, alpha):
+    def test_sample_visual_language_lora_multi_alpha_zero_matches_single(
+        self, convert_model, download_test_content, prompt, alpha
+    ):
         adapter_path, image_path = download_test_content
         assert os.path.exists(image_path), f"Missing test image: {image_path}"
 
@@ -84,12 +86,26 @@ class TestLora:
         cpp_multi_command = [cpp_sample, convert_model, image_path, prompt, adapter_path, alpha, adapter_path, "0.0"]
         cpp_multi_result = run_sample(cpp_multi_command)
 
-        py_multi_command = [sys.executable, py_script, convert_model, image_path, prompt, adapter_path, alpha, adapter_path, "0.0"]
+        py_multi_command = [
+            sys.executable,
+            py_script,
+            convert_model,
+            image_path,
+            prompt,
+            adapter_path,
+            alpha,
+            adapter_path,
+            "0.0",
+        ]
         py_multi_result = run_sample(py_multi_command)
 
         assert py_multi_result.stdout == cpp_multi_result.stdout, "Multi-LoRA C++/Python results should match"
-        assert cpp_multi_result.stdout == cpp_single_result.stdout, "Multi-LoRA (with alpha=0) should match single-LoRA output"
-        assert py_multi_result.stdout == py_single_result.stdout, "Multi-LoRA (with alpha=0) should match single-LoRA output"
+        assert cpp_multi_result.stdout == cpp_single_result.stdout, (
+            "Multi-LoRA (with alpha=0) should match single-LoRA output"
+        )
+        assert py_multi_result.stdout == py_single_result.stdout, (
+            "Multi-LoRA (with alpha=0) should match single-LoRA output"
+        )
 
     @pytest.mark.vlm
     @pytest.mark.samples
@@ -115,7 +131,17 @@ class TestLora:
         cpp_result = run_sample(cpp_command)
 
         py_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_lora.py"
-        py_command = [sys.executable, py_script, convert_model, image_path, prompt, adapter_path, "1.0", adapter_path, "1.0"]
+        py_command = [
+            sys.executable,
+            py_script,
+            convert_model,
+            image_path,
+            prompt,
+            adapter_path,
+            "1.0",
+            adapter_path,
+            "1.0",
+        ]
         py_result = run_sample(py_command)
 
         assert py_result.stdout == cpp_result.stdout, "Multi-LoRA C++/Python results should match"
