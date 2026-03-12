@@ -44,6 +44,12 @@ public:
 
   virtual ~G2P() = default;
   virtual PhonemizeResult phonemize_with_tokens(const std::string& text) const = 0;
+  virtual bool backend_available() const {
+    return true;
+  }
+  virtual std::optional<std::string> backend_error() const {
+    return std::nullopt;
+  }
 
   void set_fallback_hook(FallbackHook hook) {
     fallback_hook_ = std::move(hook);

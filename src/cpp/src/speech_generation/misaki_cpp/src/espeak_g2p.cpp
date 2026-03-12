@@ -24,6 +24,14 @@ public:
     return out;
   }
 
+  bool backend_available() const override {
+    return backend_.backend_available();
+  }
+
+  std::optional<std::string> backend_error() const override {
+    return backend_.backend_error();
+  }
+
 private:
   std::string language_;
   EspeakG2P backend_;

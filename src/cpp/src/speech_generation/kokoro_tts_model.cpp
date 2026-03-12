@@ -738,11 +738,6 @@ std::vector<std::string> phonemize_single_text(misaki::G2P& g2p,
             }
         }
 
-        OPENVINO_ASSERT(!phoneme_chunks.empty(),
-                        "Kokoro non-English preprocessing produced no phoneme chunks for input text. "
-                        "Check that espeak-ng is installed and supports requested language variant '",
-                        language_variant,
-                        "'. You may need MISAKI_ESPEAK_LIBRARY to point at libespeak-ng.");
         return phoneme_chunks;
     }
 
@@ -810,7 +805,6 @@ std::vector<std::string> phonemize_single_text(misaki::G2P& g2p,
         }
     }
 
-    OPENVINO_ASSERT(!phoneme_chunks.empty(), "Kokoro preprocessing produced no phoneme chunks for input text");
     return phoneme_chunks;
 }
 
@@ -939,7 +933,6 @@ std::vector<std::string> chunk_phonemes_from_tokens(const std::vector<ov::genai:
         }
     }
 
-    OPENVINO_ASSERT(!phoneme_chunks.empty(), "Kokoro token preprocessing produced no phoneme chunks");
     return phoneme_chunks;
 }
 #endif
@@ -1097,10 +1090,17 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
     OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
 #else
     ensure_g2p_initialized(generation_config);
+    const std::string language_variant = normalize_language_variant(generation_config.language);
+    if (!is_english_variant(language_variant) && !m_g2p->backend_available()) {
+        const auto backend_error = m_g2p->backend_error();
+        OPENVINO_THROW("Kokoro non-English text generation requires espeak-ng, but backend is unavailable for language '",
+                       language_variant,
+                       "'. Install espeak-ng and/or set MISAKI_ESPEAK_LIBRARY. ",
+                       backend_error.has_value() ? std::string("Details: ") + *backend_error : std::string{});
+    }
 
     std::vector<std::vector<std::string>> all_phoneme_chunks;
     all_phoneme_chunks.reserve(texts.size());
-    const std::string language_variant = normalize_language_variant(generation_config.language);
     for (const auto& text : texts) {
         const auto text_tokenize_start = std::chrono::steady_clock::now();
         auto phoneme_chunks = phonemize_single_text(*m_g2p, text, generation_config, language_variant);
