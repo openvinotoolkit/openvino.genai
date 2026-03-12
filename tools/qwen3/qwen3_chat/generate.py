@@ -11,9 +11,11 @@ def init_history() -> list[dict[str, Any]]:
 
 
 def _extract_text_ids(output: Any) -> torch.Tensor:
-    if isinstance(output, tuple):
-        return output[0]
-    return output
+    if isinstance(output, torch.Tensor):
+        return output
+    if hasattr(output, "sequences"):
+        return output.sequences
+    return _extract_text_ids(output[0])
 
 
 def generate_response(
@@ -50,6 +52,7 @@ def generate_response(
         gen_kwargs["return_audio"] = True
         gen_kwargs["talker_do_sample"] = True
         text_ids, audio = model.generate(**inputs, **gen_kwargs)
+        text_ids = _extract_text_ids(text_ids)
     else:
         gen_kwargs["return_audio"] = False
         output = model.generate(**inputs, **gen_kwargs)
