@@ -19,8 +19,7 @@ int main(int argc, char* argv[]) try {
     // At least one LoRA adapter must be provided.
     OPENVINO_ASSERT(argc >= 6 && ((argc - 4) % 2) == 0,
                    "Usage: ", argv[0],
-                   " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...]",
-                   "\nNote: device is fixed to CPU for this sample.");
+                   " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...]");
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
 
