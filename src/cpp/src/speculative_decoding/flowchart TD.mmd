@@ -1,0 +1,46 @@
+flowchart TD
+    classDef default fill:#f7f7f7,stroke:#333,stroke-width:1px
+    classDef startEnd fill:#e6f3ff,stroke:#0066cc,stroke-width:2px
+    classDef process fill:#ffffff,stroke:#333333,stroke-width:1px
+    classDef transform fill:#f0f8ff,stroke:#4682b4,stroke-width:1px
+    classDef subgraphBox fill:#f9f9f9,stroke:#cccccc,stroke-width:1px
+    
+    subgraph InitializationPhase [Initialization Phase]
+        direction TB
+        A[Start: Create Eagle3DecodingImpl]:::startEnd
+        B{1. Share Token Embedding Weights<br/>share_embedding_weights(main_model, draft_model)}:::process
+        C{2. Extract Hidden States for Main Model<br/>extract_hidden_state_generic(main_model, hidden_layers_to_abstract)}:::process
+        D{3. Apply Graph Transformations to Draft Model<br/>extract_hidden_state_generic(draft_model, {-1})}:::process
+        E{4. Extract d2t Mapping Table from Draft Model<br/>extract_d2t_mapping_table(draft_model)}:::process
+        F{5. Create Main/Draft Inference Pipelines<br/>new ContinuousBatchingForEagle3DecodingImpl(...)}:::process
+        G{6. Configure EAGLE-specific Parameters<br/>update_eagle_pipeline_params(...)}:::process
+        H[End: Initialization Complete]:::startEnd
+        
+        A --> B
+        B --> C
+        C --> D
+        D --> E
+        E --> F
+        F --> G
+        G --> H
+    end
+
+    subgraph GraphTransformations [Key Graph Transformations]
+        direction TB
+        T1[Run Eagle3Transform]:::transform
+        T2[Add output as new model Result]:::transform
+        T3[Run EagleBaseTransform]:::transform
+        T4[Add output as new model Result<br/>(last_hidden_state)]:::transform
+        T5[Run EagleInputTransform]:::transform
+        T6[Insert new 'Add' node and 'Parameter'<br/>(internal_hidden_states)]:::transform
+        
+        T1 --> T2
+        T3 --> T4
+        T5 --> T6
+    end
+
+    T2 -.-> C
+    T4 -.-> D
+    T6 -.-> D
+    
+    class InitializationPhase,GraphTransformations subgraphBox

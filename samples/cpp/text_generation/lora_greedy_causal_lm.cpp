@@ -10,7 +10,7 @@ int main(int argc, char* argv[]) try {
     std::string models_path = argv[1];
     std::string adapter_path = argv[2];
     std::string prompt = argv[3];
-    std::string device = "CPU";  // GPU can be used as well
+    std::string device = "GPU.1";  // GPU can be used as well
 
     using namespace ov::genai;
 
@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) try {
     pipe.set_generation_config(config);
 
     std::cout << "Generate with LoRA adapter and alpha set to 0.75:" << std::endl;
-    std::cout << pipe.generate(prompt, max_new_tokens(100), adapters(adapter, 0.75)) << std::endl;
+    std::cout << pipe.generate(prompt, max_new_tokens(100), adapters(adapter, 1.0)) << std::endl;
 
     std::cout << "\n-----------------------------";
     std::cout << "\nGenerate without LoRA adapter:" << std::endl;

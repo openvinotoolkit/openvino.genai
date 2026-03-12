@@ -14,13 +14,15 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 enum class SequenceStatus {
     RUNNING = 0,
     FINISHED = 1,
     OUT_OF_MEMORY = 2,
-    WAITING = 3
+    WAITING = 3,
+    CACHING = 4
 };
 
 enum class SequenceGroupType {
@@ -39,7 +41,7 @@ class Sequence {
         static uint64_t m_counter = 0;
         return m_counter++;
     }
-
+    ov::genai::utils::EagleMetaData m_eagle_metadata;
     TokenIds m_generated_ids;
     LogProbs m_generated_log_probs;
     uint64_t m_grouped_id;
@@ -125,6 +127,10 @@ public:
         return m_status == SequenceStatus::WAITING;
     }
 
+    bool is_caching() const {
+        return m_status == SequenceStatus::CACHING;
+    }
+
     void set_status(SequenceStatus status) {
         m_status = status;
     }
@@ -152,6 +158,13 @@ public:
         return m_hidden_state;
     }
 
+    void set_eagle_metadata(const ov::genai::utils::EagleMetaData& metadata) {
+        m_eagle_metadata = metadata;
+    }
+
+    const ov::genai::utils::EagleMetaData& get_eagle_metadata() const {
+        return m_eagle_metadata;
+    }
     // removes n last tokens and updates cumulative log prob
     // used to remove stop_string from the output
     void remove_last_tokens(int n) {
