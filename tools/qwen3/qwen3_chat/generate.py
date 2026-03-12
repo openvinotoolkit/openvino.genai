@@ -10,6 +10,12 @@ def init_history() -> list[dict[str, Any]]:
     return [{"role": "system", "content": [{"type": "text", "text": SYSTEM_PROMPT}]}]
 
 
+def _extract_text_ids(output: Any) -> torch.Tensor:
+    if isinstance(output, tuple):
+        return output[0]
+    return output
+
+
 def generate_response(
     model: Any,
     processor: Any,
@@ -34,10 +40,11 @@ def generate_response(
             clean_up_tokenization_spaces=False,
         ),
         "thinker_do_sample": False,
-        "thinker_max_new_tokens": 10,
     }
     if speaker:
         gen_kwargs["speaker"] = speaker
+
+    input_len = inputs["input_ids"].shape[-1]
 
     if enable_audio:
         gen_kwargs["return_audio"] = True
@@ -45,12 +52,12 @@ def generate_response(
         text_ids, audio = model.generate(**inputs, **gen_kwargs)
     else:
         gen_kwargs["return_audio"] = False
-        text_ids = model.generate(**inputs, **gen_kwargs)
+        output = model.generate(**inputs, **gen_kwargs)
+        text_ids = _extract_text_ids(output)
         audio = None
 
+    generated_ids = text_ids[:, input_len:]
     text = processor.batch_decode(
-        text_ids,
-        skip_special_tokens=True,
-        clean_up_tokenization_spaces=False,
+        generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False,
     )[0]
     return text, audio
