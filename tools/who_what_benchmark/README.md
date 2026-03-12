@@ -241,3 +241,5 @@ wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv -
 The dataset is licensed under Creative Commons Attribution 4.0 (CC BY 4.0).
 * This project uses data from the Puffin dataset (https://huggingface.co/datasets/LDJnr/Puffin). \
 The dataset is licensed under the Apache License 2.0.
+* This project uses questions from the VQA v2 dataset (https://visualqa.org/). \
+Annotations are licensed under CC BY 4.0.
