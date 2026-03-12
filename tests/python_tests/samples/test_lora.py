@@ -80,7 +80,7 @@ class TestLora:
         py_single_result = run_sample(py_single_command)
         assert py_single_result.stdout == cpp_single_result.stdout, "Single-LoRA C++/Python results should match"
 
-        # Multi-LoRA: add the same adapter again with alpha=0.0 (no effect expected)
+        # Multi-LoRA: add the same adapter with alpha=0.0)
         cpp_multi_command = [cpp_sample, convert_model, image_path, prompt, adapter_path, alpha, adapter_path, "0.0"]
         cpp_multi_result = run_sample(cpp_multi_command)
 
@@ -123,7 +123,6 @@ class TestLora:
         assert os.path.exists(image_path), f"Missing test image: {image_path}"
 
         cpp_sample = SAMPLES_CPP_DIR / "visual_language_lora"
-        # Two non-zero alphas; do not compare with any single-LoRA baseline.
         cpp_command = [cpp_sample, convert_model, image_path, prompt, adapter_path, "1.0", adapter_path, "1.0"]
         cpp_result = run_sample(cpp_command)
 
