@@ -1,5 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-diffusers==0.35.2
+diffusers==0.37.0
 git+https://github.com/xufang-lisa/optimum-intel.git@4001249466543734747a7c6d48722d7fba5aae29#egg=optimum-intel
 numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
 safetensors==0.6.2; platform_system == "Darwin" and platform_machine == "x86_64"

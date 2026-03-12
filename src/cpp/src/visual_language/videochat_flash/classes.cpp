@@ -640,7 +640,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChat_Flash::encode_video
     std::vector<EncodedVideo> embeds;
     for (const ov::Tensor& video : videos) {
         EncodedVideo encoded_video;
-        ImageSize target_size = ImageSize(224, 224);
+        ImageSize target_size{224, 224};
         auto preprocessed_video = videochat_flash_utils::preprocess(video, target_size.height, target_size.width,  {0.485f, 0.456f, 0.406f}, {0.229f, 0.224f, 0.225f});
         encoded_video.resized_source_size = target_size;
         encoded_video.frame_num = preprocessed_video.get_shape()[0];
