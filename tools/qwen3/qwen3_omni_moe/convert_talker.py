@@ -7,7 +7,7 @@ import torch
 from torch.export import Dim
 import openvino as ov
 from openvino.frontend.pytorch.patch_model import __make_16bit_traceable
-from transformers import Qwen3OmniMoeForConditionalGeneration
+from transformers import Qwen3OmniForConditionalGeneration
 from .constants import (
     ATTENTION_MASK,
     INPUTS_EMBEDS,
@@ -57,7 +57,7 @@ def _forward_wrap_talker(
     return result
 
 
-def convert_talker_embedding(model: Qwen3OmniMoeForConditionalGeneration, output_dir: Path) -> None:
+def convert_talker_embedding(model: Qwen3OmniForConditionalGeneration, output_dir: Path) -> None:
     output_path = output_dir / TALKER_EMBEDDING_NAME
     if output_path.exists():
         return
@@ -78,7 +78,7 @@ def convert_talker_embedding(model: Qwen3OmniMoeForConditionalGeneration, output
 
 
 def convert_talker_language(
-    model: Qwen3OmniMoeForConditionalGeneration,
+    model: Qwen3OmniForConditionalGeneration,
     output_dir: Path,
     quantization_config: dict[str, Any] | None = None,
 ) -> None:

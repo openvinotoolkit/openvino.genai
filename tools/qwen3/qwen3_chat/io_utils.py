@@ -7,9 +7,7 @@ import torch
 
 AUDIO_SAMPLE_RATE = 24000
 
-MEDIA_PATTERN = re.compile(
-    r'/(image|audio|video)\s+(?:"([^"]+)"|(\S+))'
-)
+MEDIA_PATTERN = re.compile(r'/(image|audio|video)\s+(?:"([^"]+)"|(\S+))')
 
 
 def parse_user_input(raw_input: str) -> list[dict[str, str]]:

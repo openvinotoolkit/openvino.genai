@@ -21,18 +21,6 @@ WEIGHT_FORMAT_TO_NNCF: dict[str, dict[str, Any] | None] = {
     },
 }
 
-MODEL_TYPE_PATCHES = {
-    "qwen3_omni": "qwen3_omni_moe",
-    "qwen3_omni_thinker": "qwen3_omni_moe_thinker",
-    "qwen3_omni_text": "qwen3_omni_moe_text",
-    "qwen3_omni_talker_text": "qwen3_omni_moe_talker_text",
-}
-
-ARCHITECTURE_PATCHES = {
-    "Qwen3OmniForConditionalGeneration": "Qwen3OmniMoeForConditionalGeneration",
-    "Qwen3OmniThinkerForConditionalGeneration": "Qwen3OmniMoeThinkerForConditionalGeneration",
-}
-
 ATTN_IMPLEMENTATION = "sdpa"
 
 PKV_INPUT_PREFIX = "past_key_values"

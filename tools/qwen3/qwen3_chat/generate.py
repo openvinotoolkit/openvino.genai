@@ -49,6 +49,8 @@ def generate_response(
         audio = None
 
     text = processor.batch_decode(
-        text_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False,
+        text_ids,
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False,
     )[0]
     return text, audio

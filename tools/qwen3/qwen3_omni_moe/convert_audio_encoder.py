@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 import openvino as ov
 from openvino.frontend.pytorch.patch_model import __make_16bit_traceable
-from transformers import Qwen3OmniMoeForConditionalGeneration
+from transformers import Qwen3OmniForConditionalGeneration
 
 from .constants import AUDIO_ENCODER_NAME
 from .utils import cleanup_torchscript_cache
@@ -61,7 +61,7 @@ def _forward_wrap_audio_encoder(
     return hidden_states
 
 
-def convert_audio_encoder(model: Qwen3OmniMoeForConditionalGeneration, output_dir: Path) -> None:
+def convert_audio_encoder(model: Qwen3OmniForConditionalGeneration, output_dir: Path) -> None:
     output_path = output_dir / AUDIO_ENCODER_NAME
     if output_path.exists():
         return

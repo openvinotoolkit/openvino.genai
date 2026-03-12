@@ -7,7 +7,7 @@ Supports text, image, audio, and video inputs. Generates text and audio outputs.
 
 - Python 3.10+
 - PyTorch
-- transformers (>= 5.3.0.dev0): `pip install git+https://github.com/huggingface/transformers.git`
+- transformers: `pip install git+https://github.com/huggingface/transformers@3d1a4f5e34753e51cb85052539c6ef10cab9a5c1`
 - qwen-omni-utils: `pip install qwen-omni-utils -U`
 - numpy
 

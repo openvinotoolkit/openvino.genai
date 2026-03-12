@@ -53,7 +53,10 @@ def _load_model(
     config.talker_config._attn_implementation = ATTN_IMPLEMENTATION
 
     model = Qwen3OmniMoeForConditionalGeneration.from_pretrained(
-        ckpt, config=config, torch_dtype=torch.float16, low_cpu_mem_usage=True,
+        ckpt,
+        config=config,
+        torch_dtype=torch.float16,
+        low_cpu_mem_usage=True,
     )
     model.eval()
     return model, ckpt
