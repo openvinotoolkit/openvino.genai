@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 def _log_prompts_summary(prompts, source):
     if not prompts:
-        logger.info("Pgi (%s): none", source)
+        logger.info("Prompts summary (%s): none", source)
         return
     prompt_list = prompts.get("prompts", []) if isinstance(prompts, dict) else []
     logger.info("Prompts summary (%s): count=%d", source, len(prompt_list))

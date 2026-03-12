@@ -383,10 +383,12 @@ def render_messages_dataset_to_prompts(records, tokenizer, model_path=None):
             jinja_env.globals["raise_exception"] = raise_exception
             jinja_env.filters["from_json"] = json.loads
             jinja_env.filters['strftime_now'] = strftime_now
+            chat_template_kwargs = {"add_generation_prompt": True, "enable_thinking": False, "reasoning_effort": "low"}
             prompt = jinja_env.from_string(chat_template).render(
                 messages=messages,
                 tools=tools,
-                strftime_now=strftime_now
+                strftime_now=strftime_now,
+                **chat_template_kwargs
             )
         except Exception as e:
             logger.warning(f"Error rendering template: {e}")

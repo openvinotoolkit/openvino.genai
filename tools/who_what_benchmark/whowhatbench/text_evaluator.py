@@ -1,5 +1,7 @@
 from typing import Any, Union
 
+import logging
+
 import os
 import yaml
 import pandas as pd
@@ -9,6 +11,8 @@ from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity
 from .utils import patch_awq_for_inference, get_ignore_parameters_flag
 import inspect
+
+logger = logging.getLogger(__name__)
 
 PROMPTS_FILE = 'text_prompts.yaml'
 LONG_PROMPTS_FILE = 'text_long_prompts.yaml'
@@ -60,6 +64,7 @@ class TextEvaluator(BaseEvaluator):
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
         self.empty_adapters = empty_adapters
+        self._logged_generation_params = False
 
         # Take language from the base model if provided
         self.language = language
@@ -192,6 +197,7 @@ class TextEvaluator(BaseEvaluator):
         )
 
         if generation_config is None:
+            self._log_greedy_generation_params(gen_answer_fn)
             for p in tqdm(prompts, desc="Evaluate pipeline"):
                 answers.append(
                     gen_answer_fn(
@@ -230,3 +236,34 @@ class TextEvaluator(BaseEvaluator):
         df["prompt_length_type"] = 'long' if self.long_prompt else 'short'
 
         return df
+
+    def _log_greedy_generation_params(self, gen_answer_fn):
+        if self._logged_generation_params:
+            return
+
+        self._logged_generation_params = True
+        gen_fn_name = getattr(gen_answer_fn, "__name__", "")
+        if gen_fn_name == "genai_gen_text":
+            backend = "genai"
+        elif gen_fn_name == "llamacpp_gen_text":
+            backend = "llamacpp"
+        else:
+            backend = "transformers"
+
+        params = {
+            "backend": backend,
+            "do_sample": False,
+            "max_new_tokens": self.max_new_tokens,
+            "use_chat_template": bool(self.use_chat_template),
+            "ignored_sampling_params": ["temperature", "top_p", "top_k"],
+        }
+        params.update(get_ignore_parameters_flag())
+
+        if backend == "genai":
+            params.pop("use_chat_template", None)
+            params["apply_chat_template"] = bool(self.use_chat_template)
+            params["num_assistant_tokens"] = int(self.num_assistant_tokens)
+            params["assistant_confidence_threshold"] = float(self.assistant_confidence_threshold)
+            params["empty_adapters"] = bool(self.empty_adapters)
+
+        logger.info("Text generation parameters: %s", params)
