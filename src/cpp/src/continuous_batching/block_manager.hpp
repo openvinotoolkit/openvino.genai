@@ -312,7 +312,7 @@ public:
      * were computed.
      * @param blocks_for_all_layers The blocks to be freed (one for each layer).
      */
-    void free(const BlocksPerLayer& blocks_for_all_layers) {
+    void free(const BlocksPerLayer& blocks_for_all_layers, std::map<uint64_t, BlocksPerLayer>& cached_blocks) {
         OPENVINO_ASSERT(blocks_for_all_layers.size() == m_num_layers);
         for (size_t i = 0; i < m_num_layers; i++) {
             auto& block_ptr = blocks_for_all_layers[i];
@@ -358,6 +358,20 @@ public:
                         for (size_t layer_idx = 0; layer_idx < colliding_blocks_per_layer.size(); layer_idx++) {
                             m_free_blocks[layer_idx].push_back(colliding_blocks_per_layer[layer_idx]);
                             ++m_free_blocks_num[layer_idx];
+                        }
+
+                        // As block returns to free memory, it should be removed from cached_blocks.
+                        // It prevents restoring of freed block from prefix cache map
+                        // Only erase from cached_blocks if the entry actually refers to the evicted (colliding) block,
+                        // not the currently-freed block which may be stored under the same hash key.
+                        auto cached_it = cached_blocks.find(colliding_blocks_per_layer[0]->get_hash());
+                        const bool has_cached_entry = cached_it != cached_blocks.end();
+                        if (has_cached_entry) {
+                            const auto colliding_block_idx = colliding_blocks_per_layer[0]->get_index();
+                            const auto cached_block_idx = cached_it->second[0]->get_index();
+                            if (colliding_block_idx == cached_block_idx) {
+                                cached_blocks.erase(cached_it);
+                            }
                         }
                     }
                     m_overwriteable_blocks.add(blocks_for_all_layers);
@@ -617,7 +631,7 @@ public:
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
             blocks_to_free.push_back(block_table[layer_idx].back());
         }
-        m_allocator.free(blocks_to_free);
+        m_allocator.free(blocks_to_free, m_prefix_hash_to_occupied_block_map);
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
             block_table[layer_idx].resize(block_table[layer_idx].size() - 1);
         }
@@ -814,7 +828,7 @@ public:
             for (size_t layer_idx = 0; layer_idx < effective_num_layers; layer_idx++) {
                blocks_to_free.push_back(block_table[layer_idx][i]);
             }
-            m_allocator.free(blocks_to_free);
+            m_allocator.free(blocks_to_free, m_prefix_hash_to_occupied_block_map);
         }
 
         OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
@@ -842,7 +856,7 @@ public:
                 size_t block_idx = layer_block_table.size() - idx - 1;
                 blocks_to_free.push_back(layer_block_table[block_idx]);
             }
-            m_allocator.free(blocks_to_free);
+            m_allocator.free(blocks_to_free, m_prefix_hash_to_occupied_block_map);
         }
 
         for (size_t layer_idx = 0; layer_idx < effective_num_layers; layer_idx++) {
@@ -902,7 +916,7 @@ public:
                 auto block = per_layer_block_table[logical_block_idx];
                 per_layer_cache_blocks_to_free.push_back(block);
             }
-            m_allocator.free(per_layer_cache_blocks_to_free);
+            m_allocator.free(per_layer_cache_blocks_to_free, m_prefix_hash_to_occupied_block_map);
         }
 
         // remove freed entries from the block table at this BlockManager's level
@@ -1072,7 +1086,7 @@ public:
                         auto& last_block = last_blocks[i];
                         copy_blocks_map[last_block->get_index()].push_back(new_block->get_index());
                     }
-                    m_allocator.free(last_blocks);
+                    m_allocator.free(last_blocks, m_prefix_hash_to_occupied_block_map);
                 } else {
                     // we are the only users of this block
                     if (m_enable_prefix_caching) {

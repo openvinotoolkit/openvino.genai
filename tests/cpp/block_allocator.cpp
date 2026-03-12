@@ -1,7 +1,9 @@
 // Copyright (C) 2018-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
 #include "continuous_batching/scheduler.hpp"
 
 using TestBlockAllocatorWithNumLayers = ::testing::TestWithParam<size_t>;
@@ -21,7 +23,8 @@ TEST_P(TestBlockAllocatorWithNumLayers, AllocatesBlocksAccordingToNumLayers) {
         EXPECT_EQ(allocator.num_free_blocks(i), initial_num_free_blocks - 1);
     }
 
-    allocator.free(blocks);
+    std::map<uint64_t, ov::genai::BlocksPerLayer> cached_blocks_map;
+    allocator.free(blocks, cached_blocks_map);
 }
 
 INSTANTIATE_TEST_SUITE_P(VariousNumLayers, TestBlockAllocatorWithNumLayers, ::testing::Values(1, 2, 15, 23, 42));
@@ -110,12 +113,11 @@ TEST_F(PrefixCachingBlockAllocatorTest, OnlyAllocatesAndFreesBlocksFromAllLayers
     auto blocks_per_layer = allocator.allocate_block(0, cached_blocks_map);
 
     EXPECT_THROW(allocator.free(blocks_per_layer[0], 0), ov::Exception);
-    EXPECT_NO_THROW(allocator.free(blocks_per_layer));
+    EXPECT_NO_THROW(allocator.free(blocks_per_layer, cached_blocks_map));
 
     // with prefix caching freed blocks should go into the overwritable store first, not in the actual free pool
     EXPECT_EQ(allocator.num_overwriteable_blocks(), 1);
 }
-
 
 TEST_F(PrefixCachingBlockAllocatorTest, HandlesFreesCorrectlyWithMixedHashFrees) {
     // allocate one block so that there is something to free
@@ -134,7 +136,7 @@ TEST_F(PrefixCachingBlockAllocatorTest, HandlesFreesCorrectlyWithMixedHashFrees)
         std::copy(hash_0_blocks.begin(), hash_0_blocks.begin() + num_layers / 2, std::back_inserter(mixed_hash_blocks));
         std::copy(hash_1_blocks.begin() + num_layers / 2, hash_1_blocks.end(), std::back_inserter(mixed_hash_blocks));
 
-        EXPECT_NO_THROW(allocator.free(mixed_hash_blocks));
+        EXPECT_NO_THROW(allocator.free(mixed_hash_blocks, cached_blocks_map));
         EXPECT_EQ(allocator.num_free_blocks(0), 8);
         EXPECT_EQ(allocator.num_free_blocks(num_layers - 1), 8);
         EXPECT_EQ(allocator.num_overwriteable_blocks(), 0);  // mixed hash, can't store under blocks across layers under same hash
@@ -148,13 +150,13 @@ TEST_F(PrefixCachingBlockAllocatorTest, HandlesFreesCorrectlyWithMixedHashFrees)
         std::copy(hash_0_blocks.begin() + num_layers / 2, hash_0_blocks.end(), std::back_inserter(mixed_hash_blocks));
         std::copy(hash_1_blocks.begin(), hash_1_blocks.begin() + num_layers / 2, std::back_inserter(mixed_hash_blocks));
 
-        EXPECT_NO_THROW(allocator.free(mixed_hash_blocks));
+        EXPECT_NO_THROW(allocator.free(mixed_hash_blocks, cached_blocks_map));
         EXPECT_EQ(allocator.num_free_blocks(0), 9);
         EXPECT_EQ(allocator.num_free_blocks(num_layers - 1), 9);
         EXPECT_EQ(allocator.num_overwriteable_blocks(), 0);  // mixed hash, can't store under blocks across layers under same hash
     }
 
-    allocator.free(c);
+    allocator.free(c, cached_blocks_map);
 }
 
 TEST_F(PrefixCachingBlockAllocatorTest, AllocatesFromOverwriteableBlocksWhenFreePoolIsExhausted) {
@@ -162,9 +164,9 @@ TEST_F(PrefixCachingBlockAllocatorTest, AllocatesFromOverwriteableBlocksWhenFree
     allocator.allocate_block(1, cached_blocks_map);
     allocator.allocate_block(2, cached_blocks_map);
 
-    allocator.free(cached_blocks_map[0]);
-    allocator.free(cached_blocks_map[1]);
-    allocator.free(cached_blocks_map[2]);
+    allocator.free(cached_blocks_map[0], cached_blocks_map);
+    allocator.free(cached_blocks_map[1], cached_blocks_map);
+    allocator.free(cached_blocks_map[2], cached_blocks_map);
 
     ASSERT_EQ(allocator.num_overwriteable_blocks(), 3);
 
@@ -179,7 +181,7 @@ TEST_F(PrefixCachingBlockAllocatorTest, AllocatesFromOverwriteableBlocksWhenFree
     EXPECT_EQ(allocator.num_overwriteable_blocks(), 2);
 
     for (auto& block : block_to_release) {
-        allocator.free(block);
+        allocator.free(block, cached_blocks_map);
     }
 }
 
@@ -195,7 +197,7 @@ TEST_F(PrefixCachingBlockAllocatorTest, ThrowsAtAllocationWhenFull) {
     EXPECT_THROW(blocks_to_release.push_back(allocator.allocate_block(31337, cached_blocks_map)), ov::Exception);
 
     for (auto& block : blocks_to_release) {
-        allocator.free(block);
+        allocator.free(block, cached_blocks_map);
     }
 }
 
@@ -203,28 +205,58 @@ TEST_F(PrefixCachingBlockAllocatorTest, HandlesHashCollisionsAtFreeCorrectly) {
     // TODO (vshampor): also handle collisions during allocations (multimap instead of map?)
     auto cached_blocks_map = std::map<uint64_t, ov::genai::BlocksPerLayer>{};
     auto first_hash_0_block = allocator.allocate_block(0, cached_blocks_map);
-    allocator.free(first_hash_0_block);
+    allocator.free(first_hash_0_block, cached_blocks_map);
     ASSERT_EQ(allocator.num_overwriteable_blocks(), 1);
 
     // double free
-    ASSERT_THROW(allocator.free(first_hash_0_block), ov::Exception);
+    ASSERT_THROW(allocator.free(first_hash_0_block, cached_blocks_map), ov::Exception);
 
     ov::genai::BlocksPerLayer blocks_to_release = allocator.allocate_block(1, cached_blocks_map);
     auto second_hash_0_block = allocator.allocate_block(0, cached_blocks_map);
     EXPECT_EQ(allocator.num_overwriteable_blocks(), 1);
 
     // this "free" should replace the old block with the same hash in the overwritable store
-    allocator.free(second_hash_0_block);
+    allocator.free(second_hash_0_block, cached_blocks_map);
     EXPECT_EQ(allocator.num_overwriteable_blocks(), 1);
 
-    std::map<uint64_t, ov::genai::BlocksPerLayer> empty_map{};  // to force allocator to take the block from overwritable store
+    std::map<uint64_t, ov::genai::BlocksPerLayer>
+        empty_map{};  // to force allocator to take the block from overwritable store
     auto internal_overwriteable_block = allocator.get_cached_block(0, empty_map);
     for (size_t layer_idx = 0; layer_idx < internal_overwriteable_block.size(); layer_idx++) {
         EXPECT_EQ(internal_overwriteable_block[layer_idx], second_hash_0_block[layer_idx]);
     }
-    allocator.free(internal_overwriteable_block);
+    allocator.free(internal_overwriteable_block, cached_blocks_map);
 
-    allocator.free(blocks_to_release);
+    allocator.free(blocks_to_release, cached_blocks_map);
+}
+
+TEST_F(PrefixCachingBlockAllocatorTest, HandlesPrefixHashMapAtHashCollisionCorrectly) {
+    auto alloc = ov::genai::BlockAllocator(5, true, 1);
+    std::map<uint64_t, ov::genai::BlocksPerLayer> cached;
+
+    const uint64_t H = 100;
+
+    // === Round 1: two sequences both allocate blocks with shared prefix hash H ===
+    auto blkA = alloc.allocate_block(H, cached);  // blk0, cached[H]=blk0
+    auto blkB = alloc.allocate_block(H, cached);  // blk1, cached[H]=blk1 (overwrites blk0)
+
+    alloc.free(blkB, cached);  // blk1 → OW store, cached[H]=blk1
+    ASSERT_EQ(alloc.num_overwriteable_blocks(), 1);
+
+    alloc.free(blkA, cached);  // hash collision: blk1 evicted from OW to free list, blk1 removed from cached, blk0 → OW
+    ASSERT_EQ(alloc.num_overwriteable_blocks(), 1);
+    // ensure cached entry for blk0 is removed
+    ASSERT_TRUE(cached.empty());
+
+    // === Round 2: restore from cache, exhaust free list to create double-ownership ===
+    auto r2_a = alloc.get_cached_block(H, cached);  // blk0 from OW store
+    ASSERT_FALSE(r2_a.empty());
+    ASSERT_EQ(alloc.num_overwriteable_blocks(), 0);
+
+    auto r2_b = alloc.get_cached_block(H, cached);  // blk1 no hit, empty block
+    ASSERT_TRUE(r2_b.empty());
+
+    alloc.free(r2_a, cached);
 }
 
 TEST(TestBlockAllocator, CalculatesUsagePercentageCorrectly) {
@@ -239,12 +271,12 @@ TEST(TestBlockAllocator, CalculatesUsagePercentageCorrectly) {
     auto one_block_from_some_layer = allocator.allocate_block(7);
     EXPECT_NEAR(allocator.get_used_percentage(), 11.0, 1e-5);
 
-    allocator.free(one_block_from_each_layer);
+    std::map<uint64_t, ov::genai::BlocksPerLayer> cached_blocks_map;
+    allocator.free(one_block_from_each_layer, cached_blocks_map);
     EXPECT_NEAR(allocator.get_used_percentage(), 1.0, 1e-5);
 
     allocator.free(one_block_from_some_layer, 7);
 }
-
 
 TEST(TestBlockAllocator, CalculatesUsagePercentageCorrectlyWithPrefixCaching) {
     size_t num_layers = 10;
@@ -258,13 +290,13 @@ TEST(TestBlockAllocator, CalculatesUsagePercentageCorrectlyWithPrefixCaching) {
     }
     ASSERT_NEAR(allocator.get_used_percentage(), 30.0, 1e-5);
 
-    allocator.free(prefix_hash_map[13]);
+    allocator.free(prefix_hash_map[13], prefix_hash_map);  // ow[13 -> blk0], prefix_hash_map[13] -> blk0
     prefix_hash_map.erase(13);
     ASSERT_NEAR(allocator.get_used_percentage(), 20.0, 1e-5);
 
-    allocator.allocate_block(13, prefix_hash_map);
+    allocator.allocate_block(13, prefix_hash_map);  // despite ow has hash 13, new block allocated, ow[13 -> blk0], prefix_hash_map[13] -> blk3
     ASSERT_NEAR(allocator.get_used_percentage(), 30.0, 1e-5);
     for (auto& allocated_block : prefix_hash_map) {
-        allocator.free(prefix_hash_map[allocated_block.first]);
+        allocator.free(prefix_hash_map[allocated_block.first], prefix_hash_map);
     }
 }
