@@ -180,6 +180,12 @@ python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --t
 - `--from_onnx`: "Load the model from an ONNX file instead of a pre-converted OpenVINO IR."
 
 ```sh
+# chat itration
+python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen --chat_iter 3
+python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen --pf ./prompts/chat_mode.jsonl
+```
+
+```sh
 optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 models/TinyLlama-1.1B-Chat-v1.0
 # speculative decoding
 python benchmark.py -m models/llama-2-7b-chat/ --draft_model models/TinyLlama-1.1B-Chat-v1.0 -p "What is openvino?" -n 2 --task text_gen --num_assistant_tokens 5
@@ -203,6 +209,12 @@ python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --tas
 optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code models/MiniCPM-V-2_6
 # run benchmark.py
 python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task visual_text_gen -i ./image.png
+```
+
+```sh
+# chat itration
+python benchmark.py -m ./models/MiniCPM-V-2_6/ -p "What is on the picture?" -n 2 --task visual_text_gen --chat_iter 3 -i ./image.png
+python benchmark.py -m ./models/MiniCPM-V-2_6/ -n 2 --task visual_text_gen --pf ./prompts/chat_mode_vlm.jsonl.jsonl
 ```
 
 > **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl

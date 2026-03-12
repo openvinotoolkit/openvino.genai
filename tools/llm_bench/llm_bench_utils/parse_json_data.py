@@ -29,6 +29,7 @@ def parse_vlm_json_data(json_data_list):
                 prompt_data[param] = json_data[param]
 
         text_param_list.append(prompt_data)
+
     return text_param_list
 
 
