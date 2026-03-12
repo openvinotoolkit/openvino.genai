@@ -911,9 +911,7 @@ def get_extension_model(model_path: str, temp_dir: Path) -> Path:
     shutil.copytree(source_path, extension_path)
     replace_ir_add_with_myadd(ir_xml_path)
 
-    assert (
-        b"MyAdd" in ir_xml_path.read_bytes()
-    ), "Custom op 'MyAdd' was not injected into OpenVINO IR"
+    assert b"MyAdd" in ir_xml_path.read_bytes(), "Custom op 'MyAdd' was not injected into OpenVINO IR"
 
     return extension_path
 
@@ -961,7 +959,7 @@ def get_extension_lib_path():
 
 @pytest.mark.parametrize("llm_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
 @pytest.mark.parametrize("generation_config,prompt", PERF_METRICS_STRUCTURED_OUTPUT_TEST_CASES)
-def test_llm_pipeline_add_real_extension(
+def test_llm_pipeline_add_extension_custom_op(
     llm_model: OVConvertedModelSchema,
     generation_config: dict,
     prompt: str,
