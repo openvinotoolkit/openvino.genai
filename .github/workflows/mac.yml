@@ -684,11 +684,25 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
+      - name: Convert models for cache types gtests
+        run: |
+          while IFS=',' read -r model_id _rest; do
+            [[ -z "${model_id}" || "${model_id}" =~ ^[[:space:]]*# ]] && continue
+            model_name="${model_id##*/}"
+            model_dir="${{ env.HF_HOME }}/ov_test_models/${model_name}"
+            if [[ ! -f "${model_dir}/openvino_model.xml" ]]; then
+              optimum-cli export openvino -m "${model_id}" --task text-generation-with-past "${model_dir}"
+            fi
+          done < "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
+
       - name: gtests unit tests
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="-AddSecondInputTest.*"
+        env:
+          TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
+          CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
 
       - name: Test C++ Tools
         run: |

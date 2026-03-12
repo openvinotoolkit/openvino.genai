@@ -98,6 +98,14 @@ public:
                                const ov::AnyMap& tokenizer_properties = {},
                                const ov::AnyMap& vision_encoder_properties = {});
 
+    ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
+                               const std::filesystem::path& models_path,
+                               const SchedulerConfig& scheduler_config,
+                               const std::string& device,
+                               const ov::AnyMap& properties = {},
+                               const ov::AnyMap& tokenizer_properties = {},
+                               const ov::AnyMap& vision_encoder_properties = {});
+
     /**
     * @brief Constructs a ContinuousBatchingPipeline when ov::genai::Tokenizer is initialized manually using file from the different dirs.
     *
@@ -154,6 +162,18 @@ public:
     * @param generation_config Optional generation configuration for the pipeline.
     */
     ContinuousBatchingPipeline(
+        const ModelsMap& models_map,
+        const ov::genai::Tokenizer& tokenizer,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        std::optional<std::filesystem::path> embedder_config_dir_path = std::nullopt,
+        const ov::AnyMap& properties = {},
+        const ov::genai::GenerationConfig& generation_config = {}
+    );
+
+    // Uses preloaded language model to avoid redundant read_model() during pipeline initialization.
+    ContinuousBatchingPipeline(
+        const std::shared_ptr<ov::Model>& language_model,
         const ModelsMap& models_map,
         const ov::genai::Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,

@@ -14,8 +14,15 @@ def get_models_list() -> tuple[str, ...]:
     return tuple(model_ids)
 
 
-CHAT_MODELS_LIST = (
-    "Qwen/Qwen2-0.5B-Instruct",
+CHAT_MODELS_LIST = ("Qwen/Qwen2-0.5B-Instruct",)
+
+
+LINEAR_ATTENTION_MODELS_LIST = (
+    "optimum-intel-internal-testing/tiny-random-lfm2",
+    # "optimum-intel-internal-testing/tiny-mamba",  # beam_idx is not connected
+    # "optimum-intel-internal-testing/tiny-random-zamba2",  # no chat template
+    "optimum-intel-internal-testing/tiny-random-granitemoehybrid",
+    "optimum-intel-internal-testing/tiny-random-qwen3-next",
 )
 
 

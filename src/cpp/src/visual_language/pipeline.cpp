@@ -23,6 +23,7 @@
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
 #include "lm_encoding.hpp"
+#include "logger.hpp"
 
 using namespace ov::genai;
 
@@ -45,6 +46,24 @@ void npu_auto_default_properties(ov::AnyMap& device_properties) {
 
     device_properties["AUTO"] = auto_properties;
 }
+
+void apply_linear_attention_backend_constraints(
+    const std::shared_ptr<ov::Model>& language_model,
+    const ov::AnyMap& user_properties,
+    std::string& attention_backend
+) {
+    if (attention_backend != PA_BACKEND || !utils::has_linear_attention_states(language_model)) {
+        return;
+    }
+
+    if (utils::explicitly_requires_paged_attention(user_properties)
+        || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
+        GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
+    } else {
+        attention_backend = SDPA_BACKEND;
+    }
+}
+
 }
 
 class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
@@ -80,22 +99,37 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     std::vector<ov::genai::EncodedImage> m_encoded_images;
     std::string m_system_message;
     std::shared_ptr<VisionRegistry> m_vision_registry;
-public:
-    VLMPipelineImpl(
+private:
+    void finalize_initialization(
+        const std::shared_ptr<ov::Model>& language_model,
+        const utils::KVAxesPosition& kv_pos
+    ) {
+        m_tokenizer = m_inputs_embedder->get_tokenizer();
+        m_embedding = m_inputs_embedder->get_embedding_model();
+
+        utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
+        cache_state.set_cache_types(utils::get_cache_types(*language_model));
+        cache_state.seq_length_axis = kv_pos.seq_len;
+
+        if (m_generation_config.eos_token_id == -1) {
+            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+        }
+
+        m_sampler.set_tokenizer(m_tokenizer);
+        m_sampler.set_seed(m_generation_config.rng_seed);
+
+        m_vision_registry = std::make_shared<VisionRegistry>();
+    }
+
+    void initialize_from_model_and_dir(
+        const std::shared_ptr<ov::Model>& language_model,
         const std::filesystem::path& models_dir,
         const std::string& device,
         const ov::AnyMap& properties
-    ) :
-        m_generation_config{
-            utils::from_config_json_if_exists<GenerationConfig>(
-                models_dir, "generation_config.json"
-            )
-        } {
+    ) {
         m_is_npu = device.find("NPU") != std::string::npos;
 
         auto properties_copy = properties;
-        auto language_model_path = models_dir / "openvino_language_model.xml";
-        auto language_model =  utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
         // In case user provided properties per-device
@@ -134,23 +168,47 @@ public:
             : utils::pop_or_default<ov::AnyMap>(device_properties, embedder_device, {});
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
-        m_tokenizer = m_inputs_embedder->get_tokenizer();
-        m_embedding = m_inputs_embedder->get_embedding_model();
-        // NPU is not supporting history, so in chat scenarios let's use full chat history on each iteration
+        // NPU does not support history, so use full chat history on each chat iteration.
         m_use_full_chat_history = m_is_npu;
+        finalize_initialization(language_model, kv_pos);
+    }
 
-        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
-        kv_cache_state.seq_length_axis = kv_pos.seq_len;
+    void initialize_from_model_and_map(
+        const std::shared_ptr<ov::Model>& language_model,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap& properties
+    ) {
+        m_is_npu = device.find("NPU") != std::string::npos;
+        OPENVINO_ASSERT(!m_is_npu,
+            "VLMPipeline initialization from string isn't supported for NPU device");
 
-        // If eos_token_id was not provided, take value
-        if (m_generation_config.eos_token_id == -1) {
-            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
-        }
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties);
 
-        m_sampler.set_tokenizer(m_tokenizer);
-        m_sampler.set_seed(m_generation_config.rng_seed);
-
-        m_vision_registry = std::make_shared<VisionRegistry>();
+        const auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
+        m_language = utils::singleton_core().compile_model(
+            language_model, device, properties
+        ).create_infer_request();
+        m_language.get_tensor("attention_mask").set_shape({1, 0});
+        finalize_initialization(language_model, kv_pos);
+    }
+public:
+    VLMPipelineImpl(
+        const std::filesystem::path& models_dir,
+        const std::string& device,
+        const ov::AnyMap& properties
+    ) :
+        m_generation_config{
+            utils::from_config_json_if_exists<GenerationConfig>(
+                models_dir, "generation_config.json"
+            )
+        } {
+        auto language_model_path = models_dir / "openvino_language_model.xml";
+        auto properties_copy = properties;
+        auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties_copy);
+        initialize_from_model_and_dir(language_model, models_dir, device, properties);
     }
 
 
@@ -163,31 +221,36 @@ public:
         const GenerationConfig& generation_config
     ) :
         m_generation_config{generation_config} {
-        m_is_npu = device.find("NPU") != std::string::npos;
-        OPENVINO_ASSERT(!m_is_npu,
-            "VLMPipeline initialization from string isn't supported for NPU device");
+        const auto& language_pair = utils::get_model_weights_pair(models_map, "language");
+        auto language_model = utils::singleton_core().read_model(language_pair.first, language_pair.second);
+        initialize_from_model_and_map(language_model, models_map, tokenizer, config_dir_path, device, properties);
+    }
 
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties);
+    VLMPipelineImpl(
+        const std::shared_ptr<ov::Model>& language_model,
+        const std::filesystem::path& models_dir,
+        const std::string& device,
+        const ov::AnyMap& properties
+    ) :
+        m_generation_config{
+            utils::from_config_json_if_exists<GenerationConfig>(
+                models_dir, "generation_config.json"
+            )
+        } {
+        initialize_from_model_and_dir(language_model, models_dir, device, properties);
+    }
 
-        m_tokenizer = m_inputs_embedder->get_tokenizer();
-        m_embedding = m_inputs_embedder->get_embedding_model();
-
-        auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
-        m_language = utils::singleton_core().compile_model(
-            m_language_pair.first, m_language_pair.second, device, properties
-        ).create_infer_request();
-
-        m_language.get_tensor("attention_mask").set_shape({1, 0});
-
-        // If eos_token_id was not provided, take value
-        if (m_generation_config.eos_token_id == -1) {
-            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
-        }
-
-        m_sampler.set_tokenizer(m_tokenizer);
-        m_sampler.set_seed(m_generation_config.rng_seed);
-
-        m_vision_registry = std::make_shared<VisionRegistry>();
+    VLMPipelineImpl(
+        const std::shared_ptr<ov::Model>& language_model,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap& properties,
+        const GenerationConfig& generation_config
+    ) :
+        m_generation_config{generation_config} {
+        initialize_from_model_and_map(language_model, models_map, tokenizer, config_dir_path, device, properties);
     }
 
     VLMDecodedResults generate(
@@ -308,8 +371,8 @@ public:
                 }
             }
         } else {
-            utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
-            kv_cache_state.reset_state();
+            utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
+            cache_state.reset_state();
         }
 
         if (!(m_is_chat_conversation && m_use_full_chat_history))
@@ -581,15 +644,15 @@ private:
                 " config option to increase the limit.");
         }
 
-        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
 
         if (m_is_chat_conversation) {
             if (m_use_full_chat_history) {
-                kv_cache_state.reset_state();
+                cache_state.reset_state();
                 m_language.reset_state();
                 m_language.get_tensor("attention_mask").set_shape({1, 0});
             } else {
-                utils::trim_kv_cache(m_language, kv_cache_state, std::nullopt);
+                utils::trim_kv_cache(m_language, cache_state, std::nullopt);
             }
         }
 
@@ -597,10 +660,10 @@ private:
         size_t request_id = 0;
         size_t block_size = 1; // not used
 
-        size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - kv_cache_state.num_tokens_to_trim;
-        size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
+        const size_t history_size = cache_state.get_state().size();
+        const size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
 
-        std::vector<int64_t> tokenized_history = kv_cache_state.get_state();
+        std::vector<int64_t> tokenized_history = cache_state.get_state();
         ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
         OPENVINO_ASSERT(prompt_ids.get_size() >= tokenized_history.size(), "Prompt ids size is less than tokenized history size");
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), m_tokenizer.get_pad_token_id());
@@ -631,7 +694,7 @@ private:
 
         return ov::genai::get_lm_encoded_results(
             m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
-            position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
+            position_ids, token_type_ids, cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
             use_intermediate_remote_tensor
         );
     }
@@ -657,10 +720,15 @@ VLMPipeline::VLMPipeline(
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
     } else {
+        auto properties_copy = properties;
+        auto language_model_path = models_dir / "openvino_language_model.xml";
+        auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties_copy);
+        apply_linear_attention_backend_constraints(language_model, user_properties, attention_backend);
+
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(user_properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-            m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
+            m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(language_model, models_dir, scheduler_config, device, plugin_properties);
         } else if (attention_backend == PA_BACKEND && !requires_sdpa(models_dir)) {
             // try to call CB adapter one more time, but with safe guard to silent exception
             try {
@@ -668,15 +736,15 @@ VLMPipeline::VLMPipeline(
                 // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
                 // but cannot perform its inference later
     #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-                m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_dir, scheduler_config, device, plugin_properties);
-    #endif
+                m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(language_model, models_dir, scheduler_config, device, plugin_properties);
+#endif
             } catch (ov::Exception&) {
                 // ignore exceptions from PA
             }
         }
 
         if (m_pimpl == nullptr) {
-            m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
+            m_pimpl = std::make_unique<VLMPipelineImpl>(language_model, models_dir, device, properties);
         }
     }
 
@@ -701,10 +769,14 @@ VLMPipeline::VLMPipeline(
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
     } else {
+        const auto& [model_str, weights] = utils::get_model_weights_pair(models_map, "language");
+        auto language_model = utils::singleton_core().read_model(model_str, weights);
+        apply_linear_attention_backend_constraints(language_model, user_properties, attention_backend);
+
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(user_properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-            m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
+            m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(language_model, models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
         } else if (attention_backend == PA_BACKEND && !requires_sdpa(config_dir_path)) {
             // try to call CB adapter one more time, but with safe guard to silent exception
             try {
@@ -712,7 +784,7 @@ VLMPipeline::VLMPipeline(
                 // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
                 // but cannot perform its inference later
     #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-                m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
+                m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(language_model, models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
     #endif
             } catch (ov::Exception&) {
                 // ignore exceptions from PA
@@ -720,7 +792,7 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
-            m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
+            m_pimpl = std::make_unique<VLMPipelineImpl>(language_model, models_map, tokenizer, config_dir_path, device, properties, generation_config);
         }
 
     }
