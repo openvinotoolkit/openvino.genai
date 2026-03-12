@@ -14,7 +14,16 @@ This folder contains Python examples for `openvino_genai.Text2SpeechPipeline`:
 - **Kokoro**
     - Uses a Kokoro model directory.
     - Uses `--voice` and `--language` options.
-    - End-to-end Kokoro language support includes `en-us`, `en-gb`, `es`, `fr-fr`, `hi`, `it`, and `pt-br`.
+        - End-to-end Kokoro language support includes:
+            - `en-us` (English, United States)
+            - `en-gb` (English, United Kingdom)
+            - `es` (Spanish)
+            - `fr-fr` (French, France)
+            - `hi` (Hindi)
+            - `it` (Italian)
+            - `pt-br` (Portuguese, Brazil)
+        - Not yet supported for end-to-end text generation in this flow: `ja` (Japanese), `zh` (Chinese/Mandarin).
+        - For `ja` / `zh`, you can still generate speech by phonemizing with an external G2P and then using `generate_from_phonemes` (see `kokoro_generate_from_phonemes.py`).
 
 ## Install dependencies
 
@@ -42,12 +51,12 @@ Create a speaker embedding file (SpeechT5-specific):
 
 **TODO! Add optimum-intel cmd here when available!**
 
-Kokoro phonemization can encounter unknown/out-of-dictionary words. For those words, Kokoro uses a fallback phonemizer.
+Kokoro can use `espeak-ng` in a couple of different ways:
 
-- Default fallback: `espeak-ng`
-- Optional alternative: OpenVINO fallback model via `phonemize_fallback_model_dir`
+- English (`en-us`, `en-gb`): `espeak-ng` is used as fallback for unknown/out-of-dictionary words. See `kokoro_phonemize_fallback` sample to understand how to use an OpenVINO fallback model to avoid use of `espeak-ng` for English.
+- Non-English (`es`, `fr-fr`, `hi`, `it`, `pt-br`): `espeak-ng` is the primary engine used for G2P (phonemization) step. So, it is required to be installed for E2E text-to-speech generation cases for non-english languages. Note that application can replace default G2P step with another phonemizer. See `kokoro_generate_from_phonemes` sample for more details.
 
-In order to make use of `espeak-ng` fallback method, you must install `espeak-ng`. Please follow the official installation guide, [here](https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md)
+You can install `espeak-ng` by following the official guide [here](https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md). 
 
 ## Run samples
 
