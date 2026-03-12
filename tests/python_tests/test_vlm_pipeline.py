@@ -1938,8 +1938,6 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # qwen2.5-vl cases that use 350x350 image, or 70x70 video resolutions
     "*tiny-random-qwen2.5-vl/*/image-350x350*": "CVS-180070",
     "*tiny-random-qwen2.5-vl/*/video-70x70": "CVS-180070",
-    # qwen3-vl PA cases
-    "*tiny-random-qwen3-vl/PA/*": "CVS-167316",
     # qwen3-vl cases that use 350x350 image with CPP preprocessing
     "*tiny-random-qwen3-vl/*/CPP/image-350x350": "CVS-180070",
     # qwen3-vl cases that use 32x32 video and preresized-video (uses the same 32x32 resolution)
