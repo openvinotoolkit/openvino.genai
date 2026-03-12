@@ -639,13 +639,10 @@ private:
     }
 };
 
-// TODO: remove it when QWEN ticket-167316/GEMMA3 ticket-171180 is fixed
+// TODO: remove it when GEMMA3 ticket-171180 is fixed
 bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    return vlm_config.model_type == VLMModelType::QWEN2_VL ||
-           vlm_config.model_type == VLMModelType::QWEN2_5_VL ||
-           vlm_config.model_type == VLMModelType::QWEN3_VL ||
-           vlm_config.model_type == VLMModelType::GEMMA3;
+    return vlm_config.model_type == VLMModelType::GEMMA3;
 }
 
 VLMPipeline::VLMPipeline(
