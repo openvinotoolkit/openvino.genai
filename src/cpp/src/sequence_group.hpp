@@ -467,8 +467,8 @@ public:
     }
 
     bool has_generated_tokens() const {
-        for (auto& sequence : get_running_sequences()) {
-            if (sequence->get_generated_len() > 0) {
+        for (const Sequence::Ptr& sequence : m_sequences) {
+            if (sequence->is_running() && sequence->get_generated_len() > 0) {
                 return true;
             }
         }
