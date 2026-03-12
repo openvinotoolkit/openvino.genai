@@ -284,7 +284,10 @@ TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
 
 # Some linear-attention models are exported incorrectly via OVModelForCausalLM.from_pretrained(..., export=True)
 # in the Python API path. Use optimum-cli export for these models to match stable CLI behavior.
-FORCE_OPTIMUM_CLI_EXPORT_MODELS = ("optimum-intel-internal-testing/tiny-random-lfm2",)
+FORCE_OPTIMUM_CLI_EXPORT_MODELS = (
+    "optimum-intel-internal-testing/tiny-random-lfm2",
+    "optimum-intel-internal-testing/tiny-random-qwen3-next"
+)
 
 
 def export_with_optimum_cli(model_id: str, output_dir: Path, trust_remote_code: bool) -> None:

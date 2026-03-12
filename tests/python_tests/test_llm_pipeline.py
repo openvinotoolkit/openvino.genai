@@ -310,19 +310,19 @@ def test_linear_attention_batch_input_same_as_individual(
     pipeline_type: PipelineType,
 ) -> None:
     prompts = ["table is made", "They sky is blue because", "Difference between Jupiter and Mars is that"]
-    generation_config_dict = {"max_new_tokens": 20}
+    generation_config = ov_genai.GenerationConfig(max_new_tokens=20)
 
     ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
 
-    batch_result = ov_pipe.generate(prompts, generation_config=ov_genai.GenerationConfig(**generation_config_dict))
+    batch_result = ov_pipe.generate(prompts, generation_config=generation_config)
     for i, prompt in enumerate(prompts):
-        individual_result = ov_pipe.generate(
-            prompt, generation_config=ov_genai.GenerationConfig(**generation_config_dict)
-        )
+        individual_result = ov_pipe.generate(prompt, generation_config=generation_config)
         assert batch_result.texts[i] == individual_result, (
-            f"Idx: {i}, Batch result: {batch_result.texts[i]}, Individual result: {individual_result}, Prompt: {prompt}"
+            f"Idx: {i}\n"
+            f"Batch result:      {batch_result.texts[i]}\n"
+            f"Individual result: {individual_result}\n"
+            f"Prompt: {prompt}"
         )
-
 
 #
 # Chat scenario
