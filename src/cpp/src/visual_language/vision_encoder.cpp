@@ -75,7 +75,7 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderQwen2_5_VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(model_dir, device, properties);
-     } else if (model_type == VLMModelType::VIDEOCHAT_FLASH) {
+    } else if (model_type == VLMModelType::VIDEOCHAT_FLASH) {
         return std::make_shared<VisionEncoderVideoChat_Flash>(model_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
