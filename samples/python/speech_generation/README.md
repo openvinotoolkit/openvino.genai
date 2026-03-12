@@ -14,7 +14,7 @@ This folder contains Python examples for `openvino_genai.Text2SpeechPipeline`:
 - **Kokoro**
     - Uses a Kokoro model directory.
     - Uses `--voice` and `--language` options.
-    - For end-to-end Kokoro pipeline, initial language support includes english (`en-us`, `en-gb`) and non-english espeak path (`es`, `fr-fr`, `hi`, `it`, `pt-br`).
+    - End-to-end Kokoro language support includes `en-us`, `en-gb`, `es`, `fr-fr`, `hi`, `it`, and `pt-br`.
 
 ## Install dependencies
 
@@ -61,7 +61,7 @@ Kokoro:
 
 `python text2speech.py --voice af_heart --language en-us Kokoro-82M "Hello from Kokoro in OpenVINO GenAI"`
 
-Kokoro (non-English initial testing):
+Kokoro (non-English):
 
 `python text2speech.py --language es Kokoro-82M "Los partidos políticos tradicionales compiten con los populismos."`
 
@@ -107,6 +107,7 @@ Use default `espeak-ng` fallback (omit `--phonemize_fallback_model_dir`):
 `python kokoro_phonemize_fallback.py Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --voice af_heart --language en-us`
 
 Set `--language` to match the fallback model variant (`en-us` with `..._en_us-ov`, `en-gb` with `..._en_gb-ov`).
+OpenVINO fallback models above are an English-only feature (`en-us` / `en-gb`). For non-English Kokoro languages, phonemization is handled directly by `espeak-ng` as the primary G2P path (this fallback-model feature is not used).
 
 All samples produce WAV output.
 

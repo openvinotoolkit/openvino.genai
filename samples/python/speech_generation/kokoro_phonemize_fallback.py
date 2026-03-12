@@ -14,7 +14,12 @@ def main():
     parser.add_argument("model_dir", help="Path to Kokoro model directory")
     parser.add_argument("text", help="Input text for speech generation")
     parser.add_argument("--voice", default="af_heart", help="Kokoro voice id")
-    parser.add_argument("--language", default="en-us", help="Kokoro language variant (en-us or en-gb)")
+    parser.add_argument(
+        "--language",
+        default="en-us",
+        choices=["en-us", "en-gb"],
+        help="Kokoro language variant for this sample (en-us or en-gb)",
+    )
     parser.add_argument("--device", default="CPU", help="Device to run the model on (default: CPU)")
     parser.add_argument(
         "--phonemize_fallback_model_dir",

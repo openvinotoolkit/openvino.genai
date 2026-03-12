@@ -45,6 +45,9 @@ int main(int argc, char* argv[]) try {
         }
     }
 
+    OPENVINO_ASSERT(language == "en-us" || language == "en-gb",
+                    "kokoro_phonemize_fallback sample supports only --language en-us or en-gb");
+
     ov::genai::Text2SpeechPipeline pipe(models_path, device);
     auto config = pipe.get_generation_config();
     config.voice = voice;
