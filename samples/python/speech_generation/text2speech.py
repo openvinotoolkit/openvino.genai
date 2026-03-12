@@ -50,8 +50,10 @@ def main():
         generation_properties["voice"] = voice
     elif speaker_embedding is None and language in DEFAULT_KOKORO_VOICES:
         generation_properties["voice"] = DEFAULT_KOKORO_VOICES[language]
-        print(f"[Info] No --voice provided. Using default Kokoro voice '{generation_properties['voice']}' for language '{language}'.")
-    
+        print(
+            f"[Info] No --voice provided. Using default Kokoro voice '{generation_properties['voice']}' for language '{language}'."
+        )
+
     result = pipe.generate(args.text, speaker_embedding, **generation_properties)
 
     assert len(result.speeches) == 1, "Expected only one waveform for the requested input text"

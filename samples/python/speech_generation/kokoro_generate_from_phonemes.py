@@ -121,8 +121,7 @@ def main():
     if use_tokens:
         if misaki_tokens is None:
             raise RuntimeError(
-                f"Misaki G2P for language '{language}' did not return token objects. "
-                "Use --api phonemes or --api auto."
+                f"Misaki G2P for language '{language}' did not return token objects. Use --api phonemes or --api auto."
             )
         ov_tokens = misaki_tokens_to_ov_tokens(misaki_tokens)
         if not ov_tokens:

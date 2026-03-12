@@ -56,7 +56,7 @@ Kokoro can use `espeak-ng` in a couple of different ways:
 - English (`en-us`, `en-gb`): `espeak-ng` is used as fallback for unknown/out-of-dictionary words. See `kokoro_phonemize_fallback` sample to understand how to use an OpenVINO fallback model to avoid use of `espeak-ng` for English.
 - Non-English (`es`, `fr-fr`, `hi`, `it`, `pt-br`): `espeak-ng` is the primary engine used for G2P (phonemization) step. So, it is required to be installed for E2E text-to-speech generation cases for non-english languages. Note that application can replace default G2P step with another phonemizer. See `kokoro_generate_from_phonemes` sample for more details.
 
-You can install `espeak-ng` by following the official guide [here](https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md). 
+You can install `espeak-ng` by following the official guide [here](https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md).
 
 ## Run samples
 
