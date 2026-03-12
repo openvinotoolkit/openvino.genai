@@ -424,7 +424,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
 
         // Initialize tokenizer's cache to save time later.
         // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
-        encode("non empty string");
+        encode("very non empty string");
     }
 
     if (ov_detokenizer) {
