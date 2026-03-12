@@ -74,7 +74,7 @@ def parse_args():
         default=None,
         help=(
             "CSV file for ground truth outputs. If --base-model is provided, this file will be generated/"
-            "overwritten with --base-model evaluation. If --base-model is not provided, the file must exists."
+            "overwritten with --base-model evaluation. If --base-model is not provided, the file must exist."
         ),
     )
     parser.add_argument(
