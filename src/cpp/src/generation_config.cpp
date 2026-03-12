@@ -97,7 +97,7 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
         const auto& eagle = data["eagle_tree_params"];
         read_json_param(eagle, "branching_factor", eagle_tree_params.branching_factor);
         read_json_param(eagle, "tree_depth", eagle_tree_params.tree_depth);
-        read_json_param(eagle, "total_tokens", eagle_tree_params.total_tokens);
+        read_json_param(eagle, "num_speculative_tokens", eagle_tree_params.num_speculative_tokens);
     }
 
     // append EOS to stop_token_ids
@@ -372,15 +372,15 @@ void GenerationConfig::validate() const {
                         "'branching_factor' must be > 0 when tree search is enabled, but got ",
                         eagle_tree_params.branching_factor);
         OPENVINO_ASSERT(
-            eagle_tree_params.total_tokens > 1,
-            "'total_tokens' must be > 1 when tree search is enabled (root + at least one draft node), but got ",
-            eagle_tree_params.total_tokens);
-        OPENVINO_ASSERT(eagle_tree_params.total_tokens > eagle_tree_params.tree_depth,
-                        "'total_tokens' (",
-                        eagle_tree_params.total_tokens,
-                        ") must be greater than 'tree_depth' (",
+            eagle_tree_params.num_speculative_tokens > 0,
+            "'num_speculative_tokens' must be > 0 when tree search is enabled, but got ",
+            eagle_tree_params.num_speculative_tokens);
+        OPENVINO_ASSERT(eagle_tree_params.num_speculative_tokens >= eagle_tree_params.tree_depth,
+                        "'num_speculative_tokens' (",
+                        eagle_tree_params.num_speculative_tokens,
+                        ") must be >= 'tree_depth' (",
                         eagle_tree_params.tree_depth,
-                        ") to allow at least one branching node");
+                        ") to allow at least one node per draft layer");
     }
 
     // assistant generation
