@@ -294,7 +294,7 @@ def _get_ov_model(model_id: str) -> str:
                 },
             )
         )
-        if model.config.model_type == "llava-qwen2":
+        if model.config.model_type == "llava-qwen2" or "videochat-flash" in model_id:
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         # For tiny-random-internvl2 processor is actually tokenizer
         elif isinstance(processor, transformers.Qwen2TokenizerFast):
@@ -531,7 +531,7 @@ def synthetic_video(pytestconfig):
     car_url = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg"
     image = from_cache_or_download(pytestconfig, car_url, "car.jpg")
 
-    # make 10 frames
+    # make 12 frames to fit videochat_flash's hard requirement of frame number divisible by 4
     total_frames = 12
     frames = []
     frames.append(np.array(image))
@@ -609,8 +609,6 @@ def test_images(request: pytest.FixtureRequest):
 @parametrize_all_models
 def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
     ov_pipe = ov_pipe_model.pipeline
-    if _is_videochat_flash_model(ov_pipe_model.model_id) and len(test_images) == 0:
-        pytest.skip("Disable VideoChat-Flash no_images case: known history_vision_count assertion issue.")
     result_from_streamer = []
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
@@ -2134,9 +2132,12 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
     image_input_resolution: tuple[int, int],
     video_input_resolution: tuple[int, int],
 ):
+    # VideoChat-Flash: Optimum preprocess_inputs currently fails on video chat_template rendering
+    if _is_videochat_flash_model(ov_pipe_model.model_id):
+        pytest.xfail("VideoChat-Flash video cases are expected to fail in optimum-vs-genai resolution test due lack of Optimum-intel support. See CVS-173635.")
     # VideoChat-Flash: image path is not supported in this suite; expect failure when has_image=True
     if has_image and _is_videochat_flash_model(ov_pipe_model.model_id):
-        pytest.xfail("VideoChat-Flash image cases are expected to fail in optimum-vs-genai resolution test.")
+        pytest.xfail("VideoChat-Flash image cases are expected to fail as not supported yet.")
     resized_image = None
     resized_video = None
     if has_image:
@@ -2538,12 +2539,12 @@ def test_vlm_continuous_batching_generate_videochat(
     videos = [synthetic_video_224x224_tensor]
 
     handle = ov_continious_batching_pipe_videochat.add_request(
-            0,
-            "describe this video",
-            images=images,
-            videos=videos,
-            generation_config=generation_config,
-        )
+        0,
+        "describe this video",
+        images=images,
+        videos=videos,
+        generation_config=generation_config,
+    )
     while handle.get_status() != GenerationStatus.FINISHED:
         ov_continious_batching_pipe_videochat.step()
     outputs = handle.read_all()

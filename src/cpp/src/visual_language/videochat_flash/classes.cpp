@@ -520,7 +520,7 @@ ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
     return merged_tensor;
 }
 
-ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings) {
+ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings) {
     OPENVINO_ASSERT(
         transpose_features.get_element_type() == ov::element::f32,
         "vision_embeddings input pixel_values must be f32."
@@ -531,7 +531,7 @@ ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vi
     size_t N = full_shape[0];
     OPENVINO_ASSERT(N > 0, "transpose_features batch size N must be greater than 0.");
     size_t single_sample_size = transpose_features.get_size() / N;
-    float* src_ptr = transpose_features.data<float>();
+    const float* src_ptr = transpose_features.data<const float>();
     std::vector<ov::Tensor> results_list;
     for (size_t i = 0; i < N; ++i) {
         ov::Shape single_shape = {1, full_shape[1], full_shape[2], full_shape[3], full_shape[4]};
@@ -570,7 +570,7 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
     );
     auto merge_dim = m_vlm_config.mm_hidden_size / 16;
     auto merge_model = videochat_flash_utils::build_bipartite_soft_matching_merge_opt_model(merge_dim);
-    auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", properties);
+    auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", {});
     m_ireq_queue_merge_model = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_merge_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_merge_model]() -> ov::InferRequest {
@@ -601,7 +601,7 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
     );
     auto merge_dim = m_vlm_config.mm_hidden_size / 16;
     auto merge_model = videochat_flash_utils::build_bipartite_soft_matching_merge_opt_model(merge_dim);
-    auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", properties);
+    auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", {});
     m_ireq_queue_merge_model = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_merge_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_merge_model]() -> ov::InferRequest {
@@ -617,7 +617,7 @@ EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const
 }
 
 ov::Tensor infer_visual_features(
-    ov::Tensor& transpose_features,
+    const ov::Tensor& transpose_features,
     ov::InferRequest& vision_embeddings,
     ov::InferRequest& merge_embeddings,
     ov::InferRequest& vision_projection
@@ -639,9 +639,13 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChat_Flash::encode_video
     auto vision_encoder = std::static_pointer_cast<VisionEncoderVideoChat_Flash>(m_vision_encoder);
     std::vector<EncodedVideo> embeds;
     for (const ov::Tensor& video : videos) {
-        auto video_nchw_f32 = videochat_flash_utils::preprocess(video, 224, 224, {0.485f, 0.456f, 0.406f}, {0.229f, 0.224f, 0.225f});
+        EncodedVideo encoded_video;
+        ImageSize target_size = ImageSize(224, 224);
+        auto preprocessed_video = videochat_flash_utils::preprocess(video, target_size.height, target_size.width,  {0.485f, 0.456f, 0.406f}, {0.229f, 0.224f, 0.225f});
+        encoded_video.resized_source_size = target_size;
+        encoded_video.frame_num = preprocessed_video.get_shape()[0];
         const size_t mm_local_num_frames = vision_encoder->get_mm_local_num_frames();
-        auto transpose_features = videochat_flash_utils::transpose_video_features(video_nchw_f32, mm_local_num_frames);
+        auto transpose_features = videochat_flash_utils::transpose_video_features(preprocessed_video, mm_local_num_frames);
         CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(vision_encoder->get_vision_encoder());
         CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(vision_encoder->get_merge_model());
         CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(vision_encoder->get_vision_projection());
@@ -652,7 +656,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChat_Flash::encode_video
             merge_guard.get(),
             projection_guard.get()
         );
-        EncodedVideo encoded_video;
+        
         encoded_video.video_features = final_features;
         encoded_video.num_video_tokens = final_features.get_shape()[1];
         embeds.emplace_back(std::move(encoded_video));
@@ -688,11 +692,13 @@ NormalizedPrompt InputsEmbedderVideoChat_Flash::normalize_prompt(
     const std::vector<EncodedImage>& images,
     const std::vector<EncodedVideo>& videos) const {
     OPENVINO_ASSERT(
-        base_video_id == base_image_id + images.size(),
-        "VideoChat-Flash uses a single visual tag space. base_video_id must follow image ids."
+        images.empty(),
+        "VideoChat-Flash does not support image inputs. Please provide video inputs only."
     );
+
+    const size_t base_visual_id = std::max(base_video_id, base_image_id + images.size());
     const size_t total_visuals = images.size() + videos.size();
-    return {videochat_flash_utils::normalize_prompt(prompt, base_image_id, total_visuals, NATIVE_PATTERN, write_native), {}};
+    return {videochat_flash_utils::normalize_prompt(prompt, base_visual_id, total_visuals, NATIVE_PATTERN, write_native), {}};
 }
 
 ov::Tensor InputsEmbedderVideoChat_Flash::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
@@ -745,11 +751,6 @@ ov::Tensor InputsEmbedderVideoChat_Flash::get_inputs_embeds(const std::string& i
                 return text_length;
             },
             [&](size_t image_id) {
-                OPENVINO_ASSERT(
-                    image_id >= base_id,
-                    "VideoChat-Flash does not support resolving visual placeholders from previous rounds. "
-                    "Expected image_id >= base_id, got image_id=", image_id, ", base_id=", base_id, "."
-                );
                 const ov::Tensor& image_embeds = images_features_proj.at(image_id - base_id);
                 size_t im_length = image_embeds.get_shape().at(1);
                 std::copy_n(
