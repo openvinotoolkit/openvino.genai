@@ -1998,6 +1998,8 @@ class LLMPipeline:
             eagle_tree_params.tree_depth:       lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations.
             eagle_tree_params.num_speculative_tokens: number of draft (non-root) tokens from the EAGLE tree submitted
                                                       to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
+        """
+    def get_generation_config(self) -> GenerationConfig:
         ...
     def get_tokenizer(self) -> Tokenizer:
         ...
