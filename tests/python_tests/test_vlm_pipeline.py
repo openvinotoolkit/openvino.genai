@@ -2129,7 +2129,7 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
 ):
     # VideoChat-Flash: Optimum preprocess_inputs currently fails on video chat_template rendering
     if _is_videochat_flash_model(ov_pipe_model.model_id):
-        pytest.xfail("VideoChat-Flash video cases are expected to fail in optimum-vs-genai resolution test due lack of Optimum-intel support. See CVS-173635.")
+        pytest.xfail("VideoChat-Flash video cases are expected to fail in optimum-vs-genai resolution test due to lack of Optimum-intel support. See CVS-173635.")
     # VideoChat-Flash: image path is not supported in this suite; expect failure when has_image=True
     if has_image and _is_videochat_flash_model(ov_pipe_model.model_id):
         pytest.xfail("VideoChat-Flash image cases are expected to fail as not supported yet.")
