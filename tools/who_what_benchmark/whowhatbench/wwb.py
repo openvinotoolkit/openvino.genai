@@ -72,7 +72,7 @@ def parse_args():
     parser.add_argument(
         "--gt-data",
         default=None,
-        help="CSV file containing GT outputs from --base-model. If defined and exists then file will be overwritten."
+        help="CSV file containing GT outputs from --base-model. If defined and exists then file will be overwritten.",
     )
     parser.add_argument(
         "--target-data",
