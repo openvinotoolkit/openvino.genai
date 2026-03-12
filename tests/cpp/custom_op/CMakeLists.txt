@@ -31,3 +31,8 @@ if(DEFINED TEST_TARGET_NAME)
 endif()
 
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::runtime)
+
+install(TARGETS ${TARGET_NAME}
+        LIBRARY DESTINATION tests
+        RUNTIME DESTINATION tests
+        ARCHIVE DESTINATION tests)

@@ -898,9 +898,9 @@ def replace_ir_add_with_myadd(ir_xml_path: Path) -> None:
     tree.write(ir_xml_path, encoding="utf-8", xml_declaration=True)
 
 
-def get_extention_model(model_path: str):
+def get_extension_model(model_path: str, temp_dir: Path) -> Path:
     source_path = Path(model_path)
-    extension_path = source_path.parent / f"{source_path.name}_extension"
+    extension_path = temp_dir / f"{source_path.name}_extension"
     ir_xml_path = extension_path / "openvino_model.xml"
     if ir_xml_path.exists():
         return extension_path
@@ -965,16 +965,21 @@ def test_llm_pipeline_add_real_extension(
     llm_model: OVConvertedModelSchema,
     generation_config: dict,
     prompt: str,
+    tmp_path: Path,
 ) -> None:
-    model_path = get_extention_model(llm_model.models_path)
+    extension_model_path = get_extension_model(llm_model.models_path, tmp_path)
+    try:
+        extension_lib_path = get_extension_lib_path()
+    except FileNotFoundError as exc:
+        pytest.skip(f"Custom extension library is unavailable for this environment: {exc}")
 
     # The custom op "MyAdd" from the extension is implemented in the same way as the OpenVINO op "Add"
-    properties = {"extensions": [str(get_extension_lib_path())]}
-    ov_pipe_extension = ov_genai.LLMPipeline(model_path, "CPU", **properties)
+    properties = {"extensions": [str(extension_lib_path)]}
+    ov_pipe_extension = ov_genai.LLMPipeline(extension_model_path, "CPU", **properties)
     result_extension = ov_pipe_extension.generate([prompt], **generation_config)
 
     properties = {}
-    ov_pipe_ref = ov_genai.LLMPipeline(model_path, "CPU", **properties)
+    ov_pipe_ref = ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
     result_ref = ov_pipe_ref.generate([prompt], **generation_config)
 
     assert result_extension.texts[0].strip() == result_ref.texts[0].strip(), (
