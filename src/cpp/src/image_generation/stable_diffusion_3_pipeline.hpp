@@ -579,21 +579,20 @@ public:
                 latent_cfg = latent;
             }
             ov::Tensor timestep(ov::element::f32, {1}, &timesteps[inference_step]);
-            auto infer_start = std::chrono::steady_clock::now();
 
             ov::Tensor noise_pred_tensor;
             // Use TaylorSeer if enabled and caching is appropriate
             if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
                 noise_pred_tensor = ts_state.predict(inference_step);
             } else {
+                auto infer_start = std::chrono::steady_clock::now();
                 noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
+                auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+                m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
                 if (ts_state.is_active()) {
                     ts_state.update(inference_step, noise_pred_tensor);
                 }
             }
-
-            auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-            m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;

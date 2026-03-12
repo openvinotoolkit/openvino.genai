@@ -17,31 +17,19 @@ int main(int argc, char* argv[]) try {
     const std::string prompt = argv[2];
     const std::string device = "CPU";  // GPU can be used as well
     const std::string negative_prompt = "worst quality, inconsistent motion, blurry, jittery, distorted";
-    const size_t height = 480;
-    const size_t width = 704;
-    const size_t num_frames = 161;
     const size_t num_inference_steps = 25;
-    const size_t num_videos_per_prompt = 1;
-    const float frame_rate = 25.0f;
-    const float guidance_scale = 3.0f;
-    const size_t rng_seed = 42;
 
     ov::genai::Text2VideoPipeline pipe(models_path, device);
+    const size_t frame_rate = pipe.get_generation_config().frame_rate.value();
     std::cout << "Generating baseline video without caching...\n";
     auto start_time = std::chrono::high_resolution_clock::now();
 
     auto baseline_output = pipe.generate(
         prompt,
         ov::genai::negative_prompt(negative_prompt),
-        ov::genai::height(height),
-        ov::genai::width(width),
-        ov::genai::num_frames(num_frames),
         ov::genai::num_inference_steps(num_inference_steps),
-        ov::genai::num_videos_per_prompt(num_videos_per_prompt),
-        ov::genai::rng_seed(rng_seed),
-        ov::genai::callback(progress_bar),
-        ov::genai::frame_rate(frame_rate),
-        ov::genai::guidance_scale(guidance_scale));
+        ov::genai::callback(progress_bar)
+    );
 
     auto end_time = std::chrono::high_resolution_clock::now();
     auto baseline_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
@@ -67,15 +55,9 @@ int main(int argc, char* argv[]) try {
     auto output = pipe.generate(
         prompt,
         ov::genai::negative_prompt(negative_prompt),
-        ov::genai::height(height),
-        ov::genai::width(width),
-        ov::genai::num_frames(num_frames),
         ov::genai::num_inference_steps(num_inference_steps),
-        ov::genai::num_videos_per_prompt(num_videos_per_prompt),
-        ov::genai::rng_seed(rng_seed),
-        ov::genai::callback(progress_bar),
-        ov::genai::frame_rate(frame_rate),
-        ov::genai::guidance_scale(guidance_scale));
+        ov::genai::callback(progress_bar)
+    );
 
     end_time = std::chrono::high_resolution_clock::now();
     auto taylorseer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);

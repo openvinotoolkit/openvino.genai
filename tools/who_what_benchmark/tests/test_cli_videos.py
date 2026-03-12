@@ -91,7 +91,7 @@ def test_video_model_genai(model_id, model_type, tmp_path):
 )
 def test_video_model_genai_with_taylorseer(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
+    MODEL_PATH = convert_model(model_id)
 
     run_wwb(
         [

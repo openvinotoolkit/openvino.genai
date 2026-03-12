@@ -16,19 +16,14 @@ def main():
 
     device = "CPU"  # GPU can be used as well
     pipe = openvino_genai.Text2VideoPipeline(args.model_dir, device)
+    frame_rate = pipe.get_generation_config().frame_rate
 
     # TaylorSeer configuration
     cache_interval = 3
     disable_before = 6
     disable_after = -2
     negative_prompt = "worst quality, inconsistent motion, blurry, jittery, distorted"
-    height = 480
-    width = 704
-    num_frames = 161
     num_inference_steps = 25
-    num_videos_per_prompt = 1
-    frame_rate = 25
-    guidance_scale = 3
 
     def callback(step, num_steps, latent):
         print(f"Step {step + 1}/{num_steps}")
@@ -36,15 +31,8 @@ def main():
 
     generate_kwargs = {
         "negative_prompt": negative_prompt,
-        "height": height,
-        "width": width,
-        "num_frames": num_frames,
         "num_inference_steps": num_inference_steps,
-        "num_videos_per_prompt": num_videos_per_prompt,
-        "rng_seed": 42,
         "callback": callback,
-        "frame_rate": frame_rate,
-        "guidance_scale": guidance_scale,
     }
 
     # Generate baseline for comparison
