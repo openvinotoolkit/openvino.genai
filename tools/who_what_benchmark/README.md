@@ -235,3 +235,5 @@ wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv -
 
 * The generation of ground truth on uncompressed model must be run before comparison with compressed model.
 * WWB uses [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2) for similarity measurement but you can use other similar network.
+* This project uses questions from the VQA v2 dataset (https://visualqa.org/). \
+Annotations are licensed under CC BY 4.0.
