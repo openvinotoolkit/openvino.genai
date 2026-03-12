@@ -707,12 +707,12 @@ class EagleParams:
     def branching_factor(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
-    def total_tokens(self) -> int:
+    def num_speculative_tokens(self) -> int:
         """
-        Number of nodes selected from the built EAGLE tree after reranking, used as the final set of draft token candidates submitted to the target model for verification
+        Number of draft (non-root) tokens from the EAGLE tree submitted to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root)
         """
-    @total_tokens.setter
-    def total_tokens(self, arg0: typing.SupportsInt) -> None:
+    @num_speculative_tokens.setter
+    def num_speculative_tokens(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def tree_depth(self) -> int:
@@ -999,8 +999,8 @@ class GenerationConfig:
         EAGLE tree search parameters:
         eagle_tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
         eagle_tree_params.tree_depth:       lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations.
-        eagle_tree_params.total_tokens:     number of nodes selected from the built EAGLE tree after reranking,
-                                            used as the final set of draft token candidates submitted to the target model for verification.
+        eagle_tree_params.num_speculative_tokens: number of draft (non-root) tokens from the EAGLE tree submitted
+                                                  to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
     """
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
     apply_chat_template: bool
@@ -1893,8 +1893,8 @@ class LLMPipeline:
             EAGLE tree search parameters:
             eagle_tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
             eagle_tree_params.tree_depth:       lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations.
-            eagle_tree_params.total_tokens:     number of nodes selected from the built EAGLE tree after reranking,
-                                                used as the final set of draft token candidates submitted to the target model for verification.
+            eagle_tree_params.num_speculative_tokens: number of draft (non-root) tokens from the EAGLE tree submitted
+                                                      to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
         """
     @typing.overload
     def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, device: str, config: collections.abc.Mapping[str, typing.Any] = {}, **kwargs) -> None:
@@ -1996,10 +1996,8 @@ class LLMPipeline:
             EAGLE tree search parameters:
             eagle_tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
             eagle_tree_params.tree_depth:       lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations.
-            eagle_tree_params.total_tokens:     number of nodes selected from the built EAGLE tree after reranking,
-                                                used as the final set of draft token candidates submitted to the target model for verification.
-        """
-    def get_generation_config(self) -> GenerationConfig:
+            eagle_tree_params.num_speculative_tokens: number of draft (non-root) tokens from the EAGLE tree submitted
+                                                      to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
         ...
     def get_tokenizer(self) -> Tokenizer:
         ...
