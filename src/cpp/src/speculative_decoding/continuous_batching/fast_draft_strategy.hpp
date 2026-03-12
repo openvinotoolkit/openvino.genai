@@ -32,9 +32,11 @@ std::vector<EncodedGenerationResult> generate_common(
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer,
         std::optional<std::vector<ov::Tensor>> token_type_ids,
+        std::optional<std::vector<ov::Tensor>> prompt_ids,
         GenerateStrategy& strategy) {
 
     OPENVINO_ASSERT(!token_type_ids.has_value());
+    OPENVINO_ASSERT(!prompt_ids.has_value());
     self->perf_metrics() = ov::genai::SDPerModelsPerfMetrics();
     self->draft_pipeline()->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
@@ -57,7 +59,7 @@ std::vector<EncodedGenerationResult> generate_common(
 
     std::vector<GenerationHandle> main_generations;
     {
-        std::lock_guard<std::mutex> lock(self->draft_generations_mutex());
+        std::lock_guard<std::mutex> lock(self->m_draft_generations_mutex);
         for (size_t rid = 0; rid < input_ids.size(); ++rid) {
             GenerationConfig main_cfg = sampling_params[rid];
             GenerationConfig draft_cfg = main_cfg;
@@ -158,6 +160,7 @@ public:
             const std::vector<GenerationConfig>& sampling_params,
             const StreamerVariant& streamer,
             std::optional<std::vector<ov::Tensor>> token_type_ids,
+            std::optional<std::vector<ov::Tensor>> prompt_ids,
             GenerateStrategy& strategy);
 
     SpeculativeDecodingImpl() = default;
@@ -166,7 +169,8 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt) override;
+                                 std::optional<ov::Tensor> token_type_ids = std::nullopt,
+                                 std::optional<ov::Tensor> prompt_ids = std::nullopt) override;
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  const ov::genai::GenerationConfig& sampling_params) override;
@@ -180,7 +184,8 @@ public:
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
              const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
-             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt) override;
+             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
+             const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt) override;
 
     SpeculativeDecodingMetrics get_speculative_decoding_metrics();
     SDPerModelsPerfMetrics& perf_metrics() { return m_perf_metrics; }
@@ -191,7 +196,6 @@ public:
     Tokenizer& tokenizer() { return m_tokenizer; }
     const Tokenizer& tokenizer() const { return m_tokenizer; }
 
-    std::mutex& draft_generations_mutex() { return m_draft_generations_mutex; }
 };
 
 }  // namespace ov::genai

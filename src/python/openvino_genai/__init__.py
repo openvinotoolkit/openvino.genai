@@ -96,6 +96,7 @@ from .py_openvino_genai import (
     TorchGenerator,
     ImageGenerationPerfMetrics,
     RawImageGenerationPerfMetrics,
+    TaylorSeerCacheConfig,
 )
 
 # Video generation

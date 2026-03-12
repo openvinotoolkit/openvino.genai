@@ -16,9 +16,10 @@ GenerationHandle
 ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
                                                           const ov::Tensor& input_ids,
                                                           const ov::genai::GenerationConfig& sampling_params,
-                                                          std::optional<ov::Tensor> token_type_ids) {
+                                                          std::optional<ov::Tensor> token_type_ids,
+                                                          std::optional<ov::Tensor> prompt_ids) {
     OPENVINO_ASSERT(sampling_params.is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
-    return m_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids);
+    return m_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids);
 }
 
 GenerationHandle
@@ -39,11 +40,6 @@ void ContinuousBatchingPipeline::PromptLookupImpl::step() {
     ManualTimer step_timer("prompt_lookup_decoding: step()");
     step_timer.start();
 
-    ManualTimer candidates_timer("prompt_lookup_decoding: generate_candidates()");
-    candidates_timer.start();
-    m_pipeline->generate_candidates();
-    candidates_timer.end();
-    m_sd_metrics.draft_duration += candidates_timer.get_duration();
     auto generated_len_before = m_pipeline->get_generated_request_len();
 
     ManualTimer main_timer("prompt_lookup_decoding: pipeline: step()");
@@ -96,7 +92,8 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
                                                        const std::vector<GenerationConfig>& sampling_params,
                                                        const StreamerVariant& streamer,
                                                        const std::optional<std::vector<ov::Tensor>>& token_type_ids,
-                                                       const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids) {
+                                                       const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
+                                                       const std::optional<std::vector<ov::Tensor>>& prompt_ids) {
     m_perf_metrics = PerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 
@@ -122,7 +119,15 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");   
         OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`"); 
-        generations.push_back(m_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
+
+        bool has_valid_ttid = token_type_ids.has_value() && request_id < token_type_ids->size();
+        bool has_valid_pid = prompt_ids.has_value() && request_id < prompt_ids->size();
+        generations.push_back(m_pipeline->add_request(
+            request_id,
+            input_ids[request_id],
+            sampling_params[request_id],
+            has_valid_ttid ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
+            has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt));
     }
     auto all_requests = m_pipeline->get_awaiting_requests();
 

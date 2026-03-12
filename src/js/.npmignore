@@ -4,6 +4,8 @@ lib
 src
 tests
 thirdparty
+ov_cache
+test.env
 
 CMakeLists.txt
 eslint.config.cjs
