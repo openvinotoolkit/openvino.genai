@@ -21,7 +21,6 @@ class TestLora:
 
     @pytest.mark.vlm
     @pytest.mark.samples
-    @pytest.mark.nightly
     @pytest.mark.parametrize(
         "convert_model, download_test_content, prompt, alpha",
         [
@@ -53,7 +52,6 @@ class TestLora:
 
     @pytest.mark.vlm
     @pytest.mark.samples
-    @pytest.mark.nightly
     @pytest.mark.parametrize(
         "convert_model, download_test_content, prompt, alpha",
         [
@@ -109,7 +107,6 @@ class TestLora:
 
     @pytest.mark.vlm
     @pytest.mark.samples
-    @pytest.mark.nightly
     @pytest.mark.parametrize(
         "convert_model, download_test_content, prompt",
         [
