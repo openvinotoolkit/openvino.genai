@@ -645,6 +645,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      EXTENSION_LIB_PATH: ${{ env.INSTALL_DIR }}/tests/
 
     steps:
       - name: Clone openvino.genai

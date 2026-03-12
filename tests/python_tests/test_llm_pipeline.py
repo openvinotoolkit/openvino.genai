@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+import shutil
 import pytest
 import torch
 import gc
@@ -876,3 +877,106 @@ def test_pipelines_generate_with_streaming(
         mock_streamer.assert_not_called()
     else:
         mock_streamer.assert_called()
+
+
+def replace_ir_add_with_myadd(ir_xml_path: Path) -> None:
+    import xml.etree.ElementTree as ET
+
+    target_node_name = "__module.model.layers.1.input_layernorm/aten::add/Add"
+    tree = ET.parse(ir_xml_path)
+    root = tree.getroot()
+
+    replaced = False
+    for layer in root.findall(".//layer"):
+        if layer.get("type") == "Add" and layer.get("name") == target_node_name:
+            layer.set("type", "MyAdd")
+            layer.set("version", "extension")
+            replaced = True
+            break
+
+    assert replaced, f"No IR Add layer named '{target_node_name}' found to replace with MyAdd"
+    tree.write(ir_xml_path, encoding="utf-8", xml_declaration=True)
+
+
+def get_extention_model(model_path: str):
+    source_path = Path(model_path)
+    extension_path = source_path.parent / f"{source_path.name}_extension"
+    ir_xml_path = extension_path / "openvino_model.xml"
+    if ir_xml_path.exists():
+        return extension_path
+
+    if not source_path.exists():
+        raise FileNotFoundError(f"Model path was not found: {source_path}")
+
+    shutil.copytree(source_path, extension_path)
+    replace_ir_add_with_myadd(ir_xml_path)
+
+    assert (
+        b"MyAdd" in ir_xml_path.read_bytes()
+    ), "Custom op 'MyAdd' was not injected into OpenVINO IR"
+
+    return extension_path
+
+
+def get_extension_lib_path():
+    extension_name = "openvino_custom_add_extension"
+    if sys.platform == "win32":
+        suffixes = [".dll"]
+    elif sys.platform == "darwin":
+        suffixes = [".dylib", ".so"]
+    else:
+        suffixes = [".so"]
+
+    file_names = []
+    for suffix in suffixes:
+        file_names.append(f"lib{extension_name}{suffix}")
+        file_names.append(f"{extension_name}{suffix}")
+
+    extension_lib_path_env = os.getenv("EXTENSION_LIB_PATH")
+    if extension_lib_path_env:
+        env_path = Path(extension_lib_path_env)
+        if env_path.is_file():
+            return env_path
+        if env_path.exists():
+            for file_name in file_names:
+                matches = sorted(env_path.rglob(file_name))
+                if matches:
+                    return matches[0]
+
+    workspace_root = Path(__file__).resolve().parents[2]
+    build_dir = workspace_root / "build"
+    if not build_dir.exists():
+        raise FileNotFoundError(f"Build directory was not found: {build_dir}")
+
+    for file_name in file_names:
+        matches = sorted(build_dir.rglob(file_name))
+        if matches:
+            return matches[0]
+
+    raise FileNotFoundError(
+        f"Could not find compiled custom extension '{extension_name}'. "
+        f"Searched EXTENSION_LIB_PATH='{os.getenv('EXTENSION_LIB_PATH')}' and build directory '{build_dir}'. "
+    )
+
+
+@pytest.mark.parametrize("llm_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
+@pytest.mark.parametrize("generation_config,prompt", PERF_METRICS_STRUCTURED_OUTPUT_TEST_CASES)
+def test_llm_pipeline_add_real_extension(
+    llm_model: OVConvertedModelSchema,
+    generation_config: dict,
+    prompt: str,
+) -> None:
+    model_path = get_extention_model(llm_model.models_path)
+
+    # The custom op "MyAdd" from the extension is implemented in the same way as the OpenVINO op "Add"
+    properties = {"extensions": [str(get_extension_lib_path())]}
+    ov_pipe_extension = ov_genai.LLMPipeline(model_path, "CPU", **properties)
+    result_extension = ov_pipe_extension.generate([prompt], **generation_config)
+
+    properties = {}
+    ov_pipe_ref = ov_genai.LLMPipeline(model_path, "CPU", **properties)
+    result_ref = ov_pipe_ref.generate([prompt], **generation_config)
+
+    assert result_extension.texts[0].strip() == result_ref.texts[0].strip(), (
+        "Result should be the same for model with extension and reference model."
+    )
