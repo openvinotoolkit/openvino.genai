@@ -27,7 +27,6 @@ def generate_response(
     ).to(model.device)
 
     gen_kwargs: dict[str, Any] = {
-        "thinker_max_new_tokens": 10,
         "streamer": transformers.TextStreamer(
             processor,
             skip_prompt=True,
@@ -35,6 +34,7 @@ def generate_response(
             clean_up_tokenization_spaces=False,
         ),
         "thinker_do_sample": False,
+        "thinker_max_new_tokens": 10,
     }
     if speaker:
         gen_kwargs["speaker"] = speaker
