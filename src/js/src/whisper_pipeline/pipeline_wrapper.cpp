@@ -97,8 +97,8 @@ void whisperPerformInferenceThread(WhisperTsfnContext* context) {
             result = context->pipe->generate(context->raw_speech, context->generation_config);
         }
     } catch (const std::exception& e) {
-        report_error(e.what());
         *context->is_generating = false;
+        report_error(e.what());
         finalize();
         return;
     }

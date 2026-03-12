@@ -103,8 +103,8 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
             context->inputs);
 
     } catch (std::exception& e) {
-        report_error(e.what());
         *context->is_generating = false;
+        report_error(e.what());
         finalize();
         return;
     }

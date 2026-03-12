@@ -101,7 +101,10 @@ void performInferenceThread(TsfnContext* context) {
                    context->inputs);
 
     } catch (std::exception& e) {
+        *context->is_generating = false;
         report_error(e.what());
+        finalize();
+        return;
     }
     // should be called right after inference to release the flag asap
     *context->is_generating = false;
