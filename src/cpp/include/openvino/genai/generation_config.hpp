@@ -624,8 +624,8 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * EAGLE tree search parameters:
  * @param eagle_tree_params.branching_factor number of top-k candidates expanded at each tree node (branching factor).
  * @param eagle_tree_params.tree_depth lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations.
- * @param eagle_tree_params.total_tokens number of nodes selected from the built EAGLE tree after reranking,
- *        used as the final set of draft token candidates submitted to the target model for verification.
+ * @param eagle_tree_params.num_speculative_tokens number of draft (non-root) tokens from the EAGLE tree submitted
+ *        to the target model for verification. Total tree nodes = `num_speculative_tokens + 1` (including root).
  *
  * @param structured_output_config if set, the output will be a string constrained by the specified json_schema, regex, or EBNF grammar.
  *
@@ -689,9 +689,9 @@ public:
         size_t branching_factor = 1;
         /// Lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations
         size_t tree_depth = 0;
-        /// Number of nodes selected from the built EAGLE tree after reranking,
-        /// used as the final set of draft token candidates submitted to the target model for verification
-        size_t total_tokens = 1;
+        /// Number of draft (non-root) tokens from the EAGLE tree submitted to the target model for verification.
+        /// Total tree nodes = num_speculative_tokens + 1 (including root).
+        size_t num_speculative_tokens = 0;
     } eagle_tree_params;
 
     // Structured output parameters

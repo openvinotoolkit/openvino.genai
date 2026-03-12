@@ -635,11 +635,10 @@ Sampler::TreeSearcher::TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tenso
 }
 
 void Sampler::TreeSearcher::tree_reset() {
-    const size_t total_tokens = m_parameters.eagle_tree_params.total_tokens;
-    OPENVINO_ASSERT(total_tokens > 1,
-                    "eagle_tree_params.total_tokens must be greater than 1, got ", total_tokens);
-    const int max_non_root_candidate_nodes = static_cast<int>(total_tokens - 1);
-    m_candidate_graph.emplace(-1, 0.0f, max_non_root_candidate_nodes, static_cast<int>(m_parameters.eagle_tree_params.tree_depth));
+    const size_t num_speculative_tokens = m_parameters.eagle_tree_params.num_speculative_tokens;
+    OPENVINO_ASSERT(num_speculative_tokens > 0,
+                    "eagle_tree_params.num_speculative_tokens must be greater than 0, got ", num_speculative_tokens);
+    m_candidate_graph.emplace(-1, 0.0f, static_cast<int>(num_speculative_tokens), static_cast<int>(m_parameters.eagle_tree_params.tree_depth));
 
     const std::vector<Sequence::Ptr> running = m_sequence_group->get_running_sequences();
     OPENVINO_ASSERT(!running.empty(), "tree_reset: sequence group has no running sequences");
