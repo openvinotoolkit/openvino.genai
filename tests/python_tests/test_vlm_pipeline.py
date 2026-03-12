@@ -124,11 +124,6 @@ VIDEO_MODEL_IDS = [
     "xf2022/tiny-videochat-flash-qwen",
 ]
 
-
-VIDEO_ONLY_MODEL_IDS = {
-    "xf2022/tiny-videochat-flash-qwen",
-}
-
 MODEL_IDS: list[str] = [
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
     "optimum-intel-internal-testing/tiny-random-phi3-vision",
