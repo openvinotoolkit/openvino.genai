@@ -30,6 +30,7 @@ if(ENABLE_MISAKI_CPP)
             MISAKI_SOURCE_DIR="${MISAKI_CPP_ROOT}")
 
         target_compile_features(openvino_genai_misaki_cpp PRIVATE cxx_std_20)
+        set_target_properties(openvino_genai_misaki_cpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
         if(MSVC)
             target_compile_options(openvino_genai_misaki_cpp PRIVATE /utf-8)
         endif()
