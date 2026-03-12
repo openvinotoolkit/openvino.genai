@@ -14,6 +14,7 @@ from statistics import mean
 
 def _build_python_misaki_engine(variant: str):
     from misaki import en
+
     british = variant == "en-gb"
     return en.G2P(trf=False, british=british, fallback=None, unk="❓")
 
@@ -23,14 +24,13 @@ def _validate_lexicon_data_root(path: str) -> str:
     required = ["us_gold.json", "us_silver.json", "gb_gold.json", "gb_silver.json"]
     missing = [name for name in required if not (root / name).exists()]
     if missing:
-        raise FileNotFoundError(
-            f"Lexicon data root '{root}' is missing required files: {', '.join(missing)}"
-        )
+        raise FileNotFoundError(f"Lexicon data root '{root}' is missing required files: {', '.join(missing)}")
     return str(root)
 
 
 def _build_cpp_misaki_engine(variant: str, lexicon_data_root: str | None = None):
     import misaki_cpp_py
+
     engine = misaki_cpp_py.Engine("en", variant)
 
     resolved_root = lexicon_data_root or os.getenv("MISAKI_DATA_DIR")
@@ -113,13 +113,7 @@ def _tokenize_phonemes(phonemes: str) -> list[str]:
 
 
 def _normalize_phonemes_for_compare(phonemes: str) -> str:
-    return (
-        phonemes
-        .replace("“", '"')
-        .replace("”", '"')
-        .replace("‘", "'")
-        .replace("’", "'")
-    )
+    return phonemes.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
 
 
 def _norm_basic(text: str) -> str:
@@ -195,27 +189,45 @@ def main():
     _maybe_reconfigure_stdout_for_unicode()
 
     parser = argparse.ArgumentParser(description="Dataset parity runner: misaki_cpp bindings vs Python misaki")
-    parser.add_argument("--profile", default="single", choices=["single", "realistic", "adversarial", "mixed", "chatty"],
-                        help="Dataset profile. 'single' uses --dataset/--config/--split/--field.")
+    parser.add_argument(
+        "--profile",
+        default="single",
+        choices=["single", "realistic", "adversarial", "mixed", "chatty"],
+        help="Dataset profile. 'single' uses --dataset/--config/--split/--field.",
+    )
     parser.add_argument("--dataset", default="wikitext", help="HF dataset name")
     parser.add_argument("--config", default="wikitext-103-raw-v1", help="HF dataset config")
     parser.add_argument("--split", default="train", help="HF split")
     parser.add_argument("--field", default="text", help="Text field name")
     parser.add_argument("--variant", default="en-us", choices=["en-us", "en-gb"], help="English variant")
-    parser.add_argument("--lexicon-data-root", default=None,
-                        help="Directory containing us/gb gold/silver lexicon JSON files for misaki_cpp")
+    parser.add_argument(
+        "--lexicon-data-root",
+        default=None,
+        help="Directory containing us/gb gold/silver lexicon JSON files for misaki_cpp",
+    )
     parser.add_argument("--max-items", type=int, default=300, help="Max prompts to evaluate")
     parser.add_argument("--seed", type=int, default=1337, help="Random seed")
     parser.add_argument("--min-chars", type=int, default=20, help="Minimum normalized prompt length")
-    parser.add_argument("--normalize-input-escapes", action="store_true",
-                        help="Decode \\uXXXX/\\UXXXXXXXX escapes before sending text to both engines")
+    parser.add_argument(
+        "--normalize-input-escapes",
+        action="store_true",
+        help="Decode \\uXXXX/\\UXXXXXXXX escapes before sending text to both engines",
+    )
     parser.add_argument("--show-diffs", type=int, default=10, help="How many worst mismatches to print")
-    parser.add_argument("--analyze-categories", action="store_true",
-                        help="Show mismatch category breakdown and sample examples")
-    parser.add_argument("--analyze-normalization", action="store_true",
-                        help="Show strict/basic/loose/unknown-collapsed normalization match stats")
-    parser.add_argument("--analyze-example-limit", type=int, default=2,
-                        help="Max examples per mismatch category when --analyze-categories is enabled")
+    parser.add_argument(
+        "--analyze-categories", action="store_true", help="Show mismatch category breakdown and sample examples"
+    )
+    parser.add_argument(
+        "--analyze-normalization",
+        action="store_true",
+        help="Show strict/basic/loose/unknown-collapsed normalization match stats",
+    )
+    parser.add_argument(
+        "--analyze-example-limit",
+        type=int,
+        default=2,
+        help="Max examples per mismatch category when --analyze-categories is enabled",
+    )
     args = parser.parse_args()
 
     if args.profile == "single":
@@ -392,7 +404,9 @@ def main():
                     f"skipped={skipped_count}"
                 )
             else:
-                print(f"- {source_label}: exact=0/0 (0.00%), avg_ratio=n/a, token_exact=0/0 (0.00%), avg_token_ratio=n/a, skipped={skipped_count}")
+                print(
+                    f"- {source_label}: exact=0/0 (0.00%), avg_ratio=n/a, token_exact=0/0 (0.00%), avg_token_ratio=n/a, skipped={skipped_count}"
+                )
 
     if min_case is not None:
         min_ratio, min_idx, min_source_label, min_text, min_cpp_ps, min_py_ps = min_case
