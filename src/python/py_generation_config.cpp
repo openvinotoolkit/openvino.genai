@@ -197,8 +197,8 @@ char generation_config_docstring[] = R"(
     EAGLE tree search parameters:
     eagle_tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
     eagle_tree_params.tree_depth:       lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations.
-    eagle_tree_params.total_tokens:     number of nodes selected from the built EAGLE tree after reranking,
-                                        used as the final set of draft token candidates submitted to the target model for verification.
+    eagle_tree_params.num_speculative_tokens: number of draft (non-root) tokens from the EAGLE tree submitted
+                                              to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
 )";
 
 template <typename PyClass>
@@ -426,14 +426,14 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("tree_depth",
                        &GenerationConfig::EagleParams::tree_depth,
                        "How deep to look ahead in the EAGLE tree")
-        .def_readwrite("total_tokens",
-                       &GenerationConfig::EagleParams::total_tokens,
-                       "Number of nodes selected from the built EAGLE tree after reranking, "
-                       "used as the final set of draft token candidates submitted to the target model for verification")
+        .def_readwrite("num_speculative_tokens",
+                       &GenerationConfig::EagleParams::num_speculative_tokens,
+                       "Number of draft (non-root) tokens from the EAGLE tree submitted to the target model for verification. "
+                       "Total tree nodes = num_speculative_tokens + 1 (including root)")
         .def("__repr__", [](const GenerationConfig::EagleParams& self) {
             return "EagleParams(branching_factor=" + std::to_string(self.branching_factor) +
                    ", tree_depth=" + std::to_string(self.tree_depth) +
-                   ", total_tokens=" + std::to_string(self.total_tokens) + ")";
+                   ", num_speculative_tokens=" + std::to_string(self.num_speculative_tokens) + ")";
         });
 
     // Binding for GenerationConfig
