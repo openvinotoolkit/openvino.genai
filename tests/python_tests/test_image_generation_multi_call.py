@@ -28,11 +28,15 @@ def image_generation_model():
 
     def convert_model(temp_path: Path) -> None:
         command = [
-            "optimum-cli", "export", "openvino",
-            "--model", MODEL_NAME,
+            "optimum-cli",
+            "export",
+            "openvino",
+            "--model",
+            MODEL_NAME,
             "--trust-remote-code",
-            "--weight-format", "fp16",
-            str(temp_path)
+            "--weight-format",
+            "fp16",
+            str(temp_path),
         ]
         logger.info(f"Conversion command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
@@ -53,7 +57,7 @@ def get_random_image(height: int = 64, width: int = 64) -> ov.Tensor:
 
 def get_mask_image(height: int = 64, width: int = 64) -> ov.Tensor:
     mask_data = np.zeros((1, height, width, 3), dtype=np.uint8)
-    mask_data[:, height//4:3*height//4, width//4:3*width//4, :] = 255
+    mask_data[:, height // 4 : 3 * height // 4, width // 4 : 3 * width // 4, :] = 255
     return ov.Tensor(mask_data)
 
 
@@ -62,7 +66,6 @@ NUM_CALLS = 3
 
 
 class TestText2ImageMultipleGenerations:
-
     def test_multiple_generate_no_kwargs(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
         for i in range(NUM_CALLS):
@@ -93,9 +96,7 @@ class TestText2ImageMultipleGenerations:
                 steps.append(step)
                 return False
 
-            image = pipe.generate(
-                f"prompt {i}", callback=callback, **GENERATE_KWARGS
-            )
+            image = pipe.generate(f"prompt {i}", callback=callback, **GENERATE_KWARGS)
             assert image is not None
             assert len(steps) > 0
 
@@ -110,21 +111,16 @@ class TestText2ImageMultipleGenerations:
                 steps.append(step)
                 return False
 
-            image = pipe.generate(
-                f"prompt {i}", generator=gen, callback=callback, **GENERATE_KWARGS
-            )
+            image = pipe.generate(f"prompt {i}", generator=gen, callback=callback, **GENERATE_KWARGS)
             assert image is not None
             assert len(steps) > 0
 
 
 class TestImage2ImageMultipleGenerations:
-
     def test_multiple_generate_no_kwargs(self, image_generation_model):
         pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
         for i in range(NUM_CALLS):
-            image = pipe.generate(
-                f"prompt {i}", get_random_image(), strength=0.8, **GENERATE_KWARGS
-            )
+            image = pipe.generate(f"prompt {i}", get_random_image(), strength=0.8, **GENERATE_KWARGS)
             assert image is not None
 
     def test_multiple_generate_with_torch_generator(self, image_generation_model):
@@ -132,22 +128,15 @@ class TestImage2ImageMultipleGenerations:
         pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
         for i in range(NUM_CALLS):
             gen = ov_genai.TorchGenerator(42)
-            image = pipe.generate(
-                f"prompt {i}", get_random_image(),
-                strength=0.8, generator=gen, **GENERATE_KWARGS
-            )
+            image = pipe.generate(f"prompt {i}", get_random_image(), strength=0.8, generator=gen, **GENERATE_KWARGS)
             assert image is not None
 
 
 class TestInpaintingMultipleGenerations:
-
     def test_multiple_generate_no_kwargs(self, image_generation_model):
         pipe = ov_genai.InpaintingPipeline(image_generation_model, "CPU")
         for i in range(NUM_CALLS):
-            image = pipe.generate(
-                f"prompt {i}", get_random_image(), get_mask_image(),
-                strength=0.8, **GENERATE_KWARGS
-            )
+            image = pipe.generate(f"prompt {i}", get_random_image(), get_mask_image(), strength=0.8, **GENERATE_KWARGS)
             assert image is not None
 
     def test_multiple_generate_with_torch_generator(self, image_generation_model):
@@ -156,7 +145,6 @@ class TestInpaintingMultipleGenerations:
         for i in range(NUM_CALLS):
             gen = ov_genai.TorchGenerator(42)
             image = pipe.generate(
-                f"prompt {i}", get_random_image(), get_mask_image(),
-                strength=0.8, generator=gen, **GENERATE_KWARGS
+                f"prompt {i}", get_random_image(), get_mask_image(), strength=0.8, generator=gen, **GENERATE_KWARGS
             )
             assert image is not None
