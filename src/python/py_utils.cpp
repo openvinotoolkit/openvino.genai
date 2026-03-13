@@ -34,15 +34,17 @@ public:
     GilSafeGeneratorWrapper(std::shared_ptr<ov::genai::Generator> impl, py::object py_ref)
         : m_impl(std::move(impl)), m_py_ref(std::move(py_ref)) {}
 
-    ~GilSafeGeneratorWrapper() {
+    ~GilSafeGeneratorWrapper() override {
         if (Py_IsInitialized()) {
             try {
                 py::gil_scoped_acquire acquire;
                 m_impl.reset();
                 m_py_ref = py::object();
+                return;
             } catch (...) {
             }
         }
+        m_py_ref.release();
     }
 
     float next() override { return m_impl->next(); }

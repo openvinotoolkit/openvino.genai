@@ -178,16 +178,20 @@ public:
         create_torch_generator(seed);
     }
 
-    ~TorchGenerator() {
+    ~TorchGenerator() override {
         if (Py_IsInitialized()) {
             try {
                 py::gil_scoped_acquire acquire;
                 m_torch_generator = py::object();
                 m_float32 = py::object();
                 m_torch = py::module_();
+                return;
             } catch (...) {
             }
         }
+        m_torch_generator.release();
+        m_float32.release();
+        m_torch.release();
     }
 
     float next() override {
