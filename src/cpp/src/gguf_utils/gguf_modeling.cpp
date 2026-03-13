@@ -138,12 +138,21 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const bool enable_save_ov_model) {
+std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
+                                            const bool enable_save_ov_model,
+                                            ov::genai::OVModelQuantizeMode save_ov_model_quantize_mode) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
     ss << "Loading and unpacking model from: " << model_path;
     ov::genai::utils::print_gguf_debug_info(ss.str());
-    auto [config, consts, qtypes] = load_gguf(model_path);
+
+    ss.str("");
+    ss << "OVModelQuantizeMode: quantization_mode="
+       << (save_ov_model_quantize_mode == ov::genai::OVModelQuantizeMode::ORIGINAL ? "ORIGINAL" : "GPU_OPTIMIZED")
+       << ", save_file=" << (enable_save_ov_model ? "YES" : "NO");
+    ov::genai::utils::print_gguf_debug_info(ss.str());
+
+    auto [config, consts, qtypes] = load_gguf(model_path, save_ov_model_quantize_mode);
     auto load_finish_time = std::chrono::high_resolution_clock::now();
 
     ss.str("");
@@ -159,7 +168,10 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
         model = create_language_model(config, consts, qtypes);
         if (enable_save_ov_model){
             std::filesystem::path gguf_model_path(model_path);
-            std::filesystem::path save_path = gguf_model_path.parent_path() / "openvino_model.xml";
+            std::filesystem::path save_dir = gguf_model_path.parent_path() /
+                ov::genai::utils::get_ov_model_subdir_name(save_ov_model_quantize_mode);
+            std::filesystem::create_directories(save_dir);
+            std::filesystem::path save_path = save_dir / "openvino_model.xml";
             ov::genai::utils::save_openvino_model(model, save_path.string(), true);
         }
     } else {
