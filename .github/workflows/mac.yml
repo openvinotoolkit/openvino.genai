@@ -485,7 +485,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
-      EXTENSION_LIB_PATH: ${{ github.workspace }}/ov/tests
+      EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests
       HF_HOME: ${{ github.workspace }}/hf_cache
 
     steps:
