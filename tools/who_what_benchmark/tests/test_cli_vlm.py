@@ -1,7 +1,6 @@
 import pytest
 import logging
 from pathlib import Path
-import subprocess  # nosec B404
 import sys
 
 from conftest import convert_model, run_wwb
@@ -89,62 +88,6 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
     ])
 
 
-def _download_hf_files_to_cache(repo_id: str, cache_dir: Path, filenames: list[str]):
-    from ov_utils import AtomicDownloadManager, retry_request
-
-    dest_dir = Path(cache_dir)
-
-    def download_to_local_dir(local_dir: Path) -> None:
-        for filename in filenames:
-            command = [
-                "huggingface-cli",
-                "download",
-                repo_id,
-                filename,
-                "--local-dir",
-                str(local_dir),
-            ]
-
-            def _run_download() -> None:
-                subprocess.run(command, check=True, text=True, capture_output=True)
-
-            retry_request(_run_download)
-
-    # If destination exists (e.g. shared CI cache), make sure all required files are present.
-    # This test previously cached only adapter_model.safetensors, but peft also requires
-    # adapter_config.json next to it.
-    if dest_dir.exists():
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        missing = [name for name in filenames if not (dest_dir / name).exists()]
-        if missing:
-            import shutil
-            import uuid
-
-            temp_dir = dest_dir.parent / f".tmp_{dest_dir.name}_{uuid.uuid4().hex[:8]}"
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            try:
-                download_to_local_dir(temp_dir)
-                for filename in missing:
-                    src = temp_dir / filename
-                    if not src.exists():
-                        raise AssertionError(f"Download failed: {src}")
-                    dst = dest_dir / filename
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    src.replace(dst)
-            finally:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-    else:
-        manager = AtomicDownloadManager(dest_dir)
-        manager.execute(download_to_local_dir)
-
-    for filename in filenames:
-        downloaded = dest_dir / filename
-        if not downloaded.exists():
-            raise AssertionError(f"Download failed: {downloaded}")
-
-    return dest_dir
-
-
 def run_test_with_lora(
     model_id: str,
     model_type: str,
@@ -165,10 +108,11 @@ def run_test_with_lora(
     model_path = convert_model(model_id)
 
     from ov_utils import get_ov_cache_dir
+    from ov_utils import download_hf_files_to_cache
 
     lora_filenames = ["adapter_model.safetensors", "adapter_config.json"]
     lora_cache_dir = get_ov_cache_dir() / "test_data" / lora_cache_subdir
-    lora_adapter_dir = _download_hf_files_to_cache(lora_repo_id, lora_cache_dir, lora_filenames)
+    lora_adapter_dir = download_hf_files_to_cache(lora_repo_id, lora_cache_dir, lora_filenames)
     lora_adapter_file = lora_adapter_dir / "adapter_model.safetensors"
     assert lora_adapter_file.exists(), f"LoRA adapter wasn't downloaded: {lora_adapter_file}"
 
