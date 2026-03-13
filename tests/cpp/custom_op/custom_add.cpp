@@ -5,6 +5,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <openvino/core/shape.hpp>
 
 using namespace TemplateExtension;
 
@@ -24,6 +25,13 @@ void MyAdd::validate_and_infer_types() {
                     ", bias type: ",
                     bias_type.to_string());
 
+    const ov::PartialShape bias_shape = get_input_partial_shape(1);
+    if (bias_shape.is_static()) {
+        OPENVINO_ASSERT(ov::shape_size(bias_shape.to_shape()) == 1,
+                        "MyAdd expects scalar/1-element bias, got shape: ",
+                        bias_shape);
+    }
+
     set_output_type(0, get_input_element_type(0), get_input_partial_shape(0));
 }
 
@@ -42,6 +50,7 @@ bool MyAdd::evaluate(ov::TensorVector& outputs, const ov::TensorVector& inputs) 
 #else
     const int set_env_result = setenv("EXTENSION_LIB_CALLED", "1", 1);
 #endif
+    OPENVINO_ASSERT(set_env_result == 0, "Failed to set EXTENSION_LIB_CALLED environment variable");
     OPENVINO_ASSERT(inputs.size() >= 2, "MyAdd evaluate expects at least 2 input tensors");
     OPENVINO_ASSERT(outputs.size() >= 1, "MyAdd evaluate expects at least 1 output tensor");
 
@@ -51,6 +60,9 @@ bool MyAdd::evaluate(ov::TensorVector& outputs, const ov::TensorVector& inputs) 
     OPENVINO_ASSERT(inputs[1].get_element_type() == ov::element::f32,
                     "Unexpected bias type: ",
                     inputs[1].get_element_type().to_string());
+    OPENVINO_ASSERT(inputs[1].get_size() == 1,
+                    "MyAdd evaluate expects scalar/1-element bias, got size: ",
+                    inputs[1].get_size());
     const float* pBias = static_cast<const float*>(inputs[1].data());
 
     const auto& in = inputs[0];

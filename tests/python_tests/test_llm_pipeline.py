@@ -126,9 +126,35 @@ def user_defined_status_callback(subword):
 
 
 def get_process_env_var(name: str) -> str | None:
-    libc = ctypes.CDLL(None)
-    libc.getenv.restype = ctypes.c_char_p
-    env_value = libc.getenv(name.encode("utf-8"))
+    """
+    Return the current process environment variable value, or None if unset.
+    Uses a platform-specific implementation to avoid relying on CDLL(None).getenv
+    on Windows, which is not reliably available.
+    """
+    if sys.platform == "win32":
+        # On Windows, access getenv from the C runtime DLL.
+        try:
+            crt = ctypes.cdll.ucrtbase  # Universal CRT on modern Windows
+        except OSError:
+            try:
+                crt = ctypes.cdll.msvcrt  # Fallback for older environments
+            except OSError:
+                # As a last resort, fall back to Python's view of the environment
+                return os.environ.get(name)
+        crt.getenv.restype = ctypes.c_char_p
+        crt.getenv.argtypes = (ctypes.c_char_p,)
+        env_value = crt.getenv(name.encode("utf-8"))
+    else:
+        libc = ctypes.CDLL(None)
+        try:
+            getenv_func = libc.getenv
+        except AttributeError:
+            # Fallback if libc does not expose getenv
+            return os.environ.get(name)
+        getenv_func.restype = ctypes.c_char_p
+        getenv_func.argtypes = (ctypes.c_char_p,)
+        env_value = getenv_func(name.encode("utf-8"))
+
     if env_value is None:
         return None
     return env_value.decode("utf-8")

@@ -6,7 +6,7 @@ set(TARGET_NAME "openvino_custom_add_extension")
 # The OpenVINO installed from PyPI can be used to find OpenVINO_DIR
 if(NOT CMAKE_CROSSCOMPILING)
     find_package(Python3 QUIET COMPONENTS Interpreter)
-    message(STATUS, Python3_Interpreter_FOUND=${Python3_Interpreter_FOUND})
+    message(STATUS "Python3_Interpreter_FOUND=${Python3_Interpreter_FOUND}")
     if(Python3_Interpreter_FOUND)
         execute_process(
             COMMAND ${Python3_EXECUTABLE} -c "from openvino.utils import get_cmake_path; print(get_cmake_path(), end='')"
