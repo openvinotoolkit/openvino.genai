@@ -143,7 +143,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "Qwen3-Embedding-0.6B": {
         "name": "Qwen/Qwen3-Embedding-0.6B",
-        "convert_args": ["--trust-remote-code"]
+        "convert_args": ["--trust-remote-code"],
     },
     "Qwen3-Reranker-0.6B": {
         "name": "Qwen/Qwen3-Reranker-0.6B",

@@ -272,3 +272,73 @@ def test_text_genai_json_string_config():
     # Test with WWB log info to make sure the configurations are passed from strings to the GenAI APIs
     assert "INFO:whowhatbench.wwb:cb_config: {'max_num_batched_tokens': 4096}" in output
     assert "INFO:whowhatbench.model_loaders:OpenVINO Config: {'KV_CACHE_PRECISION': 'f16', 'ATTENTION_BACKEND': 'PA'}" in output
+
+
+@pytest.mark.parametrize(
+    ("model_id"),
+    [("TinyLlama/TinyLlama-1.1B-Chat-v1.0")],
+)
+def test_text_chat_model(model_id, tmp_path):
+    temp_file_name = tmp_path / "gt.csv"
+    chat_model_path = convert_text_model(model_id, model_id.split("/")[1], _convert_base)
+
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--gt-data",
+            temp_file_name,
+            "--num-samples",
+            "1",
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-chat",
+            "--hf",
+        ]
+    )
+
+    outputs_path = tmp_path / "optimum"
+    output = run_wwb(
+        [
+            "--target-model",
+            chat_model_path,
+            "--gt-data",
+            temp_file_name,
+            "--num-samples",
+            "1",
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-chat",
+            "--output",
+            outputs_path,
+        ]
+    )
+    assert "Metrics for model" in output
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert (outputs_path / "target.csv").exists()
+
+    outputs_path = tmp_path / "genai"
+    output = run_wwb(
+        [
+            "--target-model",
+            chat_model_path,
+            "--gt-data",
+            temp_file_name,
+            "--num-samples",
+            "1",
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-chat",
+            "--genai",
+            "--output",
+            outputs_path,
+        ]
+    )
+    assert "Metrics for model" in output
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert (outputs_path / "target.csv").exists()
