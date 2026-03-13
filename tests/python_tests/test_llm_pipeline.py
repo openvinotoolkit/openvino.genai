@@ -880,7 +880,7 @@ def test_pipelines_generate_with_streaming(
 
 
 def replace_ir_add_with_myadd(ir_xml_path: Path) -> None:
-    import xml.etree.ElementTree as ET
+    import defusedxml.ElementTree as ET
 
     target_node_name = "__module.model.layers.1.input_layernorm/aten::add/Add"
     tree = ET.parse(ir_xml_path)
