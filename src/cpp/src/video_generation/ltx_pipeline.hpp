@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <numeric>
@@ -92,6 +93,51 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
                         (generation_config.width % vae_scale_factor == 0 || generation_config.width < 0),
                     "Both 'width' and 'height' must be divisible by ",
                     vae_scale_factor);
+}
+
+// Rescales the CFG noise prediction to fix overexposure when using zero terminal SNR
+// noise_cfg and noise_pred_text each contain batch_size * elements_per_sample consecutive floats.
+void rescale_noise_cfg(float* noise_cfg,
+                       const float* noise_pred_text,
+                       size_t batch_size,
+                       size_t elements_per_sample,
+                       float guidance_rescale) {
+    for (size_t b = 0; b < batch_size; ++b) {
+        float* cfg_sample = noise_cfg + b * elements_per_sample;
+        const float* text_sample = noise_pred_text + b * elements_per_sample;
+
+        double text_mean = 0.0;
+        for (size_t i = 0; i < elements_per_sample; ++i) {
+            text_mean += text_sample[i];
+        }
+        text_mean /= static_cast<double>(elements_per_sample);
+
+        double text_var = 0.0;
+        for (size_t i = 0; i < elements_per_sample; ++i) {
+            const double diff = text_sample[i] - text_mean;
+            text_var += diff * diff;
+        }
+        const float std_text = static_cast<float>(std::sqrt(text_var / static_cast<double>(elements_per_sample)));
+
+        double cfg_mean = 0.0;
+        for (size_t i = 0; i < elements_per_sample; ++i) {
+            cfg_mean += cfg_sample[i];
+        }
+        cfg_mean /= static_cast<double>(elements_per_sample);
+
+        double cfg_var = 0.0;
+        for (size_t i = 0; i < elements_per_sample; ++i) {
+            const double diff = cfg_sample[i] - cfg_mean;
+            cfg_var += diff * diff;
+        }
+        const float std_cfg = static_cast<float>(std::sqrt(cfg_var / static_cast<double>(elements_per_sample)));
+
+        const float scale = std_cfg > 0.0f ? std_text / std_cfg : 1.0f;
+        for (size_t i = 0; i < elements_per_sample; ++i) {
+            const float rescaled = cfg_sample[i] * scale;
+            cfg_sample[i] = guidance_rescale * rescaled + (1.0f - guidance_rescale) * cfg_sample[i];
+        }
+    }
 }
 
 // Unpacked latents of shape [B, C, F, H, W] are patched into tokens of shape [B, C, F // p_t, p_t, H // p, p, W // p,
@@ -613,9 +659,13 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
-            // TODO: support guidance_rescale
-            OPENVINO_ASSERT(merged_generation_config.guidance_rescale <= 0,
-                            "Parameter 'guidance_rescale' is not currently supported by LTX Pipeline. Please, contact OpenVINO GenAI developers.");
+            if (batch_size_multiplier > 1 && *merged_generation_config.guidance_rescale > 0.0f) {
+                rescale_noise_cfg(noisy_residual_tensor.data<float>(),
+                                  noise_pred_tensor.data<const float>() + noisy_residual_tensor.get_size(),
+                                  noise_pred_shape[0],
+                                  noisy_residual_tensor.get_size() / noise_pred_shape[0],
+                                  *merged_generation_config.guidance_rescale);
+            }
 
             auto scheduler_step_result =
                 m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
