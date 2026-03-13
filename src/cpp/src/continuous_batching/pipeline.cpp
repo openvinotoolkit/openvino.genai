@@ -59,7 +59,14 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_encoder_properties);
+        auto vision_encoder_properties_for_embedder = vision_encoder_properties;
+        if (vision_encoder_properties_for_embedder.empty()) {
+            const auto cache_dir_name = ov::cache_dir.name();
+            if (properties.find(cache_dir_name) != properties.end()) {
+                vision_encoder_properties_for_embedder[cache_dir_name] = properties.at(cache_dir_name);
+            }
+        }
+        embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_encoder_properties_for_embedder);
     }
 
     utils::print_scheduler_config_info(scheduler_config);
