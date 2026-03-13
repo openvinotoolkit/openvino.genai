@@ -20,15 +20,9 @@ class LogAnalyzerTest(unittest.TestCase):
     def setUp(self) -> None:
         print(f'\nIn test: "{self._testMethodName}"', flush=True)
         self._cwd = Path(__file__).parent
-        self.logs_dir_with_error = self._cwd.joinpath("data").joinpath(
-            'logs_with_error'
-        )
-        self.logs_dir_wo_error = self._cwd.joinpath("data").joinpath(
-            'logs_wo_error'
-        )
-        self.errors_to_look_for_file = self._cwd.parent.joinpath(
-            'errors_to_look_for.json'
-        )
+        self.logs_dir_with_error = self._cwd.joinpath("data").joinpath("logs_with_error")
+        self.logs_dir_wo_error = self._cwd.joinpath("data").joinpath("logs_wo_error")
+        self.errors_to_look_for_file = self._cwd.parent.joinpath("errors_to_look_for.json")
 
     def test_log_analyzer_instantiation(self) -> None:
         """
@@ -39,24 +33,18 @@ class LogAnalyzerTest(unittest.TestCase):
             path_to_errors_file=self.errors_to_look_for_file,
         )
         self.assertTrue(
-            hasattr(analyzer, '_errors_to_look_for'),
-            'Analyzer should have _errors_to_look_for',
+            hasattr(analyzer, "_errors_to_look_for"),
+            "Analyzer should have _errors_to_look_for",
         )
-        self.assertTrue(
-            hasattr(analyzer, '_log_files'), 'Analyzer should have _log_files'
-        )
+        self.assertTrue(hasattr(analyzer, "_log_files"), "Analyzer should have _log_files")
 
         for error_data in analyzer._errors_to_look_for:
-            self.assertTrue(
-                error_data['error_text'], 'Each error_data should have text'
-            )
-            self.assertTrue(error_data['ticket'], 'Each error_data should have ticket')
+            self.assertTrue(error_data["error_text"], "Each error_data should have text")
+            self.assertTrue(error_data["ticket"], "Each error_data should have ticket")
 
         for log_file in analyzer._log_files:
-            self.assertTrue(
-                log_file['file_name'], 'Each log_file should have file_name'
-            )
-            self.assertTrue(log_file['path'], 'Each log_file should have path')
+            self.assertTrue(log_file["file_name"], "Each log_file should have file_name")
+            self.assertTrue(log_file["path"], "Each log_file should have path")
 
     def test_string_cleanup(self) -> None:
         """
@@ -68,14 +56,14 @@ class LogAnalyzerTest(unittest.TestCase):
         )
 
         data = (
-            'Connection was reset',
-            'Failed to connect to github.com',
-            'Could not resolve host: github.com',
+            "Connection was reset",
+            "Failed to connect to github.com",
+            "Could not resolve host: github.com",
         )
         expected = (
-            'connection was reset',
-            'failed to connect to github com',
-            'could not resolve host github com',
+            "connection was reset",
+            "failed to connect to github com",
+            "could not resolve host github com",
         )
 
         for input_str, expected_str in zip(data, expected):
@@ -92,8 +80,7 @@ class LogAnalyzerTest(unittest.TestCase):
         analyzer.analyze()
         self.assertTrue(analyzer.found_matching_error)
         self.assertEqual(analyzer.found_error_ticket, 130955)
-        self.assertEqual(analyzer.matched_error_text,
-                         'Network is unreachable')
+        self.assertEqual(analyzer.matched_error_text, "Network is unreachable")
 
     def test_analyzer_wo_error(self) -> None:
         """

@@ -10,9 +10,7 @@ from github.WorkflowRun import WorkflowRun
 from workflow_rerun.constants import GITHUB_TOKEN, LOGGER
 
 
-def collect_logs_for_run(run: WorkflowRun,
-                         logs_dir: Path,
-                         session: requests.Session) -> Path:
+def collect_logs_for_run(run: WorkflowRun, logs_dir: Path, session: requests.Session) -> Path:
     """
     Downloads logs of a given Workflow Run,
     saves them to a specified path, and returns that path.
@@ -62,20 +60,18 @@ def collect_logs_for_run(run: WorkflowRun,
     In that case, we need only 'system.txt' file from each directory
     """
     # Get failed jobs
-    failed_jobs = [job for job in run.jobs() if job.conclusion == 'failure']
-    LOGGER.info(f'FAILED JOBS: {[job.name for job in failed_jobs]}')
+    failed_jobs = [job for job in run.jobs() if job.conclusion == "failure"]
+    LOGGER.info(f"FAILED JOBS: {[job.name for job in failed_jobs]}")
 
-    with tempfile.NamedTemporaryFile(suffix='.zip') as temp_file:
+    with tempfile.NamedTemporaryFile(suffix=".zip") as temp_file:
         log_archive_path = Path(temp_file.name)
 
         # Download logs archive
-        with open(file=log_archive_path,
-                mode='wb') as log_archive:
-            LOGGER.info(f'DOWNLOADING LOGS FOR RUN ID {run.id}')
+        with open(file=log_archive_path, mode="wb") as log_archive:
+            LOGGER.info(f"DOWNLOADING LOGS FOR RUN ID {run.id}")
             # PyGitHub does not expose the "/repos/{owner}/{repo}/actions/runs/{run_id}/logs" endpoint so we have to use requests
-            LOGGER.debug(f'Downloading logs from {run.logs_url}')
-            response = session.get(url=run.logs_url,
-                                   headers={'Authorization': f'Bearer {GITHUB_TOKEN}'})
+            LOGGER.debug(f"Downloading logs from {run.logs_url}")
+            response = session.get(url=run.logs_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
             response.raise_for_status()
             log_archive.write(response.content)
 
@@ -83,23 +79,22 @@ def collect_logs_for_run(run: WorkflowRun,
         with tempfile.TemporaryDirectory() as temp_dir:
             logs_temp_dir = Path(temp_dir)
 
-            with ZipFile(file=log_archive_path,
-                        mode='r') as zip_file:
+            with ZipFile(file=log_archive_path, mode="r") as zip_file:
                 zip_file.extractall(logs_temp_dir)
 
             # Traverse the unpacked logs to find the ones of failed jobs
             for job in failed_jobs:
-                job_filename = job.name.replace('/', '_')
-                LOGGER.debug(f'Looking for failed job logs with filename: {job_filename}')
+                job_filename = job.name.replace("/", "_")
+                LOGGER.debug(f"Looking for failed job logs with filename: {job_filename}")
 
                 for p in logs_temp_dir.iterdir():
                     # Move failed jobs' logs to the final destination
                     if p.is_dir() and p.name == job_filename:
-                        LOGGER.debug(f'Keeping system.txt from directory {p} for failed job {job.name}')
-                        (p / 'system.txt').rename(logs_dir / f'{job_filename}__system.txt')
-                    elif p.is_file() and p.name.endswith(f'{job_filename}.txt'):
-                        LOGGER.debug(f'Keeping file {p} for failed job {job.name}')
+                        LOGGER.debug(f"Keeping system.txt from directory {p} for failed job {job.name}")
+                        (p / "system.txt").rename(logs_dir / f"{job_filename}__system.txt")
+                    elif p.is_file() and p.name.endswith(f"{job_filename}.txt"):
+                        LOGGER.debug(f"Keeping file {p} for failed job {job.name}")
                         p.rename(logs_dir / p.name)
 
-    LOGGER.info(f'COLLECTED LOGS FOR {run.id} IN {logs_dir}')
+    LOGGER.info(f"COLLECTED LOGS FOR {run.id} IN {logs_dir}")
     return logs_dir
