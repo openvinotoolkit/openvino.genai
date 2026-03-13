@@ -100,11 +100,9 @@ void update_npu_config_whisper(ov::AnyMap& config,
                                const ov::genai::utils::KVAxesPosition& kv_pos,
                                const ov::genai::utils::KVDesc& kv_desc) {
     update_config(config, {"NPU_USE_NPUW", "YES"});
-    update_config(config, {"NPUW_ONLINE_PIPELINE", "NONE"});
-    update_config(config, {"NPUW_FUNCALL_FOR_ALL", "NO"});
-    update_config(config, {"NPUW_FOLD", "NO"});
     update_config(config, {"NPUW_LLM", "YES"});
     update_config(config, {"NPUW_WHISPER", "YES"});
+    update_config(config, {"NPUW_ONLINE_PIPELINE", "NONE"});
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
     update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
