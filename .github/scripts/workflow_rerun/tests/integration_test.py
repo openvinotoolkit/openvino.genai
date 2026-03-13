@@ -93,13 +93,14 @@ class IntegrationTest(unittest.TestCase):
         run_id = 123
         rerunner_run_id = 456
 
-        with (
-            patch(
-                "workflow_rerun.rerunner.collect_logs_for_run", side_effect=fake_collect_logs_for_run
-            ) as collect_mock,
-            patch("workflow_rerun.rerunner.rerun_failed_jobs") as rerun_mock,
-            patch("workflow_rerun.rerunner.record_rerun_to_db") as record_mock,
-        ):
+        # ruff wants to use parenthesis here, but it's not supported by Python 3.8
+        # which is used on the runner where these tests run
+        # fmt: off
+        with patch('workflow_rerun.rerunner.collect_logs_for_run',
+                   side_effect=fake_collect_logs_for_run) as collect_mock, \
+             patch('workflow_rerun.rerunner.rerun_failed_jobs') as rerun_mock, \
+             patch('workflow_rerun.rerunner.record_rerun_to_db') as record_mock:
+            # fmt: on
             analyze_and_rerun(
                 run=mock_run,
                 repository_name=repository_name,
