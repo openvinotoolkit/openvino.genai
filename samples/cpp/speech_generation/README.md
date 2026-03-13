@@ -38,7 +38,7 @@ python create_speaker_embedding.py
 
 ## Run Text-to-speech sample
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html)
+Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html)
 to run the sample.
 
 `text-to-speech speecht5_tts "Hello OpenVINO GenAI" speaker_embedding.bin`

@@ -223,8 +223,8 @@ Napi::Value VLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         }
         context->native_thread = std::thread(vlmPerformInferenceThread, context);
     } catch (const std::exception& ex) {
-        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
         *this->is_generating = false;
+        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
     }
     return env.Undefined();
 }
