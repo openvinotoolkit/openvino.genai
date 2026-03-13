@@ -11,7 +11,6 @@ import json
 import copy
 import types
 from llm_bench_utils.hook_common import get_bench_hook
-from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
 from llm_bench_utils.model_utils import get_version_in_format_to_pars
 from llm_bench_utils.config_class import (
@@ -153,7 +152,7 @@ def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_data_collector.stop_and_collect_data("compilation")
-            memory_data_collector.log_data(compilation_phase=True)
+            memory_data_collector.log_data(compilation=True)
     bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
@@ -259,7 +258,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
-        memory_data_collector.log_data(compilation_phase=True)
+        memory_data_collector.log_data(compilation=True)
 
     class TokenStreamer(openvino_genai.StreamerBase):
         def __init__(self, tokenizer):
@@ -356,7 +355,7 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_data_collector.stop_and_collect_data("compilation")
-            memory_data_collector.log_data(compilation_phase=True)
+            memory_data_collector.log_data(compilation=True)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time, False, None
@@ -522,7 +521,7 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
-        memory_data_collector.log_data(compilation_phase=True)
+        memory_data_collector.log_data(compilation=True)
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     return image_gen_pipe, end - start, True, callback
 
@@ -540,7 +539,7 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
-        memory_data_collector.log_data(compilation_phase=True)
+        memory_data_collector.log_data(compilation=True)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time
@@ -560,7 +559,7 @@ def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, *
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
-        memory_data_collector.log_data(compilation_phase=True)
+        memory_data_collector.log_data(compilation=True)
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     processor = AutoProcessor.from_pretrained(model_path)
     return genai_pipe, processor, end - start, True
@@ -601,7 +600,7 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_data_collector.stop_and_collect_data("compilation")
-            memory_data_collector.log_data(compilation_phase=True)
+            memory_data_collector.log_data(compilation=True)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     if is_transformers_version(">=", "4.51.0"):
@@ -656,7 +655,7 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_data
     log.info("Selected OpenVINO GenAI for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
-        memory_data_collector.log_data(compilation_phase=True)
+        memory_data_collector.log_data(compilation=True)
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
     return llm_pipe, None, end - start, None, True
@@ -700,7 +699,7 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
     log.info("Selected OpenVINO GenAI for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
-        memory_data_collector.log_data(compilation_phase=True)
+        memory_data_collector.log_data(compilation=True)
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -790,7 +789,7 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
 
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
-        memory_data_collector.log_data(compilation_phase=True)
+        memory_data_collector.log_data(compilation=True)
     bench_hook = get_bench_hook(1, ov_model, rag=True)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
@@ -842,7 +841,7 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_data_collector.stop_and_collect_data("compilation")
-            memory_data_collector.log_data(compilation_phase=True)
+            memory_data_collector.log_data(compilation=True)
     bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
@@ -867,7 +866,7 @@ def create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_
     log.info("Selected OpenVINO GenAI for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
-        memory_data_collector.log_data(compilation_phase=True)
+        memory_data_collector.log_data(compilation=True)
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
     return pipe, processor, None, end - start, True
@@ -919,7 +918,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_data_collector.stop_and_collect_data("compilation")
-            memory_data_collector.log_data(compilation_phase=True)
+            memory_data_collector.log_data(compilation=True)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     processor = tokenizer_class.from_pretrained(model_path)
@@ -1174,7 +1173,7 @@ class OptimumChunkStreamer(BaseStreamer):
         return False
 
 
-def create_genai_text_reranker_model(model_path: Path, device: str, memory_monitor: MemMonitorWrapper, tokenizer: AutoTokenizer, **kwargs):
+def create_genai_text_reranker_model(model_path: Path, device: str, memory_monitor, tokenizer: AutoTokenizer, **kwargs):
     import openvino_genai
 
     config = openvino_genai.TextRerankPipeline.Config()
@@ -1194,12 +1193,12 @@ def create_genai_text_reranker_model(model_path: Path, device: str, memory_monit
     log.info("Selected OpenVINO GenAI for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data("compilation")
-        memory_monitor.log_data(compilation_phase=True)
+        memory_monitor.log_data(compilation=True)
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     return pipe, tokenizer, end - start, None, True
 
 
-def create_text_reranker_model(model_path: Path, device: str, memory_monitor: MemMonitorWrapper, **kwargs):
+def create_text_reranker_model(model_path: Path, device: str, memory_monitor, **kwargs):
     if model_path.name.endswith('xml'):
         model_path = model_path.parents[2]
 
@@ -1249,7 +1248,7 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor: Me
 
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data("compilation")
-        memory_monitor.log_data(compilation_phase=True)
+        memory_monitor.log_data(compilation=True)
     bench_hook = get_bench_hook(1, ov_model, rag=True)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
@@ -1280,7 +1279,7 @@ def create_genai_video_gen_model(model_path, device, ov_config, memory_data_coll
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
-        memory_data_collector.log_data(compilation_phase=True)
+        memory_data_collector.log_data(compilation=True)
     log.info(f"Pipeline initialization time: {end - start:.2f}s")
     return video_gen_pipe, orig_tokenizer, end - start, None, True
 
@@ -1314,7 +1313,7 @@ def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_data_collector.stop_and_collect_data("compilation")
-            memory_data_collector.log_data(compilation_phase=True)
+            memory_data_collector.log_data(compilation=True)
     from_pretrained_time = end - start
     log.info(f"From pretrained time: {from_pretrained_time:.2f}s")
     return ov_model, ov_model.tokenizer, from_pretrained_time, None, False

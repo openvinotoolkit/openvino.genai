@@ -53,16 +53,11 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         if args['infer_count'] is not None:
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
-
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
     additional_args = {}
     if is_transformers_version(">=", "4.51"):
         additional_args["use_model_defaults"] = False
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start()
+
+    mem_consumption.start(num)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     # llama-3-8b-instruct's generation_config.json has 4096 max_length.
     # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
@@ -120,11 +115,9 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
                 **additional_args
             )
     end = time.perf_counter()
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
-
     generation_time = end - start
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
+
     tok_decode_start = time.perf_counter()
     generated_text = tokenizer.batch_decode(result)
     tok_decode_end = time.perf_counter()
@@ -176,12 +169,9 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         gen_time=generation_time,
         latency=per_token_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
-        tokenization_time=(tok_encode_time, tok_decode_time)
+        tokenization_time=(tok_encode_time, tok_decode_time),
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -263,13 +253,8 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start()
 
+    mem_consumption.start(num)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     tokenizer = model.get_tokenizer()
     if args['apply_chat_template']:
@@ -357,10 +342,8 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         generated_text = tokenizer.decode(generated_tokens)
         detokenization_end = time.perf_counter()
         tokenization_time.append((detokenization_end - detokenization_start) * 1000)
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
@@ -401,12 +384,9 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         gen_time=generation_time,
         latency=per_token_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
-        tokenization_time=tokenization_time
+        tokenization_time=tokenization_time,
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -459,12 +439,8 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         if args['infer_count'] is not None:
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start()
+
+    mem_consumption.start(num)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     streamer.reset()
     gen_config = model.get_generation_config()
@@ -511,10 +487,9 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     start = time.perf_counter()
     generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens
     end = time.perf_counter()
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
     generation_time = end - start
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
+
     tok_decode_start = time.perf_counter()
     generated_text = pipe_tokenizer.decode(generated_tokens)
     tok_decode_end = time.perf_counter()
@@ -551,12 +526,9 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         gen_time=generation_time,
         latency=per_token_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
-        tokenization_time=(tok_encode_time, tok_decode_time)
+        tokenization_time=(tok_encode_time, tok_decode_time),
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -581,6 +553,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
 
 
 def run_text_generation_benchmark(model_path, framework, device, tokens_len, streaming, args, num_iters, mem_consumption):
+    mem_consumption.update_marker("model")
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_gen_model(model_path, device, mem_consumption, **args)
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
@@ -610,10 +583,12 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
         text_gen_fn = run_text_generation_genai
 
     proc_id = os.getpid()
+    mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
+                mem_consumption.update_marker(f"step-{num}-{idx}")
                 p_idx = prompt_idx_list[idx]
                 if num == 0:
                     metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
@@ -628,6 +603,7 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
         for idx, input_text in enumerate(text_list):
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
+                mem_consumption.update_marker(f"step-{num}-{idx}")
                 if num == 0:
                     metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
                                                 max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)

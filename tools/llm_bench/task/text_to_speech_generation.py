@@ -42,24 +42,16 @@ def run_text_to_speech_generation_optimum(
         out_str += 'all input token size after padding: {} * {}, '.format(input_token_size, args['batch_size'])
         log.info(out_str)
 
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start()
+    mem_consumption.start(num)
     start = time.perf_counter()
     if vocoder:
         result = model.generate(input_tokens, speaker_embeddings=args.get('speaker_embeddings'), vocoder=vocoder)
     else:
         result = model.generate(input_tokens, speaker_embeddings=args.get('speaker_embeddings'))
-
     end = time.perf_counter()
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
-
     generation_time = end - start
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
+
     result_md5_list = []
     for bs_idx in range(args['batch_size']):
         speech = result.numpy()[bs_idx] if len(result.size()) > 1 else result.numpy()
@@ -76,12 +68,9 @@ def run_text_to_speech_generation_optimum(
         out_size=result.numel(),
         gen_time=generation_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
-        tokenization_time=[tok_encode_time]
+        tokenization_time=[tok_encode_time],
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -109,13 +98,8 @@ def run_text_to_speech_generation_genai(
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start()
 
+    mem_consumption.start(num)
     input_data = processor(text=input_text)
     num_input_tokens = len(input_data['input_ids'])
 
@@ -129,12 +113,9 @@ def run_text_to_speech_generation_genai(
     additional_args = {"speaker_embeddings": ov.Tensor(args['speaker_embeddings'].numpy())} if args.get('speaker_embeddings') is not None else {}
     generation_result = model.generate(input_text_list, **additional_args)
     end = time.perf_counter()
-
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
-
     generation_time = end - start
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
+
     perf_metrics = generation_result.perf_metrics
     tokenization_time = [perf_metrics.get_tokenization_duration().mean]
 
@@ -153,12 +134,9 @@ def run_text_to_speech_generation_genai(
         out_size=perf_metrics.num_generated_samples,
         gen_time=generation_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
-        tokenization_time=tokenization_time
+        tokenization_time=tokenization_time,
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -178,6 +156,7 @@ def run_text_to_speech_generation_genai(
 
 
 def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
+    mem_consumption.update_marker("model")
     model, processor, vocoder, pretrain_time, use_genai = FW_UTILS[framework].create_text_2_speech_model(model_path, device, mem_consumption, **args)
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
@@ -212,10 +191,12 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
         gen_fn = run_text_to_speech_generation_optimum
 
     proc_id = os.getpid()
+    mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
+                mem_consumption.update_marker(f"step-{num}-{idx}")
                 p_idx = prompt_idx_list[idx]
                 if num == 0:
                     metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
@@ -230,6 +211,7 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
         for idx, input_text in enumerate(text_list):
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
+                mem_consumption.update_marker(f"step-{num}-{idx}")
                 if num == 0:
                     metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
                                                 max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
