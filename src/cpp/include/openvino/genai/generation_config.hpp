@@ -621,8 +621,14 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  *        copy as initial value and adjusts it based on recent number of accepted tokens. If `num_assistant_tokens` is not set, it defaults to `5` for both backends.
  * @param max_ngram_size is maximum ngram to use when looking for matches in the prompt.
  *
+ * EAGLE tree search parameters:
+ * @param eagle_tree_params.branching_factor number of top-k candidates expanded at each tree node (branching factor).
+ * @param eagle_tree_params.tree_depth lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations.
+ * @param eagle_tree_params.num_speculative_tokens number of draft (non-root) tokens from the EAGLE tree submitted
+ *        to the target model for verification. Total tree nodes = `num_speculative_tokens + 1` (including root).
+ *
  * @param structured_output_config if set, the output will be a string constrained by the specified json_schema, regex, or EBNF grammar.
- * 
+ *
  * @param apply_chat_template whether or not to apply chat_template for non-chat scenarios
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
@@ -675,6 +681,19 @@ public:
     size_t num_assistant_tokens = 0;
     size_t max_ngram_size = 0;
 
+    /**
+     * @brief Parameters for EAGLE3 speculative decoding tree search
+     */
+    struct EagleParams {
+        /// Number of top-k candidates expanded at each tree node (branching factor)
+        size_t branching_factor = 1;
+        /// Lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations
+        size_t tree_depth = 0;
+        /// Number of draft (non-root) tokens from the EAGLE tree submitted to the target model for verification.
+        /// Total tree nodes = num_speculative_tokens + 1 (including root).
+        size_t num_speculative_tokens = 0;
+    } eagle_tree_params;
+
     // Structured output parameters
     std::optional<StructuredOutputConfig> structured_output_config;
 
@@ -692,6 +711,7 @@ public:
 
     bool is_greedy_decoding() const;
     bool is_beam_search() const;
+    bool is_tree_search() const;
     bool is_multinomial() const;
     bool is_assisting_generation() const;
     bool is_prompt_lookup() const;
@@ -749,6 +769,8 @@ extern OPENVINO_GENAI_EXPORTS ov::Property<size_t> rng_seed;
 static constexpr ov::Property<float> assistant_confidence_threshold{"assistant_confidence_threshold"};
 static constexpr ov::Property<size_t> num_assistant_tokens{"num_assistant_tokens"};
 static constexpr ov::Property<size_t> max_ngram_size{"max_ngram_size"};
+
+static constexpr ov::Property<GenerationConfig::EagleParams> eagle_tree_params{"eagle_tree_params"};
 
 static constexpr ov::Property<StructuredOutputConfig> structured_output_config{"structured_output_config"};
 static constexpr ov::Property<std::string> regex{"regex"};

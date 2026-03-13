@@ -20,7 +20,11 @@ enum class SequenceStatus {
     RUNNING = 0,
     FINISHED = 1,
     OUT_OF_MEMORY = 2,
-    WAITING = 3
+    WAITING = 3,
+    // The sequence is temporarily parked during EAGLE tree drafting: kept alive in the
+    // sequence group so finalize_tree() can locate and restore it, but excluded from
+    // get_running_sequences() to prevent it from being scheduled for inference.
+    SUSPENDED = 4
 };
 
 enum class SequenceGroupType {
@@ -30,6 +34,14 @@ enum class SequenceGroupType {
 
 using TokenIds = std::vector<int64_t>;
 using LogProbs = std::vector<float>;
+
+struct EagleMetaData {
+    std::vector<std::vector<uint8_t>> tree_mask;
+    std::vector<std::vector<int64_t>> retrieve_indices;
+    std::vector<int64_t> tree_position_ids;
+    std::vector<int64_t> validated_indices;
+};
+
 class SequenceGroup;
 
 class Sequence {
@@ -56,6 +68,7 @@ class Sequence {
     size_t m_hidden_size;
     std::vector<ov::Tensor> m_position_ids_list;
     int64_t m_rope_delta;
+    EagleMetaData m_eagle_metadata;
 
     // Embeddings hash calculation params
     static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
@@ -125,6 +138,10 @@ public:
         return m_status == SequenceStatus::WAITING;
     }
 
+    bool is_suspended() const {
+        return m_status == SequenceStatus::SUSPENDED;
+    }
+
     void set_status(SequenceStatus status) {
         m_status = status;
     }
@@ -150,6 +167,14 @@ public:
 
     ov::Tensor get_hidden_state() const {
         return m_hidden_state;
+    }
+
+    void set_eagle_metadata(const EagleMetaData& metadata) {
+        m_eagle_metadata = metadata;
+    }
+
+    const EagleMetaData& get_eagle_metadata() const {
+        return m_eagle_metadata;
     }
 
     // removes n last tokens and updates cumulative log prob
@@ -785,6 +810,10 @@ public:
 
     const ov::genai::GenerationConfig& get_sampling_parameters() const {
         return m_sampling_params;
+    }
+
+    void set_sampling_parameters(const ov::genai::GenerationConfig& params) {
+        m_sampling_params = params;
     }
 
     void set_out_of_memory() {
