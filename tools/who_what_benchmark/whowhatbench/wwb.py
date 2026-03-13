@@ -89,6 +89,7 @@ def parse_args():
             "text-to-image",
             "text-to-video",
             "visual-text",
+            "visual-text-chat",
             "visual-video-text",
             "image-to-image",
             "image-inpainting",
@@ -621,6 +622,33 @@ def genai_gen_visual_text(
     return out.texts[0]
 
 
+def genai_gen_visual_text_chat(model, inputs, processor, tokenizer, max_new_tokens, pruning_ratio, relevance_weight):
+    kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
+    if pruning_ratio is not None:
+        kwargs["pruning_ratio"] = pruning_ratio
+    if relevance_weight is not None:
+        kwargs["relevance_weight"] = relevance_weight
+
+    import openvino_genai
+
+    chat_history = openvino_genai.ChatHistory()
+    for input in inputs:
+        chat_history.append({"role": "user", "content": input["prompt"]})
+        media_kwargs = {}
+        if input["images"]:
+            media_kwargs["images"] = [ov.Tensor(np.array(image)[None]) for image in input["images"]]
+        if input["videos"]:
+            media_kwargs["videos"] = [ov.Tensor(np.array(image)[None]) for image in input["videos"]]
+
+        decode_res = model.generate(
+            chat_history, **media_kwargs, **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer), **kwargs
+        )
+        chat_history.append({"role": "assistant", "content": decode_res.texts[0]})
+
+    chat = model.get_tokenizer().apply_chat_template(chat_history, add_generation_prompt=True)
+    return chat
+
+
 def genai_gen_embedding(model, tokenizer, passages, **kwargs):
     embeddings = model.embed_documents(passages)
     return embeddings
@@ -769,6 +797,22 @@ def create_evaluator(base_model, args):
                 test_data=prompts,
                 num_samples=args.num_samples,
                 gen_rerank_fn=genai_gen_reranking if args.genai else None
+            )
+        elif task == "visual-text-chat":
+            processor, config = load_processor(args)
+            tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                tokenizer=tokenizer,
+                num_samples=args.num_samples,
+                similarity_model_id=args.data_encoder,
+                max_new_tokens=args.max_new_tokens,
+                gen_answer_fn=genai_gen_visual_text_chat if args.genai else None,
+                processor=processor,
+                pruning_ratio=args.pruning_ratio,
+                relevance_weight=args.relevance_weight,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")
