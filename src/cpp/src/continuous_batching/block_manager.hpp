@@ -365,8 +365,8 @@ public:
                         // Only erase from cached_blocks if the entry actually refers to the evicted (colliding) block,
                         // not the currently-freed block which may be stored under the same hash key.
                         auto cached_it = cached_blocks.find(colliding_blocks_per_layer[0]->get_hash());
-                        const bool has_cached_entry = cached_it != cached_blocks.end();
-                        if (has_cached_entry) {
+                        if (cached_it != cached_blocks.end()) {
+                            OPENVINO_ASSERT(!cached_it->second.empty(), "cached_blocks entry must not be empty");
                             const auto colliding_block_idx = colliding_blocks_per_layer[0]->get_index();
                             const auto cached_block_idx = cached_it->second[0]->get_index();
                             if (colliding_block_idx == cached_block_idx) {
