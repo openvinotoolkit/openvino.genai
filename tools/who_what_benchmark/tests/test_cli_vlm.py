@@ -1,6 +1,5 @@
 import pytest
 import logging
-from pathlib import Path
 import sys
 
 from conftest import convert_model, run_wwb
