@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 set(TARGET_NAME "openvino_custom_add_extension")
-project($TARGET_NAME)
 
 # The OpenVINO installed from PyPI can be used to find OpenVINO_DIR
 if(NOT CMAKE_CROSSCOMPILING)
@@ -16,7 +15,7 @@ if(NOT CMAKE_CROSSCOMPILING)
     endif()
 endif()
 
-message(status "OpenVINO_DIR_PY=${OpenVINO_DIR_PY}")
+message(STATUS "OpenVINO_DIR_PY=${OpenVINO_DIR_PY}")
 find_package(OpenVINO REQUIRED PATHS "${OpenVINO_DIR_PY}")
 
 set(SRC custom_add.cpp ov_extension.cpp)
@@ -33,6 +32,7 @@ endif()
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::runtime)
 
 install(TARGETS ${TARGET_NAME}
+        COMPONENT tests
         LIBRARY DESTINATION tests
         RUNTIME DESTINATION tests
         ARCHIVE DESTINATION tests)

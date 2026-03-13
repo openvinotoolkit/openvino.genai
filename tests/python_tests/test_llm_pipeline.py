@@ -890,22 +890,26 @@ def test_pipelines_generate_with_streaming(
 
 
 def replace_ir_add_with_myadd(ir_xml_path: Path) -> None:
-    import defusedxml.ElementTree as ET
+    import re
 
     target_node_name = "__module.model.layers.1.input_layernorm/aten::add/Add"
-    tree = ET.parse(ir_xml_path)
-    root = tree.getroot()
+    xml_text = ir_xml_path.read_text(encoding="utf-8")
 
-    replaced = False
-    for layer in root.findall(".//layer"):
-        if layer.get("type") == "Add" and layer.get("name") == target_node_name:
-            layer.set("type", "MyAdd")
-            layer.set("version", "extension")
-            replaced = True
-            break
+    layer_pattern = re.compile(r'<layer\b[^>]*\bname="' + re.escape(target_node_name) + r'"[^>]*>')
+    match = layer_pattern.search(xml_text)
+    assert match is not None, f"No IR Add layer named '{target_node_name}' found to replace with MyAdd"
 
-    assert replaced, f"No IR Add layer named '{target_node_name}' found to replace with MyAdd"
-    tree.write(ir_xml_path, encoding="utf-8", xml_declaration=True)
+    layer_tag = match.group(0)
+    updated_tag = re.sub(r'\btype="Add"', 'type="MyAdd"', layer_tag, count=1)
+    assert updated_tag != layer_tag, f"IR layer '{target_node_name}' does not have type='Add'"
+
+    if re.search(r'\bversion="[^"]*"', updated_tag):
+        updated_tag = re.sub(r'\bversion="[^"]*"', 'version="extension"', updated_tag, count=1)
+    else:
+        updated_tag = updated_tag[:-1] + ' version="extension">'
+
+    xml_text = xml_text[:match.start()] + updated_tag + xml_text[match.end():]
+    ir_xml_path.write_text(xml_text, encoding="utf-8")
 
 
 def get_extension_model(model_path: str, temp_dir: Path) -> Path:
@@ -976,24 +980,20 @@ def test_llm_pipeline_add_extension_custom_op(
     tmp_path: Path,
 ) -> None:
     extension_model_path = get_extension_model(llm_model.models_path, tmp_path)
-    try:
-        extension_lib_path = get_extension_lib_path()
-    except FileNotFoundError as exc:
-        pytest.skip(f"Custom extension library is unavailable for this environment: {exc}")
-
-    os.environ["EXTENSION_LIB_CALLED"] = "0"
+    extension_lib_path = get_extension_lib_path()
 
     # The custom op "MyAdd" from the extension is implemented in the same way as the OpenVINO op "Add"
     properties = {"extensions": [str(extension_lib_path)]}
+    os.environ["EXTENSION_LIB_CALLED"] = "0"
     ov_pipe_extension = ov_genai.LLMPipeline(extension_model_path, "CPU", **properties)
     result_extension = ov_pipe_extension.generate([prompt], **generation_config)
+    extension_lib_called = get_process_env_var("EXTENSION_LIB_CALLED")
+    assert extension_lib_called == "1", "Custom extension library was not called"
 
     properties = {}
     ov_pipe_ref = ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
     result_ref = ov_pipe_ref.generate([prompt], **generation_config)
 
-    extension_lib_called = get_process_env_var("EXTENSION_LIB_CALLED")
-    assert extension_lib_called == "1", "Custom extension library was not called"
     assert result_extension.texts[0].strip() == result_ref.texts[0].strip(), (
         "Result should be the same for model with extension and reference model."
     )

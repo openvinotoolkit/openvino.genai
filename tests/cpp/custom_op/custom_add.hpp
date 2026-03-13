@@ -13,7 +13,7 @@ public:
     OPENVINO_OP("MyAdd");
 
     MyAdd() = default;
-    MyAdd(const ov::OutputVector& args);  // const float &bias
+    MyAdd(const ov::OutputVector& args);
     void validate_and_infer_types() override;
     std::shared_ptr<ov::Node> clone_with_new_inputs(const ov::OutputVector& new_args) const override;
     bool visit_attributes(ov::AttributeVisitor& visitor) override;
@@ -21,4 +21,4 @@ public:
     bool evaluate(ov::TensorVector& outputs, const ov::TensorVector& inputs) const override;
     bool has_evaluate() const override;
 };
-};  // namespace TemplateExtension
+}  // namespace TemplateExtension
