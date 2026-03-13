@@ -20,7 +20,7 @@ pip install --upgrade-strategy eager -r ../../requirements.txt
 optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code MiniCPM-V-2_6
 ```
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run samples.
+Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run samples.
 
 ## Run image-to-text chat sample:
 
