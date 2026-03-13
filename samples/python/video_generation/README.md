@@ -39,7 +39,7 @@ pipeline.save_pretrained(output_dir)
 
 ### Common Information
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
+Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
 Follow [build instruction](../../../src/docs/BUILD.md) to build GenAI samples.
 
 GPUs usually provide better performance compared to CPUs. Modify the source code to change the device for inference to the GPU.
