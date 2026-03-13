@@ -3,7 +3,7 @@
 
 import readline from 'readline';
 import { z } from 'zod';
-import { LLMPipeline, StreamingStatus, StructuredOutputConfig } from 'openvino-genai-node';
+import { LLMPipeline, StreamingStatus, StructuredOutputConfig, ChatHistory } from 'openvino-genai-node';
 import { serialize_json } from './helper.js';
 
 const getWeatherTool = {
@@ -91,6 +91,10 @@ async function main() {
 
     console.log(`User prompt: ${prompt}`);
 
+    const chatHistory = new ChatHistory();
+    chatHistory.push({ role: "system", content: sysMessage });
+    chatHistory.push({ role: "user", content: prompt });
+
     for (const useStructuralTags of [false, true]) {
         console.log("=".repeat(80));
         console.log(`${centerString(useStructuralTags ? "Using structural tags" : "Using no structural tags", 80)}`);
@@ -100,7 +104,6 @@ async function main() {
         generation_config.return_decoded_results = true;
         generation_config.max_new_tokens = 300;
 
-        await pipe.startChat(sysMessage);
         if (useStructuralTags) {
             generation_config.structured_output_config = {
                 structural_tags_config: StructuredOutputConfig.TriggeredTags({
@@ -115,12 +118,11 @@ async function main() {
             generation_config.do_sample = true;
         };
 
-        const response = await pipe.generate(prompt, generation_config, streamer);
-        await pipe.finishChat();
-        console.log("\n" + "-".repeat(80));
+        const decodedResults = await pipe.generate(chatHistory, generation_config, streamer);
 
+        console.log("\n" + "-".repeat(80));
         console.log("Correct tool calls by the model:");
-        console.log(parseToolsFromResponse(response.toString()));
+        console.log(parseToolsFromResponse(decodedResults.toString()));
     }
 }
 

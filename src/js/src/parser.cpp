@@ -29,6 +29,10 @@ void JSParser::parse(ov::genai::JsonContainer& message) {
     message = promise.get_future().get();
 }
 
+Napi::Object JSParser::get_js_object(Napi::Env env) const {
+    return js_parser_ref.Value();
+}
+
 void parse_with_parser(const Napi::CallbackInfo& info, std::shared_ptr<ov::genai::Parser> parser) {
     Napi::Env env = info.Env();
 
@@ -103,6 +107,18 @@ std::shared_ptr<ov::genai::ReasoningParser> ReasoningParserWrapper::get_parser()
     return _parser;
 }
 
+void ReasoningParserWrapper::set_parser(std::shared_ptr<ov::genai::ReasoningParser> parser) {
+    _parser = std::move(parser);
+}
+
+Napi::Object ReasoningParserWrapper::wrap(Napi::Env env, std::shared_ptr<ov::genai::ReasoningParser> parser) {
+    const auto& prototype = env.GetInstanceData<AddonData>()->reasoning_parser;
+    OPENVINO_ASSERT(prototype, "Invalid pointer to ReasoningParser prototype.");
+    Napi::Object obj = prototype.Value().As<Napi::Function>().New({});
+    Napi::ObjectWrap<ReasoningParserWrapper>::Unwrap(obj)->set_parser(std::move(parser));
+    return obj;
+}
+
 DeepSeekR1ReasoningParserWrapper::DeepSeekR1ReasoningParserWrapper(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<DeepSeekR1ReasoningParserWrapper>(info) {
     try {
@@ -126,6 +142,19 @@ std::shared_ptr<ov::genai::DeepSeekR1ReasoningParser> DeepSeekR1ReasoningParserW
     return _parser;
 }
 
+void DeepSeekR1ReasoningParserWrapper::set_parser(std::shared_ptr<ov::genai::DeepSeekR1ReasoningParser> parser) {
+    _parser = std::move(parser);
+}
+
+Napi::Object DeepSeekR1ReasoningParserWrapper::wrap(Napi::Env env,
+                                                    std::shared_ptr<ov::genai::DeepSeekR1ReasoningParser> parser) {
+    const auto& prototype = env.GetInstanceData<AddonData>()->deepseek_r1_reasoning_parser;
+    OPENVINO_ASSERT(prototype, "Invalid pointer to DeepSeekR1ReasoningParser prototype.");
+    Napi::Object obj = prototype.Value().As<Napi::Function>().New({});
+    Napi::ObjectWrap<DeepSeekR1ReasoningParserWrapper>::Unwrap(obj)->set_parser(std::move(parser));
+    return obj;
+}
+
 Phi4ReasoningParserWrapper::Phi4ReasoningParserWrapper(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<Phi4ReasoningParserWrapper>(info) {
     Napi::Env env = info.Env();
@@ -147,6 +176,18 @@ void Phi4ReasoningParserWrapper::parse(const Napi::CallbackInfo& info) {
 
 std::shared_ptr<ov::genai::Phi4ReasoningParser> Phi4ReasoningParserWrapper::get_parser() {
     return _parser;
+}
+
+void Phi4ReasoningParserWrapper::set_parser(std::shared_ptr<ov::genai::Phi4ReasoningParser> parser) {
+    _parser = std::move(parser);
+}
+
+Napi::Object Phi4ReasoningParserWrapper::wrap(Napi::Env env, std::shared_ptr<ov::genai::Phi4ReasoningParser> parser) {
+    const auto& prototype = env.GetInstanceData<AddonData>()->phi4_reasoning_parser;
+    OPENVINO_ASSERT(prototype, "Invalid pointer to Phi4ReasoningParser prototype.");
+    Napi::Object obj = prototype.Value().As<Napi::Function>().New({});
+    Napi::ObjectWrap<Phi4ReasoningParserWrapper>::Unwrap(obj)->set_parser(std::move(parser));
+    return obj;
 }
 
 Llama3PythonicToolParserWrapper::Llama3PythonicToolParserWrapper(const Napi::CallbackInfo& info)
@@ -174,6 +215,19 @@ std::shared_ptr<ov::genai::Llama3PythonicToolParser> Llama3PythonicToolParserWra
     return _parser;
 }
 
+void Llama3PythonicToolParserWrapper::set_parser(std::shared_ptr<ov::genai::Llama3PythonicToolParser> parser) {
+    _parser = std::move(parser);
+}
+
+Napi::Object Llama3PythonicToolParserWrapper::wrap(Napi::Env env,
+                                                   std::shared_ptr<ov::genai::Llama3PythonicToolParser> parser) {
+    const auto& prototype = env.GetInstanceData<AddonData>()->llama3_pythonic_tool_parser;
+    OPENVINO_ASSERT(prototype, "Invalid pointer to Llama3PythonicToolParser prototype.");
+    Napi::Object obj = prototype.Value().As<Napi::Function>().New({});
+    Napi::ObjectWrap<Llama3PythonicToolParserWrapper>::Unwrap(obj)->set_parser(std::move(parser));
+    return obj;
+}
+
 Llama3JsonToolParserWrapper::Llama3JsonToolParserWrapper(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<Llama3JsonToolParserWrapper>(info) {
     Napi::Env env = info.Env();
@@ -195,4 +249,16 @@ void Llama3JsonToolParserWrapper::parse(const Napi::CallbackInfo& info) {
 
 std::shared_ptr<ov::genai::Llama3JsonToolParser> Llama3JsonToolParserWrapper::get_parser() {
     return _parser;
+}
+
+void Llama3JsonToolParserWrapper::set_parser(std::shared_ptr<ov::genai::Llama3JsonToolParser> parser) {
+    _parser = std::move(parser);
+}
+
+Napi::Object Llama3JsonToolParserWrapper::wrap(Napi::Env env, std::shared_ptr<ov::genai::Llama3JsonToolParser> parser) {
+    const auto& prototype = env.GetInstanceData<AddonData>()->llama3_json_tool_parser;
+    OPENVINO_ASSERT(prototype, "Invalid pointer to Llama3JsonToolParser prototype.");
+    Napi::Object obj = prototype.Value().As<Napi::Function>().New({});
+    Napi::ObjectWrap<Llama3JsonToolParserWrapper>::Unwrap(obj)->set_parser(std::move(parser));
+    return obj;
 }

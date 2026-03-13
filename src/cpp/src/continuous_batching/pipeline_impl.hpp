@@ -90,11 +90,13 @@ protected:
      */
     void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output);
 
+
     void _register_step_cache_usage(float step_cache_usage);
     void _reset_cache_usage_statistics();
     float _get_current_running_average_cache_usage() const;
     void _compute_cache_rotation_data(const std::vector<SequenceGroup::Ptr>& sequence_groups, const Scheduler::Output& scheduler_output);
     void _prepare_rotation_data_storage(const SchedulerConfig& normalized_config, size_t embedding_size);
+    void _set_adaptive_rkv_diversity_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output);
 
     virtual void drop_requests();
 
@@ -115,13 +117,14 @@ public:
                            const ov::AnyMap& properties,
                            const ov::genai::GenerationConfig& generation_config,
                            bool is_validation_mode_enabled = false);
-    
+
     virtual ~ContinuousBatchingImpl();
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt) override;
+                                 std::optional<ov::Tensor> token_type_ids = std::nullopt,
+                                 std::optional<ov::Tensor> prompt_ids = std::nullopt) override;
 
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
@@ -129,14 +132,22 @@ public:
 
     bool has_non_finished_requests() override;
 
+    virtual void generate_candidates_for_prompt_lookup();
+
     void step() override;
 
+    /**
+     * input_ids is a batch of input ids for generation, which can be either raw prompts or already encoded token ids,
+     * depending on the pipeline configuration. prompt_ids is an optional batch of prompt ids, which represents the
+     * token IDs of the prompt portion for each sequence in the batch.
+     */
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
              const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
-             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt) override;
+             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt,
+             const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt) override;
 
     /**
      * Updates LoRA adapters for current generation call

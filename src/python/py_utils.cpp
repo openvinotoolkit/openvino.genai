@@ -17,6 +17,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/taylorseer_config.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
@@ -380,6 +381,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::GenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::ImageGenerationConfig>(py_obj)) {
         return py::cast<ov::genai::ImageGenerationConfig>(py_obj);
+    } else if (py::isinstance<ov::genai::TaylorSeerCacheConfig>(py_obj)) {
+        return py::cast<ov::genai::TaylorSeerCacheConfig>(py_obj);
     } else if (py::isinstance<ov::genai::WhisperGenerationConfig>(py_obj)) {
         return py::cast<ov::genai::WhisperGenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::TextEmbeddingPipeline::PoolingType>(py_obj)) {

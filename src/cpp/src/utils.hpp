@@ -165,9 +165,7 @@ public:
     }
 
     void add_inputs(const ov::Tensor& inputs_ids) {
-        OPENVINO_SUPPRESS_DEPRECATED_START
-        std::copy_n(inputs_ids.data<int64_t>(), inputs_ids.get_size(), std::back_inserter(state));
-        OPENVINO_SUPPRESS_DEPRECATED_END
+        std::copy_n(inputs_ids.data<const int64_t>(), inputs_ids.get_size(), std::back_inserter(state));
     }
 
     void reset_state() {
@@ -308,7 +306,18 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
  */
 ExtensionList extract_extensions(ov::AnyMap& properties);
 
-void add_extensions_to_core(const ExtensionList& extensions);
+/**
+ * @brief Extracts extensions from properties and registers them in the shared ov::Core instance.
+ *
+ * Supported extension item types are:
+ *   - std::filesystem::path to an extension library, and
+ *   - std::shared_ptr<ov::Extension> for an already constructed extension object.
+ *
+ * @param properties Properties map that may contain the "extensions" key.
+ */
+void extract_extensions_to_core(ov::AnyMap& properties);
+
+void clear_false_prompt_lookup_from_config(ov::AnyMap& properties);
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 

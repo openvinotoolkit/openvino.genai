@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -112,21 +112,44 @@ class AdapterConfig:
         ...
     def set_alpha(self, adapter: Adapter, alpha: typing.SupportsFloat) -> AdapterConfig:
         ...
+class AdaptiveRKVConfig:
+    """
+    Configuration struct for the Adaptive R-KV cache eviction algorithm
+    """
+    def __init__(self, attention_mass: typing.SupportsFloat = 0.9, window_size: typing.SupportsInt = 8) -> None:
+        ...
+    @property
+    def attention_mass(self) -> float:
+        ...
+    @attention_mass.setter
+    def attention_mass(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def window_size(self) -> int:
+        ...
+    @window_size.setter
+    def window_size(self, arg0: typing.SupportsInt) -> None:
+        ...
 class AggregationMode:
     """
     Represents the mode of per-token score aggregation when determining least important tokens for eviction from cache
                                    :param AggregationMode.SUM: In this mode the importance scores of each token will be summed after each step of generation
                                    :param AggregationMode.NORM_SUM: Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated) of a given token in cache
+                                   :param AggregationMode.ADAPTIVE_RKV Switches the cache eviction algorithm to use Adaptive R-KV algorithm. The scores are aggregated within a configurable window 
+                                    size of the latest generated tokens. May not be used together with the KVCrush algorithm (which is disabled automatically in this mode).
     
     Members:
     
       SUM
     
       NORM_SUM
+    
+      ADAPTIVE_RKV
     """
+    ADAPTIVE_RKV: typing.ClassVar[AggregationMode]  # value = <AggregationMode.ADAPTIVE_RKV: 2>
     NORM_SUM: typing.ClassVar[AggregationMode]  # value = <AggregationMode.NORM_SUM: 1>
     SUM: typing.ClassVar[AggregationMode]  # value = <AggregationMode.SUM: 0>
-    __members__: typing.ClassVar[dict[str, AggregationMode]]  # value = {'SUM': <AggregationMode.SUM: 0>, 'NORM_SUM': <AggregationMode.NORM_SUM: 1>}
+    __members__: typing.ClassVar[dict[str, AggregationMode]]  # value = {'SUM': <AggregationMode.SUM: 0>, 'NORM_SUM': <AggregationMode.NORM_SUM: 1>, 'ADAPTIVE_RKV': <AggregationMode.ADAPTIVE_RKV: 2>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -456,6 +479,7 @@ class CacheEvictionConfig:
           following the SnapKV article approach (https://arxiv.org/abs/2404.14469).
         :type snapkv_window_size int
     """
+    adaptive_rkv_config: AdaptiveRKVConfig
     aggregation_mode: AggregationMode
     apply_rotation: bool
     kvcrush_config: KVCrushConfig
@@ -1411,6 +1435,7 @@ class ImageGenerationConfig:
     negative_prompt_3: str | None
     prompt_2: str | None
     prompt_3: str | None
+    taylorseer_config: openvino_genai.py_openvino_genai.TaylorSeerCacheConfig | None
     def __init__(self) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
@@ -2141,9 +2166,13 @@ class PipelineMetrics:
         :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
         :type max_cache_usage: float
     
-    
         :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
         :type avg_cache_usage: float
+    
+        :param kv_cache_size_in_bytes: Total allocated KV cache size in bytes, based on the total number of KV blocks.
+          This value represents reserved/allocated memory for the KV cache and does not
+          distinguish between used and unused portions in dynamic KV cache configurations.
+        :type kv_cache_size_in_bytes: int
     """
     def __init__(self) -> None:
         ...
@@ -2152,6 +2181,9 @@ class PipelineMetrics:
         ...
     @property
     def cache_usage(self) -> float:
+        ...
+    @property
+    def kv_cache_size_in_bytes(self) -> int:
         ...
     @property
     def max_cache_usage(self) -> float:
@@ -3223,6 +3255,47 @@ class T5EncoderModel:
     def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: typing.SupportsInt, **kwargs) -> openvino._pyopenvino.Tensor:
         ...
     def reshape(self, batch_size: typing.SupportsInt, max_sequence_length: typing.SupportsInt) -> T5EncoderModel:
+        ...
+class TaylorSeerCacheConfig:
+    """
+    Configuration for TaylorSeer cache mechanism in diffusion transformers.
+    
+    See paper: https://arxiv.org/pdf/2503.06923
+    
+    Attributes:
+      cache_interval: Interval between full computation steps (default: 3, must be >= 2)
+      disable_cache_before_step: Step before which caching is disabled for warmup (default: 6)
+      disable_cache_after_step: Step after which caching is disabled. If negative, calculated as num_inference_steps + disable_cache_after_step (default: -2)
+    """
+    def __init__(self) -> None:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def to_string(self) -> str:
+        ...
+    @property
+    def cache_interval(self) -> int:
+        """
+        Interval between full computation steps (must be >= 2)
+        """
+    @cache_interval.setter
+    def cache_interval(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def disable_cache_after_step(self) -> int:
+        """
+        Step after which caching is disabled (negative values are relative to num_inference_steps)
+        """
+    @disable_cache_after_step.setter
+    def disable_cache_after_step(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def disable_cache_before_step(self) -> int:
+        """
+        Step before which caching is disabled for warmup
+        """
+    @disable_cache_before_step.setter
+    def disable_cache_before_step(self, arg0: typing.SupportsInt) -> None:
         ...
 class Text2ImagePipeline:
     """

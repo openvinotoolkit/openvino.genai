@@ -40,7 +40,7 @@ static FARPROC WINAPI load_exe_hook(unsigned int event, DelayLoadInfo* info) {
 
   if (_stricmp(info->szDll, "node.exe") != 0)
     return NULL;
-  
+
   // Fall back to the current process
   if(!node_dll) node_dll = GetModuleHandleA(NULL);
 

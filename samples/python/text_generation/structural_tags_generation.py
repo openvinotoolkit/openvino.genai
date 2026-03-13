@@ -13,6 +13,7 @@ from openvino_genai import (
     GenerationConfig,
     LLMPipeline,
     StreamingStatus,
+    ChatHistory,
 )
 from openvino_genai import (
     StructuredOutputConfig as SOC,
@@ -111,6 +112,10 @@ def main():
 
     print(f"User prompt: {args.prompt}")
 
+    history = ChatHistory()
+    history.append({"role": "system", "content": sys_message})
+    history.append({"role": "user", "content": args.prompt})
+
     for use_structural_tags in [False, True]:
         print("=" * 80)
         print(f"{'Using structural tags' if use_structural_tags else 'Using no structural tags':^80}")
@@ -118,7 +123,6 @@ def main():
         config = GenerationConfig()
         config.max_new_tokens = 300
 
-        pipe.start_chat(sys_message)
         if use_structural_tags:
             config.structured_output_config = SOC(
                 structural_tags_config=SOC.TriggeredTags(
@@ -134,12 +138,12 @@ def main():
                 )
             )
             config.do_sample = True
-        response = pipe.generate(args.prompt, config, streamer=streamer)
-        pipe.finish_chat()
-        print("\n" + "-" * 80)
 
+        decoded_results = pipe.generate(history, config, streamer=streamer)
+
+        print("\n" + "-" * 80)
         print("Correct tool calls by the model:")
-        pprint(parse_tools_from_response(response))
+        pprint(parse_tools_from_response(decoded_results.texts[0]))
 
 
 if "__main__" == __name__:

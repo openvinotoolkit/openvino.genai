@@ -16,6 +16,7 @@
 #include "speculative_decoding/stateful/eagle3_strategy.hpp"
 #include "speculative_decoding/stateful/fast_draft_strategy.hpp"
 #include "utils.hpp"
+#include "logger.hpp"
 
 namespace {
 
@@ -144,6 +145,7 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
                                                    const ov::AnyMap& properties,
                                                    const ov::genai::GenerationConfig& generation_config,
                                                    const std::filesystem::path& models_path = {}) {
+    OPENVINO_ASSERT(model, "Model must not be null");
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::utils::extract_draft_model_from_config(properties_without_draft_model);
 
@@ -202,8 +204,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
-    auto extensions = utils::extract_extensions(properties);
-    utils::add_extensions_to_core(extensions);
+    utils::extract_extensions_to_core(properties);
 
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(models_path, tokenizer, device, properties);
@@ -242,8 +243,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
-    auto extensions = utils::extract_extensions(properties);
-    utils::add_extensions_to_core(extensions);
+    utils::extract_extensions_to_core(properties);
 
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(models_path, device, properties);
@@ -285,8 +285,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
-    auto extensions = utils::extract_extensions(properties);
-    utils::add_extensions_to_core(extensions);
+    utils::extract_extensions_to_core(properties);
 
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(
@@ -393,10 +392,14 @@ ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
 }
 
 void ov::genai::LLMPipeline::start_chat(const std::string& system_message) {
+    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+               "Please, use generate() with ChatHistory argument.");
     m_pimpl->start_chat(system_message);
 }
 
 void ov::genai::LLMPipeline::finish_chat() {
+    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+               "Please, use generate() with ChatHistory argument.");
     m_pimpl->finish_chat();
 }
 

@@ -51,8 +51,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_desr.properties, models_path);
 
-    auto extensions = utils::extract_extensions(properties_without_draft_model);
-    utils::add_extensions_to_core(extensions);
+    utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::read_model(models_path, properties_without_draft_model);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
@@ -68,8 +67,11 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
-        OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
-        m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
+        if (embedder) {
+            m_impl = std::make_shared<PromptLookupImpl>(model, embedder, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
+        } else {
+            m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
+        }
     } else if (draft_model_desr.model != nullptr && eagle_rt_info.eagle3_mode) {
         OPENVINO_ASSERT(embedder == nullptr, "Eagle speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
@@ -100,8 +102,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_desr.properties, models_path);
 
-    auto extensions = utils::extract_extensions(properties_without_draft_model);
-    utils::add_extensions_to_core(extensions);
+    utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::read_model(models_path, properties_without_draft_model);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
@@ -153,8 +154,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_desr.properties, std::filesystem::path(model_str));
 
-    auto extensions = utils::extract_extensions(properties_without_draft_model);
-    utils::add_extensions_to_core(extensions);
+    utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
 
     auto rt_info = model->get_rt_info();
@@ -206,8 +206,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto model_pair = utils::get_model_weights_pair(models_map, "language");
 
-    auto extensions = utils::extract_extensions(properties_without_draft_model);
-    utils::add_extensions_to_core(extensions);
+    utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::singleton_core().read_model(model_pair.first, model_pair.second);
 
     auto rt_info = model->get_rt_info();

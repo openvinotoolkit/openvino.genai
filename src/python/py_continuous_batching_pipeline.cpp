@@ -8,6 +8,7 @@
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
+#include "openvino/genai/cache_eviction.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/sparse_attention.hpp"
 #include "tokenizer/tokenizers_path.hpp"
@@ -33,6 +34,7 @@ using ov::genai::PipelineMetrics;
 using ov::genai::KVCrushAnchorPointMode;
 using ov::genai::KVCrushConfig;
 using ov::genai::ChatHistory;
+using ov::genai::AdaptiveRKVConfig;
 
 namespace {
 
@@ -161,9 +163,13 @@ auto pipeline_metrics_docstring = R"(
     :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
     :type max_cache_usage: float
 
-
     :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
     :type avg_cache_usage: float
+
+    :param kv_cache_size_in_bytes: Total allocated KV cache size in bytes, based on the total number of KV blocks.
+      This value represents reserved/allocated memory for the KV cache and does not
+      distinguish between used and unused portions in dynamic KV cache configurations.
+    :type kv_cache_size_in_bytes: int
 )";
 
 std::ostream& operator << (std::ostream& stream, const GenerationResult& generation_result) {
@@ -273,9 +279,12 @@ void init_continuous_batching_pipeline(py::module_& m) {
     py::enum_<AggregationMode>(m, "AggregationMode",
                             R"(Represents the mode of per-token score aggregation when determining least important tokens for eviction from cache
                                :param AggregationMode.SUM: In this mode the importance scores of each token will be summed after each step of generation
-                               :param AggregationMode.NORM_SUM: Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated) of a given token in cache)")
+                               :param AggregationMode.NORM_SUM: Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated) of a given token in cache
+                               :param AggregationMode.ADAPTIVE_RKV Switches the cache eviction algorithm to use Adaptive R-KV algorithm. The scores are aggregated within a configurable window 
+                                size of the latest generated tokens. May not be used together with the KVCrush algorithm (which is disabled automatically in this mode).)")
             .value("SUM", AggregationMode::SUM)
-            .value("NORM_SUM", AggregationMode::NORM_SUM);
+            .value("NORM_SUM", AggregationMode::NORM_SUM)
+            .value("ADAPTIVE_RKV", AggregationMode::ADAPTIVE_RKV);
     py::enum_<KVCrushAnchorPointMode>(m,
                                       "KVCrushAnchorPointMode",
                                       R"(Represents the anchor point types for KVCrush cache eviction
@@ -302,6 +311,13 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("rng_seed", &KVCrushConfig::rng_seed)
         .def("to_string", &KVCrushConfig::to_string);
 
+    py::class_<AdaptiveRKVConfig>(m, "AdaptiveRKVConfig", "Configuration struct for the Adaptive R-KV cache eviction algorithm")
+        .def(py::init<>([](double attention_mass, size_t window_size) { return AdaptiveRKVConfig(attention_mass, window_size); }),
+             py::arg("attention_mass") = 0.9,
+             py::arg("window_size") = 8)
+        .def_readwrite("attention_mass", &AdaptiveRKVConfig::attention_mass)
+        .def_readwrite("window_size", &AdaptiveRKVConfig::window_size);
+
     py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
             .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode, bool apply_rotation,
                             size_t snapkv_window_size, py::object kvcrush_config) {
@@ -327,7 +343,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def("get_recent_size", &CacheEvictionConfig::get_recent_size)
             .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)
             .def("get_evictable_size", &CacheEvictionConfig::get_evictable_size)
-            .def("to_string", &CacheEvictionConfig::to_string);
+            .def("to_string", &CacheEvictionConfig::to_string)
+            .def_readwrite("adaptive_rkv_config", &CacheEvictionConfig::adaptive_rkv_config);
 
     py::enum_<SparseAttentionMode>(m, "SparseAttentionMode",
                             R"(Represents the mode of sparse attention applied during generation.
@@ -378,6 +395,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readonly("scheduled_requests", &PipelineMetrics::scheduled_requests)
             .def_readonly("cache_usage", &PipelineMetrics::cache_usage)
             .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
+            .def_readonly("kv_cache_size_in_bytes", &PipelineMetrics::kv_cache_size_in_bytes)
             .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")

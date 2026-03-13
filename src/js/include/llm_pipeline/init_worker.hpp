@@ -1,6 +1,7 @@
 #pragma once
 
 #include <napi.h>
+
 #include "openvino/genai/llm_pipeline.hpp"
 
 using namespace Napi;
@@ -9,6 +10,7 @@ class InitWorker : public AsyncWorker {
 public:
     InitWorker(Function& callback,
                std::shared_ptr<ov::genai::LLMPipeline>& pipe,
+               std::shared_ptr<bool> is_initializing,
                const std::string model_path,
                std::string device,
                ov::AnyMap properties);
@@ -16,9 +18,11 @@ public:
 
     void Execute() override;
     void OnOK() override;
+    void OnError(const Error& e) override;
 
 private:
     std::shared_ptr<ov::genai::LLMPipeline>& pipe;
+    std::shared_ptr<bool> is_initializing;
     std::string model_path;
     std::string device;
     ov::AnyMap properties;

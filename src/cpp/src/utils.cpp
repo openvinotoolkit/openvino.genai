@@ -132,7 +132,7 @@ void update_npu_config_text_embedding(ov::AnyMap& config,
 }
 
 inline bool is_paged_attention_available() {
-#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+#if defined(OPENVINO_ARCH_X86_64) || (defined(OPENVINO_ARCH_ARM64) && defined(HAVE_SVE))
     return true;
 #else
     return false;
@@ -759,7 +759,7 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
         }
     }
 
-    auto prompt_lookup_prop = properties.find("prompt_lookup");
+    auto prompt_lookup_prop = properties.find(ov::genai::prompt_lookup.name());
     if (prompt_lookup_prop != properties.end() && prompt_lookup_prop->second.as<bool>() == true) {
         if (is_paged_attention_available()) {
             return true;
@@ -768,6 +768,15 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
         }
     }
     return false;
+}
+
+void clear_false_prompt_lookup_from_config(ov::AnyMap& properties) {
+    bool res = false;
+    if (properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
+        res = properties.at(ov::genai::prompt_lookup.name()).as<bool>();
+        if (!res)
+            properties.erase(ov::genai::prompt_lookup.name());
+    }
 }
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties,
@@ -801,7 +810,8 @@ ExtensionList extract_extensions(ov::AnyMap& properties) {
     return extensions;
 }
 
-void add_extensions_to_core(const ExtensionList& extensions) {
+void extract_extensions_to_core(ov::AnyMap& properties) {
+    ExtensionList extensions = extract_extensions(properties);
     for (const auto& extension : extensions) {
         if (std::holds_alternative<std::filesystem::path>(extension)) {
             singleton_core().add_extension(std::get<std::filesystem::path>(extension));

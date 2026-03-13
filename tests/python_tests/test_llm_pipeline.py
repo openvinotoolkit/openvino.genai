@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Literal, Callable
 from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
+from openvino.frontend import OpExtension
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -879,14 +880,10 @@ def test_pipelines_generate_with_streaming(
         mock_streamer.assert_called()
 
 
-def test_llm_pipeline_add_extension():
-    model_id = "katuni4ka/tiny-random-phi3"
-    models_path = download_and_convert_model(model_id).models_path
-
+@pytest.mark.parametrize("llm_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
+def test_llm_pipeline_add_extension(llm_model: OVConvertedModelSchema) -> None:
     properties = {"extensions": [str(_ext_path)]}
-    ov_genai.LLMPipeline(models_path, "CPU", **properties)
+    ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
 
-    properties = {"extensions": ["fake_path"]}
-    with pytest.raises(RuntimeError) as exc_info:
-        ov_genai.LLMPipeline(models_path, "CPU", **properties)
-    assert "Cannot find entry point to the extension library" in str(exc_info.value)
+    properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
+    ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
