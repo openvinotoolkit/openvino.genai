@@ -3,6 +3,9 @@
 
 #include "custom_add.hpp"
 
+#include <cstdlib>
+#include <iostream>
+
 using namespace TemplateExtension;
 
 MyAdd::MyAdd(const ov::OutputVector& args) : Op(args) {
@@ -21,14 +24,6 @@ void MyAdd::validate_and_infer_types() {
                     ", bias type: ",
                     bias_type.to_string());
 
-    const ov::PartialShape bias_shape = get_input_partial_shape(1);
-    if (bias_shape.rank().is_static()) {
-        const int64_t bias_rank = bias_shape.rank().get_length();
-        OPENVINO_ASSERT(bias_rank == 0 || (bias_rank == 1 && bias_shape[0].compatible(1)),
-                        "MyAdd expects scalar bias input (shape {} or {1}), got: ",
-                        bias_shape);
-    }
-
     set_output_type(0, get_input_element_type(0), get_input_partial_shape(0));
 }
 
@@ -42,6 +37,11 @@ bool MyAdd::visit_attributes(ov::AttributeVisitor& visitor) {
 }
 
 bool MyAdd::evaluate(ov::TensorVector& outputs, const ov::TensorVector& inputs) const {
+#if defined(_WIN32)
+    const int set_env_result = _putenv_s("EXTENSION_LIB_CALLED", "1");
+#else
+    const int set_env_result = setenv("EXTENSION_LIB_CALLED", "1", 1);
+#endif
     OPENVINO_ASSERT(inputs.size() >= 2, "MyAdd evaluate expects at least 2 input tensors");
     OPENVINO_ASSERT(outputs.size() >= 1, "MyAdd evaluate expects at least 1 output tensor");
 

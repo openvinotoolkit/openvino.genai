@@ -8,6 +8,7 @@ import torch
 import gc
 import sys
 import os
+import ctypes
 import json
 import logging
 import numpy as np
@@ -120,6 +121,15 @@ def user_defined_callback(subword):
 def user_defined_status_callback(subword):
     logging.info(subword)
     return ov_genai.StreamingStatus.RUNNING
+
+
+def get_process_env_var(name: str) -> str | None:
+    libc = ctypes.CDLL(None)
+    libc.getenv.restype = ctypes.c_char_p
+    env_value = libc.getenv(name.encode("utf-8"))
+    if env_value is None:
+        return None
+    return env_value.decode("utf-8")
 
 
 CALLBACK_FUNCTIONS = [
@@ -971,6 +981,8 @@ def test_llm_pipeline_add_extension_custom_op(
     except FileNotFoundError as exc:
         pytest.skip(f"Custom extension library is unavailable for this environment: {exc}")
 
+    os.environ["EXTENSION_LIB_CALLED"] = "0"
+
     # The custom op "MyAdd" from the extension is implemented in the same way as the OpenVINO op "Add"
     properties = {"extensions": [str(extension_lib_path)]}
     ov_pipe_extension = ov_genai.LLMPipeline(extension_model_path, "CPU", **properties)
@@ -980,6 +992,8 @@ def test_llm_pipeline_add_extension_custom_op(
     ov_pipe_ref = ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
     result_ref = ov_pipe_ref.generate([prompt], **generation_config)
 
+    extension_lib_called = get_process_env_var("EXTENSION_LIB_CALLED")
+    assert extension_lib_called == "1", "Custom extension library was not called"
     assert result_extension.texts[0].strip() == result_ref.texts[0].strip(), (
         "Result should be the same for model with extension and reference model."
     )
