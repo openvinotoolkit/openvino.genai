@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "tokenizer/tokenizer_impl.hpp"
+
+#include <utility>
+
 #include "add_second_input_pass.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
 #include "openvino/genai/version.hpp"
@@ -332,11 +335,11 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         return;
     }
     if (std::filesystem::exists(models_path / "openvino_tokenizer.xml")) {
-        ov_tokenizer = core.read_model(models_path / "openvino_tokenizer.xml", {}, filtered_properties);
+        ov_tokenizer = core.read_model(models_path / "openvino_tokenizer.xml", {}, std::as_const(filtered_properties));
     }
 
     if (std::filesystem::exists(models_path / "openvino_detokenizer.xml")) {
-        ov_detokenizer = core.read_model(models_path / "openvino_detokenizer.xml", {}, filtered_properties);
+        ov_detokenizer = core.read_model(models_path / "openvino_detokenizer.xml", {}, std::as_const(filtered_properties));
     }
 
     read_config(models_path);
