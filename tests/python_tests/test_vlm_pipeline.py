@@ -32,6 +32,9 @@ from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Generator
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import time
 import openvino_tokenizers
 import openvino
 import PIL
@@ -68,6 +71,25 @@ from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    print(f"[{_ts()}] [vlm-pipeline] {message}", flush=True)
+
+
+@contextmanager
+def _stage(name: str):
+    _log(f"START {name}")
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        dt = time.perf_counter() - start
+        _log(f"END   {name} dt={dt:.3f}s")
 
 
 class VisionType(Enum):
@@ -222,6 +244,7 @@ def _setup_generation_config(
 
 
 def _get_ov_model(model_id: str) -> str:
+    _log(f"_get_ov_model: model_id={model_id}")
     if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
     if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
@@ -297,7 +320,8 @@ def _get_ov_model(model_id: str) -> str:
         processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
-    manager.execute(convert_to_temp)
+    with _stage(f"convert_model({model_id})"):
+        manager.execute(convert_to_temp)
     return model_dir
 
 
@@ -333,7 +357,8 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
             vision_preprocess_env_set = True
 
     try:
-        pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=ov_backend, prompt_lookup=ov_prompt_lookup)
+        with _stage(f"VLMPipeline({ov_model}, backend={ov_backend})"):
+            pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=ov_backend, prompt_lookup=ov_prompt_lookup)
     finally:
         if vision_preprocess_env_set:
             os.environ.pop(key, None)
@@ -578,6 +603,7 @@ def test_images(request: pytest.FixtureRequest):
 
 @parametrize_all_models
 def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
+    _log(f"test_vlm_pipeline: model={ov_pipe_model.model_id} backend={ov_pipe_model.backend} num_images={len(test_images)}")
     ov_pipe = ov_pipe_model.pipeline
     result_from_streamer = []
 
@@ -588,12 +614,13 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
 
     generation_config = _setup_generation_config(ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup)
 
-    res = ov_pipe.generate(
-        PROMPTS[0],
-        images=test_images,
-        generation_config=generation_config,
-        streamer=streamer,
-    )
+    with _stage("vlm_generate"):
+        res = ov_pipe.generate(
+            PROMPTS[0],
+            images=test_images,
+            generation_config=generation_config,
+            streamer=streamer,
+        )
     assert res.texts[0] == "".join(result_from_streamer)
 
 
@@ -628,6 +655,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(
     request: pytest.FixtureRequest,
     cat_tensor: openvino.Tensor
 ):
+    _log(f"test_vlm_continuous_batching_generate_vs_add_request: model={ov_pipe_model.model_id}")
     ov_pipe = ov_pipe_model.pipeline
     generation_config = config
     generation_config.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
@@ -724,6 +752,7 @@ def test_vlm_continuous_batching_vs_stateful(
     config: GenerationConfig,
     cat_tensor: openvino.Tensor,
 ):
+    _log(f"test_vlm_continuous_batching_vs_stateful: model={ov_pipe_model.model_id}")
     ov_pipe = ov_pipe_model.pipeline
     generation_config = config
     generation_config.max_new_tokens = 25
@@ -755,6 +784,7 @@ def test_vlm_continuous_batching_vs_stateful_chat_history(
     cat_tensor: openvino.Tensor,
     car_tensor: openvino.Tensor,
 ):
+    _log(f"test_vlm_continuous_batching_vs_stateful_chat_history: model={ov_pipe_model.model_id}")
     ov_pipe = ov_pipe_model.pipeline
     generation_config = get_greedy()
     image_links_list = [[cat_tensor], [car_tensor]]
@@ -841,6 +871,7 @@ def test_vlm_pipeline_chat(
     system_message: str,
     iteration_images: list[list[PIL.Image]],
 ):
+    _log(f"test_vlm_pipeline_chat: model={ov_pipe_model.model_id} backend={ov_pipe_model.backend}")
     ov_pipe = ov_pipe_model.pipeline
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
@@ -2116,6 +2147,7 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
     image_input_resolution: tuple[int, int],
     video_input_resolution: tuple[int, int],
 ):
+    _log(f"test_vlm_pipeline_match_optimum_with_resolutions: model={ov_pipe_model.model_id} has_image={has_image} has_video={has_video}")
     resized_image = None
     resized_video = None
     if has_image:

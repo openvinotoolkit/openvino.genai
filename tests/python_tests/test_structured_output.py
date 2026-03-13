@@ -1,6 +1,9 @@
 import json
 import re
+import time
 from typing import Literal
+from contextlib import contextmanager
+from datetime import datetime, timezone
 
 import openvino_genai as ov_genai
 import pytest
@@ -10,10 +13,31 @@ from utils.hugging_face import download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline
 
 
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    print(f"[{_ts()}] [structured-output] {message}", flush=True)
+
+
+@contextmanager
+def _stage(name: str):
+    _log(f"START {name}")
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        dt = time.perf_counter() - start
+        _log(f"END   {name} dt={dt:.3f}s")
+
+
 @pytest.fixture(scope="module")
 def ov_pipe(request):
-    models_path = download_and_convert_model(request.param).models_path
-    return create_ov_pipeline(models_path)
+    with _stage(f"download_and_convert_model({request.param})"):
+        models_path = download_and_convert_model(request.param).models_path
+    with _stage(f"create_ov_pipeline({models_path})"):
+        return create_ov_pipeline(models_path)
 
 
 class Person(BaseModel):
@@ -51,6 +75,7 @@ structured_id_models = [
 @pytest.mark.parametrize("use_compound_grammar", [True, False])
 def test_structured_json(ov_pipe, prompt_and_scheme, use_compound_grammar, capfd):
     prompt, SchemeType = prompt_and_scheme
+    _log(f"test_structured_json: scheme={SchemeType.__name__} compound={use_compound_grammar}")
 
     structured_output_config = ov_genai.StructuredOutputConfig()
     if use_compound_grammar:
@@ -82,6 +107,7 @@ def test_structured_json(ov_pipe, prompt_and_scheme, use_compound_grammar, capfd
 @pytest.mark.parametrize("use_compound_grammar", [True, False])
 def test_structured_regex(ov_pipe, prompt_and_regex, use_compound_grammar):
     prompt, regex_str = prompt_and_regex
+    _log(f"test_structured_regex: compound={use_compound_grammar}")
     structured_output_config = ov_genai.StructuredOutputConfig()
     if use_compound_grammar:
         structured_output_config.compound_grammar = structured_output_config.Regex(regex_str)
