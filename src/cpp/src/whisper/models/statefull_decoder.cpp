@@ -3,6 +3,8 @@
 
 #include "statefull_decoder.hpp"
 
+#include <utility>
+
 #include "openvino/op/softmax.hpp"
 #include "openvino/pass/manager.hpp"
 #include "utils.hpp"

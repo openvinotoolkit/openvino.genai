@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "tokenizer/tokenizer_impl.hpp"
+
+#include <utility>
+
 #include "add_second_input_pass.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
 #include "openvino/genai/version.hpp"

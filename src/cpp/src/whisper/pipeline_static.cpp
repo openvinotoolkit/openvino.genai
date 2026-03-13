@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <regex>
+#include <utility>
 
 #include "openvino/runtime/intel_npu/properties.hpp"
 #include "utils.hpp"

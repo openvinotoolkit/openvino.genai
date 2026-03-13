@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <utility>
+
 #include <openvino/openvino.hpp>
 #include <variant>
 
