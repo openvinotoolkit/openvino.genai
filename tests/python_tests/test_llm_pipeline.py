@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Literal, Callable
 from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
+from openvino.frontend import OpExtension
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -26,6 +27,7 @@ from utils.hugging_face import generation_config_to_hf, download_and_convert_mod
 from utils.tokenizers import delete_rt_info, model_tmp_path
 from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, MAIN_PIPELINE_TYPES, PipelineType, GenerationChatInputsType
 from data.models import get_models_list, CHAT_MODELS_LIST
+from openvino_tokenizers import _ext_path
 
 
 def assert_hf_equals_genai(hf_reference, genai_output):
@@ -908,7 +910,7 @@ def replace_ir_add_with_myadd(ir_xml_path: Path) -> None:
     else:
         updated_tag = updated_tag[:-1] + ' version="extension">'
 
-    xml_text = xml_text[:match.start()] + updated_tag + xml_text[match.end():]
+    xml_text = xml_text[: match.start()] + updated_tag + xml_text[match.end() :]
     ir_xml_path.write_text(xml_text, encoding="utf-8")
 
 
@@ -997,3 +999,12 @@ def test_llm_pipeline_add_extension_custom_op(
     assert result_extension.texts[0].strip() == result_ref.texts[0].strip(), (
         "Result should be the same for model with extension and reference model."
     )
+
+
+@pytest.mark.parametrize("llm_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
+def test_llm_pipeline_add_extension(llm_model: OVConvertedModelSchema) -> None:
+    properties = {"extensions": [str(_ext_path)]}
+    ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
+
+    properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
+    ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
