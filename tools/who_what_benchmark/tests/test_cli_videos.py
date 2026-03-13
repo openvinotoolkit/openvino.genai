@@ -4,7 +4,6 @@ from test_cli_image import get_similarity
 from conftest import convert_model, run_wwb
 
 
-@pytest.mark.xfail(sys.platform == "darwin", reason="Not enough memory on macOS CI runners. Ticket CVS-179749")
 @pytest.mark.xfail(sys.platform == "win32", reason="Access violation in OVLTXPipeline on Windows. Ticket CVS-179750")
 @pytest.mark.parametrize(
     ("model_id", "model_type"),

@@ -699,6 +699,7 @@ public:
                  const ov::AnyMap& properties) {
         m_t5_text_encoder->compile(text_encode_device, properties);
         m_vae->compile(vae_device, properties);
+
         m_transformer->compile(denoise_device, properties);
         m_text_encode_device = text_encode_device;
         m_denoise_device = denoise_device;
