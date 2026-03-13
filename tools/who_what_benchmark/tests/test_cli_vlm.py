@@ -226,7 +226,7 @@ def test_vlm_video(model_id, model_type, tmp_path):
         ),
     ],
 )
-def test_vlm_genai_lora(
+def test_vlm_lora(
     model_id,
     model_type,
     lora_repo_id,
@@ -239,7 +239,7 @@ def test_vlm_genai_lora(
         model_id=model_id,
         model_type=model_type,
         lora_repo_id=lora_repo_id,
-        lora_cache_subdir="wwb_qwen2b_lora_100",
+        lora_cache_subdir="wwb_tiny_random_qwen2vl_lora",
         hf_alpha=hf_alpha,
         genai_alpha=genai_alpha,
         tmp_path=tmp_path,
