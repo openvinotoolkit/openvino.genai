@@ -31,7 +31,7 @@ class GilSafeGeneratorWrapper : public ov::genai::Generator {
     py::object m_py_ref;
 
 public:
-    GilSafeGeneratorWrapper(std::shared_ptr<ov::genai::Generator> impl, py::object py_ref)
+    GilSafeGeneratorWrapper(std::shared_ptr<ov::genai::Generator>&& impl, py::object&& py_ref)
         : m_impl(std::move(impl)), m_py_ref(std::move(py_ref)) {}
 
     ~GilSafeGeneratorWrapper() override {

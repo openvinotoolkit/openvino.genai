@@ -61,90 +61,63 @@ def get_mask_image(height: int = 64, width: int = 64) -> ov.Tensor:
     return ov.Tensor(mask_data)
 
 
+def create_generator(generator_type):
+    if generator_type == "cpp_std":
+        return ov_genai.CppStdGenerator(42)
+    if generator_type == "torch":
+        pytest.importorskip("torch")
+        return ov_genai.TorchGenerator(42)
+    return None
+
+
 GENERATE_KWARGS = dict(width=64, height=64, num_inference_steps=2)
 NUM_CALLS = 3
 
 
 class TestText2ImageMultipleGenerations:
-    def test_multiple_generate_without_generator(self, image_generation_model):
+    @pytest.mark.parametrize("generator_type", [None, "cpp_std", "torch"])
+    def test_multiple_generate(self, image_generation_model, generator_type):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
         for i in range(NUM_CALLS):
-            image = pipe.generate(f"prompt {i}", **GENERATE_KWARGS)
+            gen = create_generator(generator_type)
+            kwargs = {**GENERATE_KWARGS, **({"generator": gen} if gen else {})}
+            image = pipe.generate(f"prompt {i}", **kwargs)
             assert image is not None
 
-    def test_multiple_generate_with_cpp_generator(self, image_generation_model):
+    @pytest.mark.parametrize("generator_type", [None, "torch"])
+    def test_multiple_generate_with_callback(self, image_generation_model, generator_type):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
         for i in range(NUM_CALLS):
-            gen = ov_genai.CppStdGenerator(42)
-            image = pipe.generate(f"prompt {i}", generator=gen, **GENERATE_KWARGS)
-            assert image is not None
-
-    def test_multiple_generate_with_torch_generator(self, image_generation_model):
-        pytest.importorskip("torch")
-        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
-        for i in range(NUM_CALLS):
-            gen = ov_genai.TorchGenerator(42)
-            image = pipe.generate(f"prompt {i}", generator=gen, **GENERATE_KWARGS)
-            assert image is not None
-
-    def test_multiple_generate_with_callback(self, image_generation_model):
-        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
-        for i in range(NUM_CALLS):
+            gen = create_generator(generator_type)
             steps = []
 
             def callback(step, num_steps, latent):
                 steps.append(step)
                 return False
 
-            image = pipe.generate(f"prompt {i}", callback=callback, **GENERATE_KWARGS)
-            assert image is not None
-            assert len(steps) > 0
-
-    def test_multiple_generate_with_torch_generator_and_callback(self, image_generation_model):
-        pytest.importorskip("torch")
-        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
-        for i in range(NUM_CALLS):
-            gen = ov_genai.TorchGenerator(42)
-            steps = []
-
-            def callback(step, num_steps, latent):
-                steps.append(step)
-                return False
-
-            image = pipe.generate(f"prompt {i}", generator=gen, callback=callback, **GENERATE_KWARGS)
+            kwargs = {**GENERATE_KWARGS, "callback": callback, **({"generator": gen} if gen else {})}
+            image = pipe.generate(f"prompt {i}", **kwargs)
             assert image is not None
             assert len(steps) > 0
 
 
 class TestImage2ImageMultipleGenerations:
-    def test_multiple_generate_without_generator(self, image_generation_model):
+    @pytest.mark.parametrize("generator_type", [None, "cpp_std", "torch"])
+    def test_multiple_generate(self, image_generation_model, generator_type):
         pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
         for i in range(NUM_CALLS):
-            image = pipe.generate(f"prompt {i}", get_random_image(), strength=0.8, **GENERATE_KWARGS)
-            assert image is not None
-
-    def test_multiple_generate_with_torch_generator(self, image_generation_model):
-        pytest.importorskip("torch")
-        pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
-        for i in range(NUM_CALLS):
-            gen = ov_genai.TorchGenerator(42)
-            image = pipe.generate(f"prompt {i}", get_random_image(), strength=0.8, generator=gen, **GENERATE_KWARGS)
+            gen = create_generator(generator_type)
+            kwargs = {**GENERATE_KWARGS, "strength": 0.8, **({"generator": gen} if gen else {})}
+            image = pipe.generate(f"prompt {i}", get_random_image(), **kwargs)
             assert image is not None
 
 
 class TestInpaintingMultipleGenerations:
-    def test_multiple_generate_without_generator(self, image_generation_model):
+    @pytest.mark.parametrize("generator_type", [None, "cpp_std", "torch"])
+    def test_multiple_generate(self, image_generation_model, generator_type):
         pipe = ov_genai.InpaintingPipeline(image_generation_model, "CPU")
         for i in range(NUM_CALLS):
-            image = pipe.generate(f"prompt {i}", get_random_image(), get_mask_image(), strength=0.8, **GENERATE_KWARGS)
-            assert image is not None
-
-    def test_multiple_generate_with_torch_generator(self, image_generation_model):
-        pytest.importorskip("torch")
-        pipe = ov_genai.InpaintingPipeline(image_generation_model, "CPU")
-        for i in range(NUM_CALLS):
-            gen = ov_genai.TorchGenerator(42)
-            image = pipe.generate(
-                f"prompt {i}", get_random_image(), get_mask_image(), strength=0.8, generator=gen, **GENERATE_KWARGS
-            )
+            gen = create_generator(generator_type)
+            kwargs = {**GENERATE_KWARGS, "strength": 0.8, **({"generator": gen} if gen else {})}
+            image = pipe.generate(f"prompt {i}", get_random_image(), get_mask_image(), **kwargs)
             assert image is not None
