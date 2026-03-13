@@ -14,7 +14,7 @@
 #include "include/whisper_pipeline/init_worker.hpp"
 
 struct WhisperTsfnContext {
-    WhisperTsfnContext(std::vector<float> raw_speech, ov::AnyMap generation_config, std::shared_ptr<bool> is_generating)
+    WhisperTsfnContext(std::vector<float> raw_speech, ov::AnyMap generation_config, std::shared_ptr<std::atomic<bool>> is_generating)
         : raw_speech(std::move(raw_speech)),
           generation_config(std::move(generation_config)),
           is_generating(is_generating) {}
@@ -26,7 +26,7 @@ struct WhisperTsfnContext {
 
     std::vector<float> raw_speech;
     ov::AnyMap generation_config;
-    std::shared_ptr<bool> is_generating;
+    std::shared_ptr<std::atomic<bool>> is_generating;
     std::shared_ptr<ov::genai::WhisperPipeline> pipe = nullptr;
 };
 

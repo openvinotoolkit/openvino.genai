@@ -14,7 +14,7 @@
 #include "include/vlm_pipeline/start_chat_worker.hpp"
 
 struct VLMTsfnContext {
-    VLMTsfnContext(VLMGenerateInputs inputs, std::shared_ptr<bool> is_generating)
+    VLMTsfnContext(VLMGenerateInputs inputs, std::shared_ptr<std::atomic<bool>> is_generating)
         : inputs(std::move(inputs)),
           is_generating(is_generating) {};
     ~VLMTsfnContext() {};
@@ -26,7 +26,7 @@ struct VLMTsfnContext {
     VLMGenerateInputs inputs;
     std::vector<ov::Tensor> images;
     std::vector<ov::Tensor> videos;
-    std::shared_ptr<bool> is_generating;
+    std::shared_ptr<std::atomic<bool>> is_generating;
     std::shared_ptr<ov::genai::VLMPipeline> pipe = nullptr;
     std::shared_ptr<ov::AnyMap> generation_config = nullptr;
 };
@@ -37,7 +37,7 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
             try {
                 jsCallback.Call(
                     {Napi::Error::New(env, "vlmPerformInferenceThread error. " + message).Value(), env.Null()});
-            } catch (std::exception& err) {
+            } catch (const std::exception& err) {
                 std::cerr << "The callback failed when attempting to return an error from vlmPerformInferenceThread. "
                              "Details:\n"
                           << err.what() << std::endl;
@@ -76,7 +76,7 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
                             } else {
                                 resultPromise.set_value(ov::genai::StreamingStatus::RUNNING);
                             }
-                        } catch (std::exception& err) {
+                        } catch (const std::exception& err) {
                             streamer_exceptions.push_back(err.what());
                             resultPromise.set_value(ov::genai::StreamingStatus::CANCEL);
                         }
@@ -102,7 +102,7 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
                        }},
             context->inputs);
 
-    } catch (std::exception& e) {
+    } catch (const std::exception& e) {
         *context->is_generating = false;
         report_error(e.what());
         finalize();
@@ -127,7 +127,7 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
                             env.Null(),
                             to_vlm_decoded_result(env, result),
                         });
-                    } catch (std::exception& err) {
+                    } catch (const std::exception& err) {
                         report_error("The final callback failed. Details:\n" + std::string(err.what()));
                     }
                 });
@@ -136,7 +136,7 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
                 report_error("The final BlockingCall failed with status " + status);
             }
         }
-    } catch (std::exception& e) {
+    } catch (const std::exception& e) {
         report_error(e.what());
     }
     finalize();
