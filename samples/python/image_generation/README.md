@@ -7,6 +7,7 @@ There are several sample files:
  - [`lora_text2image.py`](./lora_text2image.py) shows how to apply LoRA adapters to the pipeline
  - [`taylorseer_text2image.py`](./taylorseer_text2image.py) demonstrates text to image generation with TaylorSeer caching optimization for improved performance. Only the Flux model is supported.
  - [`heterogeneous_stable_diffusion.py`](./heterogeneous_stable_diffusion.py) shows how to assemble a heterogeneous text2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
+ - [`encrypted_stable_diffusion.py`](./encrypted_stable_diffusion.py) demonstrates how to use the text to image pipeline with encrypted models and cache encryption callbacks
  - [`image2image.py`](./image2image.py) demonstrates basic usage of the image to image pipeline
  - [`inpainting.py`](./inpainting.py) demonstrates basic usage of the inpainting pipeline
  - [`benchmark_image_gen.py`](./benchmark_image_gen.py) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
@@ -157,10 +158,55 @@ For example:
 
 The sample will create a stable diffusion pipeline such that the text encoder is executed on the CPU, UNet on the NPU, and VAE decoder on the GPU.
 
+## Run text to image with encrypted models
+
+The `encrypted_stable_diffusion.py` sample demonstrates how to load and use the text to image pipeline with encrypted models. The Text2ImagePipeline and individual model components can be initialized directly from memory buffers when decrypting models on-the-fly.
+
+The following code snippet demonstrates how to load model components from memory buffers:
+
+```python
+text_encoder_model, text_encoder_weights = decrypt_model(
+    model_dir / "text_encoder", 'openvino_model.xml', 'openvino_model.bin')
+text_encoder_tokenizer = read_tokenizer(model_dir / "tokenizer")
+
+text_encoder = openvino_genai.CLIPTextModel(
+    text_encoder_model,
+    text_encoder_weights,
+    openvino_genai.CLIPTextModel.Config(model_dir / "text_encoder" / "config.json"),
+    text_encoder_tokenizer, device, **config)
+
+...
+
+# Initialize stable diffusion pipeline
+pipe = openvino_genai.Text2ImagePipeline.stable_diffusion(
+    scheduler=openvino_genai.Scheduler.from_config(model_dir / "scheduler" / "scheduler_config.json"),
+    clip_text_model=text_encoder,
+    unet=unet,
+    vae=vae,
+)
+```
+
+The sample also demonstrates how to enable user-defined encryption for plugin cache using custom encryption callbacks (base64 encoding as an example).
+
+**Main Features:**
+- Read model and tokenizer directly from memory buffers
+- Support for encrypted model files with custom decryption
+- Cache encryption callbacks for secure compiled model storage
+
+**Run Command:**
+```bash
+python encrypted_stable_diffusion.py <MODEL_DIR> "<PROMPT>" [DEVICE]
+```
+
+**Example:**
+```bash
+python encrypted_stable_diffusion.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'
+```
+
 ## Run image to image pipeline
 
-The `image2mage.py` sample demonstrates basic image to image generation pipeline. The difference with text to image pipeline is that final image is denoised from initial image converted to latent space and noised with image noise according to `strength` parameter. `strength` should be in range of `[0., 1.]` where `1.` means initial image is fully noised and it is an equivalent to text to image generation.
-Also, `strength` parameter linearly affects a number of inferenece steps, because lower `strength` values means initial latent already has some structure and it requires less steps to denoise it.
+The `image2image.py` sample demonstrates basic image to image generation pipeline. The difference with text to image pipeline is that final image is denoised from initial image converted to latent space and noised with image noise according to `strength` parameter. `strength` should be in range of `[0., 1.]` where `1.` means initial image is fully noised and it is an equivalent to text to image generation.
+Also, `strength` parameter linearly affects a number of inference steps, because lower `strength` values means initial latent already has some structure and it requires less steps to denoise it.
 
 To run the sample, download initial image first:
 
