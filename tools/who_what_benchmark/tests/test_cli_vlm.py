@@ -218,9 +218,9 @@ def test_vlm_video(model_id, model_type, tmp_path):
     ),
     [
         (
-            "Qwen/Qwen2-VL-2B-Instruct",
+            "optimum-intel-internal-testing/tiny-random-qwen2vl",
             "visual-text",
-            "saim1212/qwen2b-lora-100",
+            "likholat/tiny-random-qwen2vl-lora",
             1.0,
             2.0,
             0.99,
