@@ -63,6 +63,9 @@ jobs:
     name: Rerunner Tests
     if: ${{ github.event_name == 'pull_request' && github.repository_owner == 'openvinotoolkit' }}
     runs-on: aks-linux-small
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Checkout
         uses: ababushk/checkout@dd591a6a2ac25618db4eda86e7e0d938f88cf01b # cherry_pick_retries
