@@ -602,12 +602,39 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
                        100.0 * (pruning_result->original_visual_tokens - pruning_result->pruned_visual_tokens) / 
                        pruning_result->original_visual_tokens);
             
-            // Recalculate position_ids for pruned input_ids
+            // Diagnostic: check grid_thw vs actual vision tokens in pruned input_ids
+            {
+                const size_t pruned_seq_len = input_ids.get_shape().at(1);
+                const int64_t* pruned_ids = input_ids.data<const int64_t>();
+                size_t actual_vision_tokens = 0;
+                for (size_t i = 0; i < pruned_seq_len; ++i) {
+                    if (pruned_ids[i] == vision_pad_token_id) actual_vision_tokens++;
+                }
+                size_t grid_expected_tokens = 0;
+                for (const auto& [gt, gh, gw] : grid_thw) {
+                    grid_expected_tokens += calc_tokens_num(gt, gh, gw);
+                }
+                GENAI_INFO("[Qwen3-VL] [CDPruner] [DIAG] Before create_position_ids: "
+                           "pruned input_ids seq_len=%zu, actual_vision_pad_tokens=%zu, "
+                           "grid_thw expected tokens=%zu",
+                           pruned_seq_len, actual_vision_tokens, grid_expected_tokens);
+                if (grid_expected_tokens != actual_vision_tokens) {
+                    GENAI_INFO("[Qwen3-VL] [CDPruner] [DIAG] WARNING: grid_thw expects %zu vision tokens "
+                               "but pruned input_ids only has %zu! create_position_ids will OVERFLOW!",
+                               grid_expected_tokens, actual_vision_tokens);
+                }
+            }
+            
+            // TODO(BUG): grid_thw still describes original unpruned grid dimensions,
+            // but input_ids has been pruned. create_position_ids will write
+            // grid_expected_tokens worth of position IDs but position_ids tensor
+            // is only allocated for pruned_seq_len. This causes heap buffer overflow!
             m_position_ids = create_position_ids(input_ids, grid_thw, sequence, 0, 
                                                  std::vector<std::array<size_t, 3>>{}, 
                                                  std::vector<size_t>{}, 0, 
                                                  vision_start_token_id, 
                                                  std::vector<std::pair<size_t, size_t>>{});
+            GENAI_INFO("[Qwen3-VL] [CDPruner] [DIAG] create_position_ids returned (may have overflowed)");
             
             // Log pruned position_ids
             auto pruned_pos_shape = m_position_ids.get_shape();
@@ -751,16 +778,45 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
                       merged_image_embeddings_tensor,
                       image_pad_token_id);
         m_merged_image_embeddings = merged_image_embeddings_tensor;
+        GENAI_INFO("[Qwen3-VL] [DIAG] After apply_pruning: input_ids=[%zu,%zu], text_embeds=[%zu,%zu,%zu], "
+                   "merged_image_embeds=[%zu,%zu]",
+                   input_ids.get_shape()[0], input_ids.get_shape()[1],
+                   text_embeds.get_shape()[0], text_embeds.get_shape()[1], text_embeds.get_shape()[2],
+                   m_merged_image_embeddings.get_shape()[0], m_merged_image_embeddings.get_shape()[1]);
     }
 
     // TODO: Apply pruning to videos when video pruning is supported
 
+    GENAI_INFO("[Qwen3-VL] [DIAG] Before create_visual_pos_masks");
     // Recalculate visual_pos_masks after potential pruning
     m_lm_extra_inputs["visual_pos_masks"] = create_visual_pos_masks(input_ids, image_pad_token_id, video_pad_token_id);
+    GENAI_INFO("[Qwen3-VL] [DIAG] visual_pos_masks created, shape=[%zu,%zu]",
+               m_lm_extra_inputs["visual_pos_masks"].get_shape()[0],
+               m_lm_extra_inputs["visual_pos_masks"].get_shape()[1]);
 
-    return qwen2_vl_utils::merge_text_and_video_image_embeddings(
+    // Count vision tokens for merge validation
+    {
+        const int64_t* ids = input_ids.data<const int64_t>();
+        size_t seq = input_ids.get_shape()[1];
+        size_t img_count = 0, vid_count = 0;
+        for (size_t i = 0; i < seq; ++i) {
+            if (ids[i] == image_pad_token_id) img_count++;
+            if (ids[i] == video_pad_token_id) vid_count++;
+        }
+        GENAI_INFO("[Qwen3-VL] [DIAG] Before merge: input_ids has %zu image_pad, %zu video_pad tokens; "
+                   "image_embeds=%zu tokens, video_embeds=%zu tokens",
+                   img_count, vid_count,
+                   m_merged_image_embeddings.get_shape()[0],
+                   m_merged_video_embeddings.get_size() > 0 ? m_merged_video_embeddings.get_shape()[0] : 0);
+    }
+
+    GENAI_INFO("[Qwen3-VL] [DIAG] Calling merge_text_and_video_image_embeddings...");
+    auto result = qwen2_vl_utils::merge_text_and_video_image_embeddings(
         input_ids, text_embeds, m_merged_image_embeddings, m_merged_video_embeddings,
         image_pad_token_id, video_pad_token_id);
+    GENAI_INFO("[Qwen3-VL] [DIAG] merge completed, result shape=[%zu,%zu,%zu]",
+               result.get_shape()[0], result.get_shape()[1], result.get_shape()[2]);
+    return result;
 }
 
 void InputsEmbedderQwen3VL::start_chat(const std::string& system_message) {
