@@ -13,7 +13,7 @@ import json
 import logging
 import numpy as np
 from pathlib import Path
-from typing import Literal, Callable
+from typing import Literal, Callable, Optional
 from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
 from openvino.frontend import OpExtension
@@ -125,7 +125,7 @@ def user_defined_status_callback(subword):
     return ov_genai.StreamingStatus.RUNNING
 
 
-def get_process_env_var(name: str) -> str | None:
+def get_process_env_var(name: str) -> Optional[str]:
     """
     Return the current process environment variable value, or None if unset.
     Uses a platform-specific implementation to avoid relying on CDLL(None).getenv

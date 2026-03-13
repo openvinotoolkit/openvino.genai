@@ -4,7 +4,6 @@
 #include "custom_add.hpp"
 
 #include <cstdlib>
-#include <iostream>
 #include <openvino/core/shape.hpp>
 
 using namespace TemplateExtension;
@@ -41,6 +40,7 @@ std::shared_ptr<ov::Node> MyAdd::clone_with_new_inputs(const ov::OutputVector& n
 }
 
 bool MyAdd::visit_attributes(ov::AttributeVisitor& visitor) {
+    (void)visitor;
     return true;
 }
 
