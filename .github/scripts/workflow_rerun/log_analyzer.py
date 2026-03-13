@@ -3,10 +3,8 @@
 
 import json
 import re
-import tempfile
 from pathlib import Path
 from typing import TypedDict
-from zipfile import ZipFile
 
 from workflow_rerun.constants import LOGGER
 
