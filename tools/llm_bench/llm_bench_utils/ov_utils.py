@@ -122,12 +122,14 @@ def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+        if kwargs.get("genai", True):
+            if not is_genai_available(log_msg=True):
+                raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
             if model_class != UseCaseTextGen.ov_cls and "mpt" not in use_case.model_types and "chatglm" not in use_case.model_types:
-                log.warning("OpenVINO GenAI based benchmarking is not available for required model type. Will be switched to default benchmarking")
-            else:
-                log.info("Selected OpenVINO GenAI for benchmarking")
-                return create_genai_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs)
+                raise RuntimeError("OpenVINO GenAI based benchmarking is not available for required model type.")
+
+            log.info("Selected OpenVINO GenAI for benchmarking")
+            return create_genai_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs)
 
         log.info("Selected Optimum Intel for benchmarking")
         ov_config.pop("ATTENTION_BACKEND", None)
@@ -335,7 +337,10 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
     if not Path(model_path).exists():
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+        if kwargs.get("genai", True):
+            if not is_genai_available(log_msg=True):
+                raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
+
             log.info("Selected OpenVINO GenAI for benchmarking")
             return create_genai_image_gen_model(model_path, device, ov_config, model_index_data, memory_data_collector, **kwargs)
 
@@ -548,10 +553,7 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
 
 def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs):
     import openvino_genai as ov_genai
-    if kwargs.get("genai", True) is False:
-        raise RuntimeError('==Failure the command line does not set --genai ==')
-    if is_genai_available(log_msg=True) is False:
-        raise RuntimeError('==Failure genai is not enable ==')
+
     ov_config = kwargs['config']
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
@@ -582,12 +584,15 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+        if kwargs.get("genai", True):
+            if not is_genai_available(log_msg=True):
+                raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
             if model_class not in [UseCaseSpeech2Text.ov_cls]:
-                log.warning("OpenVINO GenAI based benchmarking is not available for required model type. Will be switched to default benchmarking")
-            else:
-                log.info("Selected OpenVINO GenAI for benchmarking")
-                return create_genai_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs)
+                raise RuntimeError("OpenVINO GenAI based benchmarking is not available for required model type.")
+
+            log.info("Selected OpenVINO GenAI for benchmarking")
+            return create_genai_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs)
+
         log.info("Selected Optimum Intel for benchmarking")
         ov_config = kwargs['config']
         if kwargs.get("mem_consumption"):
@@ -727,17 +732,18 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
     except Exception:
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         trust_remote_code = True
-    if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+    if kwargs.get("genai", True):
+        if not is_genai_available(log_msg=True):
+            raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
         try:
             return create_genai_text_embed_model(model_path, device, memory_data_collector, **kwargs)
         except Exception as exp:
-            log.warning(
+            raise RuntimeError(
                 f"Model is not supported by OpenVINO GenAI. "
                 f"GenAI pipeline loading failed with following error: {exp}"
-                "Benchmark will be switched to Optimum Intel pipeline realization"
             )
 
-        log.info("Selected Optimum Intel for benchmarking")
+    log.info("Selected Optimum Intel for benchmarking")
     model_class = kwargs['use_case'].ov_cls
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
@@ -816,14 +822,15 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
         except Exception:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
             remote_code = True
-        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+        if kwargs.get("genai", True):
+            if not is_genai_available(log_msg=True):
+                raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
             try:
                 return create_genai_image_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs)
             except Exception as exp:
-                log.warning(
+                raise RuntimeError(
                     f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
                     f"GenAI pipeline loading failed with following error: {exp}"
-                    "Benchmark will be switched to Optimum Intel pipeline realization"
                 )
 
         log.info("Selected Optimum Intel for benchmarking")
@@ -892,14 +899,15 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
         except Exception:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
             remote_code = True
-        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+        if kwargs.get("genai", True):
+            if not is_genai_available(log_msg=True):
+                raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
             try:
                 return create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_collector, **kwargs)
             except Exception as exp:
-                log.warning(
+                raise RuntimeError(
                     f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
                     f"GenAI pipeline loading failed with following error: {exp}"
-                    "Benchmark will be switched to Optimum Intel pipeline realization"
                 )
 
         log.info("Selected Optimum Intel for benchmarking")
@@ -1216,14 +1224,15 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor: Me
     except Exception:
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         trust_remote_code = True
-    if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+    if kwargs.get("genai", True):
+        if not is_genai_available(log_msg=True):
+            raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
         try:
             return create_genai_text_reranker_model(model_path, device, memory_monitor, tokenizer, **kwargs)
         except Exception as exp:
-            log.warning(
+            raise RuntimeError(
                 f"Model is not supported by OpenVINO GenAI. "
                 f"GenAI pipeline loading failed with following error: {exp}"
-                "Benchmark will be switched to Optimum Intel pipeline realization"
             )
     model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
     kwargs['use_case'].adjust_model_class_by_config(model_config)
@@ -1293,7 +1302,10 @@ def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
     if not Path(model_path).exists():
         raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
     else:
-        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+        if kwargs.get("genai", True):
+            if not is_genai_available(log_msg=True):
+                raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
+
             log.info("Selected OpenVINO GenAI for benchmarking")
             return create_genai_video_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs)
 
