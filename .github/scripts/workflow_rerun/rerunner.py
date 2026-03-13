@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
     session = requests.Session()
     retry_strategy = Retry(total=5, backoff_factor=3, backoff_jitter=1, status_forcelist=[429, 500, 502, 503, 504])
-    session.mount("https://github.com", HTTPAdapter(max_retries=retry_strategy))
+    session.mount("https://", HTTPAdapter(max_retries=retry_strategy))
 
     github = Github(auth=Auth.Token(token=GITHUB_TOKEN))
     gh_repo = github.get_repo(full_name_or_id=repository_name)
