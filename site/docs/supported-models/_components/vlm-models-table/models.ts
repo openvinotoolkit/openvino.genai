@@ -181,4 +181,25 @@ export const VLM_MODELS: VLMModelType[] = [
       },
     ],
   },
+  {
+    architecture: 'Idefics3ForConditionalGeneration',
+    models: [
+      {
+        name: 'SmolVLM',
+        links: [
+          'https://huggingface.co/HuggingFaceTB/SmolVLM-Instruct',
+          'https://huggingface.co/HuggingFaceTB/SmolVLM-256M-Instruct',
+          'https://huggingface.co/HuggingFaceTB/SmolVLM-500M-Instruct',
+        ],
+      },
+      {
+        name: 'SmolVLM2',
+        links: [
+          'https://huggingface.co/HuggingFaceTB/SmolVLM2-2.2B-Instruct',
+          'https://huggingface.co/HuggingFaceTB/SmolVLM2-256M-Video-Instruct',
+          'https://huggingface.co/HuggingFaceTB/SmolVLM2-500M-Video-Instruct',
+        ],
+      },
+    ],
+  },
 ];

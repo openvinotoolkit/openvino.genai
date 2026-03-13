@@ -114,6 +114,7 @@ MODEL_IDS: list[str] = [
     "optimum-intel-internal-testing/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+    "optimum-intel-internal-testing/tiny-random-idefics3",  # SmolVLM/IDEFICS3 test model
     *VIDEO_MODEL_IDS,
 ]
 
@@ -136,6 +137,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
+    "optimum-intel-internal-testing/tiny-random-idefics3": lambda idx: "<image>",  # SmolVLM/IDEFICS3
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
 }
 
@@ -149,6 +151,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": 32,
+    "optimum-intel-internal-testing/tiny-random-idefics3": 378,  # SmolVLM/IDEFICS3 uses 378x378
     "qnguyen3/nanoLLaVA": 384,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
