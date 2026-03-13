@@ -13,13 +13,9 @@
 
 namespace py = pybind11;
 
-using ov::genai::IncrementalParser;
 using ov::genai::Parser;
 using ov::genai::ReasoningParser;
-using ov::genai::ReasoningIncrementalParser;
 using ov::genai::DeepSeekR1ReasoningParser;
-using ov::genai::DeepSeekR1ReasoningIncrementalParser;
-using ov::genai::Phi4ReasoningIncrementalParser;
 using ov::genai::Phi4ReasoningParser;
 using ov::genai::JsonContainer;
 using ov::genai::Llama3JsonToolParser;
@@ -33,7 +29,8 @@ namespace {
 
 class ConstructableParser: public Parser {
 public:
-    void parse(JsonContainer& msg) override {
+    void parse(JsonContainer& msg,
+               const std::optional<std::vector<int64_t>>& tokens = std::nullopt) override {
         py::gil_scoped_acquire acquire;
         
         py::function parse_method = py::get_override(static_cast<const Parser*>(this), "parse");
@@ -43,42 +40,48 @@ public:
         
         // Convert JsonContainer to py::dict
         py::dict py_msg = pyutils::json_container_to_py_object(msg);
-        parse_method(py_msg);
+        try {
+            parse_method(py_msg, tokens);
+        } catch (const py::type_error&) {
+            parse_method(py_msg);
+        }
         msg = pyutils::py_object_to_json_container(py_msg);
     }
-};
 
-// ConstructableIncremental and ConstructableBase are used when python overload is called from C++
-// and we need to convert JsonContainer to py::dict and then update back JsonContainer from the py::dict which was modified in Python.
-class ConstructableIncrementalParser: public IncrementalParser {
-public:
-    using IncrementalParser::IncrementalParser;
-    std::string parse(
+    std::string parseChunk(
         JsonContainer& msg,
-        std::string& delta_text, 
+        std::string& delta_text,
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) override {
         py::gil_scoped_acquire acquire;
-        // Convert JsonContainer to py::dict
-        py::dict py_msg = pyutils::json_container_to_py_object(msg);
 
-        py::function parse_method = py::get_override(static_cast<const IncrementalParser*>(this), "parse");
-        if (!parse_method) {
-            OPENVINO_THROW("parse method not implemented in Python subclass");
+        py::function parse_chunk_method = py::get_override(static_cast<const Parser*>(this), "parse_chunk");
+        if (!parse_chunk_method) {
+            parse_chunk_method = py::get_override(static_cast<const Parser*>(this), "parseChunk");
+        }
+        if (!parse_chunk_method) {
+            OPENVINO_THROW("parse_chunk/parseChunk method not implemented in Python subclass");
         }
 
-        auto res = parse_method(py_msg, delta_text, delta_tokens);
+        py::dict py_msg = pyutils::json_container_to_py_object(msg);
+        py::object res;
+        try {
+            res = parse_chunk_method(py_msg, delta_text, delta_tokens);
+        } catch (const py::type_error&) {
+            res = parse_chunk_method(py_msg, delta_text);
+        }
         msg = pyutils::py_object_to_json_container(py_msg);
-        
         return res.cast<std::string>();
     }
 
     void reset() override {
-        PYBIND11_OVERLOAD_PURE(
-            void,
-            IncrementalParser,
-            reset,
-        );
+        py::gil_scoped_acquire acquire;
+
+        py::function reset_method = py::get_override(static_cast<const Parser*>(this), "reset");
+        if (!reset_method) {
+            OPENVINO_THROW("reset method not implemented in Python subclass");
+        }
+        reset_method();
     }
 };
 
@@ -132,7 +135,8 @@ public:
         OPENVINO_ASSERT(!m_parsers.empty(), "Provided vLLM parser does not have supported parsing methods: 'extract_tool_calls' or 'extract_reasoning'");
     }
 
-    void parse(JsonContainer& message) override {
+    void parse(JsonContainer& message,
+               const std::optional<std::vector<int64_t>>& /*tokens*/ = std::nullopt) override {
         py::gil_scoped_acquire acquire;
 
         JsonContainer new_message;
@@ -148,6 +152,14 @@ public:
         }
         message = new_message;
     }
+
+    std::string parseChunk(JsonContainer& /*delta_message*/,
+                           std::string& delta_text,
+                           const std::optional<std::vector<int64_t>>& /*delta_tokens*/ = std::nullopt) override {
+        return delta_text;
+    }
+
+    void reset() override {}
 };
 
 } // namespace
@@ -163,7 +175,21 @@ void init_parsers(py::module_& m) {
                 message.attr("update")(result);
             },
             py::arg("message"),
-            "Parse is called with the full text. Returns a dict with parsed content.");
+            "Parse is called with the full text. Returns a dict with parsed content.")
+        .def("parse_chunk",
+            [](Parser& self,
+               py::dict& delta_message,
+               std::string& delta_text,
+               const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) {
+                auto msg_cpp = pyutils::py_object_to_json_container(delta_message);
+                auto res = self.parseChunk(msg_cpp, delta_text, delta_tokens);
+                auto result = pyutils::json_container_to_py_object(msg_cpp);
+                delta_message.attr("update")(result);
+                return res;
+            },
+            py::arg("delta_message"), py::arg("delta_text"), py::arg("delta_tokens") = std::nullopt,
+            "Parse is called for every decoded text delta. Returns text to append to output.")
+        .def("reset", &Parser::reset, "Reset the internal state of the parser.");
 
     py::class_<ReasoningParser, std::shared_ptr<ReasoningParser>, Parser>(m, "ReasoningParser")
         .def(py::init<bool, bool, const std::string&, const std::string&>(),
@@ -183,34 +209,12 @@ void init_parsers(py::module_& m) {
 
     py::class_<Llama3PythonicToolParser, std::shared_ptr<Llama3PythonicToolParser>, Parser>(m, "Llama3PythonicToolParser")
         .def(py::init<>());
-    
-    py::class_<IncrementalParser, ConstructableIncrementalParser, std::shared_ptr<IncrementalParser>>(m, "IncrementalParser")
-        .def(py::init<>())
-        .def("parse", [](IncrementalParser& self,
-                         py::dict& delta_message,
-                         std::string& delta_text,
-                         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) {
-            auto msg_cpp = pyutils::py_object_to_json_container(delta_message);
-            auto res = self.parse(msg_cpp, delta_text, delta_tokens);
-            auto result = pyutils::json_container_to_py_object(msg_cpp);
-            delta_message.attr("update")(result);
-            return res;
-        }, py::arg("delta_message"), py::arg("delta_text"), py::arg("delta_tokens") = std::nullopt,
-           "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.")
-        .def("reset", &IncrementalParser::reset, "Reset the internal state of the parser.");
-    
-    py::class_<ReasoningIncrementalParser, std::shared_ptr<ReasoningIncrementalParser>, IncrementalParser>(m, "ReasoningIncrementalParser")
-        .def(py::init<bool, bool, const std::string&, const std::string&>(),
-             py::arg("expect_open_tag") = true,
-             py::arg("keep_original_content") = true,
-             py::arg("open_tag") = "<think>",
-             py::arg("close_tag") = "</think>");
-    
-    py::class_<Phi4ReasoningIncrementalParser, std::shared_ptr<Phi4ReasoningIncrementalParser>, IncrementalParser>(m, "Phi4ReasoningIncrementalParser")
-        .def(py::init<>());
 
-    py::class_<DeepSeekR1ReasoningIncrementalParser, std::shared_ptr<DeepSeekR1ReasoningIncrementalParser>, IncrementalParser>(m, "DeepSeekR1ReasoningIncrementalParser")
-        .def(py::init<>());
+    // Backward-compatible aliases for legacy incremental parser names.
+    m.attr("IncrementalParser") = m.attr("Parser");
+    m.attr("ReasoningIncrementalParser") = m.attr("ReasoningParser");
+    m.attr("Phi4ReasoningIncrementalParser") = m.attr("Phi4ReasoningParser");
+    m.attr("DeepSeekR1ReasoningIncrementalParser") = m.attr("DeepSeekR1ReasoningParser");
 
     py::class_<VLLMParserWrapper, std::shared_ptr<VLLMParserWrapper>, Parser>(m, "VLLMParserWrapper")
         .def(py::init<py::object>(), py::arg("py_parser"), "Wraps a vLLM parser to be used out of the box in Python.");

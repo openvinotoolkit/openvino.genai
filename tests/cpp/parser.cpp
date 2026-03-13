@@ -73,7 +73,7 @@ TEST(ParserTest, test_reasoning_parser_2) {
 
 class DeepSeekR1ReasoningParserTest : public ::testing::Test {
 protected:
-    ov::genai::DeepSeekR1ReasoningIncrementalParser parser;
+    ov::genai::DeepSeekR1ReasoningParser parser;
     JsonContainer msg;
 };
 
@@ -95,7 +95,7 @@ TEST_F(DeepSeekR1ReasoningParserTest, ReasoningContentAccumulatesAcrossCalls) {
     JsonContainer accumulated_msg;
     for (int i = 1; i < input_stream.size(); i++) {
         std::string delta_text = input_stream[i];
-        delta_text = parser.parse(msg, delta_text);
+        delta_text = parser.parseChunk(msg, delta_text);
         accumulated_msg.concatenate(msg);
     }
     ASSERT_EQ(accumulated_msg["reasoning_content"], ref_res);
@@ -105,7 +105,8 @@ TEST(ParserTest, test_custom_parser) {
     // Define a small custom parser derived from Parser
     class CustomParser : public ov::genai::Parser {
     public:
-        void parse(ov::genai::JsonContainer& msg) override {
+        void parse(ov::genai::JsonContainer& msg,
+                   const std::optional<std::vector<int64_t>>& /*tokens*/ = std::nullopt) override {
             // extract "content"
             if (!msg.contains("content"))
                 return;
@@ -129,6 +130,15 @@ TEST(ParserTest, test_custom_parser) {
                 msg["reasoning_content"] = think_text;
             }
         }
+
+        std::string parseChunk(ov::genai::JsonContainer& delta_message,
+                               std::string& delta_text,
+                               const std::optional<std::vector<int64_t>>& /*delta_tokens*/ = std::nullopt) override {
+            (void)delta_message;
+            return delta_text;
+        }
+
+        void reset() override {}
     };
 
     CustomParser parser;
@@ -146,11 +156,16 @@ TEST(ParserTest, CustomParser_AccumulatesBetweenStartStop) {
     using namespace ov::genai;
 
     // Custom incremental parser: mirrors the Python logic
-    class CustomParser : public IncrementalParser {
+    class CustomParser : public Parser {
     public:
         bool main_part_started = false;
 
-        std::string parse(JsonContainer& msg,
+        void parse(JsonContainer& msg,
+                   const std::optional<std::vector<int64_t>>& /*tokens*/ = std::nullopt) override {
+            // Non-incremental parse method (required by base class)
+        }
+
+        std::string parseChunk(JsonContainer& msg,
                           std::string& delta_text,
                           const std::optional<std::vector<int64_t>>& /*delta_tokens*/ = std::nullopt) override {
             // Ensure fields exist (Python test used dict defaults)
@@ -190,7 +205,7 @@ TEST(ParserTest, CustomParser_AccumulatesBetweenStartStop) {
     public:
         using TextParserStreamer::write;
         // Forwarding constructor to base class
-        CustomStreamer(ov::genai::Tokenizer& tok, const std::vector<std::shared_ptr<IncrementalParser>>& parsers)
+        CustomStreamer(const ov::genai::Tokenizer& tok, std::vector<std::shared_ptr<Parser>> parsers)
             : ov::genai::TextParserStreamer(tok, parsers) {}
 
         JsonContainer final_msg;
@@ -201,7 +216,7 @@ TEST(ParserTest, CustomParser_AccumulatesBetweenStartStop) {
     };
 
     Tokenizer tok;
-    std::shared_ptr<IncrementalParser> parser = std::make_shared<CustomParser>();
+    std::shared_ptr<Parser> parser = std::make_shared<CustomParser>();
     CustomStreamer streamer(tok, {parser});
     
     

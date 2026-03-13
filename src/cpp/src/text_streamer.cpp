@@ -137,14 +137,14 @@ StreamerBase::~StreamerBase() = default;
 class TextParserStreamer::TextParserStreamerImpl {
 public:
 
-std::vector<std::shared_ptr<IncrementalParser>> m_parsers;
+std::vector<std::shared_ptr<Parser>> m_parsers;
 JsonContainer m_parsed_message;
 
-TextParserStreamerImpl(std::vector<std::shared_ptr<IncrementalParser>> parsers) : m_parsers{parsers} {}
+TextParserStreamerImpl(std::vector<std::shared_ptr<Parser>> parsers) : m_parsers{parsers} {}
 
 };
 
-TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers) 
+TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<Parser>> parsers) 
     : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
                 return this->write(s);
     }), m_pimpl{std::make_unique<TextParserStreamerImpl>(parsers)} {
@@ -186,7 +186,7 @@ CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     JsonContainer delta_message;
     // Iterate over all parsers and apply them to the message
     for (auto& parser: m_pimpl->m_parsers) {
-        delta_text = parser->parse(delta_message, delta_text, flushed_tokens);
+        delta_text = parser->parseChunk(delta_message, delta_text, flushed_tokens);
         // Message can be modified inside parser, if parser for example extracted tool calling from message content
     }
     delta_message["content"] = delta_text;

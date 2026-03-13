@@ -52,7 +52,7 @@ public:
     class TextParserStreamerImpl;
     using TextStreamer::write;
     
-    TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers = {});
+    TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<Parser>> parsers = {});
     ~TextParserStreamer();
     
     virtual StreamingStatus write(JsonContainer& message) = 0;
