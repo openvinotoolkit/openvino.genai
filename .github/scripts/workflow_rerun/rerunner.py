@@ -67,7 +67,7 @@ def rerun_failed_jobs(repository_name: str, run_id: int, session: requests.Sessi
 
     response.raise_for_status()
 
-    LOGGER.info(f"RUN RETRIGGERED SUCCESSFULLY: {run.html_url}")
+    LOGGER.info(f"RUN RETRIGGERED SUCCESSFULLY")
 
 
 def analyze_and_rerun(
