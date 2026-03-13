@@ -21,8 +21,8 @@ def main():
     # User can run main and draft model on different devices.
     # Please, set device for main model in `openvino_genai.LLMPipeline` constructor and in `openvino_genai.draft_model` for draft.
     # CPU, GPU and NPU can be used. For NPU, the preferred configuration is when both the main and draft models use NPU.
-    main_device = 'NPU'
-    draft_device = 'NPU'
+    main_device = "NPU"
+    draft_device = "NPU"
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 128
