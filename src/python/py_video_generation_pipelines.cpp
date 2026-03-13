@@ -96,5 +96,26 @@ void init_video_generation_pipelines(py::module_& m) {
                 }
                 return result;
             },
-            py::arg("prompt"));
+            py::arg("prompt"))
+        .def(
+            "decode",
+            [](ov::genai::Text2VideoPipeline& pipe, const ov::Tensor& latent, float decode_timestep) {
+                ov::genai::VideoGenerationResult result;
+                {
+                    py::gil_scoped_release rel;
+                    result = pipe.decode(latent, decode_timestep);
+                }
+                return result;
+            },
+            py::arg("latent"),
+            py::arg("decode_timestep") = 0.0f,
+            R"(
+                Decodes a latent video tensor to pixel space.
+                Useful inside a callback to preview intermediate results.
+                latent (ov.Tensor): Packed latent video tensor from the denoising loop.
+                decode_timestep (float): Last scheduler timestep normalized to [0, 1] (timestep / maxtimestep).
+                    Required when the VAE config has timestep_conditioning=True (e.g., LTX-Video 0.9.1+).
+                    Ignored for models without timestep conditioning.
+                Returns: VideoGenerationResult.
+            )");
 }

@@ -183,7 +183,8 @@ void init_autoencoder_kl_ltx_video(py::module_& m) {
         .def_readonly("scaling_factor", &ov::genai::AutoencoderKLLTXVideo::Config::scaling_factor)
         .def_readonly("block_out_channels", &ov::genai::AutoencoderKLLTXVideo::Config::block_out_channels)
         .def_readonly("patch_size", &ov::genai::AutoencoderKLLTXVideo::Config::patch_size)
-        .def_readonly("patch_size_t", &ov::genai::AutoencoderKLLTXVideo::Config::patch_size_t);
+        .def_readonly("patch_size_t", &ov::genai::AutoencoderKLLTXVideo::Config::patch_size_t)
+        .def_readonly("timestep_conditioning", &ov::genai::AutoencoderKLLTXVideo::Config::timestep_conditioning);
 
     vae.def("get_config", &ov::genai::AutoencoderKLLTXVideo::get_config)
         .def("get_vae_scale_factor", &ov::genai::AutoencoderKLLTXVideo::get_vae_scale_factor)
@@ -217,9 +218,13 @@ void init_autoencoder_kl_ltx_video(py::module_& m) {
              &ov::genai::AutoencoderKLLTXVideo::decode,
              py::call_guard<py::gil_scoped_release>(),
              py::arg("latent"),
+             py::arg("decode_timestep") = 0.0f,
              R"(
                 Decodes latent video to pixel space.
                 latent (ov.Tensor): Latent video tensor.
+                decode_timestep (float): Last scheduler timestep normalized to [0, 1] (for example, timestep / max_timestep, where max_timestep is typically num_train_timesteps).
+                    Required when the VAE config has timestep_conditioning=True (e.g., LTX-Video 0.9.1+).
+                    Ignored for models without timestep conditioning.
                 Returns: Decoded video tensor.
             )");
 }

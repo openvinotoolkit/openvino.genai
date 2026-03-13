@@ -81,3 +81,58 @@ You can adjust several parameters to control the video generation process, inclu
 For the full list of generation parameters, refer to the [Video Generation Config API](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.VideoGenerationConfig.html).
 
 :::
+
+### Decode Latents Manually (Advanced)
+
+`Text2VideoPipeline` exposes a `decode()` method that converts a raw latent tensor into video frames. This is useful when you capture the final latent via a callback and want to decode it with a specific `decode_timestep`.
+
+:::note
+`decode_timestep` only has an effect for models whose VAE was trained with timestep conditioning, such as **LTX-Video 0.9.1** (`Lightricks/LTX-Video-0.9.1`). For the base LTX-Video model this parameter is ignored and defaults to `0.0`.
+The value should be the last scheduler timestep normalized to `[0, 1]`: `timestep / max_timestep`. The pipeline computes this automatically during `generate()`, but you can supply it explicitly when calling `decode()` directly.
+:::
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+
+        pipe = ov_genai.Text2VideoPipeline(model_path, "CPU")
+
+        final_latent = None
+
+        def callback(step, num_steps, latent):
+            global final_latent
+            final_latent = latent
+            return False
+
+        result = pipe.generate(prompt, callback=callback)
+
+        # Decode with an explicit decode_timestep for LTX-Video 0.9.1+
+        result = pipe.decode(final_latent, decode_timestep=0.05)
+        video = result.video
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include "openvino/genai/video_generation/text2video_pipeline.hpp"
+
+        int main(int argc, char* argv[]) {
+            const std::string models_path = argv[1], prompt = argv[2];
+
+            ov::genai::Text2VideoPipeline pipe(models_path, "CPU");
+
+            ov::Tensor final_latent;
+            auto callback = [&final_latent](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
+                final_latent = latent;
+                return false;
+            };
+
+            pipe.generate(prompt, ov::genai::callback(callback));
+
+            // Decode with an explicit decode_timestep for LTX-Video 0.9.1+
+            auto result = pipe.decode(final_latent, /* decode_timestep= */ 0.05f);
+            ov::Tensor video = result.video;
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
