@@ -164,7 +164,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     // Scheduler configuration
     SchedulerConfig normalized_config = scheduler_config;
     size_t total_mem_size;
-    if (execution_device.find("GPU") != std::string::npos) {
+    if (all_gpu_device && execution_devices.size() > 1) {
+        // For multi-GPU setups (e.g. HETERO:GPU.0,GPU.1), sum available
+        // memory across all GPU execution devices so that cache_size can
+        // utilise the combined VRAM instead of being capped by a single GPU.
+        total_mem_size = 0;
+        for (const auto& dev : execution_devices) {
+            total_mem_size += utils::get_available_gpu_memory(dev, m_num_decoder_layers);
+        }
+    } else if (execution_device.find("GPU") != std::string::npos) {
         total_mem_size = utils::get_available_gpu_memory(execution_device, m_num_decoder_layers);
     } else {
         total_mem_size = get_available_cpu_memory();
