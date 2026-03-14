@@ -85,7 +85,7 @@ export const VLM_MODELS: VLMModelType[] = [
       {
         name: 'videochat_flash_qwen',
         links: [
-          'https://huggingface.co/OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B',
+          'https://modelscope.cn/OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B',
         ],
         notesLink: '#videochat-flash-notes',
       },
