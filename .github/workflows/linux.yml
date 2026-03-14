@@ -982,7 +982,7 @@ jobs:
 
   genai_xgrammar_off_tests:
     name: Build & Test when ENABLE_XGRAMMAR=OFF
-    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheels]
+    needs: [smart_ci, openvino_download, genai_build_wheels]
     timeout-minutes: 45
     defaults:
       run:
@@ -999,7 +999,6 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build_xgrammar
-      EXTENSION_LIB_PATH: ${{ env.INSTALL_DIR }}/tests/
 
     steps:
       - name: Clone openvino.genai
@@ -1011,7 +1010,7 @@ jobs:
       - name: Download Build Artifacts
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_tests_Release}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
