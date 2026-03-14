@@ -471,7 +471,7 @@ ov::Tensor merge_tokens(const ov::Tensor& input, ov::InferRequest& merge_embeddi
     return current_x;
 }
 
-ov::Tensor efficient_flatten(ov::Tensor& original_tensor) {
+ov::Tensor efficient_flatten(const ov::Tensor& original_tensor) {
     // flatten 3D tensor [N,C,W] to 3D tensor [1, N*C, W]
     const ov::Shape& original_shape = original_tensor.get_shape();
     const ov::element::Type& dtype = original_tensor.get_element_type();

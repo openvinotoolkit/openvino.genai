@@ -101,7 +101,7 @@ class _VlmPipelineVideoChatFlashImageGuard:
         has_single_image = kwargs.get("image") is not None
         has_multi_images = bool(kwargs.get("images"))
         if _is_videochat_flash_model(self._model_id) and (has_single_image or has_multi_images):
-            pytest.skip("VideoChat-Flash image/image(s) tests are disabled as not supported right now. Please use video/videos input.")
+            pytest.skip("VideoChat-Flash image/image(s) tests are disabled as not supported right now, see CVS-182928. Please use video/videos input.")
         return self._pipeline.generate(*args, **kwargs)
 
     def __getattr__(self, name: str):
@@ -2129,14 +2129,10 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
 ):
     # VideoChat-Flash: Optimum preprocess_inputs currently fails on video chat_template rendering
     if _is_videochat_flash_model(ov_pipe_model.model_id):
-<<<<<<< HEAD
-        pytest.xfail("VideoChat-Flash video cases are expected to fail in optimum-vs-genai resolution test due lack of Optimum-intel support. See CVS-173635.")
-=======
-        pytest.xfail("VideoChat-Flash video cases are expected to fail in optimum-vs-genai resolution test due to lack of Optimum-intel support. See CVS-173635.")
->>>>>>> 31b488b46405a98aff877ef0ff28d11520f38dbc
+        pytest.skip("VideoChat-Flash video cases are expected to fail in optimum-vs-genai resolution test due to lack of Optimum-intel support. See CVS-173635.")
     # VideoChat-Flash: image path is not supported in this suite; expect failure when has_image=True
     if has_image and _is_videochat_flash_model(ov_pipe_model.model_id):
-        pytest.xfail("VideoChat-Flash image cases are expected to fail as not supported yet.")
+        pytest.skip("VideoChat-Flash image cases are expected to fail as not supported yet. See CVS-182928.")
     resized_image = None
     resized_video = None
     if has_image:
