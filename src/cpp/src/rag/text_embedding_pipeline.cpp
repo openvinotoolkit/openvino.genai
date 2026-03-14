@@ -4,6 +4,8 @@
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 
 #include <fstream>
+#include <utility>
+
 #include <nlohmann/json.hpp>
 
 #include "json_utils.hpp"
@@ -92,7 +94,7 @@ public:
 
         ov::Core core = utils::singleton_core();
 
-        auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
+        auto model = core.read_model(models_path / "openvino_model.xml", {}, std::as_const(properties));
 
         bool is_seq_len_fixed = true;
         if (m_config.max_length) {

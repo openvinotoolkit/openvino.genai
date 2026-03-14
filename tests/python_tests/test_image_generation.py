@@ -2,62 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-import subprocess  # nosec B404
-import logging
-from pathlib import Path
 import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
 
-from utils.constants import get_ov_cache_converted_models_dir, NPUW_CPU_PROPERTIES
-from utils.atomic_download import AtomicDownloadManager
-from utils.network import retry_request
+from utils.constants import NPUW_CPU_PROPERTIES
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
-logger = logging.getLogger(__name__)
-
-MODEL_ID = "tiny-random-latent-consistency"
-MODEL_NAME = "echarlaix/tiny-random-latent-consistency"
-
 FLUX_MODEL_ID = "tiny-random-flux"
-FLUX_MODEL_NAME = "optimum-intel-internal-testing/tiny-random-flux"
-
-MODELS = {
-    MODEL_ID: MODEL_NAME,
-    FLUX_MODEL_ID: FLUX_MODEL_NAME,
-}
-
-
-@pytest.fixture(scope="module")
-def image_generation_model(request):
-    model_id = getattr(request, "param", MODEL_ID)
-    model_name = MODELS[model_id]
-    models_dir = get_ov_cache_converted_models_dir()
-    model_path = Path(models_dir) / model_id / model_name
-    
-    manager = AtomicDownloadManager(model_path)
-    
-    def convert_model(temp_path: Path) -> None:
-        command = [
-            "optimum-cli",
-            "export",
-            "openvino",
-            "--model",
-            model_name,
-            "--trust-remote-code",
-            "--weight-format", "fp16",
-            str(temp_path)
-        ]
-        logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
-    
-    try:
-        manager.execute(convert_model)
-    except subprocess.CalledProcessError as error:
-        logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
-        raise
-    
-    return str(model_path)
 
 
 def get_random_image(height: int = 64, width: int = 64) -> ov.Tensor:
