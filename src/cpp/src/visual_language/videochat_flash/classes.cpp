@@ -474,14 +474,23 @@ ov::Tensor merge_tokens(const ov::Tensor& input, ov::InferRequest& merge_embeddi
 ov::Tensor efficient_flatten(const ov::Tensor& original_tensor) {
     // flatten 3D tensor [N,C,W] to 3D tensor [1, N*C, W]
     const ov::Shape& original_shape = original_tensor.get_shape();
+    OPENVINO_ASSERT(
+        original_shape.size() == 3,
+        "efficient_flatten expects a 3D tensor with layout [N, C, W], got ",
+        original_shape.size(),
+        "D."
+    );
     const ov::element::Type& dtype = original_tensor.get_element_type();
     ov::Shape new_shape = {
         1,
-        original_shape[0] * original_shape[1], // N*C
+        original_shape[0] * original_shape[1], // N * C
         original_shape[2]                      // W
     };
     ov::Tensor new_tensor(dtype, new_shape);
-    OPENVINO_ASSERT(original_tensor.get_size() == new_tensor.get_size(), "Flatten error: Element count mismatch during reshape.");
+    OPENVINO_ASSERT(
+        original_tensor.get_size() == new_tensor.get_size(),
+        "Flatten error: Element count mismatch during reshape."
+    );
     const void* src_data = original_tensor.data();
     void* dst_data = new_tensor.data();
     std::memcpy(dst_data, src_data, original_tensor.get_byte_size());

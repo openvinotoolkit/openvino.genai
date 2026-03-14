@@ -20,6 +20,7 @@ enum class VLMModelType {
     PHI4MM,
     QWEN2_VL,
     QWEN2_5_VL,
+    QWEN3_VL,
     GEMMA3,
     VIDEOCHAT_FLASH,
 };
@@ -102,6 +103,11 @@ public:
     size_t mm_local_num_frames = 4;
     /// @brief mm hidden size for VideoChat_Flash model
     size_t mm_hidden_size = 1408;
+    // Qwen3-VL specific config
+    /// @brief Number of position embeddings in vision encoder for Qwen3-VL model.
+    size_t vision_config_num_position_embeddings = 2304;
+    /// @brief DeepStack visual indexes for Qwen3-VL model.
+    std::vector<size_t> vision_config_deepstack_visual_indexes;
 
     /// @brief Default constructor.
     VLMConfig() = default;
