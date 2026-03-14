@@ -17,8 +17,35 @@
 #include "openvino/openvino.hpp"
 
 extern "C" {
-#include <gguflib.h>
+#ifdef HAS_LLAMA_CPP
+    #include "llama.h"
+    #include "ggml.h"
+    #include "gguf.h" 
+#else
+    #include "gguflib.h"
+#endif
 }
+
+#ifdef HAS_LLAMA_CPP
+    using gguf_tensor_type = ggml_type;
+    using gguf_tensor = ggml_tensor;
+    using gguf_ctx = struct gguf_context;
+
+    inline gguf_ctx* gguf_open(const char* fname) {
+        struct gguf_init_params params = {true, nullptr};
+        return gguf_init_from_file(fname, params);
+    }
+
+    inline void gguf_close(gguf_ctx* ctx) {
+        if (ctx) gguf_free(ctx);
+    }
+
+    inline void load_arrays(gguf_ctx*, std::unordered_map<std::string, ov::Tensor>&, std::unordered_map<std::string, gguf_tensor_type>&) {}
+
+    #define GGUF_TYPE_F32 GGML_TYPE_F32
+    #define GGUF_TYPE_F16 GGML_TYPE_F16
+
+#endif
 
 using GGUFMetaData =
     std::variant<std::monostate, float, int, ov::Tensor, std::string, std::vector<std::string>, std::vector<int32_t>>;
