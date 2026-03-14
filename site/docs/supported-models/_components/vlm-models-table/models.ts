@@ -47,6 +47,7 @@ export const VLM_MODELS: VLMModelType[] = [
       {
         name: 'nanoLLaVA',
         links: ['https://huggingface.co/qnguyen3/nanoLLaVA'],
+        notesLink: '#nanollava-notes',
       },
       {
         name: 'nanoLLaVA-1.5',
@@ -84,7 +85,7 @@ export const VLM_MODELS: VLMModelType[] = [
       {
         name: 'videochat_flash_qwen',
         links: [
-          'https://huggingface.co/OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B',
+          'https://modelscope.cn/OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B',
         ],
         notesLink: '#videochat-flash-notes',
       },
@@ -157,6 +158,25 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct',
           'https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct',
         ],
+      },
+    ],
+  },
+  {
+    architecture: 'Qwen3-VL',
+    models: [
+      {
+        name: 'Qwen3-VL',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct',
+          'https://huggingface.co/Qwen/Qwen3-VL-2B-Thinking',
+          'https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct',
+          'https://huggingface.co/Qwen/Qwen3-VL-4B-Thinking',
+          'https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct',
+          'https://huggingface.co/Qwen/Qwen3-VL-8B-Thinking',
+          'https://huggingface.co/Qwen/Qwen3-VL-32B-Instruct',
+          'https://huggingface.co/Qwen/Qwen3-VL-32B-Thinking',
+        ],
+        notesLink: '#qwen3_vl-notes',
       },
     ],
   },
