@@ -496,7 +496,85 @@ ov::Tensor efficient_flatten(const ov::Tensor& original_tensor) {
     std::memcpy(dst_data, src_data, original_tensor.get_byte_size());
     return new_tensor;
 }
+std::vector<float> get_1d_sincos_pos_embed_from_grid(int embed_dim, const std::vector<float>& pos) {
+    assert(embed_dim % 2 == 0);
+    int M = pos.size();
+    int half_dim = embed_dim / 2;
 
+    std::vector<float> omega(half_dim);
+    for (int i = 0; i < half_dim; ++i) {
+        omega[i] = 1.0f / std::pow(10000.0f, (float)i / (embed_dim / 2.0f));
+    }
+
+    std::vector<float> emb(M * embed_dim);
+    for (int m = 0; m < M; ++m) {
+        for (int d = 0; d < half_dim; ++d) {
+            float out = pos[m] * omega[d];
+            emb[m * embed_dim + d] = std::sin(out);            // 前一半是 sin
+            emb[m * embed_dim + d + half_dim] = std::cos(out); // 后一半是 cos
+        }
+    }
+    return emb;
+}
+
+std::vector<float> get_2d_sincos_pos_embed_from_grid(int embed_dim, const std::vector<std::vector<float>>& grid) {
+    assert(embed_dim % 2 == 0);
+    int half_dim = embed_dim / 2;
+    int num_points = grid[0].size();
+
+    auto emb_h = get_1d_sincos_pos_embed_from_grid(half_dim, grid[0]);
+    auto emb_w = get_1d_sincos_pos_embed_from_grid(half_dim, grid[1]);
+
+    std::vector<float> emb(num_points * embed_dim);
+    for (int i = 0; i < num_points; ++i) {
+        std::copy(emb_h.begin() + i * half_dim, emb_h.begin() + (i + 1) * half_dim, emb.begin() + i * embed_dim);
+        std::copy(emb_w.begin() + i * half_dim, emb_w.begin() + (i + 1) * half_dim, emb.begin() + i * embed_dim + half_dim);
+    }
+    return emb;
+}
+
+ov::Tensor get_3d_sincos_pos_embed(int embed_dim, int grid_size, int t_size, bool cls_token = false) {
+    assert(embed_dim % 4 == 0);
+    int embed_dim_spatial = (embed_dim / 4) * 3;
+    int embed_dim_temporal = embed_dim / 4;
+    int hw = grid_size * grid_size;
+    int total_tokens = t_size * hw;
+    int num_rows = (cls_token ? 1 : 0) + total_tokens;
+
+    ov::Shape output_shape = {1, static_cast<size_t>(num_rows), static_cast<size_t>(embed_dim)};
+    ov::Tensor pos_tensor(ov::element::f32, output_shape);
+
+    float* out_ptr = pos_tensor.data<float>();
+    std::fill(out_ptr, out_ptr + pos_tensor.get_size(), 0.0f);
+
+    std::vector<std::vector<float>> grid(2, std::vector<float>(hw));
+    for (int h = 0; h < grid_size; ++h) {
+        for (int w = 0; w < grid_size; ++w) {
+            grid[0][h * grid_size + w] = (float)w;
+            grid[1][h * grid_size + w] = (float)h;
+        }
+    }
+    auto pos_embed_spatial = get_2d_sincos_pos_embed_from_grid(embed_dim_spatial, grid);
+
+    std::vector<float> grid_t(t_size);
+    std::iota(grid_t.begin(), grid_t.end(), 0.0f);
+    auto pos_embed_temporal = get_1d_sincos_pos_embed_from_grid(embed_dim_temporal, grid_t);
+
+    int output_offset = cls_token ? 1 : 0;
+    for (int t = 0; t < t_size; ++t) {
+        for (int i = 0; i < hw; ++i) {
+            float* token_ptr = out_ptr + (output_offset + t * hw + i) * embed_dim;
+            std::memcpy(token_ptr, 
+                        &pos_embed_temporal[t * embed_dim_temporal], 
+                        embed_dim_temporal * sizeof(float));
+            std::memcpy(token_ptr + embed_dim_temporal, 
+                        &pos_embed_spatial[i * embed_dim_spatial], 
+                        embed_dim_spatial * sizeof(float));
+        }
+    }
+
+    return pos_tensor;
+}
 ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
     if (tensors.empty()) return ov::Tensor();
 
@@ -529,7 +607,7 @@ ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
     return merged_tensor;
 }
 
-ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings) {
+ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings, ov::Tensor& pos_emb) {
     OPENVINO_ASSERT(
         transpose_features.get_element_type() == ov::element::f32,
         "vision_embeddings input pixel_values must be f32."
@@ -545,7 +623,9 @@ ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferReque
     for (size_t i = 0; i < N; ++i) {
         ov::Shape single_shape = {1, full_shape[1], full_shape[2], full_shape[3], full_shape[4]};
         ov::Tensor single_input(transpose_features.get_element_type(), single_shape, src_ptr + (i * single_sample_size));
-        vision_embeddings.set_tensor("pixel_values", single_input);
+        // vision_embeddings.set_tensor("pixel_values", single_input);
+        vision_embeddings.set_tensor("hidden_states", single_input);
+        vision_embeddings.set_tensor("rotary_pos_emb", pos_emb);
         vision_embeddings.infer();
         ov::Tensor out_tensor = vision_embeddings.get_output_tensor();
         ov::Tensor copy_tensor(out_tensor.get_element_type(), out_tensor.get_shape());
@@ -563,6 +643,25 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap properties) : VisionEncoder(model_dir, device, properties) {
+
+    auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
+    std::map<std::string, ov::PartialShape> input_shapes;
+    // static x shape may cause output change
+    // ov::Shape x_shape = { 1, 3, 4, 224, 224 };
+    // ov::PartialShape x_shape = { -1, 3, -1, 224, 224 };
+    // input_shapes["hidden_states"] = x_shape;
+    // accelerate model by using static rope shape
+    ov::Shape pos_embed_shape = { 1, 1025, 1408 };
+    input_shapes["rotary_pos_emb"] = pos_embed_shape;
+    model->reshape(input_shapes);
+    auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
+
+    m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
 
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
     auto compiled_model_vision = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, properties);
@@ -586,6 +685,14 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
             return compiled_merge_model.create_infer_request();
         });
     
+    // init 3d_sincos_pos_embed
+    size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
+    size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
+    // Can not obtain this from config for now
+    const size_t img_size = 224;
+    const size_t patch_size = 14;
+    size_t grid_size = img_size / patch_size; // 16
+    m_pos_emb = videochat_flash_utils::get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);  
 }
 
 VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
@@ -616,7 +723,15 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
         [&compiled_merge_model]() -> ov::InferRequest {
             return compiled_merge_model.create_infer_request();
         });
-    
+    // init 3d_sincos_pos_embed
+    size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
+    size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
+    // Can not obtain this from config for now
+    const size_t img_size = 224;
+    const size_t patch_size = 14;
+    size_t grid_size = img_size / patch_size; // 16
+    m_pos_emb = videochat_flash_utils::get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
+
 }
 
 EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
@@ -629,13 +744,15 @@ ov::Tensor infer_visual_features(
     const ov::Tensor& transpose_features,
     ov::InferRequest& vision_embeddings,
     ov::InferRequest& merge_embeddings,
-    ov::InferRequest& vision_projection
+    ov::InferRequest& vision_projection,
+    ov::Tensor& pos_emb
 ) {
-    ov::Tensor processed_vision_embeds = videochat_flash_utils::cyclic_vit_infer(transpose_features, vision_embeddings);
+    ov::Tensor processed_vision_embeds = videochat_flash_utils::cyclic_vit_infer(transpose_features, vision_embeddings, pos_emb);
 
     ov::Tensor clipped_vision_embeds = videochat_flash_utils::remove_second_dim_first_element(processed_vision_embeds);
     ov::Tensor merged_vision_features = videochat_flash_utils::merge_tokens(clipped_vision_embeds, merge_embeddings);
-    vision_projection.set_tensor("input", merged_vision_features);
+    // vision_projection.set_tensor("input", merged_vision_features);
+    vision_projection.set_tensor("hidden_states", merged_vision_features);
     vision_projection.infer();
     ov::Tensor proj_features = vision_projection.get_output_tensor();
 
@@ -663,7 +780,8 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChat_Flash::encode_video
             transpose_features,
             vision_guard.get(),
             merge_guard.get(),
-            projection_guard.get()
+            projection_guard.get(),
+            vision_encoder->get_pos_emb()
         );
         
         encoded_video.video_features = final_features;
