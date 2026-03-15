@@ -9,9 +9,11 @@ import sys
 from pathlib import Path
 from shutil import rmtree
 
+from openvino.frontend import OpExtension
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason, ChatHistory
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
+from openvino_tokenizers import _ext_path
 
 from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
@@ -735,3 +737,16 @@ def test_dynamic_split_fuse_for_speculative_decoding():
 
 def test_dynamic_split_fuse_for_eagle3():
     compare_results_for_dynamic_split_fuse_config("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3")
+
+
+def test_continuous_batching_add_extension():
+    model_id = "katuni4ka/tiny-random-phi3"
+
+    models_path = download_and_convert_model(model_id).models_path
+    scheduler_config = SchedulerConfig()
+
+    properties = {"extensions": [str(_ext_path)]}
+    ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
+
+    properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
+    ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)

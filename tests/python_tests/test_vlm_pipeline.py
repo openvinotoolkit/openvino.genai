@@ -42,6 +42,7 @@ import sys
 import os
 import numpy as np
 import transformers
+from openvino.frontend import OpExtension
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
 from huggingface_hub import snapshot_download
@@ -2457,3 +2458,13 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
     assert results.texts[0].strip() == results_pld.texts[0].strip(), (
         "Result should be the same when prompt_lookup is enabled and disabled."
     )
+
+
+def test_vlm_pipeline_add_extension():
+    models_path = _get_ov_model(MODEL_IDS[0])
+
+    properties = {"extensions": [str(openvino_tokenizers._ext_path)]}
+    VLMPipeline(models_path, "CPU", config=properties)
+
+    properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
+    VLMPipeline(models_path, "CPU", config=properties)
