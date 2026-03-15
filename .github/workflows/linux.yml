@@ -999,7 +999,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build_xgrammar
-      EXTENSION_LIB_PATH: ${{ env.INSTALL_DIR }}/tests/
+      EXTENSION_LIB_PATH: ${{ github.workspace }}/ov/tests
 
     steps:
       - name: Clone openvino.genai
