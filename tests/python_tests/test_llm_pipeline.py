@@ -2,18 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+import shutil
 import pytest
 import torch
 import gc
 import sys
 import os
+import ctypes
 import json
 import logging
 import numpy as np
 from pathlib import Path
-from typing import Literal, Callable
+from typing import Literal, Callable, Optional
 from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
+from openvino.frontend import OpExtension
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -24,6 +27,7 @@ from utils.hugging_face import generation_config_to_hf, download_and_convert_mod
 from utils.tokenizers import delete_rt_info, model_tmp_path
 from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, MAIN_PIPELINE_TYPES, PipelineType, GenerationChatInputsType
 from data.models import get_models_list, CHAT_MODELS_LIST
+from openvino_tokenizers import _ext_path
 
 
 def assert_hf_equals_genai(hf_reference, genai_output):
@@ -119,6 +123,41 @@ def user_defined_callback(subword):
 def user_defined_status_callback(subword):
     logging.info(subword)
     return ov_genai.StreamingStatus.RUNNING
+
+
+def get_process_env_var(name: str) -> Optional[str]:
+    """
+    Return the current process environment variable value, or None if unset.
+    Uses a platform-specific implementation to avoid relying on CDLL(None).getenv
+    on Windows, which is not reliably available.
+    """
+    if sys.platform == "win32":
+        # On Windows, access getenv from the C runtime DLL.
+        try:
+            crt = ctypes.cdll.ucrtbase  # Universal CRT on modern Windows
+        except OSError:
+            try:
+                crt = ctypes.cdll.msvcrt  # Fallback for older environments
+            except OSError:
+                # As a last resort, fall back to Python's view of the environment
+                return os.environ.get(name)
+        crt.getenv.restype = ctypes.c_char_p
+        crt.getenv.argtypes = (ctypes.c_char_p,)
+        env_value = crt.getenv(name.encode("utf-8"))
+    else:
+        libc = ctypes.CDLL(None)
+        try:
+            getenv_func = libc.getenv
+        except AttributeError:
+            # Fallback if libc does not expose getenv
+            return os.environ.get(name)
+        getenv_func.restype = ctypes.c_char_p
+        getenv_func.argtypes = (ctypes.c_char_p,)
+        env_value = getenv_func(name.encode("utf-8"))
+
+    if env_value is None:
+        return None
+    return env_value.decode("utf-8")
 
 
 CALLBACK_FUNCTIONS = [
@@ -876,3 +915,122 @@ def test_pipelines_generate_with_streaming(
         mock_streamer.assert_not_called()
     else:
         mock_streamer.assert_called()
+
+
+def replace_ir_add_with_myadd(ir_xml_path: Path) -> None:
+    import re
+
+    target_node_name = "__module.model.layers.1.input_layernorm/aten::add/Add"
+    xml_text = ir_xml_path.read_text(encoding="utf-8")
+
+    layer_pattern = re.compile(r'<layer\b[^>]*\bname="' + re.escape(target_node_name) + r'"[^>]*>')
+    match = layer_pattern.search(xml_text)
+    assert match is not None, f"No IR Add layer named '{target_node_name}' found to replace with MyAdd"
+
+    layer_tag = match.group(0)
+    updated_tag = re.sub(r'\btype="Add"', 'type="MyAdd"', layer_tag, count=1)
+    assert updated_tag != layer_tag, f"IR layer '{target_node_name}' does not have type='Add'"
+
+    if re.search(r'\bversion="[^"]*"', updated_tag):
+        updated_tag = re.sub(r'\bversion="[^"]*"', 'version="extension"', updated_tag, count=1)
+    else:
+        updated_tag = updated_tag[:-1] + ' version="extension">'
+
+    xml_text = xml_text[: match.start()] + updated_tag + xml_text[match.end() :]
+    ir_xml_path.write_text(xml_text, encoding="utf-8")
+
+
+def get_extension_model(model_path: str, temp_dir: Path) -> Path:
+    source_path = Path(model_path)
+    extension_path = temp_dir / f"{source_path.name}_extension"
+    ir_xml_path = extension_path / "openvino_model.xml"
+    if ir_xml_path.exists():
+        return extension_path
+
+    if not source_path.exists():
+        raise FileNotFoundError(f"Model path was not found: {source_path}")
+
+    shutil.copytree(source_path, extension_path)
+    replace_ir_add_with_myadd(ir_xml_path)
+
+    assert b"MyAdd" in ir_xml_path.read_bytes(), "Custom op 'MyAdd' was not injected into OpenVINO IR"
+
+    return extension_path
+
+
+def get_extension_lib_path():
+    extension_name = "openvino_custom_add_extension"
+    if sys.platform == "win32":
+        suffixes = [".dll"]
+    elif sys.platform == "darwin":
+        suffixes = [".dylib", ".so"]
+    else:
+        suffixes = [".so"]
+
+    file_names = []
+    for suffix in suffixes:
+        file_names.append(f"lib{extension_name}{suffix}")
+        file_names.append(f"{extension_name}{suffix}")
+
+    extension_lib_path_env = os.getenv("EXTENSION_LIB_PATH")
+    if extension_lib_path_env:
+        env_path = Path(extension_lib_path_env)
+        if env_path.is_file():
+            return env_path
+        if env_path.exists():
+            for file_name in file_names:
+                matches = sorted(env_path.rglob(file_name))
+                if matches:
+                    return matches[0]
+
+    workspace_root = Path(__file__).resolve().parents[2]
+    build_dir = workspace_root / "build"
+    if not build_dir.exists():
+        raise FileNotFoundError(f"Build directory was not found: {build_dir}")
+
+    for file_name in file_names:
+        matches = sorted(build_dir.rglob(file_name))
+        if matches:
+            return matches[0]
+
+    raise FileNotFoundError(
+        f"Could not find compiled custom extension '{extension_name}'. "
+        f"Searched EXTENSION_LIB_PATH='{os.getenv('EXTENSION_LIB_PATH')}' and build directory '{build_dir}'. "
+    )
+
+
+@pytest.mark.parametrize("llm_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
+@pytest.mark.parametrize("generation_config,prompt", PERF_METRICS_STRUCTURED_OUTPUT_TEST_CASES)
+def test_llm_pipeline_add_extension_custom_op(
+    llm_model: OVConvertedModelSchema,
+    generation_config: dict,
+    prompt: str,
+    tmp_path: Path,
+) -> None:
+    extension_model_path = get_extension_model(llm_model.models_path, tmp_path)
+    extension_lib_path = get_extension_lib_path()
+
+    # The custom op "MyAdd" from the extension is implemented in the same way as the OpenVINO op "Add"
+    properties = {"extensions": [str(extension_lib_path)]}
+    os.environ["EXTENSION_LIB_CALLED"] = "0"
+    ov_pipe_extension = ov_genai.LLMPipeline(extension_model_path, "CPU", **properties)
+    result_extension = ov_pipe_extension.generate([prompt], **generation_config)
+    extension_lib_called = get_process_env_var("EXTENSION_LIB_CALLED")
+    assert extension_lib_called == "1", "Custom extension library was not called"
+
+    properties = {}
+    ov_pipe_ref = ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
+    result_ref = ov_pipe_ref.generate([prompt], **generation_config)
+
+    assert result_extension.texts[0].strip() == result_ref.texts[0].strip(), (
+        "Result should be the same for model with extension and reference model."
+    )
+
+
+@pytest.mark.parametrize("llm_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
+def test_llm_pipeline_add_extension(llm_model: OVConvertedModelSchema) -> None:
+    properties = {"extensions": [str(_ext_path)]}
+    ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
+
+    properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
+    ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
