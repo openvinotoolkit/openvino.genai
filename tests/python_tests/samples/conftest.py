@@ -191,6 +191,7 @@ TEST_FILES = {
     "cmu_us_awb_arctic-wav-arctic_a0001.bin": "https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin",
     "video0.mp4": "https://storage.openvinotoolkit.org/repositories/openvino_notebooks/data/data/video/Coco%20Walking%20in%20Berkeley.mp4",
     "qwen2b_lora_100_adapter_model.safetensors": "https://huggingface.co/saim1212/qwen2b-lora-100/resolve/main/adapter_model.safetensors",
+    "ltx_tiny_dummy_lora.safetensors": "https://huggingface.co/goyaladitya05/openvino-genai-test-files/resolve/main/ltx_tiny_dummy_lora.safetensors",
 }
 
 SAMPLES_PY_DIR = Path(
