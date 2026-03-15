@@ -131,7 +131,9 @@ any_other_function_with_shell_equals_true:
   - subprocess.check_output
   - subprocess.run
 assert_used:
-  skips: ["tools/who_what_benchmark/tests/test_*.py"]
+  skips:
+  - "tools/who_what_benchmark/tests/test_*.py"
+  - "src/cpp/src/speech_generation/misaki_cpp/tools/*.py"
 hardcoded_tmp_directory:
   tmp_dirs:
   - /tmp

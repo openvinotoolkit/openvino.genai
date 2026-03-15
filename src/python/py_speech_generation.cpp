@@ -19,6 +19,7 @@ using ov::genai::GenerationConfig;
 using ov::genai::PerfMetrics;
 using ov::genai::SpeechGenerationConfig;
 using ov::genai::SpeechGenerationPerfMetrics;
+using ov::genai::SpeechToken;
 using ov::genai::Text2SpeechDecodedResults;
 using ov::genai::Text2SpeechPipeline;
 
@@ -28,6 +29,10 @@ namespace {
 
 auto speech_generation_config_docstring = R"(
     SpeechGenerationConfig
+
+    Shared parameters:
+    :param speed: speech speed multiplier.
+    :type speed: float
     
     Speech-generation specific parameters:
     :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
@@ -38,6 +43,23 @@ auto speech_generation_config_docstring = R"(
 
     :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
     :type threshold: float
+
+    Kokoro-specific parameters:
+    :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+    :type language: str
+
+    :param voice: voice identifier used by Kokoro backend.
+    :type voice: str
+
+    :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+    :type max_phoneme_length: int
+
+    :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                         This applies only to fallback during phonemize / G2P
+                                         (graphemes to phonemes), before acoustic model inference.
+                                         If set, this OpenVINO G2P fallback is used.
+                                         If unset (None), espeak-ng G2P fallback is used.
+    :type phonemize_fallback_model_dir: str | None
 )";
 
 auto speech_generation_perf_metrics_docstring = R"(
@@ -49,10 +71,13 @@ auto speech_generation_perf_metrics_docstring = R"(
 
 auto text_to_speech_decoded_results = R"(
     Structure that stores the result from the generate method, including a list of waveform tensors
-    sampled at 16 kHz, along with performance metrics
+    along with output sample rate and performance metrics
 
-    :param speeches: a list of waveform tensors sampled at 16 kHz
+    :param speeches: a list of generated waveform tensors
     :type speeches: list
+
+    :param output_sample_rate: sample rate of generated waveform tensors
+    :type output_sample_rate: int
 
     :param perf_metrics: performance metrics
     :type perf_metrics: SpeechGenerationPerfMetrics
@@ -72,7 +97,70 @@ auto text_to_speech_generate_docstring = R"(
     :param properties: speech generation parameters specified as properties
     :type properties: dict
 
-    :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+    :returns: raw audios of the input texts spoken in the specified speaker's voice;
+              sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
+    :rtype: Text2SpeechDecodedResults
+)";
+
+auto text_to_speech_phonemize_docstring = R"(
+    Runs Kokoro text preprocessing and returns phoneme chunks used before acoustic inference.
+
+    :param text(s): input text(s) to phonemize
+    :type text(s): str or list[str]
+
+    :param properties: speech generation parameters specified as properties
+    :type properties: dict
+
+    :returns: phoneme chunks (or per-input phoneme chunk lists)
+    :rtype: list[str] or list[list[str]]
+)";
+
+auto text_to_speech_generate_from_phonemes_docstring = R"(
+    Generates speech directly from precomputed Kokoro phoneme chunks.
+
+    NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+
+    :param phoneme_chunks: phoneme chunks for one output speech, or nested chunk lists for multiple speeches
+    :type phoneme_chunks: list[str] or list[list[str]]
+
+    :param speaker_embedding: optional speaker embedding tensor (ignored by Kokoro backend)
+    :type speaker_embedding: openvino.Tensor or None
+
+    :param properties: speech generation parameters specified as properties
+    :type properties: dict
+
+    :returns: generated speech waveform(s)
+    :rtype: Text2SpeechDecodedResults
+)";
+
+auto speech_token_docstring = R"(
+    Lightweight speech token used by `generate_from_tokens`.
+
+    :param phonemes: token phoneme content
+    :type phonemes: str
+
+    :param whitespace: whether a whitespace follows this token
+    :type whitespace: bool
+
+    :param text: optional original token text for debugging
+    :type text: str
+)";
+
+auto text_to_speech_generate_from_tokens_docstring = R"(
+    Generates speech directly from lightweight token stream(s).
+
+    NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+
+    :param token_batches: one token sequence (`list[SpeechToken]`) or a list of token sequences
+    :type token_batches: list[SpeechToken] or list[list[SpeechToken]]
+
+    :param speaker_embedding: optional speaker embedding tensor (ignored by Kokoro backend)
+    :type speaker_embedding: openvino.Tensor or None
+
+    :param properties: speech generation parameters specified as properties
+    :type properties: dict
+
+    :returns: generated speech waveform(s)
     :rtype: Text2SpeechDecodedResults
 )";
 
@@ -99,9 +187,14 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def(py::init([](const py::kwargs& kwargs) {
             return update_speech_generation_config_from_kwargs(SpeechGenerationConfig(), kwargs);
         }))
+        .def_readwrite("speed", &SpeechGenerationConfig::speed)
         .def_readwrite("minlenratio", &SpeechGenerationConfig::minlenratio)
         .def_readwrite("maxlenratio", &SpeechGenerationConfig::maxlenratio)
         .def_readwrite("threshold", &SpeechGenerationConfig::threshold)
+        .def_readwrite("language", &SpeechGenerationConfig::language)
+        .def_readwrite("voice", &SpeechGenerationConfig::voice)
+        .def_readwrite("max_phoneme_length", &SpeechGenerationConfig::max_phoneme_length)
+        .def_readwrite("phonemize_fallback_model_dir", &SpeechGenerationConfig::phonemize_fallback_model_dir)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
@@ -118,7 +211,18 @@ void init_speech_generation_pipeline(py::module_& m) {
     py::class_<Text2SpeechDecodedResults>(m, "Text2SpeechDecodedResults", text_to_speech_decoded_results)
         .def(py::init<>())
         .def_readonly("speeches", &Text2SpeechDecodedResults::speeches)
+        .def_readonly("output_sample_rate", &Text2SpeechDecodedResults::output_sample_rate)
         .def_readonly("perf_metrics", &Text2SpeechDecodedResults::perf_metrics);
+
+    py::class_<SpeechToken>(m, "SpeechToken", speech_token_docstring)
+        .def(py::init<>())
+        .def(py::init<const std::string&, bool, const std::string&>(),
+             py::arg("phonemes"),
+             py::arg("whitespace") = false,
+             py::arg("text") = "")
+        .def_readwrite("phonemes", &SpeechToken::phonemes)
+        .def_readwrite("whitespace", &SpeechToken::whitespace)
+        .def_readwrite("text", &SpeechToken::text);
 
     py::class_<Text2SpeechPipeline>(m, "Text2SpeechPipeline", "Text-to-speech pipeline")
         .def(
@@ -143,18 +247,15 @@ void init_speech_generation_pipeline(py::module_& m) {
                const std::string& text,
                py::object speaker_embedding,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
-                SpeechGenerationConfig base_config = pipe.get_generation_config();
-
-                auto updated_config = update_speech_generation_config_from_kwargs(base_config, kwargs);
-
                 ov::genai::Text2SpeechDecodedResults res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                 {
                     py::gil_scoped_release rel;
                     if (speaker_embedding.is_none()) {
-                        res = pipe.generate(text);
+                        res = pipe.generate(text, ov::Tensor(), properties);
                     } else {
                         const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
-                        res = pipe.generate(text, tensor);
+                        res = pipe.generate(text, tensor, properties);
                     }
                 }
                 return py::cast(res);
@@ -171,18 +272,15 @@ void init_speech_generation_pipeline(py::module_& m) {
                const std::vector<std::string>& texts,
                py::object speaker_embedding,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
-                SpeechGenerationConfig base_config = pipe.get_generation_config();
-
-                auto updated_config = update_speech_generation_config_from_kwargs(base_config, kwargs);
-
                 ov::genai::Text2SpeechDecodedResults res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                 {
                     py::gil_scoped_release rel;
                     if (speaker_embedding.is_none()) {
-                        res = pipe.generate(texts);
+                        res = pipe.generate(texts, ov::Tensor(), properties);
                     } else {
                         const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
-                        res = pipe.generate(texts, tensor);
+                        res = pipe.generate(texts, tensor, properties);
                     }
                 }
                 return py::cast(res);
@@ -192,6 +290,140 @@ void init_speech_generation_pipeline(py::module_& m) {
             py::arg("speaker_embedding") = py::none(),
             "vector representing the unique characteristics of a speaker's voice.",
             (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
+
+        .def(
+            "phonemize",
+            [](Text2SpeechPipeline& pipe,
+               const std::string& text,
+               const py::kwargs& kwargs) -> std::vector<std::string> {
+                std::vector<std::string> res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    res = pipe.phonemize(text, properties);
+                }
+                return res;
+            },
+            py::arg("text"),
+            "input text for which to generate Kokoro phoneme chunks.",
+            (text_to_speech_phonemize_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
+
+        .def(
+            "phonemize",
+            [](Text2SpeechPipeline& pipe,
+               const std::vector<std::string>& texts,
+               const py::kwargs& kwargs) -> std::vector<std::vector<std::string>> {
+                std::vector<std::vector<std::string>> res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    res = pipe.phonemize(texts, properties);
+                }
+                return res;
+            },
+            py::arg("texts"),
+            "input texts for which to generate Kokoro phoneme chunks.",
+            (text_to_speech_phonemize_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
+
+        .def(
+            "generate_from_phonemes",
+            [](Text2SpeechPipeline& pipe,
+               const std::vector<std::string>& phoneme_chunks,
+               py::object speaker_embedding,
+               const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
+                ov::genai::Text2SpeechDecodedResults res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    if (speaker_embedding.is_none()) {
+                        res = pipe.generate_from_phonemes(phoneme_chunks, ov::Tensor(), properties);
+                    } else {
+                        const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
+                        res = pipe.generate_from_phonemes(phoneme_chunks, tensor, properties);
+                    }
+                }
+                return py::cast(res);
+            },
+            py::arg("phoneme_chunks"),
+            "phoneme chunks for one output speech.",
+            py::arg("speaker_embedding") = py::none(),
+            "optional speaker embedding tensor; ignored by Kokoro backend.",
+            (text_to_speech_generate_from_phonemes_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
+
+        .def(
+            "generate_from_phonemes",
+            [](Text2SpeechPipeline& pipe,
+               const std::vector<std::vector<std::string>>& phoneme_chunks,
+               py::object speaker_embedding,
+               const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
+                ov::genai::Text2SpeechDecodedResults res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    if (speaker_embedding.is_none()) {
+                        res = pipe.generate_from_phonemes(phoneme_chunks, ov::Tensor(), properties);
+                    } else {
+                        const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
+                        res = pipe.generate_from_phonemes(phoneme_chunks, tensor, properties);
+                    }
+                }
+                return py::cast(res);
+            },
+            py::arg("phoneme_chunks"),
+            "nested phoneme chunk lists for multiple output speeches.",
+            py::arg("speaker_embedding") = py::none(),
+            "optional speaker embedding tensor; ignored by Kokoro backend.",
+            (text_to_speech_generate_from_phonemes_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
+
+        .def(
+            "generate_from_tokens",
+            [](Text2SpeechPipeline& pipe,
+               const std::vector<SpeechToken>& tokens,
+               py::object speaker_embedding,
+               const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
+                ov::genai::Text2SpeechDecodedResults res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    if (speaker_embedding.is_none()) {
+                        res = pipe.generate_from_tokens(tokens, ov::Tensor(), properties);
+                    } else {
+                        const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
+                        res = pipe.generate_from_tokens(tokens, tensor, properties);
+                    }
+                }
+                return py::cast(res);
+            },
+            py::arg("tokens"),
+            "token sequence for one output speech.",
+            py::arg("speaker_embedding") = py::none(),
+            "optional speaker embedding tensor; ignored by Kokoro backend.",
+            (text_to_speech_generate_from_tokens_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
+
+        .def(
+            "generate_from_tokens",
+            [](Text2SpeechPipeline& pipe,
+               const std::vector<std::vector<SpeechToken>>& token_batches,
+               py::object speaker_embedding,
+               const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
+                ov::genai::Text2SpeechDecodedResults res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    if (speaker_embedding.is_none()) {
+                        res = pipe.generate_from_tokens(token_batches, ov::Tensor(), properties);
+                    } else {
+                        const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
+                        res = pipe.generate_from_tokens(token_batches, tensor, properties);
+                    }
+                }
+                return py::cast(res);
+            },
+            py::arg("token_batches"),
+            "nested token sequences for multiple output speeches.",
+            py::arg("speaker_embedding") = py::none(),
+            "optional speaker embedding tensor; ignored by Kokoro backend.",
+            (text_to_speech_generate_from_tokens_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def("get_generation_config", &Text2SpeechPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &Text2SpeechPipeline::set_generation_config, py::arg("config"));

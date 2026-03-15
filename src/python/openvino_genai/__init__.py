@@ -131,6 +131,7 @@ from .py_openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
 from .py_openvino_genai import (
     SpeechGenerationConfig,
     SpeechGenerationPerfMetrics,
+    SpeechToken,
     Text2SpeechDecodedResults,
     Text2SpeechPipeline,
 )

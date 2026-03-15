@@ -9,6 +9,7 @@
 #include <fstream>
 
 #include "json_utils.hpp"
+#include "kokoro_tts_model.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "speecht5_tts_model.hpp"
 #include "utils.hpp"
@@ -32,6 +33,25 @@ const std::string get_class_name(const std::filesystem::path& root_dir) {
     return arch;
 }
 
+enum class SpeechBackend {
+    SpeechT5,
+    Kokoro,
+};
+
+SpeechBackend resolve_backend(const std::filesystem::path& root_dir,
+                             const std::string& class_name) {
+    if (class_name == "SpeechT5ForTextToSpeech") {
+        return SpeechBackend::SpeechT5;
+    }
+
+    if (std::filesystem::exists(root_dir / "openvino_model.xml")) {
+        return SpeechBackend::Kokoro;
+    }
+
+    OPENVINO_THROW("Unsupported text to speech generation pipeline '", class_name,
+                   "'. Unable to auto-detect a supported backend from model metadata/files");
+}
+
 }  // namespace
 
 namespace ov {
@@ -43,20 +63,69 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
     : m_speech_gen_config(utils::from_config_json_if_exists<SpeechGenerationConfig>(root_dir)) {
     const std::string class_name = get_class_name(root_dir);
 
-    auto start_time = std::chrono::steady_clock::now();
-
-    auto tokenizer = ov::genai::Tokenizer(root_dir);
-    if (class_name == "SpeechT5ForTextToSpeech") {
+    const auto backend = resolve_backend(root_dir, class_name);
+    if (backend == SpeechBackend::SpeechT5) {
+        auto tokenizer = ov::genai::Tokenizer(root_dir);
         m_impl = std::make_shared<SpeechT5TTSImpl>(root_dir, device, properties, tokenizer);
     } else {
-        OPENVINO_THROW("Unsupported text to speech generation pipeline '", class_name, "'");
+        m_impl = std::make_shared<KokoroTTSImpl>(root_dir, device, properties);
     }
 }
 
 Text2SpeechDecodedResults Text2SpeechPipeline::generate(const std::vector<std::string>& texts,
                                                         const ov::Tensor& speaker_embedding,
                                                         const ov::AnyMap& properties) {
-    return m_impl->generate(texts, speaker_embedding, m_speech_gen_config);
+    SpeechGenerationConfig request_config = m_speech_gen_config;
+    request_config.update_generation_config(properties);
+    request_config.validate();
+    return m_impl->generate(texts, speaker_embedding, request_config);
+}
+
+Text2SpeechDecodedResults Text2SpeechPipeline::generate_from_phonemes(const std::vector<std::string>& phoneme_chunks,
+                                                                      const ov::Tensor& speaker_embedding,
+                                                                      const ov::AnyMap& properties) {
+    return generate_from_phonemes(std::vector<std::vector<std::string>>{phoneme_chunks}, speaker_embedding, properties);
+}
+
+Text2SpeechDecodedResults Text2SpeechPipeline::generate_from_phonemes(
+    const std::vector<std::vector<std::string>>& phoneme_chunks,
+    const ov::Tensor& speaker_embedding,
+    const ov::AnyMap& properties) {
+    SpeechGenerationConfig request_config = m_speech_gen_config;
+    request_config.update_generation_config(properties);
+    request_config.validate();
+    return m_impl->generate_from_phonemes(phoneme_chunks, speaker_embedding, request_config);
+}
+
+Text2SpeechDecodedResults Text2SpeechPipeline::generate_from_tokens(const std::vector<SpeechToken>& tokens,
+                                                                    const ov::Tensor& speaker_embedding,
+                                                                    const ov::AnyMap& properties) {
+    return generate_from_tokens(std::vector<std::vector<SpeechToken>>{tokens}, speaker_embedding, properties);
+}
+
+Text2SpeechDecodedResults Text2SpeechPipeline::generate_from_tokens(
+    const std::vector<std::vector<SpeechToken>>& token_batches,
+    const ov::Tensor& speaker_embedding,
+    const ov::AnyMap& properties) {
+    SpeechGenerationConfig request_config = m_speech_gen_config;
+    request_config.update_generation_config(properties);
+    request_config.validate();
+    return m_impl->generate_from_tokens(token_batches, speaker_embedding, request_config);
+}
+
+std::vector<std::string> Text2SpeechPipeline::phonemize(const std::string& text,
+                                                        const ov::AnyMap& properties) {
+    auto chunks = phonemize(std::vector<std::string>{text}, properties);
+    OPENVINO_ASSERT(chunks.size() == 1, "Expected one phonemized item");
+    return chunks[0];
+}
+
+std::vector<std::vector<std::string>> Text2SpeechPipeline::phonemize(const std::vector<std::string>& texts,
+                                                                     const ov::AnyMap& properties) {
+    SpeechGenerationConfig request_config = m_speech_gen_config;
+    request_config.update_generation_config(properties);
+    request_config.validate();
+    return m_impl->phonemize(texts, request_config);
 }
 
 SpeechGenerationConfig Text2SpeechPipeline::get_generation_config() const {

@@ -1,0 +1,47 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-vs-debug",
+      "displayName": "Windows VS2022 Debug",
+      "description": "Configure consumer sample with Visual Studio 2022 and local MisakiCpp install prefix.",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/../../build/consumer",
+      "cacheVariables": {
+        "MisakiCpp_DIR": "${sourceDir}/../../build/install-test/lib/cmake/MisakiCpp"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "ninja-debug",
+      "displayName": "Ninja Debug",
+      "description": "Configure consumer sample with Ninja and local MisakiCpp install prefix.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../../build/consumer-ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MisakiCpp_DIR": "${sourceDir}/../../build/install-test/lib/cmake/MisakiCpp"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-vs-debug",
+      "configurePreset": "windows-vs-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "ninja-debug",
+      "configurePreset": "ninja-debug"
+    }
+  ]
+}

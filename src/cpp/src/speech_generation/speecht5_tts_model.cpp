@@ -131,6 +131,7 @@ Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::strin
     const ov::Tensor& used_speaker_embedding = speaker_embedding ? speaker_embedding : get_default_speaker_embedding();
 
     Text2SpeechDecodedResults gen_speech_res;
+    gen_speech_res.output_sample_rate = 16000;
 
     auto& tokenization_durations = gen_speech_res.perf_metrics.raw_metrics.tokenization_durations;
     const auto generation_start = std::chrono::steady_clock::now();
@@ -203,6 +204,33 @@ Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::strin
     gen_speech_res.perf_metrics.evaluate_statistics();
     m_perf_metrics = gen_speech_res.perf_metrics;
     return gen_speech_res;
+}
+
+Text2SpeechDecodedResults SpeechT5TTSImpl::generate_from_phonemes(
+    const std::vector<std::vector<std::string>>& phoneme_chunks,
+    const ov::Tensor& speaker_embedding,
+    const SpeechGenerationConfig& generation_config) {
+    (void)phoneme_chunks;
+    (void)speaker_embedding;
+    (void)generation_config;
+    OPENVINO_THROW("Text2SpeechPipeline.generate_from_phonemes is only supported for Kokoro backend");
+}
+
+Text2SpeechDecodedResults SpeechT5TTSImpl::generate_from_tokens(
+    const std::vector<std::vector<SpeechToken>>& token_batches,
+    const ov::Tensor& speaker_embedding,
+    const SpeechGenerationConfig& generation_config) {
+    (void)token_batches;
+    (void)speaker_embedding;
+    (void)generation_config;
+    OPENVINO_THROW("Text2SpeechPipeline.generate_from_tokens is only supported for Kokoro backend");
+}
+
+std::vector<std::vector<std::string>> SpeechT5TTSImpl::phonemize(const std::vector<std::string>& texts,
+                                                                 const SpeechGenerationConfig& generation_config) {
+    (void)texts;
+    (void)generation_config;
+    OPENVINO_THROW("Text2SpeechPipeline.phonemize is only supported for Kokoro backend");
 }
 
 SpeechGenerationPerfMetrics SpeechT5TTSImpl::get_performance_metrics() {

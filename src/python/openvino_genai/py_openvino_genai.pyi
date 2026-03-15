@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'SpeechToken', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -2664,6 +2664,10 @@ class SpeechGenerationConfig(GenerationConfig):
     """
     
         SpeechGenerationConfig
+    
+        Shared parameters:
+        :param speed: speech speed multiplier.
+        :type speed: float
         
         Speech-generation specific parameters:
         :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
@@ -2674,7 +2678,27 @@ class SpeechGenerationConfig(GenerationConfig):
     
         :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
         :type threshold: float
+    
+        Kokoro-specific parameters:
+        :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+        :type language: str
+    
+        :param voice: voice identifier used by Kokoro backend.
+        :type voice: str
+    
+        :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+        :type max_phoneme_length: int
+    
+        :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                             This applies only to fallback during phonemize / G2P
+                                             (graphemes to phonemes), before acoustic model inference.
+                                             If set, this OpenVINO G2P fallback is used.
+                                             If unset (None), espeak-ng G2P fallback is used.
+        :type phonemize_fallback_model_dir: str | None
     """
+    language: str
+    phonemize_fallback_model_dir: str | None
+    voice: str
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """
@@ -2684,6 +2708,12 @@ class SpeechGenerationConfig(GenerationConfig):
     def __init__(self, **kwargs) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
+        ...
+    @property
+    def max_phoneme_length(self) -> int:
+        ...
+    @max_phoneme_length.setter
+    def max_phoneme_length(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def maxlenratio(self) -> float:
@@ -2696,6 +2726,12 @@ class SpeechGenerationConfig(GenerationConfig):
         ...
     @minlenratio.setter
     def minlenratio(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def speed(self) -> float:
+        ...
+    @speed.setter
+    def speed(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
     def threshold(self) -> float:
@@ -2724,6 +2760,29 @@ class SpeechGenerationPerfMetrics(PerfMetrics):
         ...
     @property
     def throughput(self) -> MeanStdPair:
+        ...
+class SpeechToken:
+    """
+    
+        Lightweight speech token used by `generate_from_tokens`.
+    
+        :param phonemes: token phoneme content
+        :type phonemes: str
+    
+        :param whitespace: whether a whitespace follows this token
+        :type whitespace: bool
+    
+        :param text: optional original token text for debugging
+        :type text: str
+    """
+    phonemes: str
+    text: str
+    whitespace: bool
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, phonemes: str, whitespace: bool = False, text: str = '') -> None:
         ...
 class StopCriteria:
     """
@@ -3410,15 +3469,21 @@ class Text2SpeechDecodedResults:
     """
     
         Structure that stores the result from the generate method, including a list of waveform tensors
-        sampled at 16 kHz, along with performance metrics
+        along with output sample rate and performance metrics
     
-        :param speeches: a list of waveform tensors sampled at 16 kHz
+        :param speeches: a list of generated waveform tensors
         :type speeches: list
+    
+        :param output_sample_rate: sample rate of generated waveform tensors
+        :type output_sample_rate: int
     
         :param perf_metrics: performance metrics
         :type perf_metrics: SpeechGenerationPerfMetrics
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def output_sample_rate(self) -> int:
         ...
     @property
     def perf_metrics(self) -> SpeechGenerationPerfMetrics:
@@ -3452,11 +3517,16 @@ class Text2SpeechPipeline:
             :param properties: speech generation parameters specified as properties
             :type properties: dict
         
-            :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+            :returns: raw audios of the input texts spoken in the specified speaker's voice;
+                      sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
             :rtype: Text2SpeechDecodedResults
          
          
             SpeechGenerationConfig
+        
+            Shared parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
             
             Speech-generation specific parameters:
             :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
@@ -3467,6 +3537,23 @@ class Text2SpeechPipeline:
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
+        
+            Kokoro-specific parameters:
+            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+            :type language: str
+        
+            :param voice: voice identifier used by Kokoro backend.
+            :type voice: str
+        
+            :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+            :type max_phoneme_length: int
+        
+            :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                                 This applies only to fallback during phonemize / G2P
+                                                 (graphemes to phonemes), before acoustic model inference.
+                                                 If set, this OpenVINO G2P fallback is used.
+                                                 If unset (None), espeak-ng G2P fallback is used.
+            :type phonemize_fallback_model_dir: str | None
         """
     @typing.overload
     def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
@@ -3484,11 +3571,16 @@ class Text2SpeechPipeline:
             :param properties: speech generation parameters specified as properties
             :type properties: dict
         
-            :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+            :returns: raw audios of the input texts spoken in the specified speaker's voice;
+                      sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
             :rtype: Text2SpeechDecodedResults
          
          
             SpeechGenerationConfig
+        
+            Shared parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
             
             Speech-generation specific parameters:
             :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
@@ -3499,9 +3591,334 @@ class Text2SpeechPipeline:
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
+        
+            Kokoro-specific parameters:
+            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+            :type language: str
+        
+            :param voice: voice identifier used by Kokoro backend.
+            :type voice: str
+        
+            :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+            :type max_phoneme_length: int
+        
+            :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                                 This applies only to fallback during phonemize / G2P
+                                                 (graphemes to phonemes), before acoustic model inference.
+                                                 If set, this OpenVINO G2P fallback is used.
+                                                 If unset (None), espeak-ng G2P fallback is used.
+            :type phonemize_fallback_model_dir: str | None
+        """
+    @typing.overload
+    def generate_from_phonemes(self, phoneme_chunks: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+        """
+            Generates speech directly from precomputed Kokoro phoneme chunks.
+        
+            NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+        
+            :param phoneme_chunks: phoneme chunks for one output speech, or nested chunk lists for multiple speeches
+            :type phoneme_chunks: list[str] or list[list[str]]
+        
+            :param speaker_embedding: optional speaker embedding tensor (ignored by Kokoro backend)
+            :type speaker_embedding: openvino.Tensor or None
+        
+            :param properties: speech generation parameters specified as properties
+            :type properties: dict
+        
+            :returns: generated speech waveform(s)
+            :rtype: Text2SpeechDecodedResults
+         
+         
+            SpeechGenerationConfig
+        
+            Shared parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
+            
+            Speech-generation specific parameters:
+            :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
+            :type minlenratio: float
+        
+            :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
+            :type minlenratio: float
+        
+            :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
+            :type threshold: float
+        
+            Kokoro-specific parameters:
+            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+            :type language: str
+        
+            :param voice: voice identifier used by Kokoro backend.
+            :type voice: str
+        
+            :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+            :type max_phoneme_length: int
+        
+            :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                                 This applies only to fallback during phonemize / G2P
+                                                 (graphemes to phonemes), before acoustic model inference.
+                                                 If set, this OpenVINO G2P fallback is used.
+                                                 If unset (None), espeak-ng G2P fallback is used.
+            :type phonemize_fallback_model_dir: str | None
+        """
+    @typing.overload
+    def generate_from_phonemes(self, phoneme_chunks: collections.abc.Sequence[collections.abc.Sequence[str]], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+        """
+            Generates speech directly from precomputed Kokoro phoneme chunks.
+        
+            NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+        
+            :param phoneme_chunks: phoneme chunks for one output speech, or nested chunk lists for multiple speeches
+            :type phoneme_chunks: list[str] or list[list[str]]
+        
+            :param speaker_embedding: optional speaker embedding tensor (ignored by Kokoro backend)
+            :type speaker_embedding: openvino.Tensor or None
+        
+            :param properties: speech generation parameters specified as properties
+            :type properties: dict
+        
+            :returns: generated speech waveform(s)
+            :rtype: Text2SpeechDecodedResults
+         
+         
+            SpeechGenerationConfig
+        
+            Shared parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
+            
+            Speech-generation specific parameters:
+            :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
+            :type minlenratio: float
+        
+            :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
+            :type minlenratio: float
+        
+            :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
+            :type threshold: float
+        
+            Kokoro-specific parameters:
+            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+            :type language: str
+        
+            :param voice: voice identifier used by Kokoro backend.
+            :type voice: str
+        
+            :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+            :type max_phoneme_length: int
+        
+            :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                                 This applies only to fallback during phonemize / G2P
+                                                 (graphemes to phonemes), before acoustic model inference.
+                                                 If set, this OpenVINO G2P fallback is used.
+                                                 If unset (None), espeak-ng G2P fallback is used.
+            :type phonemize_fallback_model_dir: str | None
+        """
+    @typing.overload
+    def generate_from_tokens(self, tokens: collections.abc.Sequence[SpeechToken], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+        """
+            Generates speech directly from lightweight token stream(s).
+        
+            NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+        
+            :param token_batches: one token sequence (`list[SpeechToken]`) or a list of token sequences
+            :type token_batches: list[SpeechToken] or list[list[SpeechToken]]
+        
+            :param speaker_embedding: optional speaker embedding tensor (ignored by Kokoro backend)
+            :type speaker_embedding: openvino.Tensor or None
+        
+            :param properties: speech generation parameters specified as properties
+            :type properties: dict
+        
+            :returns: generated speech waveform(s)
+            :rtype: Text2SpeechDecodedResults
+         
+         
+            SpeechGenerationConfig
+        
+            Shared parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
+            
+            Speech-generation specific parameters:
+            :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
+            :type minlenratio: float
+        
+            :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
+            :type minlenratio: float
+        
+            :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
+            :type threshold: float
+        
+            Kokoro-specific parameters:
+            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+            :type language: str
+        
+            :param voice: voice identifier used by Kokoro backend.
+            :type voice: str
+        
+            :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+            :type max_phoneme_length: int
+        
+            :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                                 This applies only to fallback during phonemize / G2P
+                                                 (graphemes to phonemes), before acoustic model inference.
+                                                 If set, this OpenVINO G2P fallback is used.
+                                                 If unset (None), espeak-ng G2P fallback is used.
+            :type phonemize_fallback_model_dir: str | None
+        """
+    @typing.overload
+    def generate_from_tokens(self, token_batches: collections.abc.Sequence[collections.abc.Sequence[SpeechToken]], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
+        """
+            Generates speech directly from lightweight token stream(s).
+        
+            NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+        
+            :param token_batches: one token sequence (`list[SpeechToken]`) or a list of token sequences
+            :type token_batches: list[SpeechToken] or list[list[SpeechToken]]
+        
+            :param speaker_embedding: optional speaker embedding tensor (ignored by Kokoro backend)
+            :type speaker_embedding: openvino.Tensor or None
+        
+            :param properties: speech generation parameters specified as properties
+            :type properties: dict
+        
+            :returns: generated speech waveform(s)
+            :rtype: Text2SpeechDecodedResults
+         
+         
+            SpeechGenerationConfig
+        
+            Shared parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
+            
+            Speech-generation specific parameters:
+            :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
+            :type minlenratio: float
+        
+            :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
+            :type minlenratio: float
+        
+            :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
+            :type threshold: float
+        
+            Kokoro-specific parameters:
+            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+            :type language: str
+        
+            :param voice: voice identifier used by Kokoro backend.
+            :type voice: str
+        
+            :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+            :type max_phoneme_length: int
+        
+            :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                                 This applies only to fallback during phonemize / G2P
+                                                 (graphemes to phonemes), before acoustic model inference.
+                                                 If set, this OpenVINO G2P fallback is used.
+                                                 If unset (None), espeak-ng G2P fallback is used.
+            :type phonemize_fallback_model_dir: str | None
         """
     def get_generation_config(self) -> SpeechGenerationConfig:
         ...
+    @typing.overload
+    def phonemize(self, text: str, **kwargs) -> list[str]:
+        """
+            Runs Kokoro text preprocessing and returns phoneme chunks used before acoustic inference.
+        
+            :param text(s): input text(s) to phonemize
+            :type text(s): str or list[str]
+        
+            :param properties: speech generation parameters specified as properties
+            :type properties: dict
+        
+            :returns: phoneme chunks (or per-input phoneme chunk lists)
+            :rtype: list[str] or list[list[str]]
+         
+         
+            SpeechGenerationConfig
+        
+            Shared parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
+            
+            Speech-generation specific parameters:
+            :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
+            :type minlenratio: float
+        
+            :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
+            :type minlenratio: float
+        
+            :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
+            :type threshold: float
+        
+            Kokoro-specific parameters:
+            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+            :type language: str
+        
+            :param voice: voice identifier used by Kokoro backend.
+            :type voice: str
+        
+            :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+            :type max_phoneme_length: int
+        
+            :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                                 This applies only to fallback during phonemize / G2P
+                                                 (graphemes to phonemes), before acoustic model inference.
+                                                 If set, this OpenVINO G2P fallback is used.
+                                                 If unset (None), espeak-ng G2P fallback is used.
+            :type phonemize_fallback_model_dir: str | None
+        """
+    @typing.overload
+    def phonemize(self, texts: collections.abc.Sequence[str], **kwargs) -> list[list[str]]:
+        """
+            Runs Kokoro text preprocessing and returns phoneme chunks used before acoustic inference.
+        
+            :param text(s): input text(s) to phonemize
+            :type text(s): str or list[str]
+        
+            :param properties: speech generation parameters specified as properties
+            :type properties: dict
+        
+            :returns: phoneme chunks (or per-input phoneme chunk lists)
+            :rtype: list[str] or list[list[str]]
+         
+         
+            SpeechGenerationConfig
+        
+            Shared parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
+            
+            Speech-generation specific parameters:
+            :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
+            :type minlenratio: float
+        
+            :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
+            :type minlenratio: float
+        
+            :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
+            :type threshold: float
+        
+            Kokoro-specific parameters:
+            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+            :type language: str
+        
+            :param voice: voice identifier used by Kokoro backend.
+            :type voice: str
+        
+            :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+            :type max_phoneme_length: int
+        
+            :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                                 This applies only to fallback during phonemize / G2P
+                                                 (graphemes to phonemes), before acoustic model inference.
+                                                 If set, this OpenVINO G2P fallback is used.
+                                                 If unset (None), espeak-ng G2P fallback is used.
+            :type phonemize_fallback_model_dir: str | None
+        """
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:
         ...
 class Text2VideoPipeline:
