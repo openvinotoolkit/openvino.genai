@@ -21,3 +21,5 @@ license-check: true
 vulnerability-check: true
 allow-dependencies-licenses:
   - "pkg:npm/thingies" # Docs site (dependency of dependency)
+  - "pkg:pypi/PyGithub" # Dependencies of the workflow rerunner script
+  - "pkg:pypi/psycopg2-binary"
