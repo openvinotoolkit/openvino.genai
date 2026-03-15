@@ -110,9 +110,6 @@ private:
         needs_space = !out.empty();
         if (!output_tokens.empty()) {
           output_tokens.back().whitespace = " ";
-          if (output_tokens.back()._.has_value()) {
-            output_tokens.back()._->prespace = true;
-          }
         }
         continue;
       }
@@ -138,7 +135,6 @@ private:
         // Use rating=2 for unresolved-word fallback tokens.
         auto fallback_token = make_output_token(tk.text, "WORD", "", std::nullopt, 2);
         if (fallback_token._.has_value()) {
-          fallback_token._->prespace = needs_space;
           if (tk.linked_stress.has_value()) {
             fallback_token._->stress = tk.linked_stress;
           }
@@ -189,7 +185,7 @@ private:
         continue;
       }
       out += *pronunciation;
-      output_tokens.push_back(make_output_token(tk.text, "WORD", "", *pronunciation, 4));
+      output_tokens.push_back(make_output_token(tk.text, "WORD", "", *pronunciation));
       if (output_tokens.back()._.has_value()) {
         if (tk.linked_stress.has_value()) {
           output_tokens.back()._->stress = tk.linked_stress;
@@ -217,6 +213,18 @@ private:
       return false;
     }
 
+    std::optional<std::size_t> next_non_ws;
+    for (std::size_t j = index + 1; j < tokens.size(); ++j) {
+      if (tokens[j].kind == TokenKind::Whitespace) {
+        continue;
+      }
+      next_non_ws = j;
+      break;
+    }
+    if (!next_non_ws) {
+      return false;
+    }
+
     std::optional<std::size_t> prev_word;
     for (std::size_t j = index; j-- > 0;) {
       if (tokens[j].kind == TokenKind::Whitespace) {
@@ -233,7 +241,7 @@ private:
 
     const auto prev = ascii_lower(tokens[*prev_word].text);
     if (prev == "vs") {
-      return true;
+      return tokens[*next_non_ws].kind == TokenKind::Word;
     }
 
     const auto &raw_prev = tokens[*prev_word].text;
@@ -267,13 +275,14 @@ private:
     }
 
     if (all_upper) {
-      return raw_prev.size() > 1 && raw_prev.size() <= 4;
+      return raw_prev.size() > 1 && raw_prev.size() <= 4 && tokens[*next_non_ws].kind == TokenKind::Word;
     }
 
     static const std::unordered_set<std::string> title_abbrev_without_dot = {
       "dr", "mr", "mrs", "ms", "sr", "jr", "st"
     };
-    return title_case && title_abbrev_without_dot.find(prev) != title_abbrev_without_dot.end();
+        return title_case && title_abbrev_without_dot.find(prev) != title_abbrev_without_dot.end() &&
+          tokens[*next_non_ws].kind == TokenKind::Word;
   }
 
   // Python mapping: per-token lexicon/fallback resolution path in G2P.__call__.
