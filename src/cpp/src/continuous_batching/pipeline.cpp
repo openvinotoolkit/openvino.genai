@@ -214,7 +214,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     std::shared_ptr<InputsEmbedder> embedder = nullptr;
     if (embedder_config_dir_path.has_value()) {
         auto path = *embedder_config_dir_path;
-        embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, path, device, properties);
+        embedder =
+            std::make_shared<InputsEmbedder>(models_map, tokenizer, path, device, properties_without_draft_model);
     }
     else if (rt_info.find("__weights_path") != rt_info.end()) {
         std::string weights_path = rt_info.at("__weights_path").as<std::string>();
