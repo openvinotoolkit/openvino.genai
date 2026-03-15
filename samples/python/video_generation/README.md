@@ -80,6 +80,11 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
   huggingface-cli download Cseti/LTXV-13B-LoRA-Wallace_and_Gromit-v1 walgro_style_step_42000_comfy.safetensors
   ```
 
+  LoRA adapters require an fp32 model. Export with:
+  ```sh
+  optimum-cli export openvino --model Lightricks/LTX-Video-0.9.8-13B-distilled --task text-to-video --weight-format fp32 ltx_video_ov/FP32
+  ```
+
 - **Main Feature:** Apply a LoRA adapter to a text-to-video pipeline for customized generation.
 
 - **Run Command:**
@@ -89,7 +94,7 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 
   Example:
   ```bash
-  python lora_text2video.py ./ltx_video_ov "Walgro style. A woman waits at a bus stop in the early morning, headphones resting over her blue hair, her gaze focused on her phone as she scrolls. The rising sun casts soft light across the pavement, illuminating the quiet street." walgro_style_step_42000_comfy.safetensors 1.0
+  python lora_text2video.py ./ltx_video_ov/FP32 "Walgro style. A woman waits at a bus stop in the early morning, headphones resting over her blue hair, her gaze focused on her phone as she scrolls. The rising sun casts soft light across the pavement, illuminating the quiet street." walgro_style_step_42000_comfy.safetensors 1.0
   ```
 
 The sample will generate two video files, `lora_video.avi` and `baseline_video.avi`, in the current directory.
