@@ -24,10 +24,10 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 Then, run the export with Optimum CLI:
 
 ```sh
-optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --weight-format fp32 ltx_video_ov
+optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --weight-format int8 ltx_video_ov/INT8
 ```
 
-> **Note:** `--weight-format fp32` is required for LoRA adapter support. For basic video generation without LoRA, you can use `--weight-format int8` for a smaller model.
+> **Note:** `--weight-format fp32` is required for LoRA adapter support. For basic video generation without LoRA, `--weight-format int8` (default above) produces a smaller model.
 
 Alternatively, do it in Python code:
 
