@@ -22,6 +22,7 @@ enum class VLMModelType {
     QWEN2_5_VL,
     QWEN3_VL,
     GEMMA3,
+    VIDEOCHAT_FLASH,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -98,6 +99,10 @@ public:
     /// @brief A string token denoting start of video embeddings 
     std::string video_start = "<video>";
 
+    /// @brief A frame group size for VideoChat_Flash's local video group
+    size_t mm_local_num_frames = 4;
+    /// @brief mm hidden size for VideoChat_Flash model
+    size_t mm_hidden_size = 1408;
     // Qwen3-VL specific config
     /// @brief Number of position embeddings in vision encoder for Qwen3-VL model.
     size_t vision_config_num_position_embeddings = 2304;
