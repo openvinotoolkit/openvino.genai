@@ -93,7 +93,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     for num in range(num_iters + 1):
         for image_id, img in enumerate(image_list):
             p_idx = prompt_idx_list[image_id]
-            mem_consumption.update_marker(f"step-{num}-{image_id}")
+            mem_consumption.update_marker(f"step-{num}-{p_idx}")
             if num == 0:
                 if args["output_dir"] is not None:
                     llm_bench_utils.output_file.output_image_input_text(str(img['prompt']), args, p_idx, None, proc_id)

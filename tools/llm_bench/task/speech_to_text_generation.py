@@ -154,8 +154,8 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     mem_consumption.activate_cooldown("after model compilation")
     for num in range(num_iters + 1):
         for idx, speech_param in enumerate(speech_list):
-            mem_consumption.update_marker(f"step-{num}-{idx}")
             p_idx = speech_idx_list[idx]
+            mem_consumption.update_marker(f"step-{num}-{p_idx}")
             raw_speech = model_utils.read_wav(speech_param['media'], processor.feature_extractor.sampling_rate)
             input_param['speech_idx'] = p_idx
             input_param['speech_param'] = speech_param

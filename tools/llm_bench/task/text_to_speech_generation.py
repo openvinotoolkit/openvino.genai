@@ -196,8 +196,8 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
-                mem_consumption.update_marker(f"step-{num}-{idx}")
                 p_idx = prompt_idx_list[idx]
+                mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 if num == 0:
                     metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
                                                 max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
@@ -211,7 +211,7 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
         for idx, input_text in enumerate(text_list):
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
-                mem_consumption.update_marker(f"step-{num}-{idx}")
+                mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 if num == 0:
                     metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
                                                 max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)

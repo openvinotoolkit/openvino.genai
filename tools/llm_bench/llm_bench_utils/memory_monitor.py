@@ -33,7 +33,7 @@ import json
 import sys
 
 
-# CUSTOM FIX TO AVOID ISSUE: RuntimeError: main thread is not in main loop
+# CUSTOM FIX TO AVOID ISSUE: RuntimeError: main thread is not in main loop.
 matplotlib.use("Agg")
 
 
@@ -158,8 +158,9 @@ class MemoryMonitorHandler:
     def activate_cooldown(self, label):
         cooldown = self.args.memory_consumption_cooldown
         if cooldown is not None:
-            self.mmh.update_marker("cooldown")
-            log.info(f"MemoryMonitor: {label}: {cooldown}")
+            if self.mmh:
+                self.mmh.update_marker("cooldown")
+                log.info(f"MemoryMonitor: {label}: {cooldown}")
             time.sleep(cooldown)
 
     def iter_stop_and_collect_data(self, iter_num, dict_format=True):
@@ -1137,6 +1138,7 @@ class MemoryMarkerMonitor(list):
         return False
 
     def loop(self, metadata):
+        count_error = 0
         while not self.should_stop:
             if self.check_for_markers():
                 print("Memory worker: Received stop signal")
@@ -1159,11 +1161,15 @@ class MemoryMarkerMonitor(list):
                 break
             except Exception as e:
                 print(f"Error collecting samples: {e}")
+                count_error += 1
 
             elapsed = time.perf_counter() - self.last_ts
             sleep_time = self.sampling_interval - elapsed
             if sleep_time > 0:
                 time.sleep(min(sleep_time, 0.001))
+            if count_error > 32:
+                print("Memory worker: too many errors: stop!")
+                break
         try:
             self.write_report(metadata)
             self.write_chunk()
