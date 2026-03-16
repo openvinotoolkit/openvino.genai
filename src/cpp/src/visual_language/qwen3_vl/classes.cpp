@@ -108,68 +108,65 @@ std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights
     const std::vector<std::array<size_t, 3>>& grids_thw,
     size_t num_grid_per_side
 ) {
-    std::vector<std::vector<int64_t>> indices_list(4);
-    std::vector<std::vector<float>> weights_list(4);
-    
+    // Pre-compute total positions to allocate tensors directly
+    size_t total_positions = 0;
+    for (const auto& grid_thw : grids_thw) {
+        total_positions += grid_thw[0] * grid_thw[1] * grid_thw[2];
+    }
+
+    ov::Tensor indices{ov::element::i64, {4, total_positions}};
+    ov::Tensor weights{ov::element::f32, {4, total_positions}};
+    int64_t* indices_data = indices.data<int64_t>();
+    float* weights_data = weights.data<float>();
+    size_t pos_offset = 0;
+
     for (const auto& grid_thw : grids_thw) {
         const auto [t, h, w] = grid_thw;
-        
+
         // Create linearly spaced indices for h and w
         std::vector<float> h_idxs(h), w_idxs(w);
         const float h_scale = h > 1 ? static_cast<float>(num_grid_per_side - 1) / (h - 1) : 0.0f;
         const float w_scale = w > 1 ? static_cast<float>(num_grid_per_side - 1) / (w - 1) : 0.0f;
-        
+
         for (size_t i = 0; i < h; ++i) {
             h_idxs[i] = static_cast<float>(i) * h_scale;
         }
         for (size_t i = 0; i < w; ++i) {
             w_idxs[i] = static_cast<float>(i) * w_scale;
         }
-        
+
         // Compute floor/ceil indices and interpolation weights
+        const int64_t grid_max = static_cast<int64_t>(num_grid_per_side - 1);
         for (size_t ti = 0; ti < t; ++ti) {
             for (size_t hi = 0; hi < h; ++hi) {
                 const int64_t h_floor = static_cast<int64_t>(h_idxs[hi]);
-                const int64_t h_ceil = std::min(h_floor + 1, static_cast<int64_t>(num_grid_per_side - 1));
+                const int64_t h_ceil = std::min(h_floor + 1, grid_max);
                 const float dh = h_idxs[hi] - static_cast<float>(h_floor);
+                const int64_t h_floor_row = h_floor * num_grid_per_side;
+                const int64_t h_ceil_row = h_ceil * num_grid_per_side;
                 
                 for (size_t wi = 0; wi < w; ++wi) {
                     const int64_t w_floor = static_cast<int64_t>(w_idxs[wi]);
-                    const int64_t w_ceil = std::min(w_floor + 1, static_cast<int64_t>(num_grid_per_side - 1));
+                    const int64_t w_ceil = std::min(w_floor + 1, grid_max);
                     const float dw = w_idxs[wi] - static_cast<float>(w_floor);
-                    
+
                     // 4 corners: (floor,floor), (floor,ceil), (ceil,floor), (ceil,ceil)
-                    indices_list[0].push_back(h_floor * num_grid_per_side + w_floor);
-                    indices_list[1].push_back(h_floor * num_grid_per_side + w_ceil);
-                    indices_list[2].push_back(h_ceil * num_grid_per_side + w_floor);
-                    indices_list[3].push_back(h_ceil * num_grid_per_side + w_ceil);
-                    
+                    indices_data[0 * total_positions + pos_offset] = h_floor_row + w_floor;
+                    indices_data[1 * total_positions + pos_offset] = h_floor_row + w_ceil;
+                    indices_data[2 * total_positions + pos_offset] = h_ceil_row + w_floor;
+                    indices_data[3 * total_positions + pos_offset] = h_ceil_row + w_ceil;
+
                     // Bilinear weights
-                    weights_list[0].push_back((1.0f - dh) * (1.0f - dw));
-                    weights_list[1].push_back((1.0f - dh) * dw);
-                    weights_list[2].push_back(dh * (1.0f - dw));
-                    weights_list[3].push_back(dh * dw);
+                    weights_data[0 * total_positions + pos_offset] = (1.0f - dh) * (1.0f - dw);
+                    weights_data[1 * total_positions + pos_offset] = (1.0f - dh) * dw;
+                    weights_data[2 * total_positions + pos_offset] = dh * (1.0f - dw);
+                    weights_data[3 * total_positions + pos_offset] = dh * dw;
+                    ++pos_offset;
                 }
             }
         }
     }
-    
-    const size_t total_positions = indices_list[0].size();
-    ov::Tensor indices{ov::element::i64, {4, total_positions}};
-    ov::Tensor weights{ov::element::f32, {4, total_positions}};
-    
-    int64_t* indices_data = indices.data<int64_t>();
-    float* weights_data = weights.data<float>();
-    
-    for (size_t corner = 0; corner < 4; ++corner) {
-        std::memcpy(indices_data + corner * total_positions,
-                    indices_list[corner].data(),
-                    total_positions * sizeof(int64_t));
-        std::memcpy(weights_data + corner * total_positions,
-                    weights_list[corner].data(),
-                    total_positions * sizeof(float));
-    }
-    
+
     return {indices, weights};
 }
 
@@ -189,18 +186,19 @@ ov::Tensor permute_with_spatial_merge(
     const size_t num_positions = pos_embeds.get_shape()[0];
     const size_t embed_dim = pos_embeds.get_shape()[1];
     const float* pos_embeds_data = pos_embeds.data<const float>();
-    
-    std::vector<float> permuted_data;
-    permuted_data.reserve(num_positions * embed_dim);
-    
-    size_t offset = 0;
+    const size_t embed_bytes = embed_dim * sizeof(float);
+
+    ov::Tensor result{ov::element::f32, {num_positions, embed_dim}};
+    float* dst_data = result.data<float>();
+    size_t dst_offset = 0;
+    size_t src_offset = 0;
+
     for (const auto& grid_thw : grids_thw) {
         const auto [t, h, w] = grid_thw;
         const size_t hw = h * w;
-        
         const size_t merge_h = h / spatial_merge_size;
         const size_t merge_w = w / spatial_merge_size;
-        
+
         for (size_t ti = 0; ti < t; ++ti) {
             for (size_t mhi = 0; mhi < merge_h; ++mhi) {
                 for (size_t mwi = 0; mwi < merge_w; ++mwi) {
@@ -208,22 +206,19 @@ ov::Tensor permute_with_spatial_merge(
                         for (size_t swi = 0; swi < spatial_merge_size; ++swi) {
                             const size_t src_h = mhi * spatial_merge_size + shi;
                             const size_t src_w = mwi * spatial_merge_size + swi;
-                            const size_t src_idx = offset + ti * hw + src_h * w + src_w;
-                            
-                            const float* src = pos_embeds_data + src_idx * embed_dim;
-                            permuted_data.insert(permuted_data.end(), src, src + embed_dim);
+                            const size_t src_idx = src_offset + ti * hw + src_h * w + src_w;
+
+                            std::memcpy(dst_data + dst_offset * embed_dim,
+                                        pos_embeds_data + src_idx * embed_dim,
+                                        embed_bytes);
+                            ++dst_offset;
                         }
                     }
                 }
             }
         }
-        offset += t * hw;
+        src_offset += t * hw;
     }
-    
-    const size_t permuted_len = permuted_data.size() / embed_dim;
-    ov::Tensor result{ov::element::f32, {permuted_len, embed_dim}};
-    std::memcpy(result.data<float>(), permuted_data.data(), permuted_data.size() * sizeof(float));
-    
     return result;
 }
 
