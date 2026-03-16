@@ -1009,6 +1009,9 @@ private:
         }
       }
       if (all_upper) {
+        if (const auto* from_lower_lexicon = detail::find_english_lexicon_entry(key, variant_, pos_hint)) {
+          return *from_lower_lexicon;
+        }
         for (std::size_t letter_idx = 0; letter_idx < token_text.size(); ++letter_idx) {
           const char c = token_text[letter_idx];
           std::string letter(1, c);
@@ -1793,19 +1796,192 @@ private:
       return std::nullopt;
     }
 
-    std::string combined;
-    for (std::size_t i = 0; i < parts.size(); ++i) {
-      const auto part_pron = lookup_word_pronunciation(parts[i]);
-      if (!part_pron) {
+    return resolve_compound_parts_pronunciation(parts);
+  }
+
+  static std::optional<std::vector<std::string>> split_camel_case_parts(const std::string& word) {
+    if (word.size() < 2 || word.find('-') != std::string::npos) {
+      return std::nullopt;
+    }
+
+    bool has_lower = false;
+    bool has_upper = false;
+    for (char c : word) {
+      const auto uc = static_cast<unsigned char>(c);
+      if (!std::isalpha(uc)) {
         return std::nullopt;
       }
-      std::string normalized = normalize_pronunciation(*part_pron);
-      if (i + 1 < parts.size()) {
-        replace_all(normalized, "ˈ", "ˌ");
+      has_lower = has_lower || std::islower(uc);
+      has_upper = has_upper || std::isupper(uc);
+    }
+
+    if (!has_lower || !has_upper) {
+      return std::nullopt;
+    }
+
+    std::vector<std::string> parts;
+    std::size_t part_start = 0;
+    for (std::size_t i = 1; i < word.size(); ++i) {
+      const auto prev = static_cast<unsigned char>(word[i - 1]);
+      const auto curr = static_cast<unsigned char>(word[i]);
+      const auto next = (i + 1 < word.size()) ? static_cast<unsigned char>(word[i + 1]) : static_cast<unsigned char>(0);
+
+      const bool lower_to_upper = std::islower(prev) && std::isupper(curr);
+      const bool acronym_to_word = std::isupper(prev) && std::isupper(curr) && (i + 1 < word.size()) && std::islower(next);
+      if (!lower_to_upper && !acronym_to_word) {
+        continue;
       }
-      combined += normalized;
+
+      if (i == part_start) {
+        return std::nullopt;
+      }
+      parts.push_back(word.substr(part_start, i - part_start));
+      part_start = i;
+    }
+
+    if (part_start >= word.size()) {
+      return std::nullopt;
+    }
+    parts.push_back(word.substr(part_start));
+
+    if (parts.size() < 2) {
+      return std::nullopt;
+    }
+
+    return parts;
+  }
+
+  std::optional<std::string> lookup_camel_case_compound_pronunciation(const std::string& word) const {
+    const auto parts = split_camel_case_parts(word);
+    if (!parts.has_value()) {
+      return std::nullopt;
+    }
+    return resolve_compound_parts_pronunciation(*parts);
+  }
+
+  std::optional<std::string> resolve_compound_parts_pronunciation(const std::vector<std::string>& parts) const {
+    if (parts.size() < 2) {
+      return std::nullopt;
+    }
+
+    std::vector<std::string> part_pronunciations;
+    part_pronunciations.reserve(parts.size());
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+      const auto part_pron = lookup_compound_part_pronunciation(parts, i);
+      if (!part_pron.has_value()) {
+        return std::nullopt;
+      }
+      part_pronunciations.push_back(normalize_pronunciation(*part_pron));
+    }
+
+    apply_compound_stress_balance(parts, part_pronunciations);
+
+    std::string combined;
+    for (const auto& part_pron : part_pronunciations) {
+      combined += part_pron;
     }
     return collapse_ascii_spaces(combined);
+  }
+
+  std::optional<std::string> lookup_compound_part_pronunciation(
+      const std::vector<std::string>& parts,
+      std::size_t index) const {
+    std::vector<Token> synthetic_tokens;
+    synthetic_tokens.reserve(parts.size());
+    for (const auto& part : parts) {
+      Token token;
+      token.kind = TokenKind::Word;
+      token.text = part;
+      synthetic_tokens.push_back(std::move(token));
+    }
+
+    try {
+      return lookup_pronunciation(synthetic_tokens, index);
+    } catch (const std::runtime_error& e) {
+      const std::string message = e.what();
+      if (message.rfind("Unmapped English token: ", 0) == 0) {
+        return std::nullopt;
+      }
+      throw;
+    }
+  }
+
+  static int compound_stress_weight(const std::string& pronunciation) {
+    static const std::vector<std::string> diphthongs = {
+        "A", "I", "O", "Q", "W", "Y", "ʤ", "ʧ",
+    };
+    static const std::vector<std::string> vowels = {
+        "A", "I", "O", "Q", "W", "Y", "a", "i", "u", "æ", "ɑ", "ɒ", "ɔ", "ə", "ɛ", "ɜ", "ɪ", "ʊ", "ʌ", "ᵻ",
+    };
+
+    int weight = 0;
+    for (const auto& d : diphthongs) {
+      std::size_t pos = 0;
+      while ((pos = pronunciation.find(d, pos)) != std::string::npos) {
+        weight += 2;
+        pos += d.size();
+      }
+    }
+
+    for (const auto& v : vowels) {
+      std::size_t pos = 0;
+      while ((pos = pronunciation.find(v, pos)) != std::string::npos) {
+        weight += 1;
+        pos += v.size();
+      }
+    }
+
+    return weight;
+  }
+
+  static void apply_compound_stress_balance(const std::vector<std::string>& parts,
+                                            std::vector<std::string>& pronunciations) {
+    struct StressIndex {
+      bool has_primary;
+      int weight;
+      std::size_t index;
+    };
+
+    std::vector<StressIndex> indices;
+    indices.reserve(pronunciations.size());
+    int primary_count = 0;
+
+    for (std::size_t i = 0; i < pronunciations.size(); ++i) {
+      if (pronunciations[i].empty()) {
+        continue;
+      }
+      const bool primary = has_primary_stress(pronunciations[i]);
+      if (primary) {
+        ++primary_count;
+      }
+      indices.push_back(StressIndex{primary, compound_stress_weight(pronunciations[i]), i});
+    }
+
+    if (indices.size() == 2 && parts[indices[0].index].size() == 1) {
+      const std::size_t demote_index = indices[1].index;
+      pronunciations[demote_index] = apply_inline_stress(pronunciations[demote_index], -0.5);
+      return;
+    }
+
+    if (indices.size() < 2 || primary_count <= static_cast<int>((indices.size() + 1) / 2)) {
+      return;
+    }
+
+    std::sort(indices.begin(), indices.end(), [](const StressIndex& lhs, const StressIndex& rhs) {
+      if (lhs.has_primary != rhs.has_primary) {
+        return lhs.has_primary < rhs.has_primary;
+      }
+      if (lhs.weight != rhs.weight) {
+        return lhs.weight < rhs.weight;
+      }
+      return lhs.index < rhs.index;
+    });
+
+    const std::size_t demote_count = indices.size() / 2;
+    for (std::size_t i = 0; i < demote_count; ++i) {
+      const std::size_t demote_index = indices[i].index;
+      pronunciations[demote_index] = apply_inline_stress(pronunciations[demote_index], -0.5);
+    }
   }
 
   static bool is_all_digits(const std::string &text) {
@@ -2446,6 +2622,10 @@ private:
 
     if (const auto compound = lookup_hyphen_compound_pronunciation(token.text)) {
       return *compound;
+    }
+
+    if (const auto camel_compound = lookup_camel_case_compound_pronunciation(token.text)) {
+      return *camel_compound;
     }
 
     if (token.text == "'s") {
