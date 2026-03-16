@@ -26,12 +26,11 @@
 #include "misaki/g2p.hpp"
 #include "misaki/fallbacks.hpp"
 
-std::optional<std::filesystem::path> resolve_ov_fallback_model_dir(const std::string& language_variant,
-                                                                    const ov::genai::SpeechGenerationConfig& generation_config) {
+std::optional<std::filesystem::path> resolve_ov_fallback_model_dir(
+    const ov::genai::SpeechGenerationConfig& generation_config) {
     if (!generation_config.phonemize_fallback_model_dir.has_value()) {
         return std::nullopt;
     }
-    (void)language_variant;
     return std::filesystem::path(*generation_config.phonemize_fallback_model_dir);
 }
 
@@ -602,7 +601,7 @@ void install_fallback_if_available(std::unique_ptr<misaki::G2P>& g2p,
 
     if (generation_config.phonemize_fallback_model_dir.has_value()) {
         try {
-            if (const auto model_dir = resolve_ov_fallback_model_dir(language_variant, generation_config); model_dir.has_value()) {
+            if (const auto model_dir = resolve_ov_fallback_model_dir(generation_config); model_dir.has_value()) {
                 ov::Core core = ov::genai::utils::singleton_core();
                 auto ov_fallback = std::make_shared<OpenVINOFallbackNetwork>(*model_dir, core);
                 g2p->set_fallback_hook([ov_fallback](const misaki::MToken& token) {
