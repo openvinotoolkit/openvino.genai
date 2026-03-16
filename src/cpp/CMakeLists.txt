@@ -287,11 +287,22 @@ if(BUILD_LLAMA_CPP)
     target_include_directories(${TARGET_NAME_OBJ} PRIVATE
         "${OpenVINOGenAI_SOURCE_DIR}/thirdparty/llama.cpp/include"
         "${OpenVINOGenAI_SOURCE_DIR}/thirdparty/llama.cpp/ggml/include"
+        "${OpenVINOGenAI_SOURCE_DIR}/thirdparty/llama.cpp/ggml/src"
     )
+
+    find_package(OpenCL QUIET)
+    if(OpenCL_FOUND)
+        target_include_directories(${TARGET_NAME_OBJ} PRIVATE ${OpenCL_INCLUDE_DIRS})
+    endif()
 
     if(TARGET llama)
         target_link_libraries(${TARGET_NAME} PRIVATE llama)
         add_dependencies(${TARGET_NAME} llama)
+
+        if(TARGET ggml-openvino)
+            target_link_libraries(${TARGET_NAME} PRIVATE ggml-openvino)
+        endif()
+
     endif()
 
     foreach(_tgt llama ggml ggml-base ggml-cpu ggml-openvino)

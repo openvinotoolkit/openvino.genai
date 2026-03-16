@@ -33,6 +33,9 @@ public:
     /// @return A fully constructed OpenVINO model
     std::shared_ptr<ov::Model> read(const std::string& model_path);
 
+    std::vector<float> get_reference_logits(const std::string& model_path, llama_token token);
+    void free_llama_resources();
+
 private:
     void init_llama_context(const std::string& model_path);
     ggml_cgraph* build_computation_graph();

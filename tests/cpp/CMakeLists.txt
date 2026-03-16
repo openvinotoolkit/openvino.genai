@@ -29,6 +29,7 @@ add_executable(${TEST_TARGET_NAME} ${tests_src} $<TARGET_OBJECTS:openvino_genai_
 add_subdirectory(custom_op)
 
 if(BUILD_LLAMA_CPP)
+    find_package(OpenCL QUIET)
     target_link_libraries(${TEST_TARGET_NAME} PRIVATE 
         $<TARGET_PROPERTY:openvino::genai,LINK_LIBRARIES> 
         gtest_main 
