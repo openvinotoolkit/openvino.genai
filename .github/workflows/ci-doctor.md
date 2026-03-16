@@ -38,19 +38,19 @@ safe-outputs:
 
 tools:
   cache-memory: true
-  web-fetch:
   github:
     toolsets: [default, actions] # default: context, repos, issues, pull_requests; actions: workflow logs
 
 timeout-minutes: 10
 
 steps:
-  - name: Download CI failure logs
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      RUN_ID: ${{ github.event.workflow_run.id || github.event.inputs.run_id }}
-      REPO: ${{ github.repository }}
-    run: python3 .github/scripts/ci_doctor_preanalysis.py
+   - name: Install Python requirements for CI Doctor
+      run: pip install -r .github/scripts/ci-doctor/requirements.txt
+
+   - name: Download CI failure logs
+      env:
+         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: python3 .github/scripts/ci-doctor/ci_doctor_prepare.py -r ${{ github.repository }} --run-id ${{ github.event.workflow_run.id || github.event.inputs.run_id }}
 
 source: githubnext/agentics/workflows/ci-doctor.md@0aa94a6e40aeaf131118476bc6a07e55c4ceb147
 ---
@@ -71,12 +71,11 @@ You are the CI Failure Doctor, an expert investigative agent that analyzes faile
 
 Logs have been pre-downloaded before this session started:
 
-- **Summary**: `/tmp/ci-doctor/summary.txt` — failed jobs, failed steps, all file locations, and pre-located error hints
-- **Job metadata**: `/tmp/ci-doctor/logs/failed-jobs.json` — structured list of failed jobs and their failed steps
-- **Log files**: `/tmp/ci-doctor/logs/job-<job-id>.log` — full job logs downloaded from GitHub Actions
-- **Hint files**: `/tmp/ci-doctor/filtered/*-hints.txt` — pre-located error lines from logs via generic grep heuristics
+- **Summary**: `/tmp/ci-doctor/run_<run-id>/summary.txt` — failed jobs, failed steps, all file locations, and pre-located error hints
+- **Log files**: `/tmp/ci-doctor/run_<run-id>/logs/*.txt` — logs for failed jobs downloaded from GitHub Actions
+- **Hint files**: `/tmp/ci-doctor/run_<run-id>/hints/*-hints.txt` — pre-located error lines from logs via generic grep heuristics
 
-**Start here**: Read `/tmp/ci-doctor/summary.txt` first — it lists every file location and the first few hint matches. Then examine the relevant hint files to jump directly to error locations (read ±10 lines around each hinted line number before loading the full log or artifact).
+**Start here**: Read `/tmp/ci-doctor/run_<run-id>/summary.txt` first — it lists every file location and the first few hint matches. Then examine the relevant hint files to jump directly to error locations (read ±10 lines around each hinted line number before loading the full log or artifact).
 
 ## Investigation Protocol
 
@@ -97,11 +96,11 @@ Logs have been pre-downloaded before this session started:
 
 ### Phase 2: Deep Log Analysis
 
-1. **Use Pre-Downloaded Logs**: Use the files in `/tmp/ci-doctor/`:
+1. **Use Pre-Downloaded Logs**: Use the files in `/tmp/ci-doctor/run_<run-id>/`:
    - Read the summary and hint files first (minimal context load)
    - Read ±10 lines around each hinted line number in the full log file
    - Only load the full log content if the hints are insufficient
-2. **Fallback Log Retrieval**: If pre-downloaded files are unavailable, use `get_job_logs` with `failed_only=true`, `return_content=true`, and `tail_lines=100` to get the most relevant portion of logs directly (avoids downloading large blob files). Do NOT use `web-fetch` on blob storage log URLs.
+2. **Missing Logs**: If pre-downloaded files are unavailable, call `noop` with message "Pre-downloaded logs are unavailable — cannot proceed with analysis" and **stop immediately**.
 3. **Pattern Recognition**: Analyze logs for:
    - Error messages and stack traces
    - Dependency installation failures
@@ -259,6 +258,7 @@ When creating an investigation issue, use this structure:
 - **Pattern Building**: Contribute to the knowledge base for future investigations
 - **Resource Efficient**: Use caching to avoid re-downloading large logs
 - **Security Conscious**: Never execute untrusted code from logs or external sources
+- **Tool Restrictions**: Use only MCP tools available in this session. Do NOT use `web-fetch`, the `gh` CLI, or any other shell commands for data retrieval — all GitHub API access must go through MCP tools.
 
 ## ⚠️ Mandatory Output Requirement
 
