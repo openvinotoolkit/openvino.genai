@@ -15,12 +15,6 @@
 #include <utility>
 #include <vector>
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
-
 #ifndef MISAKI_SOURCE_DIR
 #define MISAKI_SOURCE_DIR "."
 #endif
@@ -43,31 +37,6 @@ bool has_required_lexicon_files(const std::filesystem::path &root) {
          std::filesystem::exists(root / "us_silver.json") &&
          std::filesystem::exists(root / "gb_gold.json") &&
          std::filesystem::exists(root / "gb_silver.json");
-}
-
-std::optional<std::filesystem::path> current_module_dir() {
-#ifdef _WIN32
-  HMODULE module = nullptr;
-  if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                              GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                          reinterpret_cast<LPCWSTR>(&current_module_dir),
-                          &module)) {
-    return std::nullopt;
-  }
-  std::wstring buffer(MAX_PATH, L'\0');
-  DWORD len = GetModuleFileNameW(module, buffer.data(), static_cast<DWORD>(buffer.size()));
-  if (len == 0) {
-    return std::nullopt;
-  }
-  buffer.resize(len);
-  return std::filesystem::path(buffer).parent_path();
-#else
-  Dl_info info;
-  if (dladdr(reinterpret_cast<void *>(&current_module_dir), &info) == 0 || info.dli_fname == nullptr) {
-    return std::nullopt;
-  }
-  return std::filesystem::path(info.dli_fname).parent_path();
-#endif
 }
 
 } // namespace
