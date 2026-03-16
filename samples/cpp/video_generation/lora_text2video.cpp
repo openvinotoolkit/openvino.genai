@@ -34,12 +34,8 @@ int main(int32_t argc, char* argv[]) try {
         prompt,
         ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
         ov::genai::height(480),
-        ov::genai::width(704),
-        ov::genai::num_frames(161),
         ov::genai::num_inference_steps(25),
-        ov::genai::num_videos_per_prompt(1),
         ov::genai::callback(progress_bar),
-        ov::genai::frame_rate(frame_rate),
         ov::genai::guidance_scale(3)
     );
 
@@ -51,12 +47,8 @@ int main(int32_t argc, char* argv[]) try {
         ov::genai::adapters(),  // passing adapters in generate overrides adapters set in the constructor; adapters() means no adapters
         ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
         ov::genai::height(480),
-        ov::genai::width(704),
-        ov::genai::num_frames(161),
         ov::genai::num_inference_steps(25),
-        ov::genai::num_videos_per_prompt(1),
         ov::genai::callback(progress_bar),
-        ov::genai::frame_rate(frame_rate),
         ov::genai::guidance_scale(3)
     );
 
