@@ -44,13 +44,15 @@ tools:
 timeout-minutes: 10
 
 steps:
-   - name: Install Python requirements for CI Doctor
-      run: pip install -r .github/scripts/ci-doctor/requirements.txt
+  - name: Install Python requirements for CI Doctor
+    run: pip install -r .github/scripts/ci-doctor/requirements.txt
 
-   - name: Download CI failure logs
-      env:
-         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: python3 .github/scripts/ci-doctor/ci_doctor_prepare.py -r ${{ github.repository }} --run-id ${{ github.event.workflow_run.id || github.event.inputs.run_id }}
+  - name: Download CI failure logs
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPOSITORY: ${{ github.repository }}
+      RUN_ID: ${{ github.event.workflow_run.id || github.event.inputs.run_id }}
+    run: python3 .github/scripts/ci-doctor/ci_doctor_prepare.py -r "$REPOSITORY" --run-id "$RUN_ID"
 
 source: githubnext/agentics/workflows/ci-doctor.md@0aa94a6e40aeaf131118476bc6a07e55c4ceb147
 ---
