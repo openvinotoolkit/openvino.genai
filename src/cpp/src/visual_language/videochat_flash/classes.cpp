@@ -644,14 +644,20 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
     const std::string& device,
     const ov::AnyMap properties) : VisionEncoder(model_dir, device, properties) {
 
+    m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
+    // init 3d_sincos_pos_embed
+    size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
+    size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
+    // Can not obtain this from config for now
+    const size_t img_size = 224;
+    const size_t patch_size = 14;
+    size_t grid_size = img_size / patch_size; // 16
+    m_pos_emb = videochat_flash_utils::get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
+
     auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
     std::map<std::string, ov::PartialShape> input_shapes;
-    // static x shape may cause output change
-    // ov::Shape x_shape = { 1, 3, 4, 224, 224 };
-    // ov::PartialShape x_shape = { -1, 3, -1, 224, 224 };
-    // input_shapes["hidden_states"] = x_shape;
     // accelerate model by using static rope shape
-    ov::Shape pos_embed_shape = { 1, 1025, 1408 };
+    ov::Shape pos_embed_shape = m_pos_emb.get_shape(); // { 1, 1025, 1024 };
     input_shapes["rotary_pos_emb"] = pos_embed_shape;
     model->reshape(input_shapes);
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
@@ -663,7 +669,6 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
             return compiled_model.create_infer_request();
         });
 
-    m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
     auto compiled_model_vision = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, properties);
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model_vision.get_property(ov::optimal_number_of_infer_requests),
@@ -685,14 +690,7 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
             return compiled_merge_model.create_infer_request();
         });
     
-    // init 3d_sincos_pos_embed
-    size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
-    size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
-    // Can not obtain this from config for now
-    const size_t img_size = 224;
-    const size_t patch_size = 14;
-    size_t grid_size = img_size / patch_size; // 16
-    m_pos_emb = videochat_flash_utils::get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);  
+
 }
 
 VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
