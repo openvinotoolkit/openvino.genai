@@ -307,8 +307,10 @@ private:
     } else if (!tokens[index].linked_pronunciation.empty()) {
       // Keep explicit inline phonemes as-is unless explicit stress override is provided.
     } else if (!has_any_stress(pronunciation)) {
-      if (const auto case_stress = infer_case_stress(tokens[index].text)) {
-        pronunciation = apply_inline_stress(pronunciation, *case_stress);
+      if (ascii_lower(tokens[index].text) != "the") {
+        if (const auto case_stress = infer_case_stress(tokens[index].text)) {
+          pronunciation = apply_inline_stress(pronunciation, *case_stress);
+        }
       }
     } else {
       // Preserve existing stress from lexical/context rules.
@@ -322,8 +324,7 @@ private:
     bool all_upper = true;
     bool has_internal_upper = false;
     bool saw_first_alpha = false;
-    bool first_alpha_upper = false;
-    bool title_case = true;
+    bool first_alpha_is_upper = false;
 
     for (char c : word) {
       const auto uc = static_cast<unsigned char>(c);
@@ -334,17 +335,12 @@ private:
       if (std::isupper(uc)) {
         any_upper = true;
         if (!saw_first_alpha) {
-          first_alpha_upper = true;
+          first_alpha_is_upper = true;
         } else {
           has_internal_upper = true;
-          title_case = false;
         }
       } else {
         all_upper = false;
-        if (!saw_first_alpha) {
-          first_alpha_upper = false;
-          title_case = false;
-        }
       }
       saw_first_alpha = true;
     }
@@ -361,7 +357,7 @@ private:
       return 0.5;
     }
 
-    if (title_case && first_alpha_upper) {
+    if (!all_upper && first_alpha_is_upper) {
       return 0.5;
     }
 
@@ -1898,28 +1894,39 @@ private:
   }
 
   static int compound_stress_weight(const std::string& pronunciation) {
-    static const std::vector<std::string> diphthongs = {
-        "A", "I", "O", "Q", "W", "Y", "ʤ", "ʧ",
-    };
-    static const std::vector<std::string> vowels = {
-        "A", "I", "O", "Q", "W", "Y", "a", "i", "u", "æ", "ɑ", "ɒ", "ɔ", "ə", "ɛ", "ɜ", "ɪ", "ʊ", "ʌ", "ᵻ",
+    static const std::unordered_set<std::uint32_t> diphthongs = {
+        static_cast<std::uint32_t>('A'), static_cast<std::uint32_t>('I'), static_cast<std::uint32_t>('O'),
+        static_cast<std::uint32_t>('Q'), static_cast<std::uint32_t>('W'), static_cast<std::uint32_t>('Y'),
+        static_cast<std::uint32_t>(0x02A4), static_cast<std::uint32_t>(0x02A7),
     };
 
     int weight = 0;
-    for (const auto& d : diphthongs) {
-      std::size_t pos = 0;
-      while ((pos = pronunciation.find(d, pos)) != std::string::npos) {
-        weight += 2;
-        pos += d.size();
+    for (std::size_t i = 0; i < pronunciation.size();) {
+      const auto lead = static_cast<unsigned char>(pronunciation[i]);
+      std::size_t len = utf8_sequence_length(lead);
+      if (len == 0 || i + len > pronunciation.size()) {
+        len = 1;
       }
-    }
 
-    for (const auto& v : vowels) {
-      std::size_t pos = 0;
-      while ((pos = pronunciation.find(v, pos)) != std::string::npos) {
-        weight += 1;
-        pos += v.size();
+      std::uint32_t cp = 0;
+      if (len == 1) {
+        cp = lead;
+      } else if (len == 2) {
+        cp = static_cast<std::uint32_t>(lead & 0x1F) << 6;
+        cp |= static_cast<std::uint32_t>(static_cast<unsigned char>(pronunciation[i + 1]) & 0x3F);
+      } else if (len == 3) {
+        cp = static_cast<std::uint32_t>(lead & 0x0F) << 12;
+        cp |= static_cast<std::uint32_t>(static_cast<unsigned char>(pronunciation[i + 1]) & 0x3F) << 6;
+        cp |= static_cast<std::uint32_t>(static_cast<unsigned char>(pronunciation[i + 2]) & 0x3F);
+      } else {
+        cp = static_cast<std::uint32_t>(lead & 0x07) << 18;
+        cp |= static_cast<std::uint32_t>(static_cast<unsigned char>(pronunciation[i + 1]) & 0x3F) << 12;
+        cp |= static_cast<std::uint32_t>(static_cast<unsigned char>(pronunciation[i + 2]) & 0x3F) << 6;
+        cp |= static_cast<std::uint32_t>(static_cast<unsigned char>(pronunciation[i + 3]) & 0x3F);
       }
+
+      weight += diphthongs.count(cp) ? 2 : 1;
+      i += len;
     }
 
     return weight;
@@ -1946,12 +1953,6 @@ private:
         ++primary_count;
       }
       indices.push_back(StressIndex{primary, compound_stress_weight(pronunciations[i]), i});
-    }
-
-    if (indices.size() == 2 && parts[indices[0].index].size() == 1) {
-      const std::size_t demote_index = indices[1].index;
-      pronunciations[demote_index] = apply_inline_stress(pronunciations[demote_index], -0.5);
-      return;
     }
 
     if (indices.size() < 2 || primary_count <= static_cast<int>((indices.size() + 1) / 2)) {
@@ -2437,11 +2438,6 @@ private:
     return it->second;
   }
 
-  static bool is_that_unstressed_following_word(const std::string& word) {
-    return word == "i" || word == "you" || word == "he" || word == "she" ||
-           word == "it" || word == "we" || word == "they";
-  }
-
   static bool is_contest_verb_trigger(const std::string& word) {
     return word == "cannot" || word == "can't" || word == "can" || word == "could" ||
            word == "would" || word == "should" || word == "must" || word == "will";
@@ -2492,22 +2488,6 @@ private:
 
     if (key == "that's") {
       return std::string{"ðˈats"};
-    }
-
-    if (key == "that") {
-      const auto prev_word = find_prev_word_index(tokens, index);
-      if (prev_word && ascii_lower(tokens[*prev_word].text) == "at") {
-        return std::string{"ðˈat"};
-      }
-      const auto next_word = find_next_word_index(tokens, index);
-      if (!next_word) {
-        return std::string{"ðat"};
-      }
-      const auto next = ascii_lower(tokens[*next_word].text);
-      if (is_that_unstressed_following_word(next)) {
-        return std::string{"ðat"};
-      }
-      return std::string{"ðˈat"};
     }
 
     if (key == "read") {
