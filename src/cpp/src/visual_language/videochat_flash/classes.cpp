@@ -510,8 +510,8 @@ std::vector<float> get_1d_sincos_pos_embed_from_grid(int embed_dim, const std::v
     for (int m = 0; m < M; ++m) {
         for (int d = 0; d < half_dim; ++d) {
             float out = pos[m] * omega[d];
-            emb[m * embed_dim + d] = std::sin(out);            // 前一半是 sin
-            emb[m * embed_dim + d + half_dim] = std::cos(out); // 后一半是 cos
+            emb[m * embed_dim + d] = std::sin(out);            // First half uses sine
+            emb[m * embed_dim + d + half_dim] = std::cos(out); // Second half uses cosine
         }
     }
     return emb;
