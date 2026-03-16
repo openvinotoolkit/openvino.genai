@@ -104,7 +104,7 @@ def collect_logs_for_run(run: WorkflowRun, logs_dir: Path, GITHUB_TOKEN: str, se
     In that case, we need only 'system.txt' file from each directory
     """
     # Get failed jobs
-    failed_jobs = [job for job in run.jobs() if job.conclusion == "failure"]
+    failed_jobs = [job for job in run.jobs() if job.conclusion in ("failure", "cancelled")]
     LOGGER.info(f"FAILED JOBS: {[job.name for job in failed_jobs]}")
 
     with tempfile.NamedTemporaryFile(suffix=".zip") as temp_file:
@@ -199,9 +199,9 @@ def write_summary(run: WorkflowRun, logs_dir: Path, hints_dir: Path) -> None:
         "",
     ]
 
-    failed_jobs = [job for job in run.jobs() if job.conclusion == "failure"]
+    failed_jobs = [job for job in run.jobs() if job.conclusion in ("failure", "cancelled")]
     for job in failed_jobs:
-        failed_steps = ", ".join([step.name for step in job.steps if step.conclusion == "failure"])
+        failed_steps = ", ".join([step.name for step in job.steps if step.conclusion in ("failure", "cancelled")])
         lines.append(f"  Job {job.id} {job.name} {job.url}:")
         lines.append(f"    Failed steps: {failed_steps if failed_steps else '(none)'}")
 
@@ -268,9 +268,9 @@ def main():
     gh_repo = github.get_repo(full_name_or_id=repository_name)
     run = gh_repo.get_workflow_run(id_=run_id)
 
-    if run.conclusion != "failure":
+    if run.conclusion not in ("failure", "cancelled"):
         LOGGER.warning(
-            f"Run {run_id} in {repository_name} did not fail (conclusion: {run.conclusion}). No logs will be collected."
+            f"Run {run_id} in {repository_name} has conclusion '{run.conclusion}'. Expected conclusion is 'failure' or 'cancelled'. No logs will be collected."
         )
         return
 
