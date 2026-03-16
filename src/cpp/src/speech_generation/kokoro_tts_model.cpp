@@ -610,8 +610,10 @@ void install_fallback_if_available(std::unique_ptr<misaki::G2P>& g2p,
                 return;
             }
         } catch (const std::exception& error) {
-            GENAI_WARN("Failed to initialize OpenVINO fallback network for Kokoro G2P: {}", error.what());
-            return;
+            OPENVINO_THROW("Failed to initialize OpenVINO fallback network for Kokoro G2P at '",
+                           *generation_config.phonemize_fallback_model_dir,
+                           "': ",
+                           error.what());
         }
     }
 
