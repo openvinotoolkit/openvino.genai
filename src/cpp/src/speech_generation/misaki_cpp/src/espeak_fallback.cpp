@@ -48,9 +48,15 @@ struct EspeakLoadState {
   std::string error;
 };
 
-std::string as_utf8(const char8_t *value) {
-  return std::string(reinterpret_cast<const char *>(value));
+std::string as_utf8(const char* value) {
+  return std::string(value);
 }
+
+#if defined(__cpp_char8_t)
+std::string as_utf8(const char8_t* value) {
+  return std::string(reinterpret_cast<const char*>(value));
+}
+#endif
 
 std::string trim(std::string value) {
   while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) {
