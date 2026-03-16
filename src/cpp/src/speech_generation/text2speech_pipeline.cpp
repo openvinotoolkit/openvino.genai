@@ -44,12 +44,28 @@ SpeechBackend resolve_backend(const std::filesystem::path& root_dir,
         return SpeechBackend::SpeechT5;
     }
 
-    if (std::filesystem::exists(root_dir / "openvino_model.xml")) {
+    const bool has_openvino_model = std::filesystem::exists(root_dir / "openvino_model.xml");
+    const bool has_voices_dir = std::filesystem::exists(root_dir / "voices") &&
+                                std::filesystem::is_directory(root_dir / "voices");
+    const bool architecture_mentions_kokoro = class_name.find("Kokoro") != std::string::npos;
+
+    bool has_kokoro_vocab = false;
+    const std::filesystem::path config_json_path = root_dir / "config.json";
+    if (std::filesystem::exists(config_json_path)) {
+        std::ifstream config_file(config_json_path);
+        if (config_file.is_open()) {
+            const nlohmann::json config = nlohmann::json::parse(config_file, nullptr, false);
+            has_kokoro_vocab = !config.is_discarded() && config.contains("vocab") && config["vocab"].is_object();
+        }
+    }
+
+    if (has_openvino_model && (architecture_mentions_kokoro || (has_voices_dir && has_kokoro_vocab))) {
         return SpeechBackend::Kokoro;
     }
 
     OPENVINO_THROW("Unsupported text to speech generation pipeline '", class_name,
-                   "'. Unable to auto-detect a supported backend from model metadata/files");
+                   "'. Unable to auto-detect a supported backend from model metadata/files. "
+                   "Expected SpeechT5 architecture metadata or Kokoro-specific model layout");
 }
 
 }  // namespace
