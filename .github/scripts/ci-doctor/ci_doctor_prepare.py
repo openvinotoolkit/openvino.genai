@@ -7,7 +7,7 @@ import tempfile
 
 import requests
 from github.WorkflowRun import WorkflowRun
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
 import argparse
 from requests.adapters import HTTPAdapter
 from github import Github, Auth
@@ -134,8 +134,10 @@ def collect_logs_for_run(run: WorkflowRun, logs_dir: Path, GITHUB_TOKEN: str, se
                 for p in logs_temp_dir.iterdir():
                     # Move failed jobs' logs to the final destination
                     if p.is_dir() and p.name == job_filename:
-                        LOGGER.debug(f"Keeping system.txt from directory {p} for failed job {job.name}")
-                        (p / "system.txt").rename(logs_dir / f"{job_filename}__system.txt")
+                        system_log_path = p / "system.txt"
+                        if system_log_path.is_file():
+                            LOGGER.debug(f"Keeping system.txt from directory {p} for failed job {job.name}")
+                            system_log_path.rename(logs_dir / f"{job_filename}__system.txt")
                     elif p.is_file() and p.name.endswith(f"{job_filename}.txt"):
                         LOGGER.debug(f"Keeping file {p} for failed job {job.name}")
                         p.rename(logs_dir / p.name)
@@ -259,7 +261,8 @@ def main():
 
     session = requests.Session()
     retry_strategy = Retry(total=5, backoff_factor=3, backoff_jitter=1, status_forcelist=[429, 500, 502, 503, 504])
-    session.mount("https://github.com", HTTPAdapter(max_retries=retry_strategy))
+    session.mount("https://api.github.com", HTTPAdapter(max_retries=retry_strategy))
+    session.mount("https://results-receiver.actions.githubusercontent.com", HTTPAdapter(max_retries=retry_strategy))
 
     github = Github(auth=Auth.Token(token=GITHUB_TOKEN))
     gh_repo = github.get_repo(full_name_or_id=repository_name)

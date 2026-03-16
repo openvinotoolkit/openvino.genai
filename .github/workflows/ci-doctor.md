@@ -10,7 +10,7 @@ on:
     inputs:
       run_id:
         description: "Workflow run ID to investigate (for manual testing)"
-        required: false
+        required: true
 # Disable automatic triggering on workflow_run events during manual testing.
 #   workflow_run:
 #     workflows:
