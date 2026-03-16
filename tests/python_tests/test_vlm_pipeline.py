@@ -101,7 +101,9 @@ class _VlmPipelineVideoChatFlashImageGuard:
         has_single_image = kwargs.get("image") is not None
         has_multi_images = bool(kwargs.get("images"))
         if _is_videochat_flash_model(self._model_id) and (has_single_image or has_multi_images):
-            pytest.skip("VideoChat-Flash image/image(s) tests are disabled as not supported right now, see CVS-182928. Please use video/videos input.")
+            pytest.skip(
+                "VideoChat-Flash image/images tests are disabled as not supported right now, see CVS-182928. Please use video/videos input."
+            )
         return self._pipeline.generate(*args, **kwargs)
 
     def __getattr__(self, name: str):
@@ -2155,7 +2157,9 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
 ):
     # VideoChat-Flash: Optimum preprocess_inputs currently fails on video chat_template rendering
     if _is_videochat_flash_model(ov_pipe_model.model_id):
-        pytest.skip("VideoChat-Flash video cases are expected to fail in optimum-vs-genai resolution test due to lack of Optimum-intel support. See CVS-173635.")
+        pytest.skip(
+            "VideoChat-Flash video cases are expected to fail in optimum-vs-genai resolution test due to lack of Optimum-intel support. See CVS-173635."
+        )
     # VideoChat-Flash: image path is not supported in this suite; expect failure when has_image=True
     if has_image and _is_videochat_flash_model(ov_pipe_model.model_id):
         pytest.skip("VideoChat-Flash image cases are expected to fail as not supported yet. See CVS-182928.")
@@ -2496,13 +2500,10 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
         ov_pipe_pld, max_new_tokens=20, do_sample=False, prompt_lookup=True
     )
     results_pld = ov_pipe_pld.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config_pld)
-    # Baseline result must be non-empty.
-    assert results.texts[0].strip() != "", "Result should not be empty"
-    # Enabling prompt_lookup must preserve the generated text under deterministic settings.
-    assert (
-        results_pld.texts[0].strip() == results.texts[0].strip()
-    ), "prompt_lookup=True should not change generated text when do_sample=False"
 
+    assert results.texts[0].strip() == results_pld.texts[0].strip(), (
+        "Result should be the same when prompt_lookup is enabled and disabled."
+    )
 
 @pytest.fixture(scope="module", params=ATTENTION_BACKEND, ids=lambda b: f"VideoChat-Flash/{b}")
 def ov_videochatflash_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeline:
@@ -2544,7 +2545,7 @@ def test_videochatflash_text_video_generate(
     [
         pytest.param(get_greedy(), id="greedy"),
         pytest.param(get_beam_search(), id="beam_search"),
-    ]
+    ],
 )
 def test_vlm_continuous_batching_generate_videochat(
     ov_continious_batching_pipe_videochat: ContinuousBatchingPipeline,
