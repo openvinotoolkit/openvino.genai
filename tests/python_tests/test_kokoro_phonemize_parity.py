@@ -145,8 +145,6 @@ def test_kokoro_generate_from_tokens_single_sequence():
 
     ov_pipe = openvino_genai.Text2SpeechPipeline(model_dir, "CPU")
     token_type = _get_speech_token_type()
-    if token_type is None:
-        pytest.skip("SpeechToken is not available in this build")
 
     tokens = [
         token_type("həlˈoʊ", True, "Hello"),
@@ -166,8 +164,6 @@ def test_kokoro_generate_from_tokens_batch_shape():
 
     ov_pipe = openvino_genai.Text2SpeechPipeline(model_dir, "CPU")
     token_type = _get_speech_token_type()
-    if token_type is None:
-        pytest.skip("SpeechToken is not available in this build")
 
     token_batches = [
         [
