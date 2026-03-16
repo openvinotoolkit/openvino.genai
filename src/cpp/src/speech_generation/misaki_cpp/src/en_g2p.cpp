@@ -285,6 +285,14 @@ private:
           tokens[*next_non_ws].kind == TokenKind::Word;
   }
 
+  static bool is_case_stress_exempt_function_word(const std::string &key) {
+    static const std::unordered_set<std::string> exempt_words = {
+      "a", "an", "the", "that",
+      "to", "in", "at", "of", "on",
+    };
+    return exempt_words.find(key) != exempt_words.end();
+  }
+
   // Python mapping: per-token lexicon/fallback resolution path in G2P.__call__.
   std::optional<std::string> resolve_word_token(const std::vector<Token> &tokens, std::size_t index) const {
     std::string pronunciation;
@@ -307,7 +315,8 @@ private:
     } else if (!tokens[index].linked_pronunciation.empty()) {
       // Keep explicit inline phonemes as-is unless explicit stress override is provided.
     } else if (!has_any_stress(pronunciation)) {
-      if (ascii_lower(tokens[index].text) != "the") {
+      const auto lower_word = ascii_lower(tokens[index].text);
+      if (!is_case_stress_exempt_function_word(lower_word)) {
         if (const auto case_stress = infer_case_stress(tokens[index].text)) {
           pronunciation = apply_inline_stress(pronunciation, *case_stress);
         }
@@ -721,6 +730,16 @@ private:
       }
     }
 
+    const bool all_upper_letters = !text.empty() && std::all_of(text.begin(), text.end(), [](char c) {
+      return std::isupper(static_cast<unsigned char>(c));
+    });
+    if (all_upper_letters) {
+      static const std::unordered_set<char> vowel_onset_letter_names = {
+          'A', 'E', 'F', 'H', 'I', 'L', 'M', 'N', 'O', 'R', 'S', 'X',
+      };
+      return vowel_onset_letter_names.find(text.front()) != vowel_onset_letter_names.end();
+    }
+
     for (char c : text) {
       if (std::isalpha(static_cast<unsigned char>(c))) {
         return is_ascii_vowel(c);
@@ -772,6 +791,30 @@ private:
 
     const auto prev_word = find_prev_word_index(tokens, index);
     const auto next_word = find_next_word_index(tokens, index);
+
+    std::optional<TokenKind> next_non_ws_kind;
+    for (std::size_t i = index + 1; i < tokens.size(); ++i) {
+      if (tokens[i].kind == TokenKind::Whitespace) {
+        continue;
+      }
+      next_non_ws_kind = tokens[i].kind;
+      break;
+    }
+
+    if (ends_with(key, "s")) {
+      if (next_non_ws_kind.has_value() && *next_non_ws_kind == TokenKind::Punctuation) {
+        return std::string{"NOUN"};
+      }
+      if (next_word) {
+        const auto next = ascii_lower(tokens[*next_word].text);
+        if (next == "a" || next == "an" || next == "the" || next == "this" || next == "that" ||
+            next == "these" || next == "those" || next == "my" || next == "your" || next == "his" ||
+            next == "her" || next == "our" || next == "their" || next == "some" || next == "any" ||
+            next == "several" || next == "many" || next == "few" || next == "more" || next == "less") {
+          return std::string{"VERB"};
+        }
+      }
+    }
 
     if (key == "tear" && next_word) {
       const auto next = ascii_lower(tokens[*next_word].text);
@@ -837,6 +880,9 @@ private:
 
     if (prev_word) {
       const auto prev = ascii_lower(tokens[*prev_word].text);
+      if (prev == "that" && ends_with(key, "s")) {
+        return std::string{"VERB"};
+      }
       if (prev == "to") {
         return std::string{"VERB"};
       }
@@ -1001,6 +1047,16 @@ private:
     };
 
     const auto key = ascii_lower(token_text);
+
+    if (token_text.size() > 2 && token_text.back() == 's') {
+      const auto stem = token_text.substr(0, token_text.size() - 1);
+      if (is_all_upper_alpha(stem)) {
+        if (const auto stem_pronunciation = lookup_direct_pronunciation(stem, pos_hint)) {
+          return apply_plural_s(normalize_pronunciation(*stem_pronunciation));
+        }
+      }
+    }
+
     const auto &hardcoded = (variant_ == "en-gb") ? hardcoded_gb : hardcoded_us;
     const auto it = hardcoded.find(key);
     if (it != hardcoded.end()) {
@@ -1346,15 +1402,7 @@ private:
         };
 
         const bool ampersand_code_like = !has_lower && candidate.find('&') != std::string::npos;
-        const bool hyphen_code_like = !has_lower && candidate.find('-') != std::string::npos &&
-                                      std::any_of(candidate.begin(), candidate.end(), [](char ch) {
-                                        return std::isdigit(static_cast<unsigned char>(ch));
-                                      }) &&
-                                      std::any_of(candidate.begin(), candidate.end(), [](char ch) {
-                                        return std::isupper(static_cast<unsigned char>(ch));
-                                      });
-
-        if (ampersand_code_like || hyphen_code_like) {
+        if (ampersand_code_like) {
           std::string component;
           bool valid = true;
           for (char ch : candidate) {
@@ -1371,16 +1419,6 @@ private:
               }
               out.push_back({TokenKind::Whitespace, " ", ""});
               out.push_back({TokenKind::Word, "&", ""});
-              out.push_back({TokenKind::Whitespace, " ", ""});
-              continue;
-            }
-
-            if (ch == '-' && hyphen_code_like) {
-              valid = emit_component(component);
-              component.clear();
-              if (!valid) {
-                break;
-              }
               out.push_back({TokenKind::Whitespace, " ", ""});
               continue;
             }
@@ -1544,13 +1582,17 @@ private:
 
     if (key == "at") {
       if (token.text == "At") {
-        return "ˌat";
+        return "ˌæt";
       }
       return std::nullopt;
     }
 
+    if (key == "that") {
+      return "ðæt";
+    }
+
     if (key == "through") {
-      return has_future_word ? "θɹuː" : "θɹˈuː";
+      return has_future_word ? "θɹu" : "θɹˈu";
     }
 
     if (key == "won't") {
@@ -1959,6 +2001,26 @@ private:
       return;
     }
 
+    if (parts.size() == 2 && pronunciations.size() == 2 &&
+        has_primary_stress(pronunciations[0]) && has_primary_stress(pronunciations[1])) {
+      const bool first_has_internal_upper = std::any_of(parts[0].begin() + (parts[0].empty() ? 0 : 1), parts[0].end(), [](char c) {
+        return std::isupper(static_cast<unsigned char>(c));
+      });
+      auto count_marker = [](const std::string& text, const std::string& marker) {
+        std::size_t count = 0;
+        std::size_t pos = text.find(marker);
+        while (pos != std::string::npos) {
+          ++count;
+          pos = text.find(marker, pos + marker.size());
+        }
+        return count;
+      };
+      const std::size_t first_stress_count = count_marker(pronunciations[0], "ˈ") + count_marker(pronunciations[0], "ˌ");
+      if (first_has_internal_upper || first_stress_count > 1) {
+        return;
+      }
+    }
+
     std::sort(indices.begin(), indices.end(), [](const StressIndex& lhs, const StressIndex& rhs) {
       if (lhs.has_primary != rhs.has_primary) {
         return lhs.has_primary < rhs.has_primary;
@@ -2039,6 +2101,14 @@ private:
   std::optional<std::string> pronounce_code_segment(const std::string &segment) const {
     if (segment.empty()) {
       return std::nullopt;
+    }
+
+    if (is_all_digits(segment) && segment.size() == 3 && segment[0] != '0') {
+      const auto head = pronounce_integer_token(segment.substr(0, 1));
+      const auto tail = pronounce_integer_token(segment.substr(1));
+      if (head && tail) {
+        return *head + " " + *tail;
+      }
     }
 
     if (const auto direct = lookup_direct_pronunciation(segment)) {
@@ -2626,6 +2696,10 @@ private:
 
     if (const auto expanded = expand_symbol_or_number(tokens, index)) {
       return *expanded;
+    }
+
+    if (const auto hyphen_code = lookup_hyphen_code_pronunciation(token.text)) {
+      return *hyphen_code;
     }
 
     if (const auto direct = lookup_direct_pronunciation(token.text, pos_hint)) {
