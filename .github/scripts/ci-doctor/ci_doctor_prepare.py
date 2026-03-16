@@ -271,19 +271,19 @@ def main():
         )
         return
 
-    JOB_DIR = CI_DOCTOR_DIR / f"run_{run_id}"
-    JOB_LOGS_DIR = JOB_DIR / "logs"
-    JOB_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    RUN_DIR = CI_DOCTOR_DIR / f"run_{run_id}"
+    LOGS_DIR = RUN_DIR / "logs"
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    collect_logs_for_run(run=run, logs_dir=JOB_LOGS_DIR, GITHUB_TOKEN=GITHUB_TOKEN, session=session)
-    filter_logs(job_logs_dir=JOB_LOGS_DIR)
+    collect_logs_for_run(run=run, logs_dir=LOGS_DIR, GITHUB_TOKEN=GITHUB_TOKEN, session=session)
+    filter_logs(job_logs_dir=LOGS_DIR)
 
-    HINTS_DIR = JOB_DIR / "hints"
+    HINTS_DIR = RUN_DIR / "hints"
     HINTS_DIR.mkdir(exist_ok=True, parents=True)
 
-    extract_hints(logs_dir=JOB_LOGS_DIR, hints_dir=HINTS_DIR)
+    extract_hints(logs_dir=LOGS_DIR, hints_dir=HINTS_DIR)
 
-    write_summary(run=run, logs_dir=JOB_LOGS_DIR, hints_dir=HINTS_DIR)
+    write_summary(run=run, logs_dir=LOGS_DIR, hints_dir=HINTS_DIR)
 
 
 if __name__ == "__main__":
