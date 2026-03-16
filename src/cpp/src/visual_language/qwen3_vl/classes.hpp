@@ -59,7 +59,8 @@ public:
 protected:
     // Vision embeddings position model
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_pos;
-    
+    bool m_use_patched_pos_model = false;
+
     // Cached extra inputs for language model
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs{
         {"deepstack_visual_embeds", ov::Tensor()},
