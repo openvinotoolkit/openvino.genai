@@ -3,6 +3,9 @@
 These samples showcase the use of OpenVINO's inference capabilities for video generation tasks. The sample features `openvino_genai.Text2VideoPipeline` for generating videos from text prompts using models like LTX-Video.
 The applications don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU.
 
+ - [`text2video.py`](./text2video.py) demonstrates basic text to video generation.
+ - [`taylorseer_text2video.py`](./taylorseer_text2video.py) demonstrates text to video generation with TaylorSeer caching optimization for improved performance. LTX-Video model is supported only.
+
 ## Table of Contents
 1. [Download and Convert the Model](#download-and-convert-the-model)
 2. [Sample Descriptions](#sample-descriptions)
@@ -39,7 +42,7 @@ pipeline.save_pretrained(output_dir)
 
 ### Common Information
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
+Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
 Follow [build instruction](../../../src/docs/BUILD.md) to build GenAI samples.
 
 GPUs usually provide better performance compared to CPUs. Modify the source code to change the device for inference to the GPU.
@@ -99,6 +102,30 @@ video = pipe.generate(
    callback=callback
 ).video
 ```
+
+### TaylorSeer Text to Video Sample (`taylorseer_text2video.py`)
+
+- **Description:**
+  Generate videos with TaylorSeer caching optimization. This sample runs two generations: one baseline without caching and one with TaylorSeer caching enabled, then compares their performance.
+
+- **Run Command:**
+  ```bash
+  python taylorseer_text2video.py model_dir prompt
+  ```
+
+  Example:
+  ```bash
+  python taylorseer_text2video.py ./ltx_video_ov/INT8 "a robot dancing in the rain"
+  ```
+
+The sample will generate two video files: `taylorseer_baseline.avi` (without caching) and `taylorseer.avi` (with caching), and display a performance comparison showing the speedup achieved.
+
+The TaylorSeer configuration parameters can be adjusted in the source code:
+- `cache_interval`: Number of steps between cache updates (default: 3)
+- `disable_cache_before_step`: Disable caching before this step for warmup (default: 6)
+- `disable_cache_after_step`: Disable caching after this step (default: -2, meaning 2 steps before the end)
+
+For more details about TaylorSeer, see the [diffusion caching documentation](../../../site/docs/concepts/optimization-techniques/diffusion-caching.md).
 
 ## Troubleshooting
 

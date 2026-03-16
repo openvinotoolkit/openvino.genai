@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "tokenizer/tokenizer_impl.hpp"
+
+#include <utility>
+
 #include "add_second_input_pass.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
 #include "openvino/genai/version.hpp"
@@ -332,11 +335,11 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         return;
     }
     if (std::filesystem::exists(models_path / "openvino_tokenizer.xml")) {
-        ov_tokenizer = core.read_model(models_path / "openvino_tokenizer.xml", {}, filtered_properties);
+        ov_tokenizer = core.read_model(models_path / "openvino_tokenizer.xml", {}, std::as_const(filtered_properties));
     }
 
     if (std::filesystem::exists(models_path / "openvino_detokenizer.xml")) {
-        ov_detokenizer = core.read_model(models_path / "openvino_detokenizer.xml", {}, filtered_properties);
+        ov_detokenizer = core.read_model(models_path / "openvino_detokenizer.xml", {}, std::as_const(filtered_properties));
     }
 
     read_config(models_path);
@@ -423,8 +426,32 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
         m_chat_template = remap_template(m_chat_template);
 
         // Initialize tokenizer's cache to save time later.
-        // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
-        encode("non empty string");
+        // Run in async mode for speed to improve TTFT
+        {
+            int idx = m_ireq_queue_tokenizer->get_idle().get();
+            auto& req = m_ireq_queue_tokenizer->get(idx);
+
+            // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
+            // shared_ptr to keep input data alive until async request is finished
+            auto warmup_text = std::make_shared<std::string>("non empty string");
+            auto warmup_tensor = ov::Tensor(ov::element::string, ov::Shape{1}, warmup_text.get());
+
+            req.set_input_tensor(0, warmup_tensor);
+            if (is_paired_input) {
+                // Set to an empty tensor to avoid errors.
+                // The subgraph within the ov::Model will handle this scenario, ensuring the output remains correct.
+                req.set_input_tensor(1, ov::Tensor{ov::element::string, {0}});
+            }
+
+            req.set_callback([queue = m_ireq_queue_tokenizer.get(), idx, warmup_text, &req](std::exception_ptr) {
+                // this empty placeholder keeps input data alive until request is finished
+                (void) warmup_text;
+                queue->return_to(idx);
+                req.set_callback({});
+
+            });
+            req.start_async();
+        }
     }
 
     if (ov_detokenizer) {
@@ -447,8 +474,28 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
             m_bos_token = decode(std::vector{m_bos_token_id}, {ov::genai::skip_special_tokens(false)});
         if (m_eos_token_id != -1 && m_eos_token.empty())
             m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::skip_special_tokens(false)});
+            
         // Initialize detokenizer's cache to save time later.
-        decode({1, 33, 199, 42, 42});
+        {
+            int idx = m_ireq_queue_detokenizer->get_idle().get();
+            auto& req = m_ireq_queue_detokenizer->get(idx);
+
+            // shared_ptr to keep input data alive until async request is finished
+            auto warmup_tokens = std::make_shared<std::vector<int64_t>>(
+                std::initializer_list<int64_t>{1, 33, 199, 42, 42}
+            );
+
+            auto warmup_tensor = ov::Tensor(ov::element::i64, ov::Shape{1, warmup_tokens->size()}, warmup_tokens->data());
+            req.set_input_tensor(0, warmup_tensor);
+
+            req.set_callback([queue = m_ireq_queue_detokenizer.get(), idx, warmup_tokens, &req](std::exception_ptr) {
+                // this empty placeholder keeps input data alive until request is finished
+                (void) warmup_tokens;
+                queue->return_to(idx);
+                req.set_callback({});
+            });
+            req.start_async();
+        }
 
         m_vocab = read_vocab_from_detokenizer_model(ov_detokenizer);
     }
