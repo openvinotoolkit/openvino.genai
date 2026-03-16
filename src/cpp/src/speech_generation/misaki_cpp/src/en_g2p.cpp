@@ -322,6 +322,8 @@ private:
     bool all_upper = true;
     bool has_internal_upper = false;
     bool saw_first_alpha = false;
+    bool first_alpha_upper = false;
+    bool title_case = true;
 
     for (char c : word) {
       const auto uc = static_cast<unsigned char>(c);
@@ -331,11 +333,18 @@ private:
       has_alpha = true;
       if (std::isupper(uc)) {
         any_upper = true;
-        if (saw_first_alpha) {
+        if (!saw_first_alpha) {
+          first_alpha_upper = true;
+        } else {
           has_internal_upper = true;
+          title_case = false;
         }
       } else {
         all_upper = false;
+        if (!saw_first_alpha) {
+          first_alpha_upper = false;
+          title_case = false;
+        }
       }
       saw_first_alpha = true;
     }
@@ -349,6 +358,10 @@ private:
     }
 
     if (has_internal_upper) {
+      return 0.5;
+    }
+
+    if (title_case && first_alpha_upper) {
       return 0.5;
     }
 
@@ -1516,28 +1529,6 @@ private:
       return "ˌI";
     }
 
-    const bool starts_with_upper = !token.text.empty() && std::isupper(static_cast<unsigned char>(token.text.front()));
-    if (starts_with_upper) {
-      if (key == "we") {
-        return "wˌiː";
-      }
-      if (key == "you") {
-        return "jˌuː";
-      }
-      if (key == "your" || key == "you're") {
-        return "jˌɔː";
-      }
-      if (key == "he") {
-        return "hˌiː";
-      }
-      if (key == "his") {
-        return "hˌɪz";
-      }
-      if (key == "he's") {
-        return "hˌiːz";
-      }
-    }
-
     if (key == "his" && !has_future_word) {
       return "hˌɪz";
     }
@@ -2427,6 +2418,198 @@ private:
     return append_adjacent_percent(words_to_phonemes(words, true));
   }
 
+  static std::optional<std::string> lookup_clitic_pronunciation(const std::string& text) {
+    static const std::unordered_map<std::string, std::string> clitics = {
+        {"'s", "s"},
+        {"'d", "d"},
+        {"'ll", "əl"},
+        {"'m", "m"},
+        {"'t", "t"},
+        {"'re", "ɹ"},
+        {"'ve", "v"},
+        {"n'", "ən"},
+    };
+
+    const auto it = clitics.find(text);
+    if (it == clitics.end()) {
+      return std::nullopt;
+    }
+    return it->second;
+  }
+
+  static bool is_that_unstressed_following_word(const std::string& word) {
+    return word == "i" || word == "you" || word == "he" || word == "she" ||
+           word == "it" || word == "we" || word == "they";
+  }
+
+  static bool is_contest_verb_trigger(const std::string& word) {
+    return word == "cannot" || word == "can't" || word == "can" || word == "could" ||
+           word == "would" || word == "should" || word == "must" || word == "will";
+  }
+
+  static bool is_reflexive_pronoun(const std::string& word) {
+    return word == "itself" || word == "himself" || word == "herself" || word == "themselves";
+  }
+
+  static bool is_presents_verb_trigger(const std::string& word) {
+    return word == "it" || word == "he" || word == "she" || word == "ever";
+  }
+
+  static bool is_these_linking_verb(const std::string& word) {
+    return word == "are" || word == "is" || word == "were" || word == "was";
+  }
+
+  static bool is_existential_there_follower(const std::string& word) {
+    return word == "is" || word == "are" || word == "was" || word == "were" ||
+           word == "be" || word == "been" || word == "being" || word == "am";
+  }
+
+  std::optional<std::string> lookup_context_override_pronunciation(
+      const std::vector<Token>& tokens,
+      std::size_t index,
+      const Token& token,
+      const std::string& key) const {
+    if (token.text == "A" && index == 0) {
+      return std::string{"ɐ"};
+    }
+
+    if (key == "used") {
+      const auto next_word = find_next_word_index(tokens, index);
+      if (next_word && ascii_lower(tokens[*next_word].text) == "to") {
+        return variant_ == "en-gb" ? std::string{"jˈuːst"} : std::string{"jˈust"};
+      }
+    }
+
+    if (key == "to") {
+      const auto next_word = find_next_word_index(tokens, index);
+      if (next_word) {
+        const auto next = ascii_lower(tokens[*next_word].text);
+        if (next == "a" || next == "an") {
+          return std::string{"tə"};
+        }
+      }
+    }
+
+    if (key == "that's") {
+      return std::string{"ðˈats"};
+    }
+
+    if (key == "that") {
+      const auto prev_word = find_prev_word_index(tokens, index);
+      if (prev_word && ascii_lower(tokens[*prev_word].text) == "at") {
+        return std::string{"ðˈat"};
+      }
+      const auto next_word = find_next_word_index(tokens, index);
+      if (!next_word) {
+        return std::string{"ðat"};
+      }
+      const auto next = ascii_lower(tokens[*next_word].text);
+      if (is_that_unstressed_following_word(next)) {
+        return std::string{"ðat"};
+      }
+      return std::string{"ðˈat"};
+    }
+
+    if (key == "read") {
+      const auto prev_word = find_prev_word_index(tokens, index);
+      if (prev_word) {
+        const auto prev = ascii_lower(tokens[*prev_word].text);
+        if (prev == "have" || prev == "has" || prev == "had") {
+          return std::string{"ɹˈɛd"};
+        }
+      }
+    }
+
+    if (key == "contest") {
+      const auto prev_word = find_prev_word_index(tokens, index);
+      if (prev_word) {
+        const auto prev = ascii_lower(tokens[*prev_word].text);
+        if (is_contest_verb_trigger(prev)) {
+          return std::string{"kəntˈɛst"};
+        }
+      }
+    }
+
+    if (key == "presents") {
+      const auto prev_word = find_prev_word_index(tokens, index);
+      const auto next_word = find_next_word_index(tokens, index);
+      if (next_word) {
+        const auto next = ascii_lower(tokens[*next_word].text);
+        const bool reflexive_next = is_reflexive_pronoun(next);
+        if (reflexive_next) {
+          return std::string{"pɹizˈɛnts"};
+        }
+      }
+      if (prev_word) {
+        const auto prev = ascii_lower(tokens[*prev_word].text);
+        if (is_presents_verb_trigger(prev)) {
+          return std::string{"pɹizˈɛnts"};
+        }
+      }
+    }
+
+    if (key == "these") {
+      const auto next_word = find_next_word_index(tokens, index);
+      if (next_word) {
+        const auto next = ascii_lower(tokens[*next_word].text);
+        if (is_these_linking_verb(next)) {
+          return std::string{"ðˌiz"};
+        }
+      }
+    }
+
+    if (key == "there") {
+      const auto next_word = find_next_word_index(tokens, index);
+      const bool existential_there = next_word.has_value() &&
+                                      is_existential_there_follower(ascii_lower(tokens[*next_word].text));
+
+      std::optional<std::size_t> next_non_ws;
+      for (std::size_t j = index + 1; j < tokens.size(); ++j) {
+        if (tokens[j].kind == TokenKind::Whitespace) {
+          continue;
+        }
+        next_non_ws = j;
+        break;
+      }
+
+      if (!existential_there && (!next_non_ws.has_value() || tokens[*next_non_ws].kind == TokenKind::Punctuation)) {
+        return std::string{"ðˈɛɹ"};
+      }
+    }
+
+    if (key == "vs") {
+      const auto prev_word = find_prev_word_index(tokens, index);
+      std::optional<std::size_t> next_word;
+      for (std::size_t j = index + 1; j < tokens.size(); ++j) {
+        if (tokens[j].kind == TokenKind::Whitespace) {
+          continue;
+        }
+        if (tokens[j].kind == TokenKind::Punctuation) {
+          if (tokens[j].text == ".") {
+            continue;
+          }
+          break;
+        }
+        next_word = j;
+        break;
+      }
+      if (prev_word && next_word) {
+        const auto& lhs = tokens[*prev_word].text;
+        const auto& rhs = tokens[*next_word].text;
+        const bool lhs_is_letter = lhs.size() == 1 && std::isalpha(static_cast<unsigned char>(lhs[0]));
+        const bool rhs_is_letter = rhs.size() == 1 && std::isalpha(static_cast<unsigned char>(rhs[0]));
+        if (lhs_is_letter && rhs_is_letter) {
+          return variant_ == "en-gb" ? std::string{"vˈiːz"} : std::string{"vˈiz"};
+        }
+      }
+      if (const auto versus = lookup_word_pronunciation("versus")) {
+        return *versus;
+      }
+    }
+
+    return std::nullopt;
+  }
+
   std::string lookup_pronunciation(const std::vector<Token> &tokens, std::size_t index) const {
     // Python mapping: Lexicon.__call__/lookup sequence.
     // Order intentionally mirrors Python: linked overrides -> special cases -> contextual forms ->
@@ -2451,155 +2634,8 @@ private:
       return token.linked_pronunciation;
     }
 
-    if (token.text == "A" && index == 0) {
-      return "ɐ";
-    }
-
-    if (key == "used") {
-      const auto next_word = find_next_word_index(tokens, index);
-      if (next_word && ascii_lower(tokens[*next_word].text) == "to") {
-        return variant_ == "en-gb" ? "jˈuːst" : "jˈust";
-      }
-    }
-
-    if (key == "to") {
-      const auto next_word = find_next_word_index(tokens, index);
-      if (next_word) {
-        const auto next = ascii_lower(tokens[*next_word].text);
-        if (next == "a" || next == "an") {
-          return "tə";
-        }
-      }
-    }
-
-    if (key == "that's") {
-      return "ðˈats";
-    }
-
-    if (key == "that") {
-      const auto prev_word = find_prev_word_index(tokens, index);
-      if (prev_word && ascii_lower(tokens[*prev_word].text) == "at") {
-        return "ðˈat";
-      }
-      const auto next_word = find_next_word_index(tokens, index);
-      if (!next_word) {
-        return "ðat";
-      }
-      const auto next = ascii_lower(tokens[*next_word].text);
-      if (next == "i" || next == "you" || next == "he" || next == "she" || next == "it" ||
-          next == "we" || next == "they") {
-        return "ðat";
-      }
-      return "ðˈat";
-    }
-
-    if (key == "this") {
-      const bool starts_with_upper = !token.text.empty() && std::isupper(static_cast<unsigned char>(token.text.front()));
-      if (starts_with_upper) {
-        return "ðˌɪs";
-      }
-    }
-
-    if (key == "read") {
-      const auto prev_word = find_prev_word_index(tokens, index);
-      if (prev_word) {
-        const auto prev = ascii_lower(tokens[*prev_word].text);
-        if (prev == "have" || prev == "has" || prev == "had") {
-          return "ɹˈɛd";
-        }
-      }
-    }
-
-    if (key == "contest") {
-      const auto prev_word = find_prev_word_index(tokens, index);
-      if (prev_word) {
-        const auto prev = ascii_lower(tokens[*prev_word].text);
-        if (prev == "cannot" || prev == "can't" || prev == "can" || prev == "could" || prev == "would" ||
-            prev == "should" || prev == "must" || prev == "will") {
-          return "kəntˈɛst";
-        }
-      }
-    }
-
-    if (key == "presents") {
-      const auto prev_word = find_prev_word_index(tokens, index);
-      const auto next_word = find_next_word_index(tokens, index);
-      if (next_word) {
-        const auto next = ascii_lower(tokens[*next_word].text);
-        const bool reflexive_next =
-            next == "itself" || next == "himself" || next == "herself" || next == "themselves";
-        if (reflexive_next) {
-          return "pɹizˈɛnts";
-        }
-      }
-      if (prev_word) {
-        const auto prev = ascii_lower(tokens[*prev_word].text);
-        if (prev == "it" || prev == "he" || prev == "she" || prev == "ever") {
-          return "pɹizˈɛnts";
-        }
-      }
-    }
-
-    if (key == "these") {
-      const auto next_word = find_next_word_index(tokens, index);
-      if (next_word) {
-        const auto next = ascii_lower(tokens[*next_word].text);
-        if (next == "are" || next == "is" || next == "were" || next == "was") {
-          return "ðˌiz";
-        }
-      }
-    }
-
-    if (key == "there") {
-      const auto next_word = find_next_word_index(tokens, index);
-      const bool existential_there = next_word.has_value() && [&]() {
-        const auto next = ascii_lower(tokens[*next_word].text);
-        return next == "is" || next == "are" || next == "was" || next == "were" ||
-               next == "be" || next == "been" || next == "being" || next == "am";
-      }();
-
-      std::optional<std::size_t> next_non_ws;
-      for (std::size_t j = index + 1; j < tokens.size(); ++j) {
-        if (tokens[j].kind == TokenKind::Whitespace) {
-          continue;
-        }
-        next_non_ws = j;
-        break;
-      }
-
-      if (!existential_there && (!next_non_ws.has_value() || tokens[*next_non_ws].kind == TokenKind::Punctuation)) {
-        return "ðˈɛɹ";
-      }
-    }
-
-    if (key == "vs") {
-      const auto prev_word = find_prev_word_index(tokens, index);
-      std::optional<std::size_t> next_word;
-      for (std::size_t j = index + 1; j < tokens.size(); ++j) {
-        if (tokens[j].kind == TokenKind::Whitespace) {
-          continue;
-        }
-        if (tokens[j].kind == TokenKind::Punctuation) {
-          if (tokens[j].text == ".") {
-            continue;
-          }
-          break;
-        }
-        next_word = j;
-        break;
-      }
-      if (prev_word && next_word) {
-        const auto &lhs = tokens[*prev_word].text;
-        const auto &rhs = tokens[*next_word].text;
-        const bool lhs_is_letter = lhs.size() == 1 && std::isalpha(static_cast<unsigned char>(lhs[0]));
-        const bool rhs_is_letter = rhs.size() == 1 && std::isalpha(static_cast<unsigned char>(rhs[0]));
-        if (lhs_is_letter && rhs_is_letter) {
-          return variant_ == "en-gb" ? "vˈiːz" : "vˈiz";
-        }
-      }
-      if (const auto versus = lookup_word_pronunciation("versus")) {
-        return *versus;
-      }
+    if (const auto context_override = lookup_context_override_pronunciation(tokens, index, token, key)) {
+      return *context_override;
     }
 
     const auto ctx = build_context(tokens, index);
@@ -2628,36 +2664,8 @@ private:
       return *camel_compound;
     }
 
-    if (token.text == "'s") {
-      return "s";
-    }
-
-    if (token.text == "'d") {
-      return "d";
-    }
-
-    if (token.text == "'ll") {
-      return "əl";
-    }
-
-    if (token.text == "'m") {
-      return "m";
-    }
-
-    if (token.text == "'t") {
-      return "t";
-    }
-
-    if (token.text == "'re") {
-      return "ɹ";
-    }
-
-    if (token.text == "'ve") {
-      return "v";
-    }
-
-    if (token.text == "n'") {
-      return "ən";
+    if (const auto clitic = lookup_clitic_pronunciation(token.text)) {
+      return *clitic;
     }
 
       throw std::runtime_error("Unmapped English token: " + token.text);
