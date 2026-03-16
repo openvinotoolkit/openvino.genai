@@ -34,10 +34,10 @@ target_link_libraries(kokoro_phonemize_fallback PRIVATE openvino::genai)
 set_target_properties(text2speech PROPERTIES
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
-target_compile_features(text2speech PRIVATE cxx_std_11)
+target_compile_features(text2speech PRIVATE cxx_std_17)
 set_target_properties(kokoro_phonemize_fallback PROPERTIES
     INSTALL_RPATH_USE_LINK_PATH ON)
-target_compile_features(kokoro_phonemize_fallback PRIVATE cxx_std_11)
+target_compile_features(kokoro_phonemize_fallback PRIVATE cxx_std_17)
 
 install(TARGETS text2speech kokoro_phonemize_fallback
         RUNTIME DESTINATION samples_bin/
