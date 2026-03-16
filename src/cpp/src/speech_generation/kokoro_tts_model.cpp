@@ -38,24 +38,24 @@ static inline void dump_compiled_model_inputs_outputs(const ov::CompiledModel& m
     const auto inputs = model.inputs();
     const auto outputs = model.outputs();
 
-    std::cout << "\tInputs: " << std::endl;
+    GENAI_INFO("\tInputs:");
     for (const auto& input : inputs) {
         const std::string name = input.get_any_name();
         const ov::element::Type type = input.get_element_type();
         const ov::PartialShape shape = input.get_partial_shape();
         const ov::Layout layout = ov::layout::get_layout(input);
 
-        std::cout << "\t\t" << name << ", " << type << ", " << shape << ", " << layout.to_string() << std::endl;
+        GENAI_INFO("\t\t{}, {}, {}, {}", name, type, shape, layout.to_string());
     }
 
-    std::cout << "\tOutputs: " << std::endl;
+    GENAI_INFO("\tOutputs:");
     for (const auto& output : outputs) {
         const std::string name = output.get_any_name();
         const ov::element::Type type = output.get_element_type();
         const ov::PartialShape shape = output.get_partial_shape();
         const ov::Layout layout = ov::layout::get_layout(output);
 
-        std::cout << "\t\t" << name << ", " << type << ", " << shape << ", " << layout.to_string() << std::endl;
+        GENAI_INFO("\t\t{}, {}, {}, {}", name, type, shape, layout.to_string());
     }
 }
 class OpenVINOFallbackNetwork {
@@ -98,9 +98,9 @@ public:
         auto decoder_compiled_model = core.compile_model(decoder_path, "CPU");
 
         if (ov::genai::get_cur_log_level() >= ov::log::Level::INFO) {
-            std::cout << "Fallback encoder model info:" << std::endl;
+            GENAI_INFO("Fallback encoder model info:");
             dump_compiled_model_inputs_outputs(encoder_compiled_model);
-            std::cout << "Fallback decoder model info:" << std::endl;
+            GENAI_INFO("Fallback decoder model info:");
             dump_compiled_model_inputs_outputs(decoder_compiled_model);
         }
 
@@ -610,8 +610,7 @@ void install_fallback_if_available(std::unique_ptr<misaki::G2P>& g2p,
                 return;
             }
         } catch (const std::exception& error) {
-            std::cout << "Warning: failed to initialize OpenVINO fallback network for Kokoro G2P: " << error.what()
-                      << std::endl;
+            GENAI_WARN("Failed to initialize OpenVINO fallback network for Kokoro G2P: {}", error.what());
             return;
         }
     }
@@ -623,9 +622,8 @@ void install_fallback_if_available(std::unique_ptr<misaki::G2P>& g2p,
                                            version_hint ? std::string(version_hint) : std::string{},
                                            library_hint ? std::string(library_hint) : std::string{});
     if (!espeak_fallback.backend_available()) {
-        std::cout << "Warning: espeak-ng fallback is not available for Kokoro G2P. Install espeak-ng and optionally set "
-                     "MISAKI_ESPEAK_LIBRARY to enable fallback support for out-of-vocab words."
-                  << std::endl;
+        GENAI_WARN("espeak-ng fallback is not available for Kokoro G2P. Install espeak-ng and optionally set "
+                   "MISAKI_ESPEAK_LIBRARY to enable fallback support for out-of-vocab words.");
         return;
     }
 
@@ -1101,9 +1099,7 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
     std::vector<std::vector<std::string>> all_phoneme_chunks;
     all_phoneme_chunks.reserve(texts.size());
     for (const auto& text : texts) {
-        const auto text_tokenize_start = std::chrono::steady_clock::now();
         auto phoneme_chunks = phonemize_single_text(*m_g2p, text, generation_config, language_variant);
-        const auto text_tokenize_end = std::chrono::steady_clock::now();
         all_phoneme_chunks.push_back(std::move(phoneme_chunks));
     }
 
