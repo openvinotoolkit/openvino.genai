@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # Tokenization
 
-OpenVINO GenAI provides a way to tokenize and detokenize text using the [`ov::genai::Tokenizer`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.Tokenizer.html) class.
+OpenVINO GenAI provides a way to tokenize and detokenize text using the [`ov::genai::Tokenizer`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.Tokenizer.html) class.
 The `Tokenizer` is a high level abstraction over the [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers) library.
 
 It can be initialized from the path, in-memory IR representation or obtained from the `ov::genai::LLMPipeline` object.
@@ -72,7 +72,7 @@ It can be initialized from the path, in-memory IR representation or obtained fro
     </TabItemJS>
 </LanguageTabs>
 
-The `encode()` method returns a [`TokenizedInputs`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.TokenizedInputs.html) object containing `input_ids` and `attention_mask`, both stored as `ov::Tensor`.
+The `encode()` method returns a [`TokenizedInputs`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.TokenizedInputs.html) object containing `input_ids` and `attention_mask`, both stored as `ov::Tensor`.
 Since `ov::Tensor` requires fixed-length sequences, padding is applied to match the longest sequence in a batch, ensuring a uniform shape.
 Also resulting sequence is truncated by `max_length`.
 If this value is not defined by used, it's is taken from the IR.
