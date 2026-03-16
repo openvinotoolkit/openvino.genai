@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <utility>
+
 #include <openvino/openvino.hpp>
 #include <variant>
 
@@ -82,7 +84,7 @@ public:
         ov::Core core = utils::singleton_core();
         ov::CompiledModel compiled_model;
         if (device == "NPU") {
-            auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties_copy);
+            auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, std::as_const(properties_copy));
             // NB: only batch_size == 1 is supported now for NPU
             reshape_to_static_encoder(encoder_model, 1, m_feature_extractor.feature_size);
             compiled_model = core.compile_model(encoder_model, "NPU", properties_copy);

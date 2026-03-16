@@ -37,5 +37,5 @@ vector-quantize-pytorch==1.27.20
 # - OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
 av==12.3.0
 imageio==2.35.1
-decord==0.6.0
+decord==0.6.0; platform_system != "Darwin"
 opencv-python==4.10.0.84

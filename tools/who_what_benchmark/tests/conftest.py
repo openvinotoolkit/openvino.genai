@@ -50,6 +50,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-llava",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
+    "Qwen2-VL-2B-Instruct": {
+        "name": "Qwen/Qwen2-VL-2B-Instruct",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
     "tiny-random-stable-diffusion-xl": {"name": "echarlaix/tiny-random-stable-diffusion-xl", "convert_args": []},
     "stable-diffusion-3-tiny-random": {"name": "yujiepan/stable-diffusion-3-tiny-random", "convert_args": []},
     "tiny-random-flux": {"name": "optimum-intel-internal-testing/tiny-random-flux", "convert_args": []},
