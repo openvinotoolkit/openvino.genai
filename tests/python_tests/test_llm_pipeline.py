@@ -895,7 +895,7 @@ def test_pipelines_generate_with_streaming(
     stop_str: bool,
 ) -> None:
     mock_streamer = MagicMock(return_value=False)
-    
+
     prompt = "Prompt example is"
 
     generation_config = ov_genai.GenerationConfig()
@@ -917,26 +917,55 @@ def test_pipelines_generate_with_streaming(
         mock_streamer.assert_called()
 
 
+# NOTE:
+# Using regex to edit XML is the minimal method to generate the model with custom op "MyAdd" (`type="Add"` -> `type="MyAdd"`, `version="extension"`).
+# We intentionally avoid `from_pretrained`/`save_pretrained` because that path adds extra
+# conversion/serialization code and broadens test scope beyond custom-op dispatch.
 def replace_ir_add_with_myadd(ir_xml_path: Path) -> None:
     import re
 
-    target_node_name = "__module.model.layers.1.input_layernorm/aten::add/Add"
     xml_text = ir_xml_path.read_text(encoding="utf-8")
 
-    layer_pattern = re.compile(r'<layer\b[^>]*\bname="' + re.escape(target_node_name) + r'"[^>]*>')
-    match = layer_pattern.search(xml_text)
-    assert match is not None, f"No IR Add layer named '{target_node_name}' found to replace with MyAdd"
+    layer_pattern = re.compile(r'(<layer\b[^>]*\btype="Add"[^>]*>)(.*?)(</layer>)', re.DOTALL)
+    match = None
+    for candidate in layer_pattern.finditer(xml_text):
+        layer_body = candidate.group(2)
+        input_match = re.search(r'<input\b[^>]*>(.*?)</input>', layer_body, re.DOTALL)
+        if input_match is None:
+            continue
 
-    layer_tag = match.group(0)
+        input_ports = re.findall(r'<port\b[^>]*>.*?</port>', input_match.group(1), re.DOTALL)
+        if len(input_ports) != 2:
+            continue
+
+        second_input_port = input_ports[1]
+        if re.search(r'\bprecision="FP32"', second_input_port) is None:
+            continue
+
+        input_dims = re.findall(r'<dim>\s*(\d+)\s*</dim>', second_input_port)
+        if not input_dims:
+            continue
+        if any(dim != "1" for dim in input_dims):
+            continue
+
+        match = candidate
+        break
+
+    assert match is not None, (
+        "No suitable IR Add layer found to replace with MyAdd. "
+        "Expected: type='Add', exactly two inputs, and second input with precision='FP32' and all dims equal to 1"
+    )
+
+    layer_tag = match.group(1)
     updated_tag = re.sub(r'\btype="Add"', 'type="MyAdd"', layer_tag, count=1)
-    assert updated_tag != layer_tag, f"IR layer '{target_node_name}' does not have type='Add'"
+    assert updated_tag != layer_tag, "Selected IR layer does not have type='Add'"
 
     if re.search(r'\bversion="[^"]*"', updated_tag):
         updated_tag = re.sub(r'\bversion="[^"]*"', 'version="extension"', updated_tag, count=1)
     else:
         updated_tag = updated_tag[:-1] + ' version="extension">'
 
-    xml_text = xml_text[: match.start()] + updated_tag + xml_text[match.end() :]
+    xml_text = xml_text[: match.start(1)] + updated_tag + xml_text[match.end(1) :]
     ir_xml_path.write_text(xml_text, encoding="utf-8")
 
 
