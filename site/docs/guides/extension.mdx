@@ -1,0 +1,86 @@
+---
+sidebar_position: 9
+title: Extensions
+---
+
+# Extensions Property
+
+## Overview
+
+The `extensions` property allows OpenVINO GenAI pipelines to load custom OpenVINO extensions before model execution.
+Use it when a model requires custom operations or when you want to provide operation mappings through OpenVINO extension mechanisms.
+
+You can pass extensions to pipeline constructors in both Python and C++.
+
+## Key Features
+
+- **Custom Ops Support:** Load extension libraries that implement custom operations.
+- **Flexible Inputs:** Pass file paths or extension objects.
+- **Pipeline Integration:** Use the same property with `LLMPipeline`, `VLMPipeline`, and other GenAI pipelines that accept runtime properties.
+
+## Using the `extensions` Property
+
+<LanguageTabs>
+	<TabItemPython>
+		```python
+		import openvino_genai as ov_genai
+		from openvino.frontend import OpExtension
+
+		model_path = "path/to/model_with_custom_ops"
+
+		# Option 1: pass a shared library path
+		properties = {
+			"extensions": ["path/to/libopenvino_custom_add_extension.so"]
+		}
+		pipe = ov_genai.LLMPipeline(model_path, "CPU", **properties)
+
+		# Option 2: pass extension objects (frontend op mapping)
+		properties = {
+			"extensions": [OpExtension("Relu", "MyRelu")]
+		}
+		pipe = ov_genai.LLMPipeline(model_path, "CPU", **properties)
+
+        # Generate with custom ops
+        pipe.generate("Generate story about", max_new_tokens=100)
+		```
+	</TabItemPython>
+	<TabItemCpp>
+		```cpp
+		#include <filesystem>
+		#include <vector>
+
+		#include "openvino/genai/extensions.hpp"
+		#include "openvino/genai/llm_pipeline.hpp"
+
+		int main() {
+			const std::filesystem::path model_path = "path/to/model_with_custom_ops";
+
+			// Option 1: pass extension library paths
+			ov::AnyMap path_properties = {
+				ov::genai::extensions(std::vector<std::filesystem::path>{
+					"path/to/libopenvino_custom_add_extension.so"
+				})
+			};
+			ov::genai::LLMPipeline pipe(model_path, "CPU", path_properties);
+
+			// Option 2: pass OpenVINO extension objects
+			std::vector<std::shared_ptr<ov::Extension>> ext_objects;
+			ext_objects.push_back(/* std::make_shared<YourExtensionType>(...) */);
+
+			ov::AnyMap object_properties = {
+				ov::genai::extensions(ext_objects)
+			};
+			ov::genai::LLMPipeline pipe(model_path, "CPU", object_properties);
+
+            # Generate with custom ops
+            pipe.generate("Generate story about", ov::genai::max_new_tokens(100))
+
+			return 0;
+		}
+		```
+	</TabItemCpp>
+</LanguageTabs>
+
+:::tip
+For more examples of how extension lib is generated, please refer to [custom_op]()
+:::
