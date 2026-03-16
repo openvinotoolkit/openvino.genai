@@ -930,11 +930,11 @@ def replace_ir_add_with_myadd(ir_xml_path: Path) -> None:
     match = None
     for candidate in layer_pattern.finditer(xml_text):
         layer_body = candidate.group(2)
-        input_match = re.search(r'<input\b[^>]*>(.*?)</input>', layer_body, re.DOTALL)
+        input_match = re.search(r"<input\b[^>]*>(.*?)</input>", layer_body, re.DOTALL)
         if input_match is None:
             continue
 
-        input_ports = re.findall(r'<port\b[^>]*>.*?</port>', input_match.group(1), re.DOTALL)
+        input_ports = re.findall(r"<port\b[^>]*>.*?</port>", input_match.group(1), re.DOTALL)
         if len(input_ports) != 2:
             continue
 
@@ -942,7 +942,7 @@ def replace_ir_add_with_myadd(ir_xml_path: Path) -> None:
         if re.search(r'\bprecision="FP32"', second_input_port) is None:
             continue
 
-        input_dims = re.findall(r'<dim>\s*(\d+)\s*</dim>', second_input_port)
+        input_dims = re.findall(r"<dim>\s*(\d+)\s*</dim>", second_input_port)
         if not input_dims:
             continue
         if any(dim != "1" for dim in input_dims):
