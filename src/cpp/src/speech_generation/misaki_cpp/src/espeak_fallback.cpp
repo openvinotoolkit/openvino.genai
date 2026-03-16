@@ -175,17 +175,34 @@ std::string reorder_syllabic_marker(const std::string &text) {
   const std::string syllabic = "\xCC\xA9"; // U+0329
   const std::string schwa = as_utf8(u8"ᵊ");
 
+  auto last_utf8_codepoint_start = [](const std::string &value) -> std::size_t {
+    std::size_t start = value.size();
+    while (start > 0) {
+      --start;
+      const unsigned char c = static_cast<unsigned char>(value[start]);
+      if ((c & 0xC0) != 0x80) {
+        break;
+      }
+    }
+    return start;
+  };
+
   std::string out;
   out.reserve(text.size());
 
   std::size_t i = 0;
   while (i < text.size()) {
     if (i + syllabic.size() <= text.size() && text.compare(i, syllabic.size(), syllabic) == 0) {
-      if (!out.empty() && !std::isspace(static_cast<unsigned char>(out.back()))) {
-        const char last = out.back();
-        out.pop_back();
-        out += schwa;
-        out.push_back(last);
+      if (!out.empty()) {
+        const std::size_t cp_start = last_utf8_codepoint_start(out);
+        const std::string last_cp = out.substr(cp_start);
+        const bool is_ascii_space =
+            last_cp.size() == 1 && std::isspace(static_cast<unsigned char>(last_cp[0]));
+        if (!is_ascii_space) {
+          out.erase(cp_start);
+          out += schwa;
+          out += last_cp;
+        }
       }
       i += syllabic.size();
       continue;

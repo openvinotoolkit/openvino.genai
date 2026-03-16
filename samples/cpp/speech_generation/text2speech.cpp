@@ -33,7 +33,7 @@ std::vector<std::string> windows_utf8_argv(int argc, char* argv[]) {
         const wchar_t* warg = wide_argv[i];
         const int needed = WideCharToMultiByte(CP_UTF8, 0, warg, -1, nullptr, 0, nullptr, nullptr);
         OPENVINO_ASSERT(needed > 0, "Failed to convert command-line argument to UTF-8");
-        std::string utf8(static_cast<size_t>(needed - 1), '\0');
+        std::string utf8(static_cast<size_t>(needed), '\0');
         const int written = WideCharToMultiByte(CP_UTF8,
                                                 0,
                                                 warg,
@@ -42,7 +42,8 @@ std::vector<std::string> windows_utf8_argv(int argc, char* argv[]) {
                                                 needed,
                                                 nullptr,
                                                 nullptr);
-        OPENVINO_ASSERT(written > 0, "Failed to convert command-line argument to UTF-8");
+        OPENVINO_ASSERT(written == needed, "Failed to convert command-line argument to UTF-8");
+        utf8.pop_back();
         args.push_back(std::move(utf8));
     }
 
