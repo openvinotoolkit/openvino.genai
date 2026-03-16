@@ -497,7 +497,7 @@ ov::Tensor efficient_flatten(const ov::Tensor& original_tensor) {
     return new_tensor;
 }
 std::vector<float> get_1d_sincos_pos_embed_from_grid(int embed_dim, const std::vector<float>& pos) {
-    assert(embed_dim % 2 == 0);
+    OPENVINO_ASSERT(embed_dim % 2 == 0, "embed_dim must be divisible by 2 for 1D sin-cos positional embedding.");
     int M = pos.size();
     int half_dim = embed_dim / 2;
 
@@ -518,7 +518,7 @@ std::vector<float> get_1d_sincos_pos_embed_from_grid(int embed_dim, const std::v
 }
 
 std::vector<float> get_2d_sincos_pos_embed_from_grid(int embed_dim, const std::vector<std::vector<float>>& grid) {
-    assert(embed_dim % 2 == 0);
+    OPENVINO_ASSERT(embed_dim % 2 == 0, "embed_dim must be divisible by 2 for 2D sin-cos positional embedding.");
     int half_dim = embed_dim / 2;
     int num_points = grid[0].size();
 
@@ -534,7 +534,7 @@ std::vector<float> get_2d_sincos_pos_embed_from_grid(int embed_dim, const std::v
 }
 
 ov::Tensor get_3d_sincos_pos_embed(int embed_dim, int grid_size, int t_size, bool cls_token = false) {
-    assert(embed_dim % 4 == 0);
+    OPENVINO_ASSERT(embed_dim % 4 == 0, "embed_dim must be divisible by 4 for 3D sin-cos positional embedding.");
     int embed_dim_spatial = (embed_dim / 4) * 3;
     int embed_dim_temporal = embed_dim / 4;
     int hw = grid_size * grid_size;
