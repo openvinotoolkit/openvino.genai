@@ -667,9 +667,13 @@ def test_vlm_continuous_batching_generate_vs_add_request(
 
     if ov_pipe_model.model_id in VIDEO_MODEL_IDS:
         synthetic_video_32x32_tensor = request.getfixturevalue("synthetic_video_32x32_tensor")
-        synthetic_video_224x224_tensor = request.getfixturevalue("synthetic_video_224x224_tensor")
         images_list = [[], [cat_tensor], [cat_tensor]]
-        videos_list = [[synthetic_video_32x32_tensor], [synthetic_video_224x224_tensor], []]
+        # Use 224x224 synthetic video only for VideoChat-Flash models to limit per-test compute/memory.
+        if "videochat-flash" in ov_pipe_model.model_id.lower():
+            synthetic_video_224x224_tensor = request.getfixturevalue("synthetic_video_224x224_tensor")
+            videos_list = [[synthetic_video_32x32_tensor], [synthetic_video_224x224_tensor], []]
+        else:
+            videos_list = [[synthetic_video_32x32_tensor], [synthetic_video_32x32_tensor], []]
     else:
         images_list = [[], [cat_tensor]]
         videos_list = [[], []]
