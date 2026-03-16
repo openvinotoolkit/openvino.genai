@@ -10,7 +10,8 @@
 #include <variant>
 #include <vector>
 
-#include "openvino/runtime/core.hpp"
+#include "openvino/core/any.hpp"
+#include "openvino/core/extension.hpp"
 
 namespace ov {
 namespace genai {

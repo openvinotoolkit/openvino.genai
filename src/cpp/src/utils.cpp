@@ -804,7 +804,7 @@ ExtensionList extract_extensions(ov::AnyMap& properties) {
     auto it = properties.find(EXTENSIONS_ARG_NAME);
     ExtensionList extensions = {};
     if (it != properties.end()) {
-        extensions = it->second.as<std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>>();
+        extensions = it->second.as<ExtensionList>();
         properties.erase(it);
     }
     return extensions;
