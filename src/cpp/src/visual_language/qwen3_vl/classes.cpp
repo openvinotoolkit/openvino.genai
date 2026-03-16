@@ -602,170 +602,64 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
                        100.0 * (pruning_result->original_visual_tokens - pruning_result->pruned_visual_tokens) / 
                        pruning_result->original_visual_tokens);
             
-            // Diagnostic: check grid_thw vs actual vision tokens in pruned input_ids
-            {
-                const size_t pruned_seq_len = input_ids.get_shape().at(1);
-                const int64_t* pruned_ids = input_ids.data<const int64_t>();
-                size_t actual_vision_tokens = 0;
-                for (size_t i = 0; i < pruned_seq_len; ++i) {
-                    if (pruned_ids[i] == vision_pad_token_id) actual_vision_tokens++;
-                }
-                size_t grid_expected_tokens = 0;
-                for (const auto& [gt, gh, gw] : grid_thw) {
-                    grid_expected_tokens += calc_tokens_num(gt, gh, gw);
-                }
-                GENAI_INFO("[Qwen3-VL] [CDPruner] [DIAG] Before create_position_ids: "
-                           "pruned input_ids seq_len=%zu, actual_vision_pad_tokens=%zu, "
-                           "grid_thw expected tokens=%zu",
-                           pruned_seq_len, actual_vision_tokens, grid_expected_tokens);
-                if (grid_expected_tokens != actual_vision_tokens) {
-                    GENAI_INFO("[Qwen3-VL] [CDPruner] [DIAG] WARNING: grid_thw expects %zu vision tokens "
-                               "but pruned input_ids only has %zu! create_position_ids will OVERFLOW!",
-                               grid_expected_tokens, actual_vision_tokens);
-                }
-            }
-            
-            // TODO(BUG): grid_thw still describes original unpruned grid dimensions,
-            // but input_ids has been pruned. create_position_ids will write
-            // grid_expected_tokens worth of position IDs but position_ids tensor
-            // is only allocated for pruned_seq_len. This causes heap buffer overflow!
-            m_position_ids = create_position_ids(input_ids, grid_thw, sequence, 0, 
-                                                 std::vector<std::array<size_t, 3>>{}, 
-                                                 std::vector<size_t>{}, 0, 
-                                                 vision_start_token_id, 
-                                                 std::vector<std::pair<size_t, size_t>>{});
-            GENAI_INFO("[Qwen3-VL] [CDPruner] [DIAG] create_position_ids returned (may have overflowed)");
-            
-            // Log pruned position_ids
-            auto pruned_pos_shape = m_position_ids.get_shape();
-            const int64_t* pruned_pos_data = m_position_ids.data<const int64_t>();
-            size_t pruned_total_size = m_position_ids.get_size();
-            
-            int64_t pruned_pos_max = *std::max_element(pruned_pos_data, pruned_pos_data + pruned_total_size);
-            GENAI_INFO("[Qwen3-VL] [CDPruner] Pruned Position IDs Max: %ld, Updated RoPE Delta: %ld", 
-                       pruned_pos_max, m_rope_delta);
+            // Note: m_position_ids is already updated by execute_pruning_pipeline (adjust_position_ids)
             
             // Prune deepstack_visual_embeds
             // deepstack_visual_embeds shape: [num_layers, total_vision_tokens, hidden_size]
             auto& deepstack_embeds = m_lm_extra_inputs["deepstack_visual_embeds"];
-            GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] Checking deepstack_embeds existence...");
             
             if (deepstack_embeds && deepstack_embeds.get_size() > 0) {
-                auto deepstack_shape = deepstack_embeds.get_shape();
-                GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] deepstack_shape.size() = %zu", deepstack_shape.size());
+                const auto deepstack_shape = deepstack_embeds.get_shape();
                 
                 if (deepstack_shape.size() == 3) {
-                    size_t num_layers = deepstack_shape[0];
-                    size_t original_tokens = deepstack_shape[1];
-                    size_t hidden_size = deepstack_shape[2];
-                    
-                    GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] Original deepstack shape: [%zu, %zu, %zu]",
-                               num_layers, original_tokens, hidden_size);
-                    GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] pruning_result->pruned_visual_tokens = %zu",
-                               pruning_result->pruned_visual_tokens);
-                    GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] Number of regions: %zu",
-                               pruning_result->keep_flags_per_region.size());
+                    const size_t num_layers = deepstack_shape[0];
+                    const size_t original_tokens = deepstack_shape[1];
+                    const size_t hidden_size = deepstack_shape[2];
                     
                     // Build keep flags for all vision tokens across all regions
                     std::vector<bool> global_keep_flags;
-                    for (size_t region_idx = 0; region_idx < pruning_result->keep_flags_per_region.size(); ++region_idx) {
-                        const auto& region_flags = pruning_result->keep_flags_per_region[region_idx];
-                        GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] Region %zu: %zu flags",
-                                   region_idx, region_flags.size());
+                    for (const auto& region_flags : pruning_result->keep_flags_per_region) {
                         global_keep_flags.insert(global_keep_flags.end(), region_flags.begin(), region_flags.end());
                     }
                     
-                    GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] Total global_keep_flags.size() = %zu",
-                               global_keep_flags.size());
+                    OPENVINO_ASSERT(global_keep_flags.size() == original_tokens,
+                                    "Keep flags size (", global_keep_flags.size(),
+                                    ") != original tokens (", original_tokens, ")");
                     
-                    // Count actual kept tokens
-                    size_t actual_kept = std::count(global_keep_flags.begin(), global_keep_flags.end(), true);
-                    GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] Actual kept tokens = %zu", actual_kept);
-                    
-                    // Validate that keep flags match original tokens
-                    if (global_keep_flags.size() != original_tokens) {
-                        GENAI_INFO("[Qwen3-VL] [CDPruner] [ERROR] Keep flags size (%zu) != original tokens (%zu)",
-                                   global_keep_flags.size(), original_tokens);
-                        OPENVINO_ASSERT(false, "Keep flags size mismatch");
-                    }
-                    
-                    // Count actual kept tokens to validate against pruned_visual_tokens
-                    if (actual_kept != pruning_result->pruned_visual_tokens) {
-                        GENAI_INFO("[Qwen3-VL] [CDPruner] [ERROR] Actual kept (%zu) != pruned_visual_tokens (%zu)",
-                                   actual_kept, pruning_result->pruned_visual_tokens);
-                        OPENVINO_ASSERT(false, "Actual kept tokens mismatch");
-                    }
+                    const size_t actual_kept = std::count(global_keep_flags.begin(), global_keep_flags.end(), true);
+                    OPENVINO_ASSERT(actual_kept == pruning_result->pruned_visual_tokens,
+                                    "Actual kept tokens (", actual_kept,
+                                    ") != pruned_visual_tokens (", pruning_result->pruned_visual_tokens, ")");
                     
                     if (pruning_result->pruned_visual_tokens < original_tokens) {
-                        GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] Creating pruned tensor [%zu, %zu, %zu]",
-                                   num_layers, pruning_result->pruned_visual_tokens, hidden_size);
-                        
-                        // Create pruned deepstack tensor
                         ov::Tensor pruned_deepstack(deepstack_embeds.get_element_type(), 
                                                     {num_layers, pruning_result->pruned_visual_tokens, hidden_size});
                         
                         const float* src_data = deepstack_embeds.data<const float>();
                         float* dst_data = pruned_deepstack.data<float>();
                         
-                        GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] Starting per-layer pruning...");
-                        
-                        // Prune each layer
                         for (size_t layer = 0; layer < num_layers; ++layer) {
                             size_t dst_idx = 0;
                             for (size_t token = 0; token < original_tokens; ++token) {
                                 if (global_keep_flags[token]) {
-                                    if (dst_idx >= pruning_result->pruned_visual_tokens) {
-                                        GENAI_INFO("[Qwen3-VL] [CDPruner] [ERROR] Layer %zu: dst_idx (%zu) >= pruned_visual_tokens (%zu)",
-                                                   layer, dst_idx, pruning_result->pruned_visual_tokens);
-                                        OPENVINO_ASSERT(false, "dst_idx overflow");
-                                    }
-                                    
-                                    size_t src_offset = (layer * original_tokens + token) * hidden_size;
-                                    size_t dst_offset = (layer * pruning_result->pruned_visual_tokens + dst_idx) * hidden_size;
-                                    
-                                    // Validate offsets
-                                    size_t src_size = deepstack_embeds.get_size();
-                                    size_t dst_size = pruned_deepstack.get_size();
-                                    if (src_offset + hidden_size > src_size) {
-                                        GENAI_INFO("[Qwen3-VL] [CDPruner] [ERROR] src_offset overflow: %zu + %zu > %zu",
-                                                   src_offset, hidden_size, src_size);
-                                        OPENVINO_ASSERT(false, "src_offset overflow");
-                                    }
-                                    if (dst_offset + hidden_size > dst_size) {
-                                        GENAI_INFO("[Qwen3-VL] [CDPruner] [ERROR] dst_offset overflow: %zu + %zu > %zu",
-                                                   dst_offset, hidden_size, dst_size);
-                                        OPENVINO_ASSERT(false, "dst_offset overflow");
-                                    }
-                                    
+                                    const size_t src_offset = (layer * original_tokens + token) * hidden_size;
+                                    const size_t dst_offset = (layer * pruning_result->pruned_visual_tokens + dst_idx) * hidden_size;
                                     std::memcpy(dst_data + dst_offset, src_data + src_offset, hidden_size * sizeof(float));
                                     dst_idx++;
                                 }
                             }
-                            
-                            GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] Layer %zu: copied %zu tokens", layer, dst_idx);
-                            
-                            if (dst_idx != pruning_result->pruned_visual_tokens) {
-                                GENAI_INFO("[Qwen3-VL] [CDPruner] [ERROR] Layer %zu: dst_idx (%zu) != pruned_visual_tokens (%zu)",
-                                           layer, dst_idx, pruning_result->pruned_visual_tokens);
-                                OPENVINO_ASSERT(false, "dst_idx final mismatch");
-                            }
+                            OPENVINO_ASSERT(dst_idx == pruning_result->pruned_visual_tokens,
+                                            "Layer ", layer, ": dst_idx (", dst_idx,
+                                            ") != pruned_visual_tokens (", pruning_result->pruned_visual_tokens, ")");
                         }
-                        
-                        GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] All layers pruned successfully, moving tensor...");
                         
                         m_lm_extra_inputs["deepstack_visual_embeds"] = std::move(pruned_deepstack);
                         
                         GENAI_INFO("[Qwen3-VL] [CDPruner] Pruned deepstack_visual_embeds: [%zu, %zu, %zu] -> [%zu, %zu, %zu]",
                                    num_layers, original_tokens, hidden_size,
                                    num_layers, pruning_result->pruned_visual_tokens, hidden_size);
-                    } else {
-                        GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] No pruning needed (pruned >= original)");
                     }
-                } else {
-                    GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] deepstack shape is not 3D, skipping");
                 }
-            } else {
-                GENAI_INFO("[Qwen3-VL] [CDPruner] [DEBUG] deepstack_embeds is empty or null");
             }
         }
     };
@@ -778,45 +672,16 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
                       merged_image_embeddings_tensor,
                       image_pad_token_id);
         m_merged_image_embeddings = merged_image_embeddings_tensor;
-        GENAI_INFO("[Qwen3-VL] [DIAG] After apply_pruning: input_ids=[%zu,%zu], text_embeds=[%zu,%zu,%zu], "
-                   "merged_image_embeds=[%zu,%zu]",
-                   input_ids.get_shape()[0], input_ids.get_shape()[1],
-                   text_embeds.get_shape()[0], text_embeds.get_shape()[1], text_embeds.get_shape()[2],
-                   m_merged_image_embeddings.get_shape()[0], m_merged_image_embeddings.get_shape()[1]);
     }
 
     // TODO: Apply pruning to videos when video pruning is supported
 
-    GENAI_INFO("[Qwen3-VL] [DIAG] Before create_visual_pos_masks");
     // Recalculate visual_pos_masks after potential pruning
     m_lm_extra_inputs["visual_pos_masks"] = create_visual_pos_masks(input_ids, image_pad_token_id, video_pad_token_id);
-    GENAI_INFO("[Qwen3-VL] [DIAG] visual_pos_masks created, shape=[%zu,%zu]",
-               m_lm_extra_inputs["visual_pos_masks"].get_shape()[0],
-               m_lm_extra_inputs["visual_pos_masks"].get_shape()[1]);
 
-    // Count vision tokens for merge validation
-    {
-        const int64_t* ids = input_ids.data<const int64_t>();
-        size_t seq = input_ids.get_shape()[1];
-        size_t img_count = 0, vid_count = 0;
-        for (size_t i = 0; i < seq; ++i) {
-            if (ids[i] == image_pad_token_id) img_count++;
-            if (ids[i] == video_pad_token_id) vid_count++;
-        }
-        GENAI_INFO("[Qwen3-VL] [DIAG] Before merge: input_ids has %zu image_pad, %zu video_pad tokens; "
-                   "image_embeds=%zu tokens, video_embeds=%zu tokens",
-                   img_count, vid_count,
-                   m_merged_image_embeddings.get_shape()[0],
-                   m_merged_video_embeddings.get_size() > 0 ? m_merged_video_embeddings.get_shape()[0] : 0);
-    }
-
-    GENAI_INFO("[Qwen3-VL] [DIAG] Calling merge_text_and_video_image_embeddings...");
-    auto result = qwen2_vl_utils::merge_text_and_video_image_embeddings(
+    return qwen2_vl_utils::merge_text_and_video_image_embeddings(
         input_ids, text_embeds, m_merged_image_embeddings, m_merged_video_embeddings,
         image_pad_token_id, video_pad_token_id);
-    GENAI_INFO("[Qwen3-VL] [DIAG] merge completed, result shape=[%zu,%zu,%zu]",
-               result.get_shape()[0], result.get_shape()[1], result.get_shape()[2]);
-    return result;
 }
 
 void InputsEmbedderQwen3VL::start_chat(const std::string& system_message) {
