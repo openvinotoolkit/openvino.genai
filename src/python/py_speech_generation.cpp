@@ -39,7 +39,7 @@ auto speech_generation_config_docstring = R"(
     :type minlenratio: float
 
     :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-    :type minlenratio: float
+    :type maxlenratio: float
 
     :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
     :type threshold: float
@@ -86,8 +86,8 @@ auto text_to_speech_decoded_results = R"(
 auto text_to_speech_generate_docstring = R"(
     Generates speeches based on input texts
 
-    :param text(s): input text(s) for which to generate speech
-    :type text(s): str or list[str]
+    :param text_or_texts: input text(s) for which to generate speech
+    :type text_or_texts: str or list[str]
 
     :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                              voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
@@ -105,8 +105,8 @@ auto text_to_speech_generate_docstring = R"(
 auto text_to_speech_phonemize_docstring = R"(
     Runs Kokoro text preprocessing and returns phoneme chunks used before acoustic inference.
 
-    :param text(s): input text(s) to phonemize
-    :type text(s): str or list[str]
+    :param text_or_texts: input text(s) to phonemize
+    :type text_or_texts: str or list[str]
 
     :param properties: speech generation parameters specified as properties
     :type properties: dict
