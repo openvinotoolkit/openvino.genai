@@ -167,6 +167,17 @@ public:
         const std::filesystem::path& config_dir_path,
         const std::string& device,
         const ov::AnyMap properties);
+
+    enum class VisionEmbeddingsCompilePolicy {
+        COMPILE,
+        SKIP,
+    };
+
+    VisionEncoder(
+        const std::filesystem::path& model_dir,
+        const std::string& device,
+        const ov::AnyMap properties,
+        VisionEmbeddingsCompilePolicy compile_policy);
 };
 
 } // namespace ov::genai

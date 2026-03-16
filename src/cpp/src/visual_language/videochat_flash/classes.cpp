@@ -642,7 +642,8 @@ ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferReque
 VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
     const std::filesystem::path& model_dir,
     const std::string& device,
-    const ov::AnyMap properties) : VisionEncoder(model_dir, device, properties) {
+    const ov::AnyMap properties)
+    : VisionEncoder(model_dir, device, properties, VisionEncoder::VisionEmbeddingsCompilePolicy::SKIP) {
 
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
     // init 3d_sincos_pos_embed
@@ -690,7 +691,6 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
             return compiled_merge_model.create_infer_request();
         });
     
-
 }
 
 VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
