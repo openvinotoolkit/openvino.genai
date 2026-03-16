@@ -18,10 +18,12 @@ TEST_CASE("Espeak engine reports unknown marker when backend unavailable", "[esp
 
 TEST_CASE("Espeak engine produces non-empty phonemes when backend available", "[espeak][basic]") {
   auto engine = misaki::make_engine("espeak", "es");
+  if (!engine->backend_available()) {
+    SKIP("espeak-ng backend is unavailable in this environment");
+  }
+
   const auto result = engine->phonemize_with_tokens("hola mundo");
 
   REQUIRE(result.tokens.empty());
-  if (!result.phonemes.empty()) {
-    REQUIRE_FALSE(result.phonemes.empty());
-  }
+  REQUIRE_FALSE(result.phonemes.empty());
 }
