@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import argparse
 import difflib
+import hashlib
 import os
-import random
 import re
 import codecs
 import sys
@@ -148,7 +148,6 @@ def _load_texts(spec: DatasetSpec, max_items: int, seed: int, min_chars: int):
     from datasets import load_dataset
 
     ds = load_dataset(spec.dataset, spec.config, split=spec.split)
-    rng = random.Random(seed)
 
     candidates = []
     for row in ds:
@@ -160,7 +159,11 @@ def _load_texts(spec: DatasetSpec, max_items: int, seed: int, min_chars: int):
                 continue
             candidates.append(normalized)
 
-    rng.shuffle(candidates)
+    def _seeded_sort_key(value: str) -> str:
+        payload = f"{seed}\0{value}".encode("utf-8", errors="ignore")
+        return hashlib.sha256(payload).hexdigest()
+
+    candidates.sort(key=_seeded_sort_key)
     return candidates[:max_items]
 
 
@@ -206,7 +209,7 @@ def main():
         help="Directory containing us/gb gold/silver lexicon JSON files for misaki_cpp",
     )
     parser.add_argument("--max-items", type=int, default=300, help="Max prompts to evaluate")
-    parser.add_argument("--seed", type=int, default=1337, help="Random seed")
+    parser.add_argument("--seed", type=int, default=1337, help="Deterministic sampling seed")
     parser.add_argument("--min-chars", type=int, default=20, help="Minimum normalized prompt length")
     parser.add_argument(
         "--normalize-input-escapes",
