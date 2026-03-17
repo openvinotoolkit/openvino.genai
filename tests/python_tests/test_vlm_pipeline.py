@@ -2539,7 +2539,7 @@ def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeli
 
 
 def test_videochatflash_qwen_rejects_image_input(
-ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor
 ):
     generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
     with pytest.raises(RuntimeError):
