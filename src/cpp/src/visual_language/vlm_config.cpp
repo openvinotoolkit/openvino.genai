@@ -25,7 +25,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen2_5_vl", VLMModelType::QWEN2_5_VL},
         {"qwen3_vl", VLMModelType::QWEN3_VL},
         {"gemma3", VLMModelType::GEMMA3},
-        {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH},
+        {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
     };
 
     auto it = model_types_map.find(value);
@@ -72,12 +72,13 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     read_json_param(parsed, "vision_config.window_size", vision_config_window_size);
     read_json_param(parsed, "vision_config.tokens_per_second", vision_config_tokens_per_second);
 
-    // VideoChat_Flash specific config params
-    read_json_param(parsed, "mm_local_num_frames", mm_local_num_frames);
-    read_json_param(parsed, "mm_hidden_size", mm_hidden_size);
     // Qwen3-VL
     read_json_param(parsed, "vision_config.num_position_embeddings", vision_config_num_position_embeddings);
     read_json_param(parsed, "vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
+    
+    // VideoChat_Flash_Qwen specific config params
+    read_json_param(parsed, "mm_local_num_frames", mm_local_num_frames);
+    read_json_param(parsed, "mm_hidden_size", mm_hidden_size);
 }
 
 } // namespace ov::genai

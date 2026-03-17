@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -22,14 +22,14 @@ namespace videochat_flash_utils {
                                     const std::array<float, 3>& image_std = {0.229f, 0.224f, 0.225f});
 }
 
-class VisionEncoderVideoChat_Flash : public VisionEncoder {
+class VisionEncoderVideoChatFlashQwen : public VisionEncoder {
 public:
-    VisionEncoderVideoChat_Flash(
+    VisionEncoderVideoChatFlashQwen(
         const std::filesystem::path& model_dir,
         const std::string& device,
         const ov::AnyMap properties);
 
-    VisionEncoderVideoChat_Flash(
+    VisionEncoderVideoChatFlashQwen(
         const ModelsMap& models_map,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
@@ -49,10 +49,7 @@ public:
         return m_ireq_queue_merge_model.get();
     }
 
-    size_t get_mm_local_num_frames() const {
-        return m_vlm_config.mm_local_num_frames;
-    }
-    ov::Tensor& get_pos_emb() {
+    const ov::Tensor& get_pos_emb() const {
         return m_pos_emb;
     }
 protected:
@@ -68,16 +65,16 @@ protected:
     ov::Tensor m_pos_emb;
 };
 
-class InputsEmbedderVideoChat_Flash : public InputsEmbedder::IInputsEmbedder {
+class InputsEmbedderVideoChatFlashQwen : public InputsEmbedder::IInputsEmbedder {
 public:
-    InputsEmbedderVideoChat_Flash(
+    InputsEmbedderVideoChatFlashQwen(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
         const std::string& device,
         const ov::AnyMap device_config
     );
 
-    InputsEmbedderVideoChat_Flash(
+    InputsEmbedderVideoChatFlashQwen(
         const VLMConfig& vlm_config,
         const ModelsMap& models_map,
         const Tokenizer& tokenizer,
