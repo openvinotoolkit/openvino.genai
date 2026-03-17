@@ -363,7 +363,7 @@ private:
     friend class InputsEmbedderQwen2_5_VL;
     friend class InputsEmbedderQwen3VL;
     friend class InputsEmbedderGemma3;
-    friend class InputsEmbedderVideoChat_Flash_Qwen;
+    friend class InputsEmbedderVideoChatFlashQwen;
 };
 
 template <typename Func>

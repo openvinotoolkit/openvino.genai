@@ -110,13 +110,11 @@ class _VlmPipelineVideoChatFlashQwenImageGuard:
         return getattr(self._pipeline, name)
 
 
-
 PROMPTS: list[str] = [
     "What is in the image?",
     "What is special about this image?",
     "Describe the image",
 ]
-
 
 
 VIDEO_MODEL_IDS = [
@@ -162,6 +160,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
 }
+
 
 VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
@@ -246,6 +245,13 @@ def _setup_generation_config(
 
     return generation_config
 
+def is_optimum_intel_version_4_videochat_flash_qwen():
+    """
+    Compare the current optimum_intel version to a given reference with an operation.
+    """
+    import importlib.metadata as metadata
+    _optimum_intel_version = metadata.version("optimum-intel")
+    return _optimum_intel_version == "1.27.0.dev0+70056d0"
 
 def _get_ov_model(model_id: str) -> str:
     if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
@@ -261,6 +267,10 @@ def _get_ov_model(model_id: str) -> str:
     if "optimum-intel-internal-testing/tiny-random-qwen3-vl" == model_id and is_transformers_version("<", "4.57.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
+        )
+    if "xf2022/tiny-videochat-flash-qwen" == model_id and is_optimum_intel_version_4_videochat_flash_qwen():
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Supported version is 1.27.0.dev0+70056d0."
         )
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
@@ -363,7 +373,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
         if vision_preprocess_env_set:
             os.environ.pop(key, None)
 
-    pipeline = _VlmPipelineVideoChatFlashImageGuard(pipeline, ov_model)
+    pipeline = _VlmPipelineVideoChatFlashQwenImageGuard(pipeline, ov_model)
 
     return VlmModelInfo(
         ov_model,
@@ -557,13 +567,16 @@ def synthetic_video(pytestconfig):
 def synthetic_video_32x32(synthetic_video):
     return resize_video(synthetic_video, (32, 32))
 
+
 @pytest.fixture(scope="module")
 def synthetic_video_224x224(synthetic_video):
     return resize_video(synthetic_video, (224, 224))
 
+
 @pytest.fixture(scope="module")
 def cat_image_448x448(cat_image):
     return cat_image.resize((448, 448))
+
 
 @pytest.fixture(scope="module")
 def cat_image_384x384(cat_image):
@@ -589,6 +602,7 @@ def cat_tensor(cat_image) -> openvino.Tensor:
 def car_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
     return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['car'], "car.jpg"))
 
+
 @pytest.fixture(scope="module")
 def synthetic_video_224x224_tensor(synthetic_video_224x224):
     return openvino.Tensor(synthetic_video_224x224)
@@ -598,9 +612,11 @@ def synthetic_video_224x224_tensor(synthetic_video_224x224):
 def synthetic_video_32x32_tensor(synthetic_video_32x32):
     return openvino.Tensor(synthetic_video_32x32)
 
+
 @pytest.fixture(scope="module")
 def handwritten_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
     return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['handwritten'], "handwritten.png"))
+
 
 @pytest.fixture(scope="function", params=[
     pytest.param([], id="no_images"),
@@ -2500,6 +2516,7 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
         "Result should be the same when prompt_lookup is enabled and disabled."
     )
 
+
 @pytest.fixture(scope="module", params=ATTENTION_BACKEND, ids=lambda b: f"VideoChat-Flash-Qwen/{b}")
 def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeline:
     """
@@ -2510,10 +2527,12 @@ def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeli
     model_path = _get_ov_model(VIDEOCHAT_FLASH_QWEN_MODEL_ID)
     return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_backend)
 
+
 def test_videochatflash_qwen_rejects_image_input(ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor):
     generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
     with pytest.raises(RuntimeError):
         ov_videochatflash_qwen_pipe_raw.generate(PROMPTS[0], image=cat_tensor, generation_config=generation_config)
+
 
 @pytest.mark.parametrize(
     "config",

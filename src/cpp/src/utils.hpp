@@ -4,8 +4,11 @@
 #pragma once
 #include <type_traits>
 #include <optional>
+#include <regex>
 #include <stdexcept>
 #include <utility>
+#include <variant>
+#include <vector>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -127,6 +130,15 @@ ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config);
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
+
+std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text,
+                                                             ov::genai::Tokenizer& tokenizer,
+                                                             const std::regex& native_pattern);
+
+ov::Tensor insert_image_placeholders(const std::vector<std::variant<ov::Tensor, size_t>>& chunks,
+                                     const std::vector<size_t>& tokens_per_images);
+
+std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::Tensor& tokens);
 
 void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
