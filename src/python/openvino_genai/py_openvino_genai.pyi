@@ -4755,6 +4755,7 @@ class VLMRawPerfMetrics:
 class VideoGenerationConfig:
     generator: Generator
     negative_prompt: str | None
+    taylorseer_config: openvino_genai.py_openvino_genai.TaylorSeerCacheConfig | None
     def __init__(self) -> None:
         ...
     @property

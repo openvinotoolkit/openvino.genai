@@ -114,7 +114,7 @@ const config: Config = {
           items: [
             {
               label: 'Terms of Use',
-              href: 'https://docs.openvino.ai/2025/about-openvino/additional-resources/terms-of-use.html',
+              href: 'https://docs.openvino.ai/2026/about-openvino/additional-resources/terms-of-use.html',
             },
             {
               label: 'Responsible AI',
