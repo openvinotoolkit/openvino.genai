@@ -183,12 +183,13 @@ def extract_hints(logs_dir: Path, hints_dir: Path) -> None:
         if not log_file.is_file() or not log_file.name.endswith(".txt"):
             continue
         hints: list[str] = []
-        for lineno, line in enumerate(log_file.open(), start=1):
-            if NOISE_PATTERN.search(line) or not ERROR_PATTERN.search(line):
-                continue
-            hints.append(f"{lineno}:{line.strip()}")
-            if len(hints) >= MAX_HINT_LINES:
-                break
+        with log_file.open() as f:
+            for lineno, line in enumerate(f, start=1):
+                if NOISE_PATTERN.search(line) or not ERROR_PATTERN.search(line):
+                    continue
+                hints.append(f"{lineno}:{line.strip()}")
+                if len(hints) >= MAX_HINT_LINES:
+                    break
 
         hints_file_path = hints_dir / f"{log_file.name}-hints.txt"
         if hints:
@@ -228,10 +229,11 @@ def write_summary(run: WorkflowRun, logs_dir: Path, hints_dir: Path) -> None:
         lines.append(f"  {hints_file} ({hint_count} matches)")
         # Show first 3 hint lines as preview.
         try:
-            for i, line in enumerate(hints_file.open()):
-                if i >= 3:
-                    break
-                lines.append(f"    {line.rstrip()}")
+            with hints_file.open() as f:
+                for i, line in enumerate(f):
+                    if i >= 3:
+                        break
+                    lines.append(f"    {line.rstrip()}")
         except OSError:
             pass
 
@@ -253,10 +255,11 @@ def filter_logs(job_logs_dir: Path):
     """Remove lines matching patterns in PATTERNS_TO_FILTER_OUT from log files in LOG_DIR."""
     for log_file in job_logs_dir.glob("*.txt"):
         filtered_lines: list[str] = []
-        for line in log_file.open():
-            if any(pattern.search(line) for pattern in PATTERNS_TO_FILTER_OUT):
-                continue
-            filtered_lines.append(line.rstrip())
+        with log_file.open() as f:
+            for line in f:
+                if any(pattern.search(line) for pattern in PATTERNS_TO_FILTER_OUT):
+                    continue
+                filtered_lines.append(line.rstrip())
 
         log_file.write_text("\n".join(filtered_lines) + "\n")
 
