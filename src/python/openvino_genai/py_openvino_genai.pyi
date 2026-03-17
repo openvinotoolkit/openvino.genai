@@ -2674,7 +2674,7 @@ class SpeechGenerationConfig(GenerationConfig):
         :type minlenratio: float
     
         :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-        :type minlenratio: float
+        :type maxlenratio: float
     
         :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
         :type threshold: float
@@ -2694,6 +2694,10 @@ class SpeechGenerationConfig(GenerationConfig):
                                              (graphemes to phonemes), before acoustic model inference.
                                              If set, this OpenVINO G2P fallback is used.
                                              If unset (None), espeak-ng G2P fallback is used.
+                                             For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                             `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                             omit this key instead of passing None because kwargs-to-AnyMap
+                                             conversion rejects None values.
         :type phonemize_fallback_model_dir: str | None
     """
     language: str
@@ -3506,8 +3510,8 @@ class Text2SpeechPipeline:
         """
             Generates speeches based on input texts
         
-            :param text(s): input text(s) for which to generate speech
-            :type text(s): str or list[str]
+            :param text_or_texts: input text(s) for which to generate speech
+            :type text_or_texts: str or list[str]
         
             :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                                      voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
@@ -3533,7 +3537,7 @@ class Text2SpeechPipeline:
             :type minlenratio: float
         
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-            :type minlenratio: float
+            :type maxlenratio: float
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
@@ -3553,6 +3557,10 @@ class Text2SpeechPipeline:
                                                  (graphemes to phonemes), before acoustic model inference.
                                                  If set, this OpenVINO G2P fallback is used.
                                                  If unset (None), espeak-ng G2P fallback is used.
+                                                 For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                                 `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                                 omit this key instead of passing None because kwargs-to-AnyMap
+                                                 conversion rejects None values.
             :type phonemize_fallback_model_dir: str | None
         """
     @typing.overload
@@ -3560,8 +3568,8 @@ class Text2SpeechPipeline:
         """
             Generates speeches based on input texts
         
-            :param text(s): input text(s) for which to generate speech
-            :type text(s): str or list[str]
+            :param text_or_texts: input text(s) for which to generate speech
+            :type text_or_texts: str or list[str]
         
             :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                                      voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
@@ -3587,7 +3595,7 @@ class Text2SpeechPipeline:
             :type minlenratio: float
         
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-            :type minlenratio: float
+            :type maxlenratio: float
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
@@ -3607,6 +3615,10 @@ class Text2SpeechPipeline:
                                                  (graphemes to phonemes), before acoustic model inference.
                                                  If set, this OpenVINO G2P fallback is used.
                                                  If unset (None), espeak-ng G2P fallback is used.
+                                                 For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                                 `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                                 omit this key instead of passing None because kwargs-to-AnyMap
+                                                 conversion rejects None values.
             :type phonemize_fallback_model_dir: str | None
         """
     @typing.overload
@@ -3640,7 +3652,7 @@ class Text2SpeechPipeline:
             :type minlenratio: float
         
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-            :type minlenratio: float
+            :type maxlenratio: float
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
@@ -3660,6 +3672,10 @@ class Text2SpeechPipeline:
                                                  (graphemes to phonemes), before acoustic model inference.
                                                  If set, this OpenVINO G2P fallback is used.
                                                  If unset (None), espeak-ng G2P fallback is used.
+                                                 For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                                 `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                                 omit this key instead of passing None because kwargs-to-AnyMap
+                                                 conversion rejects None values.
             :type phonemize_fallback_model_dir: str | None
         """
     @typing.overload
@@ -3693,7 +3709,7 @@ class Text2SpeechPipeline:
             :type minlenratio: float
         
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-            :type minlenratio: float
+            :type maxlenratio: float
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
@@ -3713,6 +3729,10 @@ class Text2SpeechPipeline:
                                                  (graphemes to phonemes), before acoustic model inference.
                                                  If set, this OpenVINO G2P fallback is used.
                                                  If unset (None), espeak-ng G2P fallback is used.
+                                                 For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                                 `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                                 omit this key instead of passing None because kwargs-to-AnyMap
+                                                 conversion rejects None values.
             :type phonemize_fallback_model_dir: str | None
         """
     @typing.overload
@@ -3746,7 +3766,7 @@ class Text2SpeechPipeline:
             :type minlenratio: float
         
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-            :type minlenratio: float
+            :type maxlenratio: float
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
@@ -3766,6 +3786,10 @@ class Text2SpeechPipeline:
                                                  (graphemes to phonemes), before acoustic model inference.
                                                  If set, this OpenVINO G2P fallback is used.
                                                  If unset (None), espeak-ng G2P fallback is used.
+                                                 For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                                 `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                                 omit this key instead of passing None because kwargs-to-AnyMap
+                                                 conversion rejects None values.
             :type phonemize_fallback_model_dir: str | None
         """
     @typing.overload
@@ -3799,7 +3823,7 @@ class Text2SpeechPipeline:
             :type minlenratio: float
         
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-            :type minlenratio: float
+            :type maxlenratio: float
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
@@ -3819,6 +3843,10 @@ class Text2SpeechPipeline:
                                                  (graphemes to phonemes), before acoustic model inference.
                                                  If set, this OpenVINO G2P fallback is used.
                                                  If unset (None), espeak-ng G2P fallback is used.
+                                                 For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                                 `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                                 omit this key instead of passing None because kwargs-to-AnyMap
+                                                 conversion rejects None values.
             :type phonemize_fallback_model_dir: str | None
         """
     def get_generation_config(self) -> SpeechGenerationConfig:
@@ -3828,8 +3856,8 @@ class Text2SpeechPipeline:
         """
             Runs Kokoro text preprocessing and returns phoneme chunks used before acoustic inference.
         
-            :param text(s): input text(s) to phonemize
-            :type text(s): str or list[str]
+            :param text_or_texts: input text(s) to phonemize
+            :type text_or_texts: str or list[str]
         
             :param properties: speech generation parameters specified as properties
             :type properties: dict
@@ -3849,7 +3877,7 @@ class Text2SpeechPipeline:
             :type minlenratio: float
         
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-            :type minlenratio: float
+            :type maxlenratio: float
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
@@ -3869,6 +3897,10 @@ class Text2SpeechPipeline:
                                                  (graphemes to phonemes), before acoustic model inference.
                                                  If set, this OpenVINO G2P fallback is used.
                                                  If unset (None), espeak-ng G2P fallback is used.
+                                                 For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                                 `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                                 omit this key instead of passing None because kwargs-to-AnyMap
+                                                 conversion rejects None values.
             :type phonemize_fallback_model_dir: str | None
         """
     @typing.overload
@@ -3876,8 +3908,8 @@ class Text2SpeechPipeline:
         """
             Runs Kokoro text preprocessing and returns phoneme chunks used before acoustic inference.
         
-            :param text(s): input text(s) to phonemize
-            :type text(s): str or list[str]
+            :param text_or_texts: input text(s) to phonemize
+            :type text_or_texts: str or list[str]
         
             :param properties: speech generation parameters specified as properties
             :type properties: dict
@@ -3897,7 +3929,7 @@ class Text2SpeechPipeline:
             :type minlenratio: float
         
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-            :type minlenratio: float
+            :type maxlenratio: float
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
@@ -3917,6 +3949,10 @@ class Text2SpeechPipeline:
                                                  (graphemes to phonemes), before acoustic model inference.
                                                  If set, this OpenVINO G2P fallback is used.
                                                  If unset (None), espeak-ng G2P fallback is used.
+                                                 For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                                 `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                                 omit this key instead of passing None because kwargs-to-AnyMap
+                                                 conversion rejects None values.
             :type phonemize_fallback_model_dir: str | None
         """
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:
