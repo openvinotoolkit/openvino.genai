@@ -56,7 +56,7 @@ setup(
             "transformers[sentencepiece]==4.57.6",
             "sentence_transformers==5.2.2",
             "huggingface-hub==0.36.2",
-            "tqdm==4.67.1",
+            "tqdm==4.67.3",
             "optimum-intel[nncf,tests]==1.27.0",
         ],
     },
