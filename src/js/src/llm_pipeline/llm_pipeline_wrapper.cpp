@@ -11,7 +11,7 @@
 #include "include/tokenizer.hpp"
 
 struct TsfnContext {
-    TsfnContext(GenerateInputs inputs, std::shared_ptr<bool> is_generating)
+    TsfnContext(GenerateInputs inputs, std::shared_ptr<std::atomic<bool>> is_generating)
         : inputs(inputs),
           is_generating(is_generating) {};
     ~TsfnContext() {};
@@ -21,7 +21,7 @@ struct TsfnContext {
     std::optional<Napi::ThreadSafeFunction> streamer_tsfn;
 
     GenerateInputs inputs;
-    std::shared_ptr<bool> is_generating;
+    std::shared_ptr<std::atomic<bool>> is_generating;
     std::shared_ptr<ov::genai::LLMPipeline> pipe = nullptr;
     std::shared_ptr<ov::AnyMap> generation_config = nullptr;
     std::shared_ptr<ov::AnyMap> options = nullptr;
@@ -33,7 +33,7 @@ void performInferenceThread(TsfnContext* context) {
             try {
                 jsCallback.Call(
                     {Napi::Error::New(env, "performInferenceThread error. " + message).Value(), env.Null()});
-            } catch (std::exception& err) {
+            } catch (const std::exception& err) {
                 std::cerr << "The callback failed when attempting to return an error from performInferenceThread. "
                              "Details:\n"
                           << err.what() << std::endl;
@@ -73,7 +73,7 @@ void performInferenceThread(TsfnContext* context) {
                             } else {
                                 resultPromise.set_value(ov::genai::StreamingStatus::RUNNING);
                             }
-                        } catch (std::exception& err) {
+                        } catch (const std::exception& err) {
                             streamer_exceptions.push_back(err.what());
                             resultPromise.set_value(ov::genai::StreamingStatus::CANCEL);
                         }
@@ -100,8 +100,11 @@ void performInferenceThread(TsfnContext* context) {
                               }},
                    context->inputs);
 
-    } catch (std::exception& e) {
+    } catch (const std::exception& e) {
+        *context->is_generating = false;
         report_error(e.what());
+        finalize();
+        return;
     }
     // should be called right after inference to release the flag asap
     *context->is_generating = false;
@@ -124,7 +127,7 @@ void performInferenceThread(TsfnContext* context) {
                             env.Null(),                     // Error should be null in normal case
                             to_decoded_result(env, result)  // Return DecodedResults as the final result
                         });
-                    } catch (std::exception& err) {
+                    } catch (const std::exception& err) {
                         report_error("The final callback failed. Details:\n" + std::string(err.what()));
                     }
                 });
@@ -133,7 +136,7 @@ void performInferenceThread(TsfnContext* context) {
                 report_error("The final BlockingCall failed with status " + status);
             }
         }
-    } catch (std::exception& e) {
+    } catch (const std::exception& e) {
         report_error(e.what());
     }
     finalize();

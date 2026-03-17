@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <napi.h>
 
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -13,7 +14,7 @@ class VLMInitWorker : public AsyncWorker {
 public:
     VLMInitWorker(Function& callback,
                   std::shared_ptr<ov::genai::VLMPipeline>& pipe,
-                  std::shared_ptr<bool> is_initializing,
+                  std::shared_ptr<std::atomic<bool>> is_initializing,
                   const std::string model_path,
                   std::string device,
                   ov::AnyMap properties);
@@ -25,7 +26,7 @@ public:
 
 private:
     std::shared_ptr<ov::genai::VLMPipeline>& pipe;
-    std::shared_ptr<bool> is_initializing;
+    std::shared_ptr<std::atomic<bool>> is_initializing;
     std::string model_path;
     std::string device;
     ov::AnyMap properties;
