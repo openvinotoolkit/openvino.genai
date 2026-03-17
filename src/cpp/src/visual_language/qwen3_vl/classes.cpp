@@ -5,9 +5,11 @@
 #include "utils.hpp"
 #include "logger.hpp"
 
-#include "openvino/op/unsqueeze.hpp"
+#include "openvino/op/add.hpp"
 #include "openvino/op/multiply.hpp"
-#include "openvino/op/reduce_sum.hpp"
+#include "openvino/op/split.hpp"
+#include "openvino/op/squeeze.hpp"
+#include "openvino/op/unsqueeze.hpp"
 
 namespace ov::genai {
 
@@ -144,7 +146,7 @@ std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights
                 const float dh = h_idxs[hi] - static_cast<float>(h_floor);
                 const int64_t h_floor_row = h_floor * num_grid_per_side;
                 const int64_t h_ceil_row = h_ceil * num_grid_per_side;
-                
+
                 for (size_t wi = 0; wi < w; ++wi) {
                     const int64_t w_floor = static_cast<int64_t>(w_idxs[wi]);
                     const int64_t w_ceil = std::min(w_floor + 1, grid_max);
@@ -241,16 +243,17 @@ ov::Tensor create_visual_pos_masks(
     return result;
 }
 
-bool check_vision_preprocess_env() {
-    const char* env = std::getenv("VISION_PREPROCESS");
+bool check_vision_pos_embeds_env() {
+    const char* env = std::getenv("VISION_POS_EMBEDS");
     return !(env && std::string(env) == "CPP");
 }
 
 /**
- * @brief Patches vision_embeddings_pos model to perform weighted sum internally.
+ * @brief Patches vision_embeddings_pos model to perform weighted sum on device.
  *
  * Original: input [4, N] → model → [4, N, D] (then CPU weighted sum)
- * Patched:  input [4, N] + weights [4, N] → model → [4, N, D] → Unsqueeze+Multiply+ReduceSum → [N, D]
+ * Patched:  input [4, N] + weights [4, N] → model → [4, N, D]
+ *           → per-corner Multiply [N,D]×[N,1] → sequential Add → [N, D]
  */
 std::shared_ptr<ov::Model> patch_weighted_sum_into_pos_model(
     const std::shared_ptr<ov::Model>& model_org
@@ -259,29 +262,37 @@ std::shared_ptr<ov::Model> patch_weighted_sum_into_pos_model(
     OPENVINO_ASSERT(results.size() == 1u, "Expected single output from vision_embeddings_pos model");
     auto orig_output = results[0]->input_value(0); // [4, N, D]
 
-    // New parameter: weights [4, N]
     auto weights_param = std::make_shared<ov::op::v0::Parameter>(
         ov::element::f32, ov::PartialShape{4, -1});
     weights_param->set_friendly_name("weights");
     weights_param->output(0).get_tensor().set_names({"weights"});
 
-    // Unsqueeze weights: [4, N] → [4, N, 1]
-    auto axis_const = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {2});
-    auto unsqueezed = std::make_shared<ov::op::v0::Unsqueeze>(weights_param, axis_const);
+    constexpr size_t num_corners = 4;
+    auto axis0 = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {0});
+    auto sq_axis0 = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {0});
+    auto unsq_axis1 = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {1});
 
-    // Multiply: [4, N, D] * [4, N, 1] → [4, N, D]
-    auto multiplied = std::make_shared<ov::op::v1::Multiply>(orig_output, unsqueezed);
+    // Split pos_embeds [4,N,D] → 4×[N,D] and weights [4,N] → 4×[N,1]
+    auto split_e = std::make_shared<ov::op::v1::Split>(orig_output, axis0, num_corners);
+    auto split_w = std::make_shared<ov::op::v1::Split>(weights_param, axis0, num_corners);
 
-    // ReduceSum over axis 0: [4, N, D] → [N, D]
-    auto reduce_axis = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {0});
-    auto summed = std::make_shared<ov::op::v1::ReduceSum>(multiplied, reduce_axis, false);
+    // Per-corner: Squeeze → Multiply → sequential Add
+    ov::Output<ov::Node> summed;
+    for (size_t i = 0; i < num_corners; ++i) {
+        auto embed = std::make_shared<ov::op::v0::Squeeze>(split_e->output(i), sq_axis0);     // [N, D]
+        auto weight = std::make_shared<ov::op::v0::Unsqueeze>(
+            std::make_shared<ov::op::v0::Squeeze>(split_w->output(i), sq_axis0), unsq_axis1); // [N, 1]
+        auto weighted = std::make_shared<ov::op::v1::Multiply>(embed, weight);                // [N, D]
 
-    auto new_result = std::make_shared<ov::op::v0::Result>(summed);
+        summed = (i == 0) ? weighted->output(0)
+                          : std::make_shared<ov::op::v1::Add>(summed, weighted)->output(0);
+    }
 
     auto params = model_org->get_parameters();
     params.push_back(weights_param);
 
-    return std::make_shared<ov::Model>(ov::ResultVector{new_result}, params);
+    return std::make_shared<ov::Model>(
+        ov::ResultVector{std::make_shared<ov::op::v0::Result>(summed)}, params);
 }
 
 } // namespace
@@ -300,7 +311,7 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
 ) : InputsEmbedderQwen2VL(vlm_config, model_dir, device, device_config) {
     auto pos_model = utils::singleton_core().read_model(
         model_dir / "openvino_vision_embeddings_pos_model.xml");
-    m_use_patched_pos_model = check_vision_preprocess_env();
+    m_use_patched_pos_model = check_vision_pos_embeds_env();
     if (m_use_patched_pos_model) {
         pos_model = patch_weighted_sum_into_pos_model(pos_model);
     }
@@ -325,7 +336,7 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const auto& [pos_model_str, pos_weights] = 
         utils::get_model_weights_pair(models_map, "vision_embeddings_pos");
     auto pos_model = utils::singleton_core().read_model(pos_model_str, pos_weights);
-    m_use_patched_pos_model = check_vision_preprocess_env();
+    m_use_patched_pos_model = check_vision_pos_embeds_env();
     if (m_use_patched_pos_model) {
         pos_model = patch_weighted_sum_into_pos_model(pos_model);
     }
@@ -410,9 +421,9 @@ ov::Tensor InputsEmbedderQwen3VL::get_interpolated_pos_embeds(
 ) {
     const size_t num_grid_per_side = static_cast<size_t>(
         std::sqrt(static_cast<double>(m_vlm_config.vision_config_num_position_embeddings)));
-    
+
     auto [indices, weights] = get_position_interpolation_indices_and_weights(grids_thw, num_grid_per_side);
-    
+
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_vision_embeddings_pos.get());
     ov::InferRequest& vision_embeddings_pos = infer_request_guard.get();
 
