@@ -10,6 +10,7 @@
 #include "include/chat_history.hpp"
 #include "include/parser.hpp"
 #include "include/perf_metrics.hpp"
+#include "include/text2speech_pipeline/perf_metrics.hpp"
 #include "include/vlm_pipeline/perf_metrics.hpp"
 #include "include/whisper_pipeline/perf_metrics.hpp"
 
@@ -822,6 +823,18 @@ ov::genai::WhisperPerfMetrics& unwrap<ov::genai::WhisperPerfMetrics>(const Napi:
 }
 
 template <>
+ov::genai::SpeechGenerationPerfMetrics& unwrap<ov::genai::SpeechGenerationPerfMetrics>(const Napi::Env& env,
+                                                                                        const Napi::Value& value) {
+    const auto obj = value.As<Napi::Object>();
+    const auto& prototype = env.GetInstanceData<AddonData>()->text2speech_perf_metrics;
+    OPENVINO_ASSERT(prototype, "Invalid pointer to prototype.");
+    OPENVINO_ASSERT(obj.InstanceOf(prototype.Value().As<Napi::Function>()),
+                    "Passed argument is not of type Text2SpeechPerfMetrics");
+    const auto js_metrics = Napi::ObjectWrap<Text2SpeechPerfMetricsWrapper>::Unwrap(obj);
+    return js_metrics->get_value();
+}
+
+template <>
 ov::genai::ChatHistory& unwrap<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value) {
     OPENVINO_ASSERT(value.IsObject(), "Passed argument must be an object.");
     const auto obj = value.As<Napi::Object>();
@@ -1571,5 +1584,17 @@ Napi::Object to_whisper_decoded_result(const Napi::Env& env, const ov::genai::Wh
         }
         obj.Set("words", words);
     }
+    return obj;
+}
+
+Napi::Object to_text2speech_decoded_result(const Napi::Env& env,
+                                           const ov::genai::Text2SpeechDecodedResults& results) {
+    Napi::Object obj = Napi::Object::New(env);
+    Napi::Array speeches = Napi::Array::New(env, results.speeches.size());
+    for (size_t i = 0; i < results.speeches.size(); ++i) {
+        speeches[i] = cpp_to_js<ov::Tensor, Napi::Value>(env, results.speeches[i]);
+    }
+    obj.Set("speeches", speeches);
+    obj.Set("perfMetrics", Text2SpeechPerfMetricsWrapper::wrap(env, results.perf_metrics));
     return obj;
 }

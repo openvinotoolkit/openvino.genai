@@ -12,6 +12,8 @@
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
+#include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
+#include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/openvino.hpp"
 
@@ -150,6 +152,10 @@ ov::genai::VLMPerfMetrics& unwrap<ov::genai::VLMPerfMetrics>(const Napi::Env& en
 template <>
 ov::genai::WhisperPerfMetrics& unwrap<ov::genai::WhisperPerfMetrics>(const Napi::Env& env,
                                                                       const Napi::Value& value);
+
+template <>
+ov::genai::SpeechGenerationPerfMetrics& unwrap<ov::genai::SpeechGenerationPerfMetrics>(const Napi::Env& env,
+                                                                                        const Napi::Value& value);
 
 template <>
 ov::genai::ChatHistory& unwrap<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value);
@@ -299,3 +305,5 @@ Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedRes
 Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDecodedResults& results);
 
 Napi::Object to_whisper_decoded_result(const Napi::Env& env, const ov::genai::WhisperDecodedResults& results);
+
+Napi::Object to_text2speech_decoded_result(const Napi::Env& env, const ov::genai::Text2SpeechDecodedResults& results);
