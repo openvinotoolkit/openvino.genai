@@ -59,6 +59,10 @@ auto speech_generation_config_docstring = R"(
                                          (graphemes to phonemes), before acoustic model inference.
                                          If set, this OpenVINO G2P fallback is used.
                                          If unset (None), espeak-ng G2P fallback is used.
+                                         For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                         `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                         omit this key instead of passing None because kwargs-to-AnyMap
+                                         conversion rejects None values.
     :type phonemize_fallback_model_dir: str | None
 )";
 
