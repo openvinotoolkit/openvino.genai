@@ -23,6 +23,7 @@
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
 #include "lm_encoding.hpp"
+#include "lora/helper.hpp"
 
 using namespace ov::genai;
 
@@ -61,6 +62,8 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // position_ids[N, conversation length], beam_idx[N].
     // Output shape: logits[N, conversation length, vocab_size].
     ov::InferRequest m_language;
+    // LoRA adapter controller
+    std::optional<AdapterController> m_adapter_controller;
     // True if chat mode is activated to save conversation
     // history between generate() calls.
     bool m_is_chat_conversation = false;
@@ -93,7 +96,8 @@ public:
         } {
         m_is_npu = device.find("NPU") != std::string::npos;
 
-        auto properties_copy = properties;
+        auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+        auto& properties_copy = filtered_properties.fork();
         auto language_model_path = models_dir / "openvino_language_model.xml";
         auto language_model =  utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
@@ -110,6 +114,13 @@ public:
         auto lm_properties = device_properties.empty()
             ? properties_copy
             : utils::pop_or_default<ov::AnyMap>(device_properties, device, {});
+
+        if (m_generation_config.adapters) {
+            m_generation_config.adapters->set_tensor_name_prefix(
+                m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
+            );
+            m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
+        }
 
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
@@ -167,17 +178,33 @@ public:
         OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
 
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties);
+        auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+        auto& properties_copy = filtered_properties.fork();
+
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
 
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
         auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
+        auto language_model = utils::singleton_core().read_model(m_language_pair.first, m_language_pair.second);
+        auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
+
+        if (m_generation_config.adapters) {
+            m_generation_config.adapters->set_tensor_name_prefix(
+                m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
+            );
+            m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
+        }
+
         m_language = utils::singleton_core().compile_model(
-            m_language_pair.first, m_language_pair.second, device, properties
+            m_language_pair.first, m_language_pair.second, device, properties_copy
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
+
+        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        kv_cache_state.seq_length_axis = kv_pos.seq_len;
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
@@ -211,7 +238,7 @@ public:
         auto& raw_counters = perf_metrics.raw_metrics;
 
         if (!m_is_chat_conversation) {
-            m_language.reset_state();
+            reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
         }
 
@@ -278,6 +305,18 @@ public:
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
+            // Update m_history with pruned content if pruning is enabled
+            if (generation_config.pruning_ratio > 0) {
+                auto history_state = ChatHistoryInternalState::get_or_create(m_history, m_vision_registry);
+                size_t last_user_idx = history_state->get_last_user_message_index();
+
+                // Replace the original prompt with the pruned prompt after CDPruner
+                auto user_message = m_history[last_user_idx];
+                std::string original_prompt = user_message["content"].get_string();
+                user_message["content"] = m_inputs_embedder->get_last_pruned_prompt(original_prompt);
+                m_history[last_user_idx] = user_message;
+            }
+
             m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
 
             if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
@@ -358,6 +397,9 @@ public:
             intermediate_remote_tensor = false;
         }
 
+        m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
+                                                           generation_config.relevance_weight);
+
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
         auto processed_chat_data = chat_context.process(images, videos);
@@ -365,7 +407,7 @@ public:
         bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
 
         if (use_full_history) {
-            m_language.reset_state();
+            reset_language_state();
             m_language.get_tensor("attention_mask").set_shape({1, 0});
             m_inputs_embedder->start_chat("");
         }
@@ -403,6 +445,11 @@ public:
         );
 
         EncodedResults& encoded_result = generation_finish_info.results;
+        
+        // Update pruned content after generation (CDPruner has run during prepare_inputs_and_generate)
+        if (generation_config.pruning_ratio > 0) {
+            chat_context.apply_pruning_to_last_message();
+        }
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;
@@ -461,7 +508,7 @@ public:
         m_image_id = 0;
         m_video_id = 0;
         // Resetting state may be slow.
-        m_language.reset_state();
+        reset_language_state();
         m_language.get_tensor("attention_mask").set_shape({0, 0});
         // clear all chat history
         m_inputs_embedder->finish_chat();
@@ -498,6 +545,19 @@ public:
     }
 
 private:
+    void reset_language_state() {
+        if (m_adapter_controller) {
+            // Preserve adapter-owned state variables
+            for (auto& state : m_language.query_state()) {
+                if (!m_adapter_controller->has_state_name(state.get_name())) {
+                    state.reset();
+                }
+            }
+        } else {
+            m_language.reset_state();
+        }
+    }
+
     void setup_generation_config(GenerationConfig& generation_config) {
         // If stop_token_ids were not provided, take value from default m_generation_config
         if (generation_config.stop_token_ids.empty())
@@ -566,11 +626,15 @@ private:
         if (m_is_chat_conversation) {
             if (m_use_full_chat_history) {
                 kv_cache_state.reset_state();
-                m_language.reset_state();
+                reset_language_state();
                 m_language.get_tensor("attention_mask").set_shape({1, 0});
             } else {
-                utils::trim_kv_cache(m_language, kv_cache_state, std::nullopt);
+                utils::trim_kv_cache(m_language, kv_cache_state, m_adapter_controller);
             }
+        }
+
+        if (m_adapter_controller) {
+            m_adapter_controller->apply(m_language, generation_config.adapters);
         }
 
         std::vector<SequenceGroup::Ptr> requests;
@@ -605,6 +669,8 @@ private:
         std::optional<int64_t> rope_delta;
         std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
 
+        const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
+
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
         }
@@ -612,17 +678,15 @@ private:
         return ov::genai::get_lm_encoded_results(
             m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
             position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
-            use_intermediate_remote_tensor
+            use_intermediate_remote_tensor, lm_extra_inputs
         );
     }
 };
 
-// TODO: remove it when QWEN ticket-167316/GEMMA3 ticket-171180 is fixed
+// TODO: remove it when GEMMA3 ticket-171180 is fixed
 bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    return vlm_config.model_type == VLMModelType::QWEN2_VL ||
-           vlm_config.model_type == VLMModelType::QWEN2_5_VL ||
-           vlm_config.model_type == VLMModelType::GEMMA3;
+    return vlm_config.model_type == VLMModelType::GEMMA3;
 }
 
 VLMPipeline::VLMPipeline(

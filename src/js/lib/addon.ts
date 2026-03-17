@@ -20,8 +20,11 @@ import {
   StreamingStatus,
   VLMPipelineProperties,
   LLMPipelineProperties,
+  WhisperGenerationConfig,
+  WhisperPipelineProperties,
 } from "./utils.js";
-import { VLMPerfMetrics, PerfMetrics } from "./perfMetrics.js";
+import { VLMPerfMetrics, PerfMetrics, WhisperPerfMetrics } from "./perfMetrics.js";
+import type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -140,6 +143,34 @@ export interface LLMPipeline {
   setGenerationConfig(config: GenerationConfig): void;
 }
 
+export interface WhisperPipeline {
+  new (): WhisperPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: WhisperPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    rawSpeech: Float32Array | number[],
+    generationConfig: WhisperGenerationConfig,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    callback: (
+      err: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: WhisperPerfMetrics;
+        chunks?: WhisperDecodedResultChunk[];
+        words?: WhisperWordTiming[];
+      },
+    ) => void,
+  ): void;
+  getTokenizer(): ITokenizer;
+  getGenerationConfig(): Partial<WhisperGenerationConfig>;
+  setGenerationConfig(config: WhisperGenerationConfig): void;
+}
+
 export interface VLMPipeline {
   new (): VLMPipeline;
   init(
@@ -149,7 +180,7 @@ export interface VLMPipeline {
     callback: (err: Error | null) => void,
   ): void;
   generate(
-    prompt: string,
+    inputs: string | IChatHistory,
     images: Tensor[] | undefined,
     videos: Tensor[] | undefined,
     streamer: ((chunk: string) => StreamingStatus) | undefined,
@@ -218,6 +249,7 @@ interface OpenVINOGenAIAddon {
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
   Text2VideoPipeline: Text2VideoPipeline;
+  WhisperPipeline: WhisperPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
   ReasoningParser: IReasoningParser;
@@ -252,6 +284,7 @@ export const {
   LLMPipeline,
   VLMPipeline,
   Text2VideoPipeline,
+  WhisperPipeline,
   ChatHistory,
   Tokenizer,
   ReasoningParser,

@@ -70,6 +70,8 @@ public:
 
     bool has_token_type_ids() const;
 
+    const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
+
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
@@ -105,6 +107,9 @@ public:
 
     // adds currently generated text to chat history
     void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
+
+    // gets last pruned prompt after vision token pruning
+    std::string get_last_pruned_prompt(const std::string& original_prompt) const;
 
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
@@ -188,6 +193,8 @@ private:
 
         virtual bool has_token_type_ids() const;
 
+        virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
+
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
         virtual std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
@@ -245,6 +252,12 @@ private:
         virtual void start_chat(const std::string& system_message);
 
         virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
+
+        // Get last pruned prompt after vision token pruning.
+        virtual std::string get_last_pruned_prompt(const std::string& original_prompt) const {
+            OPENVINO_THROW_NOT_IMPLEMENTED(
+                "get_last_pruned_prompt() must be implemented by derived classes that support vision token pruning");
+        }
 
         virtual void finish_chat();
 
@@ -330,7 +343,10 @@ private:
          */
         std::optional<VisionTokenPruningProcessor::PruningResult> execute_pruning_pipeline(
             const PruningContext& context) {
-            return m_pruning_processor->execute(context, m_position_ids, m_kv_cache_state, m_prev_hist_length);
+            return m_pruning_processor->execute(context,
+                                                m_position_ids,
+                                                m_kv_cache_state,
+                                                m_prev_hist_length);
         }
     };
 
@@ -345,6 +361,7 @@ private:
     friend class InputsEmbedderPhi4MM;
     friend class InputsEmbedderQwen2VL;
     friend class InputsEmbedderQwen2_5_VL;
+    friend class InputsEmbedderQwen3VL;
     friend class InputsEmbedderGemma3;
 };
 

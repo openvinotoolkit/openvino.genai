@@ -24,7 +24,7 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 2. Performance: avoid `dynamic_cast` in hot paths (inference loops). Use `static_cast` or redesign if the type is known.
 3. Avoid copies: large data structures (like tensors) must be passed by reference or moved, not copied.
 4. Pass non-fundamental values by `const` reference wherever possible.
-5. Exceptions: use `OPENVINO_ASSERT(condition, ...)` for checks instead of `if` + `throw`.
+5. Exceptions: use `OPENVINO_ASSERT(condition, ...)` for checks instead of `if` + `OPENVINO_THROW(...)` or `throw`.
 6. Formatting & Safety:
    - No `using namespace std;`.
    - No `auto` for primitive types where it obscures readability.
@@ -40,7 +40,7 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 15. Assumptions on the user's behalf aren't allowed. For example, the implementation shouldn't adjust config values silently or with a warning; it should throw an exception instead.
 16. Samples:
     - Avoid adding new samples unless there is a strong, clearly justified reason.
-    - Keep command‑line arguments in samples minimal.
+    - Keep command‑line arguments in samples minimal. Prefer hardcoding values.
     - Ensure new samples have corresponding tests.
 
 ## Code Review Instructions for PRs
@@ -48,9 +48,10 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 When performing a code review on a Pull Request, additionally follow this protocol:
 
 1. PR description must be aligned with [./pull_request_template.md](./pull_request_template.md) and its checklist must be filled out. If not, request the author to update the description and checklist before proceeding with the review.
-2. PR description must be up to date and include all information about the changes.
-3. Include C++ Core Guidelines references in review comments.
-4. Python Bindings: if C++ APIs are changed, check if the corresponding Python pybind11 wrappers in src/python need updates.
-5. Documentation: ensure that any new public APIs have docstrings in C++ headers and Python bindings. Ensure that new public APIs have documentation updated in /site.
-6. Test Coverage: ensure that new features or changes have corresponding tests.
-7. Verify that the result of every newly introduced function is used in at least one call site except for `void` functions.
+2. If the documentation is updated, PR description must include a link to the corresponding documentation deployed on the fork.
+3. PR description must be up to date and include all information about the changes.
+4. Include C++ Core Guidelines references in review comments.
+5. Python Bindings: if C++ APIs are changed, check if the corresponding Python pybind11 wrappers in src/python need updates.
+6. Documentation: ensure that any new public APIs have docstrings in C++ headers and Python bindings. Ensure that new public APIs have documentation updated in /site.
+7. Test Coverage: ensure that new features or changes have corresponding tests.
+8. Verify that the result of every newly introduced function is used in at least one call site except for `void` functions.

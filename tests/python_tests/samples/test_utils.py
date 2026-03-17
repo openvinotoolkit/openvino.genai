@@ -8,12 +8,23 @@ def run_sample(
     command: list[str],
     input_data: str | None = None,
     env: dict[str, str] = os.environ,
+    cwd: str | None = None,
 ):
     logger.info(f"Running sample command: {' '.join(map(str, command))}")
     if input_data:
         logger.info(f"Input data: {input_data}")
     try:
-        result = subprocess.run(command, text=True, check=True, encoding='utf-8', env=env, input=input_data, stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+        result = subprocess.run(
+            command,
+            text=True,
+            check=True,
+            encoding="utf-8",
+            env=env,
+            input=input_data,
+            stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            cwd=cwd,
+        )
     except subprocess.CalledProcessError as error:
         logger.error(f"Sample returned {error.returncode}. Output:\n{error.output}")
         raise

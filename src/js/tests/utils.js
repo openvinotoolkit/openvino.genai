@@ -1,3 +1,6 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import { addon as ov } from "openvino-node";
 
 /**
@@ -55,4 +58,18 @@ export function createTestVideoTensor(frames = 4, height = 32, width = 32) {
   }
 
   return new ov.Tensor("u8", [frames, height, width, channels], data);
+}
+
+/**
+ * Creates raw speech buffer for tests.
+ * @param {Object} [options]
+ * @param {number} [options.durationSeconds=0.1] - Duration in seconds
+ * @param {number} [options.sampleRate=16000] - Sample rate in Hz
+ * @param {number} [options.fillValue=0] - Fill value (e.g. 0 for silence), normalized to [-1, 1]
+ * @returns {Float32Array}
+ */
+export function createTestRawSpeech(options = {}) {
+  const { durationSeconds = 0.1, sampleRate = 16000, fillValue = 0 } = options;
+  const length = Math.round(durationSeconds * sampleRate);
+  return new Float32Array(length).fill(fillValue);
 }

@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2026 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 /** Structure holding mean and standard deviation values. */
@@ -41,6 +41,14 @@ export type RawMetrics = {
 export type VLMRawMetrics = {
   /** Durations for embedding preparation in milliseconds. */
   prepareEmbeddingsDurations: number[];
+};
+
+/** Structure with raw performance metrics for Whisper generation. */
+export type WhisperRawMetrics = {
+  /** Durations for features extraction in milliseconds. */
+  featuresExtractionDurations: number[];
+  /** Durations for word-level timestamps processing in milliseconds. */
+  wordLevelTimestampsProcessingDurations: number[];
 };
 
 /**
@@ -148,3 +156,24 @@ export type VideoGenerationPerfMetrics = {
   /** VAE decoder inference duration in milliseconds. */
   vaeDecoderInferDuration: number;
 };
+
+/**
+ * Holds performance metrics for each Whisper generate call.
+ *
+ * WhisperPerfMetrics extends PerfMetrics with Whisper-specific metrics:
+ *  - Features extraction duration, ms
+ *  - Word-level timestamps processing duration, ms
+ */
+export interface WhisperPerfMetrics extends PerfMetrics {
+  /** Returns the mean and standard deviation of features extraction duration in milliseconds. */
+  getFeaturesExtractionDuration(): MeanStdPair;
+  /** Returns the mean and standard deviation of word-level timestamps processing duration in milliseconds. */
+  getWordLevelTimestampsProcessingDuration(): MeanStdPair;
+  /** Whisper-specific raw metrics */
+  whisperRawMetrics: WhisperRawMetrics;
+
+  /** Adds the metrics from another WhisperPerfMetrics object to this one.
+   * @returns The current WhisperPerfMetrics instance.
+   */
+  add(other: WhisperPerfMetrics): this;
+}

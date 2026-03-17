@@ -42,7 +42,7 @@ Node.js bindings currently support:
 
 ## Installation
 
-To install OpenVINO GenAI for Node.js, refer to the [Install Guide](https://docs.openvino.ai/2025/get-started/install-openvino.html).
+To install OpenVINO GenAI for Node.js, refer to the [Install Guide](https://docs.openvino.ai/2026/get-started/install-openvino.html).
 
 ## Quick Start
 
