@@ -5,11 +5,17 @@
 #include "utils.hpp"
 #include "logger.hpp"
 
+#include <cstdlib>
+
 #include "openvino/op/add.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/split.hpp"
 #include "openvino/op/squeeze.hpp"
 #include "openvino/op/unsqueeze.hpp"
+
+#include "openvino/op/constant.hpp"
+#include "openvino/op/parameter.hpp"
+#include "openvino/op/result.hpp"
 
 namespace ov::genai {
 
@@ -144,8 +150,8 @@ std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights
                 const int64_t h_floor = static_cast<int64_t>(h_idxs[hi]);
                 const int64_t h_ceil = std::min(h_floor + 1, grid_max);
                 const float dh = h_idxs[hi] - static_cast<float>(h_floor);
-                const int64_t h_floor_row = h_floor * num_grid_per_side;
-                const int64_t h_ceil_row = h_ceil * num_grid_per_side;
+                const int64_t h_floor_row = h_floor * static_cast<int64_t>(num_grid_per_side);
+                const int64_t h_ceil_row = h_ceil * static_cast<int64_t>(num_grid_per_side);
 
                 for (size_t wi = 0; wi < w; ++wi) {
                     const int64_t w_floor = static_cast<int64_t>(w_idxs[wi]);
@@ -168,6 +174,8 @@ std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights
             }
         }
     }
+    OPENVINO_ASSERT(pos_offset == total_positions,
+        "Position offset mismatch: expected ", total_positions, ", got ", pos_offset);
 
     return {indices, weights};
 }
@@ -200,6 +208,10 @@ ov::Tensor permute_with_spatial_merge(
         const size_t hw = h * w;
         const size_t merge_h = h / spatial_merge_size;
         const size_t merge_w = w / spatial_merge_size;
+        OPENVINO_ASSERT(
+            h % spatial_merge_size == 0 && w % spatial_merge_size == 0,
+            "permute_with_spatial_merge expects h and w divisible by spatial_merge_size. "
+            "Got h=", h, ", w=", w, ", spatial_merge_size=", spatial_merge_size);
 
         for (size_t ti = 0; ti < t; ++ti) {
             for (size_t mhi = 0; mhi < merge_h; ++mhi) {
@@ -221,6 +233,10 @@ ov::Tensor permute_with_spatial_merge(
         }
         src_offset += t * hw;
     }
+    OPENVINO_ASSERT(
+        dst_offset == num_positions,
+        "permute_with_spatial_merge wrote ", dst_offset,
+        " positions, but num_positions is ", num_positions);
     return result;
 }
 
@@ -308,10 +324,10 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap device_config
-) : InputsEmbedderQwen2VL(vlm_config, model_dir, device, device_config) {
+) : InputsEmbedderQwen2VL(vlm_config, model_dir, device, device_config),
+    m_use_patched_pos_model(check_vision_pos_embeds_env()) {
     auto pos_model = utils::singleton_core().read_model(
         model_dir / "openvino_vision_embeddings_pos_model.xml");
-    m_use_patched_pos_model = check_vision_pos_embeds_env();
     if (m_use_patched_pos_model) {
         pos_model = patch_weighted_sum_into_pos_model(pos_model);
     }
@@ -332,11 +348,11 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config
-) : InputsEmbedderQwen2VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+) : InputsEmbedderQwen2VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config),
+    m_use_patched_pos_model(check_vision_pos_embeds_env()) {
     const auto& [pos_model_str, pos_weights] = 
         utils::get_model_weights_pair(models_map, "vision_embeddings_pos");
     auto pos_model = utils::singleton_core().read_model(pos_model_str, pos_weights);
-    m_use_patched_pos_model = check_vision_pos_embeds_env();
     if (m_use_patched_pos_model) {
         pos_model = patch_weighted_sum_into_pos_model(pos_model);
     }
@@ -431,7 +447,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_interpolated_pos_embeds(
 
     ov::Tensor weighted_sum;
     if (m_use_patched_pos_model) {
-        // Patched model: pass weights, get [N, D] directly from GPU
+        // Patched model: pass weights, get [N, D] directly on device
         vision_embeddings_pos.set_tensor("weights", weights);
         vision_embeddings_pos.infer();
         weighted_sum = vision_embeddings_pos.get_output_tensor();

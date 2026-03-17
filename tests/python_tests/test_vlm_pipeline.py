@@ -2931,3 +2931,42 @@ def test_video_metadata_sampling_continuous_batching(
             outputs_add_request_api.append(tokenizer.decode(result.generated_ids))
 
     _compare_outputs_for_video_sampling(*outputs_add_request_api)
+
+
+@pytest.mark.skipif(
+    is_transformers_version("<", "4.57.0"),
+    reason="Qwen3-VL requires transformers >= 4.57.0",
+)
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
+def test_vision_pos_embeds_modes_equivalence(cat_tensor, backend):
+    """Test that VISION_POS_EMBEDS=CPP (CPU fallback) and default (patched model)
+    produce identical results for Qwen3-VL."""
+    model_id = "optimum-intel-internal-testing/tiny-random-qwen3-vl"
+    model_path = _get_ov_model(model_id)
+
+    # Default mode: patched model (device-side weighted sum)
+    prev_val = os.environ.pop("VISION_POS_EMBEDS", None)
+    try:
+        ov_pipe_default = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
+        gen_config_default = _setup_generation_config(ov_pipe_default, max_new_tokens=20, do_sample=False)
+        result_default = ov_pipe_default.generate(PROMPTS[0], images=[cat_tensor], generation_config=gen_config_default)
+    finally:
+        if prev_val is not None:
+            os.environ["VISION_POS_EMBEDS"] = prev_val
+
+    # CPP mode: CPU fallback weighted sum
+    os.environ["VISION_POS_EMBEDS"] = "CPP"
+    try:
+        ov_pipe_cpp = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
+        gen_config_cpp = _setup_generation_config(ov_pipe_cpp, max_new_tokens=20, do_sample=False)
+        result_cpp = ov_pipe_cpp.generate(PROMPTS[0], images=[cat_tensor], generation_config=gen_config_cpp)
+    finally:
+        os.environ.pop("VISION_POS_EMBEDS", None)
+        if prev_val is not None:
+            os.environ["VISION_POS_EMBEDS"] = prev_val
+
+    assert result_default.texts[0] == result_cpp.texts[0], (
+        f"VISION_POS_EMBEDS modes produced different results.\n"
+        f"Default (patched model): '{result_default.texts[0]}'\n"
+        f"CPP (CPU fallback):      '{result_cpp.texts[0]}'"
+    )
