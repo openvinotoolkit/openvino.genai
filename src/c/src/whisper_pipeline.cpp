@@ -197,8 +197,10 @@ ov_status_e ov_genai_whisper_decoded_results_get_chunks_count(const ov_genai_whi
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        if (results->object->chunks.has_value()) {
+        if (results->object->chunks.has_value() && !results->object->chunks->empty()) {
             *count = results->object->chunks->size();
+        } else if (results->object->words.has_value()) {
+            *count = results->object->words->size();
         } else {
             *count = 0;
         }
@@ -215,16 +217,27 @@ ov_status_e ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        if (!results->object->chunks.has_value()) {
-            return ov_status_e::NOT_FOUND;
-        }
-        if (index >= results->object->chunks->size()) {
-            return ov_status_e::OUT_OF_BOUNDS;
-        }
-
         std::unique_ptr<ov_genai_whisper_decoded_result_chunk> _chunk =
             std::make_unique<ov_genai_whisper_decoded_result_chunk>();
-        _chunk->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>(results->object->chunks->at(index));
+
+        if (results->object->chunks.has_value() && !results->object->chunks->empty()) {
+            if (index >= results->object->chunks->size()) {
+                return ov_status_e::OUT_OF_BOUNDS;
+            }
+            _chunk->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>(results->object->chunks->at(index));
+        } else if (results->object->words.has_value()) {
+            if (index >= results->object->words->size()) {
+                return ov_status_e::OUT_OF_BOUNDS;
+            }
+            const auto& word_data = results->object->words->at(index);
+            _chunk->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>();
+            _chunk->object->start_ts = word_data.start_ts;
+            _chunk->object->end_ts = word_data.end_ts;
+            _chunk->object->text = word_data.word;
+        } else {
+            return ov_status_e::NOT_FOUND;
+        }
+
         *chunk = _chunk.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
