@@ -24,8 +24,10 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 Then, run the export with Optimum CLI:
 
 ```sh
-optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --weight-format fp32 ltx_video_ov
+optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --weight-format fp32 ltx_video_ov/FP32
 ```
+
+> **Note:** `--weight-format fp32` is required for LoRA adapter support. For basic video generation without LoRA, `--weight-format int8` produces a smaller model.
 
 Alternatively, do it in Python code:
 
@@ -61,7 +63,7 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 
   Example:
   ```bash
-  ./text2video ltx_video_ov "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
+  ./text2video ltx_video_ov/FP32 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
   ```
 
 ### LoRA Text to Video Sample (`lora_text2video.cpp`)
@@ -85,7 +87,7 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 
   Example:
   ```bash
-  ./lora_text2video ltx_video_ov "In the style of Pixel, the video shifts to a majestic castle under a starry sky." ltx_pixel_pytorch_lora_weights.safetensors 3.0
+  ./lora_text2video ltx_video_ov/FP32 "In the style of Pixel, the video shifts to a majestic castle under a starry sky." ltx_pixel_pytorch_lora_weights.safetensors 3.0
   ```
 
 The LoRA text-to-video sample will generate two video files, `lora_video.avi` and `baseline_video.avi`, in the current directory.
