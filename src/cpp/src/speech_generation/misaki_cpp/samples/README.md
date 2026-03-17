@@ -14,11 +14,6 @@ Small API examples for the C++ Misaki port.
   - Installs `set_fallback_hook(...)`
   - Demonstrates fallback resolution for unknown words
 
-- `consumer/`
-  - Tiny standalone CMake consumer using `find_package(MisakiCpp CONFIG REQUIRED)`
-  - Useful reference for integrating the installed package into another project
-  - Includes `CMakePresets.json` for one-command configure/build
-
 ## Build and run
 
 From `cpp/`:

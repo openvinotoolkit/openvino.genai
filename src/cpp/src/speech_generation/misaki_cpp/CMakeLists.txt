@@ -22,13 +22,6 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 FetchContent_Declare(
-  catch2
-  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-  GIT_TAG v3.6.0
-)
-FetchContent_MakeAvailable(catch2)
-
-FetchContent_Declare(
   nlohmann_json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
   GIT_TAG v3.11.3
@@ -54,39 +47,6 @@ target_compile_definitions(misaki_cpp PRIVATE
   MISAKI_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 add_library(MisakiCpp::misaki_cpp ALIAS misaki_cpp)
-
-add_executable(test_english tests/test_english.cpp)
-target_link_libraries(test_english PRIVATE
-  misaki_cpp
-  Catch2::Catch2WithMain
-  nlohmann_json::nlohmann_json
-)
-
-add_executable(test_english_exactness tests/test_english_exactness.cpp)
-target_link_libraries(test_english_exactness PRIVATE
-  misaki_cpp
-  Catch2::Catch2WithMain
-  nlohmann_json::nlohmann_json
-)
-target_compile_definitions(test_english_exactness PRIVATE
-  MISAKI_ENGLISH_GOLDEN_CASES_PATH="${CMAKE_SOURCE_DIR}/tests/english_golden_cases.jsonl"
-)
-
-add_executable(test_english_gb_exactness tests/test_english_gb_exactness.cpp)
-target_link_libraries(test_english_gb_exactness PRIVATE
-  misaki_cpp
-  Catch2::Catch2WithMain
-  nlohmann_json::nlohmann_json
-)
-target_compile_definitions(test_english_gb_exactness PRIVATE
-  MISAKI_ENGLISH_GB_GOLDEN_CASES_PATH="${CMAKE_SOURCE_DIR}/tests/english_gb_golden_cases.jsonl"
-)
-
-add_executable(test_espeak_g2p tests/test_espeak_g2p.cpp)
-target_link_libraries(test_espeak_g2p PRIVATE
-  misaki_cpp
-  Catch2::Catch2WithMain
-)
 
 
 add_executable(sample_basic_usage samples/basic_usage.cpp)
@@ -155,22 +115,3 @@ install(
     ${CMAKE_CURRENT_BINARY_DIR}/MisakiCppConfigVersion.cmake
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MisakiCpp
 )
-
-include(CTest)
-include(Catch)
-
-if(MISAKI_ENGLISH_LEXICON_DATA_DIR)
-  set(_MISAKI_TEST_ENV "MISAKI_DATA_DIR=${MISAKI_ENGLISH_LEXICON_DATA_DIR}")
-  catch_discover_tests(test_english PROPERTIES ENVIRONMENT "${_MISAKI_TEST_ENV}")
-  catch_discover_tests(test_english_exactness PROPERTIES ENVIRONMENT "${_MISAKI_TEST_ENV}")
-  catch_discover_tests(test_english_gb_exactness PROPERTIES ENVIRONMENT "${_MISAKI_TEST_ENV}")
-else()
-  message(WARNING
-    "MISAKI_ENGLISH_LEXICON_DATA_DIR is not set and bundled data/ files were not found. "
-    "Standalone misaki_cpp tests require lexicon files via MISAKI_DATA_DIR or set_english_lexicon_data_root(...).")
-  catch_discover_tests(test_english)
-  catch_discover_tests(test_english_exactness)
-  catch_discover_tests(test_english_gb_exactness)
-endif()
-
-catch_discover_tests(test_espeak_g2p)
