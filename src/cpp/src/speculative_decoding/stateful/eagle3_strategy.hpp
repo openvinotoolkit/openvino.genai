@@ -22,7 +22,7 @@ namespace genai {
 
 /// @brief Bundled model input tensors produced by Eagle3InputBuilder.
 struct InputTensors {
-    ov::Tensor input_ids;        ///< Token ids          [1, seq_len]
+    ov::Tensor input_ids;        ///< Token ids           [1, seq_len]
     ov::Tensor attention_mask;   ///< Attention mask      [1, attn_len]
     ov::Tensor position_ids;     ///< Position ids        [1, seq_len]
     ov::Tensor eagle_tree_mask;  ///< Tree attention mask [1, 1, seq_len, attn_len] or [1,1,1,1]
@@ -65,17 +65,25 @@ struct ValidationResult {
 /// @brief Constructs model input tensors for each Eagle3 inference phase.
 ///
 /// Each method reads sequence state (prompt ids, generated ids, EagleMetaData)
-/// and produces a complete InputTensors bundle.  The builder is stateless; it
-/// holds a non-owning reference to the active SequenceGroup.
+/// and produces a complete InputTensors bundle.
 class Eagle3InputBuilder {
 public:
     explicit Eagle3InputBuilder(const SequenceGroup::Ptr& sequence_group) : m_sequence_group(sequence_group) {}
 
-    /// @brief Builds inputs for TARGET_PREFILL and DRAFT_INITIAL phases (causal, no tree mask).
-    InputTensors build_prefill_inputs(size_t input_token_count) const;
+    /// @brief Builds inputs for TARGET_PREFILL phase.
+    ///
+    /// Precondition: generated_ids is empty (called immediately after initialize_sequence).
+    /// Produces causal inputs covering the full prompt; no tree attention mask.
+    InputTensors build_target_prefill_inputs() const;
+
+    /// @brief Builds inputs for the first draft pass of each speculative window.
+    ///
+    /// Uses target hidden states instead of the draft model's own hidden states.
+    /// Submits the last input_token_count tokens from the draft sequence; no tree attention mask.
+    InputTensors build_draft_initial_inputs(size_t input_token_count) const;
 
     /// @brief Builds inputs for DRAFT_ITERATION: flat-concatenated branch tokens across all sequences.
-    /// @param past_accepted_token_count Tokens already in the draft KV cache (history + root).
+    /// @param past_accepted_token_count Tokens already in the draft KV cache.
     InputTensors build_draft_iteration_inputs(size_t past_accepted_token_count) const;
 
     /// @brief Builds inputs for TARGET_VALIDATION: all N+1 tree candidates with tree attention mask.
@@ -182,7 +190,7 @@ public:
 
     /// @brief Returns raw logits tensor from model output.
     /// On NPU, the output length is a fixed NPUW_LLM_MAX_GENERATION_TOKEN_LEN (possibly
-    /// aligned) which may differ from input length.  Useful positions are always at the tail.
+    /// aligned) which may differ from input length. Useful positions are always at the tail.
     ov::Tensor get_logits() const;
 
     /// @brief Extracts the hidden features from the model output.
@@ -220,10 +228,10 @@ protected:
     /// @param is_validation    Whether the sampler should run in tree-validation mode.
     void invoke_sampler(const ov::Tensor& logits, size_t input_token_count, size_t sample_count, bool is_validation);
 
-    /// @brief Samples tokens in draft mode (non-validation). Collects the last generated
-    ///        token from each running sequence after the sampler has run.
+    /// @brief Samples the next token for each running sequence (non-validation mode).
+    ///        Collects the last generated token from each running sequence after the sampler has run.
     /// @return One token per running sequence.
-    std::vector<int64_t> sample_draft_tokens(const ov::Tensor& logits, size_t input_token_count);
+    std::vector<int64_t> sample_next_tokens(const ov::Tensor& logits, size_t input_token_count);
 
     /// @brief Samples tokens in validation mode. The sampler's validate_tree_candidates
     ///        rewrites generated_ids; this method extracts the accepted + bonus tokens.
@@ -279,17 +287,13 @@ public:
 };
 
 // ---------------------------------------------------------------------------
-// Eagle3DraftWrapper — draft model with pre-allocated buffers
+// Eagle3DraftWrapper — draft model
 // ---------------------------------------------------------------------------
 
 /**
  * @brief Draft model wrapper for Eagle3.
  *
  * Generates candidate tokens using target or internal hidden states.
- * Uses tokens[1:] per Eagle3 specification.
- *
- * Pre-allocates reusable tensor buffers for the DRAFT_ITERATION hot path
- * to avoid repeated heap allocation during the speculative loop.
  */
 class Eagle3DraftWrapper : public Eagle3InferWrapperBase {
 public:
