@@ -271,9 +271,9 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
         )
-    if "xf2022/tiny-videochat-flash-qwen" == model_id and is_optimum_intel_version_4_videochat_flash_qwen():
+    if "xf2022/tiny-videochat-flash-qwen" == model_id and not is_optimum_intel_version_4_videochat_flash_qwen():
         pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Supported version is 1.27.0.dev0+70056d0."
+            "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported version is 1.27.0.dev0+70056d0."
         )
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
