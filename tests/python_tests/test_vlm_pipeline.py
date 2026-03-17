@@ -122,7 +122,7 @@ VIDEO_MODEL_IDS = [
     "optimum-intel-internal-testing/tiny-random-llava-next-video",
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
-    "xf2022/tiny-videochat-flash-qwen",
+    "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
 ]
 
@@ -151,7 +151,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next": lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
-    "xf2022/tiny-videochat-flash-qwen": lambda idx: f"<|image_{idx + 1}|>\n",
+    "optimum-intel-internal-testing/tiny-videochat-flash-qwen": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
@@ -167,7 +167,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
-    "xf2022/tiny-videochat-flash-qwen": lambda idx: f"<|image_{idx + 1}|>\n",
+    "optimum-intel-internal-testing/tiny-videochat-flash-qwen": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
 }
 
@@ -187,7 +187,7 @@ RESOLUTION_BY_VIDEO_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 32,
 }
 
-VIDEOCHAT_FLASH_QWEN_MODEL_ID = "xf2022/tiny-videochat-flash-qwen"
+VIDEOCHAT_FLASH_QWEN_MODEL_ID = "optimum-intel-internal-testing/tiny-videochat-flash-qwen"
 
 DEFAULT_RESOLUTION = 336
 
@@ -212,7 +212,7 @@ TEST_IMAGE_URLS = {
 
 NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-internvl2",
-    "xf2022/tiny-videochat-flash-qwen",
+    "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
 }
 
 DEFAULT_NPUW_PROPERTIES = {
@@ -271,7 +271,7 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
         )
-    if "xf2022/tiny-videochat-flash-qwen" == model_id and not is_optimum_intel_version_4_videochat_flash_qwen():
+    if "optimum-intel-internal-testing/tiny-videochat-flash-qwen" == model_id and not is_optimum_intel_version_4_videochat_flash_qwen():
         pytest.skip(
             "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported version is 1.27.0.dev0+70056d0."
         )
@@ -308,7 +308,7 @@ def _get_ov_model(model_id: str) -> str:
                     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
-                    "xf2022/tiny-videochat-flash-qwen",
+                    "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
                 },
             )
         )
