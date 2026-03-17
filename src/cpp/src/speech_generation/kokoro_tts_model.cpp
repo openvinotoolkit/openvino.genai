@@ -45,7 +45,11 @@ static inline void dump_compiled_model_inputs_outputs(const ov::CompiledModel& m
         const ov::PartialShape shape = input.get_partial_shape();
         const ov::Layout layout = ov::layout::get_layout(input);
 
-        GENAI_INFO("\t\t{}, {}, {}, {}", name, type, shape, layout.to_string());
+        std::ostringstream log_message;
+        log_message << "\t\t" << name << ", " << type << ", " << shape << ", " << layout.to_string();
+        const std::string log_line = log_message.str();
+
+        GENAI_INFO("%s", log_line.c_str());
     }
 
     GENAI_INFO("\tOutputs:");
@@ -55,7 +59,11 @@ static inline void dump_compiled_model_inputs_outputs(const ov::CompiledModel& m
         const ov::PartialShape shape = output.get_partial_shape();
         const ov::Layout layout = ov::layout::get_layout(output);
 
-        GENAI_INFO("\t\t{}, {}, {}, {}", name, type, shape, layout.to_string());
+        std::ostringstream log_message;
+        log_message << "\t\t" << name << ", " << type << ", " << shape << ", " << layout.to_string();
+        const std::string log_line = log_message.str();
+
+        GENAI_INFO("%s", log_line.c_str());
     }
 }
 class OpenVINOFallbackNetwork {
