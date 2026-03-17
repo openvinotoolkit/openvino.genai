@@ -50,10 +50,18 @@ std::tuple<ov::Output<ov::Node>,
         const ov::Output<ov::Node>& batch_dim,
         const ov::Output<ov::Node>& hidden_dim,
         const std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>& cos_sin_cached,
-        const std::shared_ptr<ov::Node>& output_shape);
+        const std::shared_ptr<ov::Node>& output_shape,
+        bool is_vlm = false,
+        const std::vector<int64_t>& mrope_section = {});
 
 ov::Output<ov::Node> init_rope(
     int64_t head_dim,
     int64_t max_position_embeddings = 2048,
     float base = 10000.0f,
     float scaling_factor = 1.0f);
+
+ov::Output<ov::Node> inject_visual_embeds(
+    const ov::Output<ov::Node>& hidden_states,
+    const ov::Output<ov::Node>& deepstack_visual_embeds,
+    const ov::Output<ov::Node>& visual_pos_masks,
+    int64_t layer_idx);

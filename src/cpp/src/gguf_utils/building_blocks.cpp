@@ -18,6 +18,18 @@ using namespace ov;
 using namespace ov::op::v13;
 using namespace ov::op;
 
+std::pair<Output<ov::Node>, Output<ov::Node>> rope_emb(
+    const Output<ov::Node>& x,
+    const Output<ov::Node>& rope_const,
+    const Output<ov::Node>& position_ids,
+    const Output<ov::Node>& batch_dim,
+    bool is_vlm = false,
+    const std::vector<int64_t>& mrope_section = {});
+
+static std::vector<Output<Node>> split_mrope_freqs(
+    const Output<Node>& freqs_transposed,
+    const std::vector<int64_t>& mrope_section);
+
 static const size_t GGML_QUANTIZATION_GROUP_SIZE = 32;
 
 Output<ov::Node> causal_mask(
@@ -208,53 +220,180 @@ std::tuple<Output<ov::Node>, Output<ov::Node>, std::pair<Output<ov::Node>, Outpu
     return {q_rot, k_rot, {cos_unsqueezed, sin_unsqueezed}};
 }
 
+static std::vector<Output<Node>> split_mrope_freqs(
+    const Output<Node>& freqs_transposed,
+    const std::vector<int64_t>& mrope_section) {
+
+    OPENVINO_ASSERT(!mrope_section.empty(), "[rope_emb] mrope_section must not be empty.");
+
+    std::vector<Output<Node>> split_inputs;
+    auto axis0 = std::make_shared<v0::Constant>(element::i64, Shape{}, 0);
+
+    for (size_t i = 0; i < mrope_section.size(); ++i) {
+        auto idx = std::make_shared<v0::Constant>(element::i64, Shape{}, static_cast<int64_t>(i));
+        split_inputs.push_back(std::make_shared<v8::Gather>(freqs_transposed, idx, axis0));
+    }
+
+    auto emb_half = std::make_shared<ov::opset13::Concat>(
+        NodeVector{
+            split_inputs[0].get_node_shared_ptr(),
+            split_inputs[1].get_node_shared_ptr(),
+            split_inputs[2].get_node_shared_ptr()
+        },
+        -1);
+
+    auto emb_full = std::make_shared<ov::opset13::Concat>(
+        NodeVector{emb_half, emb_half},
+        -1);
+
+    std::vector<int64_t> split_sizes;
+    for (auto v : mrope_section) {
+        split_sizes.push_back(v * 2);
+    }
+
+    std::vector<Output<Node>> pieces;
+    int64_t start = 0;
+    auto steps = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
+    auto axes_last = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{2});
+
+    for (size_t i = 0; i < split_sizes.size(); ++i) {
+        auto starts = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{start});
+        auto ends = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{start + split_sizes[i]});
+        pieces.push_back(std::make_shared<ov::opset13::Slice>(emb_full, starts, ends, steps, axes_last));
+        start += split_sizes[i];
+    }
+
+    return pieces;
+}
+
+ov::Output<ov::Node> inject_visual_embeds(
+    const ov::Output<ov::Node>& hidden_states,
+    const ov::Output<ov::Node>& deepstack_visual_embeds,
+    const ov::Output<ov::Node>& visual_pos_masks,
+    int64_t layer_idx) {
+
+    auto non_zero = std::make_shared<v3::NonZero>(visual_pos_masks, element::i64);
+    auto transpose_order = std::make_shared<v0::Constant>(
+        element::i32, Shape{2}, std::vector<int32_t>{1, 0});
+    auto indices = std::make_shared<v1::Transpose>(non_zero, transpose_order);
+
+    auto hidden_selected = std::make_shared<v8::GatherND>(hidden_states, indices, 0);
+
+    auto gather_axis = std::make_shared<v0::Constant>(element::i64, Shape{}, 0);
+    auto gather_idx = std::make_shared<v0::Constant>(element::i64, Shape{}, layer_idx);
+    auto visual_selected = std::make_shared<v8::Gather>(deepstack_visual_embeds, gather_idx, gather_axis);
+
+    auto added = std::make_shared<v1::Add>(hidden_selected, visual_selected, AutoBroadcastType::NUMPY);
+
+    return std::make_shared<v15::ScatterNDUpdate>(hidden_states, indices, added);
+}
+
 // Generate Rotary Position Embedding components
 std::pair<Output<ov::Node>, Output<ov::Node>> rope_emb(
     const Output<ov::Node>& x,
     const Output<ov::Node>& rope_const,
     const Output<ov::Node>& position_ids,
-    const Output<ov::Node>& batch_dim) {
-    
-    // Process position IDs
-    auto position_expanded = std::make_shared<v0::Convert>(
-        std::make_shared<v0::Unsqueeze>(position_ids, 
-            std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 1)),
-        element::f32
-    );
+    const Output<ov::Node>& batch_dim,
+    bool is_vlm,
+    const std::vector<int64_t>& mrope_section) {
 
-    // Broadcast rope constants
+    if (!is_vlm) {
+        // Process position IDs
+        auto position_expanded = std::make_shared<v0::Convert>(
+            std::make_shared<v0::Unsqueeze>(position_ids, 
+                std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 1)),
+            element::f32
+        );
+
+        // Broadcast rope constants
+        auto target_shape = std::make_shared<v0::Concat>(OutputVector{
+            batch_dim,
+            std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1),
+            std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1)
+        }, 0);
+
+        auto inv_freq_expanded = std::make_shared<v3::Broadcast>(
+            rope_const, target_shape, BroadcastType::BIDIRECTIONAL
+        );
+
+        // Compute frequencies
+        auto freqs = std::make_shared<v0::MatMul>(
+            inv_freq_expanded, position_expanded,
+            false, false
+        );
+
+        auto freqs_transposed = std::make_shared<v1::Transpose>(
+            freqs, 
+            std::make_shared<ov::op::v0::Constant>(element::i32, Shape{3}, std::vector<int32_t>{0, 2, 1})
+        );
+
+        // Concatenate and compute trigonometric values
+        auto emb = std::make_shared<ov::opset13::Concat>(
+            ov::NodeVector{freqs_transposed, freqs_transposed}, -1
+        );
+
+        return {
+            std::make_shared<ov::opset13::Cos>(emb),
+            std::make_shared<ov::opset13::Sin>(emb)
+        };
+    }
+
+    OPENVINO_ASSERT(!mrope_section.empty(), "[rope_emb] mrope_section must not be empty for VLM mode.");
+
+    auto rope_shape = std::make_shared<v3::ShapeOf>(rope_const, element::i64);
+    auto rope_dim_idx = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
+    auto axis0 = std::make_shared<v0::Constant>(element::i64, Shape{}, 0);
+    auto rope_half_dim = std::make_shared<v8::Gather>(rope_shape, rope_dim_idx, axis0);
+
+    auto pos_shape = std::make_shared<v3::ShapeOf>(position_ids, element::i64);
+    auto pos_axis0 = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
+    auto first_dim = std::make_shared<v8::Gather>(pos_shape, pos_axis0, axis0);
+
+    auto rope_const_4d = std::make_shared<v0::Unsqueeze>(
+        rope_const,
+        std::make_shared<v0::Constant>(element::i64, Shape{}, 0));
+
     auto target_shape = std::make_shared<v0::Concat>(OutputVector{
+        first_dim,
         batch_dim,
-        std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1),
+        rope_half_dim,
         std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, 1)
     }, 0);
 
     auto inv_freq_expanded = std::make_shared<v3::Broadcast>(
-        rope_const, target_shape, BroadcastType::BIDIRECTIONAL
+        rope_const_4d, target_shape, BroadcastType::BIDIRECTIONAL
     );
 
-    // Compute frequencies
-    auto freqs = std::make_shared<v0::MatMul>(
-        inv_freq_expanded, position_expanded,
-        false, false
+    auto position_expanded = std::make_shared<v0::Convert>(
+        std::make_shared<v0::Unsqueeze>(position_ids,
+            std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, 2)),
+        element::f32
     );
+
+    auto freqs = std::make_shared<v0::MatMul>(
+        inv_freq_expanded, position_expanded, false, false);
 
     auto freqs_transposed = std::make_shared<v1::Transpose>(
-        freqs, 
-        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{3}, std::vector<int32_t>{0, 2, 1})
+        freqs,
+        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 1, 3, 2})
     );
 
-    // Concatenate and compute trigonometric values
-    auto emb = std::make_shared<ov::opset13::Concat>(
-        ov::NodeVector{freqs_transposed, freqs_transposed}, -1
-    );
+    auto pieces = split_mrope_freqs(freqs_transposed, mrope_section);
+
+    OPENVINO_ASSERT(pieces.size() == 3, "[rope_emb] Qwen3VL expects 3 mRoPE pieces.");
+
+    ov::NodeVector reordered;
+    reordered.push_back(pieces[0].get_node_shared_ptr());
+    reordered.push_back(pieces[1].get_node_shared_ptr());
+    reordered.push_back(pieces[2].get_node_shared_ptr());
+
+    auto emb = std::make_shared<ov::opset13::Concat>(reordered, -1);
 
     return {
         std::make_shared<ov::opset13::Cos>(emb),
         std::make_shared<ov::opset13::Sin>(emb)
     };
 }
-
 
 ov::Output<ov::Node> make_rms_norm_qwen3(
     const std::string& key,
@@ -354,12 +493,14 @@ multi_head_attention(
     const Output<Node>& position_ids,
     const Output<Node>& rope_const,
     const Output<Node>& beam_idx,
-    const std::pair<Output<Node>, Output<Node>>& cos_sin_cached) {
+    const std::pair<Output<Node>, Output<Node>>& cos_sin_cached,
+    bool is_vlm = false,
+    const std::vector<int64_t>& mrope_section = {}) {
     int num_heads = std::get<int>(configs.at("head_num"));
     int head_dim = std::get<int>(configs.at("head_size"));
     int num_heads_kv = std::get<int>(configs.at("head_num_kv"));
     float rms_norm_eps = std::get<float>(configs.at("rms_norm_eps"));
-    
+
     // 1. Split heads
     // There are q_norm k_norm in Qwen3, if key_name + ".self_attn.q_norm" + ".weight" exists, a rms_norm will be built.
     auto q_split = split_heads(query, num_heads, head_dim, rms_norm_eps, key_name + ".self_attn.q_norm", consts);
@@ -369,7 +510,7 @@ multi_head_attention(
     // 2. Apply rotary embeddings
     Output<Node> cos, sin;
     if (cos_sin_cached.first.get_node() == nullptr) {
-        std::tie(cos, sin) = rope_emb(v_split, rope_const, position_ids, batch_dim);
+        std::tie(cos, sin) = rope_emb(v_split, rope_const, position_ids, batch_dim, is_vlm, mrope_section);
     }
 
     auto [q_rot, k_rot, new_cos_sin] = apply_rotary_pos_emb(
@@ -419,7 +560,7 @@ multi_head_attention(
     auto k_combined = std::make_shared<ov::opset13::Concat>(OutputVector{k_cache.second, k_rot}, 2);
     auto v_combined = std::make_shared<ov::opset13::Concat>(OutputVector{v_cache.second, v_split}, 2);
 
-    auto k_assign = std::make_shared<ov::opset13::Assign>(k_combined, k_cache.first); //->get_variable_id()
+    auto k_assign = std::make_shared<ov::opset13::Assign>(k_combined, k_cache.first);
     auto v_assign = std::make_shared<ov::opset13::Assign>(v_combined, v_cache.first);
 
     // 4. Handle group query attention
@@ -445,7 +586,6 @@ multi_head_attention(
             std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, num_heads, -1, head_dim}),
             true
         );
-
 
         auto broadcast_shape2 = std::make_shared<ov::opset13::Concat>(OutputVector{
             batch_dim,
@@ -870,7 +1010,9 @@ std::tuple<ov::Output<ov::Node>,
         const ov::Output<ov::Node>& batch_dim,
         const ov::Output<ov::Node>& hidden_dim,
         const std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>& cos_sin_cached,
-        const std::shared_ptr<ov::Node>& output_shape) {
+        const std::shared_ptr<ov::Node>& output_shape,
+        bool is_vlm,
+        const std::vector<int64_t>& mrope_section) {
 
     std::string name_suffix = ".layer" + std::to_string(layer_idx);
     std::string name_prefix = "model.layers.self_attn";
@@ -941,7 +1083,9 @@ std::tuple<ov::Output<ov::Node>,
         position_ids,
         rope_const,
         beam_idx,
-        cos_sin_cached);
+        cos_sin_cached,
+        is_vlm,
+        mrope_section);
 
     // Output projection
     auto o_proj = make_fc(

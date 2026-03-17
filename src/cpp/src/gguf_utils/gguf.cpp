@@ -387,6 +387,15 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
     config["rms_norm_eps"] = metadata_to_float(metadata, arch + ".attention.layer_norm_rms_epsilon");
     config["rope_freq_base"] = metadata.count(arch + ".rope.freq_base") ?
             metadata_to_float(metadata, arch + ".rope.freq_base") : 10000.0f;
+
+    if (metadata.count(arch + ".rope.dimension_sections")) {
+        config["mrope_section"] = metadata.at(arch + ".rope.dimension_sections");
+    }
+
+    if (metadata.count(arch + ".n_deepstack_layers")) {
+        config["n_deepstack_layers"] = metadata_to_int(metadata, arch + ".n_deepstack_layers");
+    }
+
     config["file_type"] = metadata_to_int(metadata, "general.file_type");
     return config;
 }
