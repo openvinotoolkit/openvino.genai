@@ -295,7 +295,7 @@ ov::CompiledModel compile_kokoro_model(ov::Core& core,
     ov::AnyMap compile_properties = properties;
 
     if (device.find("GPU") != std::string::npos) {
-        set_default_property(compile_properties, "INFERENCE_PRECISION_HINT", "f32");
+        set_default_property(compile_properties, "INFERENCE_PRECISION_HINT", ov::element::f32);
     }
 
     if (!npu_requested) {
