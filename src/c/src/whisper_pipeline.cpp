@@ -214,6 +214,23 @@ ov_status_e ov_genai_whisper_decoded_results_get_chunks_count(const ov_genai_whi
     return ov_status_e::OK;
 }
 
+// Note:
+// - When results->object->chunks is present and non-empty, this function returns a
+//   segment-level chunk at the specified index.
+// - When segment-level chunks are not available but results->object->words is present,
+//   this function falls back to per-word timings and synthesizes a "chunk" from the
+//   corresponding WhisperWordTiming entry.
+//
+// In the synthesized word-level case:
+// - WhisperDecodedResultChunk::start_ts is taken from WhisperWordTiming::start_ts.
+// - WhisperDecodedResultChunk::end_ts is taken from WhisperWordTiming::end_ts.
+// - WhisperDecodedResultChunk::text is taken from WhisperWordTiming::word.
+// Other fields of WhisperDecodedResultChunk remain at their default values and
+// should not be assumed to be populated.
+//
+// Callers that need to distinguish between segment-level chunks and word-level
+// synthesized chunks should check the originating ov::genai::WhisperDecodedResults
+// object (for example, whether chunks or words were originally requested / filled).
 ov_status_e ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper_decoded_results* results,
                                                           size_t index,
                                                           ov_genai_whisper_decoded_result_chunk** chunk) {
