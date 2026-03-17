@@ -54,6 +54,17 @@ def get_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _safe_extract(archive_path: Path, dest_dir: Path) -> None:
+    """Extract a zip archive, rejecting entries that would escape dest_dir."""
+    dest_dir = dest_dir.resolve()
+    with ZipFile(file=archive_path, mode="r") as zip_file:
+        for member in zip_file.namelist():
+            member_path = (dest_dir / member).resolve()
+            if not str(member_path).startswith(str(dest_dir) + os.sep):
+                raise ValueError(f"Zip entry escapes target directory: {member}")
+        zip_file.extractall(dest_dir)
+
+
 def collect_logs_for_run(run: WorkflowRun, logs_dir: Path, GITHUB_TOKEN: str, session: requests.Session):
     """
     Downloads logs of a given Workflow Run,
@@ -121,10 +132,8 @@ def collect_logs_for_run(run: WorkflowRun, logs_dir: Path, GITHUB_TOKEN: str, se
 
         # Unpack it
         with tempfile.TemporaryDirectory() as temp_dir:
-            logs_temp_dir = Path(temp_dir)
-
-            with ZipFile(file=log_archive_path, mode="r") as zip_file:
-                zip_file.extractall(logs_temp_dir)
+            logs_temp_dir = Path(temp_dir).resolve()
+            _safe_extract(log_archive_path, logs_temp_dir)
 
             # Traverse the unpacked logs to find the ones of failed jobs
             for job in failed_jobs:
@@ -275,6 +284,11 @@ def main():
         return
 
     RUN_DIR = CI_DOCTOR_DIR / f"run_{run_id}"
+
+    # check if run_dir is empty
+    if RUN_DIR.exists() and any(RUN_DIR.iterdir()):
+        raise RuntimeError(f"Run directory {RUN_DIR} is not empty. Clean it up before running the script.")
+
     LOGS_DIR = RUN_DIR / "logs"
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 

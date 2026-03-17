@@ -170,7 +170,7 @@ Logs have been pre-downloaded before this session started:
 3. **Close older duplicate issues**
    - If you find older open issues that are duplicates of the current failure:
      - Add a comment explaining this is a duplicate of the new investigation
-     - Use the `update-issue` tool with `state: "closed"` and `state_reason: "not_planned"` to close them
+     - Use the `update-issue` tool with `status: "closed"` to close them
      - Include a link to the new issue in the comment
    - If older issues describe resolved problems that are recurring:
      - Keep them open but add a comment linking to the new occurrence
