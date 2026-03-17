@@ -249,7 +249,10 @@ def _setup_generation_config(
 
 def is_optimum_intel_version_4_videochat_flash_qwen():
     """
-    Compare the current optimum_intel version to a given reference with an operation.
+    Return True if the installed ``optimum-intel`` version matches the
+    specific version required for tiny-videochat-flash-qwen tests.
+
+    Currently this checks for an exact match with ``"1.27.0.dev0+70056d0"``.
     """
     import importlib.metadata as metadata
 
@@ -271,7 +274,10 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
         )
-    if "optimum-intel-internal-testing/tiny-videochat-flash-qwen" == model_id and not is_optimum_intel_version_4_videochat_flash_qwen():
+    if (
+        "optimum-intel-internal-testing/tiny-videochat-flash-qwen" == model_id
+        and not is_optimum_intel_version_4_videochat_flash_qwen()
+    ):
         pytest.skip(
             "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported version is 1.27.0.dev0+70056d0."
         )
