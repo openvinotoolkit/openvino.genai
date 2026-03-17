@@ -213,9 +213,9 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
                                                       int64_t width) {
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");
     OPENVINO_ASSERT(height > 0, "Height must be positive");
-    OPENVINO_ASSERT(height % 32 == 0, "Height have to be divisible by 32 but got ", height);
+    OPENVINO_ASSERT(height % 32 == 0, "Height must be divisible by 32 but got ", height);
     OPENVINO_ASSERT(width > 0, "Width must be positive");
-    OPENVINO_ASSERT(width % 32 == 0, "Width have to be divisible by 32 but got ", width);
+    OPENVINO_ASSERT(width % 32 == 0, "Width must be divisible by 32 but got ", width);
 
     if (m_encoder_model) {
         ov::PartialShape input_shape = m_encoder_model->input(0).get_partial_shape();
@@ -266,7 +266,11 @@ ov::Tensor AutoencoderKLLTXVideo::encode(const ov::Tensor& video, std::shared_pt
     ov::Tensor output = m_encoder_request.get_output_tensor(), latent;
 
     if (m_encoder_output_name == "latent_sample") {
-        latent = output;
+        // Copy to an owned tensor so the normalization below does not mutate
+        // the infer request's internal buffer (which would alias any tensor
+        // the caller holds across multiple encode() calls).
+        latent = ov::Tensor(output.get_element_type(), output.get_shape());
+        output.copy_to(latent);
     } else if (m_encoder_output_name == "latent_parameters") {
         latent = DiagonalGaussianDistribution(output).sample(generator);
     } else {
@@ -306,7 +310,7 @@ const AutoencoderKLLTXVideo::Config& AutoencoderKLLTXVideo::get_config() const {
     return m_config;
 }
 
-size_t AutoencoderKLLTXVideo::get_vae_scale_factor() const {  // TODO: compare with reference. Drop?
+size_t AutoencoderKLLTXVideo::get_vae_scale_factor() const {
     return std::pow(2, m_config.block_out_channels.size() - 1);
 }
 
