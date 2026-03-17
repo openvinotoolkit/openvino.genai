@@ -35,7 +35,7 @@ Alternatively, do it in Python code:
 from optimum.intel.openvino import OVLTXPipeline
 
 pipeline = OVLTXPipeline.from_pretrained("Lightricks/LTX-Video", export=True, compile=False)
-pipeline.save_pretrained("ltx_video_ov")
+pipeline.save_pretrained("ltx_video_ov/FP32")
 ```
 
 ## Sample Descriptions
