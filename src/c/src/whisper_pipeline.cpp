@@ -184,7 +184,11 @@ ov_status_e ov_genai_whisper_decoded_results_has_chunks(const ov_genai_whisper_d
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        *has_chunks = results->object->chunks.has_value();
+        const bool has_non_empty_chunks =
+            results->object->chunks.has_value() && !results->object->chunks->empty();
+        const bool has_non_empty_words =
+            results->object->words.has_value() && !results->object->words->empty();
+        *has_chunks = has_non_empty_chunks || has_non_empty_words;
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
