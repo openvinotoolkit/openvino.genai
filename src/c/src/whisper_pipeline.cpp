@@ -246,7 +246,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper
                 return ov_status_e::OUT_OF_BOUNDS;
             }
             _chunk->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>(results->object->chunks->at(index));
-        } else if (results->object->words.has_value()) {
+        } else if (results->object->words.has_value() && !results->object->words->empty()) {
             if (index >= results->object->words->size()) {
                 return ov_status_e::OUT_OF_BOUNDS;
             }
