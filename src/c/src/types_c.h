@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -10,9 +10,13 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/json_container.hpp"
+#include "openvino/genai/speech_generation/speech_generation_config.hpp"
+#include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
+#include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 
 #define GET_PROPERTY_FROM_ARGS_LIST                                                                            \
-    std::string property_key = va_arg(args_ptr, char*);                                                        \
+    char* _property_key_ptr = va_arg(args_ptr, char*);                                                          \
+    std::string property_key = _property_key_ptr ? _property_key_ptr : "";                                     \
     if (property_key == ov::cache_encryption_callbacks.name()) {                                               \
         ov_encryption_callbacks* _value = va_arg(args_ptr, ov_encryption_callbacks*);                          \
         auto encrypt_func = _value->encrypt_func;                                                              \
@@ -145,4 +149,28 @@ struct ov_genai_chat_history_opaque {
  */
 struct ov_genai_json_container_opaque {
     std::shared_ptr<ov::genai::JsonContainer> object;
+};
+
+/**
+ * @struct ov_genai_speech_generation_config_opaque
+ * @brief This is an interface of ov::genai::SpeechGenerationConfig
+ */
+struct ov_genai_speech_generation_config_opaque {
+    std::shared_ptr<ov::genai::SpeechGenerationConfig> object;
+};
+
+/**
+ * @struct ov_genai_text2speech_decoded_results_opaque
+ * @brief This is an interface of ov::genai::Text2SpeechDecodedResults
+ */
+struct ov_genai_text2speech_decoded_results_opaque {
+    std::shared_ptr<ov::genai::Text2SpeechDecodedResults> object;
+};
+
+/**
+ * @struct ov_genai_text2speech_pipeline_opaque
+ * @brief This is an interface of ov::genai::Text2SpeechPipeline
+ */
+struct ov_genai_text2speech_pipeline_opaque {
+    std::shared_ptr<ov::genai::Text2SpeechPipeline> object;
 };
