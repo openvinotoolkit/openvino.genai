@@ -169,7 +169,10 @@ EspeakLoadState try_load_espeak_api(const std::string &library_hint) {
 }
 
 EspeakLoadState &get_cached_load_state(const std::string &library_path) {
+  static std::mutex load_cache_mutex;
   static std::unordered_map<std::string, EspeakLoadState> load_cache;
+
+  std::scoped_lock lock(load_cache_mutex);
   auto it = load_cache.find(library_path);
   if (it == load_cache.end()) {
     it = load_cache.emplace(library_path, try_load_espeak_api(library_path)).first;
