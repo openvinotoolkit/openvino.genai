@@ -31,5 +31,5 @@ class TestText2Video:
         run_sample(cpp_command)
 
         js_sample = SAMPLES_JS_DIR / "video_generation/text2video.js"
-        js_command = ['node', js_sample, convert_model, sample_args]
+        js_command = ["node", js_sample, convert_model, sample_args]
         run_sample(js_command)

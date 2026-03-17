@@ -84,8 +84,11 @@ if __name__ == "__main__":
 
             if not models_path.exists():
                 command = [
-                    "optimum-cli", "export", "openvino",
-                    "--model", model_id,
+                    "optimum-cli",
+                    "export",
+                    "openvino",
+                    "--model",
+                    model_id,
                     str(models_path),
                 ] + extra_args
                 print(f"Converting model '{model_name}': {' '.join(command)}")
