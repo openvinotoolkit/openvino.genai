@@ -69,11 +69,11 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 - **Description:**
   Video generation with LoRA adapters using a text-to-video model. This sample demonstrates how to generate videos from text prompts while applying multiple LoRA adapters.
 
-  Recommended models: Lightricks/LTX-Video-0.9.8-13B-distilled
+  Recommended models: Lightricks/LTX-Video
 
   To download the LoRA adapter used in the example below:
   ```sh
-  huggingface-cli download Cseti/LTXV-13B-LoRA-Wallace_and_Gromit-v1 walgro_style_step_42000_comfy.safetensors
+  huggingface-cli download svjack/ltx_video_pixel_early_lora ltx_pixel_pytorch_lora_weights.safetensors
   ```
 
 - **Main Feature:** Apply LoRA adapters to a text-to-video pipeline for customized generation.
@@ -85,7 +85,7 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 
   Example:
   ```bash
-  ./lora_text2video ltx_video_ov "Walgro style. A woman waits at a bus stop in the early morning, headphones resting over her blue hair, her gaze focused on her phone as she scrolls. The rising sun casts soft light across the pavement, illuminating the quiet street." walgro_style_step_42000_comfy.safetensors 1.0
+  ./lora_text2video ltx_video_ov "In the style of Pixel, the video shifts to a majestic castle under a starry sky." ltx_pixel_pytorch_lora_weights.safetensors 3.0
   ```
 
 The LoRA text-to-video sample will generate two video files, `lora_video.avi` and `baseline_video.avi`, in the current directory.
