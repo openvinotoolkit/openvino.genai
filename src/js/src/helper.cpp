@@ -676,6 +676,9 @@ ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(c
 
 template <>
 ov::Tensor js_to_cpp<ov::Tensor>(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsNull() || value.IsUndefined()) {
+        return ov::Tensor();
+    }
     OPENVINO_ASSERT(value.IsObject(), "Passed argument must be an object.");
 
     auto tensor_wrap = value.As<Napi::Object>();
@@ -752,6 +755,18 @@ ov::genai::WhisperGenerationConfig js_to_cpp<ov::genai::WhisperGenerationConfig>
 }
 
 template <>
+ov::genai::SpeechGenerationConfig js_to_cpp<ov::genai::SpeechGenerationConfig>(const Napi::Env& env,
+                                                                               const Napi::Value& value) {
+    ov::genai::SpeechGenerationConfig config;
+    if (value.IsUndefined() || value.IsNull()) {
+        return config;
+    }
+    ov::AnyMap config_map = js_to_cpp<ov::AnyMap>(env, value);
+    config.update_generation_config(config_map);
+    return config;
+}
+
+template <>
 std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value) {
     std::vector<ov::Tensor> tensors;
     if (value.IsUndefined() || value.IsNull()) {
@@ -814,6 +829,16 @@ ov::genai::ChatHistory& unwrap<ov::genai::ChatHistory>(const Napi::Env& env, con
 
     const auto chat_history = Napi::ObjectWrap<ChatHistoryWrap>::Unwrap(obj);
     return chat_history->get_value();
+}
+
+template <>
+ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsString()) {
+        return value.As<Napi::String>().Utf8Value();
+    } else if (value.IsArray()) {
+        return js_to_cpp<std::vector<std::string>>(env, value);
+    }
+    OPENVINO_THROW("Passed argument must be a string or an array of strings.");
 }
 
 template <>
@@ -1391,6 +1416,17 @@ Napi::Value cpp_to_js<ov::genai::WhisperGenerationConfig, Napi::Value>(
     } else {
         obj.Set("suppress_tokens", env.Undefined());
     }
+    return obj;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::SpeechGenerationConfig, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::SpeechGenerationConfig& config) {
+    Napi::Object obj = cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(env, config).As<Napi::Object>();
+    obj.Set("minlenratio", cpp_to_js<float, Napi::Value>(env, config.minlenratio));
+    obj.Set("maxlenratio", cpp_to_js<float, Napi::Value>(env, config.maxlenratio));
+    obj.Set("threshold", cpp_to_js<float, Napi::Value>(env, config.threshold));
     return obj;
 }
 
