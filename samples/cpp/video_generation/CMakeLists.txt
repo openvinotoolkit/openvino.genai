@@ -48,3 +48,29 @@ install(TARGETS text2video
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
+
+# create taylorseer text2video sample executable
+add_executable(taylorseer_text2video taylorseer_text2video.cpp imwrite_video.cpp)
+
+target_include_directories(taylorseer_text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/")
+ov_genai_link_opencv(taylorseer_text2video core imgproc videoio imgcodecs)
+target_link_libraries(taylorseer_text2video PRIVATE openvino::genai indicators::indicators)
+
+if(UNIX AND NOT APPLE)
+    set_target_properties(taylorseer_text2video PROPERTIES
+        INSTALL_RPATH "$ORIGIN/../lib"
+    )
+elseif(APPLE)
+    set_target_properties(taylorseer_text2video PROPERTIES
+        INSTALL_RPATH "@loader_path/../lib"
+    )
+endif()
+
+set_target_properties(taylorseer_text2video PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS taylorseer_text2video
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
