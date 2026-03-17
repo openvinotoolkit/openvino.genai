@@ -92,6 +92,7 @@ class VlmModelInfo:
 def _is_videochat_flash_qwen_model(model_id: str) -> bool:
     return "videochat-flash-qwen" in model_id.lower()
 
+
 class _VlmPipelineVideoChatFlashQwenImageGuard:
     def __init__(self, pipeline: VLMPipeline, model_id: str):
         self._pipeline = pipeline
@@ -245,11 +246,13 @@ def _setup_generation_config(
 
     return generation_config
 
+
 def is_optimum_intel_version_4_videochat_flash_qwen():
     """
     Compare the current optimum_intel version to a given reference with an operation.
     """
     import importlib.metadata as metadata
+
     _optimum_intel_version = metadata.version("optimum-intel")
     return _optimum_intel_version == "1.27.0.dev0+70056d0"
 
@@ -504,13 +507,16 @@ def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[8])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe_videochat() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(VIDEOCHAT_FLASH_QWEN_MODEL_ID)
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
+
 def download_image(link: str) -> PIL.Image:
     return PIL.Image.open(requests.get(link, stream=True).raw).convert("RGB")
+
 
 def from_cache_or_download(pytestconfig: pytest.Config, link: str, file_name: str):
     def implementation():
@@ -2532,7 +2538,9 @@ def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeli
     return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_backend)
 
 
-def test_videochatflash_qwen_rejects_image_input(ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor):
+def test_videochatflash_qwen_rejects_image_input(
+ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor
+):
     generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
     with pytest.raises(RuntimeError):
         ov_videochatflash_qwen_pipe_raw.generate(PROMPTS[0], image=cat_tensor, generation_config=generation_config)
@@ -2582,7 +2590,5 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         assert text == res_generate[0].texts[out_idx]
         assert abs(output.score - res_generate[0].scores[out_idx]) < DEFAULT_SCORE_EPSILON
         assert (
-            output.finish_reason == GenerationFinishReason.STOP
-                or output.finish_reason == GenerationFinishReason.LENGTH
+            output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
         )
-
