@@ -179,6 +179,11 @@ InpaintingPipeline InpaintingPipeline::stable_diffusion_3(
     return InpaintingPipeline(impl);
 }
 
+InpaintingPipeline InpaintingPipeline::clone() {
+    InpaintingPipeline pipe(m_impl->clone());
+    return pipe;
+}
+
 ImageGenerationConfig InpaintingPipeline::get_generation_config() const {
     return m_impl->get_generation_config();
 }

@@ -152,6 +152,22 @@ install(TARGETS inpainting
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
+# create inpainting concurrent sample executable
+
+add_executable(inpainting_concurrency inpainting_concurrency.cpp load_image.cpp imwrite.cpp)
+
+target_include_directories(inpainting_concurrency PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(inpainting_concurrency PRIVATE openvino::genai indicators::indicators)
+
+set_target_properties(inpainting_concurrency PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS inpainting_concurrency
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
 # benchmark_image_gen
 
 include(FetchContent)
