@@ -58,8 +58,19 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
+        return generate(prompt, images, videos, {}, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
         auto start_time = std::chrono::steady_clock::now();
-        auto result = m_impl.generate({prompt}, {images}, {videos}, {std::move(generation_config)}, streamer)[0];
+        auto result = m_impl.generate({prompt}, {images}, {videos}, {videos_metadata}, {std::move(generation_config)}, streamer)[0];
         auto stop_time = std::chrono::steady_clock::now();
 
         VLMDecodedResults decoded;
@@ -94,10 +105,21 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
+        return generate(history, images, videos, {}, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        const ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
         auto start_time = std::chrono::steady_clock::now();
         // Ensure chat history internal state is initialized for original history
         ChatHistoryInternalState::get_or_create(history);
-        auto result = m_impl.generate({history}, {images}, {videos}, {std::move(generation_config)}, streamer)[0];
+        auto result = m_impl.generate({history}, {images}, {videos}, {videos_metadata}, {std::move(generation_config)}, streamer)[0];
         auto stop_time = std::chrono::steady_clock::now();
 
         VLMDecodedResults decoded;
