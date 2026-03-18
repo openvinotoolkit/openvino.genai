@@ -8,6 +8,7 @@ import openvino_genai
 import urllib.parse
 import json
 import json5
+import os
 
 TOOL_DESC = """{name_for_model}: Call this tool to interact with the {name_for_human} API. What is the {name_for_human} API useful for? {description_for_model} Parameters: {parameters}"""
 
@@ -114,9 +115,30 @@ def parse_first_tool_call(text):
         text = text[:k]
     return tool_name, tool_args, text
 
+def _tool_error(tool_name: str, message: str) -> str:
+    return json.dumps({"tool": tool_name, "error": message}, ensure_ascii=False)
+
+def _parse_tool_args(tool_name: str, tool_args: str):
+    try:
+        parsed_args = json5.loads(tool_args)
+    except Exception as ex:
+        return None, _tool_error(tool_name, f"Failed to parse tool arguments: {ex}")
+
+    if not isinstance(parsed_args, dict):
+        return None, _tool_error(tool_name, "Tool arguments must be a JSON object")
+
+    return parsed_args, None
+
 def call_tool(tool_name: str, tool_args: str) -> str:
     if tool_name == "get_weather":
-        city_name = json5.loads(tool_args)["city_name"]
+        parsed_args, parse_error = _parse_tool_args(tool_name, tool_args)
+        if parse_error:
+            return parse_error
+
+        city_name = parsed_args.get("city_name")
+        if not isinstance(city_name, str) or not city_name.strip():
+            return _tool_error(tool_name, "Missing or invalid required argument: city_name")
+
         key_selection = {
             "current_condition": [
                 "temp_C",
@@ -126,35 +148,69 @@ def call_tool(tool_name: str, tool_args: str) -> str:
                 "observation_time",
             ],
         }
-        resp = requests.get(f"https://wttr.in/{city_name}?format=j1")
-        resp.raise_for_status()
-        resp = resp.json()
-        ret = {k: {_v: resp[k][0][_v] for _v in v} for k, v in key_selection.items()}
+
+        try:
+            response = requests.get(f"https://wttr.in/{city_name}?format=j1", timeout=10)
+            response.raise_for_status()
+        except requests.RequestException as ex:
+            return _tool_error(tool_name, f"Weather request failed: {ex}")
+
+        try:
+            response_payload = response.json()
+        except ValueError as ex:
+            return _tool_error(tool_name, f"Weather response is not valid JSON: {ex}")
+
+        current_condition = response_payload.get("current_condition")
+        if not isinstance(current_condition, list) or not current_condition or not isinstance(current_condition[0], dict):
+            return _tool_error(tool_name, "Weather response has unexpected structure")
+
+        weather = current_condition[0]
+        ret = {
+            k: {_v: weather.get(_v, "") for _v in v}
+            for k, v in key_selection.items()
+        }
         return json.dumps(ret, ensure_ascii=False)
     elif tool_name == "generate_image":
         tool_args = tool_args.replace("(", "").replace(")", "")
-        prompt = json5.loads(tool_args)["prompt"]
+        parsed_args, parse_error = _parse_tool_args(tool_name, tool_args)
+        if parse_error:
+            return parse_error
+
+        prompt = parsed_args.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            return _tool_error(tool_name, "Missing or invalid required argument: prompt")
+
         prompt = urllib.parse.quote(prompt)
         return json.dumps(
             {"image_url": f"https://image.pollinations.ai/prompt/{prompt}"},
             ensure_ascii=False,
         )
     else:
-        raise NotImplementedError
+        return _tool_error(tool_name, "Unsupported tool")
 
-def llm_with_tool(llm_pipe, prompt, history, list_of_tool_info):
+def llm_with_tool(llm_pipe, prompt, history, list_of_tool_info, max_steps=8):
     chat_history = [(x["user"], x["bot"]) for x in history] + [(prompt, "")]
     planning_prompt = build_input_text(llm_pipe.get_tokenizer(), chat_history, list_of_tool_info)
 
     text = ""
-    while True:
+    for _ in range(max_steps):
         # llm pipe output based planning_prompt and the text (previous output)
         llm_config = llm_pipe.get_generation_config()
-        output = llm_pipe.generate(planning_prompt + text, llm_config, streamer)
+        try:
+            output = llm_pipe.generate(planning_prompt + text, llm_config, streamer)
+        except Exception as ex:
+            output = f"\nObservation: = {_tool_error('llm_generate', f'LLM generation failed: {ex}')}\nThought:"
+            text += output
+            break
+
         # parse the output to get action
         action, action_input, output = parse_first_tool_call(output)
         if action:
-            observation = call_tool(action, action_input)
+            try:
+                observation = call_tool(action, action_input)
+            except Exception as ex:
+                observation = _tool_error(action, f"Unexpected tool execution failure: {ex}")
+
             observation_txt = f"\nObservation: = {observation}\nThought:"
             print("\n\n- Getting information from the tool API -", observation_txt, "\n")
             output += observation_txt
@@ -162,6 +218,8 @@ def llm_with_tool(llm_pipe, prompt, history, list_of_tool_info):
         else:
             text += output
             break
+    else:
+        text += f"\nObservation: = {_tool_error('llm_with_tool', 'Reached max tool-calling steps')}\n"
 
     history.append({"user": prompt, "bot": text})
     return text, history
@@ -178,6 +236,9 @@ def main():
 
     device = 'CPU'  # GPU can be used as well
     llm_model_path = args.model_dir
+
+    if not os.path.exists(llm_model_path):
+        raise RuntimeError(f"Model path does not exist: {llm_model_path}")
 
     llm_pipe = openvino_genai.LLMPipeline(llm_model_path, device)
     llm_config = openvino_genai.GenerationConfig()
