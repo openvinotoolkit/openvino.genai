@@ -183,6 +183,7 @@ def get_huggingface_models(
     model_class: Type[OVModel],
     local_files_only=False,
     trust_remote_code=False,
+    **model_kwargs,
 ) -> tuple[OptimizedModel, AutoTokenizer]:
     if not local_files_only and isinstance(model_id, str):
         model_id = snapshot_download(model_id)  # required to avoid HF rate limits
@@ -204,6 +205,7 @@ def get_huggingface_models(
             "ov_config": get_default_llm_properties(),
             "local_files_only": local_files_only,
             "trust_remote_code": trust_remote_code,
+            **model_kwargs,
         }
         return model_class.from_pretrained(model_id, **params)
 
@@ -261,6 +263,7 @@ TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
 def download_and_convert_model_class(
     model_id: str, 
     model_class: Type[OVModel],
+    model_kwargs = {},
     **tokenizer_kwargs,
 ) -> OVConvertedModelSchema:
     trust_remote_code = model_id in TRUST_REMOTE_CODE_MODELS
@@ -274,11 +277,11 @@ def download_and_convert_model_class(
 
     if manager.is_complete() or (models_path / OV_MODEL_FILENAME).exists():
         opt_model, hf_tokenizer = get_huggingface_models(
-            models_path, model_class, local_files_only=True, trust_remote_code=trust_remote_code
+            models_path, model_class, local_files_only=True, trust_remote_code=trust_remote_code, **model_kwargs
         )
     else:
         opt_model, hf_tokenizer = get_huggingface_models(
-            model_id, model_class, local_files_only=False, trust_remote_code=trust_remote_code
+            model_id, model_class, local_files_only=False, trust_remote_code=trust_remote_code, **model_kwargs
         )
         if "padding_side" in tokenizer_kwargs:
             hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")

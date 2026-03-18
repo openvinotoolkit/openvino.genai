@@ -59,11 +59,13 @@ void text2speechPerformInferenceThread(Text2SpeechTsfnContext* context) {
     ov::genai::Text2SpeechDecodedResults result;
 
     try {
-        std::visit(overloaded{[context, &result](const std::string& text) {
-                                  result = context->pipe->generate(text, context->speaker_embedding, context->properties);
+        const auto& speaker = context->speaker_embedding;
+        const auto& props = context->properties;
+        std::visit(overloaded{[context, &result, &speaker, &props](const std::string& text) {
+                                  result = context->pipe->generate(text, speaker, props);
                               },
-                              [context, &result](const std::vector<std::string>& texts) {
-                                  result = context->pipe->generate(texts, context->speaker_embedding, context->properties);
+                              [context, &result, &speaker, &props](const std::vector<std::string>& texts) {
+                                  result = context->pipe->generate(texts, speaker, props);
                               }},
                    context->inputs);
     } catch (const std::exception& e) {
