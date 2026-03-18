@@ -770,6 +770,28 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
+      - name: Install FFmpeg and av for videochat tests
+        if: ${{ matrix.test.run_condition && matrix.test.name == 'VLM (videochat)' }}
+        run: |
+          $ffmpegZip = "$env:RUNNER_TEMP\ffmpeg-release-essentials.zip"
+          $ffmpegRoot = "$env:RUNNER_TEMP\ffmpeg"
+          # gyan.dev publishes Windows-native ffmpeg builds in this archive.
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $ffmpegZip -MaximumRetryCount 10
+          Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegRoot -Force
+          $ffmpegExe = Get-ChildItem -Path $ffmpegRoot -Recurse -Filter "ffmpeg.exe" -File | Select-Object -First 1
+          if (-not $ffmpegExe) {
+            throw "ffmpeg.exe was not found. The downloaded archive is not a valid Windows ffmpeg build."
+          }
+          $ffmpegBin = $ffmpegExe.DirectoryName
+          if (-not (Get-ChildItem -Path $ffmpegBin -Filter "avcodec*.dll" -ErrorAction SilentlyContinue)) {
+            throw "avcodec DLLs were not found in ffmpeg/bin."
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value $ffmpegBin
+          $env:Path = "$ffmpegBin;$env:Path"
+          python -m pip install av
+          python -c "import av; print(av.__version__)"
+          ffmpeg -version
+
       - name: Tests
         if: ${{ matrix.test.run_condition }}
         run: ${{ matrix.test.cmd }}
