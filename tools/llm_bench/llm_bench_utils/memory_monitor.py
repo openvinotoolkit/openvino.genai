@@ -26,7 +26,7 @@ import logging as log
 
 
 # CUSTOM FIX TO AVOID ISSUE: RuntimeError: main thread is not in main loop
-matplotlib.use('Agg')
+matplotlib.use("Agg")
 
 
 class MemoryType(Enum):
@@ -120,7 +120,9 @@ class MemoryMonitor:
             ```
         """
         if self._monitoring_in_progress:
-            log.warning(f"Monitoring was already in progress. MemoryMonitor will be restarted and previous data will be lost for {self.memory_type}.")
+            log.warning(
+                f"Monitoring was already in progress. MemoryMonitor will be restarted and previous data will be lost for {self.memory_type}."
+            )
             self.stop()
 
         self._memory_values_queue = queue.Queue()
@@ -279,7 +281,7 @@ class MemoryMonitor:
             time.sleep(max(0.0, self.interval - (time.perf_counter() - _last_measurement_time)))
 
 
-class MemMonitorWrapper():
+class MemMonitorWrapper:
     def __init__(self):
         self.save_dir = None
 
@@ -290,7 +292,7 @@ class MemMonitorWrapper():
         self.memory_types = [MemoryType.RSS, MemoryType.SYSTEM]
 
         self.memory_monitors = {}
-        self.memory_data = {'full_mem': {}, 'from_zero': {}}
+        self.memory_data = {"full_mem": {}, "from_zero": {}}
 
     def create_monitors(self):
         for memory_type in self.memory_types:
@@ -305,7 +307,7 @@ class MemMonitorWrapper():
             self.save_dir = Path(dir)
 
     def start(self, delay=None):
-        self.memory_data = {'full_mem': {}, 'from_zero': {}}
+        self.memory_data = {"full_mem": {}, "from_zero": {}}
         for mm in self.memory_monitors.values():
             mm.start()
 
@@ -315,7 +317,7 @@ class MemMonitorWrapper():
         else:
             time.sleep(self.interval * 3)
 
-    def stop_and_collect_data(self, dir_name='mem_monitor_log'):
+    def stop_and_collect_data(self, dir_name="mem_monitor_log"):
         dir_name = f"{dir_name}_{self.proc_id}"
         self.stop()
 
@@ -326,7 +328,7 @@ class MemMonitorWrapper():
             for from_zero in [False, True]:
                 time_values, memory_values = mm.get_data(memory_from_zero=from_zero)
 
-                mm_measure_type = 'from_zero' if from_zero else 'full_mem'
+                mm_measure_type = "from_zero" if from_zero else "full_mem"
                 self.memory_data[mm_measure_type][mt] = max(memory_values)
 
                 if self.save_dir:
@@ -366,14 +368,14 @@ class MemMonitorWrapper():
         )
 
 
-class MemStatus():
+class MemStatus:
     def __init__(self, rss=None, sys=None):
         self.rss = rss
         self.sys = sys
 
 
-class MemoryDataSummarizer():
-    MEMORY_NOT_COLLECTED = ''
+class MemoryDataSummarizer:
+    MEMORY_NOT_COLLECTED = ""
     DEF_MEM_UNIT = MemoryUnit.MiB
 
     def __init__(self, args):
@@ -385,8 +387,10 @@ class MemoryDataSummarizer():
             memory_monitor.set_dir(args.memory_consumption_dir)
         self.memory_monitor = memory_monitor
         self.iteration_mem_data = []
-        self.compilation_mem_info = {'max_mem': MemStatus(self.MEMORY_NOT_COLLECTED, self.MEMORY_NOT_COLLECTED),
-                                     'increase_mem': MemStatus(self.MEMORY_NOT_COLLECTED, self.MEMORY_NOT_COLLECTED)}
+        self.compilation_mem_info = {
+            "max_mem": MemStatus(self.MEMORY_NOT_COLLECTED, self.MEMORY_NOT_COLLECTED),
+            "increase_mem": MemStatus(self.MEMORY_NOT_COLLECTED, self.MEMORY_NOT_COLLECTED),
+        }
         self.initial_mem_status = self.log_curent_memory_data(prefix="Start")
 
     def start(self):
@@ -394,7 +398,7 @@ class MemoryDataSummarizer():
             time.sleep(int(self.cooldown))
         self.memory_monitor.start()
 
-    def stop_and_collect_data(self, dir_name='mem_monitor_log'):
+    def stop_and_collect_data(self, dir_name="mem_monitor_log"):
         self.memory_monitor.stop_and_collect_data(dir_name)
 
     def stop(self):
@@ -408,22 +412,28 @@ class MemoryDataSummarizer():
         comment = ""
         if compilation_phase:
             comment = "on compilation phase"
-            self.compilation_mem_info['max_mem'].sys = max_sys_mem
-            self.compilation_mem_info['max_mem'].rss = max_rss_mem
-            self.compilation_mem_info['increase_mem'].sys = sys_increase
-            self.compilation_mem_info['increase_mem'].rss = rss_increase
+            self.compilation_mem_info["max_mem"].sys = max_sys_mem
+            self.compilation_mem_info["max_mem"].rss = max_rss_mem
+            self.compilation_mem_info["increase_mem"].sys = sys_increase
+            self.compilation_mem_info["increase_mem"].rss = rss_increase
 
-        msg = (f"Max RSS memory {comment}: {max_rss_mem:.2f}{self.memory_monitor.memory_unit.value}, "
-               f"RSS memory increase {comment}: {rss_increase:.2f}{self.memory_monitor.memory_unit.value}, "
-               f"Max System memory {comment}: {max_sys_mem:.2f}{self.memory_monitor.memory_unit.value}, "
-               f"System memory increase {comment}: {sys_increase:.2f}{self.memory_monitor.memory_unit.value}")
+        msg = (
+            f"Max RSS memory {comment}: {max_rss_mem:.2f}{self.memory_monitor.memory_unit.value}, "
+            f"RSS memory increase {comment}: {rss_increase:.2f}{self.memory_monitor.memory_unit.value}, "
+            f"Max System memory {comment}: {max_sys_mem:.2f}{self.memory_monitor.memory_unit.value}, "
+            f"System memory increase {comment}: {sys_increase:.2f}{self.memory_monitor.memory_unit.value}"
+        )
         log.info(msg)
 
-    def log_curent_memory_data(self, prefix : str = ""):
-        mem_status = MemStatus(cast_bytes_to(MemoryMonitor.get_rss_memory(), self.memory_monitor.memory_unit),
-                               cast_bytes_to(MemoryMonitor.get_system_memory(), self.memory_monitor.memory_unit))
-        log.info(f"{prefix} RSS memory {mem_status.rss:.2f}{self.memory_monitor.memory_unit.value}, "
-                 f"{prefix} System memory {mem_status.sys:.2f}{self.memory_monitor.memory_unit.value}")
+    def log_curent_memory_data(self, prefix: str = ""):
+        mem_status = MemStatus(
+            cast_bytes_to(MemoryMonitor.get_rss_memory(), self.memory_monitor.memory_unit),
+            cast_bytes_to(MemoryMonitor.get_system_memory(), self.memory_monitor.memory_unit),
+        )
+        log.info(
+            f"{prefix} RSS memory {mem_status.rss:.2f}{self.memory_monitor.memory_unit.value}, "
+            f"{prefix} System memory {mem_status.sys:.2f}{self.memory_monitor.memory_unit.value}"
+        )
         return mem_status
 
     def get_initial_mem_data(self, print_unit: MemoryUnit | None = None):
