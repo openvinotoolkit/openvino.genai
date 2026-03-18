@@ -773,11 +773,13 @@ jobs:
       - name: Install FFmpeg and av for videochat tests
         if: ${{ matrix.test.run_condition && matrix.test.name == 'VLM (videochat)' }}
         run: |
-          $ffmpegZip = "$env:RUNNER_TEMP\ffmpeg-release-essentials.zip"
+          $ffmpegZip = "$env:RUNNER_TEMP\ffmpeg-release-full-shared.7z"
           $ffmpegRoot = "$env:RUNNER_TEMP\ffmpeg"
+          $sevenZipExe = "$env:RUNNER_TEMP\7zr.exe"
           # gyan.dev publishes Windows-native ffmpeg builds in this archive.
-          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $ffmpegZip -MaximumRetryCount 10
-          Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegRoot -Force
+          Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile $sevenZipExe -MaximumRetryCount 10
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full-shared.7z" -OutFile $ffmpegZip -MaximumRetryCount 10
+          & $sevenZipExe x $ffmpegZip "-o$ffmpegRoot" -y
           $ffmpegExe = Get-ChildItem -Path $ffmpegRoot -Recurse -Filter "ffmpeg.exe" -File | Select-Object -First 1
           if (-not $ffmpegExe) {
             throw "ffmpeg.exe was not found. The downloaded archive is not a valid Windows ffmpeg build."
