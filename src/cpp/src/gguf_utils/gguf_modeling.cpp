@@ -22,6 +22,48 @@ using namespace ov::op;
 
 namespace {
 
+void debug_print_const_keys(const std::unordered_map<std::string, ov::Tensor>& consts) {
+    std::cout << "==== consts keys (" << consts.size() << ") ====" << std::endl;
+    for (const auto& item : consts) {
+        std::cout << item.first << std::endl;
+    }
+    std::cout << "==============================" << std::endl;
+}
+
+void debug_print_qtype_keys(const std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
+    std::cout << "==== qtypes keys (" << qtypes.size() << ") ====" << std::endl;
+    for (const auto& item : qtypes) {
+        std::cout << item.first << std::endl;
+    }
+    std::cout << "==============================" << std::endl;
+}
+
+void debug_check_key_exists(
+    const std::string& name,
+    const std::unordered_map<std::string, ov::Tensor>& consts) {
+
+    std::cout << "[DEBUG] checking const key: " << name << std::endl;
+    if (!consts.count(name)) {
+        std::cout << "[ERROR] const key NOT FOUND: " << name << std::endl;
+        debug_print_const_keys(consts);
+    } else {
+        std::cout << "[OK] const key found: " << name << std::endl;
+    }
+}
+
+void debug_check_qtype_exists(
+    const std::string& name,
+    const std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
+
+    std::cout << "[DEBUG] checking qtype key: " << name << std::endl;
+    if (!qtypes.count(name)) {
+        std::cout << "[ERROR] qtype key NOT FOUND: " << name << std::endl;
+        debug_print_qtype_keys(qtypes);
+    } else {
+        std::cout << "[OK] qtype key found: " << name << std::endl;
+    }
+}
+
 auto set_name = [](auto node, const std::string& name) {
     node->output(0).set_names({name});
     node->set_friendly_name(name);
@@ -330,6 +372,30 @@ std::shared_ptr<ov::Model> create_text_embeddings_model(
     return model;
 }
 
+std::shared_ptr<ov::Model> create_vision_embeddings_pos_model(
+    const std::map<std::string, GGUFMetaData>& configs,
+    std::unordered_map<std::string, ov::Tensor>& consts,
+    std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
+    auto input = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::i64, ov::PartialShape{4, -1});
+    set_name(input, "input");
+
+    auto [last_hidden_state, embeddings] = make_embedding(
+        "embeddings",
+        input->output(0),
+        consts,
+        gguf_tensor_type::GGUF_TYPE_F16);
+
+    auto result = std::make_shared<ov::op::v0::Result>(last_hidden_state);
+    set_name(result, "last_hidden_state");
+
+    ov::ParameterVector inputs{input};
+    auto model = std::make_shared<ov::Model>(
+        ov::OutputVector({result->output(0)}),
+        inputs);
+
+    return model;
+}
 
 } // namespace
 
@@ -374,7 +440,28 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
         }
     } else if (!model_arch.compare("clip")) {
         
+        debug_check_key_exists("embeddings.weight", consts);
+        debug_check_qtype_exists("embeddings.qtype", qtypes);
 
+        // std::shared_ptr<ov::Model> vision_embeddings_model = create_vision_embeddings_model(config, consts, qtypes);
+        std::shared_ptr<ov::Model> vision_embeddings_pos_model = create_vision_embeddings_pos_model(config, consts, qtypes);
+        // std::shared_ptr<ov::Model> vision_embeddings_merger_model = create_vision_embeddings_merger_model(config, consts, qtypes);
+
+        if (enable_save_ov_model) {
+            std::filesystem::path gguf_model_path(model_path);
+
+            // std::filesystem::path vision_emb_save_path =
+            //     gguf_model_path.parent_path() / "openvino_vision_embeddings_model.xml";
+            // ov::genai::utils::save_openvino_model(vision_embeddings_model, vision_emb_save_path.string(), true);
+
+            std::filesystem::path vision_pos_save_path =
+                gguf_model_path.parent_path() / "openvino_vision_embeddings_pos_model.xml";
+            ov::genai::utils::save_openvino_model(vision_embeddings_pos_model, vision_pos_save_path.string(), true);
+
+            // std::filesystem::path vision_merger_save_path =
+            //     gguf_model_path.parent_path() / "openvino_vision_embeddings_merger_model.xml";
+            // ov::genai::utils::save_openvino_model(vision_embeddings_merger_model, vision_merger_save_path.string(), true);
+        }
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }

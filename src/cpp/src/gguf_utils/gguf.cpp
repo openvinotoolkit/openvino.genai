@@ -372,6 +372,24 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
     std::map<std::string, GGUFMetaData> config;
     auto arch = std::get<std::string>(metadata.at("general.architecture"));
     config["architecture"] = arch;
+
+    if (!arch.compare("clip")) {
+        config["layer_num"] = metadata_to_int(metadata, "clip.vision.block_count");
+        config["head_num"] = metadata_to_int(metadata, "clip.vision.attention.head_count");
+        config["hidden_size"] = metadata_to_int(metadata, "clip.vision.embedding_length");
+        config["head_size"] = metadata_to_int(metadata, "clip.vision.embedding_length") /
+                              metadata_to_int(metadata, "clip.vision.attention.head_count");
+        config["head_num_kv"] = metadata_to_int(metadata, "clip.vision.attention.head_count");
+        config["rms_norm_eps"] = metadata_to_float(metadata, "clip.vision.attention.layer_norm_epsilon");
+        config["max_position_embeddings"] = metadata_to_int(metadata, "clip.vision.image_size");
+        config["patch_size"] = metadata_to_int(metadata, "clip.vision.patch_size");
+        config["spatial_merge_size"] = metadata_to_int(metadata, "clip.vision.spatial_merge_size");
+        config["projection_dim"] = metadata_to_int(metadata, "clip.vision.projection_dim");
+        config["intermediate_size"] = metadata_to_int(metadata, "clip.vision.feed_forward_length");
+        config["file_type"] = metadata_to_int(metadata, "general.file_type");
+        return config;
+    }
+
     config["layer_num"] = metadata_to_int(metadata, arch + ".block_count");
     config["head_num"] = metadata_to_int(metadata, arch + ".attention.head_count");
     config["head_size"] = metadata.count(arch + ".attention.key_length") ?
@@ -400,9 +418,340 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
     return config;
 }
 
+std::unordered_map<std::string, ov::Tensor> clip_consts_from_weights(
+    const std::map<std::string, GGUFMetaData>& config,
+    const std::unordered_map<std::string, ov::Tensor>& weights) {
+    std::unordered_map<std::string, ov::Tensor> consts;
+    // vision position embedding
+    if (weights.count("v.position_embd.weight")) {
+        consts["embeddings.weight"] = weights.at("v.position_embd.weight");
+    }
+
+    // vision patch embedding
+    if (weights.count("v.patch_embd.bias")) {
+        consts["self.proj.bias"] = weights.at("v.patch_embd.bias");
+    }
+
+    // Keep raw patch weights first.
+    // They will be merged later in create_vision_embeddings_model()
+    // into self.proj.weight with shape [1024, 3, 2, 16, 16].
+    if (weights.count("v.patch_embd.weight")) {
+        consts["self.proj.weight.raw0"] = weights.at("v.patch_embd.weight");
+    }
+    if (weights.count("v.patch_embd.weight.1")) {
+        consts["self.proj.weight.raw1"] = weights.at("v.patch_embd.weight.1");
+    }
+
+    if (weights.count("v.patch_embd.scales")) {
+        consts["self.proj.scales"] = weights.at("v.patch_embd.scales");
+    }
+    if (weights.count("v.patch_embd.biases")) {
+        consts["self.proj.biases"] = weights.at("v.patch_embd.biases");
+    }
+
+    // vision transformer blocks
+    for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
+        if (weights.count(format("v.blk.%d.ln1.weight", i))) {
+            consts[format("self.blocks.%d.norm1.weight", i)] = weights.at(format("v.blk.%d.ln1.weight", i));
+        }
+        if (weights.count(format("v.blk.%d.ln1.bias", i))) {
+            consts[format("self.blocks.%d.norm1.bias", i)] = weights.at(format("v.blk.%d.ln1.bias", i));
+        }
+
+        if (weights.count(format("v.blk.%d.attn_qkv.weight", i))) {
+            consts[format("self.blocks.%d.attn.qkv.weight", i)] = weights.at(format("v.blk.%d.attn_qkv.weight", i));
+        }
+        if (weights.count(format("v.blk.%d.attn_qkv.bias", i))) {
+            consts[format("self.blocks.%d.attn.qkv.bias", i)] = weights.at(format("v.blk.%d.attn_qkv.bias", i));
+        }
+        if (weights.count(format("v.blk.%d.attn_qkv.scales", i))) {
+            consts[format("self.blocks.%d.attn.qkv.scales", i)] = weights.at(format("v.blk.%d.attn_qkv.scales", i));
+        }
+        if (weights.count(format("v.blk.%d.attn_qkv.biases", i))) {
+            consts[format("self.blocks.%d.attn.qkv.biases", i)] = weights.at(format("v.blk.%d.attn_qkv.biases", i));
+        }
+
+        if (weights.count(format("v.blk.%d.attn_out.weight", i))) {
+            consts[format("self.blocks.%d.attn.proj.weight", i)] = weights.at(format("v.blk.%d.attn_out.weight", i));
+        }
+        if (weights.count(format("v.blk.%d.attn_out.bias", i))) {
+            consts[format("self.blocks.%d.attn.proj.bias", i)] = weights.at(format("v.blk.%d.attn_out.bias", i));
+        }
+        if (weights.count(format("v.blk.%d.attn_out.scales", i))) {
+            consts[format("self.blocks.%d.attn.proj.scales", i)] = weights.at(format("v.blk.%d.attn_out.scales", i));
+        }
+        if (weights.count(format("v.blk.%d.attn_out.biases", i))) {
+            consts[format("self.blocks.%d.attn.proj.biases", i)] = weights.at(format("v.blk.%d.attn_out.biases", i));
+        }
+
+        if (weights.count(format("v.blk.%d.ln2.weight", i))) {
+            consts[format("self.blocks.%d.norm2.weight", i)] = weights.at(format("v.blk.%d.ln2.weight", i));
+        }
+        if (weights.count(format("v.blk.%d.ln2.bias", i))) {
+            consts[format("self.blocks.%d.norm2.bias", i)] = weights.at(format("v.blk.%d.ln2.bias", i));
+        }
+
+        if (weights.count(format("v.blk.%d.ffn_up.weight", i))) {
+            consts[format("self.blocks.%d.mlp.linear_fc1.weight", i)] = weights.at(format("v.blk.%d.ffn_up.weight", i));
+        }
+        if (weights.count(format("v.blk.%d.ffn_up.bias", i))) {
+            consts[format("self.blocks.%d.mlp.linear_fc1.bias", i)] = weights.at(format("v.blk.%d.ffn_up.bias", i));
+        }
+        if (weights.count(format("v.blk.%d.ffn_up.scales", i))) {
+            consts[format("self.blocks.%d.mlp.linear_fc1.scales", i)] = weights.at(format("v.blk.%d.ffn_up.scales", i));
+        }
+        if (weights.count(format("v.blk.%d.ffn_up.biases", i))) {
+            consts[format("self.blocks.%d.mlp.linear_fc1.biases", i)] = weights.at(format("v.blk.%d.ffn_up.biases", i));
+        }
+
+        if (weights.count(format("v.blk.%d.ffn_down.weight", i))) {
+            consts[format("self.blocks.%d.mlp.linear_fc2.weight", i)] = weights.at(format("v.blk.%d.ffn_down.weight", i));
+        }
+        if (weights.count(format("v.blk.%d.ffn_down.bias", i))) {
+            consts[format("self.blocks.%d.mlp.linear_fc2.bias", i)] = weights.at(format("v.blk.%d.ffn_down.bias", i));
+        }
+        if (weights.count(format("v.blk.%d.ffn_down.scales", i))) {
+            consts[format("self.blocks.%d.mlp.linear_fc2.scales", i)] = weights.at(format("v.blk.%d.ffn_down.scales", i));
+        }
+        if (weights.count(format("v.blk.%d.ffn_down.biases", i))) {
+            consts[format("self.blocks.%d.mlp.linear_fc2.biases", i)] = weights.at(format("v.blk.%d.ffn_down.biases", i));
+        }
+    }
+
+    // final norm
+    if (weights.count("v.post_ln.weight")) {
+        consts["self.norm.weight"] = weights.at("v.post_ln.weight");
+    }
+    if (weights.count("v.post_ln.bias")) {
+        consts["self.norm.bias"] = weights.at("v.post_ln.bias");
+    }
+
+    // final merger
+    if (weights.count("mm.0.weight")) {
+        consts["self.merger.linear_fc1.weight"] = weights.at("mm.0.weight");
+    }
+    if (weights.count("mm.0.bias")) {
+        consts["self.merger.linear_fc1.bias"] = weights.at("mm.0.bias");
+    }
+    if (weights.count("mm.0.scales")) {
+        consts["self.merger.linear_fc1.scales"] = weights.at("mm.0.scales");
+    }
+    if (weights.count("mm.0.biases")) {
+        consts["self.merger.linear_fc1.biases"] = weights.at("mm.0.biases");
+    }
+
+    if (weights.count("mm.2.weight")) {
+        consts["self.merger.linear_fc2.weight"] = weights.at("mm.2.weight");
+    }
+    if (weights.count("mm.2.bias")) {
+        consts["self.merger.linear_fc2.bias"] = weights.at("mm.2.bias");
+    }
+    if (weights.count("mm.2.scales")) {
+        consts["self.merger.linear_fc2.scales"] = weights.at("mm.2.scales");
+    }
+    if (weights.count("mm.2.biases")) {
+        consts["self.merger.linear_fc2.biases"] = weights.at("mm.2.biases");
+    }
+
+    // deepstack merger 0
+    if (weights.count("v.deepstack.5.norm.weight")) {
+        consts["self.deepstack_merger_list.0.norm.weight"] = weights.at("v.deepstack.5.norm.weight");
+    }
+    if (weights.count("v.deepstack.5.norm.bias")) {
+        consts["self.deepstack_merger_list.0.norm.bias"] = weights.at("v.deepstack.5.norm.bias");
+    }
+    if (weights.count("v.deepstack.5.fc1.weight")) {
+        consts["self.deepstack_merger_list.0.linear_fc1.weight"] = weights.at("v.deepstack.5.fc1.weight");
+    }
+    if (weights.count("v.deepstack.5.fc1.bias")) {
+        consts["self.deepstack_merger_list.0.linear_fc1.bias"] = weights.at("v.deepstack.5.fc1.bias");
+    }
+    if (weights.count("v.deepstack.5.fc1.scales")) {
+        consts["self.deepstack_merger_list.0.linear_fc1.scales"] = weights.at("v.deepstack.5.fc1.scales");
+    }
+    if (weights.count("v.deepstack.5.fc1.biases")) {
+        consts["self.deepstack_merger_list.0.linear_fc1.biases"] = weights.at("v.deepstack.5.fc1.biases");
+    }
+    if (weights.count("v.deepstack.5.fc2.weight")) {
+        consts["self.deepstack_merger_list.0.linear_fc2.weight"] = weights.at("v.deepstack.5.fc2.weight");
+    }
+    if (weights.count("v.deepstack.5.fc2.bias")) {
+        consts["self.deepstack_merger_list.0.linear_fc2.bias"] = weights.at("v.deepstack.5.fc2.bias");
+    }
+    if (weights.count("v.deepstack.5.fc2.scales")) {
+        consts["self.deepstack_merger_list.0.linear_fc2.scales"] = weights.at("v.deepstack.5.fc2.scales");
+    }
+    if (weights.count("v.deepstack.5.fc2.biases")) {
+        consts["self.deepstack_merger_list.0.linear_fc2.biases"] = weights.at("v.deepstack.5.fc2.biases");
+    }
+
+    // deepstack merger 1
+    if (weights.count("v.deepstack.11.norm.weight")) {
+        consts["self.deepstack_merger_list.1.norm.weight"] = weights.at("v.deepstack.11.norm.weight");
+    }
+    if (weights.count("v.deepstack.11.norm.bias")) {
+        consts["self.deepstack_merger_list.1.norm.bias"] = weights.at("v.deepstack.11.norm.bias");
+    }
+    if (weights.count("v.deepstack.11.fc1.weight")) {
+        consts["self.deepstack_merger_list.1.linear_fc1.weight"] = weights.at("v.deepstack.11.fc1.weight");
+    }
+    if (weights.count("v.deepstack.11.fc1.bias")) {
+        consts["self.deepstack_merger_list.1.linear_fc1.bias"] = weights.at("v.deepstack.11.fc1.bias");
+    }
+    if (weights.count("v.deepstack.11.fc1.scales")) {
+        consts["self.deepstack_merger_list.1.linear_fc1.scales"] = weights.at("v.deepstack.11.fc1.scales");
+    }
+    if (weights.count("v.deepstack.11.fc1.biases")) {
+        consts["self.deepstack_merger_list.1.linear_fc1.biases"] = weights.at("v.deepstack.11.fc1.biases");
+    }
+    if (weights.count("v.deepstack.11.fc2.weight")) {
+        consts["self.deepstack_merger_list.1.linear_fc2.weight"] = weights.at("v.deepstack.11.fc2.weight");
+    }
+    if (weights.count("v.deepstack.11.fc2.bias")) {
+        consts["self.deepstack_merger_list.1.linear_fc2.bias"] = weights.at("v.deepstack.11.fc2.bias");
+    }
+    if (weights.count("v.deepstack.11.fc2.scales")) {
+        consts["self.deepstack_merger_list.1.linear_fc2.scales"] = weights.at("v.deepstack.11.fc2.scales");
+    }
+    if (weights.count("v.deepstack.11.fc2.biases")) {
+        consts["self.deepstack_merger_list.1.linear_fc2.biases"] = weights.at("v.deepstack.11.fc2.biases");
+    }
+
+    // deepstack merger 2
+    if (weights.count("v.deepstack.17.norm.weight")) {
+        consts["self.deepstack_merger_list.2.norm.weight"] = weights.at("v.deepstack.17.norm.weight");
+    }
+    if (weights.count("v.deepstack.17.norm.bias")) {
+        consts["self.deepstack_merger_list.2.norm.bias"] = weights.at("v.deepstack.17.norm.bias");
+    }
+    if (weights.count("v.deepstack.17.fc1.weight")) {
+        consts["self.deepstack_merger_list.2.linear_fc1.weight"] = weights.at("v.deepstack.17.fc1.weight");
+    }
+    if (weights.count("v.deepstack.17.fc1.bias")) {
+        consts["self.deepstack_merger_list.2.linear_fc1.bias"] = weights.at("v.deepstack.17.fc1.bias");
+    }
+    if (weights.count("v.deepstack.17.fc1.scales")) {
+        consts["self.deepstack_merger_list.2.linear_fc1.scales"] = weights.at("v.deepstack.17.fc1.scales");
+    }
+    if (weights.count("v.deepstack.17.fc1.biases")) {
+        consts["self.deepstack_merger_list.2.linear_fc1.biases"] = weights.at("v.deepstack.17.fc1.biases");
+    }
+    if (weights.count("v.deepstack.17.fc2.weight")) {
+        consts["self.deepstack_merger_list.2.linear_fc2.weight"] = weights.at("v.deepstack.17.fc2.weight");
+    }
+    if (weights.count("v.deepstack.17.fc2.bias")) {
+        consts["self.deepstack_merger_list.2.linear_fc2.bias"] = weights.at("v.deepstack.17.fc2.bias");
+    }
+    if (weights.count("v.deepstack.17.fc2.scales")) {
+        consts["self.deepstack_merger_list.2.linear_fc2.scales"] = weights.at("v.deepstack.17.fc2.scales");
+    }
+    if (weights.count("v.deepstack.17.fc2.biases")) {
+        consts["self.deepstack_merger_list.2.linear_fc2.biases"] = weights.at("v.deepstack.17.fc2.biases");
+    }
+
+    return consts;
+}
+
+std::unordered_map<std::string, gguf_tensor_type> clip_qtypes_from_weights(
+    const std::map<std::string, GGUFMetaData>& config,
+    const std::unordered_map<std::string, gguf_tensor_type>& qtype) {
+    std::unordered_map<std::string, gguf_tensor_type> qtype_map;
+    // vision position embedding
+    if (qtype.count("v.position_embd.qtype")) {
+        qtype_map["embeddings.qtype"] = qtype.at("v.position_embd.qtype");
+    }
+
+    // vision patch embedding
+    if (qtype.count("v.patch_embd.qtype")) {
+        qtype_map["self.proj.qtype"] = qtype.at("v.patch_embd.qtype");
+    }
+
+    // Keep raw patch weights first.
+    // They will be merged later in create_vision_embeddings_model().
+    if (qtype.count("v.patch_embd.qtype")) {
+        qtype_map["self.proj.weight.raw0.qtype"] = qtype.at("v.patch_embd.qtype");
+        qtype_map["self.proj.weight.raw1.qtype"] = qtype.at("v.patch_embd.qtype");
+    }
+
+    // vision transformer blocks
+    for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
+        if (qtype.count(format("v.blk.%d.ln1.qtype", i))) {
+            qtype_map[format("self.blocks.%d.norm1.qtype", i)] = qtype.at(format("v.blk.%d.ln1.qtype", i));
+        }
+        if (qtype.count(format("v.blk.%d.attn_qkv.qtype", i))) {
+            qtype_map[format("self.blocks.%d.attn.qkv.qtype", i)] = qtype.at(format("v.blk.%d.attn_qkv.qtype", i));
+        }
+        if (qtype.count(format("v.blk.%d.attn_out.qtype", i))) {
+            qtype_map[format("self.blocks.%d.attn.proj.qtype", i)] = qtype.at(format("v.blk.%d.attn_out.qtype", i));
+        }
+        if (qtype.count(format("v.blk.%d.ln2.qtype", i))) {
+            qtype_map[format("self.blocks.%d.norm2.qtype", i)] = qtype.at(format("v.blk.%d.ln2.qtype", i));
+        }
+        if (qtype.count(format("v.blk.%d.ffn_up.qtype", i))) {
+            qtype_map[format("self.blocks.%d.mlp.linear_fc1.qtype", i)] = qtype.at(format("v.blk.%d.ffn_up.qtype", i));
+        }
+        if (qtype.count(format("v.blk.%d.ffn_down.qtype", i))) {
+            qtype_map[format("self.blocks.%d.mlp.linear_fc2.qtype", i)] = qtype.at(format("v.blk.%d.ffn_down.qtype", i));
+        }
+    }
+
+    // final norm
+    if (qtype.count("v.post_ln.qtype")) {
+        qtype_map["self.norm.qtype"] = qtype.at("v.post_ln.qtype");
+    }
+
+    // final merger
+    if (qtype.count("mm.0.qtype")) {
+        qtype_map["self.merger.linear_fc1.qtype"] = qtype.at("mm.0.qtype");
+    }
+    if (qtype.count("mm.2.qtype")) {
+        qtype_map["self.merger.linear_fc2.qtype"] = qtype.at("mm.2.qtype");
+    }
+
+    // deepstack merger 0
+    if (qtype.count("v.deepstack.5.norm.qtype")) {
+        qtype_map["self.deepstack_merger_list.0.norm.qtype"] = qtype.at("v.deepstack.5.norm.qtype");
+    }
+    if (qtype.count("v.deepstack.5.fc1.qtype")) {
+        qtype_map["self.deepstack_merger_list.0.linear_fc1.qtype"] = qtype.at("v.deepstack.5.fc1.qtype");
+    }
+    if (qtype.count("v.deepstack.5.fc2.qtype")) {
+        qtype_map["self.deepstack_merger_list.0.linear_fc2.qtype"] = qtype.at("v.deepstack.5.fc2.qtype");
+    }
+
+    // deepstack merger 1
+    if (qtype.count("v.deepstack.11.norm.qtype")) {
+        qtype_map["self.deepstack_merger_list.1.norm.qtype"] = qtype.at("v.deepstack.11.norm.qtype");
+    }
+    if (qtype.count("v.deepstack.11.fc1.qtype")) {
+        qtype_map["self.deepstack_merger_list.1.linear_fc1.qtype"] = qtype.at("v.deepstack.11.fc1.qtype");
+    }
+    if (qtype.count("v.deepstack.11.fc2.qtype")) {
+        qtype_map["self.deepstack_merger_list.1.linear_fc2.qtype"] = qtype.at("v.deepstack.11.fc2.qtype");
+    }
+
+    // deepstack merger 2
+    if (qtype.count("v.deepstack.17.norm.qtype")) {
+        qtype_map["self.deepstack_merger_list.2.norm.qtype"] = qtype.at("v.deepstack.17.norm.qtype");
+    }
+    if (qtype.count("v.deepstack.17.fc1.qtype")) {
+        qtype_map["self.deepstack_merger_list.2.linear_fc1.qtype"] = qtype.at("v.deepstack.17.fc1.qtype");
+    }
+    if (qtype.count("v.deepstack.17.fc2.qtype")) {
+        qtype_map["self.deepstack_merger_list.2.linear_fc2.qtype"] = qtype.at("v.deepstack.17.fc2.qtype");
+    }
+
+    return qtype_map;
+}
+
 std::unordered_map<std::string, ov::Tensor> consts_from_weights(
     const std::map<std::string, GGUFMetaData>& config,
     const std::unordered_map<std::string, ov::Tensor>& weights) {
+
+    if (!std::get<std::string>(config.at("architecture")).compare("clip")) {
+        return clip_consts_from_weights(config, weights);
+    }
+
     std::unordered_map<std::string, ov::Tensor> consts;
 
     consts["model.embed_tokens.weight"] = weights.at("token_embd.weight");
@@ -524,6 +873,11 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
 std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(
     const std::map<std::string, GGUFMetaData>& config,
     const std::unordered_map<std::string, gguf_tensor_type>& qtype) {
+
+    if (!std::get<std::string>(config.at("architecture")).compare("clip")) {
+        return clip_qtypes_from_weights(config, qtype);
+    }
+
     std::unordered_map<std::string, gguf_tensor_type> qtype_map;
 
     if (qtype.count("token_embd.qtype")) {
