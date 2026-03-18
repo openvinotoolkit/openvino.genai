@@ -727,7 +727,7 @@ jobs:
               # puts them in the process image before _core.pyd asks for them.
               
               # Clean the pxd
-              pip uninstall av
+              pip uninstall -y av
               pip install av==16.1.0
               python -c "
               import av, os, pathlib, textwrap
