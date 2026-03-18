@@ -53,6 +53,10 @@
 
 # Tests
 /tests/ @sgonorov
+/tests/python_tests/test_image_generation_multi_call.py @likholat
+
+# Python bindings
+/src/python/py_image_generation_pipelines.cpp @likholat
 
 # GenAI Tools
 /tools/ @sbalandi
