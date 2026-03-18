@@ -23,7 +23,8 @@ VLMChatContext::VLMChatContext(
 
 VLMChatContext::ProcessedChatData VLMChatContext::process(
     const std::vector<ov::Tensor>& new_images,
-    const std::vector<ov::Tensor>& new_videos
+    const std::vector<ov::Tensor>& new_videos,
+    const std::vector<VideoMetadata>& new_videos_metadata
 ) {
     ProcessedChatData result;
     
@@ -37,7 +38,7 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
     std::vector<size_t> new_image_indices = m_history_state->register_images(new_images);
     std::vector<size_t> new_video_indices = m_history_state->register_videos(new_videos);
     
-    encode_visions_if_needed(new_image_indices, new_video_indices);
+    encode_visions_if_needed(new_image_indices, new_video_indices, new_videos_metadata);
     
     fill_messages_metadata(matching_history_length, new_image_indices, new_video_indices);
     
@@ -77,7 +78,8 @@ void VLMChatContext::rollback() {
 
 void VLMChatContext::encode_visions_if_needed(
     const std::vector<size_t>& image_indices,
-    const std::vector<size_t>& video_indices
+    const std::vector<size_t>& video_indices,
+    const std::vector<VideoMetadata>& videos_metadata
 ) {
     for (size_t idx : image_indices) {
         VisionID id = m_history_state->get_image_vision_id(idx);
@@ -92,7 +94,17 @@ void VLMChatContext::encode_visions_if_needed(
         VisionID id = m_history_state->get_video_vision_id(idx);
         if (!m_vision_registry->has_encoded_video(id)) {
             const ov::Tensor& original = m_vision_registry->get_original(id);
-            const auto encoded = m_inputs_embedder.encode_videos({original});
+
+            std::vector<VideoMetadata> resolved_videos_metadata = {};
+            if (!videos_metadata.empty()) {
+                const size_t video_metadata_idx = idx - m_initial_base_video_index;
+                OPENVINO_ASSERT(video_metadata_idx < videos_metadata.size(),
+                    "Resolved video metadata index out of range. "
+                    "Please provide metadata for all videos or none of them.");
+                resolved_videos_metadata.push_back(videos_metadata[video_metadata_idx]);
+            }
+
+            const auto encoded = m_inputs_embedder.encode_videos({original}, resolved_videos_metadata);
             m_vision_registry->set_encoded_video(id, std::move(encoded[0]));
         }
     }
