@@ -118,6 +118,12 @@ def parse_first_tool_call(text):
 def _tool_error(tool_name: str, message: str) -> str:
     return json.dumps({"tool": tool_name, "error": message}, ensure_ascii=False)
 
+def _strip_wrapping_parentheses(text: str) -> str:
+    stripped = text.strip()
+    if len(stripped) >= 2 and stripped[0] == "(" and stripped[-1] == ")":
+        return stripped[1:-1].strip()
+    return stripped
+
 def _parse_tool_args(tool_name: str, tool_args: str):
     try:
         parsed_args = json5.loads(tool_args)
@@ -171,7 +177,7 @@ def call_tool(tool_name: str, tool_args: str) -> str:
         }
         return json.dumps(ret, ensure_ascii=False)
     elif tool_name == "generate_image":
-        tool_args = tool_args.replace("(", "").replace(")", "")
+        tool_args = _strip_wrapping_parentheses(tool_args)
         parsed_args, parse_error = _parse_tool_args(tool_name, tool_args)
         if parse_error:
             return parse_error
