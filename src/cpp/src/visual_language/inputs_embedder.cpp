@@ -159,11 +159,12 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::sample_video_if_needed(
     const VideoMetadata& video_metadata
 ) const {
     const auto& video_shape = video.get_shape();
-    const size_t video_frames_num = video_shape[0];
-
+    
     OPENVINO_ASSERT(video_shape.size() == 4,
-        "Video tensor must have shape {N, H, W, C}, got rank ", video_shape.size());
-
+    "Video tensor must have shape {N, H, W, C}, got rank ", video_shape.size());
+    
+    const size_t video_frames_num = video_shape[0];
+    
     OPENVINO_ASSERT(video_metadata.frames_indices.size() <= video_frames_num,
         "Number of frames to sample cannot be greater than total number of frames in the video.");
 
