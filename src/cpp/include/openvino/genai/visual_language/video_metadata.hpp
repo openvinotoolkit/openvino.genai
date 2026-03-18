@@ -3,6 +3,11 @@
 
 #pragma once
 
+#include <cstddef>
+#include <vector>
+
+#include "openvino/genai/visibility.hpp"
+
 namespace ov::genai {
 
 /**
