@@ -13,15 +13,6 @@
 
 namespace ov::genai {
 
-namespace videochat_flash_utils {
-    ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t mm_local_num_frames);
-    ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8,
-                                    const size_t target_h = 224,
-                                    const size_t target_w = 224,
-                                    const std::array<float, 3>& image_mean = {0.485f, 0.456f, 0.406f},
-                                    const std::array<float, 3>& image_std = {0.229f, 0.224f, 0.225f});
-}
-
 class VisionEncoderVideoChatFlashQwen : public VisionEncoder {
 public:
     VisionEncoderVideoChatFlashQwen(
