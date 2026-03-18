@@ -426,9 +426,9 @@ public:
     }
 
     void rebuild_models() {
-        m_t5_text_encoder = std::make_shared<T5EncoderModel>(m_models_dir / "text_encoder", m_text_encode_device, m_compile_properties);
-        m_transformer = std::make_shared<LTXVideoTransformer3DModel>(m_models_dir / "transformer", m_denoise_device, m_compile_properties);
-        m_vae = std::make_shared<AutoencoderKLLTXVideo>(m_models_dir / "vae_decoder", m_vae_device, m_compile_properties);
+        m_t5_text_encoder = std::make_shared<T5EncoderModel>(m_models_dir / "text_encoder");
+        m_transformer = std::make_shared<LTXVideoTransformer3DModel>(m_models_dir / "transformer");
+        m_vae = std::make_shared<AutoencoderKLLTXVideo>(m_models_dir / "vae_decoder");
     }
 
     void reshape_models(const VideoGenerationConfig& generation_config, size_t batch_size_multiplier) {
