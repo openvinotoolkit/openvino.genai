@@ -23,12 +23,19 @@ def main():
     parser.add_argument("prompt", help="Text prompt for video generation")
     args, adapters = parser.parse_known_args()
 
+    if len(adapters) % 2 != 0:
+        parser.error("Each LoRA adapter path must be followed by a numeric alpha value (got an odd number of extra arguments).")
+
     # Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
     adapter_config = openvino_genai.AdapterConfig()
-    for i in range(int(len(adapters) / 2)):
-        adapter = openvino_genai.Adapter(adapters[2 * i])
-        alpha = float(adapters[2 * i + 1])
-        adapter_config.add(adapter, alpha)
+    for i in range(len(adapters) // 2):
+        adapter_path = adapters[2 * i]
+        alpha_str = adapters[2 * i + 1]
+        try:
+            alpha = float(alpha_str)
+        except ValueError:
+            parser.error(f"Invalid alpha value for LoRA adapter '{adapter_path}': '{alpha_str}' is not a number.")
+        adapter_config.add(openvino_genai.Adapter(adapter_path), alpha)
 
     pipe = openvino_genai.Text2VideoPipeline(args.model_dir, "CPU", adapters=adapter_config)  # GPU can be used as well
 
