@@ -115,6 +115,17 @@ public:
                                  GenerationConfig sampling_params);
 
     /**
+     * Adds request to running queue based on string input, vector of images, videos and videos metadata
+     * This step also performs tokenization's encode
+     */
+    GenerationHandle add_request(uint64_t request_id,
+                                 const std::string& prompt,
+                                 const std::vector<ov::Tensor>& images,
+                                 const std::vector<ov::Tensor>& videos,
+                                 const std::vector<VideoMetadata>& videos_metadata,
+                                 GenerationConfig sampling_params);
+
+    /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop
      */
     virtual bool has_non_finished_requests() = 0;
@@ -139,45 +150,69 @@ public:
     /**
      * Performs monolitic generation based on text prompts
      */
-    std::vector<GenerationResult>
-    generate(const std::vector<std::string>& prompts,
-             std::vector<GenerationConfig> sampling_params,
-             const StreamerVariant& streamer);
+    std::vector<GenerationResult> generate(
+        const std::vector<std::string>& prompts,
+        std::vector<GenerationConfig> sampling_params,
+        const StreamerVariant& streamer
+    );
 
-    virtual std::vector<VLMDecodedResults>
-    generate(
-             const std::vector<std::string>& prompts,
-             const std::vector<std::vector<ov::Tensor>>& rgbs,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer);
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<std::string>& prompts,
+        const std::vector<std::vector<ov::Tensor>>& rgbs,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
 
-    virtual std::vector<VLMDecodedResults> generate(const std::vector<std::string>& prompts,
-                                                    const std::vector<std::vector<ov::Tensor>>& images,
-                                                    const std::vector<std::vector<ov::Tensor>>& videos,
-                                                    const std::vector<GenerationConfig>& sampling_params,
-                                                    const StreamerVariant& streamer);
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<std::string>& prompts,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
+
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<std::string>& prompts,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
 
     
     /**
      * Performs monolitic generation based on ChatHistory objects
      */
-    std::vector<GenerationResult>
-    generate(const std::vector<ChatHistory>& histories,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer);
+    std::vector<GenerationResult> generate(
+        const std::vector<ChatHistory>& histories,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
 
-    virtual std::vector<VLMDecodedResults>
-    generate(
-             const std::vector<ChatHistory>& histories,
-             const std::vector<std::vector<ov::Tensor>>& rgbs,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer);
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<ChatHistory>& histories,
+        const std::vector<std::vector<ov::Tensor>>& rgbs,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
 
-    virtual std::vector<VLMDecodedResults> generate(const std::vector<ChatHistory>& histories,
-                                                    const std::vector<std::vector<ov::Tensor>>& images,
-                                                    const std::vector<std::vector<ov::Tensor>>& videos,
-                                                    const std::vector<GenerationConfig>& sampling_params,
-                                                    const StreamerVariant& streamer);
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<ChatHistory>& histories,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
+
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<ChatHistory>& histories,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
 
     /**
      * Starts chat with a given system prompt
