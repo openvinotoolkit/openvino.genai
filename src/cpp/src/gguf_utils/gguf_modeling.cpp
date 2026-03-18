@@ -304,6 +304,33 @@ std::shared_ptr<ov::Model> create_vlm_language_model(
     return model;
 }
 
+std::shared_ptr<ov::Model> create_text_embeddings_model(
+    const std::map<std::string, GGUFMetaData>& configs,
+    std::unordered_map<std::string, ov::Tensor>& consts,
+    std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
+
+    auto input = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::i64, ov::PartialShape{-1, -1});
+    set_name(input, "input");
+
+    auto [inputs_embeds, embeddings_table] = make_embedding(
+        "model.embed_tokens",
+        input->output(0),
+        consts,
+        qtypes.at("model.embed_tokens.qtype"));
+
+    auto result = std::make_shared<ov::op::v0::Result>(inputs_embeds);
+    set_name(result, "inputs_embeds");
+
+    ov::ParameterVector inputs{input};
+    auto model = std::make_shared<ov::Model>(
+        ov::OutputVector{result->output(0)},
+        inputs);
+
+    return model;
+}
+
+
 } // namespace
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const bool enable_save_ov_model) {
@@ -331,12 +358,23 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
             ov::genai::utils::save_openvino_model(model, save_path.string(), true);
         }
     } else if (!model_arch.compare("qwen3vl")) {
-        model = create_vlm_language_model(config, consts, qtypes);
-        if (enable_save_ov_model){
+        std::shared_ptr<ov::Model> vlm_llm_model = create_vlm_language_model(config, consts, qtypes);
+        std::shared_ptr<ov::Model> text_embeddings_model = create_text_embeddings_model(config, consts, qtypes);
+
+        if (enable_save_ov_model) {
             std::filesystem::path gguf_model_path(model_path);
-            std::filesystem::path save_path = gguf_model_path.parent_path() / "openvino_language_model.xml";
-            ov::genai::utils::save_openvino_model(model, save_path.string(), true);
+
+            std::filesystem::path lm_save_path =
+                gguf_model_path.parent_path() / "openvino_language_model.xml";
+            ov::genai::utils::save_openvino_model(vlm_llm_model, lm_save_path.string(), true);
+            
+            std::filesystem::path text_emb_save_path =
+                gguf_model_path.parent_path() / "openvino_text_embeddings_model.xml";
+            ov::genai::utils::save_openvino_model(text_embeddings_model, text_emb_save_path.string(), true);
         }
+    } else if (!model_arch.compare("clip")) {
+        
+
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }

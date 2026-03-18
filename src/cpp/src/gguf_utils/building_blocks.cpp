@@ -711,7 +711,9 @@ ov::Output<ov::Node> make_int8_weights(
 
     // Expand dimensions for scales and biases
     auto scale_shape = scales.get_shape();
-    scale_shape.push_back(1);
+    while (scale_shape.size() < 3) {
+        scale_shape.push_back(1); // Add new axis at the end
+    }
     scales.set_shape(scale_shape);
     biases.set_shape(scale_shape);
 
@@ -779,7 +781,9 @@ ov::Output<ov::Node> make_int4_weights(
 
     // Expand dimensions for scales and biases
     ov::Shape scale_bias_shape = scales.get_shape();
-    scale_bias_shape.push_back(1); // Add new axis at the end
+    while (scale_bias_shape.size() < 3) {
+        scale_bias_shape.push_back(1); // Add new axis at the end
+    }
     scales.set_shape(scale_bias_shape);
     biases.set_shape(scale_bias_shape);
 
