@@ -11,7 +11,6 @@
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "types_c.h"
 
-// WhisperDecodedResultChunk implementation
 ov_status_e ov_genai_whisper_decoded_result_chunk_create(ov_genai_whisper_decoded_result_chunk** chunk) {
     if (!chunk) {
         return ov_status_e::INVALID_C_PARAM;
@@ -83,7 +82,6 @@ ov_status_e ov_genai_whisper_decoded_result_chunk_get_text(const ov_genai_whispe
     return ov_status_e::OK;
 }
 
-// WhisperDecodedResults implementation
 ov_status_e ov_genai_whisper_decoded_results_create(ov_genai_whisper_decoded_results** results) {
     if (!results) {
         return ov_status_e::INVALID_C_PARAM;
@@ -184,11 +182,7 @@ ov_status_e ov_genai_whisper_decoded_results_has_chunks(const ov_genai_whisper_d
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        const bool has_non_empty_chunks =
-            results->object->chunks.has_value() && !results->object->chunks->empty();
-        const bool has_non_empty_words =
-            results->object->words.has_value() && !results->object->words->empty();
-        *has_chunks = has_non_empty_chunks || has_non_empty_words;
+        *has_chunks = results->object->chunks.has_value() && !results->object->chunks->empty();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
@@ -201,9 +195,44 @@ ov_status_e ov_genai_whisper_decoded_results_get_chunks_count(const ov_genai_whi
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        if (results->object->chunks.has_value() && !results->object->chunks->empty()) {
+        if (results->object->chunks.has_value()) {
             *count = results->object->chunks->size();
-        } else if (results->object->words.has_value()) {
+        } else {
+            *count = 0;
+        }
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper_decoded_results* results,
+                                                          size_t index,
+                                                          ov_genai_whisper_decoded_result_chunk** chunk) {
+    if (!results || !(results->object) || !chunk) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        if (!results->object->chunks.has_value() || index >= results->object->chunks->size()) {
+            return ov_status_e::OUT_OF_BOUNDS;
+        }
+        std::unique_ptr<ov_genai_whisper_decoded_result_chunk> _chunk =
+            std::make_unique<ov_genai_whisper_decoded_result_chunk>();
+        _chunk->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>(results->object->chunks->at(index));
+        *chunk = _chunk.release();
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_decoded_results_get_words_count(const ov_genai_whisper_decoded_results* results,
+                                                             size_t* count) {
+    if (!results || !(results->object) || !count) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        if (results->object->words.has_value()) {
             *count = results->object->words->size();
         } else {
             *count = 0;
@@ -214,52 +243,24 @@ ov_status_e ov_genai_whisper_decoded_results_get_chunks_count(const ov_genai_whi
     return ov_status_e::OK;
 }
 
-// Note:
-// - When results->object->chunks is present and non-empty, this function returns a
-//   segment-level chunk at the specified index.
-// - When segment-level chunks are not available but results->object->words is present,
-//   this function falls back to per-word timings and synthesizes a "chunk" from the
-//   corresponding WhisperWordTiming entry.
-//
-// In the synthesized word-level case:
-// - WhisperDecodedResultChunk::start_ts is taken from WhisperWordTiming::start_ts.
-// - WhisperDecodedResultChunk::end_ts is taken from WhisperWordTiming::end_ts.
-// - WhisperDecodedResultChunk::text is taken from WhisperWordTiming::word.
-// Other fields of WhisperDecodedResultChunk remain at their default values and
-// should not be assumed to be populated.
-//
-// Callers that need to distinguish between segment-level chunks and word-level
-// synthesized chunks should check the originating ov::genai::WhisperDecodedResults
-// object (for example, whether chunks or words were originally requested / filled).
-ov_status_e ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper_decoded_results* results,
-                                                          size_t index,
-                                                          ov_genai_whisper_decoded_result_chunk** chunk) {
-    if (!results || !(results->object) || !chunk) {
+ov_status_e ov_genai_whisper_decoded_results_get_word_at(const ov_genai_whisper_decoded_results* results,
+                                                         size_t index,
+                                                         ov_genai_whisper_decoded_result_chunk** word) {
+    if (!results || !(results->object) || !word) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        std::unique_ptr<ov_genai_whisper_decoded_result_chunk> _chunk =
-            std::make_unique<ov_genai_whisper_decoded_result_chunk>();
-
-        if (results->object->chunks.has_value() && !results->object->chunks->empty()) {
-            if (index >= results->object->chunks->size()) {
-                return ov_status_e::OUT_OF_BOUNDS;
-            }
-            _chunk->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>(results->object->chunks->at(index));
-        } else if (results->object->words.has_value() && !results->object->words->empty()) {
-            if (index >= results->object->words->size()) {
-                return ov_status_e::OUT_OF_BOUNDS;
-            }
-            const auto& word_data = results->object->words->at(index);
-            _chunk->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>();
-            _chunk->object->start_ts = word_data.start_ts;
-            _chunk->object->end_ts = word_data.end_ts;
-            _chunk->object->text = word_data.word;
-        } else {
-            return ov_status_e::NOT_FOUND;
+        if (!results->object->words.has_value() || index >= results->object->words->size()) {
+            return ov_status_e::OUT_OF_BOUNDS;
         }
-
-        *chunk = _chunk.release();
+        const auto& word_data = results->object->words->at(index);
+        std::unique_ptr<ov_genai_whisper_decoded_result_chunk> _word =
+            std::make_unique<ov_genai_whisper_decoded_result_chunk>();
+        _word->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>();
+        _word->object->start_ts = word_data.start_ts;
+        _word->object->end_ts = word_data.end_ts;
+        _word->object->text = word_data.word;
+        *word = _word.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
@@ -290,12 +291,11 @@ ov_status_e ov_genai_whisper_decoded_results_get_string(const ov_genai_whisper_d
     return ov_status_e::OK;
 }
 
-// WhisperPipeline implementation
 ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
-                                             const char* device,
-                                             const size_t property_args_size,
-                                             ov_genai_whisper_pipeline** pipeline,
-                                             ...) {
+                                              const char* device,
+                                              const size_t property_args_size,
+                                              ov_genai_whisper_pipeline** pipeline,
+                                              ...) {
     if (!models_path || !device || !pipeline || property_args_size % 2 != 0) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -308,7 +308,6 @@ ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
             GET_PROPERTY_FROM_ARGS_LIST;
         }
         va_end(args_ptr);
-
         std::unique_ptr<ov_genai_whisper_pipeline> _pipeline = std::make_unique<ov_genai_whisper_pipeline>();
         _pipeline->object = std::make_shared<ov::genai::WhisperPipeline>(std::filesystem::path(models_path),
                                                                          std::string(device),
@@ -327,10 +326,10 @@ void ov_genai_whisper_pipeline_free(ov_genai_whisper_pipeline* pipeline) {
 }
 
 ov_status_e ov_genai_whisper_pipeline_generate(ov_genai_whisper_pipeline* pipeline,
-                                               const float* raw_speech,
-                                               size_t raw_speech_size,
-                                               const ov_genai_whisper_generation_config* config,
-                                               ov_genai_whisper_decoded_results** results) {
+                                                const float* raw_speech,
+                                                size_t raw_speech_size,
+                                                const ov_genai_whisper_generation_config* config,
+                                                ov_genai_whisper_decoded_results** results) {
     if (!pipeline || !(pipeline->object) || !raw_speech || !results) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -338,17 +337,12 @@ ov_status_e ov_genai_whisper_pipeline_generate(ov_genai_whisper_pipeline* pipeli
         std::unique_ptr<ov_genai_whisper_decoded_results> _results =
             std::make_unique<ov_genai_whisper_decoded_results>();
         _results->object = std::make_shared<ov::genai::WhisperDecodedResults>();
-
-        // Convert raw speech input to vector
         ov::genai::RawSpeechInput speech_input(raw_speech, raw_speech + raw_speech_size);
-
-        // Generate results
         if (config && config->object) {
             *(_results->object) = pipeline->object->generate(speech_input, *(config->object));
         } else {
             *(_results->object) = pipeline->object->generate(speech_input);
         }
-
         *results = _results.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;

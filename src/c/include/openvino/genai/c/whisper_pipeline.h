@@ -3,7 +3,7 @@
 //
 
 /**
- * @brief This is a header file for OpenVINO GenAI C API, which is a C wrapper for  ov::genai::WhisperPipeline class.
+ * @brief This is a header file for OpenVINO GenAI C API, which is a C wrapper for ov::genai::WhisperPipeline class.
  *
  * @file whisper_pipeline.h
  */
@@ -172,6 +172,27 @@ ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper_decoded_res
                                               ov_genai_whisper_decoded_result_chunk** chunk);
 
 /**
+ * @brief Get number of word-level results from ov_genai_whisper_decoded_results.
+ * @param results A pointer to the ov_genai_whisper_decoded_results instance.
+ * @param count A pointer to the number of words.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_decoded_results_get_words_count(const ov_genai_whisper_decoded_results* results, size_t* count);
+
+/**
+ * @brief Get word result at specific index from ov_genai_whisper_decoded_results.
+ * @param results A pointer to the ov_genai_whisper_decoded_results instance.
+ * @param index The index of the word result to retrieve.
+ * @param word A pointer to the newly created ov_genai_whisper_decoded_result_chunk containing word metadata.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_decoded_results_get_word_at(const ov_genai_whisper_decoded_results* results,
+                                             size_t index,
+                                             ov_genai_whisper_decoded_result_chunk** word);
+
+/**
  * @brief Get string representation from ov_genai_whisper_decoded_results.
  * @param results A pointer to the ov_genai_whisper_decoded_results instance.
  * @param output A pointer to the pre-allocated output string buffer. It can be set to NULL, in which case the
@@ -206,7 +227,7 @@ ov_genai_whisper_decoded_results_get_string(const ov_genai_whisper_decoded_resul
  *
  * Example with properties:
  * ov_genai_whisper_pipeline_create(model_path, "GPU", 2, &pipeline,
- *                                  "CACHE_DIR", "cache_dir");
+ * "CACHE_DIR", "cache_dir");
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
                                                                       const char* device,
