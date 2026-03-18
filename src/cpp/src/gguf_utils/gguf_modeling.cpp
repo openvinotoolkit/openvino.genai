@@ -168,25 +168,11 @@ std::shared_ptr<ov::Model> create_vlm_language_model(
     std::unordered_map<std::string, ov::Tensor>& consts,
     std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
     
-    std::cout << "[DEBUG] Starting create_vlm_language_model" << std::endl;
-    
     const int hidden_size = std::get<int>(configs.at("hidden_size"));
     const int n_deepstack_layers = configs.count("n_deepstack_layers") ?
         std::get<int>(configs.at("n_deepstack_layers")) : 0;
-    
-    std::cout << "[DEBUG] Config values - hidden_size: " << hidden_size 
-              << ", n_deepstack_layers: " << n_deepstack_layers << std::endl;
-    
     std::vector<int64_t> mrope_section = get_mrope_section_from_config(configs);
-    
-    std::cout << "[DEBUG] mrope_section size: " << mrope_section.size() << std::endl;
-    for (size_t i = 0; i < mrope_section.size(); ++i) {
-        std::cout << "[DEBUG] mrope_section[" << i << "]: " << mrope_section[i] << std::endl;
-    }
-
     OPENVINO_ASSERT(!mrope_section.empty(), "[create_vlm_language_model] Missing rope.dimension_sections in GGUF metadata.");
-
-    std::cout << "[DEBUG] Creating input parameters..." << std::endl;
     
     auto attention_mask = std::make_shared<ov::op::v0::Parameter>(
         ov::element::i64, ov::PartialShape{-1, -1});
@@ -212,20 +198,12 @@ std::shared_ptr<ov::Model> create_vlm_language_model(
         ov::element::i32, ov::PartialShape{-1});
     set_name(beam_idx, "beam_idx");
 
-    std::cout << "[DEBUG] Input parameters created successfully" << std::endl;
-
     auto hidden_states = inputs_embeds->output(0);
-
-    std::cout << "[DEBUG] Initializing RoPE with head_size: " << std::get<int>(configs.at("head_size"))
-              << ", max_position_embeddings: " << std::get<int>(configs.at("max_position_embeddings"))
-              << ", rope_freq_base: " << std::get<float>(configs.at("rope_freq_base")) << std::endl;
 
     auto rope_const = init_rope(
         std::get<int>(configs.at("head_size")),
         std::get<int>(configs.at("max_position_embeddings")),
         std::get<float>(configs.at("rope_freq_base")));
-
-    std::cout << "[DEBUG] RoPE initialized successfully" << std::endl;
 
     auto input_shape = std::make_shared<ov::op::v3::ShapeOf>(inputs_embeds);
     auto batch_axis = std::make_shared<ov::op::v0::Constant>(
@@ -242,11 +220,8 @@ std::shared_ptr<ov::Model> create_vlm_language_model(
     std::shared_ptr<ov::Node> output_shape = nullptr;
 
     const int layer_num = std::get<int>(configs.at("layer_num"));
-    std::cout << "[DEBUG] Starting layer processing, total layers: " << layer_num << std::endl;
 
     for (int i = 0; i < layer_num; ++i) {
-        std::cout << "[DEBUG] Processing layer " << i << "/" << layer_num << std::endl;
-        
         auto [new_hidden, layer_sinks, new_mask, new_cos_sin, new_shape] = layer(
             configs,
             consts,
@@ -270,32 +245,22 @@ std::shared_ptr<ov::Model> create_vlm_language_model(
         cos_sin_cached = new_cos_sin;
         output_shape = new_shape;
 
-        std::cout << "[DEBUG] Layer " << i << " processed, sinks count: " << layer_sinks.size() << std::endl;
-
         if (i < n_deepstack_layers) {
-            std::cout << "[DEBUG] Injecting visual embeds for layer " << i << std::endl;
             hidden_states = inject_visual_embeds(
                 hidden_states,
                 deepstack_visual_embeds,
                 visual_pos_masks,
                 i);
-            std::cout << "[DEBUG] Visual embeds injected for layer " << i << std::endl;
         }
 
         sinks.insert(sinks.end(), layer_sinks.begin(), layer_sinks.end());
     }
-
-    std::cout << "[DEBUG] All layers processed, total sinks: " << sinks.size() << std::endl;
-    std::cout << "[DEBUG] Applying final normalization with eps: " << std::get<float>(configs.at("rms_norm_eps")) << std::endl;
 
     auto final_norm = make_rms_norm(
         "model.norm",
         hidden_states,
         consts,
         std::get<float>(configs.at("rms_norm_eps")));
-
-    std::cout << "[DEBUG] Final normalization applied" << std::endl;
-    std::cout << "[DEBUG] Creating LM head with qtype: " << static_cast<int>(qtypes.at("lm_head.qtype")) << std::endl;
 
     ov::Output<ov::Node> lm_head_embeddings;
     if (!consts.count("lm_head.weight")) {
@@ -316,8 +281,6 @@ std::shared_ptr<ov::Model> create_vlm_language_model(
         lm_head_embeddings,
         qtypes.at("lm_head.qtype"));
 
-    std::cout << "[DEBUG] LM head created" << std::endl;
-
     auto logits = std::make_shared<ov::op::v0::Result>(embed_out);
     set_name(logits, "logits");
 
@@ -330,21 +293,14 @@ std::shared_ptr<ov::Model> create_vlm_language_model(
         attention_mask
     };
 
-    std::cout << "[DEBUG] Creating model with " << inputs.size() << " inputs and " << sinks.size() << " sinks" << std::endl;
-
     auto model = std::make_shared<ov::Model>(ov::OutputVector({logits->output(0)}), sinks, inputs);
 
     const int file_type = std::get<int>(configs.at("file_type"));
-    std::cout << "[DEBUG] Setting model runtime info, file_type: " << file_type << std::endl;
 
     if (file_type == 1 || file_type == 0) {
         model->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
-        std::cout << "[DEBUG] Set kv_cache_precision to f16" << std::endl;
     }
     model->set_rt_info(8.0f, {"runtime_options", ov::hint::activations_scale_factor.name()});
-    std::cout << "[DEBUG] Set activations_scale_factor to 8.0" << std::endl;
-
-    std::cout << "[DEBUG] create_vlm_language_model completed successfully" << std::endl;
     return model;
 }
 
