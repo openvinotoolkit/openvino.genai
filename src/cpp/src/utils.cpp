@@ -361,7 +361,8 @@ ov::Tensor insert_image_placeholders(const std::vector<std::variant<ov::Tensor, 
 
 std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::Tensor& tokens) {
     std::vector<std::variant<ov::Tensor, size_t>> chunks;
-    int64_t last_token = tokens.data<int64_t>()[0];
+    const int64_t* tokens_ptr = tokens.data<const int64_t>();
+    int64_t last_token = tokens_ptr[0];
     size_t text_start = 0;
     for (size_t offset = 1; offset < tokens.get_shape().at(1); ++offset) {
         // If last_token and next_token are not negative, it's continuation of the current chunk text - skip
@@ -369,16 +370,17 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
         // If last token is not negative and next_token is negative, it's an end of text - push_back a chunk
         // If last_token and next_token are negative, it's continuation of an image placeholder - skip
         // if last_token and next_token are negative but different, it's a start of a new image placeholder - save the previous image placeholder
-        int64_t next_token = tokens.data<int64_t>()[offset];
+        int64_t next_token = tokens_ptr[offset];
         if (last_token < 0 && next_token >= 0) {
             text_start = offset;
             chunks.push_back(size_t(-(last_token + 1)));
         } else if (last_token >= 0 && next_token < 0) {
+            // Create a non-owning, read-only tensor view over the existing token buffer.
             chunks.emplace_back(
                 std::in_place_type<ov::Tensor>,
                 ov::element::i64,
                 ov::Shape{1, offset - text_start},
-                tokens.data<int64_t>() + text_start
+                const_cast<int64_t*>(tokens_ptr + text_start)
             );
         } else if (last_token < 0 && next_token < 0 && last_token != next_token) {
             chunks.push_back(size_t(-(last_token + 1)));
@@ -388,11 +390,12 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
     // Add the last chunk
     size_t full_length = tokens.get_shape().at(1);
     if (last_token >= 0) {
+        // Create a non-owning, read-only tensor view over the existing token buffer.
         chunks.emplace_back(
             std::in_place_type<ov::Tensor>,
             ov::element::i64,
             ov::Shape{1, full_length - text_start},
-            tokens.data<int64_t>() + text_start
+            const_cast<int64_t*>(tokens_ptr + text_start)
         );
     } else {
         chunks.push_back(size_t(-(last_token + 1)));
