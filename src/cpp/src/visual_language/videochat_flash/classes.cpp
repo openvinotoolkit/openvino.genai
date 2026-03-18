@@ -583,12 +583,13 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
             return compiled_model.create_infer_request();
         });
 
+    constexpr std::size_t num_attention_heads = 16;
     OPENVINO_ASSERT(
-        m_vlm_config.mm_hidden_size % 16 == 0,
+        m_vlm_config.mm_hidden_size % num_attention_heads == 0,
         "mm_hidden_size must be divisible by 16 for VideoChat-Flash merge model. Got mm_hidden_size=",
         m_vlm_config.mm_hidden_size
     );
-    const auto merge_dim = m_vlm_config.mm_hidden_size / 16;
+    const auto merge_dim = m_vlm_config.mm_hidden_size / num_attention_heads;
     auto merge_model = build_bipartite_soft_matching_merge_opt_model(merge_dim);
     auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", {});
     m_ireq_queue_merge_model = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
