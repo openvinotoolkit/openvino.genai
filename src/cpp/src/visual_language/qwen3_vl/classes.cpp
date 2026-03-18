@@ -9,12 +9,21 @@ namespace ov::genai {
 
 namespace {
 
+constexpr float DEFAULT_METADATA_FPS = 24.0f;
+
 /**
  * @brief Calculates timestamps for video frames based on encoded video metadata.
  * @return Vector of float timestamps corresponding to each video frame.
  */
 std::vector<float> calculate_timestamps(const VideoMetadata& video_metadata, size_t merge_size) {
-    OPENVINO_ASSERT(video_metadata.fps > 0.0f, "Video metadata fps must be positive for timestamp calculation.");
+    OPENVINO_ASSERT(video_metadata.fps >= 0.0f, "Video metadata fps must be positive for timestamp calculation.");
+
+    float metadata_fps = video_metadata.fps;
+    if (metadata_fps == 0.0f) {
+        GENAI_INFO("Qwen3-VL requires frame timestamps to construct prompts, but VideoMetadata is missing or fps is not set. "
+            "Defaulting to 24 fps. Please provide VideoMetadata with fps for more accurate results.");
+        metadata_fps = DEFAULT_METADATA_FPS;
+    }
 
     // Copy frames_indices since padding may be needed
     std::vector<size_t> frames_indices = video_metadata.frames_indices;
@@ -29,7 +38,7 @@ std::vector<float> calculate_timestamps(const VideoMetadata& video_metadata, siz
     timestamps.reserve(frames_indices.size() / merge_size);
     for (size_t i = 0; i < frames_indices.size(); i += merge_size) {
         const float timestamp = (static_cast<float>(frames_indices[i] + frames_indices[i + merge_size - 1]))
-            / 2.0f / video_metadata.fps;
+            / 2.0f / metadata_fps;
         timestamps.push_back(timestamp);
     }
     return timestamps;
@@ -62,7 +71,7 @@ void fill_video_metadata(VideoMetadata& video_metadata, size_t total_num_frames,
             GENAI_INFO("Requested to sample frames by fps, but video metadata fps is not set. "
                 "Defaulting to 24 fps for frame sampling. "
                 "Please provide VideoMetadata with fps for more accurate results.");
-            video_metadata.fps = 24.0f;
+            video_metadata.fps = DEFAULT_METADATA_FPS;
         }
 
         num_frames = static_cast<size_t>(
