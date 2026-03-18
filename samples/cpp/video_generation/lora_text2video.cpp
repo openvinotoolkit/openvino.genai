@@ -9,6 +9,14 @@
 
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
 
+void print_perf_metrics(const ov::genai::VideoGenerationPerfMetrics& perf_metrics) {
+    std::cout << "\nPerformance metrics:\n"
+              << "  Load time: " << perf_metrics.get_load_time() << " ms\n"
+              << "  Generate duration: " << perf_metrics.get_generate_duration() << " ms\n"
+              << "  Transformer duration: " << perf_metrics.get_transformer_infer_duration().mean << " ms\n"
+              << "  VAE decoder duration: " << perf_metrics.get_vae_decoder_infer_duration() << " ms\n";
+}
+
 int main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc >= 3 && (argc - 3) % 2 == 0, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [<LORA_SAFETENSORS> <ALPHA> ...]");
 
@@ -16,7 +24,6 @@ int main(int32_t argc, char* argv[]) try {
     std::string prompt = argv[2];
 
     const std::string device = "CPU";  // GPU can be used as well
-    float frame_rate = 25.0f;
 
     ov::genai::AdapterConfig adapter_config;
     // Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
@@ -34,12 +41,17 @@ int main(int32_t argc, char* argv[]) try {
         prompt,
         ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
         ov::genai::height(480),
+        ov::genai::width(704),
+        ov::genai::num_frames(161),
+        ov::genai::num_videos_per_prompt(1),
         ov::genai::num_inference_steps(25),
+        ov::genai::frame_rate(25.0f),
         ov::genai::callback(progress_bar),
         ov::genai::guidance_scale(3)
     );
 
-    save_video("lora_video.avi", output.video, frame_rate);
+    save_video("lora_video.avi", output.video, 25);
+    print_perf_metrics(output.perf_metrics);
 
     std::cout << "Generating video without LoRA adapters applied, resulting video will be in baseline_video.avi\n";
     output = pipe.generate(
@@ -47,12 +59,17 @@ int main(int32_t argc, char* argv[]) try {
         ov::genai::adapters(),  // passing adapters in generate overrides adapters set in the constructor; adapters() means no adapters
         ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
         ov::genai::height(480),
+        ov::genai::width(704),
+        ov::genai::num_frames(161),
+        ov::genai::num_videos_per_prompt(1),
         ov::genai::num_inference_steps(25),
+        ov::genai::frame_rate(25.0f),
         ov::genai::callback(progress_bar),
         ov::genai::guidance_scale(3)
     );
 
-    save_video("baseline_video.avi", output.video, frame_rate);
+    save_video("baseline_video.avi", output.video, 25);
+    print_perf_metrics(output.perf_metrics);
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
