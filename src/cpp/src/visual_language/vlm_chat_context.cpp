@@ -33,6 +33,8 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
 
     if (history_modified) {
         m_history_state->truncate_to(matching_history_length);
+        m_initial_base_image_index = m_history_state->get_base_image_index();
+        m_initial_base_video_index = m_history_state->get_base_video_index();
     }
     
     std::vector<size_t> new_image_indices = m_history_state->register_images(new_images);
@@ -74,6 +76,8 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
 
 void VLMChatContext::rollback() {
      m_history_state->truncate_to(m_initial_messages_metadata_count);
+     m_initial_base_image_index = m_history_state->get_base_image_index();
+     m_initial_base_video_index = m_history_state->get_base_video_index();
 }
 
 void VLMChatContext::encode_visions_if_needed(
