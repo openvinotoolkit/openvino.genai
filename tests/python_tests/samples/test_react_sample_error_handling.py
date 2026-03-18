@@ -13,6 +13,7 @@ from conftest import SAMPLES_PY_DIR
 def react_module():
     module_path = SAMPLES_PY_DIR / "text_generation/react_sample.py"
     spec = importlib.util.spec_from_file_location("react_sample", module_path)
+    assert spec is not None, f"Failed to load module spec from {module_path}"
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
