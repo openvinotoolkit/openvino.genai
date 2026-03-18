@@ -9,7 +9,7 @@ import tempfile
 import numpy as np
 import pytest
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_JS_DIR
 from test_utils import run_sample
 
 rng = np.random.default_rng(34231)
@@ -47,8 +47,15 @@ class TestTextToSpeechSample:
                       "--speaker_embedding_file_path", self.temp_speaker_embedding_file.name]
         py_result = run_sample(py_command)
 
+        # Run JS sample
+        js_script = SAMPLES_JS_DIR / "speech_generation/text2speech.js"
+        js_command = ["node", js_script, convert_model, input_prompt,
+                      "--speaker_embedding", self.temp_speaker_embedding_file.name]
+        js_result = run_sample(js_command)
+
         assert "Text successfully converted to audio file" in cpp_result.stdout, "C++ sample text2speech must be successfully completed"
         assert "Text successfully converted to audio file" in py_result.stdout, "Python sample text2speech must be successfully completed"
+        assert "Text successfully converted to audio file" in js_result.stdout, "JS sample text2speech must be successfully completed"
 
 
     @pytest.mark.speech_generation
@@ -67,5 +74,11 @@ class TestTextToSpeechSample:
         py_command = [sys.executable, py_script, convert_model, input_prompt]
         py_result = run_sample(py_command)
 
+        # Run JS sample
+        js_script = SAMPLES_JS_DIR / "speech_generation/text2speech.js"
+        js_command = ["node", js_script, convert_model, input_prompt]
+        js_result = run_sample(js_command)
+
         assert "Text successfully converted to audio file" in cpp_result.stdout, "C++ sample text2speech must be successfully completed"
         assert "Text successfully converted to audio file" in py_result.stdout, "Python sample text2speech must be successfully completed"
+        assert "Text successfully converted to audio file" in js_result.stdout, "JS sample text2speech must be successfully completed"
