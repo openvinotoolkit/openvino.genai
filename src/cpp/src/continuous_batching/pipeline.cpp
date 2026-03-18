@@ -268,6 +268,17 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
     return m_impl->add_request(request_id, prompt, images, videos, sampling_params);
 }
 
+GenerationHandle ContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata,
+    const ov::genai::GenerationConfig& sampling_params
+) {
+    return m_impl->add_request(request_id, prompt, images, videos, videos_metadata, sampling_params);
+}
+
 void ContinuousBatchingPipeline::step() {
     m_impl->step();
 }
@@ -325,6 +336,16 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer) {
     return m_impl->generate(prompts, images, videos, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images,
+    const std::vector<std::vector<ov::Tensor>>& videos,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer) {
+    return m_impl->generate(prompts, images, videos, videos_metadata, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
