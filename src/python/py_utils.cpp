@@ -163,6 +163,17 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 }
             }
             return parsers;
+        } else if (property_name == ov::genai::videos_metadata.name()) {
+            auto property_list = py_obj.cast<py::list>();
+            std::vector<ov::genai::VideoMetadata> videos_metadata;
+            for (const auto& item : property_list) {
+                if (py::isinstance<ov::genai::VideoMetadata>(item)) {
+                    videos_metadata.push_back(item.cast<ov::genai::VideoMetadata>());
+                } else {
+                    OPENVINO_THROW("Incorrect value in \"", property_name, "\". Expected VideoMetadata.");
+                }
+            }
+            return videos_metadata;
         } else {
             auto _list = py_obj.cast<py::list>();
             enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR, DICT};
