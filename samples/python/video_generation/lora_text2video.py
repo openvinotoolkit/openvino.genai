@@ -43,21 +43,19 @@ def main():
         print(f"Generation step {step + 1} / {num_steps}")
         return False
 
+    frame_rate = 25
+
     generate_args = dict(
         negative_prompt="worst quality, inconsistent motion, blurry, jittery, distorted",
         height=480,
-        width=704,
-        num_frames=161,
         num_inference_steps=25,
-        num_videos_per_prompt=1,
         callback=callback,
-        frame_rate=25,
         guidance_scale=3,
     )
 
     print("Generating video with LoRA adapters applied, resulting video will be in lora_video.avi")
     output = pipe.generate(args.prompt, **generate_args)
-    save_video("lora_video.avi", output.video, 25)
+    save_video("lora_video.avi", output.video, frame_rate)
     print_perf_metrics(output.perf_metrics)
 
     print("Generating video without LoRA adapters applied, resulting video will be in baseline_video.avi")
@@ -67,7 +65,7 @@ def main():
         adapters=openvino_genai.AdapterConfig(),
         **generate_args,
     )
-    save_video("baseline_video.avi", output.video, 25)
+    save_video("baseline_video.avi", output.video, frame_rate)
     print_perf_metrics(output.perf_metrics)
 
 

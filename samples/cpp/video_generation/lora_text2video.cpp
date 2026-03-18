@@ -36,21 +36,19 @@ int main(int32_t argc, char* argv[]) try {
     // LoRA adapters passed to the constructor will be activated by default in next generates
     ov::genai::Text2VideoPipeline pipe(models_dir, device, ov::genai::adapters(adapter_config));
 
+    const float frame_rate = 25.0f;
+
     std::cout << "Generating video with LoRA adapters applied, resulting video will be in lora_video.avi\n";
     auto output = pipe.generate(
         prompt,
         ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
         ov::genai::height(480),
-        ov::genai::width(704),
-        ov::genai::num_frames(161),
-        ov::genai::num_videos_per_prompt(1),
         ov::genai::num_inference_steps(25),
-        ov::genai::frame_rate(25.0f),
         ov::genai::callback(progress_bar),
         ov::genai::guidance_scale(3)
     );
 
-    save_video("lora_video.avi", output.video, 25);
+    save_video("lora_video.avi", output.video, frame_rate);
     print_perf_metrics(output.perf_metrics);
 
     std::cout << "Generating video without LoRA adapters applied, resulting video will be in baseline_video.avi\n";
@@ -59,16 +57,12 @@ int main(int32_t argc, char* argv[]) try {
         ov::genai::adapters(),  // passing adapters in generate overrides adapters set in the constructor; adapters() means no adapters
         ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
         ov::genai::height(480),
-        ov::genai::width(704),
-        ov::genai::num_frames(161),
-        ov::genai::num_videos_per_prompt(1),
         ov::genai::num_inference_steps(25),
-        ov::genai::frame_rate(25.0f),
         ov::genai::callback(progress_bar),
         ov::genai::guidance_scale(3)
     );
 
-    save_video("baseline_video.avi", output.video, 25);
+    save_video("baseline_video.avi", output.video, frame_rate);
     print_perf_metrics(output.perf_metrics);
 
     return EXIT_SUCCESS;
