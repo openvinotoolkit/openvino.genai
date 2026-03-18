@@ -113,7 +113,7 @@ class VisualTextEvaluator(TextEvaluator):
             pruning_ratio,
             relevance_weight,
         ):
-            if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING:
+            if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and "transformers" in str(type(model)):
                 inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type]()
                 preprocess_inputs = inputs_processor.preprocess_inputs
             else:

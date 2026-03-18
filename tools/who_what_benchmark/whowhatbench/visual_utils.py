@@ -90,7 +90,9 @@ class Qwen3VLInputsPreprocessor(VLMInputsPreprocessor):
         if video is not None:
             conversation[0]["content"].insert(0, {"type": "video", "video": video})
 
-        inputs = processor.apply_chat_template(conversation, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt")
+        inputs = processor.apply_chat_template(
+            conversation, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt"
+        )
         return inputs
 
 
