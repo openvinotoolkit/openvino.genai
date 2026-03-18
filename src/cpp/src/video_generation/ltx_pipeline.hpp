@@ -102,6 +102,9 @@ void rescale_noise_cfg(float* noise_cfg,
                        size_t batch_size,
                        size_t elements_per_sample,
                        float guidance_rescale) {
+    if (elements_per_sample == 0) {
+        return;
+    }
     for (size_t b = 0; b < batch_size; ++b) {
         float* cfg_sample = noise_cfg + b * elements_per_sample;
         const float* text_sample = noise_pred_text + b * elements_per_sample;
