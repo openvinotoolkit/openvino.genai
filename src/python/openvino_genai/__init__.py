@@ -42,6 +42,7 @@ __version__ = get_version()
 
 from .py_openvino_genai import (
     VLMPipeline,
+    VideoMetadata,
 )
 
 # LLM pipeline
