@@ -791,6 +791,7 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $ffmpegBin
           $env:Path = "$ffmpegBin;$env:Path"
           python -m pip install av
+          python -c "import site, pathlib; p = pathlib.Path(site.getsitepackages()[0]) / 'ffmpeg_dll_path.pth'; p.write_text(\"import os; os.add_dll_directory(r'$ffmpegBin')\\n\", encoding='utf-8')"
           python -c "import av; print(av.__version__)"
           ffmpeg -version
 
