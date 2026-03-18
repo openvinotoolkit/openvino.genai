@@ -12,6 +12,7 @@
 
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
+#include "openvino/genai/visual_language/video_metadata.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 #include "py_utils.hpp"
 #include "bindings_utils.hpp"
@@ -45,6 +46,9 @@ auto vlm_generate_common_params = R"(
     :param videos: list of frames
     :type videos: list[ov.Tensor]
 
+    :param videos_metadata: list of metadata for each video
+    :type videos_metadata: list[VideoMetadata]
+
     :param generation_config: generation_config
     :type generation_config: GenerationConfig or a dict
 
@@ -64,6 +68,8 @@ auto vlm_generate_kwargs_param = R"(
     Expected parameters list:
     image: ov.Tensor - input image,
     images: list[ov.Tensor] - input images,
+    videos: list[ov.Tensor] - input videos,
+    videos_metadata: list[VideoMetadata] - metadata for each video,
     generation_config: GenerationConfig,
     streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
 
@@ -114,11 +120,28 @@ auto decoded_results_docstring = R"(
     metrics:    performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
 )";
 
+auto video_metadata_docstring = R"(
+    Structure with metadata describing the original video source.
+    Controls video frames sampling before encoding.
+
+    :param total_num_frames: Total number of frames in the original video before any sampling. 0 means unknown.
+    :type total_num_frames: int
+
+    :param fps: Frame rate of the original video in frames per second. 0 means unknown.
+    :type fps: float
+
+    :param frames_indices: Indices of frames to sample from the provided video tensor.
+    When empty (default), model-specific sampling is applied if defined, otherwise all frames are processed.
+    When non-empty, only the specified frames are extracted and model-specific sampling logic is skipped (if any).
+    :type frames_indices: list[int]
+)";
+
 py::object call_vlm_generate(
     ov::genai::VLMPipeline& pipe,
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
     const std::vector<ov::Tensor>& videos,
+    const std::vector<ov::genai::VideoMetadata>& videos_metadata,
     const ov::genai::GenerationConfig& generation_config,
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
@@ -128,7 +151,7 @@ py::object call_vlm_generate(
     ov::genai::VLMDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res= pipe.generate(prompt, images, videos, updated_config, streamer);
+        res= pipe.generate(prompt, images, videos, videos_metadata, updated_config, streamer);
     }
     return py::cast(res);
 }
@@ -138,6 +161,7 @@ py::object call_vlm_generate_with_chat_history(
     const ov::genai::ChatHistory& history,
     const std::vector<ov::Tensor>& images,
     const std::vector<ov::Tensor>& videos,
+    const std::vector<ov::genai::VideoMetadata>& videos_metadata,
     const ov::genai::GenerationConfig& generation_config,
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
@@ -147,9 +171,17 @@ py::object call_vlm_generate_with_chat_history(
     ov::genai::VLMDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res = pipe.generate(history, images, videos, updated_config, streamer);
+        res = pipe.generate(history, images, videos, videos_metadata, updated_config, streamer);
     }
     return py::cast(res);
+}
+
+void init_video_metadata(py::module_& m) {
+    py::class_<ov::genai::VideoMetadata>(m, "VideoMetadata", video_metadata_docstring)
+        .def(py::init<>())
+        .def_readwrite("total_num_frames", &ov::genai::VideoMetadata::total_num_frames)
+        .def_readwrite("fps", &ov::genai::VideoMetadata::fps)
+        .def_readwrite("frames_indices", &ov::genai::VideoMetadata::frames_indices);
 }
 
 void init_vlm_pipeline(py::module_& m) {
@@ -241,7 +273,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate(pipe, prompt, images, videos, generation_config, streamer, kwargs);
+                return call_vlm_generate(pipe, prompt, images, videos, {}, generation_config, streamer, kwargs);
             },
             py::arg("prompt"), "Input string",
             py::arg("images"), "Input images",
@@ -255,11 +287,32 @@ void init_vlm_pipeline(py::module_& m) {
             [](ov::genai::VLMPipeline& pipe,
                 const std::string& prompt,
                 const std::vector<ov::Tensor>& images,
+                const std::vector<ov::Tensor>& videos,
+                const std::vector<ov::genai::VideoMetadata>& videos_metadata,
                 const ov::genai::GenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate(pipe, prompt, images, {}, generation_config, streamer, kwargs);
+                return call_vlm_generate(pipe, prompt, images, videos, videos_metadata, generation_config, streamer, kwargs);
+            },
+            py::arg("prompt"), "Input string",
+            py::arg("images"), "Input images",
+            py::arg("videos"), "Input videos",
+            py::arg("videos_metadata"), "Metadata for input videos",
+            py::arg("generation_config"), "generation_config",
+            py::arg("streamer") = std::monostate(), "streamer",
+            (vlm_generate_prompt_docstring + std::string(" \n ")).c_str()
+        )
+        .def(
+            "generate",
+            [](ov::genai::VLMPipeline& pipe,
+                const std::string& prompt,
+                const std::vector<ov::Tensor>& images,
+                const ov::genai::GenerationConfig& generation_config,
+                const pyutils::PyBindStreamerVariant& streamer,
+                const py::kwargs& kwargs
+            ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
+                return call_vlm_generate(pipe, prompt, images, {}, {}, generation_config, streamer, kwargs);
             },
             py::arg("prompt"), "Input string",
             py::arg("images"), "Input images",
@@ -276,10 +329,29 @@ void init_vlm_pipeline(py::module_& m) {
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate(pipe, prompt, {}, videos, generation_config, streamer, kwargs);
+                return call_vlm_generate(pipe, prompt, {}, videos, {}, generation_config, streamer, kwargs);
             },
             py::arg("prompt"), "Input string",
             py::arg("videos"), "Input videos, each providing multiple frames",
+            py::arg("generation_config"), "generation_config",
+            py::arg("streamer") = std::monostate(), "streamer",
+            (vlm_generate_prompt_docstring + std::string(" \n ")).c_str()
+        )
+        .def(
+            "generate",
+            [](ov::genai::VLMPipeline& pipe,
+                const std::string& prompt,
+                const std::vector<ov::Tensor>& videos,
+                const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+                const ov::genai::GenerationConfig& generation_config,
+                const pyutils::PyBindStreamerVariant& streamer,
+                const py::kwargs& kwargs
+            ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
+                return call_vlm_generate(pipe, prompt, {}, videos, videos_metadata, generation_config, streamer, kwargs);
+            },
+            py::arg("prompt"), "Input string",
+            py::arg("videos"), "Input videos, each providing multiple frames",
+            py::arg("videos_metadata"), "Metadata for input videos",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
             (vlm_generate_prompt_docstring + std::string(" \n ")).c_str()
@@ -293,7 +365,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate(pipe, prompt, {image}, {}, generation_config, streamer, kwargs);
+                return call_vlm_generate(pipe, prompt, {image}, {}, {}, generation_config, streamer, kwargs);
             },
             py::arg("prompt"), "Input string",
             py::arg("image"), "Input image",
@@ -328,7 +400,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate_with_chat_history(pipe, history, images, videos, generation_config, streamer, kwargs);
+                return call_vlm_generate_with_chat_history(pipe, history, images, videos, {}, generation_config, streamer, kwargs);
             },
             py::arg("history"), "Chat history",
             py::arg("images"), "Input images",
@@ -342,11 +414,32 @@ void init_vlm_pipeline(py::module_& m) {
             [](ov::genai::VLMPipeline& pipe,
                 const ov::genai::ChatHistory& history,
                 const std::vector<ov::Tensor>& images,
+                const std::vector<ov::Tensor>& videos,
+                const std::vector<ov::genai::VideoMetadata>& videos_metadata,
                 const ov::genai::GenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate_with_chat_history(pipe, history, images, {}, generation_config, streamer, kwargs);
+                return call_vlm_generate_with_chat_history(pipe, history, images, videos, videos_metadata, generation_config, streamer, kwargs);
+            },
+            py::arg("history"), "Chat history",
+            py::arg("images"), "Input images",
+            py::arg("videos"), "Input videos",
+            py::arg("videos_metadata"), "Metadata for input videos",
+            py::arg("generation_config"), "generation_config",
+            py::arg("streamer") = std::monostate(), "streamer",
+            (vlm_generate_history_docstring + std::string(" \n ")).c_str()
+        )
+        .def(
+            "generate",
+            [](ov::genai::VLMPipeline& pipe,
+                const ov::genai::ChatHistory& history,
+                const std::vector<ov::Tensor>& images,
+                const ov::genai::GenerationConfig& generation_config,
+                const pyutils::PyBindStreamerVariant& streamer,
+                const py::kwargs& kwargs
+            ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
+                return call_vlm_generate_with_chat_history(pipe, history, images, {}, {}, generation_config, streamer, kwargs);
             },
             py::arg("history"), "Chat history",
             py::arg("images"), "Input images",
@@ -363,10 +456,29 @@ void init_vlm_pipeline(py::module_& m) {
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate_with_chat_history(pipe, history, {}, videos, generation_config, streamer, kwargs);
+                return call_vlm_generate_with_chat_history(pipe, history, {}, videos, {}, generation_config, streamer, kwargs);
             },
             py::arg("history"), "Chat history",
             py::arg("videos"), "Input videos",
+            py::arg("generation_config"), "generation_config",
+            py::arg("streamer") = std::monostate(), "streamer",
+            (vlm_generate_history_docstring + std::string(" \n ")).c_str()
+        )
+        .def(
+            "generate",
+            [](ov::genai::VLMPipeline& pipe,
+                const ov::genai::ChatHistory& history,
+                const std::vector<ov::Tensor>& videos,
+                const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+                const ov::genai::GenerationConfig& generation_config,
+                const pyutils::PyBindStreamerVariant& streamer,
+                const py::kwargs& kwargs
+            ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
+                return call_vlm_generate_with_chat_history(pipe, history, {}, videos, videos_metadata, generation_config, streamer, kwargs);
+            },
+            py::arg("history"), "Chat history",
+            py::arg("videos"), "Input videos",
+            py::arg("videos_metadata"), "Metadata for input videos",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
             (vlm_generate_history_docstring + std::string(" \n ")).c_str()
