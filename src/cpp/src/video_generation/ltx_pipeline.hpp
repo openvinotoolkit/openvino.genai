@@ -663,6 +663,8 @@ public:
             }
 
             if (batch_size_multiplier > 1 && *merged_generation_config.guidance_rescale > 0.0f) {
+                OPENVINO_ASSERT(noise_pred_shape[0] > 0,
+                                "Expected positive batch dimension in noise_pred_shape[0] before rescaling noise.");
                 rescale_noise_cfg(noisy_residual_tensor.data<float>(),
                                   noise_pred_tensor.data<const float>() + noisy_residual_tensor.get_size(),
                                   noise_pred_shape[0],
