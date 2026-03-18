@@ -16,7 +16,7 @@ struct OPENVINO_GENAI_EXPORTS VideoMetadata {
     /// Indices of frames to sample from the provided video tensor.
     /// When empty (default), model-specific sampling is applied if defined, otherwise all frames are processed.
     /// When non-empty, only the specified frames are extracted and model-specific sampling logic is skipped (if any).
-    std::vector<size_t> frame_indices;
+    std::vector<size_t> frames_indices;
 };
 
 } // namespace ov::genai
