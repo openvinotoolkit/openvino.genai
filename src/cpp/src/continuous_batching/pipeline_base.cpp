@@ -277,10 +277,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
-    // empty videos batch size should match prompt batch size
-    const std::vector<std::vector<ov::Tensor>> empty_videos_vector(prompts.size());
+    // empty videos metadata batch size should match prompt batch size
     const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(prompts.size());
-    return generate(prompts, images_vector, empty_videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
+    return generate(prompts, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults>
@@ -490,10 +489,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
-    // empty videos batch size should match histories batch size
-    const std::vector<std::vector<ov::Tensor>> empty_videos_vector(histories.size());
+    // empty videos metadata batch size should match histories batch size
     const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(histories.size());
-    return generate(histories, images_vector, empty_videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
+    return generate(histories, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults>
