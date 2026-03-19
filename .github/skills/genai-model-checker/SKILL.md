@@ -1,6 +1,6 @@
 ---
 name: genai-model-checker
-description: "Validate a newly supported optimum-intel model with OpenVINO GenAI. Use when: checking new model support, verifying model export to OpenVINO IR, running GenAI inference smoke test, benchmarking model accuracy with who-what-benchmark."
+description: "Validate a newly supported optimum-intel model with OpenVINO GenAI. Use when: checking new model support, verifying model export to OpenVINO IR, running GenAI inference test with llm_bench, benchmarking model accuracy with who-what-benchmark."
 argument-hint: "model_id and task (e.g. tencent/HY-MT1.5-1.8B text-generation-with-past)"
 ---
 
@@ -19,15 +19,25 @@ Validates that a HuggingFace model exported via optimum-intel works correctly wi
 The user must provide:
 
 - **model_id**: HuggingFace model identifier (e.g. `tencent/HY-MT1.5-1.8B`)
-- **task**: optimum-cli export task (e.g. `text-generation-with-past`, `image-text-to-text`)
+- **task**: optimum-cli export task. Supported values:
+  - `text-generation-with-past`
+  - `image-text-to-text`
+  - `text-to-image`
+  - `image-to-image`
+  - `feature-extraction`
+  - `text-classification`
+  - `text-to-video`
+  - `automatic-speech-recognition`
 
-## Procedure
+## Prerequisites
 
-### Step 0: Activate python virtual environment
+Activate the Python virtual environment:
 
 ```
 source .venv/bin/activate
 ```
+
+## Procedure
 
 ### Step 1: Run check_model.py
 
@@ -37,15 +47,22 @@ Run the checker script from the repository root:
 python3 .github/skills/genai-model-checker/scripts/check_model.py \
     --model-id <model_id> \
     --task <export_task> \
-    --work-dir /tmp/genai-model-check \
-    --llm-bench-script tools/llm_bench/benchmark.py
+    --work-dir /tmp/genai-model-check
 ```
 
-Optional arguments:
+Run `python3 .github/skills/genai-model-checker/scripts/check_model.py --help` for the full argument reference including defaults.
 
-- `--device CPU` (default: CPU)
-- `--skip-wwb` to skip accuracy benchmarking and only run export + smoke test
-- `--num-samples 32` to control WWB sample count
+#### Skip flags (for re-runs after a fix)
+
+When a previous run already passed some steps (e.g. export succeeded but inference test failed), use skip flags to avoid repeating expensive passed steps:
+
+- `--skip-export` — reuse existing IR in `<work-dir>/model_ir` instead of re-exporting (avoids re-downloading weights)
+- `--skip-llm-bench` — skip the llm_bench inference test
+- `--skip-wwb` — skip the who-what-benchmark accuracy check
+
+Do **not** use skip flags on the first run. Only use them when retrying after a targeted fix.
+
+**Important:** do not use `--skip-export` when investigating a WWB similarity failure. The exported IR must be regenerated together with fresh WWB runs to get a consistent comparison — reusing a previously exported IR with a freshly generated HF ground truth can produce misleading similarity scores.
 
 ### Step 2: Interpret Results
 
@@ -54,24 +71,30 @@ The script prints a structured summary and exits with code 0 (pass) or 1 (fail).
 **Pass criteria:**
 
 - Export: exit code 0, IR files created
-- Smoke test (llm_bench): exit code 0, output generated
-- WWB accuracy: similarity score > 0.95 for text models, > 0.90 for image models
+- Inference test (llm_bench): exit code 0, metrics line printed
+- WWB accuracy (three sub-steps, all must pass):
+  1. HF ground truth generation: exit code 0, `gt.csv` created
+  2. Optimum target evaluation: similarity ≥ SIMILARITY_THRESHOLD
+  3. GenAI target evaluation: similarity ≥ SIMILARITY_THRESHOLD
 
-Report results to the user or a next agent. If a step failed, include the error output. Include full stack traces for debugging. Also include log files path for reference.
+  Note: the WWB step is skipped automatically for `automatic-speech-recognition` (no WWB support).
 
-## Behavioral Rules
+**Log files:** each tool writes its own dedicated log; paths are printed during execution. When a step fails, read the corresponding log for the full traceback and context before drawing any conclusions.
 
-- **DO NOT** attempt to fix, patch, or work around failures. The sole purpose is to run the check and report results.
-- **DO NOT** edit source code, configuration files, or model files to make a failing step pass.
-- If a step fails, report the failure with the error output and stop. Do not retry with modified parameters or code changes.
+### Step 3: Report Results
 
-## Execution Rules
+Report results to the user or a next agent. If all steps pass, indicate success and provide performance metrics and accuracy data. If a step fails, analyze tool logs and provide a summary with the failed tool log path.
 
-- The script streams output live. Individual steps (export, WWB) can take **several minutes**.
+## Constraints
 
-## Security Rules
+### Behavioral
+
+- This skill is read-only: report results, do not change anything to make a step pass.
+- If a step fails, report the error and stop. Do not proceed to the next step.
+- **Forbidden on failure:** modifying CLI arguments, changing `--task` or `--device`, editing `check_model.py`, editing model or config files, or retrying with altered inputs.
+
+### Security
 
 - **NEVER** install any packages. Assume the environment is pre-configured.
-- **NEVER** pass `--trust-remote-code` to any command.
-- **NEVER** construct shell commands via string concatenation. Always use the script.
-- **NEVER** modify the model_id — pass it exactly as the user provided after validating format.
+- **NEVER** invoke `optimum-cli`, `wwb`, or `llm_bench` directly. Always go through `check_model.py`.
+- **NEVER** modify `model_id` — pass it exactly as provided by the user.
