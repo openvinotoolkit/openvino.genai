@@ -368,10 +368,10 @@ class TestLoRAVideoGeneration:
     def test_transformer_has_set_adapters_method(self, video_generation_model):
         """Test that the LTXVideoTransformer3DModel has the set_adapters method"""
         model_path = Path(video_generation_model) / "transformer"
-        if model_path.exists():
-            model = ov_genai.LTXVideoTransformer3DModel(str(model_path))
-            model.compile("CPU")
+        assert model_path.exists(), f"Transformer subdirectory not found at: {model_path}"
+        model = ov_genai.LTXVideoTransformer3DModel(str(model_path))
+        model.compile("CPU")
 
-            assert hasattr(model, "set_adapters")
+        assert hasattr(model, "set_adapters")
 
-            model.set_adapters(None)
+        model.set_adapters(None)
