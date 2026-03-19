@@ -29,9 +29,10 @@ class ChatTextEvaluator(TextEvaluator):
         pruning_ratio=None,
         relevance_weight=None,
     ) -> None:
-        assert base_model is not None or gt_data is not None, (
-            "Text generation pipeline for evaluation or ground truth data must be defined"
-        )
+        if base_model is None and gt_data is None:
+            raise ValueError(
+                "Text generation pipeline for evaluation or ground truth data must be defined"
+            )
 
         self.test_data = test_data
         self.max_new_tokens = max_new_tokens
@@ -59,11 +60,13 @@ class ChatTextEvaluator(TextEvaluator):
     def read_data_to_evaluation_scores(self, data):
         text_data = {"answers": [], "prompts": []}
 
-        for item in ["prompts", "answers"]:
-            pathes = data[item].values
-            for path in pathes:
-                with open(path, "r") as f:
-                    text_data[item].append(f.read())
+        for path in data["answers"].values:
+            with open(path, "r", encoding="utf-8") as f:
+                text_data["answers"].append(json.load(f))
+
+        for path in data["prompts"].values:
+            with open(path, "r", encoding="utf-8") as f:
+                text_data["prompts"].append(json.load(f))
 
         df = pd.DataFrame(text_data)
         return df
@@ -99,8 +102,8 @@ class ChatTextEvaluator(TextEvaluator):
 
         self.last_cmp = all_metrics_per_prompt
         self.last_cmp["prompts"] = predictions_text["prompts"].values
-        self.last_cmp["source_model"] = self.gt_data["answers"].values
-        self.last_cmp["optimized_model"] = predictions["answers"].values
+        self.last_cmp["source_model"] = ["\n\n".join(val) for val in gt_data_text["answers"].values]
+        self.last_cmp["optimized_model"] = ["\n\n".join(val) for val in predictions_text["answers"].values]
         self.last_cmp = pd.DataFrame(self.last_cmp)
         self.last_cmp.rename(columns={"prompts": "prompt"}, inplace=True)
 
@@ -150,9 +153,15 @@ class ChatTextEvaluator(TextEvaluator):
             pruning_ratio,
             relevance_weight,
         ):
+            if model.config.model_type not in MODEL_TYPE_TO_CLS_MAPPING:
+                raise ValueError(
+                    f"WWB is not supported models with type {model.config.model_type} to evaluation in chat mode."
+                )
+
             inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type](chat_mode=True)
+            answers = []
             for input_case in inputs:
-                inputs = inputs_processor.preprocess_inputs(
+                preprocess_inputs = inputs_processor.preprocess_inputs(
                     input_case["prompt"],
                     input_case["images"],
                     processor,
@@ -161,7 +170,7 @@ class ChatTextEvaluator(TextEvaluator):
                     video=input_case["videos"],
                 )
                 tokens = model.generate(
-                    **inputs,
+                    **preprocess_inputs,
                     **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
                     do_sample=False,
                     max_new_tokens=max_new_tokens,
@@ -173,15 +182,13 @@ class ChatTextEvaluator(TextEvaluator):
                     # The output tuple has format (<list of decoded outputs without question/prompt>, <GenerateDecoderOnlyOutput>)
                     answer_text = tokens[0][0]
                 else:
-                    answer_tokens = tokens[:, inputs["input_ids"].shape[-1] :]
+                    answer_tokens = tokens[:, preprocess_inputs["input_ids"].shape[-1] :]
                     answer_text = tokenizer.batch_decode(answer_tokens, skip_special_tokens=True)[0]
 
                 inputs_processor.update_chat_history_with_answer(answer_text)
+                answers.append(answer_text)
 
-            results_chat = tokenizer.apply_chat_template(
-                inputs_processor.chat_history, tokenize=False, add_generation_prompt=True
-            )
-            return results_chat
+            return answers
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
@@ -194,7 +201,7 @@ class ChatTextEvaluator(TextEvaluator):
             input_data = self.prepare_default_data()
 
         answers = []
-        prompts_pathes = []
+        prompts_paths = []
         input_data = input_data if self.num_samples is None else input_data[: self.num_samples]
 
         if not os.path.exists(result_dir):
@@ -218,18 +225,18 @@ class ChatTextEvaluator(TextEvaluator):
                 self.relevance_weight,
             )
 
-            result_path = os.path.join(result_dir, f"chat_vlm_output_{i}.txt")
-            with open(result_path, "w") as f:
-                f.write(answer)
+            result_path = os.path.join(result_dir, f"chat_vlm_output_{i}.json")
+            with open(result_path, "w", encoding="utf-8") as f:
+                json.dump(answer, f, ensure_ascii=False, indent=4)
             answers.append(result_path)
 
-            prompt_path = os.path.join(prompts_dir, f"chat_vlm_prompts_{i}.txt")
-            with open(prompt_path, "w") as f:
+            prompt_path = os.path.join(prompts_dir, f"chat_vlm_prompts_{i}.json")
+            with open(prompt_path, "w", encoding="utf-8") as f:
                 prompts = [input["prompt"] for input in inputs]
-                f.write("\n\n".join(prompts))
-            prompts_pathes.append(prompt_path)
+                json.dump(prompts, f, ensure_ascii=False, indent=4)
+            prompts_paths.append(prompt_path)
 
-        res_data = {"prompts": prompts_pathes, "answers": answers}
+        res_data = {"prompts": prompts_paths, "answers": answers}
         df = pd.DataFrame(res_data)
 
         return df

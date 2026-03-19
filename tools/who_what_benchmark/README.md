@@ -71,6 +71,8 @@ wwb --base-model llava-hf/llava-v1.6-mistral-7b-hf --gt-data llava_test/gt.csv -
 wwb --target-model llava-int8 --gt-data llava_test/gt.csv --model-type visual-text --genai
 ```
 
+> **NOTE**: use --model-type visual-text-chat option to run evaluation in chat mode
+
 ### Compare Visual Language Models with video inputs (VLMs)
 ```sh
 # Export FP16 model to OpenVINO

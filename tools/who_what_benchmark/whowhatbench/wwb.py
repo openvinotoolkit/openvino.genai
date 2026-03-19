@@ -678,22 +678,23 @@ def genai_gen_visual_text_chat(model, inputs, processor, tokenizer, max_new_toke
 
     import openvino_genai
 
+    answers = []
     chat_history = openvino_genai.ChatHistory()
-    for input in inputs:
-        chat_history.append({"role": "user", "content": input["prompt"]})
+    for chat_input in inputs:
+        chat_history.append({"role": "user", "content": chat_input["prompt"]})
         media_kwargs = {}
-        if input["images"]:
-            media_kwargs["images"] = [ov.Tensor(np.array(image)[None]) for image in input["images"]]
-        if input["videos"]:
-            media_kwargs["videos"] = [ov.Tensor(np.array(image)[None]) for image in input["videos"]]
+        if chat_input["images"]:
+            media_kwargs["images"] = [ov.Tensor(np.array(image)) for image in chat_input["images"]]
+        if chat_input["videos"]:
+            media_kwargs["videos"] = [ov.Tensor(np.array(video)) for video in chat_input["videos"]]
 
         decode_res = model.generate(
             chat_history, **media_kwargs, **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer), **kwargs
         )
+        answers.append(decode_res.texts[0])
         chat_history.append({"role": "assistant", "content": decode_res.texts[0]})
 
-    chat = model.get_tokenizer().apply_chat_template(chat_history, add_generation_prompt=True)
-    return chat
+    return answers
 
 
 def genai_gen_embedding(model, tokenizer, passages, **kwargs):
@@ -886,10 +887,10 @@ def create_evaluator(base_model, args):
                     "WWB can't start an evaluation in visual-text-chat mode, "
                     "please, specify chat_template or use --model-type visual-text. "
                 )
+
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
                 tokenizer=tokenizer,
                 num_samples=args.num_samples,
                 similarity_model_id=args.data_encoder,
@@ -1110,7 +1111,7 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text"]:
+        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
             print_text_results(evaluator)
         elif (
             "text-to-image" in args.model_type
