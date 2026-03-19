@@ -14,6 +14,7 @@ try:
 except ImportError:
     from llm_wrapper import OpenVINOChatModel
 
+
 def _resolve_langchain_agent_apis() -> dict[str, Any]:
     """Resolve LangChain APIs with compatibility fallback for 1.x and legacy agents."""
     try:
@@ -91,7 +92,11 @@ def safe_calculator(expression: str) -> str:
     if not isinstance(expression, str) or not expression.strip():
         raise ValueError("Expression must be a non-empty string")
 
-    parsed = ast.parse(expression, mode="eval")
+    try:
+        parsed = ast.parse(expression, mode="eval")
+    except SyntaxError as syntax_error:
+        raise ValueError(f"Invalid expression syntax: {expression!r}") from syntax_error
+
     result = _evaluate_expression_node(parsed.body)
     if result.is_integer():
         return str(int(result))

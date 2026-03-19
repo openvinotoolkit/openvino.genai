@@ -46,6 +46,9 @@ class OpenVINOChatModel(BaseChatModel):
         if not os.path.exists(self.model_path):
             raise ValueError(f"Model path does not exist: {self.model_path}")
 
+        if not os.path.isdir(self.model_path):
+            raise ValueError(f"Model directory does not exist or is not a directory: {self.model_path}")
+
         if self.num_return_sequences != 1:
             raise ValueError(
                 "OpenVINOChatModel currently supports only num_return_sequences=1. "
@@ -194,7 +197,8 @@ class OpenVINOChatModel(BaseChatModel):
         history = self._to_chat_history(messages)
         config = self._build_generation_config(stop=stop, **kwargs)
 
-        chunks: queue.Queue[str | None] = queue.Queue()
+        # Bounded queue applies backpressure and prevents unbounded buffering.
+        chunks: queue.Queue[str | None] = queue.Queue(maxsize=128)
         generation_error: dict[str, Exception | None] = {"error": None}
 
         def callback(subword: str) -> ov_genai.StreamingStatus:
@@ -224,4 +228,4 @@ class OpenVINOChatModel(BaseChatModel):
 
         generation_thread.join()
         if generation_error["error"] is not None:
-            raise RuntimeError("OpenVINO generation failed during streaming") from generation_error["error"]
+            raise generation_error["error"]

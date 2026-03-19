@@ -213,3 +213,10 @@ def test_safe_calculator_supports_basic_arithmetic(example_module):
 def test_safe_calculator_rejects_unsupported_expression(example_module):
     with pytest.raises(ValueError, match="Unsupported"):
         example_module.safe_calculator("abs(-1)")
+
+
+@pytest.mark.samples
+@pytest.mark.agent
+def test_safe_calculator_rejects_invalid_syntax(example_module):
+    with pytest.raises(ValueError, match="Invalid expression syntax"):
+        example_module.safe_calculator("2 +")
