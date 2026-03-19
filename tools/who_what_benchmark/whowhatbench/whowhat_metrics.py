@@ -29,18 +29,50 @@ def evaluate_similarity(model, data_gold, data_prediction):
     answers_gold = data_gold["answers"].values
     answers_prediction = data_prediction["answers"].values
 
+    # in question mode - gold, prediction are string
+    # in chat mode - gold, prediction are list of answers
+   # in question mode - gold, prediction are string
+    # in chat mode - gold, prediction are list of answers
+    metric_per_chat_answer_list = []
     metric_per_question = []
-    for gold, prediction in tqdm(
-        zip(answers_gold, answers_prediction),
+    for i, gold, prediction in tqdm(
+        enumerate(zip(answers_gold, answers_prediction)),
         total=min(len(answers_gold), len(answers_prediction)),
         desc="Similarity evaluation",
-    ):
-        embeddings = model.encode([gold, prediction], show_progress_bar=False)
-        cos_sim = util.cos_sim(embeddings, embeddings)
-        metric_per_question.append(cos_sim[0, 1].item())
+    ): 
+        if isinstance(gold, list):
+            if not isinstance(prediction, list):
+                raise ValueError(
+                    f"Prompt {i}: GT and prediction data are inconsistant. GT data is a list of answers, but prediction is a string."
+                )
+            if len(gold) != len(prediction):
+                raise ValueError(f"Prompt {i}: GT and prediction data have different amout of answers.")
+            input_list = [*gold, *prediction]
+            n = len(gold)
+        else:
+            if not isinstance(prediction, str):
+                raise ValueError(
+                    f"Prompt {i}: GT and prediction data are inconsistant. Prediction data is a list of answers, but GT is a string."
+                )
+            input_list = [gold, prediction]
+            n = 1 
+
+        embeddings = model.encode(input_list, convert_to_tensor=True, show_progress_bar=False)
+
+        n = len(gold) if isinstance(gold, list) else 1
+        embeddings_gold = embeddings[:n]
+        embeddings_pred = embeddings[n:]
+        cos_sims = util.cos_sim(embeddings_gold, embeddings_pred).diagonal().cpu().numpy()
+        metric_per_question.append(np.mean(cos_sims))
+        if isinstance(gold, list):
+            metric_per_chat_answer_list.append(cos_sims)
 
     metric_dict = {"similarity": np.mean(metric_per_question)}
-    return metric_dict, {"similarity": metric_per_question}
+    additional_info = {"similarity": metric_per_question}
+    if metric_per_chat_answer_list:
+        additional_info["similarity_per_chat_replicas"] = metric_per_chat_answer_list
+
+    return metric_dict, additional_info
 
 
 def evaluate_divergency(tokenizer, data_gold, data_prediction):
@@ -54,6 +86,21 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
     sdtn_list = []  # each value = share of tokens to correct in the prediction
     fdt_max = []  # each value = total number of tokens in the reference
     for a_answer, b_answer in zip(answers_gold, answers_prediction):
+        # in chat mode - gold, prediction are list of answers
+        # let's check only last answer
+        if isinstance(a_answer, list):
+            if not isinstance(b_answer, list):
+                raise ValueError(
+                    f"GT and prediction data are inconsistant. GT data is a list of answers, but prediction is a string."
+                )
+            if not a_answer or not b_answer:
+                raise ValueError(f"List of answers can't be empty.")
+            a_answer = a_answer[-1]
+            b_answer = b_answer[-1]
+        elif not isinstance(b_answer, str):
+            raise ValueError(
+                f"GT and prediction data are inconsistant. Prediction data is a list, but GT is a string."
+            )
         a_indexes = tokenizer.encode(a_answer, return_tensors="pt").squeeze().tolist()
         b_indexes = tokenizer.encode(b_answer, return_tensors="pt").squeeze().tolist()
         if not a_indexes and not b_indexes:

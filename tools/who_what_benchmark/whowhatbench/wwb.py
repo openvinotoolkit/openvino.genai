@@ -533,6 +533,7 @@ def genai_gen_chat_text(
     if empty_adapters:
         kwargs["adapters"] = openvino_genai.AdapterConfig()
 
+    answers = []
     chat_history = openvino_genai.ChatHistory()
     for prompt in prompts:
         chat_history.append({"role": "user", "content": prompt})
@@ -544,10 +545,10 @@ def genai_gen_chat_text(
             assistant_confidence_threshold=assistant_confidence_threshold,
             **kwargs,
         )
+        answers.append(decode_res.texts[0])
         chat_history.append({"role": "assistant", "content": decode_res.texts[0]})
 
-    chat = model.get_tokenizer().apply_chat_template(chat_history, add_generation_prompt=True)
-    return chat
+    return answers
 
 
 def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,

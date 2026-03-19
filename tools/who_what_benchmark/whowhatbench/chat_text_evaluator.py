@@ -2,6 +2,7 @@ from typing import Any, Union
 
 import os
 import yaml
+import json
 import pandas as pd
 from tqdm import tqdm
 from importlib.resources import files
@@ -67,11 +68,13 @@ class ChatTextEvaluator(TextEvaluator):
     def read_data_to_evaluation_scores(self, data):
         text_data = {"answers": [], "prompts": []}
 
-        for item in ["prompts", "answers"]:
-            paths = data[item].values
-            for path in paths:
-                with open(path, "r") as f:
-                    text_data[item].append(f.read())
+        for path in data["answers"].values:
+            with open(path, "r", encoding="utf-8") as f:
+                text_data["answers"].append(json.load(f))
+
+        for path in data["prompts"].values:
+            with open(path, "r", encoding="utf-8") as f:
+                text_data["prompts"].append(f.read())
 
         df = pd.DataFrame(text_data)
         return df
@@ -107,8 +110,8 @@ class ChatTextEvaluator(TextEvaluator):
 
         self.last_cmp = all_metrics_per_prompt
         self.last_cmp["prompts"] = predictions_text["prompts"].values
-        self.last_cmp["source_model"] = gt_data_text["answers"].values
-        self.last_cmp["optimized_model"] = predictions_text["answers"].values
+        self.last_cmp["source_model"] = ["\n\n".join(val) for val in gt_data_text["answers"].values]
+        self.last_cmp["optimized_model"] = ["\n\n".join(val) for val in predictions_text["answers"].values]
         self.last_cmp = pd.DataFrame(self.last_cmp)
         self.last_cmp.rename(columns={"prompts": "prompt"}, inplace=True)
 
@@ -142,6 +145,7 @@ class ChatTextEvaluator(TextEvaluator):
                 device = model.device
 
             chat_history = []
+            answers = []
             for prompt in prompts:
                 chat_history.append({"role": "user", "content": prompt})
                 inputs = tokenizer.apply_chat_template(
@@ -166,8 +170,9 @@ class ChatTextEvaluator(TextEvaluator):
                 answer_tokens = tokens[:, inputs["input_ids"].shape[-1] :]
                 answer_text = tokenizer.batch_decode(answer_tokens, skip_special_tokens=True)
                 chat_history.append({"role": "assistant", "content": answer_text[0]})
+                answers.append(answer_text[0])
 
-            return tokenizer.apply_chat_template(chat_history, add_generation_prompt=True, tokenize=False)
+            return answers
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
@@ -211,13 +216,13 @@ class ChatTextEvaluator(TextEvaluator):
                 self.assistant_confidence_threshold,
             )
 
-            result_path = os.path.join(result_dir, f"chat_output_{i}.txt")
-            with open(result_path, "w") as f:
-                f.write(answer)
+            result_path = os.path.join(result_dir, f"chat_output_{i}.json")
+            with open(result_path, "w", encoding="utf-8") as f:
+                json.dump(answer, f, ensure_ascii=False, indent=4)
             answers.append(result_path)
 
             prompt_path = os.path.join(prompts_dir, f"chat_prompts_{i}.txt")
-            with open(prompt_path, "w") as f:
+            with open(prompt_path, "w", encoding="utf-8") as f:
                 f.write("\n\n".join(p))
             prompts_paths.append(prompt_path)
 
