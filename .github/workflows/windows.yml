@@ -663,7 +663,7 @@ jobs:
           - name: 'Test av library import'
             cmd: |
               python -m pip install av==16.1.0 imageio==2.37.2 decord==0.6.0 opencv-python==4.13.0.90
-              python -c "import av; print(av.__version__)"
+              python -c "import imageio; import os; libs_dir = os.path.dirname(os.path.dirname(imageio.__file__)) + '\\av.libs'; os.environ['PATH'] = libs_dir + os.pathsep + os.environ.get('PATH', ''); print(libs_dir); import av; print(av.__version__)"
             run_condition: true
             timeout: 60
           - name: 'Whisper'
