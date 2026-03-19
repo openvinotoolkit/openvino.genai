@@ -8,6 +8,7 @@
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
+#include "openvino/genai/video_generation/text2video_pipeline.hpp"
 #include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/json_container.hpp"
 
@@ -145,4 +146,36 @@ struct ov_genai_chat_history_opaque {
  */
 struct ov_genai_json_container_opaque {
     std::shared_ptr<ov::genai::JsonContainer> object;
+};
+
+/**
+ * @struct ov_genai_video_generation_config_opaque
+ * @brief This is an interface of ov::genai::VideoGenerationConfig
+ */
+struct ov_genai_video_generation_config_opaque {
+    std::shared_ptr<ov::genai::VideoGenerationConfig> object;
+};
+
+/**
+ * @struct ov_genai_text2video_pipeline_opaque
+ * @brief This is an interface of ov::genai::Text2VideoPipeline
+ */
+struct ov_genai_text2video_pipeline_opaque {
+    std::shared_ptr<ov::genai::Text2VideoPipeline> object;
+};
+
+/**
+ * @struct ov_genai_video_generation_perf_metrics_opaque
+ * @brief This is an interface of ov::genai::VideoGenerationPerfMetrics
+ */
+struct ov_genai_video_generation_perf_metrics_opaque {
+    std::shared_ptr<ov::genai::VideoGenerationPerfMetrics> object;
+};
+
+/**
+ * @struct ov_genai_video_generation_result_opaque
+ * @brief This is an interface of ov::genai::VideoGenerationResult
+ */
+struct ov_genai_video_generation_result_opaque {
+    std::shared_ptr<ov::genai::VideoGenerationResult> object;
 };
