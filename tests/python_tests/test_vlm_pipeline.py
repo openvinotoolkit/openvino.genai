@@ -67,6 +67,7 @@ from utils.atomic_download import AtomicDownloadManager
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 import logging
+from time import perf_counter
 logger = logging.getLogger(__name__)
 
 
@@ -1828,12 +1829,29 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         )
         return NanollavaProcessorWrapper(hf_model.process_images, hf_model.config, hf_model.dtype)
 
+    timings: collections.OrderedDict[str, float] = collections.OrderedDict()
+
+    def profile_step(step_name: str):
+        class _Profiler:
+            def __enter__(self_inner):
+                self_inner.start = perf_counter()
+                return self_inner
+
+            def __exit__(self_inner, exc_type, exc, tb):
+                timings[step_name] = perf_counter() - self_inner.start
+
+        return _Profiler()
+
+    total_start = perf_counter()
     ov_pipe = ov_pipe_model.pipeline
 
     model_id = ov_pipe_model.model_id
-    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
-    model_path = _get_ov_model(model_id)
-    optimum_model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
+    with profile_step("snapshot_download"):
+        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    with profile_step("load_openvino_model"):
+        model_path = _get_ov_model(model_id)
+    with profile_step("load_optimum_model"):
+        optimum_model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
 
     prompt_parts = []
     if image is not None:
@@ -1851,47 +1869,50 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
 
     # Run the optimum_model with optimum-intel
     tokenizer = None
-    if optimum_model.config.model_type == "llava-qwen2":
-        processor = get_nanollava_processor()
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
-
-        from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
-
-        preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[optimum_model.config.model_type].preprocess_inputs
-        inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=optimum_model.config)
-    else:
-        processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-        # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
-        if optimum_model.config.model_type == "gemma3":
-            processor.tokenizer.add_bos_token = False
-        if optimum_model.config.model_type in ["internvl_chat", "minicpmv"]:
+    with profile_step("optimum_preprocess"):
+        if optimum_model.config.model_type == "llava-qwen2":
+            processor = get_nanollava_processor()
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
-        if optimum_model.config.model_type == "minicpmv":
-            # optimum 1.27.0 will manually apply chat template if processor.chat_template isn't set.
-            # So, make sure we set it here to align with GenAI routines.
-            if (
-                getattr(processor, "chat_template", None) is None
-                and getattr(tokenizer, "chat_template", None) is not None
-            ):
-                processor.chat_template = tokenizer.chat_template
 
-        inputs = optimum_model.preprocess_inputs(
-            text=prompt, image=image, video=video, processor=processor, tokenizer=tokenizer, config=optimum_model.config
-        )
+            from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
+
+            preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[optimum_model.config.model_type].preprocess_inputs
+            inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=optimum_model.config)
+        else:
+            processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+            # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
+            if optimum_model.config.model_type == "gemma3":
+                processor.tokenizer.add_bos_token = False
+            if optimum_model.config.model_type in ["internvl_chat", "minicpmv"]:
+                tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
+            if optimum_model.config.model_type == "minicpmv":
+                # optimum 1.27.0 will manually apply chat template if processor.chat_template isn't set.
+                # So, make sure we set it here to align with GenAI routines.
+                if (
+                    getattr(processor, "chat_template", None) is None
+                    and getattr(tokenizer, "chat_template", None) is not None
+                ):
+                    processor.chat_template = tokenizer.chat_template
+
+            inputs = optimum_model.preprocess_inputs(
+                text=prompt, image=image, video=video, processor=processor, tokenizer=tokenizer, config=optimum_model.config
+            )
 
     max_new_tokens = 100
-    output_ids = optimum_model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    with profile_step("optimum_generate"):
+        output_ids = optimum_model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
     input_ids = inputs["input_ids"] if isinstance(inputs, dict) else inputs.input_ids
     generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(input_ids, output_ids)]
 
-    if optimum_model.config.model_type == "llava-qwen2":
-        assert tokenizer is not None, "Tokenizer should be set for llava-qwen2 models."
-        optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
-    else:
-        optimum_output = processor.batch_decode(
-            generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
-        )
-        optimum_text = optimum_output[0]
+    with profile_step("optimum_decode"):
+        if optimum_model.config.model_type == "llava-qwen2":
+            assert tokenizer is not None, "Tokenizer should be set for llava-qwen2 models."
+            optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
+        else:
+            optimum_output = processor.batch_decode(
+                generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
+            )
+            optimum_text = optimum_output[0]
 
     params = {}
     if image is not None:
@@ -1899,10 +1920,15 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     if video is not None:
         params["videos"] = [openvino.Tensor(video)]
 
-    genai_output = ov_pipe.generate(prompt, **params, max_new_tokens=max_new_tokens, do_sample=False)
+    with profile_step("genai_generate"):
+        genai_output = ov_pipe.generate(prompt, **params, max_new_tokens=max_new_tokens, do_sample=False)
     genai_text = genai_output.texts[0]
 
+    timings["total"] = perf_counter() - total_start
+
     assert optimum_text == genai_text
+
+    return timings
 
 
 # (Width, Height)
@@ -2126,7 +2152,22 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
         resized_video = request.getfixturevalue("synthetic_video")
         resized_video = resize_video(resized_video, video_input_resolution)
 
-    run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
+    timings = run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
+
+    # Log one compact line that is easy to grep in CI artifacts.
+    ordered_stage_names = [name for name in timings.keys() if name != "total"]
+    sorted_stage_names = sorted(ordered_stage_names, key=lambda name: timings[name], reverse=True)
+    stage_summary = ", ".join([f"{name}={timings[name]:.3f}s" for name in sorted_stage_names])
+
+    request.node.user_properties.append(("vlm_profile_total_s", f"{timings['total']:.3f}"))
+    request.node.user_properties.append(("vlm_profile_stages", stage_summary))
+
+    logger.warning(
+        "VLM profiling | test=%s | total=%.3fs | %s",
+        request.node.nodeid,
+        timings["total"],
+        stage_summary,
+    )
 
 
 # CDPruner Tests
