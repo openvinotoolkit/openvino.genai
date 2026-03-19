@@ -662,8 +662,8 @@ jobs:
         test:
           - name: 'Test av library import'
             cmd: |
-              python -m pip install av==16.1.0 imageio==2.37.2 decord==0.6.0 opencv-python==4.13.0.90
-              python -c "import imageio; import os; libs_dir = os.path.dirname(os.path.dirname(imageio.__file__)) + '\\av.libs'; os.environ['PATH'] = libs_dir + os.pathsep + os.environ.get('PATH', ''); print(libs_dir); import av; print(av.__version__)"
+              python -m pip install av==16.1.0
+              python -c "import sysconfig, os; purelib = sysconfig.get_paths().get('purelib'); libs_dir = os.path.join(purelib, 'av.libs'); os.environ['PATH'] = libs_dir + os.pathsep + os.environ.get('PATH', ''); print(libs_dir); print(os.environ['PATH']); from pathlib import Path; [print(p) for p in Path(r'C:\Windows\System32').rglob('*.dll') if p.is_file()]; import av; print(av.__version__)"
             run_condition: true
             timeout: 60
           - name: 'Whisper'
