@@ -9,7 +9,7 @@
 
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
 
-void print_perf_metrics(const ov::genai::VideoGenerationPerfMetrics& perf_metrics) {
+void print_perf_metrics(ov::genai::VideoGenerationPerfMetrics& perf_metrics) {
     std::cout << "\nPerformance metrics:\n"
               << "  Load time: " << perf_metrics.get_load_time() << " ms\n"
               << "  Generate duration: " << perf_metrics.get_generate_duration() << " ms\n"
