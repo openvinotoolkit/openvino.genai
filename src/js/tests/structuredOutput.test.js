@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import { LLMPipeline, StructuredOutputConfig } from "../dist/index.js";
 import assert from "node:assert/strict";
 import { describe, it, before } from "node:test";
