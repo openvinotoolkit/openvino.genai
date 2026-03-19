@@ -6,10 +6,14 @@
 
 #include "openvino/opsets/opset13.hpp"
 #include "visual_language/clip.hpp"
+#include "visual_language/utils.hpp"
 #include "utils.hpp"
 
 #include <algorithm>
 #include <cstring>
+#include <numeric>
+#include <cmath>
+#include <sstream>
 
 namespace ov::genai {
 
@@ -58,7 +62,7 @@ ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8, ImageSize image_size, con
     const size_t in_frame_bytes = in_h * in_w * channels;
     const size_t out_frame_elems = channels * image_size.height * image_size.width;
 
-    clip_ctx ctx;
+    clip_ctx ctx{};
     
     std::copy_n(image_mean.begin(), image_mean.size(), ctx.image_mean);
     std::copy_n(image_std.begin(), image_std.size(), ctx.image_std);
@@ -710,7 +714,7 @@ ov::Tensor InputsEmbedderVideoChatFlashQwen::get_inputs_embeds(const std::string
     std::vector<std::variant<ov::Tensor, size_t>> new_chat_tokens;
     if (m_is_chat_conversation) {
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = utils::split_tokenize(prompt, m_tokenizer, NATIVE_PATTERN);
+        new_chat_tokens = visual_language::utils::split_tokenize(prompt, m_tokenizer, NATIVE_PATTERN);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     } else {
@@ -723,16 +727,16 @@ ov::Tensor InputsEmbedderVideoChatFlashQwen::get_inputs_embeds(const std::string
             templated_prompt = prompt;
         }
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = utils::split_tokenize(templated_prompt, m_tokenizer, NATIVE_PATTERN);
+        new_chat_tokens = visual_language::utils::split_tokenize(templated_prompt, m_tokenizer, NATIVE_PATTERN);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     }
-    ov::Tensor new_merged_tokens = utils::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
+    ov::Tensor new_merged_tokens = visual_language::utils::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
     ov::Tensor new_tokens = update_history(new_merged_tokens);
     m_prev_hist_length = m_kv_cache_state.get_state().size();
     m_kv_cache_state.add_inputs(new_tokens);
 
-    std::vector<std::variant<ov::Tensor, size_t>> tokens = utils::drop_image_placeholders(new_tokens);
+    std::vector<std::variant<ov::Tensor, size_t>> tokens = visual_language::utils::drop_image_placeholders(new_tokens);
     ov::Tensor inputs_embeds{ov::element::f32, {1, new_tokens.get_shape().at(1), m_vlm_config.hidden_size}};
     size_t offset = 0;
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());

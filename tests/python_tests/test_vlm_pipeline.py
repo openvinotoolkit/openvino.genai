@@ -93,7 +93,16 @@ def _is_videochat_flash_qwen_model(model_id: str) -> bool:
     return "videochat-flash-qwen" in model_id.lower()
 
 
-class _VlmPipelineVideoChatFlashQwenImageGuard:
+VIDEO_MODELS_WITH_UNSUPPORTED_IMAGE_INPUTS: list[str] = [
+    "optimum-intel-internal-testing/tiny-videochat-flash-qwen", # CVS-182928
+]
+
+
+def _has_unsupported_image_inputs(model_id: str) -> bool:
+    return model_id in VIDEO_MODELS_WITH_UNSUPPORTED_IMAGE_INPUTS
+
+
+class _VlmPipelineUnsupportedImageInputGuard:
     def __init__(self, pipeline: VLMPipeline, model_id: str):
         self._pipeline = pipeline
         self._model_id = model_id
@@ -101,9 +110,9 @@ class _VlmPipelineVideoChatFlashQwenImageGuard:
     def generate(self, *args: Any, **kwargs: Any):
         has_single_image = kwargs.get("image") is not None
         has_multi_images = bool(kwargs.get("images"))
-        if _is_videochat_flash_qwen_model(self._model_id) and (has_single_image or has_multi_images):
+        if _has_unsupported_image_inputs(self._model_id) and (has_single_image or has_multi_images):
             pytest.skip(
-                "VideoChat-Flash-Qwen image/images tests are disabled as not supported right now, see CVS-182928. Please use video/videos input."
+                f"{self._model_id} does not support image/images inputs in this suite. Please use video/videos input."
             )
         return self._pipeline.generate(*args, **kwargs)
 
@@ -114,7 +123,7 @@ class _VlmPipelineVideoChatFlashQwenImageGuard:
 PROMPTS: list[str] = [
     "What is in the image?",
     "What is special about this image?",
-    "Describe the image",
+    "Describe the image"
 ]
 
 
@@ -247,7 +256,7 @@ def _setup_generation_config(
     return generation_config
 
 
-def is_optimum_intel_version_4_videochat_flash_qwen():
+def is_optimum_intel_version_for_videochat_flash_qwen():
     """
     Return True if the installed ``optimum-intel`` version matches the
     specific version required for tiny-videochat-flash-qwen tests.
@@ -274,10 +283,7 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
         )
-    if (
-        "optimum-intel-internal-testing/tiny-videochat-flash-qwen" == model_id
-        and not is_optimum_intel_version_4_videochat_flash_qwen()
-    ):
+    if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip(
             "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported version is 1.27.0.dev0+70056d0."
         )
@@ -318,7 +324,7 @@ def _get_ov_model(model_id: str) -> str:
                 },
             )
         )
-        if model.config.model_type == "llava-qwen2" or "videochat-flash-qwen" in model_id:
+        if model.config.model_type == "llava-qwen2" or _is_videochat_flash_qwen_model(model_id):
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         # For tiny-random-internvl2 processor is actually tokenizer
         elif isinstance(processor, transformers.Qwen2TokenizerFast):
@@ -382,7 +388,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
         if vision_preprocess_env_set:
             os.environ.pop(key, None)
 
-    pipeline = _VlmPipelineVideoChatFlashQwenImageGuard(pipeline, ov_model)
+    pipeline = _VlmPipelineUnsupportedImageInputGuard(pipeline, ov_model)
 
     return VlmModelInfo(
         ov_model,
@@ -2559,7 +2565,7 @@ def test_videochatflash_qwen_rejects_image_input(
         pytest.param(get_beam_search(), id="beam_search"),
     ],
 )
-def test_vlm_continuous_batching_generate_vs_add_request(
+def test_vlm_continuous_batching_generate_vs_add_request_for_videochat(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
     ov_continious_batching_pipe_videochat: ContinuousBatchingPipeline,
     config: GenerationConfig,
