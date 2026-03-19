@@ -24,7 +24,9 @@ def main():
     args, adapters = parser.parse_known_args()
 
     if len(adapters) % 2 != 0:
-        parser.error("Each LoRA adapter path must be followed by a numeric alpha value (got an odd number of extra arguments).")
+        parser.error(
+            "Each LoRA adapter path must be followed by a numeric alpha value (got an odd number of extra arguments)."
+        )
 
     # Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
     adapter_config = openvino_genai.AdapterConfig()
