@@ -9,6 +9,7 @@ hf_transfer==0.1.9
 gguf==0.18.0
 
 # rag requirements
+langchain==1.2.12
 langchain_community==0.4.1
 langchain-core==1.2.17
 

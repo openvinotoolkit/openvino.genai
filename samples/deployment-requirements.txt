@@ -5,3 +5,5 @@ pillow==12.1.1  # Image processing for VLMs
 json5==0.13.0  # For ReAct
 pydantic==2.12.5  # For Structured output json schema
 opencv-python==4.13.0.92 # For video-to-text VLM sample
+langchain==1.2.12  # For agentic sample
+langchain-core==1.2.20  # For OpenVINOChatModel wrapper
