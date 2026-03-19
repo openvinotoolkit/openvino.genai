@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import whowhatbench
 from packaging.version import Version
 from transformers import AutoModelForCausalLM, AutoTokenizer, __version__

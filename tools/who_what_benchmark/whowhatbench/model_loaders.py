@@ -1,7 +1,10 @@
-import os
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from pathlib import Path
 import logging
 import torch
+import os
 
 from packaging.version import Version
 
