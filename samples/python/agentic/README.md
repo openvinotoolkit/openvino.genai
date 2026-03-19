@@ -37,10 +37,9 @@ Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/lear
 
 GPUs usually provide better performance compared to CPUs. Modify the source code in the scripts to change the device parameter for inference to the GPU.
 
-Install [../../deployment-requirements.txt](https://www.google.com/search?q=../../deployment-requirements.txt) and the sample-specific requirements to run these files:
+Install [../../deployment-requirements.txt](https://www.google.com/search?q=../../deployment-requirements.txt) to run these files:
 
-pip install \--upgrade-strategy eager \-r ../../deployment-requirements.txt  
-pip install langchain langchain-community pydantic
+pip install \--upgrade-strategy eager \-r ../../deployment-requirements.txt
 
 ### **1\. LangChain LLM Wrapper (llm\_wrapper.py)**
 
