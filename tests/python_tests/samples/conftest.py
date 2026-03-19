@@ -1,3 +1,6 @@
+# Copyright (C) 2025-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import subprocess # nosec B404
 import os
 import json
@@ -171,6 +174,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "tiny-random-flux": {
         "name": "optimum-intel-internal-testing/tiny-random-flux",
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
+    },
+    "stable-diffusion-3-tiny-random": {
+        "name": "optimum-intel-internal-testing/stable-diffusion-3-tiny-random",
         "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
     },
 }
