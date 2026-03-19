@@ -664,6 +664,7 @@ jobs:
             cmd: |
               python -m pip install av==16.1.0 imageio==2.37.2 decord==0.6.0 opencv-python==4.13.0.90
               python -c "import av; print(av.__version__)"
+            run_condition: true
             timeout: 60
           - name: 'Whisper'
             # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
