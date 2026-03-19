@@ -33,7 +33,7 @@ def num_positive_integers(x):
     return x
 
 
-def num_more_then_one(x):
+def num_greater_than_one(x):
     x = int(x)
     if x < 1:
         raise argparse.ArgumentTypeError("Minimum input value is 1")
@@ -92,7 +92,7 @@ def get_argparser():
         "-ic",
         "--infer_count",
         default=None,
-        type=num_more_then_one,
+        type=num_greater_than_one,
         help="set the output token size, the value must be greater than 0.",
     )
     parser.add_argument(
@@ -441,11 +441,11 @@ def get_argparser():
     )
     parser.add_argument(
         "--chat_iter",
-        type=num_more_then_one,
+        type=num_greater_than_one,
         default=None,
         help="Triggers chat mode. The chat will run chat_iter iterations with the same prompt."
         " Alternative option is setup prompt list in JSONL with -pf."
-        " The parameter specifies the amount of the chat iteration. Applicable for VLM and LLM Pipeline.",
+        " The parameter specifies the amount of the chat iterations. Applicable for VLM and LLM Pipeline.",
     )
     return parser.parse_args()
 

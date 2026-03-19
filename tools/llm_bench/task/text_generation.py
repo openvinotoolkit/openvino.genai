@@ -115,8 +115,6 @@ def update_chat_iteration_with_memory_info(chat_iter_data_list: list, memory_met
 
 # ===== Optimum Utils =====
 def setup_additional_args_optimum(args: dict, model: object, tokenizer: object, streaming, tokens_len: int):
-    from optimum.intel.utils.import_utils import is_transformers_version
-
     additional_args = model_utils.setup_gen_config_use_custom_args()
 
     # llama-3-8b-instruct's generation_config.json has 4096 max_length.
@@ -888,7 +886,7 @@ def run_text_generation_genai_chat_mode(
             per_token_time = generation_time * 1000 / num_tokens
         else:
             log.warning("No generated tokens")
-        first_token_time = perf_metrics.get_ttft().mean
+        first_token_time = perf_metrics.get_ttft().mean - perf_metrics.raw_metrics.tokenization_durations[-1] / 1000
         second_tokens_durations = (np.array(perf_metrics.raw_metrics.m_durations) / 1000).tolist()
         tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
         inference_durations = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()

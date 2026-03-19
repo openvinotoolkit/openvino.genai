@@ -295,15 +295,15 @@ def output_avg_statis_tokens(
                 avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * batch_size * 1000
             tput_unit = latency_unit
             if batch_size > 1:
-                latency_unit = '{}{}s'.format(batch_size, latency_unit)
+                display_unit = "{}{}s".format(batch_size, latency_unit)
             if avg_1st_token_latency >= 0:
                 avg_1st_token_latency = (
-                    f"{avg_1st_token_latency:.2f} ms/{latency_unit}" if chat_mode else f"{avg_1st_token_latency:.2f} ms"
+                    f"{avg_1st_token_latency:.2f} ms/{display_unit}" if chat_mode else f"{avg_1st_token_latency:.2f} ms"
                 )
             else:
                 avg_1st_token_latency = "NA"
             avg_2nd_tokens_latency = (
-                "NA" if avg_2nd_tokens_latency < 0 else f"{avg_2nd_tokens_latency:.2f} ms/{latency_unit}"
+                "NA" if avg_2nd_tokens_latency < 0 else f"{avg_2nd_tokens_latency:.2f} ms/{display_unit}"
             )
             avg_2nd_token_tput = "NA" if avg_2nd_tokens_latency == "NA" else f"{avg_2nd_token_tput:.2f} {tput_unit}s/s"
             prefix = (

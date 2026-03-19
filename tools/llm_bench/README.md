@@ -214,7 +214,7 @@ python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task 
 ```sh
 # chat itration
 python benchmark.py -m ./models/MiniCPM-V-2_6/ -p "What is on the picture?" -n 2 --task visual_text_gen --chat_iter 3 -i ./image.png
-python benchmark.py -m ./models/MiniCPM-V-2_6/ -n 2 --task visual_text_gen --pf ./prompts/chat_mode_vlm.jsonl.jsonl
+python benchmark.py -m ./models/MiniCPM-V-2_6/ -n 2 --task visual_text_gen --pf ./prompts/chat_mode_vlm.jsonl
 ```
 
 > **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl

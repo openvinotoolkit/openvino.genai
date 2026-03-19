@@ -59,7 +59,7 @@ video_generation_json = [
 ]
 llm_chat_json = [
     {
-        "prompt": ["Tell me the plot of Mulan.", "Who is the main character ?"],
+        "prompt": ["Tell me the plot of Mulan.", "Who is the main character?"],
     }
 ]
 llm_chat_vlm_json = [
@@ -515,7 +515,7 @@ class TestBenchmarkLLM:
                 "text_gen",
                 "--optimum",
                 "-p",
-                "Why the Sun is yellow ?",
+                "Why the Sun is yellow?",
                 "--chat_iter",
                 "2",
             ],
@@ -531,7 +531,7 @@ class TestBenchmarkLLM:
                 "text_gen",
                 "--genai",
                 "-p",
-                "Why the Sun is yellow ?",
+                "Why the Sun is yellow?",
                 "--chat_iter",
                 "3",
             ],
@@ -566,7 +566,7 @@ class TestBenchmarkLLM:
                 "visual_text_gen",
                 "--genai",
                 "-p",
-                "Why the Sun is yellow ?",
+                "Why the Sun is yellow?",
                 "--chat_iter",
                 "3",
             ],
