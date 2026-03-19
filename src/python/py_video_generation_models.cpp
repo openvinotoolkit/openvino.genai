@@ -106,6 +106,8 @@ void init_ltx_video_transformer_3d_model(py::module_& m) {
              R"(
                 Sets LoRA adapters for the transformer model.
                 adapters (AdapterConfig or None): Adapter configuration to apply.
+                Passing None keeps currently configured adapters unchanged.
+                Pass an empty AdapterConfig() to disable all adapters.
             )")
         .def("infer",
              &ov::genai::LTXVideoTransformer3DModel::infer,

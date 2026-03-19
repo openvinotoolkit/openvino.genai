@@ -2014,6 +2014,8 @@ class LTXVideoTransformer3DModel:
         """
                         Sets LoRA adapters for the transformer model.
                         adapters (AdapterConfig or None): Adapter configuration to apply.
+                        Passing None keeps currently configured adapters unchanged.
+                        Pass an empty AdapterConfig() to disable all adapters.
         """
     def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         """
