@@ -9,7 +9,7 @@
 
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
 
-void print_perf_metrics(const ov::genai::VideoGenerationPerfMetrics& perf_metrics) {
+void print_perf_metrics(ov::genai::VideoGenerationPerfMetrics& perf_metrics) {
     std::cout << "\nPerformance metrics:\n"
               << "  Load time: " << perf_metrics.get_load_time() << " ms\n"
               << "  Generate duration: " << perf_metrics.get_generate_duration() << " ms\n"
@@ -49,7 +49,7 @@ int main(int32_t argc, char* argv[]) try {
     );
 
     save_video("lora_video.avi", output.video, frame_rate);
-    print_perf_metrics(output.perf_metrics);
+    print_perf_metrics(output.performance_stat);
 
     std::cout << "Generating video without LoRA adapters applied, resulting video will be in baseline_video.avi\n";
     output = pipe.generate(
@@ -63,7 +63,7 @@ int main(int32_t argc, char* argv[]) try {
     );
 
     save_video("baseline_video.avi", output.video, frame_rate);
-    print_perf_metrics(output.perf_metrics);
+    print_perf_metrics(output.performance_stat);
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
