@@ -494,7 +494,7 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
 
         // Shape example: [-1,4,0,64]
         auto shape = op->get_input_partial_shape(0);
-        if (shape.rank().get_length() != 4) {
+        if (shape.rank().is_dynamic() || shape.rank().get_length() != 4) {
             // kv cache should have 4 dimensions
             continue;
         }
