@@ -286,7 +286,7 @@ TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
 # in the Python API path. Use optimum-cli export for these models to match stable CLI behavior.
 FORCE_OPTIMUM_CLI_EXPORT_MODELS = (
     "optimum-intel-internal-testing/tiny-random-lfm2",
-    "optimum-intel-internal-testing/tiny-random-qwen3-next"
+    "optimum-intel-internal-testing/tiny-random-qwen3-next",
 )
 
 
