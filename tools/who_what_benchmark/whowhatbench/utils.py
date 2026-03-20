@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from typing import Union, Optional
 from packaging.version import Version
 
@@ -122,7 +125,7 @@ def get_ignore_parameters_flag():
 
     transformers_version = Version(__version__)
 
-    if transformers_version >= Version("4.51.0"):
+    if transformers_version >= Version("4.51.0") and transformers_version < Version("5.0.0"):
         return {"use_model_defaults": False}
     return {}
 
