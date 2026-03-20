@@ -922,7 +922,22 @@ jobs:
           merge-multiple: true
 
       - name: Extract Artifacts
-        run: Expand-Archive -Path ${{ env.INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.INSTALL_DIR }}
+        run: |
+          $genaiExtractDir = Join-Path $env:RUNNER_TEMP 'genai_cpack'
+          if (Test-Path $genaiExtractDir) {
+            Remove-Item -Path $genaiExtractDir -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Path $genaiExtractDir | Out-Null
+          Expand-Archive -Path ${{ env.INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath $genaiExtractDir
+
+          robocopy $genaiExtractDir ${{ env.INSTALL_DIR }} /E /NFL /NDL /NJH /NJS /NP
+          $robocopyExitCode = $LASTEXITCODE
+          if ($robocopyExitCode -gt 7) {
+            exit $robocopyExitCode
+          }
+
+          exit 0
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
