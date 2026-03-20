@@ -454,14 +454,14 @@ CacheTypes get_cache_types(const ov::Model& model) {
 
         // Shape example: [-1,4,0,64]
         auto shape = op->get_input_partial_shape(0);
+        if (shape.rank().is_dynamic()) {
+            continue;
+        }
         const auto rank = shape.rank().get_length();
         size_t dynamic_axis_count = 0, zero_axis_count = 0;
         for (size_t i = 0; i < rank; i++) {
-            if (shape[i].is_dynamic()) {
-                dynamic_axis_count++;
-            } else if (shape[i] == 0) {
-                zero_axis_count++;
-            }
+            dynamic_axis_count += shape[i].is_dynamic() ? 1 : 0;
+            zero_axis_count += shape[i] == 0 ? 1 : 0;
         }
 
         if (rank == 4 && dynamic_axis_count == 1 && zero_axis_count == 1) {

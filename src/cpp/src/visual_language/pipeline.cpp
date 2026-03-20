@@ -690,7 +690,7 @@ private:
                 m_language.reset_state();
                 m_language.get_tensor("attention_mask").set_shape({1, 0});
             } else {
-                utils::trim_kv_cache(m_language, cache_state, std::nullopt);
+                utils::trim_kv_cache(m_language, cache_state, m_adapter_controller);
             }
         }
 
