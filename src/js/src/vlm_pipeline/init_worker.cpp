@@ -5,7 +5,7 @@
 
 VLMInitWorker::VLMInitWorker(Function& callback,
                              std::shared_ptr<ov::genai::VLMPipeline>& pipe,
-                             std::shared_ptr<bool> is_initializing,
+                             std::shared_ptr<std::atomic<bool>> is_initializing,
                              const std::string model_path,
                              const std::string device,
                              const ov::AnyMap properties)

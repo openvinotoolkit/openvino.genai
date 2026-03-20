@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 /*
  * When this file is linked to a DLL, it sets up a delay-load hook that
  * intervenes when the DLL is trying to load 'node.exe' or 'iojs.exe'

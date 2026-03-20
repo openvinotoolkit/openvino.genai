@@ -6,6 +6,7 @@ import subprocess  # nosec B404
 import logging
 from pathlib import Path
 
+import numpy as np
 import openvino_genai as ov_genai
 
 from utils.constants import get_ov_cache_converted_models_dir
@@ -325,3 +326,57 @@ class TestText2VideoPipelineAdvanced:
             num_inference_steps=2,
         )
         assert result.video is not None
+
+
+class TestTaylorSeer:
+    def test_taylorseer_custom_config(self, video_generation_model):
+        """Test TaylorSeer with custom cache configuration.
+
+        Uses disable_cache_before_step = N-1 and disable_cache_after_step = N so that
+        TaylorSeer is only active on the last inference step.
+
+        Verifies via callback that latents at steps 0..N-2 are identical between baseline
+        and TaylorSeer runs, while the last step differs due to Taylor prediction.
+        """
+        num_inference_steps = 4
+        generate_kwargs = dict(height=32, width=32, num_inference_steps=num_inference_steps)
+
+        taylorseer_config = ov_genai.TaylorSeerCacheConfig()
+        taylorseer_config.cache_interval = 2
+        taylorseer_config.disable_cache_before_step = num_inference_steps - 1
+        taylorseer_config.disable_cache_after_step = num_inference_steps  # never disable
+
+        baseline_latents = []
+        taylorseer_latents = []
+
+        def make_callback(latents_list):
+            def callback(step, num_steps, latent):
+                latents_list.append(latent.data[:].copy())
+                return False
+
+            return callback
+
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+
+        pipe.generate("test prompt", callback=make_callback(baseline_latents), **generate_kwargs)
+        ts_result = pipe.generate(
+            "test prompt",
+            taylorseer_config=taylorseer_config,
+            callback=make_callback(taylorseer_latents),
+            **generate_kwargs,
+        )
+
+        assert ts_result.video is not None
+        assert len(baseline_latents) == num_inference_steps
+        assert len(taylorseer_latents) == num_inference_steps
+
+        # Steps 0..N-2: TaylorSeer inactive, latents must be identical to baseline
+        for step in range(num_inference_steps - 1):
+            assert np.array_equal(baseline_latents[step], taylorseer_latents[step]), (
+                f"Step {step} latents differ unexpectedly — TaylorSeer should not be active yet"
+            )
+
+        # Last step: TaylorSeer prediction was used, result must differ from baseline
+        assert not np.array_equal(baseline_latents[-1], taylorseer_latents[-1]), (
+            "Last step latents are identical — TaylorSeer prediction should have changed the result"
+        )

@@ -1,8 +1,11 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "include/llm_pipeline/init_worker.hpp"
 
 InitWorker::InitWorker(Function& callback,
                        std::shared_ptr<ov::genai::LLMPipeline>& pipe,
-                       std::shared_ptr<bool> is_initializing,
+                       std::shared_ptr<std::atomic<bool>> is_initializing,
                        const std::string model_path,
                        const std::string device,
                        const ov::AnyMap properties)

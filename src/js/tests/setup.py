@@ -15,6 +15,7 @@ from optimum.intel import (
     OVModelForVisualCausalLM,
     OVModelForFeatureExtraction,
     OVModelForSequenceClassification,
+    OVModelForSpeechSeq2Seq,
 )
 
 # Add the Python tests utils directory to the path
@@ -39,6 +40,10 @@ TEST_MODELS = {
     "RERANK_MODEL": {
         "model_id": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "model_class": OVModelForSequenceClassification,
+    },
+    "WHISPER_MODEL": {
+        "model_id": "openai/whisper-tiny",
+        "model_class": OVModelForSpeechSeq2Seq,
     },
 }
 

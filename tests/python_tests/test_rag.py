@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import numpy as np
@@ -16,6 +16,8 @@ import platform
 from optimum.intel import OVModelForFeatureExtraction, OVModelForSequenceClassification
 from torch import Tensor
 import torch
+from utils.constants import NPUW_CPU_PROPERTIES
+from utils.ov_genai_pipelines import should_skip_npuw_tests
 from utils.qwen3_reranker_utils import qwen3_reranker_format_queries, qwen3_reranker_format_document
 
 EMBEDDINGS_TEST_MODELS = [
@@ -726,16 +728,11 @@ def test_fixed_shapes_configs_xfail(emb_model, dataset_documents, config, datase
         TextEmbeddingPipeline.Config(max_length=50, pad_to_max_length=True, batch_size=4),
     ],
 )
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_npu_fallback(emb_model, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
     models_path = emb_model.models_path
 
-    NPU_FALLBACK_PROPERTIES = {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
-
-    pipeline = TextEmbeddingPipeline(models_path, "NPU", config, **NPU_FALLBACK_PROPERTIES)
+    pipeline = TextEmbeddingPipeline(models_path, "NPU", config, **NPUW_CPU_PROPERTIES)
     docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
     result = pipeline.embed_documents(docs_to_embed)
 
