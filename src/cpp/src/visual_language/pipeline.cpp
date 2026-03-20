@@ -134,8 +134,6 @@ private:
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
-        auto language_model_path = models_dir / "openvino_language_model.xml";
-        auto language_model =  utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
         // In case user provided properties per-device
@@ -207,7 +205,6 @@ private:
         m_embedding = m_inputs_embedder->get_embedding_model();
 
         auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
-        auto language_model = utils::singleton_core().read_model(m_language_pair.first, m_language_pair.second);
         const auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
         if (m_generation_config.adapters) {
@@ -238,14 +235,7 @@ public:
         auto properties_copy = properties;
         auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         initialize_from_model_and_dir(language_model, models_dir, device, properties);
-
-        utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
-        cache_state.seq_length_axis = kv_pos.seq_len;
-
-        // If eos_token_id was not provided, take value
-        if (m_generation_config.eos_token_id == -1) {
-            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
-        }
+    }
 
     VLMPipelineImpl(
         const ModelsMap& models_map,
