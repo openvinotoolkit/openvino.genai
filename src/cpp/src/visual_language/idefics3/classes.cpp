@@ -121,13 +121,10 @@ NormalizedPrompt InputsEmbedderIdefics3::normalize_prompt(
     auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
     
     // Expand each <image> token to match the number of tokens from vision encoder
-    std::vector<ov::Tensor> image_embeds;
-    image_embeds.reserve(images_sequence.size());
     size_t searched_pos = 0;
     
     for (size_t new_image_id : images_sequence) {
         const auto& encoded_image = images.at(new_image_id - base_id);
-        image_embeds.push_back(encoded_image.resized_source);
         
         // Each image produces image_seq_len tokens (729 for SmolVLM)
         size_t num_tokens = encoded_image.resized_source.get_shape().at(1);
