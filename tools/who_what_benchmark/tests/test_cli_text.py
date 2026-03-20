@@ -10,6 +10,7 @@ import sys
 from transformers import AutoTokenizer
 from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfig
 
+from test_cli_image import get_similarity
 from conftest import convert_text_model, run_wwb
 
 
@@ -279,9 +280,10 @@ def test_text_genai_json_string_config():
 
 @pytest.mark.parametrize(
     ("model_id"),
-    [("TinyLlama/TinyLlama-1.1B-Chat-v1.0")],
+    [("optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM")],
 )
 def test_text_chat_model(model_id, tmp_path):
+    SIMILARITY_THRESHOLD = 0.9
     temp_file_name = tmp_path / "gt.csv"
     chat_model_path = convert_text_model(model_id, model_id.split("/")[1], _convert_base)
 
@@ -323,6 +325,9 @@ def test_text_chat_model(model_id, tmp_path):
     assert (outputs_path / "metrics.csv").exists()
     assert (outputs_path / "target.csv").exists()
 
+    similarity = get_similarity(output)
+    assert similarity >= SIMILARITY_THRESHOLD
+
     outputs_path = tmp_path / "genai"
     output = run_wwb(
         [
@@ -345,3 +350,6 @@ def test_text_chat_model(model_id, tmp_path):
     assert (outputs_path / "metrics_per_question.csv").exists()
     assert (outputs_path / "metrics.csv").exists()
     assert (outputs_path / "target.csv").exists()
+
+    similarity = get_similarity(output)
+    assert similarity >= SIMILARITY_THRESHOLD

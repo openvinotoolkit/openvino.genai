@@ -32,9 +32,8 @@ class ChatTextEvaluator(TextEvaluator):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
     ) -> None:
-        assert base_model is not None or gt_data is not None, (
-            "Text generation pipeline for evaluation or ground truth data must be defined"
-        )
+        if base_model is None and gt_data is None:
+            raise ValueError("Text generation pipeline for evaluation or ground truth data must be defined")
 
         self.test_data = test_data
         self.metrics = metrics
