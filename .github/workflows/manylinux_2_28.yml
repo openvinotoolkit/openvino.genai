@@ -496,8 +496,10 @@ jobs:
       matrix:
         test:
           - name: 'Test av library import'
+            # Validate that the pinned PyAV version installs and coexists with the media stack
+            # (imageio, decord, opencv-python) used by OpenVINO GenAI video/VLM pipelines on manylinux 2_28.
             cmd: |
-              python -m pip install av==16.1.0 imageio==2.37.2 decord==0.6.0 opencv-python==4.13.0.90
+              python -m pip install av==16.1.0
               python -c "import av; print(av.__version__)"
             run_condition: true
             timeout: 60

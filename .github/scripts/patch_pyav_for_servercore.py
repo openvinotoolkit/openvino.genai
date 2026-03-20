@@ -27,7 +27,6 @@ import platform
 import struct
 import sys
 import sysconfig
-import textwrap
 
 
 def get_av_libs_dir():
@@ -366,14 +365,17 @@ def patch_av_init_ctypes_preload():
         f"{indent}os.add_dll_directory(libs_dir)",
         f"{indent}import ctypes as _ctypes",
         f"{indent}import glob as _glob",
+        f"{indent}import sys as _sys",
         f"{indent}for _dll in sorted(_glob.glob(os.path.join(libs_dir, '*.dll'))):",
         f"{indent}    try:",
         f"{indent}        _ctypes.CDLL(_dll)",
-        f"{indent}    except OSError:",
-        f"{indent}        pass",
+        f"{indent}    except OSError as _exc:",
+        f"{indent}        print(f\"Failed to preload DLL: {{_dll}}: {{_exc}}\", file=_sys.stderr)",
     ]
     new_patch = "\n".join(new_patch_lines)
-    new_code = code.replace(old_patch, new_patch)
+    new_code = (
+        code[:old_index] + new_patch + code[old_index + len(old_patch) :]
+    )
     pathlib.Path(init_path).write_text(new_code)
     print(f"  Patched {init_path}")
     return True
