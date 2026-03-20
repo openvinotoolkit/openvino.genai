@@ -61,7 +61,7 @@ class Qwen3VLInputsPreprocessor(VLMInputsPreprocessor):
         super().__init__(chat_mode)
 
     def update_chat_history_with_answer(self, answer):
-        self.chat_history.append({"role": "assistant", "content": answer})
+        self.chat_history.append({"role": "assistant", "content": [{"type": "text", "text": answer}]})
 
     def preprocess_inputs(
         self,
@@ -77,18 +77,33 @@ class Qwen3VLInputsPreprocessor(VLMInputsPreprocessor):
             raise ValueError("Processor is required.")
         if audio is not None:
             raise ValueError("Audio input is not supported")
-        conversation = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": text},
-                ],
-            }
-        ]
-        if image is not None:
-            conversation[0]["content"].insert(0, {"type": "image", "image": image})
-        if video is not None:
-            conversation[0]["content"].insert(0, {"type": "video", "video": video})
+
+        if self.chat_mode:
+            media = []
+            if image is not None:
+                media += [{"type": "image", "image": img} for img in image]
+            if video is not None:
+                media += [{"type": "video", "video": v} for v in video]
+            self.chat_history.append(
+                {
+                    "role": "user",
+                    "content": media + [{"type": "text", "text": text}],
+                }
+            )
+            conversation = self.chat_history
+        else:
+            conversation = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": text},
+                    ],
+                }
+            ]
+            if image is not None:
+                conversation[0]["content"].insert(0, {"type": "image", "image": image})
+            if video is not None:
+                conversation[0]["content"].insert(0, {"type": "video", "video": video})
 
         inputs = processor.apply_chat_template(
             conversation, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt"
@@ -127,14 +142,14 @@ class LLAVAInputsPreprocessor(VLMInputsPreprocessor):
         if getattr(processor, "chat_template", None) is not None:
             templated_prompt = {"role": "user", "content": [{"type": "text", "text": text}]}
             if image is not None:
-                for im in image:
+                for _ in image:
                     templated_prompt["content"].append({"type": "image"})
                 if self.chat_mode:
                     if self.images is None:
                         self.images = []
                     self.images.extend(image)
                 else:
-                    self.images = [*image] 
+                    self.images = [*image]
 
             if self.chat_mode:
                 self.chat_history.append(templated_prompt)
@@ -164,7 +179,4 @@ class LLAVAInputsPreprocessor(VLMInputsPreprocessor):
         return inputs
 
 
-MODEL_TYPE_TO_CLS_MAPPING = {
-    "qwen3_vl": Qwen3VLInputsPreprocessor,
-    "llava": LLAVAInputsPreprocessor
-}
+MODEL_TYPE_TO_CLS_MAPPING = {"qwen3_vl": Qwen3VLInputsPreprocessor, "llava": LLAVAInputsPreprocessor}

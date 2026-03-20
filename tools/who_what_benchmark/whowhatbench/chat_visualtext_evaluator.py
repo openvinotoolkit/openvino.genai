@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from typing import Any, Union
 
 import os
@@ -12,7 +15,7 @@ from .visual_utils import MODEL_TYPE_TO_CLS_MAPPING, fix_phi3_v_eos_token_id
 
 
 @register_evaluator("visual-text-chat")
-class ChatTextEvaluator(TextEvaluator):
+class ChatVisualTextEvaluator(TextEvaluator):
     CHAT_PROMPTS_FILE = "visualtext_image_chat_prompts.json"
 
     def __init__(
@@ -30,9 +33,7 @@ class ChatTextEvaluator(TextEvaluator):
         relevance_weight=None,
     ) -> None:
         if base_model is None and gt_data is None:
-            raise ValueError(
-                "Text generation pipeline for evaluation or ground truth data must be defined"
-            )
+            raise ValueError("Text generation pipeline for evaluation or ground truth data must be defined")
 
         self.test_data = test_data
         self.max_new_tokens = max_new_tokens
@@ -155,7 +156,7 @@ class ChatTextEvaluator(TextEvaluator):
         ):
             if model.config.model_type not in MODEL_TYPE_TO_CLS_MAPPING:
                 raise ValueError(
-                    f"WWB is not supported models with type {model.config.model_type} to evaluation in chat mode."
+                    f"WWB doesn't support models with type '{model.config.model_type}' to evaluation in chat mode."
                 )
 
             inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type](chat_mode=True)
