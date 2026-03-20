@@ -370,12 +370,10 @@ def patch_av_init_ctypes_preload():
         f"{indent}    try:",
         f"{indent}        _ctypes.CDLL(_dll)",
         f"{indent}    except OSError as _exc:",
-        f"{indent}        print(f\"Failed to preload DLL: {{_dll}}: {{_exc}}\", file=_sys.stderr)",
+        f'{indent}        print(f"Failed to preload DLL: {{_dll}}: {{_exc}}", file=_sys.stderr)',
     ]
     new_patch = "\n".join(new_patch_lines)
-    new_code = (
-        code[:old_index] + new_patch + code[old_index + len(old_patch) :]
-    )
+    new_code = code[:old_index] + new_patch + code[old_index + len(old_patch) :]
     pathlib.Path(init_path).write_text(new_code)
     print(f"  Patched {init_path}")
     return True
