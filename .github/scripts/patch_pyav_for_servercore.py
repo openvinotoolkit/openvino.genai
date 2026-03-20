@@ -95,7 +95,6 @@ def build_pe_dll(dll_name, export_names):
 
     # Build name strings
     name_bytes_list = [n.encode("ascii") + b"\x00" for n in sorted(export_names)]
-    sorted_names = sorted(export_names)
 
     # Calculate total edata size
     total_names_size = sum(len(b) for b in name_bytes_list)
@@ -104,7 +103,6 @@ def build_pe_dll(dll_name, export_names):
     # --- Build .text section (stub code: xor eax,eax; ret) ---
     # Single stub shared by all exports: "xor eax, eax; ret"
     text_code = b"\x31\xc0\xc3"  # xor eax, eax; ret
-    text_raw_size = _align(len(text_code), FILE_ALIGNMENT)
 
     # Virtual addresses (after section alignment)
     text_rva = SECTION_ALIGNMENT  # .text at 0x1000
@@ -343,8 +341,8 @@ def patch_av_init_ctypes_preload():
     init_path = get_av_init_path()
     code = pathlib.Path(init_path).read_text()
 
-    # Check if already patched
-    if "ctypes" in code:
+    # Check if already patched: look for our specific CDLL preload marker
+    if "_ctypes.CDLL(" in code:
         print(f"  av/__init__.py already patched, skipping")
         return False
 
@@ -354,17 +352,27 @@ def patch_av_init_ctypes_preload():
         print(f"  File content may have changed. Manual patching may be needed.")
         return False
 
-    # New patch: keep add_dll_directory but also pre-load via ctypes
-    new_patch = textwrap.dedent("""\
-        os.add_dll_directory(libs_dir)
-                import ctypes as _ctypes
-                import glob as _glob
-                for _dll in sorted(_glob.glob(os.path.join(libs_dir, '*.dll'))):
-                    try:
-                        _ctypes.CDLL(_dll)
-                    except OSError:
-                        pass""").rstrip()
+    # New patch: keep add_dll_directory but also pre-load via ctypes,
+    # preserving the original line indentation.
+    old_index = code.index(old_patch)
+    line_start = code.rfind("\n", 0, old_index) + 1
+    line_end = code.find("\n", old_index)
+    if line_end == -1:
+        line_end = len(code)
+    original_line = code[line_start:line_end]
+    indent = original_line[: len(original_line) - len(original_line.lstrip())]
 
+    new_patch_lines = [
+        f"{indent}os.add_dll_directory(libs_dir)",
+        f"{indent}import ctypes as _ctypes",
+        f"{indent}import glob as _glob",
+        f"{indent}for _dll in sorted(_glob.glob(os.path.join(libs_dir, '*.dll'))):",
+        f"{indent}    try:",
+        f"{indent}        _ctypes.CDLL(_dll)",
+        f"{indent}    except OSError:",
+        f"{indent}        pass",
+    ]
+    new_patch = "\n".join(new_patch_lines)
     new_code = code.replace(old_patch, new_patch)
     pathlib.Path(init_path).write_text(new_code)
     print(f"  Patched {init_path}")
