@@ -11,7 +11,7 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/tensor.hpp"
 
-namespace ov::genai::visual_language::utils {
+namespace ov::genai::vlm_utils {
 
 std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text,
                                                              ov::genai::Tokenizer& tokenizer,
@@ -22,4 +22,4 @@ ov::Tensor insert_image_placeholders(const std::vector<std::variant<ov::Tensor, 
 
 std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::Tensor& tokens);
 
-}  // namespace ov::genai::visual_language::utils
+}  // namespace ov::genai::vlm_utils

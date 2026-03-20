@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "visual_language/utils.hpp"
+#include "visual_language/vlm_utils.hpp"
 
 #include <algorithm>
 
@@ -20,7 +20,7 @@ overloaded(Ts...) -> overloaded<Ts...>;
 
 }  // namespace
 
-namespace ov::genai::visual_language::utils {
+namespace ov::genai::vlm_utils {
 
 std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text,
                                                              ov::genai::Tokenizer& tokenizer,
@@ -118,4 +118,4 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
     return chunks;
 }
 
-}  // namespace ov::genai::visual_language::utils
+}  // namespace ov::genai::vlm_utils
