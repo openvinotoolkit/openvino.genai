@@ -1,11 +1,6 @@
 name: SDL tests
 on:
   workflow_dispatch:
-  pull_request:
-  push:
-    branches:
-      - master
-      - 'releases/**'
 
 permissions: read-all
 

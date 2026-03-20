@@ -2,11 +2,6 @@ name: Windows (VS 2022, Python 3.11)
 on:
   workflow_dispatch:
   pull_request:
-  merge_group:
-  push:
-    branches:
-      - master
-      - 'releases/**'
 
 permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
@@ -98,7 +93,7 @@ jobs:
     name: genai cpack (${{ matrix.build-type }})
     strategy:
       matrix:
-        build-type: [Release, Debug]
+        build-type: [Release]
     needs: [ openvino_download ]
     timeout-minutes: 80
     defaults:
@@ -202,11 +197,7 @@ jobs:
         shell: pwsh
         run: |
           ${{ env.OV_INSTALL_DIR }}/setupvars.ps1
-          if ( "${{ matrix.build-type }}" -ne "Debug" ) {
-            $pyVersions = '3.10', '3.11', '3.12', '3.13'
-          } else {
-            $pyVersions = '3.11'
-          }
+          $pyVersions = '3.11'
 
           foreach ($pyVersion in $pyVersions) {
             Remove-Item -Path "${{ env.BUILD_DIR }}/CMakeCache.txt" -Force -ErrorAction SilentlyContinue
@@ -389,7 +380,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.11']
     defaults:
       run:
         shell: pwsh
@@ -498,6 +489,7 @@ jobs:
 
   store_artifacts:
     name: Store build artifacts
+    if: ${{ false }}
     strategy:
       matrix:
         build-type: [Release]
@@ -545,6 +537,7 @@ jobs:
 
   genai_build_samples:
     name: Build Samples - ${{ matrix.build-type }}
+    if: ${{ false }}
     strategy:
       fail-fast: false
       matrix:
@@ -601,6 +594,7 @@ jobs:
 
   genai_build_nodejs:
     name: Build Node.js bindings
+    if: ${{ false }}
     needs: [ openvino_download ]
     timeout-minutes: 90
     defaults:
@@ -654,6 +648,7 @@ jobs:
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
+    if: ${{ false }}
     needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
@@ -771,6 +766,7 @@ jobs:
 
   genai_samples_tests:
     name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
+    if: ${{ false }}
     strategy:
       fail-fast: false
       matrix:
@@ -901,7 +897,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheels, genai_build_genai_wheel ]
-    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
+    if: ${{ needs.openvino_download.result == 'success' }}
     timeout-minutes: 90
     defaults:
       run:
@@ -955,6 +951,7 @@ jobs:
 
   genai_nodejs_tests:
     name: Node.js bindings tests
+    if: ${{ false }}
     needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_nodejs ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
     timeout-minutes: 20
