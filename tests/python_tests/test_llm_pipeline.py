@@ -324,6 +324,7 @@ def test_linear_attention_batch_input_same_as_individual(
             f"Prompt: {prompt}"
         )
 
+
 #
 # Chat scenario
 #
@@ -421,9 +422,7 @@ def test_chat_scenario(
 @pytest.mark.parametrize("inputs", CHAT_INPUTS[:1])  # exclude beam search config
 @pytest.mark.parametrize(
     "input_type",
-    [
-        GenerationChatInputsType.ENCODED_INPUTS, 
-        GenerationChatInputsType.CHAT_HISTORY],
+    [GenerationChatInputsType.ENCODED_INPUTS, GenerationChatInputsType.CHAT_HISTORY],
 )
 def test_linear_attention_chat_scenario(
     llm_model: OVConvertedModelSchema,
