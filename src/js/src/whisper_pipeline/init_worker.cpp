@@ -9,7 +9,7 @@
 
 WhisperInitWorker::WhisperInitWorker(Napi::Function& callback,
                                      std::shared_ptr<ov::genai::WhisperPipeline>& pipe,
-                                     std::shared_ptr<bool> is_initializing,
+                                     std::shared_ptr<std::atomic<bool>> is_initializing,
                                      std::string&& model_path,
                                      std::string&& device,
                                      ov::AnyMap&& properties)
