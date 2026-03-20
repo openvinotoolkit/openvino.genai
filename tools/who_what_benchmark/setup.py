@@ -51,7 +51,7 @@ setup(
             "torch==2.10.0",
             "torchvision==0.25.0",
             "torchaudio==2.10.0",
-            "transformers>=4.50,<=4.51.3",
+            "transformers>=4.50,<=4.52.4",
             "optimum-intel==1.27.0",
         ],
         "llm-test-openvino": [
