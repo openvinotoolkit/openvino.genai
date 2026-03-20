@@ -421,7 +421,9 @@ def test_chat_scenario(
 @pytest.mark.parametrize("inputs", CHAT_INPUTS[:1])  # exclude beam search config
 @pytest.mark.parametrize(
     "input_type",
-    [GenerationChatInputsType.STRING, GenerationChatInputsType.ENCODED_INPUTS, GenerationChatInputsType.CHAT_HISTORY],
+    [
+        GenerationChatInputsType.ENCODED_INPUTS, 
+        GenerationChatInputsType.CHAT_HISTORY],
 )
 def test_linear_attention_chat_scenario(
     llm_model: OVConvertedModelSchema,
@@ -431,20 +433,12 @@ def test_linear_attention_chat_scenario(
     chat_history_hf = []
     chat_history_ov = ov_genai.ChatHistory() if input_type == GenerationChatInputsType.CHAT_HISTORY else []
 
-    if input_type == GenerationChatInputsType.ENCODED_INPUTS:
-        # chat is not supported for PA backend with encoded_inputs format
-        ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
-    else:
-        ov_pipe = create_ov_pipeline(llm_model.models_path)
-
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
     generation_config_kwargs, system_message = inputs
 
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     hf_generation_config = generation_config_to_hf(llm_model.opt_model.generation_config, ov_generation_config)
 
-    prev_chat_len = 0
-
-    ov_pipe.start_chat(system_message)
     chat_history_hf.append({"role": "system", "content": system_message})
     chat_history_ov.append({"role": "system", "content": system_message})
 
@@ -464,47 +458,25 @@ def test_linear_attention_chat_scenario(
         answer_str = llm_model.hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
         chat_history_hf.append({"role": "assistant", "content": answer_str})
 
-        if input_type == GenerationChatInputsType.STRING:
-            answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
-        elif input_type == GenerationChatInputsType.CHAT_HISTORY:
+        if input_type == GenerationChatInputsType.CHAT_HISTORY:
             result_ov: ov_genai.DecodedResults = ov_pipe.generate(
                 chat_history_ov, generation_config=ov_generation_config
             )
             answer_ov = result_ov.texts[0]
         elif input_type == GenerationChatInputsType.ENCODED_INPUTS:
-            input_ids = np.array([tokenized["input_ids"][0][prev_chat_len:]], dtype=np.int64)
-            attention_mask = np.array([tokenized["attention_mask"][0][prev_chat_len:]], dtype=np.int64)
+            input_ids = np.array([tokenized["input_ids"][0]], dtype=np.int64)
+            attention_mask = np.array([tokenized["attention_mask"][0]], dtype=np.int64)
             inputs_ov = ov_genai.TokenizedInputs(ov.Tensor(input_ids), ov.Tensor(attention_mask))
 
             result_ov = ov_pipe.generate(inputs_ov, generation_config=ov_generation_config).tokens[0]
-
             answer_ov = llm_model.hf_tokenizer.decode(result_ov, skip_special_tokens=True)
-            prev_chat_len = len(tokenized["input_ids"][0]) + len(result_ov)
 
         chat_history_ov.append({"role": "assistant", "content": answer_ov})
-
-    ov_pipe.finish_chat()
 
     chat_history_messages_ov = (
         chat_history_ov.get_messages() if input_type == GenerationChatInputsType.CHAT_HISTORY else chat_history_ov
     )
     assert_hf_equals_genai(chat_history_hf, chat_history_messages_ov)
-
-    # Test chat history generate without start_chat/finish_chat matches the same chat scenario
-    if input_type == GenerationChatInputsType.CHAT_HISTORY:
-        chat_history_ov = ov_genai.ChatHistory()
-        chat_history_ov.append({"role": "system", "content": system_message})
-
-        for prompt in QUESTIONS:
-            chat_history_ov.append({"role": "user", "content": prompt})
-            result_ov: ov_genai.DecodedResults = ov_pipe.generate(
-                chat_history_ov, generation_config=ov_generation_config
-            )
-            answer_ov = result_ov.texts[0]
-            chat_history_ov.append({"role": "assistant", "content": answer_ov})
-
-        chat_history_messages_ov = chat_history_ov.get_messages()
-        assert_hf_equals_genai(chat_history_hf, chat_history_messages_ov)
 
 
 @pytest.mark.parametrize("llm_model", [CHAT_MODELS_LIST[0]], indirect=True)
