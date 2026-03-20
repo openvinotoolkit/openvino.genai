@@ -29,18 +29,15 @@ public:
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
     
     CircularBufferQueueElementGuard<ov::InferRequest> get_vision_encoder() {
-        OPENVINO_ASSERT(m_ireq_queue_vision_encoder, "Vision encoder infer request queue is not initialized");
-        return m_ireq_queue_vision_encoder->get();
+        return m_ireq_queue_vision_encoder.get();
     }
 
     CircularBufferQueueElementGuard<ov::InferRequest> get_vision_projection() {
-        OPENVINO_ASSERT(m_ireq_queue_vision_projection, "Vision projection infer request queue is not initialized");
-        return m_ireq_queue_vision_projection->get();
+        return m_ireq_queue_vision_projection.get();
     }
 
     CircularBufferQueueElementGuard<ov::InferRequest> get_merge_model() {
-        OPENVINO_ASSERT(m_ireq_queue_merge_model, "Vision merge infer request queue is not initialized");
-        return m_ireq_queue_merge_model->get();
+        return m_ireq_queue_merge_model.get();
     }
 
     const ov::Tensor& get_pos_emb() const {
