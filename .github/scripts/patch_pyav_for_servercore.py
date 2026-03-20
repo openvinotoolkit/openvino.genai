@@ -355,14 +355,10 @@ def patch_av_init_ctypes_preload():
     # preserving the original line indentation.
     old_index = code.index(old_patch)
     line_start = code.rfind("\n", 0, old_index) + 1
-    line_end = code.find("\n", old_index)
-    if line_end == -1:
-        line_end = len(code)
-    original_line = code[line_start:line_end]
-    indent = original_line[: len(original_line) - len(original_line.lstrip())]
+    indent = code[line_start:old_index]
 
     new_patch_lines = [
-        f"{indent}os.add_dll_directory(libs_dir)",
+        "os.add_dll_directory(libs_dir)",
         f"{indent}import ctypes as _ctypes",
         f"{indent}import glob as _glob",
         f"{indent}import sys as _sys",
