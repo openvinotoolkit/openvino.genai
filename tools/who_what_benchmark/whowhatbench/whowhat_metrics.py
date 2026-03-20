@@ -12,12 +12,17 @@ import torch
 import torch.nn.functional as F
 
 import cv2
+import logging
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
 from transformers import CLIPImageProcessor, CLIPModel
 from tqdm import tqdm
 from skimage.metrics import structural_similarity
 from sklearn.metrics.pairwise import cosine_similarity
+
+# Reduce INFO log messages printed during SentenceTransformer and CLIP initialization
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.ERROR)
 
 
 def evaluate_similarity(model, data_gold, data_prediction):
@@ -30,7 +35,7 @@ def evaluate_similarity(model, data_gold, data_prediction):
         total=min(len(answers_gold), len(answers_prediction)),
         desc="Similarity evaluation",
     ):
-        embeddings = model.encode([gold, prediction])
+        embeddings = model.encode([gold, prediction], show_progress_bar=False)
         cos_sim = util.cos_sim(embeddings, embeddings)
         metric_per_question.append(cos_sim[0, 1].item())
 
@@ -166,6 +171,12 @@ def evaluate_image_similarity(processor, model, data_gold, data_prediction):
             gold_outputs = model.get_image_features(gold_inputs)
             prediction_outputs = model.get_image_features(prediction_inputs)
 
+        # if transformers < 5.0 image features are torch.Tensor
+        # if transformers >= 5.0 it is transformers.modeling_outputs.BaseModelOutputWithPooling
+        # which has pooler_output and last_hidden_state attributes
+        if not isinstance(gold_outputs, torch.Tensor) and hasattr(gold_outputs, "pooler_output"):
+            gold_outputs = gold_outputs.pooler_output
+            prediction_outputs = prediction_outputs.pooler_output
         cos_sim = F.cosine_similarity(gold_outputs, prediction_outputs)
         print("cos_sim: ", cos_sim.item())
         metric_per_image.append(cos_sim.item())

@@ -161,7 +161,7 @@ class RerankingEvaluator(BaseEvaluator):
                 scores = scipy.special.expit(scores)
             ordered_scores = []
             for index, (score, _) in enumerate(zip(scores, passages)):
-                ordered_scores.append(np.array([index, score.numpy()]))
+                ordered_scores.append(np.array([index, score.to(torch.float32).cpu().numpy()]))
             return np.array(ordered_scores[:DEFAULT_TOP_K])
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
