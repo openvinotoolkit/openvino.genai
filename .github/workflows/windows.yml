@@ -721,33 +721,9 @@ jobs:
           - name: 'VLM (videochat)'
             cmd: |
               python -m pip install git+https://github.com/huggingface/optimum-intel.git@70056d07e802786b52810488257d55091d587fc6
-              # Workaround: on AKS Windows containers os.add_dll_directory() is
-              # ineffective for the av.libs path, so the delvewheel-bundled FFmpeg
-              # DLLs cannot be found.  Pre-loading them via ctypes.CDLL(full_path)
-              # puts them in the process image before _core.pyd asks for them.
-              
-              # Clean the pxd
-              pip uninstall -y av
-              pip install av==16.1.0
-              python -c "
-              import av, os, pathlib, textwrap
-              init = pathlib.Path(av.__file__)
-              code = init.read_text()
-              old = 'os.add_dll_directory(libs_dir)'
-              patch = textwrap.dedent('''
-                  os.add_dll_directory(libs_dir)
-                          import ctypes as _ctypes, glob as _glob
-                          for _dll in sorted(_glob.glob(os.path.join(libs_dir, chr(42) + '.dll'))):
-                              try: _ctypes.CDLL(_dll)
-                              except OSError: pass''').lstrip()
-              if old in code and 'ctypes' not in code:
-                  init.write_text(code.replace(old, patch))
-                  print('Patched', init)
-              else:
-                  print('Skip (already patched or layout changed)')
-              "
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "videochat"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            # CVS-183222 CI issue to be fixed
+            run_condition: ${{ false && fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'VLM (qwen3-vl)'
             cmd: |
