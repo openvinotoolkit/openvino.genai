@@ -186,6 +186,8 @@ public:
     virtual void reset() = 0;
 
     virtual ~IncrementalParser() = default;
+
+    virtual bool is_stop_invoked() const { return false; }
 };
 
 /**

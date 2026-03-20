@@ -656,6 +656,10 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
         handle->stop();
         return;
     }
+    if (streaming_status != StreamingStatus::TOOL_CALL_STOP) {
+        handle->stop();
+        return;
+    }
 
     std::unordered_map<uint64_t, GenerationOutput> generation_outputs = handle->read();
     OPENVINO_ASSERT(generation_outputs.size() <= 1);

@@ -135,6 +135,96 @@ def test_several_incremental_parsers(hf_ov_genai_models):
 
 
 @pytest.mark.parametrize(
+    "hf_ov_genai_models", 
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
+    indirect=True
+)
+def test_several_incremental_parsers(hf_ov_genai_models):
+    hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+
+    class CustomReasonParser(IncrementalParser):
+        thinking_started: bool = False
+        deactivated: bool = False
+
+        def parse(self, message: dict, delta_text: str, delta_tokens=None) -> dict:
+            if self.deactivated:
+                return delta_text
+
+            if not self.thinking_started and delta_text == "<start>":
+                self.thinking_started = True
+            elif self.thinking_started and delta_text != "</stop>":
+                message["reasoning_content"] = delta_text
+            elif self.thinking_started and delta_text == "</stop>":
+                self.deactivated = True
+
+            return delta_text
+
+    class IncrementalToolParser(IncrementalParser):
+        started_took_call: bool = False
+        accumulated_tool_call: StringIO = StringIO()
+        deactivated: bool = False
+        do_stop: bool = False
+
+        def is_stop_invoked(self) -> bool:
+            return self.do_stop
+        
+        def parse(self, delta_msg: dict, delta_text: str, delta_tokens=None) -> str:
+            if self.deactivated:
+                return delta_text
+
+            if delta_text == "{" and not self.started_took_call:
+                self.started_took_call = True
+                self.accumulated_tool_call.write(delta_text)
+
+                # If not keep took call in resulting string
+                # delta_text = ''
+            elif self.started_took_call and delta_text == "}":
+                self.started_took_call = False
+                self.accumulated_tool_call.write(delta_text)
+                self.deactivated = True
+                delta_msg["tool_calls"] = [json.loads(self.accumulated_tool_call.getvalue())]
+                self.do_stop = True
+                # If not keep took call in resulting string
+                # delta_text = ''
+            elif self.started_took_call:
+                self.accumulated_tool_call.write(delta_text)
+            return delta_text
+
+    class CustomStreamer(TextParserStreamer):
+        def write(self, message):
+            print(message)
+            
+            return StreamingStatus.RUNNING
+
+    streamer = CustomStreamer(genai_tokenizer, parsers=[IncrementalToolParser(), CustomReasonParser()])
+
+    stream_string = [
+        "Hello",
+        "{",
+        '"func_name": ',
+        '"weather", "location": "New York"',
+        "}",
+        "<start>",
+        " ",
+        "world",
+        " ",
+        "</stop>",
+        "!",
+    ]
+    think_content = " world "
+    content = "".join(stream_string)
+    tool_call = {"func_name": "weather", "location": "New York"}
+
+    for subword in stream_string:
+        streamer._write(subword)
+
+    final_msg = streamer.get_parsed_message()
+    assert final_msg["reasoning_content"] == think_content
+    assert final_msg["content"] == content
+    assert final_msg["tool_calls"][0] == tool_call
+
+
+@pytest.mark.parametrize(
     "hf_ov_genai_models",
     ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
     indirect=True,
