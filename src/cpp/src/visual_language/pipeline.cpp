@@ -690,7 +690,11 @@ private:
                 m_language.reset_state();
                 m_language.get_tensor("attention_mask").set_shape({1, 0});
             } else {
+                bool needs_full_reset = cache_state.needs_reset();
                 utils::trim_kv_cache(m_language, cache_state, m_adapter_controller);
+                if (needs_full_reset) {
+                    m_language.get_tensor("attention_mask").set_shape({1, 0});
+                }
             }
         }
 
@@ -702,7 +706,7 @@ private:
         size_t request_id = 0;
         size_t block_size = 1; // not used
 
-        const size_t history_size = cache_state.get_state().size();
+        const size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - cache_state.num_tokens_to_trim;
         const size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
 
         std::vector<int64_t> tokenized_history = cache_state.get_state();
