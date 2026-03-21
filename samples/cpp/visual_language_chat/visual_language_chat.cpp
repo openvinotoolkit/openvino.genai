@@ -11,16 +11,39 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
 }
 
 int main(int argc, char* argv[]) try {
-    if (argc < 3 || argc > 5) {
-        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> [DEVICE] [PROMPT_LOOKUP]");
+    std::string model_dir;
+    std::string image_dir;
+    std::string device = "CPU";
+    std::string lookup = "false";
+    std::string system_prompt;
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--system_prompt" || arg == "-sys") {
+            if (i + 1 < argc) {
+                system_prompt = argv[++i];
+            } else {
+                throw std::runtime_error("Error: --system_prompt requires a value.");
+            }
+        } else if (model_dir.empty()) {
+            model_dir = arg;
+        } else if (image_dir.empty()) {
+            image_dir = arg;
+        } else if (device == "CPU") {
+            device = arg;
+        } else {
+            lookup = arg;
+        }
     }
 
-    std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
+    if (model_dir.empty() || image_dir.empty()) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> [DEVICE] [PROMPT_LOOKUP] [--system_prompt \"prompt text\"]");
+    }
+
+    std::vector<ov::Tensor> rgbs = utils::load_images(image_dir);
 
     // GPU and NPU can be used as well.
     // Note: If NPU is selected, only language model will be run on NPU
-    std::string device = (argc >= 4) ? argv[3] : "CPU";
-    std::string lookup = (argc == 5) ? argv[4] : "false";
     bool prompt_lookup = (lookup == "true");
     // Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
     ov::AnyMap properties = {ov::genai::prompt_lookup(prompt_lookup)};
@@ -30,7 +53,7 @@ int main(int argc, char* argv[]) try {
         properties.insert({ov::cache_dir("vlm_cache")});
     }
 
-    ov::genai::VLMPipeline pipe(argv[1], device, properties);
+    ov::genai::VLMPipeline pipe(model_dir, device, properties);
 
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
@@ -44,6 +67,9 @@ int main(int argc, char* argv[]) try {
     std::string prompt;
 
     ov::genai::ChatHistory history;
+    if (!system_prompt.empty()) {
+        history.push_back({{"role", "system"}, {"content", system_prompt}});
+    }
     
     std::cout << "question:\n";
     std::getline(std::cin, prompt);

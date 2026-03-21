@@ -16,6 +16,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
+    parser.add_argument("--system_prompt", "-sys", help="Optional system prompt to set the assistant persona")
     args = parser.parse_args()
 
     device = args.device
@@ -25,6 +26,8 @@ def main():
     config.max_new_tokens = 100
 
     chat_history = openvino_genai.ChatHistory()
+    if args.system_prompt:
+        chat_history.append({"role": "system", "content": args.system_prompt})
     while True:
         try:
             prompt = input("question:\n")

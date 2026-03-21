@@ -55,6 +55,7 @@ def main():
     parser.add_argument(
         "prompt_lookup", nargs="?", default="false", help="Enable prompt lookup decoding (default: false)"
     )
+    parser.add_argument("--system_prompt", "-sys", help="Optional system prompt to set the assistant persona")
     args = parser.parse_args()
 
     rgbs = read_images(args.image_dir)
@@ -80,6 +81,8 @@ def main():
         config.max_ngram_size = 3
 
     history = openvino_genai.ChatHistory()
+    if args.system_prompt:
+        history.append({"role": "system", "content": args.system_prompt})
     prompt = input('question:\n')
     history.append({"role": "user", "content": prompt})
     decoded_results = pipe.generate(history, images=rgbs, generation_config=config, streamer=streamer)

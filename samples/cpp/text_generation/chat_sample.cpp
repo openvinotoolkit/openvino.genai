@@ -4,14 +4,30 @@
 #include "openvino/genai/llm_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    if (argc < 2 || argc > 3) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DEVICE>");
-    }
-    std::string prompt;
-    std::string models_path = argv[1];
+    std::string models_path;
+    std::string device = "CPU";  // GPU, NPU can be used as well
+    std::string system_prompt;
 
-    // Default device is CPU; can be overridden by the second argument
-    std::string device = (argc == 3) ? argv[2] : "CPU";  // GPU, NPU can be used as well
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--system_prompt" || arg == "-sys") {
+            if (i + 1 < argc) {
+                system_prompt = argv[++i];
+            } else {
+                throw std::runtime_error("Error: --system_prompt requires a value.");
+            }
+        } else if (models_path.empty()) {
+            models_path = arg;
+        } else {
+            device = arg;
+        }
+    }
+
+    if (models_path.empty()) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> [DEVICE] [--system_prompt \"prompt text\"]");
+    }
+
+    std::string prompt;
     ov::genai::LLMPipeline pipe(models_path, device);
     
     ov::genai::GenerationConfig config;
@@ -24,6 +40,9 @@ int main(int argc, char* argv[]) try {
     };
 
     ov::genai::ChatHistory chat_history;
+    if (!system_prompt.empty()) {
+        chat_history.push_back({{"role", "system"}, {"content", system_prompt}});
+    }
 
     std::cout << "question:\n";
     while (std::getline(std::cin, prompt)) {
