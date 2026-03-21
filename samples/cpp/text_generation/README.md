@@ -52,7 +52,7 @@ Recommended models: meta-llama/Llama-2-7b-chat-hf, TinyLlama/TinyLlama-1.1B-Chat
 - **Main Feature:** Real-time chat-like text generation.
 - **Run Command:**
   ```bash
-  ./chat_sample <MODEL_DIR>
+  ./chat_sample <MODEL_DIR> [DEVICE] [--system_prompt "prompt text"]
   ```
 #### Missing chat template
 If you encounter an exception indicating a missing "chat template" when launching the `ov::genai::LLMPipeline` in chat mode, it likely means the model was not tuned for chat functionality. To work this around, manually add the chat template to tokenizer_config.json of your model or update it using call `pipe.get_tokenizer().set_chat_template(new_chat_template)`.
