@@ -45,12 +45,6 @@ bool MyAdd::visit_attributes(ov::AttributeVisitor& visitor) {
 }
 
 bool MyAdd::evaluate(ov::TensorVector& outputs, const ov::TensorVector& inputs) const {
-#if defined(_WIN32)
-    const int set_env_result = _putenv_s("EXTENSION_LIB_CALLED", "1");
-#else
-    const int set_env_result = setenv("EXTENSION_LIB_CALLED", "1", 1);
-#endif
-    OPENVINO_ASSERT(set_env_result == 0, "Failed to set EXTENSION_LIB_CALLED environment variable");
     OPENVINO_ASSERT(inputs.size() >= 2, "MyAdd evaluate expects at least 2 input tensors");
     OPENVINO_ASSERT(outputs.size() >= 1, "MyAdd evaluate expects at least 1 output tensor");
 

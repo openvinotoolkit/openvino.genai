@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Literal, Callable, Optional
 from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
-from openvino.frontend import OpExtension
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -27,7 +26,6 @@ from utils.hugging_face import generation_config_to_hf, download_and_convert_mod
 from utils.tokenizers import delete_rt_info, model_tmp_path
 from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, MAIN_PIPELINE_TYPES, PipelineType, GenerationChatInputsType
 from data.models import get_models_list, CHAT_MODELS_LIST
-from openvino_tokenizers import _ext_path
 
 
 def assert_hf_equals_genai(hf_reference, genai_output):
@@ -123,41 +121,6 @@ def user_defined_callback(subword):
 def user_defined_status_callback(subword):
     logging.info(subword)
     return ov_genai.StreamingStatus.RUNNING
-
-
-def get_process_env_var(name: str) -> Optional[str]:
-    """
-    Return the current process environment variable value, or None if unset.
-    Uses a platform-specific implementation to avoid relying on CDLL(None).getenv
-    on Windows, which is not reliably available.
-    """
-    if sys.platform == "win32":
-        # On Windows, access getenv from the C runtime DLL.
-        try:
-            crt = ctypes.cdll.ucrtbase  # Universal CRT on modern Windows
-        except OSError:
-            try:
-                crt = ctypes.cdll.msvcrt  # Fallback for older environments
-            except OSError:
-                # As a last resort, fall back to Python's view of the environment
-                return os.environ.get(name)
-        crt.getenv.restype = ctypes.c_char_p
-        crt.getenv.argtypes = (ctypes.c_char_p,)
-        env_value = crt.getenv(name.encode("utf-8"))
-    else:
-        libc = ctypes.CDLL(None)
-        try:
-            getenv_func = libc.getenv
-        except AttributeError:
-            # Fallback if libc does not expose getenv
-            return os.environ.get(name)
-        getenv_func.restype = ctypes.c_char_p
-        getenv_func.argtypes = (ctypes.c_char_p,)
-        env_value = getenv_func(name.encode("utf-8"))
-
-    if env_value is None:
-        return None
-    return env_value.decode("utf-8")
 
 
 CALLBACK_FUNCTIONS = [
@@ -921,7 +884,7 @@ def test_pipelines_generate_with_streaming(
 # Using regex to edit XML is the minimal method to generate the model with custom op "MyAdd" (`type="Add"` -> `type="MyAdd"`, `version="extension"`).
 # We intentionally avoid `from_pretrained`/`save_pretrained` because that path adds extra
 # conversion/serialization code and broadens test scope beyond custom-op dispatch.
-def replace_ir_add_with_myadd(ir_xml_path: Path) -> None:
+def replace_ir_add_with_myadd(ir_xml_path: Path, target_type_name: str = "MyAdd") -> None:
     import re
 
     xml_text = ir_xml_path.read_text(encoding="utf-8")
@@ -952,12 +915,12 @@ def replace_ir_add_with_myadd(ir_xml_path: Path) -> None:
         break
 
     assert match is not None, (
-        "No suitable IR Add layer found to replace with MyAdd. "
+        f"No suitable IR Add layer found to replace with {target_type_name}. "
         "Expected: type='Add', exactly two inputs, and second input with precision='FP32' and all dims equal to 1"
     )
 
     layer_tag = match.group(1)
-    updated_tag = re.sub(r'\btype="Add"', 'type="MyAdd"', layer_tag, count=1)
+    updated_tag = re.sub(r'\btype="Add"', f'type="{target_type_name}"', layer_tag, count=1)
     assert updated_tag != layer_tag, "Selected IR layer does not have type='Add'"
 
     if re.search(r'\bversion="[^"]*"', updated_tag):
@@ -969,20 +932,36 @@ def replace_ir_add_with_myadd(ir_xml_path: Path) -> None:
     ir_xml_path.write_text(xml_text, encoding="utf-8")
 
 
-def get_extension_model(model_path: str, temp_dir: Path) -> Path:
+def assert_ir_contains_op_type(model_path: Path | str, op_type: str) -> None:
+    import re
+
+    model_dir = Path(model_path)
+    ir_xml_path = model_dir / "openvino_model.xml"
+    if not ir_xml_path.exists():
+        raise FileNotFoundError(f"IR XML was not found: {ir_xml_path}")
+
+    xml_text = ir_xml_path.read_text(encoding="utf-8")
+    pattern = re.compile(rf'<layer\b[^>]*\btype="{re.escape(op_type)}"[^>]*>')
+    assert pattern.search(xml_text) is not None, f"IR does not contain op type '{op_type}' in {ir_xml_path}"
+
+
+def get_extension_model(model_path: str, temp_dir: Path, op_name: str = "MyAdd") -> Path:
     source_path = Path(model_path)
-    extension_path = temp_dir / f"{source_path.name}_extension"
+    extension_suffix = "extension" if op_name == "MyAdd" else f"{op_name.lower()}_extension"
+    extension_path = temp_dir / f"{source_path.name}_{extension_suffix}"
     ir_xml_path = extension_path / "openvino_model.xml"
     if ir_xml_path.exists():
+        assert_ir_contains_op_type(extension_path, op_name)
         return extension_path
 
     if not source_path.exists():
         raise FileNotFoundError(f"Model path was not found: {source_path}")
 
     shutil.copytree(source_path, extension_path)
-    replace_ir_add_with_myadd(ir_xml_path)
+    replace_ir_add_with_myadd(ir_xml_path, target_type_name=op_name)
+    assert_ir_contains_op_type(extension_path, op_name)
 
-    assert b"MyAdd" in ir_xml_path.read_bytes(), "Custom op 'MyAdd' was not injected into OpenVINO IR"
+    assert op_name.encode("utf-8") in ir_xml_path.read_bytes(), f"Custom op '{op_name}' was not injected into OpenVINO IR"
 
     return extension_path
 
@@ -1027,39 +1006,71 @@ def get_extension_lib_path():
         f"Searched EXTENSION_LIB_PATH='{os.getenv('EXTENSION_LIB_PATH')}' and build directory '{build_dir}'. "
     )
 
+class CustomAdd(ov.Op):
+    class_type_info = ov.DiscreteTypeInfo("CustomAdd", "extension")
+    evaluate_calls = 0
+
+    def __init__(self, inputs=None, **attrs):
+        super().__init__(self, inputs)
+        self._attrs = attrs
+
+    def validate_and_infer_types(self):
+        self.set_output_type(0, self.get_input_element_type(0), self.get_input_partial_shape(0))
+
+    def clone_with_new_inputs(self, new_inputs):
+        return CustomAdd(new_inputs, **self._attrs)
+
+    def visit_attributes(self, visitor):
+        visitor.on_attributes(self._attrs)
+        return True
+
+    def has_evaluate(self):
+        return True
+
+    def evaluate(self, outputs, inputs):
+        type(self).evaluate_calls += 1
+        lhs = np.array(inputs[0].data, copy=False)
+        rhs = np.array(inputs[1].data, copy=False)
+        outputs[0].shape = inputs[0].shape
+        np.add(lhs, rhs, out=np.array(outputs[0].data, copy=False))
+        return True
+
+    def get_type_info(self):
+        return CustomAdd.class_type_info
+
 
 @pytest.mark.parametrize("llm_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
 @pytest.mark.parametrize("generation_config,prompt", PERF_METRICS_STRUCTURED_OUTPUT_TEST_CASES)
-def test_llm_pipeline_add_extension_custom_op(
+def test_llm_pipeline_add_extension(
     llm_model: OVConvertedModelSchema,
     generation_config: dict,
     prompt: str,
     tmp_path: Path,
 ) -> None:
-    extension_model_path = get_extension_model(llm_model.models_path, tmp_path)
-    extension_lib_path = get_extension_lib_path()
+    myadd_model_path = get_extension_model(llm_model.models_path, tmp_path, "MyAdd")
+    assert_ir_contains_op_type(myadd_model_path, "MyAdd")
 
-    # The custom op "MyAdd" from the extension is implemented in the same way as the OpenVINO op "Add"
-    properties = {"extensions": [str(extension_lib_path)]}
-    os.environ["EXTENSION_LIB_CALLED"] = "0"
-    ov_pipe_extension = ov_genai.LLMPipeline(extension_model_path, "CPU", **properties)
-    result_extension = ov_pipe_extension.generate([prompt], **generation_config)
-    extension_lib_called = get_process_env_var("EXTENSION_LIB_CALLED")
-    assert extension_lib_called == "1", "Custom extension library was not called"
+    # The custom op "MyAdd" is provided by a compiled extension library and is intended to behave like OpenVINO "Add".
+    properties = {"extensions": [str(get_extension_lib_path())]}
+    ov_pipe_extension_path = ov_genai.LLMPipeline(myadd_model_path, "CPU", **properties)
+    result_extension_path = ov_pipe_extension_path.generate([prompt], **generation_config)
 
-    properties = {}
-    ov_pipe_ref = ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
+    # The Python custom op "CustomAdd" is intended to behave like OpenVINO "Add", but it exercises Python ov.Op registration and callback-based evaluation.
+    customadd_model_path = get_extension_model(llm_model.models_path, tmp_path, "CustomAdd")
+    assert_ir_contains_op_type(customadd_model_path, "CustomAdd")
+    CustomAdd.evaluate_calls = 0
+    properties = {"extensions": [ov.OpExtension(CustomAdd)]}
+    ov_pipe_extension_obj = ov_genai.LLMPipeline(customadd_model_path, "CPU", **properties)
+    result_extension_obj = ov_pipe_extension_obj.generate([prompt], **generation_config)
+    assert CustomAdd.evaluate_calls > 0, "Python custom op 'CustomAdd' was not called"
+
+    # Reference result with the original model and without custom extensions.
+    ov_pipe_ref = ov_genai.LLMPipeline(llm_model.models_path, "CPU")
     result_ref = ov_pipe_ref.generate([prompt], **generation_config)
 
-    assert result_extension.texts[0].strip() == result_ref.texts[0].strip(), (
-        "Result should be the same for model with extension and reference model."
+    assert result_extension_path.texts[0].strip() == result_ref.texts[0].strip(), (
+        "Result should be the same for model with extension 'MyAdd' and reference model."
     )
-
-
-@pytest.mark.parametrize("llm_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
-def test_llm_pipeline_add_extension(llm_model: OVConvertedModelSchema) -> None:
-    properties = {"extensions": [str(_ext_path)]}
-    ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
-
-    properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
-    ov_genai.LLMPipeline(llm_model.models_path, "CPU", **properties)
+    assert result_extension_obj.texts[0].strip() == result_ref.texts[0].strip(), (
+        "Result should be the same for model with extension 'CustomAdd' and reference model."
+    )
