@@ -155,7 +155,7 @@ Community LoRA adapters for LTX-Video are available on [HuggingFace](https://hug
 
 ```sh
 # Export model to OpenVINO
-optimum-cli export openvino -m Lightricks/LTX-Video --weight-format fp16 ltx-video-model
+optimum-cli export openvino -m Lightricks/LTX-Video --weight-format fp32 ltx-video-model
 # Collect references using HuggingFace diffusers with a LoRA adapter
 wwb --base-model Lightricks/LTX-Video --gt-data ltx_lora_test/gt.csv --model-type text-to-video --adapters path/to/lora.safetensors --alphas 0.9 --hf
 # Compute metrics with OpenVINO GenAI and the same LoRA adapter
