@@ -19,15 +19,42 @@ if(BUILD_TOKENIZERS)
     )
 endif()
 
-option(BUILD_LLAMA_CPP "Build llama.cpp with OpenVINO backend for dynamic GGUF loading" OFF)
-
 if(BUILD_LLAMA_CPP)
     set(GGML_OPENVINO ON CACHE BOOL "Enable OpenVINO backend in llama.cpp" FORCE)
+
+    include(FetchContent)
+    
+    FetchContent_Declare(
+        opencl_headers
+        GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers.git
+        GIT_TAG        v2023.12.14
+    )
+    FetchContent_Declare(
+        opencl_hpp
+        GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-CLHPP.git
+        GIT_TAG        v2023.12.14
+    )
+
+    FetchContent_GetProperties(opencl_headers)
+    if(NOT opencl_headers_POPULATED)
+        FetchContent_Populate(opencl_headers)
+    endif()
+
+    FetchContent_GetProperties(opencl_hpp)
+    if(NOT opencl_hpp_POPULATED)
+        FetchContent_Populate(opencl_hpp)
+    endif()
+
+    # Inject these paths so ggml-openvino.cpp can find <CL/cl2.hpp>
+    include_directories(
+        ${opencl_headers_SOURCE_DIR}
+        ${opencl_hpp_SOURCE_DIR}/include
+    )
 
     # Save and restore to avoid polluting global scope
     set(_orig_build_shared_libs ${BUILD_SHARED_LIBS})
     
-    # --- GSOC INTEGRATION: Force static build ---
+    # Force static build ---
     # We build llama.cpp statically so it gets absorbed into the openvino_genai 
     # binary, hiding it from downstream users.
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build llama.cpp as static library" FORCE)

@@ -58,6 +58,7 @@ endif()
 
 target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src"
                                                        "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/gguf_utils"
+"${OpenVINOGenAI_SOURCE_DIR}/thirdparty/llama.cpp/ggml/src/ggml-openvino"
                                                        $<TARGET_PROPERTY:openvino::genai,INTERFACE_INCLUDE_DIRECTORIES>)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")

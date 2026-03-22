@@ -17,7 +17,7 @@ struct ggml_cgraph;
 namespace ov {
 namespace genai {
 
-/// @brief A dynamic GGUF reader utilizing llama.cpp and ov::frontend::ggml
+/// @brief A dynamic GGUF reader utilizing llama.cpp to intercept and translate GGML computation graphs into OpenVINO.
 class GGUFReaderV2 {
 public:
     GGUFReaderV2();
@@ -28,13 +28,14 @@ public:
 
     ~GGUFReaderV2();
 
-    /// @brief Loads a GGUF file, generates the GGML graph, and translates it to ov::Model
-    /// @param model_path Path to the .gguf file
-    /// @return A fully constructed OpenVINO model
+    /// @brief Loads a GGUF file, generates the GGML graph via dummy capture, and translates it.
+    /// @param model_path Path to the .gguf file.
+    /// @return A fully constructed, type-validated OpenVINO model.
     std::shared_ptr<ov::Model> read(const std::string& model_path);
 
-    std::vector<float> get_reference_logits(const std::string& model_path, llama_token token);
-    void free_llama_resources();
+    /// @brief Retrieves the raw logits from the native llama.cpp execution.
+    /// @return Pointer to the native f32 logits buffer (used primarily for equivalence testing).
+    float* get_native_logits() const;
 
 private:
     void init_llama_context(const std::string& model_path);
