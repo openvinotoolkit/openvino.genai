@@ -961,8 +961,9 @@ def get_extension_model(model_path: str, temp_dir: Path, op_name: str = "MyAdd")
     replace_ir_add_with_myadd(ir_xml_path, target_type_name=op_name)
     assert_ir_contains_op_type(extension_path, op_name)
 
-    assert op_name.encode("utf-8") in ir_xml_path.read_bytes(), f"Custom op '{op_name}' was not injected into OpenVINO IR"
-
+    assert op_name.encode("utf-8") in ir_xml_path.read_bytes(), (
+        f"Custom op '{op_name}' was not injected into OpenVINO IR"
+    )
     return extension_path
 
 
@@ -1005,6 +1006,7 @@ def get_extension_lib_path():
         f"Could not find compiled custom extension '{extension_name}'. "
         f"Searched EXTENSION_LIB_PATH='{os.getenv('EXTENSION_LIB_PATH')}' and build directory '{build_dir}'. "
     )
+
 
 class CustomAdd(ov.Op):
     class_type_info = ov.DiscreteTypeInfo("CustomAdd", "extension")
