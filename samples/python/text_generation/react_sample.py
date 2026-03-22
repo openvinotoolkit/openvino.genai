@@ -115,7 +115,7 @@ def parse_first_tool_call(text):
     return tool_name, tool_args, text
 
 def _tool_error(tool_name: str, message: str) -> str:
-    return json.dumps({"tool": tool_name, "error": message}, ensure_ascii=False)
+    return json.dumps({"tool": tool_name, "error": message})
 
 def _strip_wrapping_parentheses(text: str) -> str:
     stripped = text.strip()
