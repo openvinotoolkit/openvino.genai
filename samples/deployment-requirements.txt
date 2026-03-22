@@ -5,3 +5,5 @@ pillow==12.1.1  # Image processing for VLMs
 json5==0.13.0  # For ReAct
 pydantic==2.12.5  # For Structured output json schema
 opencv-python==4.13.0.92 # For video-to-text VLM sample
+fastapi==0.115.12  # For OpenAI-compatible API server
+uvicorn==0.34.2  # For OpenAI-compatible API server
