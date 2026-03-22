@@ -720,6 +720,7 @@ def create_evaluator(base_model, args):
                 gen_video_fn=genai_gen_text2video if args.genai else None,
                 is_genai=args.genai,
                 seed=args.seed,
+                empty_adapters=args.empty_adapters,
             )
         elif task == "visual-text" or task == "visual-video-text":
             processor, config = load_processor(args)
