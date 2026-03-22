@@ -27,16 +27,14 @@ public:
         const ov::element::Type input_type_0 = get_input_element_type(0);
         const ov::element::Type input_type_1 = get_input_element_type(1);
         if (!input_type_0.compatible(input_type_1)) {
-            throw std::runtime_error("CustomAdd input element types must match");
+            OPENVINO_ASSERT(false, "CustomAdd input element types must match");
         }
 
         set_output_type(0, input_type_0, get_input_partial_shape(0));
     }
 
     std::shared_ptr<ov::Node> clone_with_new_inputs(const ov::OutputVector& new_args) const override {
-        if (new_args.size() != 2) {
-            throw std::runtime_error("CustomAdd expects exactly 2 new inputs");
-        }
+        OPENVINO_ASSERT(new_args.size() == 2, "CustomAdd expects exactly 2 new inputs");
         return std::make_shared<CustomAdd>(new_args.at(0), new_args.at(1));
     }
 
@@ -45,19 +43,14 @@ public:
     }
 
     bool evaluate(ov::TensorVector& outputs, const ov::TensorVector& inputs) const override {
-        std::cout << "custom add evaluate\n";
-        if (inputs.size() != 2) {
-            throw std::runtime_error("CustomAdd expects exactly 2 inputs");
-        }
-        if (outputs.size() != 1) {
-            throw std::runtime_error("CustomAdd expects exactly 1 output");
-        }
+        OPENVINO_ASSERT(inputs.size() == 2, "CustomAdd expects exactly 2 inputs");
+        OPENVINO_ASSERT(outputs.size() == 1, "CustomAdd expects exactly 1 output");
 
         outputs[0].set_shape(inputs[0].get_shape());
 
         const ov::element::Type element_type = inputs[0].get_element_type();
         if (element_type != inputs[1].get_element_type()) {
-            throw std::runtime_error("CustomAdd input element types must match");
+            OPENVINO_ASSERT(false, "CustomAdd input element types must match");
         }
 
         if (element_type == ov::element::f32) {
@@ -67,7 +60,7 @@ public:
             return evaluate_typed<ov::float16>(outputs[0], inputs[0], inputs[1]);
         }
 
-        throw std::runtime_error("CustomAdd unsupported element type");
+        OPENVINO_ASSERT(false, "CustomAdd unsupported element type");
     }
 
     bool has_evaluate() const override {

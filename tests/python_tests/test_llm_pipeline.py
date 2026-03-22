@@ -8,12 +8,11 @@ import torch
 import gc
 import sys
 import os
-import ctypes
 import json
 import logging
 import numpy as np
 from pathlib import Path
-from typing import Literal, Callable, Optional
+from typing import Literal, Callable
 from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
 

@@ -10,7 +10,7 @@ namespace TemplateExtension {
 class MyAdd : public ov::op::Op {
 public:
     // OP name.
-    OPENVINO_OP("MyAdd");
+    OPENVINO_OP("MyAdd", "extension");
 
     MyAdd() = default;
     MyAdd(const ov::OutputVector& args);
