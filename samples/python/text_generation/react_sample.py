@@ -8,7 +8,6 @@ import openvino_genai
 import urllib.parse
 import json
 import json5
-import os
 
 TOOL_DESC = """{name_for_model}: Call this tool to interact with the {name_for_human} API. What is the {name_for_human} API useful for? {description_for_model} Parameters: {parameters}"""
 
@@ -242,9 +241,6 @@ def main():
 
     device = 'CPU'  # GPU can be used as well
     llm_model_path = args.model_dir
-
-    if not os.path.exists(llm_model_path):
-        raise RuntimeError(f"Model path does not exist: {llm_model_path}")
 
     llm_pipe = openvino_genai.LLMPipeline(llm_model_path, device)
     llm_config = openvino_genai.GenerationConfig()
