@@ -153,12 +153,13 @@ wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type 
 The API provides a way to access to investigate the worst generated text examples.
 
 ```python
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import whowhatbench
 
 model_id = "facebook/opt-1.3b"
 base_small = AutoModelForCausalLM.from_pretrained(model_id)
-optimized_model = AutoModelForCausalLM.from_pretrained(model_id, load_in_4bit=True, device_map="auto")
+quant_config = BitsAndBytesConfig(load_in_4bit=True)
+optimized_model = AutoModelForCausalLM.from_pretrained(model_id, quantization_config=quant_config, device_map="auto")
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 
 evaluator = whowhatbench.TextEvaluator(base_model=base_small, tokenizer=tokenizer)
