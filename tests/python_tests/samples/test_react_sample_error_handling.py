@@ -22,6 +22,7 @@ def react_module():
 
 @pytest.mark.samples
 @pytest.mark.agent
+@pytest.mark.llm
 def test_call_tool_handles_invalid_json_args(react_module):
     result = react_module.call_tool("get_weather", "not-json")
     payload = json.loads(result)
@@ -31,6 +32,7 @@ def test_call_tool_handles_invalid_json_args(react_module):
 
 @pytest.mark.samples
 @pytest.mark.agent
+@pytest.mark.llm
 def test_call_tool_handles_missing_required_argument(react_module):
     result = react_module.call_tool("get_weather", "{}")
     payload = json.loads(result)
@@ -40,6 +42,7 @@ def test_call_tool_handles_missing_required_argument(react_module):
 
 @pytest.mark.samples
 @pytest.mark.agent
+@pytest.mark.llm
 def test_call_tool_handles_unsupported_tool(react_module):
     result = react_module.call_tool("unknown_tool", "{}")
     payload = json.loads(result)
@@ -49,6 +52,7 @@ def test_call_tool_handles_unsupported_tool(react_module):
 
 @pytest.mark.samples
 @pytest.mark.agent
+@pytest.mark.llm
 def test_call_tool_handles_weather_request_exception(monkeypatch, react_module):
     def _raise_request_exception(*args, **kwargs):
         raise requests.RequestException("network unavailable")
@@ -86,6 +90,7 @@ class _FakeLLMPipeline:
 
 @pytest.mark.samples
 @pytest.mark.agent
+@pytest.mark.llm
 def test_llm_with_tool_continues_after_tool_error(react_module):
     fake_pipe = _FakeLLMPipeline()
     text, history = react_module.llm_with_tool(
