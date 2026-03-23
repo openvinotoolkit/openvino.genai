@@ -196,8 +196,6 @@ export const VLM_MODELS: VLMModelType[] = [
         name: 'SmolVLM2',
         links: [
           'https://huggingface.co/HuggingFaceTB/SmolVLM2-2.2B-Instruct',
-          'https://huggingface.co/HuggingFaceTB/SmolVLM2-256M-Video-Instruct',
-          'https://huggingface.co/HuggingFaceTB/SmolVLM2-500M-Video-Instruct',
         ],
       },
     ],
