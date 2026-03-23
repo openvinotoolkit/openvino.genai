@@ -276,19 +276,24 @@ def _setup_generation_config(
 
 def is_optimum_intel_version_for_videochat_flash_qwen():
     """
-    Return True if the installed ``optimum-intel`` version matches the
-    specific version required for tiny-videochat-flash-qwen tests.
+    Return True if the installed ``optimum-intel`` local version metadata
+    contains the expected commit prefix required for tiny-videochat-flash-qwen
+    tests.
 
-    Currently this checks for an exact match with ``"1.27.0.dev0+70056d0"``.
+    Example accepted version: ``1.27.0.dev0+70056d0``.
     """
     import importlib.metadata as metadata
     from importlib.metadata import PackageNotFoundError
+
+    expected_commit_prefix = "70056d0"
 
     try:
         _optimum_intel_version = metadata.version("optimum-intel")
     except PackageNotFoundError:
         return False
-    return _optimum_intel_version == "1.27.0.dev0+70056d0"
+
+    local_version = _optimum_intel_version.split("+", 1)[1] if "+" in _optimum_intel_version else ""
+    return expected_commit_prefix in local_version
 
 def _get_ov_model(model_id: str) -> str:
     if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
@@ -307,7 +312,7 @@ def _get_ov_model(model_id: str) -> str:
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip(
-            "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported version is 1.27.0.dev0+70056d0."
+            "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported commit prefix is 70056d0."
         )
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
