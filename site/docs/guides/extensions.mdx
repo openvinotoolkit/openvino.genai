@@ -54,14 +54,14 @@ Accepted C++ forms:
 
 		# Option 1: pass a shared library path
 		llm_pipe = ov_genai.LLMPipeline(
-            models_path,
+            model_path,
             "CPU",
             extensions=[Path("/path/to/libopenvino_custom_extension.so")],
         )
 
 		# Option 2: register a Python custom op.
 		llm_pipe = ov_genai.VLMPipeline(
-            models_path,
+            model_path,
             "CPU",
             extensions=[ov.OpExtension(CustomAdd)],
         )
@@ -87,19 +87,19 @@ Accepted C++ forms:
 
 			// Option 1: pass extension library paths
 			ov::genai::LLMPipeline llm_pipe(
-				models_path,
+				model_path,
 				"CPU",
 				ov::genai::extensions(std::vector<std::filesystem::path>{
-					"/path/to/libopenvino_custom_extension.so",
+					"/path/to/libopenvino_custom_extension.so"
 				})
 			);
 
 			// Option 2: register a C++ custom op.
 			ov::genai::LLMPipeline llm_pipe(
-				models_path,
+				model_path,
 				"CPU",
 				ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{
-					std::make_shared<ov::OpExtension<CustomAdd>>(),
+					std::make_shared<ov::OpExtension<CustomAdd>>()
 				})
 			);
 
