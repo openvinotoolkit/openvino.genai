@@ -27,6 +27,8 @@ ov_pipe_model
 ov_continious_batching_pipe
 """
 
+import utils.win32_av_mock  # noqa: F401 - must be imported before transformers
+
 import collections
 from enum import Enum
 from dataclasses import dataclass
