@@ -373,7 +373,6 @@ void align_cache_and_history(const ov::Tensor& new_chat_tokens, utils::CacheStat
     std::vector<int64_t>& state = cache_state.get_state();
 
     if (state.empty()) {
-        cache_state.reset_mem_state = true;
         return;
     }
 
