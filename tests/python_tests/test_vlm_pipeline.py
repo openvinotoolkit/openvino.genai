@@ -1,6 +1,8 @@
 # Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import patch_pyav_for_servercore  # noqa: F401
+
 """
 Fixture hierarchy
 synthetic_video ──────── synthetic_video_32x32_tensor
