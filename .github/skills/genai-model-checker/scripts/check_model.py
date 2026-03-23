@@ -57,18 +57,6 @@ def log_header(args: argparse.Namespace, bench_task: str, wwb_task: str, work_di
         logger.info("  %-25s %s", pkg, version.stdout.strip() if version.returncode == 0 else "NOT INSTALLED")
 
 
-def log_directory_contents(directory: Path, label: str) -> None:
-    """Log directory tree for debugging missing/unexpected files."""
-    if not directory.exists():
-        logger.warning("%s directory does not exist: %s", label, directory)
-        return
-    logger.info("%s contents (%s):", label, directory)
-    for item in sorted(directory.rglob("*")):
-        rel = item.relative_to(directory)
-        size = item.stat().st_size if item.is_file() else 0
-        logger.info("  %s %s", f"{size:>10,}" if item.is_file() else "       DIR", rel)
-
-
 @dataclass
 class ToolResult:
     name: str
@@ -333,7 +321,7 @@ def _get_arguments() -> argparse.Namespace:
     def model_id_validator(model_id: str) -> str:
         MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
         if not MODEL_ID_PATTERN.match(model_id):
-            raise RuntimeError(
+            raise argparse.ArgumentTypeError(
                 f"Invalid model_id format: {model_id}\n"
                 "Expected format: org-name/model-name (alphanumeric, hyphens, dots, underscores)"
             )

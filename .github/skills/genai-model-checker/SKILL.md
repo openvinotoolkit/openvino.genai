@@ -66,16 +66,16 @@ Do **not** use skip flags on the first run. Only use them when retrying after a 
 
 ### Step 2: Interpret Results
 
-The script prints a structured summary and exits with code 0 (pass) or 1 (fail).
+The script logs progress for each step and exits with code 0 (pass) or non-zero (fail).
 
 **Pass criteria:**
 
-- Export: exit code 0, IR files created
-- Inference test (llm_bench): exit code 0, metrics line printed
+- Export: exit code 0
+- Inference test (llm_bench): exit code 0, metrics line logged
 - WWB accuracy (three sub-steps, all must pass):
-  1. HF ground truth generation: exit code 0, `gt.csv` created
-  2. Optimum target evaluation: similarity ≥ SIMILARITY_THRESHOLD
-  3. GenAI target evaluation: similarity ≥ SIMILARITY_THRESHOLD
+  1. HF ground truth generation: exit code 0
+  2. Optimum target evaluation: similarity ≥ `SIMILARITY_THRESHOLD`
+  3. GenAI target evaluation: similarity ≥ `SIMILARITY_THRESHOLD`
 
   Note: the WWB step is skipped automatically for `automatic-speech-recognition` (no WWB support).
 
