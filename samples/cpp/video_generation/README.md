@@ -24,18 +24,18 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 Then, run the export with Optimum CLI:
 
 ```sh
-optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --weight-format int8 ltx_video_ov/INT8
+optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --weight-format fp32 ltx_video_ov/FP32
 ```
 
-Alternatively, do it in Python code. If NNCF is installed, the model will be compressed to INT8 automatically.
+> **Note:** `--weight-format fp32` is required for LoRA adapter support. For basic video generation without LoRA, `--weight-format int8` produces a smaller model.
+
+Alternatively, do it in Python code:
 
 ```python
 from optimum.intel.openvino import OVLTXPipeline
 
-output_dir = "ltx_video_ov/INT8"
-
-pipeline = OVLTXPipeline.from_pretrained("Lightricks/LTX-Video", export=True, compile=False, load_in_8bit=True)
-pipeline.save_pretrained(output_dir)
+pipeline = OVLTXPipeline.from_pretrained("Lightricks/LTX-Video", export=True, compile=False)
+pipeline.save_pretrained("ltx_video_ov/FP32")
 ```
 
 ## Sample Descriptions
@@ -63,10 +63,34 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 
   Example:
   ```bash
-  ./text2video ltx_video_ov/INT8 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
+  ./text2video ltx_video_ov/FP32 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
   ```
 
-The sample will generate a video file `genai_video.avi` in the current directory.
+### LoRA Text to Video Sample (`lora_text2video.cpp`)
+
+- **Description:**
+  Video generation with LoRA adapters using a text-to-video model. This sample demonstrates how to generate videos from text prompts while applying multiple LoRA adapters.
+
+  Recommended models: Lightricks/LTX-Video
+
+  To download the LoRA adapter used in the example below:
+  ```sh
+  huggingface-cli download svjack/ltx_video_pixel_early_lora ltx_pixel_pytorch_lora_weights.safetensors
+  ```
+
+- **Main Feature:** Apply LoRA adapters to a text-to-video pipeline for customized generation.
+
+- **Run Command:**
+  ```bash
+  ./lora_text2video model_dir prompt [lora_adapter_path alpha] ...
+  ```
+
+  Example:
+  ```bash
+  ./lora_text2video ltx_video_ov/FP32 "In the style of Pixel, the video shifts to a majestic castle under a starry sky." ltx_pixel_pytorch_lora_weights.safetensors 3.0
+  ```
+
+The LoRA text-to-video sample will generate two video files, `lora_video.avi` and `baseline_video.avi`, in the current directory.
 
 Users can modify the source code to experiment with different generation parameters:
 - Change width or height of generated video
