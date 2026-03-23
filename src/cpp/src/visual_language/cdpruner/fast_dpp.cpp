@@ -298,24 +298,22 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
             // Single GPU call processes both halves in parallel
             auto selected_tokens = m_opencl_dpp->select(merged_kernel, total_select);
 
-            // Take tokens_first_half from batch 0 results, tokens_second_half from batch 1 results
+            // Take tokens_first_half from batch 0 results, tokens_second_half from batch 1 results.
             std::vector<size_t> merged_selection;
             merged_selection.reserve(tokens_first_half + tokens_second_half);
 
             for (size_t i = 0; i < tokens_first_half; ++i) {
-                size_t token_idx = selected_tokens[i];
-                OPENVINO_ASSERT(token_idx < first_tokens,
-                                "OpenCL DPP selected out-of-range index for first split: ",
-                                token_idx, " >= ", first_tokens);
-                merged_selection.push_back(token_idx);
+                OPENVINO_ASSERT(selected_tokens[i] < first_tokens,
+                                "DPP selected invalid token index ", selected_tokens[i],
+                                " >= ", first_tokens);
+                merged_selection.push_back(selected_tokens[i]);
             }
 
             for (size_t i = 0; i < tokens_second_half; ++i) {
-                size_t token_idx = selected_tokens[per_batch_select + i];
-                OPENVINO_ASSERT(token_idx < second_tokens,
-                                "OpenCL DPP selected out-of-range index for second split: ",
-                                token_idx, " >= ", second_tokens);
-                merged_selection.push_back(token_idx + split_point);
+                OPENVINO_ASSERT(selected_tokens[per_batch_select + i] < second_tokens,
+                                "DPP selected invalid token index ", selected_tokens[per_batch_select + i],
+                                " >= ", second_tokens);
+                merged_selection.push_back(selected_tokens[per_batch_select + i] + split_point);
             }
 
             std::sort(merged_selection.begin(), merged_selection.end());

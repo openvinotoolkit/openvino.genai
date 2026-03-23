@@ -141,7 +141,9 @@ private:
                 // Skip update if token was already selected (di2s == -INFINITY)
                 if (di2s_data[j] > -INFINITY) {
                     float new_di2s = di2s_data[j] - eis_j * eis_j;
-                    di2s_data[j] = (new_di2s != new_di2s) ? -FLT_MAX : new_di2s;
+                    // Clamp NaN and -INFINITY overflow to -FLT_MAX so that
+                    // -INFINITY is exclusively reserved for "already selected".
+                    di2s_data[j] = (new_di2s != new_di2s || new_di2s == -INFINITY) ? -FLT_MAX : new_di2s;
                 }
             }
         }
