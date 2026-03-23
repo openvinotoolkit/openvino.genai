@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <regex>
+#include <utility>
 
 #include "openvino/runtime/intel_npu/properties.hpp"
 #include "utils.hpp"
@@ -1038,7 +1039,7 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     
     ov::Core core = utils::singleton_core();
 
-    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties_copy);
+    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, std::as_const(properties_copy));
     reshape_to_static_encoder(encoder_model, m_feature_extractor.feature_size);
     auto last_hidden_state_shape = get_encoder_hidden_state_shape(encoder_model);
 
@@ -1046,10 +1047,10 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     std::shared_ptr<ov::Model> decoder_with_past_model;
 
     if (std::filesystem::exists(models_path / "openvino_decoder_with_past_model.xml") ) {
-        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties_copy);
-        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, properties_copy);
+        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(properties_copy));
+        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, std::as_const(properties_copy));
     } else {
-        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties_copy);
+        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(properties_copy));
         ov::pass::StatefulToStateless().run_on_model(model);
 
         decoder_model = prepare_decoder_model(model);
@@ -1138,6 +1139,8 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     raw_metrics.m_batch_sizes.reserve(max_new_tokens);
     raw_metrics.m_token_infer_durations.reserve(max_new_tokens);
     raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+
+    perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations = {{MicroSeconds(0.0f)}};
 
     const auto extract_start = std::chrono::steady_clock::now();
     auto input_features = m_feature_extractor.extract(raw_speech_input);
@@ -1246,8 +1249,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
             const auto word_timestamps_processing_duration = ov::genai::PerfMetrics::get_microsec(
                 std::chrono::steady_clock::now() - word_timestamps_processing_start);
 
-            perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations.emplace_back(
-                word_timestamps_processing_duration);
+            perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations[0] += MicroSeconds(word_timestamps_processing_duration);
 
             if (!result.words.has_value()) {
                 result.words = std::vector<WhisperWordTiming>{};

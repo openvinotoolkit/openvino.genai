@@ -6,7 +6,7 @@ sidebar_position: 5
 
 ## Overview
 
-[`openvino_genai.PerfMetrics`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.PerfMetrics.html) (referred as `PerfMetrics` for simplicity) is a structure that holds performance metrics for each generate call.
+[`openvino_genai.PerfMetrics`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.PerfMetrics.html) (referred as `PerfMetrics` for simplicity) is a structure that holds performance metrics for each generate call.
 `PerfMetrics` holds fields with mean and standard deviations for the following metrics:
 - Time To the First Token (TTFT), ms
 - Time per Output Token (TPOT), ms/token
@@ -21,8 +21,8 @@ and:
 - Number of generated tokens
 - Number of tokens in the input prompt
 
-Performance metrics are stored either in the [`DecodedResults`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.DecodedResults.html) or [`EncodedResults`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.EncodedResults.html) in `perf_metric` field.
-Additionally to the fields mentioned above, `PerfMetrics` has a member `raw_metrics` of type [`openvino_genai.RawPerfMetrics`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.RawPerfMetrics.html) that contains raw values for the durations of each batch of new token generation, tokenization durations, detokenization durations, and more.
+Performance metrics are stored either in the [`DecodedResults`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.DecodedResults.html) or [`EncodedResults`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.EncodedResults.html) in `perf_metric` field.
+Additionally to the fields mentioned above, `PerfMetrics` has a member `raw_metrics` of type [`openvino_genai.RawPerfMetrics`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.RawPerfMetrics.html) that contains raw values for the durations of each batch of new token generation, tokenization durations, detokenization durations, and more.
 These raw metrics are accessible if you wish to calculate your own statistical values such as median or percentiles.
 However, since mean and standard deviation values are usually sufficient, we will focus on `PerfMetrics`.
 
@@ -64,9 +64,9 @@ However, since mean and standard deviation values are usually sufficient, we wil
         import { LLMPipeline } from "openvino-genai-node";
 
         const pipe = await LLMPipeline(models_path, "CPU");
-        const result = await pipe.generate("The Sun is yellow because", { 
+        const result = await pipe.generate("The Sun is yellow because", {
             max_new_tokens: 20,
-            return_decoded_results: true 
+            return_decoded_results: true
         });
         const perf_metrics = result.perfMetrics;
 
@@ -141,13 +141,13 @@ This accumulates statistics from several `generate()` calls.
         import { LLMPipeline } from "openvino-genai-node";
 
         const pipe = await LLMPipeline(models_path, "CPU");
-        const res_1 = await pipe.generate("The Sun is yellow because", { 
+        const res_1 = await pipe.generate("The Sun is yellow because", {
             max_new_tokens: 20,
-            return_decoded_results: true 
+            return_decoded_results: true
         });
-        const res_2 = await pipe.generate("Why Sky is blue because", { 
+        const res_2 = await pipe.generate("Why Sky is blue because", {
             max_new_tokens: 20,
-            return_decoded_results: true 
+            return_decoded_results: true
         });
         const perf_metrics = res_1.perfMetrics.add(res_2.perfMetrics);
 

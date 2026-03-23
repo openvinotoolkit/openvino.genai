@@ -102,16 +102,12 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
     textToImage: true,
     imageToImage: true,
     inpainting: true,
-    loraSupport: false,
+    loraSupport: true,
     links: [
       'https://huggingface.co/black-forest-labs/FLUX.1-schnell',
-      'https://huggingface.co/Freepik/flux.1-lite-8B-alpha',
-      'https://huggingface.co/black-forest-labs/FLUX.1-dev',
       'https://huggingface.co/shuttleai/shuttle-3-diffusion',
       'https://huggingface.co/shuttleai/shuttle-3.1-aesthetic',
       'https://huggingface.co/shuttleai/shuttle-jaguar',
-      'https://huggingface.co/Shakker-Labs/AWPortrait-FL',
-      'https://huggingface.co/black-forest-labs/FLUX.1-Fill-dev',
     ],
   },
 ];

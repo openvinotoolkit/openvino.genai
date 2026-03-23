@@ -1,5 +1,5 @@
 <div align="center">
- 
+
 ![OpenVINO GenAI](/site/static/img/openvino-genai-logo-gradient.svg)
 
 [<b>Getting Started</b>](#getting-started) •
@@ -73,7 +73,7 @@ Library efficiently supports LoRA adapters for Text and Image generation scenari
 - Select active adapters for every generation
 - Mix multiple adapters with coefficients via alpha blending
 
-All scenarios are run on top of OpenVINO Runtime that supports inference on CPU, GPU and NPU. See [here](https://docs.openvino.ai/2025/about-openvino/release-notes-openvino/system-requirements.html) for platform support matrix.
+All scenarios are run on top of OpenVINO Runtime that supports inference on CPU, GPU and NPU. See [here](https://docs.openvino.ai/2026/about-openvino/release-notes-openvino/system-requirements.html) for platform support matrix.
 
 <a id="optimization-methods"></a>
 
@@ -87,12 +87,12 @@ OpenVINO™ GenAI library provides a transparent way to use state-of-the-art gen
 Additionally, OpenVINO™ GenAI library implements a continuous batching approach to use OpenVINO within LLM serving. The continuous batching library could be used in LLM serving frameworks and supports the following features:
 - Prefix caching that caches fragments of previous generation requests and corresponding KVCache entries internally and uses them in case of repeated query.
 
-Continuous batching functionality is used within OpenVINO Model Server (OVMS) to serve LLMs, see [here](https://docs.openvino.ai/2025/openvino-workflow/model-server/ovms_what_is_openvino_model_server.html) for more details.
+Continuous batching functionality is used within OpenVINO Model Server (OVMS) to serve LLMs, see [here](https://docs.openvino.ai/2026/model-server/ovms_what_is_openvino_model_server.html) for more details.
 
 
 ## Additional Resources
 
-- [OpenVINO Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html)
+- [OpenVINO Generative AI workflow](https://docs.openvino.ai/2026/openvino-workflow-generative.html)
 - [Optimum Intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
 - [OpenVINO Notebooks with GenAI](https://openvinotoolkit.github.io/openvino_notebooks/?libraries=OpenVINO+GenAI)
 

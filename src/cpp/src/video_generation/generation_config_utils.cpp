@@ -28,6 +28,7 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
     read_anymap_param(properties, "width", config.width);
     read_anymap_param(properties, "num_inference_steps", config.num_inference_steps);
     read_anymap_param(properties, "max_sequence_length", config.max_sequence_length);
+    read_anymap_param(properties, "taylorseer_config", config.taylorseer_config);
 
     // 'generator' has higher priority than 'seed' parameter
     const bool have_generator_param =

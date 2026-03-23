@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import { LLMPipeline } from 'openvino-genai-node';
 import { basename } from 'node:path';
 
@@ -6,7 +9,7 @@ main();
 async function main() {
     const modelPath = process.argv[2];
     const prompts = process.argv.slice(3);
-    
+
     if (!modelPath) {
         console.error('Please specify path to model directory\n'
                     + `Run command must be: 'node ${basename(process.argv[1])} *path_to_model_dir* *prompts*'`);

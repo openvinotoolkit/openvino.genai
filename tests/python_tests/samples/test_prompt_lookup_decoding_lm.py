@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import os
@@ -56,4 +56,3 @@ class TestPromptLookupDecodingLM:
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and CPP results should match"
         assert cpp_result_ref.stdout == cpp_result.stdout, "Greedy and speculative decoding results should match"
-

@@ -4,7 +4,7 @@ import CodeExamplePython from './_code_example_python.mdx';
 
 ## Run Model Using OpenVINO GenAI
 
-The [`Text2SpeechPipeline`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.Text2SpeechPipeline.html) is the main object for generating speech from text.
+The [`Text2SpeechPipeline`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.Text2SpeechPipeline.html) is the main object for generating speech from text.
 It automatically loads the TTS model and vocoder from the converted model directory.
 
 <LanguageTabs>
@@ -42,7 +42,7 @@ Check out [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master
 
 ### Use Speaker Embedding File
 
-To generate speech using the SpeechT5 TTS model, you can specify a target voice by providing a speaker embedding file. 
+To generate speech using the SpeechT5 TTS model, you can specify a target voice by providing a speaker embedding file.
 
 This file must contain 512 32-bit floating-point values that represent the voice characteristics of the target speaker. The model will use these characteristics to synthesize the input text in the specified voice.
 
@@ -94,4 +94,3 @@ python create_speaker_embedding.py
         ```
     </TabItemCpp>
 </LanguageTabs>
-

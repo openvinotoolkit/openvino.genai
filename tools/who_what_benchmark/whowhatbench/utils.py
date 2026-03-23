@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from typing import Union, Optional
 from packaging.version import Version
 
@@ -122,7 +125,7 @@ def get_ignore_parameters_flag():
 
     transformers_version = Version(__version__)
 
-    if transformers_version >= Version("4.51.0"):
+    if transformers_version >= Version("4.51.0") and transformers_version < Version("5.0.0"):
         return {"use_model_defaults": False}
     return {}
 
@@ -144,6 +147,51 @@ def get_json_config(config):
             raise RuntimeError(f'Failed to parse JSON config: {config}')
 
     return json_config
+
+
+def normalize_lora_adapters_and_alphas(adapters, alphas):
+    if adapters is None:
+        return None, None
+
+    if isinstance(adapters, (str, Path, os.PathLike)):
+        adapters = [adapters]
+    elif not isinstance(adapters, (list, tuple)):
+        raise ValueError("`adapters` must be a non-empty list/tuple, or a single adapter path")
+
+    if len(adapters) == 0:
+        raise ValueError("`adapters` must be a non-empty list/tuple")
+
+    if alphas is None:
+        raise ValueError("`alphas` must be provided and match the number of adapters")
+
+    if isinstance(alphas, (int, float)):
+        alphas = [alphas]
+    elif not isinstance(alphas, (list, tuple)):
+        raise ValueError("`alphas` must be a list/tuple with one value per adapter, or a single float")
+
+    if len(alphas) != len(adapters):
+        raise ValueError("`alphas` must be the same length as `adapters`")
+
+    return list(adapters), list(alphas)
+
+
+def apply_peft_adapters(model, adapters, alphas, merged_adapter_name="merged_lora"):
+    adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+
+    from peft import PeftModel
+
+    adapter_names = ["adapter_0"]
+    model = PeftModel.from_pretrained(model, adapters[0], adapter_name=adapter_names[0])
+
+    for idx, adapter in enumerate(adapters[1:], start=1):
+        adapter_name = f"adapter_{idx}"
+        model.load_adapter(adapter, adapter_name=adapter_name)
+        adapter_names.append(adapter_name)
+
+    model.add_weighted_adapter(adapter_names, alphas, merged_adapter_name)
+    model.set_adapter(merged_adapter_name)
+
+    return model
 
 
 # preapre default dataset for visualtext(VLM) evalutor
@@ -254,3 +302,8 @@ def parquet_generate_tables(self, files, *args, **kwargs):
                 logger.warning(f"Skipping bad file '{file}'. {type(e).__name__}: {e}`")
             else:
                 logger.warning(f"Skipping bad file '{file}'. {type(e).__name__}: {e}`")
+
+
+def disable_diffusers_model_progress_bar(model):
+    if hasattr(model, "set_progress_bar_config"):
+        model.set_progress_bar_config(disable=True)

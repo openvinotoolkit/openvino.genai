@@ -15,8 +15,16 @@ import {
   ILlama3PythonicToolParser,
   ILlama3JsonToolParser,
 } from "./parsers.js";
-import { GenerationConfig, StreamingStatus, VLMPipelineProperties } from "./utils.js";
-import { VLMPerfMetrics } from "./perfMetrics.js";
+import {
+  GenerationConfig,
+  StreamingStatus,
+  VLMPipelineProperties,
+  LLMPipelineProperties,
+  WhisperGenerationConfig,
+  WhisperPipelineProperties,
+} from "./utils.js";
+import { VLMPerfMetrics, PerfMetrics, WhisperPerfMetrics } from "./perfMetrics.js";
+import type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -106,6 +114,63 @@ export interface TextRerankPipeline {
   ): void;
 }
 
+export interface LLMPipeline {
+  new (): LLMPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    ovProperties: LLMPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    inputs: string | string[] | IChatHistory,
+    generationConfig: GenerationConfig,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    callback: (
+      err: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: PerfMetrics;
+        parsed: Record<string, unknown>[];
+      },
+    ) => void,
+  ): void;
+  startChat(systemMessage: string, callback: (err: Error | null) => void): void;
+  finishChat(callback: (err: Error | null) => void): void;
+  getTokenizer(): ITokenizer;
+  getGenerationConfig(): GenerationConfig;
+  setGenerationConfig(config: GenerationConfig): void;
+}
+
+export interface WhisperPipeline {
+  new (): WhisperPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: WhisperPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    rawSpeech: Float32Array | number[],
+    generationConfig: WhisperGenerationConfig,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    callback: (
+      err: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: WhisperPerfMetrics;
+        chunks?: WhisperDecodedResultChunk[];
+        words?: WhisperWordTiming[];
+      },
+    ) => void,
+  ): void;
+  getTokenizer(): ITokenizer;
+  getGenerationConfig(): Partial<WhisperGenerationConfig>;
+  setGenerationConfig(config: WhisperGenerationConfig): void;
+}
+
 export interface VLMPipeline {
   new (): VLMPipeline;
   init(
@@ -115,7 +180,7 @@ export interface VLMPipeline {
     callback: (err: Error | null) => void,
   ): void;
   generate(
-    prompt: string,
+    inputs: string | IChatHistory,
     images: Tensor[] | undefined,
     videos: Tensor[] | undefined,
     streamer: ((chunk: string) => StreamingStatus) | undefined,
@@ -135,13 +200,15 @@ export interface VLMPipeline {
   getTokenizer(): ITokenizer;
   setChatTemplate(template: string): void;
   setGenerationConfig(config: GenerationConfig): void;
+  getGenerationConfig(): GenerationConfig;
 }
 
 interface OpenVINOGenAIAddon {
   TextRerankPipeline: TextRerankPipeline;
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
-  LLMPipeline: any;
+  LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
+  WhisperPipeline: WhisperPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
   ReasoningParser: IReasoningParser;
@@ -175,6 +242,7 @@ export const {
   TextRerankPipeline,
   LLMPipeline,
   VLMPipeline,
+  WhisperPipeline,
   ChatHistory,
   Tokenizer,
   ReasoningParser,

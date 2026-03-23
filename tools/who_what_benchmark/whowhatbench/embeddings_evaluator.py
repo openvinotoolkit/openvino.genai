@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from typing import Any, Union
 
 import itertools
@@ -149,7 +152,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
 
             if kwargs.get("normalize", False):
                 embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-            return embeddings
+            return embeddings.to(torch.float32).cpu().numpy()
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
@@ -177,7 +180,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
 
-        for i, data in tqdm(enumerate(inputs), desc="Evaluate pipeline"):
+        for i, data in tqdm(enumerate(inputs), total=len(inputs), desc="Evaluate pipeline"):
             kwargs = {'padding_side': self.padding_side,
                       'pooling_type': self.pooling_type,
                       'normalize': self.normalize}

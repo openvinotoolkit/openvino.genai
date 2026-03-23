@@ -12,10 +12,8 @@ import numpy as np
 import hashlib
 import threading
 import llm_bench_utils.metrics_print as metrics_print
-import llm_bench_utils.output_csv
 from transformers import set_seed
 from llm_bench_utils.ov_utils import get_genai_chunk_streamer, OptimumChunkStreamer
-import llm_bench_utils.output_json
 import llm_bench_utils.output_file
 import llm_bench_utils.gen_output_data as gen_output_data
 from llm_bench_utils.prompt_utils import get_text_prompt
@@ -27,7 +25,6 @@ DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
 def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                         prompt_index, bench_hook, tokens_len, streaming, model_precision, proc_id, mem_consumption):
-    from optimum.intel.utils.import_utils import is_transformers_version
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
@@ -58,9 +55,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     max_sys_mem_consumption = ''
     max_rss_mem_increase = ''
     max_sys_mem_increase = ''
-    additional_args = {}
-    if is_transformers_version(">=", "4.51"):
-        additional_args["use_model_defaults"] = False
+    additional_args = model_utils.setup_gen_config_use_custom_args()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
@@ -121,7 +116,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             )
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
         max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
 
     generation_time = end - start
@@ -359,7 +354,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         tokenization_time.append((detokenization_end - detokenization_start) * 1000)
 
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
         max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
@@ -512,7 +507,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
         max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
     generation_time = end - start
     tok_decode_start = time.perf_counter()

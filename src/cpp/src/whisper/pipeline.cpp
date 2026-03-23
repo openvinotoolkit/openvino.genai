@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <utility>
+
 #include <openvino/openvino.hpp>
 #include <variant>
 
@@ -82,10 +84,14 @@ public:
         ov::Core core = utils::singleton_core();
         ov::CompiledModel compiled_model;
         if (device == "NPU") {
-            auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties_copy);
+            auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, std::as_const(properties_copy));
             // NB: only batch_size == 1 is supported now for NPU
             reshape_to_static_encoder(encoder_model, 1, m_feature_extractor.feature_size);
             compiled_model = core.compile_model(encoder_model, "NPU", properties_copy);
+
+            // WA: Push eos_token to NPUW to stop infer() if KVcache is full
+            auto eos_token = m_generation_config.eos_token_id == -1 ? m_tokenizer.get_eos_token_id() : m_generation_config.eos_token_id;
+            properties_copy.insert({"WHISPER_EOS_TOKEN", eos_token});
         } else {
             compiled_model = core.compile_model(models_path / "openvino_encoder_model.xml", device, properties_copy);
         }
@@ -140,10 +146,10 @@ public:
         generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
 
-        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(tokenization_duration_microseconds);
         result.words = generate_result.words;
 
         result.perf_metrics = generate_result.perf_metrics;
+        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(tokenization_duration_microseconds);
         auto& segments = generate_result.segments;
 
         if (segments.has_value()) {
@@ -165,7 +171,6 @@ public:
         metrics.load_time = this->m_load_time_ms;
         auto stop_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(MicroSeconds(0.0f));
         metrics.evaluate_statistics(start_time);
 
         return result;

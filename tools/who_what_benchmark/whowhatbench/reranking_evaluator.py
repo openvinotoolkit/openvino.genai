@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from typing import Any, Union
 
 import os
@@ -158,7 +161,7 @@ class RerankingEvaluator(BaseEvaluator):
                 scores = scipy.special.expit(scores)
             ordered_scores = []
             for index, (score, _) in enumerate(zip(scores, passages)):
-                ordered_scores.append(np.array([index, score.numpy()]))
+                ordered_scores.append(np.array([index, score.to(torch.float32).cpu().numpy()]))
             return np.array(ordered_scores[:DEFAULT_TOP_K])
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
@@ -177,7 +180,7 @@ class RerankingEvaluator(BaseEvaluator):
 
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
-        for i, data in tqdm(enumerate(inputs), desc="Evaluate pipeline"):
+        for i, data in tqdm(enumerate(inputs), total=len(inputs), desc="Evaluate pipeline"):
             query = data[0]
             documents = data[1]
             if is_qwen3(model.config):

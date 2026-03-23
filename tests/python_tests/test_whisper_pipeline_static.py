@@ -1,11 +1,13 @@
-# Copyright (C) 2024 Intel Corporation
+# Copyright (C) 2024-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+from utils.constants import NPUW_CPU_PROPERTIES
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
 from test_whisper_pipeline import get_whisper_models_list, sample_from_dataset, get_fixture_params_for_n_whisper_dataset_samples
 from transformers import WhisperProcessor, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+from huggingface_hub import snapshot_download
 import openvino_genai as ov_genai
 import openvino_tokenizers
 import openvino
@@ -14,15 +16,13 @@ import pathlib
 
 # This test suite is designed specifically to validate the functionality 
 # and robustness of the WhisperStaticPipeline on NPUW:CPU.
-config = {"NPU_USE_NPUW" : "YES",
-          "NPUW_DEVICES" : "CPU",
-          "NPUW_ONLINE_PIPELINE" : "NONE",
-          "STATIC_PIPELINE": True}
+config = {**NPUW_CPU_PROPERTIES, "STATIC_PIPELINE": True}
 
 def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
     model_id, path = params
 
-    processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
+    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_cached, trust_remote_code=True))
     if not stateful:
         path = pathlib.Path(f"{path}_with_past")
 
@@ -30,7 +30,7 @@ def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
     
     if not manager.is_complete() and not (path / "openvino_encoder_model.xml").exists():
         def convert_to_temp(temp_path: pathlib.Path) -> None:
-            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            tokenizer = AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
             ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
                 tokenizer,
                 with_detokenizer=True,
@@ -43,15 +43,17 @@ def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
 
             tokenizer.save_pretrained(temp_path)
 
-            opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-                model_id,
-                export=True,
-                trust_remote_code=True,
-                stateful=stateful,
-                compile=False,
-                device="CPU",
-                load_in_8bit=False,
-            ))
+            opt_model = retry_request(
+                lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                    model_cached,
+                    export=True,
+                    trust_remote_code=True,
+                    stateful=stateful,
+                    compile=False,
+                    device="CPU",
+                    load_in_8bit=False,
+                )
+            )
             opt_model.generation_config.save_pretrained(temp_path)
             opt_model.config.save_pretrained(temp_path)
             opt_model.save_pretrained(temp_path)

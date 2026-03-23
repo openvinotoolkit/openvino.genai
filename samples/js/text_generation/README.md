@@ -23,7 +23,7 @@ huggingface-cli download <model> --local-dir <output_folder>
 
 To run any samples with a GGUF model, simply provide the path to the .gguf file via the `model_dir` parameter.
 
-This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models 
+This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models
 and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
 
 ## Sample Descriptions
@@ -35,8 +35,8 @@ In the current directory, run:
 npm install
 ```
 
-If you use the master branch, you may need to follow 
-[this instruction](../../../src/js/README.md#build-bindings) 
+If you use the master branch, you may need to follow
+[this instruction](../../../src/js/README.md#build-bindings)
 to build the latest version of `openvino-genai-node` from source first, then install dependencies.
 
 
@@ -100,7 +100,7 @@ Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
   ```
 
 ### 6. LLMs benchmarking sample (`benchmark_genai`)
-- **Description:** 
+- **Description:**
   This sample script demonstrates how to benchmark LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
 
   For more information on how performance metrics are calculated, please follow the [performance-metrics tutorial](../../../src/README.md#performance-metrics).
@@ -121,10 +121,10 @@ Recommended models: meta-llama/Llama-3.2-1B-Instruct, meta-llama/Llama-3.2-8B-In
   ```
   After running the command, an interactive dialog starts. You can enter a prompt and receive a structured output in response. The process is divided into two stages:
 
-1. **Stage One:** The model generates a JSON schema indicating the number of items of each type the user requests. For example, if you prompt:  
-   `Generate a JSON for 2 cars and 1 person with an Irish surname`  
-   The model might output:  
-   `{"person": 1, "car": 2, "transaction": 0}`  
+1. **Stage One:** The model generates a JSON schema indicating the number of items of each type the user requests. For example, if you prompt:
+   `Generate a JSON for 2 cars and 1 person with an Irish surname`
+   The model might output:
+   `{"person": 1, "car": 2, "transaction": 0}`
    This internal JSON is used to determine how many items of each type to generate in the next stage. It is not shown to the user.
 
 2. **Stage Two:** For each item type and count specified in the schema, the model is prompted to generate a JSON object. The original prompt is reused, but the schema guides the model to produce the correct structure. For the example above, the output might look like:
@@ -136,7 +136,7 @@ Recommended models: meta-llama/Llama-3.2-1B-Instruct, meta-llama/Llama-3.2-8B-In
    {"model": "Ford", "year": 2019, "color": "red"}
    ```
 
-**Note:**  
+**Note:**
 Structured output enforcement guarantees correct JSON formatting, but does not ensure the factual correctness or sensibility of the content. The model may generate implausible or nonsensical data, such as `{"name": "John", "age": 200000}` or `{"model": "AbrakaKadabra9999######4242"}`. These are valid JSONs but may not make sense. For best results, use the latest or fine-tuned models for this task to improve the quality and relevance of the generated output.
 
 
@@ -146,9 +146,9 @@ Structured output enforcement guarantees correct JSON formatting, but does not e
   If during the sampling process the model produces a trigger string, it switches to structured mode and generates output according to a JSON schema defined by the tag. After that the model switches back to regular sampling mode.
   This is useful for generating function calls or other structured outputs that need to follow a specific format.
 
-  This sample demonstrates how to use OpenVINO GenAI to generate structured tool calls from natural language prompts using structural tags. 
-  The model is guided to output function calls in a specific format, enabling integration with external tools: 
-  - Weather API 
+  This sample demonstrates how to use OpenVINO GenAI to generate structured tool calls from natural language prompts using structural tags.
+  The model is guided to output function calls in a specific format, enabling integration with external tools:
+  - Weather API
   - Currency exchange APIs
 
   The system message instructs the model to call tools using a strict format:
@@ -157,7 +157,7 @@ Structured output enforcement guarantees correct JSON formatting, but does not e
   {"argument1": "value1", ...}
   </function>
   ```
-  The sample includes schemas for each tool, and the model is prompted to use them for tool calling. There are two model calls - with and without structural tags. 
+  The sample includes schemas for each tool, and the model is prompted to use them for tool calling. There are two model calls - with and without structural tags.
   You can compare the results to see how the model generates structured outputs when using structural tags.
   If there is no prompt provided, the sample will use the default prompt: `"What is the weather in London today and in Paris yesterday, and how many pounds can I get for 100 euros?"`
 
@@ -168,10 +168,10 @@ Structured output enforcement guarantees correct JSON formatting, but does not e
   ```
   After running, the script will print the generated text output with and without structural tags, and display the parsed tool calls.
 
-**Note:**  
-This approach is useful for building LLM-powered agents that interact with external APIs or services in a controlled, structured way. 
+**Note:**
+This approach is useful for building LLM-powered agents that interact with external APIs or services in a controlled, structured way.
 For best results, use models fine-tuned for function calling and adapt structural tags according to the model function call template.
-If the model does not generate trigger strings there will be no structural constraints during the generation. 
+If the model does not generate trigger strings there will be no structural constraints during the generation.
 The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 
@@ -181,7 +181,7 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   It showcases how to combine multiple grammar types - Regex, JSONSchema and EBNF - using Union and Concat operations to strictly control LLM output and
   also shows how to write parsing logic to extract structured data from the generated output.
   It features multi-turn chat, switching grammar constraints between turns (e.g., "yes"/"no" answers and structured tool calls).
-  Union operation allows the model to choose which grammar to use during generation. 
+  Union operation allows the model to choose which grammar to use during generation.
   In the sample it is used to combine two regex grammars for `"yes"` or `"no"` answer.
   Concat operation allows to start with one grammar and continue with another.
   Also it demonstrates how to write custom parser to extract tool calls from the generated text.

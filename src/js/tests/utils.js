@@ -1,51 +1,7 @@
-import { bootstrap } from "global-agent";
-import { promises as fs } from "node:fs";
-import { listFiles, downloadFile } from "@huggingface/hub";
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import { addon as ov } from "openvino-node";
-
-const BASE_DIR = "./tests/models/";
-
-bootstrap();
-
-export async function downloadModel(repo) {
-  console.log(`Downloading model '${repo}'`);
-
-  const fetch = await import("node-fetch");
-  const modelName = repo.split("/")[1];
-  const destDir = `${BASE_DIR}${modelName}`;
-
-  await fs.mkdir(destDir, { recursive: true });
-
-  const fileList = await listFiles({
-    repo,
-    fetch: fetch.default,
-  });
-  const fileNames = [];
-  for await (const file of fileList) {
-    fileNames.push(file.path);
-  }
-
-  for (const path of fileNames) {
-    console.log(`Downloading file '${path}'`);
-    const response = await downloadFile({
-      repo,
-      path,
-      fetch: fetch.default,
-    });
-    const filename = `${destDir}/${path}`;
-
-    await saveFile(filename, response);
-    console.log(`File '${path}' downloaded`);
-  }
-
-  console.log(`Model '${repo}' downloaded`);
-}
-
-async function saveFile(file, response) {
-  const arrayBuffer = await response.arrayBuffer();
-
-  await fs.writeFile(file, Buffer.from(arrayBuffer));
-}
 
 /**
  * Creates a synthetic test image tensor with a gradient pattern.
@@ -102,4 +58,18 @@ export function createTestVideoTensor(frames = 4, height = 32, width = 32) {
   }
 
   return new ov.Tensor("u8", [frames, height, width, channels], data);
+}
+
+/**
+ * Creates raw speech buffer for tests.
+ * @param {Object} [options]
+ * @param {number} [options.durationSeconds=0.1] - Duration in seconds
+ * @param {number} [options.sampleRate=16000] - Sample rate in Hz
+ * @param {number} [options.fillValue=0] - Fill value (e.g. 0 for silence), normalized to [-1, 1]
+ * @returns {Float32Array}
+ */
+export function createTestRawSpeech(options = {}) {
+  const { durationSeconds = 0.1, sampleRate = 16000, fillValue = 0 } = options;
+  const length = Math.round(durationSeconds * sampleRate);
+  return new Float32Array(length).fill(fillValue);
 }

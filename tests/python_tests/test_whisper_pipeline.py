@@ -22,6 +22,7 @@ import datasets
 from transformers import WhisperProcessor, AutoTokenizer
 from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+from huggingface_hub import snapshot_download
 import gc
 import json
 import typing
@@ -35,6 +36,8 @@ from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
 from typing import Any
 from difflib import SequenceMatcher
+
+from utils.dataset_utils import load_dataset_via_snapshot
 
 
 @pytest.fixture(scope="class", autouse=True)
@@ -110,7 +113,8 @@ def save_model(model_id: str, tmp_path: pathlib.Path):
     manager = AtomicDownloadManager(tmp_path)
 
     def save_to_temp(temp_path: pathlib.Path) -> None:
-        tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
+        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+        tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True))
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
             tokenizer,
             with_detokenizer=True,
@@ -122,19 +126,21 @@ def save_model(model_id: str, tmp_path: pathlib.Path):
 
         tokenizer.save_pretrained(temp_path)
 
-        opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-            model_id,
-            export=True,
-            trust_remote_code=True,
-            compile=False,
-            device="CPU",
-            load_in_8bit=False,
-        ))
+        opt_model = retry_request(
+            lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                model_cached,
+                export=True,
+                trust_remote_code=True,
+                compile=False,
+                device="CPU",
+                load_in_8bit=False,
+            )
+        )
         opt_model.generation_config.save_pretrained(temp_path)
         opt_model.config.save_pretrained(temp_path)
         opt_model.save_pretrained(temp_path)
 
-        processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
+        processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_cached, trust_remote_code=True))
         processor.save_pretrained(temp_path)
 
     manager.execute(save_to_temp)
@@ -204,8 +210,8 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
     # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0" 
     # https://github.com/huggingface/datasets/issues/7647 dataset is fixed for streaming mode
     # if not long_form:
-    if False:  
-        ds = datasets.load_dataset(
+    if False:
+        ds = load_dataset_via_snapshot(
             "mozilla-foundation/common_voice_11_0",
             language,
             split="test",
@@ -213,11 +219,10 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
             trust_remote_code=True,
         )
     else:
-        ds = datasets.load_dataset(
+        ds = load_dataset_via_snapshot(
             "distil-whisper/meanwhile",
             split="test",
             streaming=True,
-            trust_remote_code=True,
         )
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
@@ -531,9 +536,7 @@ def test_longform_audio(model_descr, sample_from_dataset):
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_shortform(model_descr):
     samples = []
-    ds = datasets.load_dataset(
-        "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation"
-    )
+    ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
 
     for ds_row in ds:
         samples.append(ds_row["audio"]["array"])
@@ -572,7 +575,7 @@ def align_words_by_text(ref_words, test_words):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_reference):
-    ds = datasets.load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
+    ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
     samples = [i["audio"]["array"] for i in ds]
 
     pipe = read_whisper_model(model_descr, word_timestamps=True)[3]
@@ -760,6 +763,9 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
 
+    # processing duration is a single value per generate
+    assert len(whisper_raw_metrics.word_level_timestamps_processing_durations) == 1
+
     word_ts_raw_dur = np.array(whisper_raw_metrics.word_level_timestamps_processing_durations) / 1000
     mean_dur, std_dur = perf_metrics.get_word_level_timestamps_processing_duration()
     assert np.allclose(mean_dur, np.mean(word_ts_raw_dur))
@@ -825,6 +831,7 @@ def streamer_for_test(request):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
+@pytest.mark.xfail(sys.platform == "darwin", reason="Ticket - 182134", raises=AssertionError)
 def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
     _, _, _, genai_pipe = read_whisper_model(model_descr)
 

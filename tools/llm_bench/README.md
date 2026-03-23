@@ -34,8 +34,8 @@ huggingface-cli login
 
 The `optimum-cli` tool simplifies converting Hugging Face models to OpenVINO IR format.
 - Detailed documentation can be found in the [Optimum-Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export).
-- To learn more about weight compression, see the [NNCF Weight Compression Guide](https://docs.openvino.ai/2025/openvino-workflow/model-optimization-guide/weight-compression.html).
-- For additional guidance on running inference with OpenVINO for LLMs, see the [OpenVINO Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html).
+- To learn more about weight compression, see the [NNCF Weight Compression Guide](https://docs.openvino.ai/2026/openvino-workflow/model-optimization-guide/weight-compression.html).
+- For additional guidance on running inference with OpenVINO for LLMs, see the [OpenVINO Generative AI workflow](https://docs.openvino.ai/2026/openvino-workflow-generative.html).
 
 **Usage:**
 
@@ -333,7 +333,7 @@ python benchmark.py -m models/LTX-Video/FP16 -p "A cat plays with ball on the ch
 > **Supported Video Generation model types:** Lightricks/LTX-Video
 
 ## 8. Memory consumption mode
-Enables memory usage information collection mode. This mode affects execution time, so it is not recommended to run memory consumption and performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_delay, but the impact is still expected.
+Enables memory usage information collection mode. This mode affects execution time, so it is not recommended to run memory consumption and performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_interval, but the impact is still expected.
 
 ```sh
 # run benchmark.py in memory consumption mode
@@ -342,8 +342,9 @@ python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --tas
 
 **Parameters:**
 - `-mc, --memory_consumption`: Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations. If the value is 2, output the maximum memory consumption in all iterations.
-- `--memory_consumption_delay`: Delay for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance.
-- `-mc_dir, --memory_consumption_dir`: Path to store memory consamption logs and chart.
+- `--memory_consumption_interval`: Interval sampling for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance.
+- `--memory_consumption_cooldown`: Time for relaxing before workload, it allows to deallocate system resources.
+- `-mc_dir, --memory_consumption_dir`: Path to store memory consumption logs and chart.
 
 ## 9. Additional Resources
 

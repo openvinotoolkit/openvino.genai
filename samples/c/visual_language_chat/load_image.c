@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "load_image.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -176,4 +179,3 @@ int file_exists(const char* path) {
     struct stat buffer;
     return (stat(path, &buffer) == 0);
 }
-

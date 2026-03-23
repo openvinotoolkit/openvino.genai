@@ -1,7 +1,13 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
-#include <thread>
+#include <atomic>
 #include <napi.h>
+
+#include <thread>
+
 #include "openvino/genai/llm_pipeline.hpp"
 
 class LLMPipelineWrapper : public Napi::ObjectWrap<LLMPipelineWrapper> {
@@ -15,14 +21,11 @@ public:
     Napi::Value start_chat(const Napi::CallbackInfo& info);
     Napi::Value finish_chat(const Napi::CallbackInfo& info);
     Napi::Value get_tokenizer(const Napi::CallbackInfo& info);
+    Napi::Value get_generation_config(const Napi::CallbackInfo& info);
+    Napi::Value set_generation_config(const Napi::CallbackInfo& info);
+
 private:
-    bool is_loaded = false;
-    bool is_initialized = false;
-    bool is_running = false;
-
-    std::string model_path;
-    std::string device;
-
     std::shared_ptr<ov::genai::LLMPipeline> pipe = nullptr;
-    std::function<bool(std::string)> streamer;
+    std::shared_ptr<std::atomic<bool>> is_initializing = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<std::atomic<bool>> is_generating = std::make_shared<std::atomic<bool>>(false);
 };

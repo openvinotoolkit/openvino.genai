@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Intel Corporation
+// Copyright (C) 2024-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
@@ -343,4 +343,3 @@ const std::vector<EOSPenaltyTransformTestStruct> EOS_PENALTY_TRANSFORM_TEST_CASE
 INSTANTIATE_TEST_SUITE_P(VariousInputs,
                          EOSPenaltyTransformTest,
                          testing::ValuesIn(EOS_PENALTY_TRANSFORM_TEST_CASES));
-

@@ -16,6 +16,7 @@
 #include "speculative_decoding/stateful/eagle3_strategy.hpp"
 #include "speculative_decoding/stateful/fast_draft_strategy.hpp"
 #include "utils.hpp"
+#include "logger.hpp"
 
 namespace {
 
@@ -144,13 +145,15 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
                                                    const ov::AnyMap& properties,
                                                    const ov::genai::GenerationConfig& generation_config,
                                                    const std::filesystem::path& models_path = {}) {
+    OPENVINO_ASSERT(model, "Model must not be null");
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::utils::extract_draft_model_from_config(properties_without_draft_model);
 
     auto main_model_descr =
         ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
+    OPENVINO_ASSERT(main_model_descr.model, "Model descriptor must contain a valid model");
 
-    if (draft_model_descr.model != nullptr) {
+    if (draft_model_descr.model) {
         // FIXME: Add support for StatefulSpeculativeLLMPipeline for non-NPU devices for both models.
         OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",
                         "Stateful FastDraft and Stateful Eagle3 Speculative Decoding require NPU to be "
@@ -387,10 +390,14 @@ ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
 }
 
 void ov::genai::LLMPipeline::start_chat(const std::string& system_message) {
+    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+               "Please, use generate() with ChatHistory argument.");
     m_pimpl->start_chat(system_message);
 }
 
 void ov::genai::LLMPipeline::finish_chat() {
+    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+               "Please, use generate() with ChatHistory argument.");
     m_pimpl->finish_chat();
 }
 
