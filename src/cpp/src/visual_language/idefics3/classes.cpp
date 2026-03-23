@@ -16,8 +16,11 @@ namespace {
  * Handles resizing to a fixed square size and normalization.
  */
 clip_image_f32 preprocess_idefics3_image(const clip_image_u8& image, const ProcessorConfig& config) {
-    // Idefics3 expects 378x378 images to produce 27x27 = 729 patches
-    // The connector reshapes from [729, 1152] to [27, 9, 3456]
+    // Idefics3/SmolVLM uses a fixed 27x27 patch grid (378x378 image with 14x14 patches)
+    // The connector is hard-coded to reshape from [729, 1152] to [27, 9, 3456]
+    // Note: config.image_size may contain different values (e.g., 980 from other configs)
+    // but we must use 378 to match the connector's expected dimensions.
+    
     int patch_size = config.patch_size > 0 ? config.patch_size : 14;
     constexpr int target_patches_per_side = 27;
     int target_size = target_patches_per_side * patch_size;  // 27 * 14 = 378
