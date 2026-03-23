@@ -93,6 +93,24 @@ def _is_videochat_flash_qwen_model(model_id: str) -> bool:
     return "videochat-flash-qwen" in model_id.lower()
 
 
+def _get_synthetic_video_fixture_name_for_model(model_id: str) -> str:
+    if _is_videochat_flash_qwen_model(model_id):
+        return "synthetic_video_videochat_flash_qwen"
+    return "synthetic_video"
+
+
+def _get_synthetic_video_32x32_tensor_fixture_name_for_model(model_id: str) -> str:
+    if _is_videochat_flash_qwen_model(model_id):
+        return "synthetic_video_videochat_flash_qwen_32x32_tensor"
+    return "synthetic_video_32x32_tensor"
+
+
+def _get_synthetic_video_224x224_tensor_fixture_name_for_model(model_id: str) -> str:
+    if _is_videochat_flash_qwen_model(model_id):
+        return "synthetic_video_videochat_flash_qwen_224x224_tensor"
+    return "synthetic_video_224x224_tensor"
+
+
 VIDEO_MODELS_WITH_UNSUPPORTED_IMAGE_INPUTS: list[str] = [
     "optimum-intel-internal-testing/tiny-videochat-flash-qwen", # CVS-182928
 ]
@@ -525,7 +543,7 @@ def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
 
 
 @pytest.fixture(scope="module")
-def ov_continious_batching_pipe_videochat() -> ContinuousBatchingPipeline:
+def ov_continuous_batching_pipe_videochat() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(VIDEOCHAT_FLASH_QWEN_MODEL_ID)
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
@@ -562,28 +580,35 @@ def resize_video(video, shape):
         video_resized.append(np.array(resized))
     return np.array(video_resized)
 
-@pytest.fixture(scope="module")
-def synthetic_video(pytestconfig):
+
+def _build_synthetic_video_frames(pytestconfig: pytest.Config, total_frames: int) -> list[np.ndarray]:
     # TODO: use real video
     car_url = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg"
     image = from_cache_or_download(pytestconfig, car_url, "car.jpg")
 
-    # make 12 frames to fit videochat_flash_qwen's hard requirement of frame number divisible by 4
-    total_frames = 12
-    frames = []
-    frames.append(np.array(image))
+    frames = [np.array(image)]
     shift = 3
+    width, height = image.size
     for i in range(1, total_frames):
         new_frame = np.zeros(np.array(image).shape, np.array(image).dtype)
-
-        width, height = image.size
         for x in range(0, width):
             for y in range(0, height):
                 # shift previous frame
-                new_frame[y, x] = frames[i-1][y, (x - shift + width) % width]
+                new_frame[y, x] = frames[i - 1][y, (x - shift + width) % width]
         frames.append(new_frame)
-
     return frames
+
+@pytest.fixture(scope="module")
+def synthetic_video(pytestconfig):
+    # Keep 12 frames for compatibility with existing multi-video tests.
+    return _build_synthetic_video_frames(pytestconfig, total_frames=12)
+
+
+@pytest.fixture(scope="module")
+def synthetic_video_videochat_flash_qwen(pytestconfig):
+    # VideoChat-Flash-Qwen requires frame count divisible by 4.
+    return _build_synthetic_video_frames(pytestconfig, total_frames=12)
+
 
 @pytest.fixture(scope="module")
 def synthetic_video_32x32(synthetic_video):
@@ -591,8 +616,18 @@ def synthetic_video_32x32(synthetic_video):
 
 
 @pytest.fixture(scope="module")
+def synthetic_video_videochat_flash_qwen_32x32(synthetic_video_videochat_flash_qwen):
+    return resize_video(synthetic_video_videochat_flash_qwen, (32, 32))
+
+
+@pytest.fixture(scope="module")
 def synthetic_video_224x224(synthetic_video):
     return resize_video(synthetic_video, (224, 224))
+
+
+@pytest.fixture(scope="module")
+def synthetic_video_videochat_flash_qwen_224x224(synthetic_video_videochat_flash_qwen):
+    return resize_video(synthetic_video_videochat_flash_qwen, (224, 224))
 
 
 @pytest.fixture(scope="module")
@@ -631,8 +666,18 @@ def synthetic_video_224x224_tensor(synthetic_video_224x224):
 
 
 @pytest.fixture(scope="module")
+def synthetic_video_videochat_flash_qwen_224x224_tensor(synthetic_video_videochat_flash_qwen_224x224):
+    return openvino.Tensor(synthetic_video_videochat_flash_qwen_224x224)
+
+
+@pytest.fixture(scope="module")
 def synthetic_video_32x32_tensor(synthetic_video_32x32):
     return openvino.Tensor(synthetic_video_32x32)
+
+
+@pytest.fixture(scope="module")
+def synthetic_video_videochat_flash_qwen_32x32_tensor(synthetic_video_videochat_flash_qwen_32x32):
+    return openvino.Tensor(synthetic_video_videochat_flash_qwen_32x32)
 
 
 @pytest.fixture(scope="module")
@@ -706,9 +751,11 @@ def test_vlm_continuous_batching_generate_vs_add_request(
     image_links_list = [[], [cat_tensor]]
 
     if ov_pipe_model.model_id in VIDEO_MODEL_IDS:
-        synthetic_video_32x32_tensor = request.getfixturevalue("synthetic_video_32x32_tensor")
+        video_fixture_name = _get_synthetic_video_32x32_tensor_fixture_name_for_model(ov_pipe_model.model_id)
+        synthetic_video_32x32_tensor = request.getfixturevalue(video_fixture_name)
         images_list = [[], [cat_tensor], [cat_tensor]]
         videos_list = [[synthetic_video_32x32_tensor], [synthetic_video_32x32_tensor], []]
+        
     else:
         images_list = [[], [cat_tensor]]
         videos_list = [[], []]
@@ -899,10 +946,20 @@ def iteration_images(request) -> list[list[PIL.Image]]:
         id="3 images + 2 videos on first iteration, video on second iteration"
     ),
 ])
-def iteration_images_and_videos(request):
+def iteration_images_and_videos(request, ov_pipe_model: VlmModelInfo):
+    video_fixture_name = _get_synthetic_video_32x32_tensor_fixture_name_for_model(ov_pipe_model.model_id)
     params = []
     for param in request.param:
-        params.append([[request.getfixturevalue(image) for image in bundle] for bundle in param])
+        items = []
+        for bundle in param:
+            item_values = []
+            for item in bundle:
+                if item == "synthetic_video_32x32_tensor":
+                    item_values.append(request.getfixturevalue(video_fixture_name))
+                else:
+                    item_values.append(request.getfixturevalue(item))
+            items.append(item_values)
+        params.append(items)
     return params
 
 
@@ -1120,6 +1177,7 @@ def test_vlm_pipeline_chat_npu(ov_npu_pipe_model: VlmModelInfo, system_message, 
 @parametrize_all_models_with_video
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat_with_video(
+    request: pytest.FixtureRequest,
     ov_pipe_model: VlmModelInfo,
     system_message: str,
     iteration_images_and_videos,
@@ -1140,6 +1198,11 @@ def test_vlm_pipeline_chat_with_video(
     ov_pipe.start_chat(system_message)
     iteration_images = iteration_images_and_videos[0]
     iteration_videos = iteration_images_and_videos[1]
+
+    if _is_videochat_flash_qwen_model(ov_pipe_model.model_id):
+        video_fixture_name = _get_synthetic_video_32x32_tensor_fixture_name_for_model(ov_pipe_model.model_id)
+        video_tensor = request.getfixturevalue(video_fixture_name)
+        iteration_videos = [[video_tensor for _ in bundle] for bundle in iteration_videos]
 
     images = iteration_images[0]
     videos = iteration_videos[0]
@@ -1354,7 +1417,8 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
 
     images_and_videos = {"images": image_sequence}
     if ov_pipe_model.model_id in VIDEO_MODEL_IDS:
-        video = request.getfixturevalue("synthetic_video_32x32_tensor")
+        video_fixture_name = _get_synthetic_video_32x32_tensor_fixture_name_for_model(ov_pipe_model.model_id)
+        video = request.getfixturevalue(video_fixture_name)
         images_and_videos["videos"] = video
 
     results_with_cancel = ""
@@ -1489,7 +1553,8 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
 
     images_and_videos = {"images": image_sequence}
     if ov_pipe_model.model_id in VIDEO_MODEL_IDS:
-        video = request.getfixturevalue("synthetic_video_32x32_tensor")
+        video_fixture_name = _get_synthetic_video_32x32_tensor_fixture_name_for_model(ov_pipe_model.model_id)
+        video = request.getfixturevalue(video_fixture_name)
         images_and_videos["videos"] = video
 
     ov_pipe.start_chat()
@@ -1551,8 +1616,11 @@ def conversation_requests(
 
 @pytest.fixture(scope="module")
 def conversation_video_requests(
-    synthetic_video_32x32_tensor: openvino.Tensor,
+    request: pytest.FixtureRequest,
+    ov_pipe_model: VlmModelInfo,
 ) -> list[tuple[str, list[openvino.Tensor]]]:
+    video_fixture_name = _get_synthetic_video_32x32_tensor_fixture_name_for_model(ov_pipe_model.model_id)
+    synthetic_video_32x32_tensor = request.getfixturevalue(video_fixture_name)
     return [
         ("Describe", [synthetic_video_32x32_tensor]),
         ("How many images are there?", [synthetic_video_32x32_tensor, synthetic_video_32x32_tensor]),
@@ -1672,9 +1740,10 @@ def test_model_tags_representation(
         ]
         templated_prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
 
-    input_tensor: openvino.Tensor = request.getfixturevalue(
-        "cat_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
-    )
+    input_tensor_fixture_name = "cat_tensor"
+    if vision_type == VisionType.VIDEO:
+        input_tensor_fixture_name = _get_synthetic_video_32x32_tensor_fixture_name_for_model(model_id)
+    input_tensor: openvino.Tensor = request.getfixturevalue(input_tensor_fixture_name)
     vision_inputs_kwargs = get_vision_inputs_kwargs([input_tensor], vision_type)
 
     def workaround_inconsistent_inference():
@@ -1824,9 +1893,10 @@ def test_model_tags_same_reference(
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=2, set_eos_token=False)
     ov_pipe.set_generation_config(generation_config)
 
-    input_tensor: openvino.Tensor = request.getfixturevalue(
-        "cat_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
-    )
+    input_tensor_fixture_name = "cat_tensor"
+    if vision_type == VisionType.VIDEO:
+        input_tensor_fixture_name = _get_synthetic_video_32x32_tensor_fixture_name_for_model(ov_pipe_model.model_id)
+    input_tensor: openvino.Tensor = request.getfixturevalue(input_tensor_fixture_name)
 
     def workaround_inconsistent_inference():
         __tracebackhide__ = True
@@ -1854,9 +1924,10 @@ def test_model_tags_older(
 ):
     ov_pipe = ov_pipe_model.pipeline
 
-    input_tensor: openvino.Tensor = request.getfixturevalue(
-        "car_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
-    )
+    input_tensor_fixture_name = "car_tensor"
+    if vision_type == VisionType.VIDEO:
+        input_tensor_fixture_name = _get_synthetic_video_32x32_tensor_fixture_name_for_model(ov_pipe_model.model_id)
+    input_tensor: openvino.Tensor = request.getfixturevalue(input_tensor_fixture_name)
 
     generation_config = _setup_generation_config(ov_pipe, set_eos_token=False)
     ov_pipe.set_generation_config(generation_config)
@@ -2203,12 +2274,13 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
         resized_image = resized_image.resize(image_input_resolution)
 
     if has_video:
-        resized_video = request.getfixturevalue("synthetic_video")
+        video_fixture_name = _get_synthetic_video_fixture_name_for_model(ov_pipe_model.model_id)
+        resized_video = request.getfixturevalue(video_fixture_name)
         # Use only the first 10 frames for non-VideoChat-Flash models.
         # The synthetic_video fixture produces 12 frames (VideoChat-Flash requires frame count divisible by 4),
         # but some qwen2vl/qwen2.5-vl show optimum-vs-genai mismatches with 12 frames due to accumulated numerical differences.
         # VideoChat-Flash is already skipped above, so truncation is safe here for now.
-        resized_video = resize_video(resized_video[:10], video_input_resolution)
+        resized_video = resize_video(resized_video, video_input_resolution)
 
     run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
 
@@ -2571,13 +2643,14 @@ def test_videochatflash_qwen_rejects_image_input(
 )
 def test_vlm_continuous_batching_generate_vs_add_request_for_videochat(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
-    ov_continious_batching_pipe_videochat: ContinuousBatchingPipeline,
+    ov_continuous_batching_pipe_videochat: ContinuousBatchingPipeline,
     config: GenerationConfig,
     request: pytest.FixtureRequest,
 ):
     generation_config = config
     generation_config.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
-    synthetic_video_224x224_tensor = request.getfixturevalue("synthetic_video_224x224_tensor")
+    video_fixture_name = _get_synthetic_video_224x224_tensor_fixture_name_for_model(VIDEOCHAT_FLASH_QWEN_MODEL_ID)
+    synthetic_video_224x224_tensor = request.getfixturevalue(video_fixture_name)
     images = []
     videos = [synthetic_video_224x224_tensor]
     res_generate = []
@@ -2590,8 +2663,8 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_videochat(
         )
     )
 
-    tokenizer = ov_continious_batching_pipe_videochat.get_tokenizer()
-    handle = ov_continious_batching_pipe_videochat.add_request(
+    tokenizer = ov_continuous_batching_pipe_videochat.get_tokenizer()
+    handle = ov_continuous_batching_pipe_videochat.add_request(
         0,
         "describe this video",
         images=images,
@@ -2599,7 +2672,7 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_videochat(
         generation_config=generation_config,
     )
     while handle.get_status() != GenerationStatus.FINISHED:
-        ov_continious_batching_pipe_videochat.step()
+        ov_continuous_batching_pipe_videochat.step()
     outputs = handle.read_all()
     for out_idx, output in enumerate(outputs):
         text = tokenizer.decode(output.generated_ids)

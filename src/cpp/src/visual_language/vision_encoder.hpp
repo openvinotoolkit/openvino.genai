@@ -157,6 +157,8 @@ protected:
     VideoProcessorConfig m_video_processor_config;
 
 public:
+    VisionEncoder() = default;
+
     VisionEncoder(
         const std::filesystem::path& model_dir,
         const std::string& device,

@@ -27,23 +27,10 @@ public:
         const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
-    
-    CircularBufferQueueElementGuard<ov::InferRequest> get_vision_encoder() {
-        return m_ireq_queue_vision_encoder.get();
-    }
+    EncodedVideo encode_video(const ov::Tensor& video);
 
-    CircularBufferQueueElementGuard<ov::InferRequest> get_vision_projection() {
-        return m_ireq_queue_vision_projection.get();
-    }
-
-    CircularBufferQueueElementGuard<ov::InferRequest> get_merge_model() {
-        return m_ireq_queue_merge_model.get();
-    }
-
-    const ov::Tensor& get_pos_emb() const {
-        return m_pos_emb;
-    }
 protected:
+
     /// @brief  Infer requests queue for video projection model.
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_projection;
 
@@ -52,7 +39,8 @@ protected:
 
     /// @brief A config to follow.
     VLMConfig m_vlm_config;
-        /// @brief pos_emb Tensor.
+
+    /// @brief pos_emb Tensor.
     ov::Tensor m_pos_emb;
 };
 

@@ -310,12 +310,30 @@ ov::Tensor merge_tokens(const ov::Tensor& input, ov::InferRequest& merge_embeddi
     const size_t c = x_shape[2];
 
     OPENVINO_ASSERT(
-        p > target_num_token,
-        "Current tokens (", p, ") must be greater than target (", target_num_token, ")."
+        target_num_token > 0,
+        "target_num_token must be greater than 0. Got ", target_num_token, "."
     );
     OPENVINO_ASSERT(
-        p % 2 == 0,
-        "Bipartite merge requires an even token count. Got tokens=", p, "."
+        p >= target_num_token,
+        "Current tokens (", p, ") must be greater than or equal to target (", target_num_token, ")."
+    );
+
+    if (p == target_num_token) {
+        return input;
+    }
+
+    size_t reachable_tokens = p;
+    while (reachable_tokens > target_num_token) {
+        OPENVINO_ASSERT(
+            reachable_tokens % 2 == 0,
+            "Token count must stay even during bipartite merge. Current=", reachable_tokens, "."
+        );
+        reachable_tokens /= 2;
+    }
+    OPENVINO_ASSERT(
+        reachable_tokens == target_num_token,
+        "target_num_token is not reachable by repeated halving: initial=", p,
+        ", target=", target_num_token, "."
     );
 
     const ov::Shape size_shape = {b, p, 1};
@@ -326,25 +344,72 @@ ov::Tensor merge_tokens(const ov::Tensor& input, ov::InferRequest& merge_embeddi
 
     ov::Tensor current_x = input;
 
-    // Simplified: iterate until token count reaches target.
-    size_t tmp_p = p;
-    while (tmp_p > target_num_token) {
+    while (true) {
+        const ov::Shape& current_shape = current_x.get_shape();
+        OPENVINO_ASSERT(
+            current_shape.size() == 3 && current_shape[0] == b && current_shape[2] == c,
+            "hidden_states must keep shape [", b, ", tokens, ", c, "], got ",
+            current_shape.to_string(), "."
+        );
+
+        const size_t current_tokens = current_shape[1];
+        if (current_tokens == target_num_token) {
+            break;
+        }
+
+        OPENVINO_ASSERT(
+            current_tokens > target_num_token,
+            "Unexpected token count before merge: ", current_tokens,
+            ", target=", target_num_token, "."
+        );
+
+        const ov::Shape& current_size_shape = size_tensor.get_shape();
+        OPENVINO_ASSERT(
+            current_size_shape.size() == 3 &&
+                current_size_shape[0] == b &&
+                current_size_shape[1] == current_tokens &&
+                current_size_shape[2] == 1,
+            "size tensor must match hidden_states shape [", b, ", ", current_tokens, ", 1], got ",
+            current_size_shape.to_string(), "."
+        );
+
         merge_embeddings.set_tensor("hidden_states", current_x);
         merge_embeddings.set_tensor("size", size_tensor);
         merge_embeddings.infer();
 
-        current_x = merge_embeddings.get_output_tensor(0);
-        size_tensor = merge_embeddings.get_output_tensor(1);
+        ov::Tensor next_x = merge_embeddings.get_output_tensor(0);
+        ov::Tensor next_size = merge_embeddings.get_output_tensor(1);
 
-        tmp_p = std::max(target_num_token, tmp_p / 2);
+        const ov::Shape& next_x_shape = next_x.get_shape();
+        const ov::Shape& next_size_shape = next_size.get_shape();
+
+        OPENVINO_ASSERT(
+            next_x_shape.size() == 3 && next_x_shape[0] == b && next_x_shape[2] == c,
+            "merge output hidden_states has invalid shape: ", next_x_shape.to_string(), "."
+        );
+        OPENVINO_ASSERT(
+            next_size_shape.size() == 3 &&
+                next_size_shape[0] == b &&
+                next_size_shape[1] == next_x_shape[1] &&
+                next_size_shape[2] == 1,
+            "merge output size has invalid shape: ", next_size_shape.to_string(),
+            ", expected [", b, ", ", next_x_shape[1], ", 1]."
+        );
+        OPENVINO_ASSERT(
+            next_x_shape[1] == current_tokens / 2,
+            "merge model must halve token count each step. Current=", current_tokens,
+            ", next=", next_x_shape[1], "."
+        );
+
+        current_x = std::move(next_x);
+        size_tensor = std::move(next_size);
     }
 
-    const ov::Shape& final_shape = current_x.get_shape();
     const ov::Shape expected_shape = {b, target_num_token, c};
     OPENVINO_ASSERT(
-        final_shape == expected_shape,
+        current_x.get_shape() == expected_shape,
         "Merge failed: expected shape ", expected_shape.to_string(),
-        ", got ", final_shape.to_string()
+        ", got ", current_x.get_shape().to_string()
     );
 
     return current_x;
@@ -518,35 +583,51 @@ ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferReque
 VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     const std::filesystem::path& model_dir,
     const std::string& device,
-    const ov::AnyMap properties)
-    : VisionEncoder(model_dir, device, properties, VisionEncoder::VisionEmbeddingsCompilePolicy::SKIP) {
-
+    const ov::AnyMap properties) {
+    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
+    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(model_dir, "video_preprocessor_config.json");
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
+
     // init 3d_sincos_pos_embed
     const size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
     const size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
+
     // Can not obtain this from config for now
-    const size_t img_size = 224;
-    const size_t patch_size = 14;
+    constexpr size_t img_size = 224;
+    constexpr size_t patch_size = 14;
     const size_t grid_size = img_size / patch_size; // 16
     m_pos_emb = get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
 
+    OPENVINO_ASSERT(
+        m_pos_emb.get_size() > 0,
+        "m_pos_emb must be initialized before vision embeddings model initialization."
+    );
+    const ov::Shape pos_emb_shape = m_pos_emb.get_shape();
+
+    OPENVINO_ASSERT(
+        pos_emb_shape.size() == 3 && pos_emb_shape[0] == 1,
+        "m_pos_emb must have shape [1, tokens, hidden]. Got ",
+        pos_emb_shape.to_string(),
+        "."
+    );
+
     auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
+
+    // Accelerate model by using static rope shape.
     std::map<std::string, ov::PartialShape> input_shapes;
-    // accelerate model by using static rope shape
-    const ov::Shape pos_embed_shape = m_pos_emb.get_shape(); // { 1, 1025, 1408 };
-    input_shapes["rotary_pos_emb"] = pos_embed_shape;
+    input_shapes["rotary_pos_emb"] = pos_emb_shape;
     model->reshape(input_shapes);
+
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
-
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
 
-    auto compiled_model_vision = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, properties);
+    auto compiled_model_vision =
+        utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, properties);
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model_vision.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model_vision]() -> ov::InferRequest {
@@ -569,7 +650,6 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
         [&compiled_merge_model]() -> ov::InferRequest {
             return compiled_merge_model.create_infer_request();
         });
-    
 }
 
 VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
@@ -605,8 +685,8 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     const size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
     const size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
     // Can not obtain this from config for now
-    const size_t img_size = 224;
-    const size_t patch_size = 14;
+    constexpr size_t img_size = 224;
+    constexpr size_t patch_size = 14;
     const size_t grid_size = img_size / patch_size; // 16
     m_pos_emb = get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
 
@@ -618,21 +698,30 @@ EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, co
     OPENVINO_THROW("VideoChat-Flash currently does not support image inference. Please use video input.");
 }
 
-ov::Tensor infer_visual_features(
-    const ov::Tensor& transpose_features,
-    ov::InferRequest& vision_embeddings,
-    ov::InferRequest& merge_embeddings,
-    ov::InferRequest& vision_projection,
-    const ov::Tensor& pos_emb
-) {
-    ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_embeddings, pos_emb);
-    ov::Tensor clipped_vision_embeds = remove_second_dim_first_element(processed_vision_embeds);
-    ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_embeddings);
-    vision_projection.set_tensor("hidden_states", merged_vision_features);
-    vision_projection.infer();
-    ov::Tensor proj_features = vision_projection.get_output_tensor();
+EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& video) {
+    EncodedVideo encoded_video;
+    ImageSize target_size{224, 224};
+    auto preprocessed_video = preprocess(video, target_size, {0.485f, 0.456f, 0.406f}, {0.229f, 0.224f, 0.225f});
+    encoded_video.resized_source_size = target_size;
+    encoded_video.frame_num = preprocessed_video.get_shape()[0];
+    const size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
+    auto transpose_features = transpose_video_features(preprocessed_video, mm_local_num_frames);
 
-    return efficient_flatten(proj_features);
+    CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(m_ireq_queue_vision_encoder.get());
+    CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(m_ireq_queue_merge_model.get());
+    CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(m_ireq_queue_vision_projection.get());
+
+    ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get(), m_pos_emb);
+    ov::Tensor clipped_vision_embeds = remove_second_dim_first_element(processed_vision_embeds);
+    ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_guard.get());
+    projection_guard.get().set_tensor("hidden_states", merged_vision_features);
+    projection_guard.get().infer();
+    ov::Tensor proj_features = projection_guard.get().get_output_tensor();
+    ov::Tensor final_features = efficient_flatten(proj_features);
+
+    encoded_video.video_features = final_features;
+    encoded_video.num_video_tokens = final_features.get_shape()[1];
+    return encoded_video;
 }
 
 
@@ -641,28 +730,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChatFlashQwen::encode_vi
     const auto vision_encoder = std::static_pointer_cast<VisionEncoderVideoChatFlashQwen>(m_vision_encoder);
     std::vector<EncodedVideo> embeds;
     for (const ov::Tensor& video : videos) {
-        EncodedVideo encoded_video;
-        ImageSize target_size{224, 224};
-        auto preprocessed_video = preprocess(video, target_size, {0.485f, 0.456f, 0.406f}, {0.229f, 0.224f, 0.225f});
-        encoded_video.resized_source_size = target_size;
-        encoded_video.frame_num = preprocessed_video.get_shape()[0];
-        const size_t mm_local_num_frames =  m_vlm_config.mm_local_num_frames;
-        auto transpose_features = transpose_video_features(preprocessed_video, mm_local_num_frames);
-        CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(vision_encoder->get_vision_encoder());
-        CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(vision_encoder->get_merge_model());
-        CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(vision_encoder->get_vision_projection());
-
-        auto final_features = infer_visual_features(
-            transpose_features,
-            vision_guard.get(),
-            merge_guard.get(),
-            projection_guard.get(),
-            vision_encoder->get_pos_emb()
-        );
-        
-        encoded_video.video_features = final_features;
-        encoded_video.num_video_tokens = final_features.get_shape()[1];
-        embeds.emplace_back(std::move(encoded_video));
+        embeds.emplace_back(vision_encoder->encode_video(video));
     }
     return embeds;
 }
