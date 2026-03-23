@@ -13,6 +13,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoModel,
     AutoTokenizer,
+    pipeline as transformers_pipeline,
     __version__,
 )
 
@@ -759,6 +760,44 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
     return model
 
 
+def load_speech_generation_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
+    import openvino_genai
+
+    return GenAIModelWrapper(
+        openvino_genai.Text2SpeechPipeline(model_dir, device=device, **ov_config),
+        model_dir,
+        "speech-generation",
+    )
+
+
+def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
+    if use_hf:
+        logger.info("Using HF Transformers API")
+        pipeline_kwargs = {"task": "text-to-speech", "model": model_id}
+        if device.lower() == "cpu":
+            pipeline_kwargs["device"] = "cpu"
+        else:
+            pipeline_kwargs["device"] = device.lower()
+
+        try:
+            return transformers_pipeline(trust_remote_code=False, **pipeline_kwargs)
+        except TypeError:
+            return transformers_pipeline(**pipeline_kwargs)
+        except Exception:
+            try:
+                return transformers_pipeline(trust_remote_code=True, **pipeline_kwargs)
+            except TypeError:
+                return transformers_pipeline(**pipeline_kwargs)
+
+    if use_genai:
+        logger.info("Using OpenVINO GenAI API")
+        return load_speech_generation_genai_pipeline(model_id, device, ov_config, **kwargs)
+
+    raise ValueError(
+        "Speech generation in WWB requires either --genai or --hf backend."
+    )
+
+
 def load_model(
     model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
 ):
@@ -790,5 +829,7 @@ def load_model(
         return load_reranking_model(model_id, device, ov_options, use_hf, use_genai)
     elif model_type == "text-to-video":
         return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+    elif model_type == "speech-generation":
+        return load_speech_generation_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")

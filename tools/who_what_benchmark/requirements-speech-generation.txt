@@ -1,0 +1,6 @@
+# Optional dependencies for WWB speech-generation evaluation.
+# Install these only when running the speech-generation benchmark.
+
+jiwer
+faster-whisper
+speechbrain

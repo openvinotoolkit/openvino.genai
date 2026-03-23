@@ -11,6 +11,7 @@ from .inpaint_evaluator import InpaintingEvaluator
 from .embeddings_evaluator import EmbeddingsEvaluator
 from .reranking_evaluator import RerankingEvaluator
 from .text2video_evaluator import Text2VideoEvaluator
+from .speech_generation_evaluator import SpeechGenerationEvaluator
 
 
 __all__ = [
@@ -24,5 +25,6 @@ __all__ = [
     "EmbeddingsEvaluator",
     "RerankingEvaluator",
     "Text2VideoEvaluator",
+    "SpeechGenerationEvaluator",
     "EVALUATOR_REGISTRY",
 ]

@@ -28,6 +28,10 @@ To install WWB and its dependencies, follow these steps:
 ```
     pip install .
 ```
+If you want to run speech-generation evaluation, install the extra evaluator dependencies separately:
+```
+pip install -r requirements-speech-generation.txt
+```
 To install WWB with nightly builds of openvino, openvino-tokenizers, and openvino-genai, use the following command:
 ```
 PIP_PRE=1 \
@@ -148,6 +152,42 @@ wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type 
 # compute metrics with GenAI
 wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --genai --output ltx_video_genai
 ```
+
+### Compare Speech-generation models
+```sh
+# Install the extra evaluator dependencies once.
+pip install -r requirements-speech-generation.txt
+
+# Export SpeechT5 to OpenVINO.
+optimum-cli export openvino -m microsoft/speecht5_tts speecht5_tts_ov
+
+# Collect reference audio with the Hugging Face baseline.
+# Reference wav files will be stored under t5/reference/.
+wwb --base-model microsoft/speecht5_tts --gt-data t5/gt.csv --model-type speech-generation --hf
+
+# Compare the OpenVINO GenAI pipeline against the saved reference set.
+# Generated wav files will be stored under t5/target/ unless --output is specified.
+wwb --target-model speecht5_tts_ov --gt-data t5/gt.csv --model-type speech-generation --genai
+```
+
+Speech-generation evaluation uses the prompt text itself as the default expected transcript and writes audio at 16 kHz for both reference and target files before scoring.
+
+The speech-generation evaluator reports these metrics:
+
+* `speaker score` - speaker similarity based on SpeechBrain speaker verification.
+* `content score` - transcript similarity based on faster-whisper transcription and normalized text comparison.
+* `prosody score` - rhythm, pitch, and energy similarity.
+* `acoustic score` - MFCC/log-mel style acoustic similarity.
+* `overall score` - aggregate score used for sorting worst examples.
+
+The optional input CSV for speech-generation may contain these columns:
+
+* `prompts` or `prompt` - input text to synthesize.
+* `expected_text` - expected transcript used for content scoring. If omitted, `prompts` is used.
+* `speaker_embedding_file_path` - optional path to a binary float32 xvector file.
+* `language` - reserved field for future multi-language TTS backends. It is currently unused for SpeechT5 evaluation/generation.
+* `voice` - reserved field for future multi-voice TTS backends. It is currently unused for SpeechT5.
+
 
 ### API
 The API provides a way to access to investigate the worst generated text examples.
