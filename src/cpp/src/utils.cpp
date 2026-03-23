@@ -549,6 +549,10 @@ void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optio
         ov::Tensor old_tensor = state.get_state();
         // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
         auto shape = old_tensor.get_shape();
+        OPENVINO_ASSERT(shape[cache_state.seq_length_axis] >= cache_state.num_tokens_to_trim,
+                        "trim_kv_cache: requested to trim ", cache_state.num_tokens_to_trim,
+                        " tokens, but cached sequence length is ", shape[cache_state.seq_length_axis],
+                        " for state '", state.get_name(), "'.");
         shape[cache_state.seq_length_axis] -= cache_state.num_tokens_to_trim;
 
         ov::Coordinate new_shape_begin{0, 0, 0, 0};
