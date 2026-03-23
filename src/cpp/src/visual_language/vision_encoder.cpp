@@ -4,7 +4,6 @@
 #include "vision_encoder.hpp"
 #include "utils.hpp"
 
-
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen2_5_vl/classes.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
@@ -29,23 +28,6 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::
         [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
-    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
-    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(model_dir, "video_preprocessor_config.json");
-}
-
-VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir,
-                             const std::string& device,
-                             const ov::AnyMap properties,
-                             VisionEmbeddingsCompilePolicy compile_policy) {
-    if (compile_policy == VisionEmbeddingsCompilePolicy::COMPILE) {
-        auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, properties);
-        ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
-        m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-            compiled_model.get_property(ov::optimal_number_of_infer_requests),
-            [&compiled_model]() -> ov::InferRequest {
-                return compiled_model.create_infer_request();
-            });
-    }
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
     m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(model_dir, "video_preprocessor_config.json");
 }

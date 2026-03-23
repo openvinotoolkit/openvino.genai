@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import sys
-from patch_pyav_for_servercore import install_av_stub_module_for_windows
-install_av_stub_module_for_windows()
+import patch_pyav_for_servercore
+
+patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import openvino_genai as ov_genai
 import functools

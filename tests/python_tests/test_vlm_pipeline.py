@@ -112,7 +112,7 @@ def _get_synthetic_video_224x224_tensor_fixture_name_for_model(model_id: str) ->
 
 
 VIDEO_MODELS_WITH_UNSUPPORTED_IMAGE_INPUTS: list[str] = [
-    "optimum-intel-internal-testing/tiny-videochat-flash-qwen", # CVS-182928
+    "optimum-intel-internal-testing/tiny-videochat-flash-qwen",  # CVS-182928
 ]
 
 
@@ -755,7 +755,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         synthetic_video_32x32_tensor = request.getfixturevalue(video_fixture_name)
         images_list = [[], [cat_tensor], [cat_tensor]]
         videos_list = [[synthetic_video_32x32_tensor], [synthetic_video_32x32_tensor], []]
-        
+
     else:
         images_list = [[], [cat_tensor]]
         videos_list = [[], []]
@@ -2276,10 +2276,6 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
     if has_video:
         video_fixture_name = _get_synthetic_video_fixture_name_for_model(ov_pipe_model.model_id)
         resized_video = request.getfixturevalue(video_fixture_name)
-        # Use only the first 10 frames for non-VideoChat-Flash models.
-        # The synthetic_video fixture produces 12 frames (VideoChat-Flash requires frame count divisible by 4),
-        # but some qwen2vl/qwen2.5-vl show optimum-vs-genai mismatches with 12 frames due to accumulated numerical differences.
-        # VideoChat-Flash is already skipped above, so truncation is safe here for now.
         resized_video = resize_video(resized_video, video_input_resolution)
 
     run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
