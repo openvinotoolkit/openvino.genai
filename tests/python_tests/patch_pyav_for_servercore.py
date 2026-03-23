@@ -13,3 +13,7 @@ def install_av_stub_module_for_windows():
 
     sys.modules["av"] = ModuleType("av")
     sys.modules["av"].__version__ = "0.0.0"
+
+
+if __name__ == "__main__":
+    install_av_stub_module_for_windows()
