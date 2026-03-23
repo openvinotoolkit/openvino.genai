@@ -18,7 +18,7 @@ Solution:
 2. Patch av/__init__.py to pre-load bundled FFmpeg DLLs via ctypes.CDLL
 
 Usage (in CI, after `pip install av`):
-    python .github/scripts/patch_pyav_for_servercore.py
+    python tests/python_tests/patch_pyav_for_servercore.py
 """
 
 import os
@@ -27,6 +27,21 @@ import platform
 import struct
 import sys
 import sysconfig
+
+
+def install_av_stub_module_for_windows():
+    """Install a lightweight 'av' stub on Windows to avoid PyAV DLL loading in tests."""
+    # win32 fails on ffmpeg DLLs load
+    # import transformers.pipeline imports VideoClassificationPipeline which requires PyAV (ffmpeg bindings)
+    # wa is to create mock 'av' module to prevent DLLs loading errors
+    # ticket: 179943
+    if sys.platform != "win32":
+        return
+
+    from types import ModuleType
+
+    sys.modules["av"] = ModuleType("av")
+    sys.modules["av"].__version__ = "0.0.0"
 
 
 def get_av_libs_dir():
