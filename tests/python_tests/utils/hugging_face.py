@@ -283,7 +283,7 @@ def sanitize_model_id(model_id: str) -> str:
 TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
 
 # Some linear-attention models are exported incorrectly via OVModelForCausalLM.from_pretrained(..., export=True)
-# in the Python API path. Use optimum-cli export for these models to match stable CLI behavior.
+# in the Python API path. Use optimum-cli export for these models to match stable CLI behavior - CVS-183496
 FORCE_OPTIMUM_CLI_EXPORT_MODELS = (
     "optimum-intel-internal-testing/tiny-random-lfm2",
     "optimum-intel-internal-testing/tiny-random-qwen3-next",
