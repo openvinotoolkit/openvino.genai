@@ -4,12 +4,8 @@
 #pragma once
 #include <type_traits>
 #include <optional>
-#include <regex>
 #include <stdexcept>
 #include <utility>
-#include <variant>
-#include <vector>
-
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
