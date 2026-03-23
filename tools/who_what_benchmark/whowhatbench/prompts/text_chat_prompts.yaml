@@ -92,7 +92,7 @@ prompts:
            Question: What is the capital city of Canada?
         - Can you tell me the population of it?
         - What are some famous tourist attractions?
-        - What is the best time of year to visit this town for tourism?"
+        - What is the best time of year to visit this town for tourism?
         - Are there any winter activities that are worth checking out?
     -
         - Write a biography of Albert Einstein.
@@ -118,7 +118,7 @@ prompts:
         - |
             Please create a parent and family needs assessment and needs assessment plan for a classroom environment. It should include the following components:
             1. Needs Assessment Instrument. Develop an instrument that can be used to determine the needs of parents and families within the classroom environment. Sample instruments could include the development of a survey, an focus group interview protocol, or other instruments that determine the specific needs of parents and families in the classroom environment.
-            2. Needs Assessment Implementation and Analysis Plan: Develop a timeline for the collection of needs assessment data during the academic year, as well as a timeline for the analysis of the data and implementation of activities that respond to the needs assessment data.",
+            2. Needs Assessment Implementation and Analysis Plan: Develop a timeline for the collection of needs assessment data during the academic year, as well as a timeline for the analysis of the data and implementation of activities that respond to the needs assessment data.,
         - Please write a 1500 word narrative that describes this needs assessment instrument and implementation plan, use appropriate evidence to justify each decision, as well as ways to address cultural and linguistic diversity throughout the needs assessment process. Please include 3 citations.
         - continue
     -

@@ -300,6 +300,8 @@ def test_text_chat_model(model_id, tmp_path):
             "--model-type",
             "text-chat",
             "--hf",
+            "--max_new_tokens",
+            "10",
         ]
     )
 
@@ -318,6 +320,8 @@ def test_text_chat_model(model_id, tmp_path):
             "text-chat",
             "--output",
             outputs_path,
+            "--max_new_tokens",
+            "10",
         ]
     )
     assert "Metrics for model" in output
@@ -344,6 +348,8 @@ def test_text_chat_model(model_id, tmp_path):
             "--genai",
             "--output",
             outputs_path,
+            "--max_new_tokens",
+            "10",
         ]
     )
     assert "Metrics for model" in output

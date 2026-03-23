@@ -14,6 +14,7 @@ import torch.nn.functional as F
 import cv2
 import logging
 import numpy as np
+import pandas as pd
 from sentence_transformers import SentenceTransformer, util
 from transformers import CLIPImageProcessor, CLIPModel
 from tqdm import tqdm
@@ -25,12 +26,17 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
 
-def evaluate_similarity(model, data_gold, data_prediction):
+def evaluate_similarity(
+    model: SentenceTransformer,
+    data_gold: pd.DataFrame,
+    data_prediction: pd.DataFrame
+) -> tuple[dict, dict]:
     answers_gold = data_gold["answers"].values
     answers_prediction = data_prediction["answers"].values
 
-    # in question mode - gold, prediction are string
-    # in chat mode - gold, prediction are list of answers
+    # gold, prediction are output of the model to compare
+    # type: str, in question mode
+    # type: list[str], in chat mode
     metric_per_chat_answer_list = []
     metric_per_question = []
     for i, (gold, prediction) in tqdm(
@@ -175,7 +181,10 @@ class TextSimilarity:
             pad_token = tokenizer.pad_token
         else:
             pad_token = tokenizer.eos_token
-        self.model = SentenceTransformer(model_id, tokenizer_kwargs={"pad_token": pad_token}, trust_remote_code=trust_remote_code)
+        self.model = SentenceTransformer(model_id,
+                                         tokenizer_kwargs={"pad_token": pad_token},
+                                         trust_remote_code=trust_remote_code,
+                                         device="cpu")
 
     def evaluate(self, gt, prediction):
         return evaluate_similarity(self.model, gt, prediction)

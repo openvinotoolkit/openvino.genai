@@ -109,8 +109,9 @@ class ChatTextEvaluator(TextEvaluator):
 
         self.last_cmp = all_metrics_per_prompt
         self.last_cmp["prompts"] = predictions_text["prompts"].values
-        self.last_cmp["source_model"] = ["\n\n".join(val) for val in gt_data_text["answers"].values]
-        self.last_cmp["optimized_model"] = ["\n\n".join(val) for val in predictions_text["answers"].values]
+
+        self.last_cmp["source_model"] = ["".join([f"Answer {i}:\n{rep}\n" for i, rep in enumerate(val)]) for val in gt_data_text["answers"].values]
+        self.last_cmp["optimized_model"] = ["".join([f"Answer {i}:\n{rep}\n" for i, rep in enumerate(val)]) for val in predictions_text["answers"].values]
         self.last_cmp = pd.DataFrame(self.last_cmp)
         self.last_cmp.rename(columns={"prompts": "prompt"}, inplace=True)
 
