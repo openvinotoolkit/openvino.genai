@@ -55,10 +55,11 @@ void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& dec
 
         m_cache_state.num_tokens_to_trim = state.size() - m_prev_hist_length;
         state.resize(m_prev_hist_length);
-        // Always require a full KV cache reset on cancel. Partial trim via num_tokens_to_trim
-        // is unreliable for VLM because the text token count differs from the actual KV cache
-        // entry count (due to image/video embeddings replacing placeholder tokens).
-        m_cache_state.reset_mem_state = true;
+        // When cancelling the first generate (state becomes empty), partial trim would
+        // create a zero-size KV tensor causing a segfault, so a full reset is required.
+        // For hybrid/linear models, needs_reset() already returns true via
+        // has_linear() + num_tokens_to_trim > 0.
+        m_cache_state.reset_mem_state = state.empty();
     }
 }
 
