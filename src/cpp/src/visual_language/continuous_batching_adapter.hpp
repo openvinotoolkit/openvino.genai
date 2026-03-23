@@ -52,8 +52,7 @@ public:
         device,
         config_dir_path,
         properties,
-        generation_config} {
-    }
+        generation_config} { }
 
     VLMContinuousBatchingAdapter(
         const std::shared_ptr<ov::Model>& language_model,
