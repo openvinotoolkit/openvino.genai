@@ -146,7 +146,8 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "Qwen3-Embedding-0.6B": {
         "name": "Qwen/Qwen3-Embedding-0.6B",
-        "convert_args": ["--trust-remote-code"]
+        "alias": "Qwen/Qwen3-Embedding-0.6B-fe",
+        "convert_args": ["--trust-remote-code", "--task", "feature-extraction"],
     },
     "Qwen3-Reranker-0.6B": {
         "name": "Qwen/Qwen3-Reranker-0.6B",
@@ -331,7 +332,10 @@ def convert_model(request):
     else:
         converted_models_dir = get_ov_cache_converted_models_dir()
         model_cache = converted_models_dir / model_id
-        model_path = model_cache / model_name
+        if "alias" in model:
+            model_path = model_cache / model["alias"]
+        else:
+            model_path = model_cache / model_name
         logger.info(f"Preparing model: {model_name}")
         optimum_cli_convert(model, str(model_path))
         yield str(model_path)
