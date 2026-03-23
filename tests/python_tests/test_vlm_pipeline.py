@@ -54,6 +54,7 @@ from openvino_genai import (
     StreamingStatus,
     GenerationFinishReason,
     ChatHistory,
+    VideoMetadata,
 )
 
 from utils.network import retry_request
@@ -2457,3 +2458,114 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
     assert results.texts[0].strip() == results_pld.texts[0].strip(), (
         "Result should be the same when prompt_lookup is enabled and disabled."
     )
+
+
+@pytest.fixture(scope="module")
+def video_sampling_inputs(synthetic_video_32x32) -> list[tuple[openvino.Tensor, VideoMetadata | None]]:
+    video_tensor = openvino.Tensor(synthetic_video_32x32)
+
+    frames_indices = list(range(4))
+    presampled_video_tensor = openvino.Tensor(synthetic_video_32x32[frames_indices])
+
+    video_metadata = VideoMetadata()
+    video_metadata.frames_indices = frames_indices
+
+    return [
+        (video_tensor, None),
+        (presampled_video_tensor, None),
+        (video_tensor, video_metadata),
+    ]
+
+
+def _compare_outputs_for_video_sampling(
+    output_all_frames: str,
+    output_presampled: str,
+    output_with_metadata: str,
+):
+    assert output_all_frames != output_with_metadata, (
+        "Result should be different when using video metadata to sample frames."
+    )
+    assert output_presampled == output_with_metadata, (
+        "Presampled video result should match video metadata result when using the same frame indices."
+    )
+
+
+@parametrize_all_models_with_video
+def test_video_metadata_sampling(
+    ov_pipe_model: VlmModelInfo,
+    video_sampling_inputs: list[tuple[openvino.Tensor, VideoMetadata | None]],
+):
+    ov_pipe = ov_pipe_model.pipeline
+
+    generation_config = _setup_generation_config(
+        ov_pipe, max_new_tokens=20, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup
+    )
+
+    prompt = PROMPTS[0]
+
+    outputs = []
+    for video, video_metadata in video_sampling_inputs:
+        videos_metadata_kwargs = {"videos_metadata": [video_metadata]} if video_metadata else {}
+        output = ov_pipe.generate(
+            prompt,
+            videos=[video],
+            generation_config=generation_config,
+            **videos_metadata_kwargs,
+        )
+        outputs.append(output.texts[0])
+
+    _compare_outputs_for_video_sampling(*outputs)
+
+
+def test_video_metadata_sampling_continuous_batching(
+    ov_continuous_batching_pipe_qwen2vl: ContinuousBatchingPipeline,
+    video_sampling_inputs: list[tuple[openvino.Tensor, VideoMetadata | None]],
+):
+    ov_pipe = ov_continuous_batching_pipe_qwen2vl
+
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 20
+    generation_config.do_sample = False
+
+    prompt = PROMPTS[0]
+
+    outputs_generate_api = []
+
+    for video, video_metadata in video_sampling_inputs:
+        videos_metadata_kwargs = {"videos_metadata": [[video_metadata]]} if video_metadata else {}
+        results = ov_pipe.generate(
+            [prompt],
+            videos=[[video]],
+            generation_config=[generation_config],
+            **videos_metadata_kwargs,
+        )
+        outputs_generate_api.append(results[0].texts[0])
+
+    _compare_outputs_for_video_sampling(*outputs_generate_api)
+
+    outputs_add_request_api = []
+    handles = []
+
+    for request_id, (video, video_metadata) in enumerate(video_sampling_inputs):
+        videos_metadata_kwargs = {"videos_metadata": [video_metadata]} if video_metadata else {}
+        handle = ov_pipe.add_request(
+            request_id,
+            prompt,
+            images=[],
+            videos=[video],
+            generation_config=generation_config,
+            **videos_metadata_kwargs,
+        )
+        handles.append(handle)
+
+    while ov_pipe.has_non_finished_requests():
+        ov_pipe.step()
+
+    tokenizer = ov_pipe.get_tokenizer()
+
+    for handle in handles:
+        results = handle.read_all()
+        for result in results:
+            outputs_add_request_api.append(tokenizer.decode(result.generated_ids))
+
+    _compare_outputs_for_video_sampling(*outputs_add_request_api)
