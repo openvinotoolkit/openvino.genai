@@ -773,7 +773,9 @@ def test_continuous_batching_add_extension(
 
     # The custom op "MyAdd" is provided by a compiled extension library and is intended to behave like OpenVINO "Add".
     properties_path = {"extensions": [str(get_extension_lib_path())]}
-    pipe_extension_path = ContinuousBatchingPipeline(myadd_model_path, scheduler_config, "CPU", properties=properties_path)
+    pipe_extension_path = ContinuousBatchingPipeline(
+        myadd_model_path, scheduler_config, "CPU", properties=properties_path
+    )
     result_extension_path = pipe_extension_path.generate([prompt], [generation_config])
 
     # The Python custom op "CustomAdd" is intended to behave like OpenVINO "Add", but it exercises Python ov.Op registration and callback-based evaluation.
@@ -781,7 +783,9 @@ def test_continuous_batching_add_extension(
     assert_ir_contains_op_type(customadd_model_path, "CustomAdd")
     CustomAdd.evaluate_calls = 0
     properties_obj = {"extensions": [ov.OpExtension(CustomAdd)]}
-    pipe_extension_obj = ContinuousBatchingPipeline(customadd_model_path, scheduler_config, "CPU", properties=properties_obj)
+    pipe_extension_obj = ContinuousBatchingPipeline(
+        customadd_model_path, scheduler_config, "CPU", properties=properties_obj
+    )
     result_extension_obj = pipe_extension_obj.generate([prompt], [generation_config])
     assert CustomAdd.evaluate_calls > 0, "Python custom op 'CustomAdd' was not called"
 

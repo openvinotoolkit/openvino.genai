@@ -73,9 +73,7 @@ def get_ir_xml_path(model_dir: Path) -> Path:
     if language_model_ir_xml_path.exists():
         return language_model_ir_xml_path
 
-    raise FileNotFoundError(
-        f"IR XML was not found: {default_ir_xml_path} or {language_model_ir_xml_path}"
-    )
+    raise FileNotFoundError(f"IR XML was not found: {default_ir_xml_path} or {language_model_ir_xml_path}")
 
 
 def assert_ir_contains_op_type(model_path: Path | str, op_type: str) -> None:

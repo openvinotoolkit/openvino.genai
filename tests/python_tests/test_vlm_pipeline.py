@@ -2470,15 +2470,18 @@ def test_vlm_pipeline_add_extension(cat_tensor, tmp_path: Path) -> None:
     # The custom op "MyAdd" is provided by a compiled extension library and is intended to behave like OpenVINO "Add".
     properties_path = {"extensions": [str(get_extension_lib_path())]}
     pipe_extension_path = VLMPipeline(myadd_model_path, "CPU", config=properties_path)
-    result_extension_path = pipe_extension_path.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
-
+    result_extension_path = pipe_extension_path.generate(
+        PROMPTS[0], images=[cat_tensor], generation_config=generation_config
+    )
     # The Python custom op "CustomAdd" is intended to behave like OpenVINO "Add", but it exercises Python ov.Op registration and callback-based evaluation.
     customadd_model_path = get_extension_model(models_path, tmp_path, "CustomAdd")
     assert_ir_contains_op_type(customadd_model_path, "CustomAdd")
     CustomAdd.evaluate_calls = 0
     properties_obj = {"extensions": [openvino.OpExtension(CustomAdd)]}
     pipe_extension_obj = VLMPipeline(customadd_model_path, "CPU", config=properties_obj)
-    result_extension_obj = pipe_extension_obj.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+    result_extension_obj = pipe_extension_obj.generate(
+        PROMPTS[0], images=[cat_tensor], generation_config=generation_config
+    )
     assert CustomAdd.evaluate_calls > 0, "Python custom op 'CustomAdd' was not called"
 
     # Reference result with the original model and without custom extensions.

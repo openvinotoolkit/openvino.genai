@@ -63,8 +63,8 @@ PERF_METRICS_STRUCTURED_OUTPUT_TEST_CASES = [
     ({'max_new_tokens': 20}, 'Generate json of a person'),
 ]
 
-CUSTOM_OP_TEST_CASES = [
-    ({'max_new_tokens': 20}, 'Generate json of a person'),
+CUSTOM_EXTENSIONS_TEST_CASES = [
+    ({"max_new_tokens": 20}, "Generate json of a person"),
 ]
 
 
@@ -886,7 +886,7 @@ def test_pipelines_generate_with_streaming(
 
 
 @pytest.mark.parametrize("llm_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
-@pytest.mark.parametrize("generation_config,prompt", CUSTOM_OP_TEST_CASES)
+@pytest.mark.parametrize("generation_config,prompt", CUSTOM_EXTENSIONS_TEST_CASES)
 def test_llm_pipeline_add_extension(
     llm_model: OVConvertedModelSchema,
     generation_config: dict,
