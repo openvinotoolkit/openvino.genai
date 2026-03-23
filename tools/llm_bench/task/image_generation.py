@@ -231,8 +231,8 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for image_id, image_param in enumerate(image_list):
-                mem_consumption.update_marker(f"step-{num}-{image_id}")
                 p_idx = prompt_idx_list[image_id]
+                mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 image_gen_fn(image_param, num, prompt_idx_list[image_id], pipe, args, iter_data_list, proc_id, mem_consumption, callback)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()

@@ -368,14 +368,14 @@ def run_text_reranker_benchmark(
     if args["subsequent"] is False:
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
-                mem_consumption.update_marker(f"step-{num}-{idx}")
                 p_idx = prompt_idx_list[idx]
+                mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 iter_data_list.append(launch(text_reranker_pipeline, num, p_idx, iter_timestamp, input_text, proc_id, bench_hook))
     else:
         for idx, input_text in enumerate(text_list):
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
-                mem_consumption.update_marker(f"step-{num}-{idx}")
+                mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 iter_data_list.append(launch(text_reranker_pipeline, num, p_idx, iter_timestamp, input_text, proc_id, bench_hook))
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args["batch_size"], False, True, latency_unit="text")
