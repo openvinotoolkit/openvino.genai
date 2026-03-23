@@ -10,7 +10,7 @@ import logging
 import os
 import re
 import shlex
-import subprocess
+import subprocess  # nosec B404
 import sys
 import time
 from pathlib import Path
