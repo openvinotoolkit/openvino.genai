@@ -31,11 +31,13 @@ The user must provide:
 
 ## Prerequisites
 
-Activate the Python virtual environment:
+Activate the Python virtual environment before running any commands.
 
-```
-source .venv/bin/activate
-```
+1. **Locate the virtual environment** — check for common directories at the repository root: `.venv/`, `venv/`, `env/`. Use `list_dir` to find it. If none is found, ask the user for its location.
+2. **Activate** based on the current platform:
+   - **Linux/macOS**: `source <venv_path>/bin/activate`
+   - **Windows (cmd)**: `<venv_path>\Scripts\activate.bat`
+   - **Windows (PowerShell)**: `<venv_path>\Scripts\Activate.ps1`
 
 ## Procedure
 
