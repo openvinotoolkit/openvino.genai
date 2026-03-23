@@ -186,6 +186,17 @@ public:
 
     /// Higher level interface, which can process multiple prompts in continuous batching manner
     std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
+
+    /// Overload that accepts optional token_type_ids and position_ids (for VLM / multimodal use).
+    /// When the pipeline was constructed from a directory with inputs_embeds support, input_ids
+    /// is treated as inputs_embeds and position_ids specifies MRoPE position IDs + rope_delta.
+    std::vector<EncodedGenerationResult> generate(
+        const std::vector<ov::Tensor>& input_ids,
+        const std::vector<ov::genai::GenerationConfig>& sampling_params,
+        const ov::genai::StreamerVariant& streamer,
+        const std::optional<std::vector<ov::Tensor>>& token_type_ids,
+        const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids);
+
     std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
     
     std::vector<GenerationResult> generate(

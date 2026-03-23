@@ -286,6 +286,21 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(const 
     return encoded_results;
 }
 
+std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(
+    const std::vector<ov::Tensor>& input_ids,
+    const std::vector<ov::genai::GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    const std::optional<std::vector<ov::Tensor>>& token_type_ids,
+    const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids) {
+    auto encoded_results = m_impl->generate(input_ids, sampling_params, streamer, token_type_ids, position_ids);
+
+    for (auto& encoded_result : encoded_results) {
+        encoded_result.perf_metrics.load_time = m_impl->m_load_time_ms;
+    }
+
+    return encoded_results;
+}
+
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
     auto decoded_results = m_impl->generate(prompts, sampling_params, streamer);
 
