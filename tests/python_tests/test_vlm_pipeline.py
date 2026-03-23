@@ -71,6 +71,42 @@ from time import perf_counter
 logger = logging.getLogger(__name__)
 
 
+# Aggregated profiling storage for test_vlm_pipeline_match_optimum_with_resolutions.
+_OPTIMUM_VS_GENAI_PROFILING: dict[str, list[float]] = collections.defaultdict(list)
+
+
+def _record_optimum_vs_genai_timing(metric_name: str, duration_s: float) -> None:
+    _OPTIMUM_VS_GENAI_PROFILING[metric_name].append(duration_s)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _log_optimum_vs_genai_profile_summary():
+    """Log one aggregated summary for optimum-vs-genai profiling metrics."""
+    yield
+
+    if not _OPTIMUM_VS_GENAI_PROFILING:
+        return
+
+    logger.warning(
+        "VLM profiling summary | target=test_vlm_pipeline_match_optimum_with_resolutions | metrics=%d",
+        len(_OPTIMUM_VS_GENAI_PROFILING),
+    )
+
+    for metric_name in sorted(_OPTIMUM_VS_GENAI_PROFILING):
+        values = _OPTIMUM_VS_GENAI_PROFILING[metric_name]
+        avg_s = sum(values) / len(values)
+        min_s = min(values)
+        max_s = max(values)
+        logger.warning(
+            "VLM profiling summary | metric=%s | avg=%.3fs | min=%.3fs | max=%.3fs | count=%d",
+            metric_name,
+            avg_s,
+            min_s,
+            max_s,
+            len(values),
+        )
+
+
 class VisionType(Enum):
     IMAGE = "IMAGE"
     VIDEO = "VIDEO"
@@ -308,6 +344,7 @@ GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transforme
 
 @pytest.fixture(scope="module")
 def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
+    fixture_start = perf_counter()
     if not (2 <= len(request.param) <= 3):
         raise ValueError("expected request.param must be a tuple of length 2 or 3")
     ov_model, ov_backend = request.param[:2]
@@ -338,6 +375,12 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     finally:
         if vision_preprocess_env_set:
             os.environ.pop(key, None)
+
+    # Only record this fixture time for optimum-vs-genai parametrization
+    # where the 3rd param is preprocessing method (CPP/GRAPH).
+    if preprocess_method is not None:
+        _record_optimum_vs_genai_timing("fixture.ov_pipe_model", perf_counter() - fixture_start)
+
     return VlmModelInfo(
         ov_model,
         ov_backend,
@@ -1813,7 +1856,7 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo, vision_type: Vis
         ov_pipe.generate(vision_tag(0))
 
 
-def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
+def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video) -> tuple[collections.OrderedDict[str, float], str, str]:
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
             self.processor = processor
@@ -1926,9 +1969,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
 
     timings["total"] = perf_counter() - total_start
 
-    assert optimum_text == genai_text
-
-    return timings
+    return timings, optimum_text, genai_text
 
 
 # (Width, Height)
@@ -2142,32 +2183,35 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
     image_input_resolution: tuple[int, int],
     video_input_resolution: tuple[int, int],
 ):
+    test_case_start = perf_counter()
     resized_image = None
     resized_video = None
+
     if has_image:
+        fixture_start = perf_counter()
         resized_image = request.getfixturevalue("cat_image")
+        _record_optimum_vs_genai_timing("fixture.cat_image", perf_counter() - fixture_start)
+
+        resize_start = perf_counter()
         resized_image = resized_image.resize(image_input_resolution)
+        _record_optimum_vs_genai_timing("preprocess.image_resize", perf_counter() - resize_start)
 
     if has_video:
+        fixture_start = perf_counter()
         resized_video = request.getfixturevalue("synthetic_video")
+        _record_optimum_vs_genai_timing("fixture.synthetic_video", perf_counter() - fixture_start)
+
+        resize_start = perf_counter()
         resized_video = resize_video(resized_video, video_input_resolution)
+        _record_optimum_vs_genai_timing("preprocess.video_resize", perf_counter() - resize_start)
 
-    timings = run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
+    timings, optimum_text, genai_text = run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
+    for stage_name, duration_s in timings.items():
+        _record_optimum_vs_genai_timing(stage_name, duration_s)
 
-    # Log one compact line that is easy to grep in CI artifacts.
-    ordered_stage_names = [name for name in timings.keys() if name != "total"]
-    sorted_stage_names = sorted(ordered_stage_names, key=lambda name: timings[name], reverse=True)
-    stage_summary = ", ".join([f"{name}={timings[name]:.3f}s" for name in sorted_stage_names])
+    _record_optimum_vs_genai_timing("test_case_total", perf_counter() - test_case_start)
 
-    request.node.user_properties.append(("vlm_profile_total_s", f"{timings['total']:.3f}"))
-    request.node.user_properties.append(("vlm_profile_stages", stage_summary))
-
-    logger.warning(
-        "VLM profiling | test=%s | total=%.3fs | %s",
-        request.node.nodeid,
-        timings["total"],
-        stage_summary,
-    )
+    assert optimum_text == genai_text
 
 
 # CDPruner Tests
