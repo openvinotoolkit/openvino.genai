@@ -265,7 +265,7 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     std::vector<std::vector<size_t>> aggregated_selected;
 
     size_t global_offset = 0;
-    GENAI_DEBUG("[CDPruner] Multi-frame pruning: %zu frames", visual_features_list.size());
+    GENAI_DEBUG("[CDPruner] Chunked pruning: %zu chunks/regions", visual_features_list.size());
 
     for (size_t frame_idx = 0; frame_idx < visual_features_list.size(); ++frame_idx) {
         const auto& visual_feature = visual_features_list[frame_idx];
@@ -300,7 +300,7 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
         actual_total_tokens += feature.get_shape()[1];
     }
 
-    GENAI_DEBUG("[CDPruner] Concatenating %zu frames with total %zu tokens",
+    GENAI_DEBUG("[CDPruner] Concatenating %zu chunks/regions with total %zu tokens",
                 pruned_features_list.size(),
                 actual_total_tokens);
 

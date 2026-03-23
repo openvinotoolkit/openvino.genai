@@ -100,6 +100,10 @@ public:
      */
     std::vector<std::vector<size_t>> get_last_selected_tokens() const;
 
+    const std::vector<std::vector<bool>>& get_last_keep_flags() const {
+        return m_last_keep_flags;
+    }
+
     /**
      * @brief Result structure for CDPruner visual token pruning pipeline.
      * Contains all necessary information about the pruning operation and its results.
@@ -225,6 +229,8 @@ private:
     /// @brief Configuration storage (used before pruner is created; pruner becomes source of truth after creation)
     /// Device is stored in m_config.device
     cdpruner::Config m_config;
+    /// @brief Keep flags from last pruning operation
+    std::vector<std::vector<bool>> m_last_keep_flags;
 };
 
 }  // namespace ov::genai

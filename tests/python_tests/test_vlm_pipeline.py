@@ -1938,13 +1938,18 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
 # CDPruner Tests
 
 CDPRUNER_SUPPORTED_MODELS = [
+    "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
 ]
 
+CDPRUNER_BACKENDS_BY_MODEL = {
+    "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": ["PA"],
+}
+
 parametrize_cdpruner_models = pytest.mark.parametrize(
     "ov_pipe_model",
-    [(m, b) for m in CDPRUNER_SUPPORTED_MODELS for b in ATTENTION_BACKEND],
+    [(m, b) for m in CDPRUNER_SUPPORTED_MODELS for b in CDPRUNER_BACKENDS_BY_MODEL.get(m, ATTENTION_BACKEND)],
     ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],
 )
@@ -2053,7 +2058,7 @@ def test_cdpruner_disable_after_enable(ov_pipe_model: VlmModelInfo, cat_tensor: 
 @pytest.fixture(scope="module")
 def ov_continuous_batching_pipe_qwen2vl() -> ContinuousBatchingPipeline:
     """Fixture for Qwen2VL continuous batching pipeline."""
-    model_path = _get_ov_model(CDPRUNER_SUPPORTED_MODELS[0])
+    model_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen2vl")
     return ContinuousBatchingPipeline(model_path, SchedulerConfig(), "CPU")
 
 

@@ -61,6 +61,16 @@ public:
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
 
+    std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
+
+    std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) override;
+
+    std::string get_last_pruned_prompt(const std::string& original_prompt) const override;
+
+    void start_chat(const std::string& system_message) override;
+
+    void finish_chat() override;
+
     NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,

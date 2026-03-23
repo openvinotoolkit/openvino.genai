@@ -4,6 +4,7 @@
 
 #include "visual_language/minicpm/classes.hpp"
 
+#include "logger.hpp"
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
@@ -27,6 +28,300 @@ struct ImageSliceResult {
     ov::Tensor slices;
     ImageSize target_size;
 };
+
+struct MiniCPMPruningInputs {
+    ov::Tensor merged_visual_embeddings;
+    std::vector<std::array<size_t, 3>> visions_grid_thw;
+    std::vector<size_t> visions_sequence;
+};
+
+ov::Tensor create_sequential_position_ids(const size_t seq_len, const size_t history_size) {
+    ov::Tensor position_ids{ov::element::i64, {1, seq_len}};
+    std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), static_cast<int64_t>(history_size));
+    return position_ids;
+}
+
+ov::Tensor clone_input_ids_with_normalized_region_tokens(const ov::Tensor& input_ids,
+                                                         const int64_t im_start_id,
+                                                         const int64_t im_end_id,
+                                                         const int64_t slice_start_id,
+                                                         const int64_t slice_end_id) {
+    ov::Tensor normalized_input_ids(input_ids.get_element_type(), input_ids.get_shape());
+    std::memcpy(normalized_input_ids.data(), input_ids.data(), input_ids.get_byte_size());
+
+    int64_t* normalized_data = normalized_input_ids.data<int64_t>();
+    for (size_t idx = 0; idx < normalized_input_ids.get_size(); ++idx) {
+        if (normalized_data[idx] == slice_start_id) {
+            normalized_data[idx] = im_start_id;
+        } else if (normalized_data[idx] == slice_end_id) {
+            normalized_data[idx] = im_end_id;
+        }
+    }
+
+    return normalized_input_ids;
+}
+
+MiniCPMPruningInputs collect_visual_embeddings_for_pruning(const std::vector<EncodedImage>& images,
+                                                           const std::vector<size_t>& images_sequence,
+                                                           const size_t query_num,
+                                                           const size_t hidden_size) {
+    size_t region_count = 0;
+    for (size_t image_id : images_sequence) {
+        const EncodedImage& encoded_image = images.at(image_id);
+        ++region_count;
+        const ov::Shape& slices_shape = encoded_image.slices_shape;
+        if (!slices_shape.empty()) {
+            region_count += slices_shape.at(0) * slices_shape.at(1);
+        }
+    }
+
+    ov::Tensor merged_visual_embeddings{ov::element::f32, {region_count * query_num, hidden_size}};
+    float* merged_data = merged_visual_embeddings.data<float>();
+    size_t token_offset = 0;
+
+    std::vector<std::array<size_t, 3>> visions_grid_thw;
+    std::vector<size_t> visions_sequence;
+    visions_grid_thw.reserve(region_count);
+    visions_sequence.reserve(region_count);
+
+    for (size_t image_id : images_sequence) {
+        const EncodedImage& encoded_image = images.at(image_id);
+        const ov::Tensor& resampled_source = encoded_image.resampled_image.resampled_source;
+
+        OPENVINO_ASSERT(resampled_source.get_shape().size() == 3 &&
+                            resampled_source.get_shape().at(1) == query_num &&
+                            resampled_source.get_shape().at(2) == hidden_size,
+                        "Unexpected MiniCPM source embedding shape for CDPruner integration");
+
+        std::memcpy(merged_data + token_offset * hidden_size,
+                    resampled_source.data<const float>(),
+                    query_num * hidden_size * sizeof(float));
+        token_offset += query_num;
+        visions_grid_thw.push_back({1, 1, query_num});
+        visions_sequence.push_back(visions_sequence.size());
+
+        const ov::Shape& slices_shape = encoded_image.slices_shape;
+        if (!slices_shape.empty()) {
+            for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
+                for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
+                    const ov::Tensor& slice_embeddings = encoded_image.resampled_image.vision_embed_tensors.at(row_idx).at(col_idx);
+                    OPENVINO_ASSERT(slice_embeddings.get_shape().size() == 3 &&
+                                        slice_embeddings.get_shape().at(1) == query_num &&
+                                        slice_embeddings.get_shape().at(2) == hidden_size,
+                                    "Unexpected MiniCPM resampled slice embedding shape for CDPruner integration");
+                    std::memcpy(merged_data + token_offset * hidden_size,
+                                slice_embeddings.data<const float>(),
+                                query_num * hidden_size * sizeof(float));
+                    token_offset += query_num;
+                    visions_grid_thw.push_back({1, 1, query_num});
+                    visions_sequence.push_back(visions_sequence.size());
+                }
+            }
+        }
+    }
+
+    OPENVINO_ASSERT(token_offset == region_count * query_num,
+                    "MiniCPM CDPruner visual token collection size mismatch");
+
+    return {std::move(merged_visual_embeddings), std::move(visions_grid_thw), std::move(visions_sequence)};
+}
+
+ov::Tensor generate_pruned_minicpm_input_ids(const ov::Tensor& original_input_ids,
+                                             const std::vector<std::vector<bool>>& keep_flags_per_region,
+                                             const int64_t vision_pad_token_id,
+                                             const int64_t im_start_id,
+                                             const int64_t im_end_id,
+                                             const int64_t slice_start_id,
+                                             const int64_t slice_end_id) {
+    size_t removed_tokens = 0;
+    for (const auto& keep_flags : keep_flags_per_region) {
+        removed_tokens += static_cast<size_t>(std::count(keep_flags.begin(), keep_flags.end(), false));
+    }
+
+    const size_t original_seq_len = original_input_ids.get_shape().at(1);
+    const size_t pruned_seq_len = original_seq_len - removed_tokens;
+    ov::Tensor pruned_input_ids{ov::element::i64, {1, pruned_seq_len}};
+
+    const int64_t* original_data = original_input_ids.data<const int64_t>();
+    int64_t* pruned_data = pruned_input_ids.data<int64_t>();
+
+    bool inside_vision_region = false;
+    size_t region_idx = 0;
+    size_t pad_idx = 0;
+    size_t write_idx = 0;
+
+    for (size_t seq_idx = 0; seq_idx < original_seq_len; ++seq_idx) {
+        const int64_t token_id = original_data[seq_idx];
+        const bool is_region_start = token_id == im_start_id || token_id == slice_start_id;
+        const bool is_region_end = token_id == im_end_id || token_id == slice_end_id;
+
+        if (is_region_start) {
+            OPENVINO_ASSERT(region_idx < keep_flags_per_region.size(),
+                            "MiniCPM CDPruner region metadata exhausted while pruning input ids");
+            inside_vision_region = true;
+            pad_idx = 0;
+        }
+
+        if (inside_vision_region && token_id == vision_pad_token_id) {
+            OPENVINO_ASSERT(region_idx < keep_flags_per_region.size(),
+                            "MiniCPM CDPruner region index out of range while pruning input ids");
+            const auto& keep_flags = keep_flags_per_region.at(region_idx);
+            OPENVINO_ASSERT(pad_idx < keep_flags.size(),
+                            "MiniCPM CDPruner visual token index out of range while pruning input ids");
+            if (keep_flags[pad_idx]) {
+                pruned_data[write_idx++] = token_id;
+            }
+            ++pad_idx;
+            continue;
+        }
+
+        pruned_data[write_idx++] = token_id;
+
+        if (inside_vision_region && is_region_end) {
+            const auto& keep_flags = keep_flags_per_region.at(region_idx);
+            OPENVINO_ASSERT(pad_idx == keep_flags.size(),
+                            "MiniCPM CDPruner keep flags do not match consumed visual tokens");
+            inside_vision_region = false;
+            ++region_idx;
+        }
+    }
+
+    OPENVINO_ASSERT(write_idx == pruned_seq_len, "MiniCPM CDPruner pruned input ids length mismatch");
+    OPENVINO_ASSERT(region_idx == keep_flags_per_region.size(), "MiniCPM CDPruner did not process all vision regions");
+    OPENVINO_ASSERT(!inside_vision_region, "MiniCPM CDPruner ended inside a vision region");
+
+    return pruned_input_ids;
+}
+
+void update_kv_cache_tail(utils::KVCacheState& kv_cache_state,
+                          const size_t history_size,
+                          const ov::Tensor& pruned_input_ids) {
+    std::vector<int64_t>& kv_history = kv_cache_state.get_state();
+    OPENVINO_ASSERT(kv_history.size() == history_size + pruned_input_ids.get_size(),
+                    "MiniCPM CDPruner KV cache state size mismatch after pruning");
+
+    const int64_t* pruned_data = pruned_input_ids.data<const int64_t>();
+    std::copy(pruned_data, pruned_data + pruned_input_ids.get_size(), kv_history.begin() + history_size);
+}
+
+void inject_visual_embeddings(ov::Tensor& inputs_embeds,
+                              const ov::Tensor& input_ids,
+                              const ov::Tensor& visual_embeddings,
+                              const int64_t vision_pad_token_id,
+                              const int64_t im_start_id,
+                              const int64_t im_end_id,
+                              const int64_t slice_start_id,
+                              const int64_t slice_end_id,
+                              const size_t hidden_size) {
+    const int64_t* input_ids_data = input_ids.data<const int64_t>();
+    const float* visual_data = visual_embeddings.data<const float>();
+    float* inputs_embeds_data = inputs_embeds.data<float>();
+
+    bool inside_vision_region = false;
+    size_t visual_token_idx = 0;
+    const size_t visual_token_count = visual_embeddings.get_shape().at(0);
+
+    for (size_t seq_idx = 0; seq_idx < input_ids.get_shape().at(1); ++seq_idx) {
+        const int64_t token_id = input_ids_data[seq_idx];
+        if (token_id == im_start_id || token_id == slice_start_id) {
+            inside_vision_region = true;
+            continue;
+        }
+        if (token_id == im_end_id || token_id == slice_end_id) {
+            inside_vision_region = false;
+            continue;
+        }
+        if (inside_vision_region && token_id == vision_pad_token_id) {
+            OPENVINO_ASSERT(visual_token_idx < visual_token_count,
+                            "MiniCPM CDPruner visual embedding count does not match pad token count");
+            std::memcpy(inputs_embeds_data + seq_idx * hidden_size,
+                        visual_data + visual_token_idx * hidden_size,
+                        hidden_size * sizeof(float));
+            ++visual_token_idx;
+        }
+    }
+
+    OPENVINO_ASSERT(visual_token_idx == visual_token_count,
+                    "MiniCPM CDPruner did not consume all collected visual embeddings");
+}
+
+std::string get_last_pruned_minicpm_prompt(const std::string& original_prompt,
+                                           const std::vector<std::vector<bool>>& keep_flags_per_region,
+                                           const std::string& im_start,
+                                           const std::string& im_end,
+                                           const std::string& slice_start,
+                                           const std::string& slice_end,
+                                           const std::string& vision_pad_token) {
+    if (keep_flags_per_region.empty()) {
+        return original_prompt;
+    }
+
+    std::string pruned_prompt;
+    pruned_prompt.reserve(original_prompt.size());
+
+    size_t pos = 0;
+    bool inside_vision_region = false;
+    size_t region_idx = 0;
+    size_t pad_idx = 0;
+
+    while (pos < original_prompt.size()) {
+        size_t next_im_start = original_prompt.find(im_start, pos);
+        size_t next_im_end = original_prompt.find(im_end, pos);
+        size_t next_slice_start = original_prompt.find(slice_start, pos);
+        size_t next_slice_end = original_prompt.find(slice_end, pos);
+        size_t next_pad = inside_vision_region ? original_prompt.find(vision_pad_token, pos) : std::string::npos;
+
+        size_t next_token_pos = std::min({next_im_start, next_im_end, next_slice_start, next_slice_end, next_pad});
+        if (next_token_pos == std::string::npos) {
+            pruned_prompt.append(original_prompt, pos, std::string::npos);
+            break;
+        }
+
+        if (next_token_pos > pos) {
+            pruned_prompt.append(original_prompt, pos, next_token_pos - pos);
+            pos = next_token_pos;
+        }
+
+        if (next_token_pos == next_im_start) {
+            OPENVINO_ASSERT(region_idx < keep_flags_per_region.size(),
+                            "MiniCPM CDPruner region metadata exhausted while pruning prompt");
+            pruned_prompt.append(im_start);
+            pos += im_start.size();
+            inside_vision_region = true;
+            pad_idx = 0;
+        } else if (next_token_pos == next_slice_start) {
+            OPENVINO_ASSERT(region_idx < keep_flags_per_region.size(),
+                            "MiniCPM CDPruner region metadata exhausted while pruning prompt");
+            pruned_prompt.append(slice_start);
+            pos += slice_start.size();
+            inside_vision_region = true;
+            pad_idx = 0;
+        } else if (next_token_pos == next_im_end) {
+            pruned_prompt.append(im_end);
+            pos += im_end.size();
+            inside_vision_region = false;
+            ++region_idx;
+        } else if (next_token_pos == next_slice_end) {
+            pruned_prompt.append(slice_end);
+            pos += slice_end.size();
+            inside_vision_region = false;
+            ++region_idx;
+        } else {
+            OPENVINO_ASSERT(region_idx < keep_flags_per_region.size(),
+                            "MiniCPM CDPruner region metadata exhausted while pruning prompt pads");
+            const auto& keep_flags = keep_flags_per_region.at(region_idx);
+            OPENVINO_ASSERT(pad_idx < keep_flags.size(),
+                            "MiniCPM CDPruner prompt pad index out of range");
+            if (keep_flags[pad_idx]) {
+                pruned_prompt.append(vision_pad_token);
+            }
+            ++pad_idx;
+            pos += vision_pad_token.size();
+        }
+    }
+
+    return pruned_prompt;
+}
 
 
 int ensure_divide(int length, int patch_size) {
@@ -633,15 +928,17 @@ NormalizedPrompt InputsEmbedderMiniCPM::normalize_prompt(const std::string& prom
 }
 
 ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
-    std::string unk64;
-    ov::Tensor encoded_input = get_encoded_input_ids(unified_prompt, metrics);
+    (void)recalculate_merged_embeddings;
+    ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
+    m_position_ids = create_sequential_position_ids(input_ids.get_shape().at(1), m_prev_hist_length);
+    m_rope_delta = 0;
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor inputs_embeds = m_embedding->infer(req, encoded_input);
+    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
     OPENVINO_ASSERT(
-        m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
+        m_vlm_config.hidden_size == text_embeds.get_shape().at(2),
         "Unexpected embedding size"
     );
     auto start_tokenizer_time = std::chrono::steady_clock::now();
@@ -659,46 +956,125 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_p
         4 == special_tokens.get_shape().at(1),
         "Every special token must be represented with a single int."
     );
+    ov::Tensor unk_token = m_tokenizer.encode(m_vlm_config.unk, ov::genai::add_special_tokens(false)).input_ids;
+    OPENVINO_ASSERT(1 == unk_token.get_shape().at(1), "MiniCPM vision pad token must be represented with a single int.");
     int64_t im_start_id = special_tokens.data<int64_t>()[0];
     int64_t im_end_id = special_tokens.data<int64_t>()[1];
     int64_t slice_start_id = special_tokens.data<int64_t>()[2];
     int64_t slice_end_id = special_tokens.data<int64_t>()[3];
-    int64_t im_start_pos = 0, slice_start_pos = 0;
-    int64_t* begin = encoded_input.data<int64_t>();
-    int64_t* ids = begin;
-    size_t encoded_input_size = encoded_input.get_size();
-    int64_t* end = ids + encoded_input_size;
-    float* inputs_embeds_data = inputs_embeds.data<float>();
-    for (size_t image_id : images_sequence) {
-        const EncodedImage& encoded_image = images.at(image_id);
-        const ov::Tensor& resampled_source = encoded_image.resampled_image.resampled_source;
-        auto emb = resampled_source.data<float>();
-        ids = std::find(ids, end, im_start_id);
-        OPENVINO_ASSERT(end != ids);
-        ++ids;
-        std::copy_n(emb, resampled_source.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
-        ids += m_vlm_config.query_num;
-        ov::Shape slices_shape = encoded_image.slices_shape;
-        if (slices_shape.size()) {
-            size_t token_idx = 0;
-            for (size_t i = 0; i < slices_shape.at(0); ++i) {
-                for (size_t ja = 0; ja < slices_shape.at(1); ++ja) {
-                    const ov::Tensor& vision_embed_tensor_i_j = encoded_image.resampled_image.vision_embed_tensors[i][ja];
-                    ids = std::find(ids, end, slice_start_id);
-                    OPENVINO_ASSERT(end != ids);
-                    ++ids;
-                    std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
-                    ids += m_vlm_config.query_num;
+    int64_t vision_pad_token_id = unk_token.data<int64_t>()[0];
+
+    ov::Tensor merged_visual_embeddings;
+    if (!images.empty()) {
+        auto pruning_inputs = collect_visual_embeddings_for_pruning(images,
+                                                                   images_sequence,
+                                                                   m_vlm_config.query_num,
+                                                                   m_vlm_config.hidden_size);
+        merged_visual_embeddings = pruning_inputs.merged_visual_embeddings;
+
+        if (is_cdpruner_active()) {
+            const ov::Tensor normalized_input_ids = clone_input_ids_with_normalized_region_tokens(input_ids,
+                                                                                                  im_start_id,
+                                                                                                  im_end_id,
+                                                                                                  slice_start_id,
+                                                                                                  slice_end_id);
+            const std::vector<size_t> tokens_per_vision(pruning_inputs.visions_sequence.size(), m_vlm_config.query_num);
+            const size_t history_size_before_pruning = m_prev_hist_length;
+
+            PruningContext pruning_context{normalized_input_ids,
+                                           text_embeds,
+                                           merged_visual_embeddings,
+                                           pruning_inputs.visions_sequence.size(),
+                                           pruning_inputs.visions_grid_thw,
+                                           pruning_inputs.visions_sequence,
+                                           tokens_per_vision,
+                                           vision_pad_token_id,
+                                           im_start_id,
+                                           im_end_id,
+                                           1};
+
+            if (auto pruning_result = execute_pruning_pipeline(pruning_context)) {
+                merged_visual_embeddings = pruning_result->pruned_embeddings;
+                text_embeds = pruning_result->pruned_text_embeds;
+                input_ids = generate_pruned_minicpm_input_ids(input_ids,
+                                                              pruning_result->keep_flags_per_region,
+                                                              vision_pad_token_id,
+                                                              im_start_id,
+                                                              im_end_id,
+                                                              slice_start_id,
+                                                              slice_end_id);
+                update_kv_cache_tail(m_kv_cache_state, history_size_before_pruning, input_ids);
+                m_prev_hist_length = m_kv_cache_state.get_state().size();
+
+                if (pruning_result->updated_rope_delta.has_value()) {
+                    m_rope_delta = pruning_result->updated_rope_delta.value();
                 }
+
+                GENAI_INFO("[MiniCPM] [CDPruner] Visual tokens: %zu -> %zu (pruned %zu, %.1f%%)",
+                           pruning_result->original_visual_tokens,
+                           pruning_result->pruned_visual_tokens,
+                           pruning_result->original_visual_tokens - pruning_result->pruned_visual_tokens,
+                           100.0 * static_cast<double>(pruning_result->original_visual_tokens - pruning_result->pruned_visual_tokens) /
+                               static_cast<double>(pruning_result->original_visual_tokens));
             }
         }
     }
 
-    // inputs_embeds is bound to infer request that can be used by another thread after leaving this scope
-    // so we need to return a copy to make sure data does not get corrupted 
-    ov::Tensor inputs_embeds_copy(inputs_embeds.get_element_type(), inputs_embeds.get_shape());
-    std::memcpy(inputs_embeds_copy.data(), inputs_embeds.data(), inputs_embeds.get_byte_size());
-    return inputs_embeds_copy;
+    ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+    std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+
+    if (merged_visual_embeddings.get_size() > 0) {
+        inject_visual_embeddings(inputs_embeds,
+                                 input_ids,
+                                 merged_visual_embeddings,
+                                 vision_pad_token_id,
+                                 im_start_id,
+                                 im_end_id,
+                                 slice_start_id,
+                                 slice_end_id,
+                                 m_vlm_config.hidden_size);
+    }
+
+    return inputs_embeds;
+}
+
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderMiniCPM::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
+    if (m_position_ids.get_size() > 0 && m_position_ids.get_shape().at(1) == inputs_embeds_size) {
+        return {m_position_ids, m_rope_delta};
+    }
+    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size);
+}
+
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderMiniCPM::get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) {
+    (void)rope_delta;
+    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size);
+}
+
+std::string InputsEmbedderMiniCPM::get_last_pruned_prompt(const std::string& original_prompt) const {
+    if (!is_cdpruner_active() || !m_pruning_processor) {
+        return original_prompt;
+    }
+
+    const auto& keep_flags_per_region = m_pruning_processor->get_last_keep_flags();
+    return get_last_pruned_minicpm_prompt(original_prompt,
+                                          keep_flags_per_region,
+                                          m_vlm_config.im_start,
+                                          m_vlm_config.im_end,
+                                          m_vlm_config.slice_start,
+                                          m_vlm_config.slice_end,
+                                          m_vlm_config.unk);
+}
+
+void InputsEmbedderMiniCPM::start_chat(const std::string& system_message) {
+    IInputsEmbedder::start_chat(system_message);
+    m_position_ids = ov::Tensor();
+    m_rope_delta = 0;
+}
+
+void InputsEmbedderMiniCPM::finish_chat() {
+    IInputsEmbedder::finish_chat();
+    m_position_ids = ov::Tensor();
+    m_rope_delta = 0;
 }
 
 ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image, const ImageSize& target_size, size_t pad_to_max) {

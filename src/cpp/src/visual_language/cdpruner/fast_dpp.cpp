@@ -253,12 +253,6 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
                                split_point);
     }
 
-    // OpenCL requires even total token count due to internal batch splitting
-    // Calculate adjusted token counts for OpenCL
-    size_t original_num_tokens = tokens_first_half + tokens_second_half;
-    size_t num_tokens_to_keep = (original_num_tokens % 2 == 0) ? original_num_tokens : original_num_tokens + 1;
-    size_t opencl_tokens_first_half = num_tokens_to_keep / 2;
-
     // Get tensor shapes: [B, tokens/2, tokens/2]
     auto first_shape = kernel_matrix_first.get_shape();
     auto second_shape = kernel_matrix_second.get_shape();
@@ -270,127 +264,128 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
                     "Kernel matrices must be square");
     OPENVINO_ASSERT(first_shape[0] == second_shape[0], "Kernel matrices must have the same batch size");
 
-    size_t original_batch_size = first_shape[0];
-    size_t first_tokens = first_shape[1];
-    size_t second_tokens = second_shape[1];
-    ov::Tensor merged_kernel;
+    const size_t batch_size = first_shape[0];
+    const size_t first_tokens = first_shape[1];
+    const size_t second_tokens = second_shape[1];
 
-    // Check if both matrices have the same token size
-    if (first_tokens == second_tokens) {
-        // Create merged tensor with shape [original_batch_size, 2, tokens, tokens]
-        merged_kernel = ov::Tensor(ov::element::f32, {original_batch_size, 2, first_tokens, first_tokens});
-        float* merged_data = merged_kernel.data<float>();
-
-        const float* first_data = kernel_matrix_first.data<const float>();
-        const float* second_data = kernel_matrix_second.data<const float>();
-
-        size_t matrix_size = first_tokens * first_tokens;
-        size_t matrix_size_bytes = matrix_size * sizeof(float);
-
-        // Copy data for each original batch
-        for (size_t b = 0; b < original_batch_size; ++b) {
-            size_t first_src_offset = b * matrix_size;
-            size_t first_dst_offset = b * 2 * matrix_size + 0 * matrix_size;
-            std::memcpy(merged_data + first_dst_offset, first_data + first_src_offset, matrix_size_bytes);
-
-            size_t second_src_offset = b * matrix_size;
-            size_t second_dst_offset = b * 2 * matrix_size + 1 * matrix_size;
-            std::memcpy(merged_data + second_dst_offset, second_data + second_src_offset, matrix_size_bytes);
-        }
-
-    } else {
-        // Pad to max size, fill padding with first token's data from larger matrix
-        size_t max_tokens = std::max(first_tokens, second_tokens);
-        merged_kernel = ov::Tensor(ov::element::f32, {original_batch_size, 2, max_tokens, max_tokens});
-        float* merged_data = merged_kernel.data<float>();
-
-        const float* first_data = kernel_matrix_first.data<const float>();
-        const float* second_data = kernel_matrix_second.data<const float>();
-
-        const float* larger_matrix_data = (first_tokens > second_tokens) ? first_data : second_data;
-        size_t larger_matrix_tokens = std::max(first_tokens, second_tokens);
-
-        for (size_t b = 0; b < original_batch_size; ++b) {
-            const float* padding_source = larger_matrix_data + b * larger_matrix_tokens * larger_matrix_tokens;
-
-            for (size_t i = 0; i < max_tokens; ++i) {
-                size_t dst_offset = b * 2 * max_tokens * max_tokens + 0 * max_tokens * max_tokens + i * max_tokens;
-                if (i < first_tokens) {
-                    size_t src_offset = b * first_tokens * first_tokens + i * first_tokens;
-                    std::memcpy(merged_data + dst_offset, first_data + src_offset, first_tokens * sizeof(float));
-                    if (first_tokens < max_tokens) {
-                        for (size_t j = first_tokens; j < max_tokens; ++j) {
-                            merged_data[dst_offset + j] = padding_source[0];
-                        }
-                    }
-                } else {
-                    for (size_t j = 0; j < max_tokens; ++j) {
-                        merged_data[dst_offset + j] = padding_source[0];
-                    }
-                }
-            }
-
-            for (size_t i = 0; i < max_tokens; ++i) {
-                size_t dst_offset = b * 2 * max_tokens * max_tokens + 1 * max_tokens * max_tokens + i * max_tokens;
-                if (i < second_tokens) {
-                    size_t src_offset = b * second_tokens * second_tokens + i * second_tokens;
-                    std::memcpy(merged_data + dst_offset, second_data + src_offset, second_tokens * sizeof(float));
-                    if (second_tokens < max_tokens) {
-                        for (size_t j = second_tokens; j < max_tokens; ++j) {
-                            merged_data[dst_offset + j] = padding_source[0];
-                        }
-                    }
-                } else {
-                    for (size_t j = 0; j < max_tokens; ++j) {
-                        merged_data[dst_offset + j] = padding_source[0];
-                    }
-                }
-            }
-        }
-    }
+    const float* first_data = kernel_matrix_first.data<const float>();
+    const float* second_data = kernel_matrix_second.data<const float>();
+    const size_t first_batch_matrix_size = first_tokens * first_tokens;
+    const size_t second_batch_matrix_size = second_tokens * second_tokens;
 
     std::vector<std::vector<size_t>> batch_results;
-    batch_results.reserve(original_batch_size);
+    batch_results.reserve(batch_size);
 
-    // The merged_kernel has shape [original_batch_size, 2, max_tokens, max_tokens] representing two halves
-    // Extract each batch and process separately
-    size_t max_tokens = (first_tokens == second_tokens) ? first_tokens : std::max(first_tokens, second_tokens);
-    const float* merged_data = merged_kernel.data<const float>();
-    for (size_t batch_idx = 0; batch_idx < original_batch_size; ++batch_idx) {
-        ov::Tensor single_batch_kernel(ov::element::f32, {2, max_tokens, max_tokens});
-        float* single_batch_data = single_batch_kernel.data<float>();
+    OPENVINO_ASSERT(m_opencl_dpp, "OpenCL DPP must be initialized");
 
-        size_t batch_matrix_size = 2 * max_tokens * max_tokens;
-        size_t batch_offset = batch_idx * batch_matrix_size;
-        std::memcpy(single_batch_data, merged_data + batch_offset, batch_matrix_size * sizeof(float));
+    // OpenCL selects the same count per batch (selected_token_num / batch_size).
+    // When tokens_first_half != tokens_second_half (odd total), use max to avoid truncation.
+    const size_t per_batch_select = std::max(tokens_first_half, tokens_second_half);
+    const size_t total_select = per_batch_select * 2;  // always even for OpenCL
 
-        auto selected_tokens = m_opencl_dpp->select(single_batch_kernel, num_tokens_to_keep);
+    if (first_tokens == second_tokens) {
+        // Fast path: equal-sized matrices can be merged into [2, N, N] for single GPU dispatch
+        // This leverages GPU batch parallelism (both halves processed simultaneously)
+        const size_t matrix_size = first_tokens * first_tokens;
 
-        std::vector<size_t> merged_selection;
-        // Filter out padded tokens and convert to absolute positions
-        for (size_t i = 0; i < selected_tokens.size(); ++i) {
-            size_t token_idx = selected_tokens[i];
-            if (i < opencl_tokens_first_half) {
+        for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+            // Merge two [1, N, N] matrices into [2, N, N]
+            ov::Tensor merged_kernel(ov::element::f32, {2, first_tokens, first_tokens});
+            float* merged_data = merged_kernel.data<float>();
+            std::memcpy(merged_data, first_data + batch_idx * matrix_size, matrix_size * sizeof(float));
+            std::memcpy(merged_data + matrix_size, second_data + batch_idx * matrix_size, matrix_size * sizeof(float));
+
+            // Single GPU call processes both halves in parallel
+            auto selected_tokens = m_opencl_dpp->select(merged_kernel, total_select);
+
+            // Take tokens_first_half from batch 0 results, tokens_second_half from batch 1 results
+            std::vector<size_t> merged_selection;
+            merged_selection.reserve(tokens_first_half + tokens_second_half);
+
+            for (size_t i = 0; i < tokens_first_half; ++i) {
+                size_t token_idx = selected_tokens[i];
+                OPENVINO_ASSERT(token_idx < first_tokens,
+                                "OpenCL DPP selected out-of-range index for first split: ",
+                                token_idx, " >= ", first_tokens);
+                merged_selection.push_back(token_idx);
+            }
+
+            for (size_t i = 0; i < tokens_second_half; ++i) {
+                size_t token_idx = selected_tokens[per_batch_select + i];
+                OPENVINO_ASSERT(token_idx < second_tokens,
+                                "OpenCL DPP selected out-of-range index for second split: ",
+                                token_idx, " >= ", second_tokens);
+                merged_selection.push_back(token_idx + split_point);
+            }
+
+            std::sort(merged_selection.begin(), merged_selection.end());
+            batch_results.push_back(std::move(merged_selection));
+        }
+    } else {
+        // Zero-padding path: pad smaller matrix to max_tokens, merge into [2, max_N, max_N].
+        // This leverages GPU batch parallelism even when matrices differ by 1 in size.
+        // Zero-padding guarantees padded tokens have di2s=0 and will never be selected by DPP,
+        // because real tokens always have positive di2s (kernel diagonal = self-similarity > 0).
+        const size_t max_tokens = std::max(first_tokens, second_tokens);
+        const size_t max_matrix_size = max_tokens * max_tokens;
+
+        GENAI_DEBUG("[CDPruner] Zero-padding split sizes (%zu vs %zu) -> %zu, selecting %zu per batch",
+                    first_tokens, second_tokens, max_tokens, per_batch_select);
+
+        for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+            // Create merged [2, max_tokens, max_tokens] tensor, zero-initialized
+            ov::Tensor merged_kernel(ov::element::f32, {2, max_tokens, max_tokens});
+            float* merged_data = merged_kernel.data<float>();
+            std::memset(merged_data, 0, 2 * max_matrix_size * sizeof(float));
+
+            // Copy first matrix rows into merged_kernel[0], zero-padding right/bottom if needed
+            const float* src_first = first_data + batch_idx * first_batch_matrix_size;
+            for (size_t i = 0; i < first_tokens; ++i) {
+                std::memcpy(merged_data + i * max_tokens,
+                            src_first + i * first_tokens,
+                            first_tokens * sizeof(float));
+            }
+
+            // Copy second matrix rows into merged_kernel[1], zero-padding right/bottom if needed
+            const float* src_second = second_data + batch_idx * second_batch_matrix_size;
+            float* dst_second = merged_data + max_matrix_size;
+            for (size_t i = 0; i < second_tokens; ++i) {
+                std::memcpy(dst_second + i * max_tokens,
+                            src_second + i * second_tokens,
+                            second_tokens * sizeof(float));
+            }
+
+            // Single GPU call processes both halves in parallel
+            auto selected_tokens = m_opencl_dpp->select(merged_kernel, total_select);
+
+            // Split results: first per_batch_select are from first half, rest from second half.
+            // Filter out padded indices — after many Cholesky updates, floating-point drift
+            // can make a real token's di2s go slightly negative, causing the DPP to prefer
+            // a padded position (di2s=0). We skip such indices safely.
+            std::vector<size_t> merged_selection;
+            merged_selection.reserve(tokens_first_half + tokens_second_half);
+
+            size_t collected = 0;
+            for (size_t i = 0; i < per_batch_select && collected < tokens_first_half; ++i) {
+                size_t token_idx = selected_tokens[i];
                 if (token_idx < first_tokens) {
                     merged_selection.push_back(token_idx);
+                    ++collected;
                 }
-            } else {
+            }
+
+            collected = 0;
+            for (size_t i = 0; i < per_batch_select && collected < tokens_second_half; ++i) {
+                size_t token_idx = selected_tokens[per_batch_select + i];
                 if (token_idx < second_tokens) {
                     merged_selection.push_back(token_idx + split_point);
+                    ++collected;
                 }
-                // else: skip padded token
             }
-        }
 
-        // Trim to original requested token count if we padded to even number
-        // This removes the last selected token(s) which have the lowest quality
-        if (merged_selection.size() > original_num_tokens) {
-            merged_selection.resize(original_num_tokens);
+            std::sort(merged_selection.begin(), merged_selection.end());
+            batch_results.push_back(std::move(merged_selection));
         }
-
-        // Sort final result to maintain order
-        std::sort(merged_selection.begin(), merged_selection.end());
-        batch_results.push_back(std::move(merged_selection));
     }
 
     return batch_results;

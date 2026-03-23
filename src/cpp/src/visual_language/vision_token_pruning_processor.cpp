@@ -613,8 +613,8 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
         OPENVINO_ASSERT(kept_indices_per_image.size() == 1 && region_count > 1, "Kept token indices layout mismatch");
 
         std::vector<std::vector<size_t>> normalized(region_count);
-        size_t offset = 0;
         for (size_t kept_idx : kept_indices_per_image[0]) {
+            size_t offset = 0;
             for (size_t img_idx = 0; img_idx < region_count; ++img_idx) {
                 if (kept_idx >= offset && kept_idx < offset + tokens_per_image[img_idx]) {
                     normalized[img_idx].push_back(kept_idx - offset);
@@ -649,12 +649,13 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
     ov::Tensor new_position_ids(original_position_ids.get_element_type(), {batch_size, new_seq_len});
     int64_t* pos_data = new_position_ids.data<int64_t>();
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
+    const int64_t* original_pos_data = original_position_ids.data<const int64_t>();
 
     // Process each batch
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
         size_t write_idx = 0, image_idx = 0, visual_idx = 0;
         bool inside_vision = false;
-        int64_t next_pos = 0;
+        int64_t next_pos = original_pos_data[batch_idx * seq_len];
         size_t batch_offset = batch_idx * seq_len;
         size_t out_offset = batch_idx * new_seq_len;
 
@@ -800,6 +801,8 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
                     "KV cache history is shorter than recorded previous history length");
     kv_history.resize(prev_hist_length);
     kv_cache_state.add_inputs(result.pruned_input_ids);
+
+    m_last_keep_flags = result.keep_flags_per_region;
 
     auto pruning_end = std::chrono::high_resolution_clock::now();
     auto pruning_duration = std::chrono::duration_cast<std::chrono::milliseconds>(pruning_end - pruning_start).count();
