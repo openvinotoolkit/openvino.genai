@@ -36,7 +36,7 @@ clip_image_f32 preprocess_idefics3_image(const clip_image_u8& image, const Proce
     return normalized_image;
 }
 
-ov::Tensor create_patch_attention_mask(int num_patches_h, int num_patches_w) {
+ov::Tensor create_patch_attention_mask(size_t num_patches_h, size_t num_patches_w) {
     // Create attention mask for patches
     ov::Tensor mask(ov::element::boolean, {1, num_patches_h, num_patches_w});
     bool* mask_data = mask.data<bool>();
@@ -44,12 +44,12 @@ ov::Tensor create_patch_attention_mask(int num_patches_h, int num_patches_w) {
     return mask;
 }
 
-ov::Tensor create_patch_position_ids(int num_patches) {
+ov::Tensor create_patch_position_ids(size_t num_patches) {
     // Create position IDs for patches
     ov::Tensor position_ids(ov::element::i64, {1, num_patches});
     int64_t* pos_data = position_ids.data<int64_t>();
-    for (int i = 0; i < num_patches; ++i) {
-        pos_data[i] = i;
+    for (size_t i = 0; i < num_patches; ++i) {
+        pos_data[i] = static_cast<int64_t>(i);
     }
     return position_ids;
 }
