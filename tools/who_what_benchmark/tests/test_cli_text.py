@@ -96,8 +96,6 @@ def test_text_gt_data(tmp_path):
 
 
 def test_text_output_directory(tmp_path):
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 173169")
     temp_file_name = tmp_path / "gt.csv"
     output = run_wwb([
         "--base-model",
@@ -132,8 +130,6 @@ def test_text_output_directory(tmp_path):
 
 
 def test_text_verbose():
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 173169")
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -188,8 +184,6 @@ def test_text_hf_model(model_id, tmp_path):
 
 
 def test_text_genai_model():
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 173169")
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -206,8 +200,10 @@ def test_text_genai_model():
 
 
 def test_text_genai_cb_model(tmp_path):
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 173169")
+    if sys.platform == "darwin":
+        pytest.xfail(
+            "Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only"
+        )
     config_path = tmp_path / "config.json"
     with open(config_path, "w") as f:
         config = {
@@ -251,8 +247,10 @@ def test_text_genai_cb_model(tmp_path):
 
 
 def test_text_genai_json_string_config():
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 173169")
+    if sys.platform == "darwin":
+        pytest.xfail(
+            "Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only"
+        )
 
     cb_json_string = "{\"max_num_batched_tokens\": 4096}"
     ov_json_string = "{\"KV_CACHE_PRECISION\":\"f16\", \"ATTENTION_BACKEND\": \"PA\"}"
@@ -283,6 +281,9 @@ def test_text_genai_json_string_config():
     [("optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM")],
 )
 def test_text_chat_model(model_id, tmp_path):
+    if sys.platform == "darwin":
+        pytest.xfail("Ticket 183495")
+
     SIMILARITY_THRESHOLD = 0.9
     temp_file_name = tmp_path / "gt.csv"
     chat_model_path = convert_text_model(model_id, model_id.split("/")[1], _convert_base)

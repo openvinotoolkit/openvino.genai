@@ -1,49 +1,45 @@
 from typing import Any, Union
 
 import os
-import yaml
 import json
 import pandas as pd
 from tqdm import tqdm
-from importlib.resources import files
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
-from .whowhat_metrics import TextDivergency, TextSimilarity
-from .utils import patch_awq_for_inference, get_ignore_parameters_flag
-import inspect
+from .whowhat_metrics import TextSimilarity
+from .utils import get_ignore_parameters_flag, load_image
+from .visual_utils import MODEL_TYPE_TO_CLS_MAPPING, fix_phi3_v_eos_token_id
 
 
-@register_evaluator("text-chat")
+@register_evaluator("visual-text-chat")
 class ChatTextEvaluator(TextEvaluator):
-    CHAT_PROMPTS_FILE = "text_chat_prompts.yaml"
+    CHAT_PROMPTS_FILE = "visualtext_image_chat_prompts.json"
 
     def __init__(
         self,
         base_model: Any = None,
         tokenizer: Any = None,
+        processor: Any = None,
         gt_data: str = None,
         test_data: Union[str, list] = None,
-        metrics="similarity",
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
         max_new_tokens=128,
         num_samples=None,
         gen_answer_fn=None,
-        empty_adapters=False,
-        num_assistant_tokens=0,
-        assistant_confidence_threshold=0.0,
+        pruning_ratio=None,
+        relevance_weight=None,
     ) -> None:
         if base_model is None and gt_data is None:
             raise ValueError("Text generation pipeline for evaluation or ground truth data must be defined")
 
         self.test_data = test_data
-        self.metrics = metrics
         self.max_new_tokens = max_new_tokens
         self.tokenizer = tokenizer
         self.num_samples = num_samples
         self.generation_fn = gen_answer_fn
-        self.num_assistant_tokens = num_assistant_tokens
-        self.assistant_confidence_threshold = assistant_confidence_threshold
-        self.empty_adapters = empty_adapters
+        self.pruning_ratio = pruning_ratio
+        self.relevance_weight = relevance_weight
+        self.processor = processor
 
         self.gt_dir = os.path.dirname(gt_data or "")
         if base_model:
@@ -53,12 +49,7 @@ class ChatTextEvaluator(TextEvaluator):
 
         self.similarity = None
         self.divergency = None
-        if "similarity" in self.metrics:
-            self.similarity = TextSimilarity(similarity_model_id)
-        if "divergency" in self.metrics:
-            assert tokenizer is not None
-            self.divergency = TextDivergency(tokenizer)
-
+        self.similarity = TextSimilarity(similarity_model_id)
         self.last_cmp = None
 
     def get_generation_fn(self):
@@ -73,7 +64,7 @@ class ChatTextEvaluator(TextEvaluator):
 
         for path in data["prompts"].values:
             with open(path, "r", encoding="utf-8") as f:
-                text_data["prompts"].append(f.read())
+                text_data["prompts"].append(json.load(f))
 
         df = pd.DataFrame(text_data)
         return df
@@ -109,7 +100,6 @@ class ChatTextEvaluator(TextEvaluator):
 
         self.last_cmp = all_metrics_per_prompt
         self.last_cmp["prompts"] = predictions_text["prompts"].values
-
         self.last_cmp["source_model"] = [
             "".join([f"Answer {i}:\n{rep}\n" for i, rep in enumerate(val)]) for val in gt_data_text["answers"].values
         ]
@@ -134,48 +124,72 @@ class ChatTextEvaluator(TextEvaluator):
 
         return res
 
+    def prepare_default_data(self, custom_path: str = None):
+        from importlib.resources import files
+
+        data_path = custom_path or files("whowhatbench.prompts").joinpath(self.CHAT_PROMPTS_FILE)
+        data = []
+        with open(data_path) as input_file:
+            data = json.load(input_file)
+
+        def_chat_inputs = []
+        for chat in data:
+            chat_input = []
+            for item in chat:
+                chat_input.append(
+                    {
+                        "prompt": item["text"],
+                        "images": [load_image(image) for image in item["images"]] if item["images"] else None,
+                        "videos": None,
+                    }
+                )
+            def_chat_inputs.append(chat_input)
+        return def_chat_inputs
+
     def _generate_data(self, model, gen_answer_fn=None, result_dir="reference"):
         def default_gen_answer(
             model,
+            inputs,
+            processor,
             tokenizer,
-            prompts,
             max_new_tokens,
-            _empty_adapters=False,
-            _num_assistant_tokens=0,
-            _assistant_confidence_threshold=0.0,
+            pruning_ratio,
+            relevance_weight,
         ):
-            is_awq = getattr(model, "is_awq", None) is not None
-            device = "cpu"
-            if hasattr(model, "device"):
-                device = model.device
+            if model.config.model_type not in MODEL_TYPE_TO_CLS_MAPPING:
+                raise ValueError(
+                    f"WWB doesn't support models with type '{model.config.model_type}' to evaluation in chat mode."
+                )
 
-            chat_history = []
+            inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type](chat_mode=True)
             answers = []
-            for prompt in prompts:
-                chat_history.append({"role": "user", "content": prompt})
-                inputs = tokenizer.apply_chat_template(
-                    chat_history, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_dict=True
-                ).to(device)
-
-                if "token_type_ids" in inputs and "token_type_ids" not in list(
-                    inspect.signature(model.forward).parameters.keys()
-                ):
-                    inputs.pop("token_type_ids")
-
-                if is_awq:
-                    with patch_awq_for_inference(is_awq):
-                        tokens = model.generate(
-                            **inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag()
-                        )
+            for input_case in inputs:
+                preprocess_inputs = inputs_processor.preprocess_inputs(
+                    input_case["prompt"],
+                    input_case["images"],
+                    processor,
+                    tokenizer,
+                    config=model.config,
+                    video=input_case["videos"],
+                )
+                tokens = model.generate(
+                    **preprocess_inputs,
+                    **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
+                    do_sample=False,
+                    max_new_tokens=max_new_tokens,
+                    tokenizer=tokenizer,
+                    **get_ignore_parameters_flag(),
+                )
+                if isinstance(tokens, tuple) and isinstance(tokens[0], list) and isinstance(tokens[0][0], str):
+                    # Some models return a decoded output, like miniCPM-o
+                    # The output tuple has format (<list of decoded outputs without question/prompt>, <GenerateDecoderOnlyOutput>)
+                    answer_text = tokens[0][0]
                 else:
-                    tokens = model.generate(
-                        **inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag()
-                    )
+                    answer_tokens = tokens[:, preprocess_inputs["input_ids"].shape[-1] :]
+                    answer_text = tokenizer.batch_decode(answer_tokens, skip_special_tokens=True)[0]
 
-                answer_tokens = tokens[:, inputs["input_ids"].shape[-1] :]
-                answer_text = tokenizer.batch_decode(answer_tokens, skip_special_tokens=True)
-                chat_history.append({"role": "assistant", "content": answer_text[0]})
-                answers.append(answer_text[0])
+                inputs_processor.update_chat_history_with_answer(answer_text)
+                answers.append(answer_text)
 
             return answers
 
@@ -183,25 +197,15 @@ class ChatTextEvaluator(TextEvaluator):
 
         if self.test_data:
             if isinstance(self.test_data, str):
-                data = pd.read_csv(self.test_data)
-            else:
-                if isinstance(self.test_data, dict):
-                    assert "prompts" in self.test_data
-                    data = dict(self.test_data)
-                else:
-                    data = {"prompts": list(self.test_data)}
-                data = pd.DataFrame.from_dict(data)
+                input_data = self.prepare_default_data(self.test_data)
+            elif isinstance(self.test_data, list):
+                input_data = self.test_data
         else:
-            # default data were created based on flpelerin/ChatAlpaca-10k and LDJnr/Puffin datasets
-            data_path = files("whowhatbench.prompts").joinpath(self.CHAT_PROMPTS_FILE)
-            prompt_data = yaml.safe_load(data_path.read_text(encoding="utf-8"))
-            data = pd.DataFrame.from_dict(prompt_data)
-
-        prompt_data = data["prompts"]
+            input_data = self.prepare_default_data()
 
         answers = []
         prompts_paths = []
-        prompts = prompt_data.values if self.num_samples is None else prompt_data.values[: self.num_samples]
+        input_data = input_data if self.num_samples is None else input_data[: self.num_samples]
 
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
@@ -210,25 +214,29 @@ class ChatTextEvaluator(TextEvaluator):
         if not os.path.exists(prompts_dir):
             os.makedirs(prompts_dir)
 
-        for i, p in tqdm(enumerate(prompts), desc="Evaluate pipeline"):
+        for i, inputs in tqdm(
+            enumerate(input_data),
+            desc="Evaluate pipeline",
+        ):
             answer = gen_answer_fn(
                 model,
+                inputs,
+                self.processor,
                 self.tokenizer,
-                p,
                 self.max_new_tokens,
-                self.empty_adapters,
-                self.num_assistant_tokens,
-                self.assistant_confidence_threshold,
+                self.pruning_ratio,
+                self.relevance_weight,
             )
 
-            result_path = os.path.join(result_dir, f"chat_output_{i}.json")
+            result_path = os.path.join(result_dir, f"chat_vlm_output_{i}.json")
             with open(result_path, "w", encoding="utf-8") as f:
                 json.dump(answer, f, ensure_ascii=False, indent=4)
             answers.append(result_path)
 
-            prompt_path = os.path.join(prompts_dir, f"chat_prompts_{i}.txt")
+            prompt_path = os.path.join(prompts_dir, f"chat_vlm_prompts_{i}.json")
             with open(prompt_path, "w", encoding="utf-8") as f:
-                f.write("\n\n".join(p))
+                prompts = [input["prompt"] for input in inputs]
+                json.dump(prompts, f, ensure_ascii=False, indent=4)
             prompts_paths.append(prompt_path)
 
         res_data = {"prompts": prompts_paths, "answers": answers}

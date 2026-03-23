@@ -27,9 +27,7 @@ logging.getLogger("transformers").setLevel(logging.ERROR)
 
 
 def evaluate_similarity(
-    model: SentenceTransformer,
-    data_gold: pd.DataFrame,
-    data_prediction: pd.DataFrame
+    model: SentenceTransformer, data_gold: pd.DataFrame, data_prediction: pd.DataFrame
 ) -> tuple[dict, dict]:
     answers_gold = data_gold["answers"].values
     answers_prediction = data_prediction["answers"].values
@@ -181,10 +179,9 @@ class TextSimilarity:
             pad_token = tokenizer.pad_token
         else:
             pad_token = tokenizer.eos_token
-        self.model = SentenceTransformer(model_id,
-                                         tokenizer_kwargs={"pad_token": pad_token},
-                                         trust_remote_code=trust_remote_code,
-                                         device="cpu")
+        self.model = SentenceTransformer(
+            model_id, tokenizer_kwargs={"pad_token": pad_token}, trust_remote_code=trust_remote_code, device="cpu"
+        )
 
     def evaluate(self, gt, prediction):
         return evaluate_similarity(self.model, gt, prediction)
