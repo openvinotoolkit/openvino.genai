@@ -350,21 +350,59 @@ def dtw_mean_distance(seq_a: np.ndarray, seq_b: np.ndarray) -> Optional[float]:
 
 def voiced_f0_stats(audio: np.ndarray, sr: int) -> Tuple[Optional[np.ndarray], Optional[float], Optional[float]]:
     try:
+        # Estimate frame-by-frame fundamental frequency (F0) using librosa.pyin.
+        #
+        # pyin is a pitch-tracking algorithm:
+        # - it analyzes short overlapping frames of audio
+        # - for each frame, it tries to estimate the fundamental frequency
+        # - it also decides whether the frame is "voiced" (speech/vowel-like, pitch present)
+        #   or "unvoiced" (silence, noise, consonants with no stable pitch, etc.)
+        #
+        # fmin / fmax constrain the pitch search range to something reasonable for speech.
         f0, voiced_flag, _ = librosa.pyin(
             audio,
             sr=sr,
-            fmin=librosa.note_to_hz("C2"),
-            fmax=librosa.note_to_hz("C7"),
-            frame_length=2048,
-            hop_length=256,
+            fmin=librosa.note_to_hz("C2"),   # lower pitch bound (~65 Hz)
+            fmax=librosa.note_to_hz("C7"),   # upper pitch bound (~2093 Hz)
+            frame_length=2048,               # analysis window size
+            hop_length=256,                  # step between frames
         )
+
+        # If pitch extraction failed completely, return no results.
         if f0 is None or voiced_flag is None:
             return None, None, None
+
+        # voiced_flag is a boolean array, one entry per frame:
+        #   True  -> frame is considered voiced
+        #   False -> frame is considered unvoiced
+        #
+        # Taking the mean after converting True/False to 1.0/0.0 gives the
+        # fraction of frames that are voiced.
+        #
+        # Example:
+        #   [True, True, False, True] -> [1, 1, 0, 1] -> mean = 0.75
         voiced_ratio = float(np.mean(voiced_flag.astype(np.float32)))
+
+        # f0 contains pitch values in Hz for voiced frames.
+        # Unvoiced / uncertain frames are usually NaN.
+        #
+        # Keep only the finite values so we ignore unvoiced regions.
         voiced_vals = f0[np.isfinite(f0)]
+
+        # Compute a robust "typical pitch" summary using the median.
+        # Median is used instead of mean because it is less sensitive to
+        # occasional pitch-tracking outliers.
         median_hz = float(np.median(voiced_vals)) if voiced_vals.size else None
+
+        # Return:
+        #   f0          -> full frame-by-frame pitch contour
+        #   voiced_ratio -> how much of the clip was voiced
+        #   median_hz    -> typical voiced pitch
         return f0, voiced_ratio, median_hz
+
     except Exception:
+        # If anything goes wrong (bad audio, pitch tracker failure, etc.),
+        # return empty results instead of crashing the whole evaluation.
         return None, None, None
 
 
