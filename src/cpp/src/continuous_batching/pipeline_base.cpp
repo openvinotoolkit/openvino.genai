@@ -295,11 +295,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     OPENVINO_ASSERT(prompts.size() == sampling_params.size(),
         "Number of prompts should be equal to the number of generation configs.");
-    OPENVINO_ASSERT(
-        prompts.size() == images_vector.size() &&
-        prompts.size() == videos_vector.size() &&
-        prompts.size() == videos_metadata_vector.size(),
-        "Number of prompts should be equal to the number of images, videos and video metadata vectors.");
+    OPENVINO_ASSERT(prompts.size() == images_vector.size() && prompts.size() == videos_vector.size(),
+        "Number of prompts should be equal to the number of images and videos vectors.");
+    OPENVINO_ASSERT(prompts.size() == videos_metadata_vector.size(),
+        "Number of prompts should be equal to the number of videos metadata vector.");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
@@ -508,12 +507,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
     OPENVINO_ASSERT(histories.size() == sampling_params.size(),
         "Number of chat histories should be equal to the number of generation configs.");
-    OPENVINO_ASSERT(
-        histories.size() == images_vector.size() &&
-        histories.size() == videos_vector.size() &&
-        histories.size() == videos_metadata_vector.size(),
-        "Number of chat histories should be equal to the number of images, videos and video metadata vectors."
+    OPENVINO_ASSERT(histories.size() == images_vector.size() && histories.size() == videos_vector.size(),
+        "Number of chat histories should be equal to the number of images and videos vectors."
     );
+    OPENVINO_ASSERT(histories.size() == videos_metadata_vector.size(),
+        "Number of chat histories should be equal to the number of videos metadata vector.");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
