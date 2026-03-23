@@ -23,7 +23,7 @@ You can pass extensions to pipeline constructors in both Python and C++.
 
 ## Using the `extensions` Property
 
-## Python
+### Python
 
 Accepted item types in the Python `extensions` list:
 
@@ -31,7 +31,7 @@ Accepted item types in the Python `extensions` list:
 - `openvino.Extension` objects such as `ov.OpExtension(...)`
 - Python custom-op classes, which are automatically wrapped as `openvino.OpExtension(...)`
 
-## C++
+### C++
 
 Include `openvino/genai/extensions.hpp` and use the `ov::genai::extensions(...)` helper to build the `extensions` property.
 
@@ -44,6 +44,8 @@ Accepted C++ forms:
 <LanguageTabs>
 	<TabItemPython>
 		```python
+		from pathlib import Path
+
 		import openvino as ov
         import openvino_genai as ov_genai
 
@@ -52,7 +54,7 @@ Accepted C++ forms:
 
 		model_path = "path/to/model_with_custom_ops"
 
-		# Option 1: pass a shared library path
+		# Option 1: pass extension library paths
 		llm_pipe = ov_genai.LLMPipeline(
             model_path,
             "CPU",
@@ -60,7 +62,7 @@ Accepted C++ forms:
         )
 
 		# Option 2: register a Python custom op.
-		llm_pipe = ov_genai.VLMPipeline(
+		vlm_pipe = ov_genai.VLMPipeline(
             model_path,
             "CPU",
             extensions=[ov.OpExtension(CustomAdd)],
@@ -95,7 +97,7 @@ Accepted C++ forms:
 			);
 
 			// Option 2: register a C++ custom op.
-			ov::genai::LLMPipeline llm_pipe(
+			ov::genai::LLMPipeline ov_pipe(
 				model_path,
 				"CPU",
 				ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{
@@ -103,8 +105,8 @@ Accepted C++ forms:
 				})
 			);
 
-            # Generate with custom ops
-            llm_pipe.generate("Generate story about", ov::genai::max_new_tokens(100))
+            // Generate with custom ops
+            llm_pipe.generate("Generate story about", ov::genai::max_new_tokens(100));
 
 			return 0;
 		}
