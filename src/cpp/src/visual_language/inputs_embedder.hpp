@@ -261,10 +261,6 @@ private:
 
         virtual void finish_chat();
 
-        virtual std::string get_last_pruned_prompt(const std::string& original_prompt) const {
-            return original_prompt;
-        }
-
         virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_id,
