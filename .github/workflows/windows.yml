@@ -660,6 +660,13 @@ jobs:
       fail-fast: false
       matrix:
         test:
+          - name: 'Test av library import'
+            cmd: |
+              python -m pip install av==16.1.0
+              python .github/scripts/patch_pyav_for_servercore.py
+              python -c "import av; print(av.__version__)"
+            run_condition: true
+            timeout: 60
           - name: 'Whisper'
             # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
             cmd: 'python -m pytest -s -v tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
