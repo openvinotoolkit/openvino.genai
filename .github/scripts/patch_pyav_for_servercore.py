@@ -324,6 +324,7 @@ def create_missing_system_stubs(target_dir):
             created.append(dll_name)
         except Exception as e:
             print(f"  ERROR: Failed to create stub for {dll_name}: {e}")
+            raise e
 
     return created
 
@@ -378,7 +379,7 @@ def patch_av_init_ctypes_preload():
 def verify_import():
     """Verify that av can now be imported."""
     for mod_name in list(sys.modules.keys()):
-        if mod_name.startswith("av"):
+        if mod_name == "av" or mod_name.startswith("av."):
             del sys.modules[mod_name]
 
     try:
