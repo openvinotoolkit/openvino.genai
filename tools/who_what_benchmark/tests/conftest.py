@@ -109,14 +109,14 @@ def convert_model(model_name: str) -> str:
         return model_path
 
     def convert(temp_path: Path) -> None:
+        if "--weight-format" not in convert_args:
+            convert_args.extend(["--weight-format", "fp16"])
         command = [
             "optimum-cli",
             "export",
             "openvino",
             "--model",
-            model_name,
-            "--weight-format",
-            "fp16",
+            MODELS[model_id]["name"],
             *convert_args,
             str(temp_path),
         ]
