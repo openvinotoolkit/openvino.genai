@@ -21,7 +21,7 @@
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
-#include "openvino/runtime/core.hpp"
+#include "openvino/core/extension.hpp"
 
 namespace py = pybind11;
 

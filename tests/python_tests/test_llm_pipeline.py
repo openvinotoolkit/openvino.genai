@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import shutil
 import pytest
 import torch
 import gc
