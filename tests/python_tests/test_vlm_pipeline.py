@@ -264,8 +264,12 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
     Currently this checks for an exact match with ``"1.27.0.dev0+70056d0"``.
     """
     import importlib.metadata as metadata
+    from importlib.metadata import PackageNotFoundError
 
-    _optimum_intel_version = metadata.version("optimum-intel")
+    try:
+        _optimum_intel_version = metadata.version("optimum-intel")
+    except PackageNotFoundError:
+        return False
     return _optimum_intel_version == "1.27.0.dev0+70056d0"
 
 def _get_ov_model(model_id: str) -> str:
