@@ -330,6 +330,137 @@ std::shared_ptr<ov::Model> create_text_embeddings_model(
     return model;
 }
 
+std::shared_ptr<ov::Model> create_vision_embeddings_model(
+    const std::map<std::string, GGUFMetaData>& configs,
+    std::unordered_map<std::string, ov::Tensor>& consts,
+    std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
+    // Create input parameter
+    auto hidden_states = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::f32, ov::PartialShape{-1, -1});
+    set_name(hidden_states, "hidden_states");
+
+    // Get patch embedding weights
+    auto weight_0 = consts.at("self.proj.weight.raw0");
+    auto weight_1 = consts.at("self.proj.weight.raw1");
+    auto bias = consts.at("self.proj.bias");
+
+    // Merge two 4D weights [1024, 3, 16, 16] into one 5D kernel [1024, 3, 2, 16, 16]
+    ov::Shape raw_shape = weight_0.get_shape();
+    OPENVINO_ASSERT(raw_shape.size() == 4, "self.proj.weight.raw0 rank must be 4");
+    OPENVINO_ASSERT(weight_1.get_shape() == raw_shape, "self.proj.weight.raw1 shape mismatch");
+
+    ov::Shape merged_shape = {raw_shape[0], raw_shape[1], 2, raw_shape[2], raw_shape[3]};
+    ov::Tensor merged_weight(weight_0.get_element_type(), merged_shape);
+
+    size_t plane_size = raw_shape[2] * raw_shape[3];
+    size_t channel_plane = raw_shape[1] * plane_size;
+    size_t out_plane = 2 * channel_plane;
+
+    if (weight_0.get_element_type() == ov::element::f32) {
+        const float* src0 = weight_0.data<float>();
+        const float* src1 = weight_1.data<float>();
+        float* dst = merged_weight.data<float>();
+
+        for (size_t oc = 0; oc < raw_shape[0]; ++oc) {
+            for (size_t ic = 0; ic < raw_shape[1]; ++ic) {
+                size_t src_offset = oc * channel_plane + ic * plane_size;
+                size_t dst_offset_0 = oc * out_plane + ic * 2 * plane_size;
+                size_t dst_offset_1 = dst_offset_0 + plane_size;
+
+                std::memcpy(dst + dst_offset_0, src0 + src_offset, plane_size * sizeof(float));
+                std::memcpy(dst + dst_offset_1, src1 + src_offset, plane_size * sizeof(float));
+            }
+        }
+    } else if (weight_0.get_element_type() == ov::element::f16) {
+        const ov::float16* src0 = weight_0.data<ov::float16>();
+        const ov::float16* src1 = weight_1.data<ov::float16>();
+        ov::float16* dst = merged_weight.data<ov::float16>();
+
+        for (size_t oc = 0; oc < raw_shape[0]; ++oc) {
+            for (size_t ic = 0; ic < raw_shape[1]; ++ic) {
+                size_t src_offset = oc * channel_plane + ic * plane_size;
+                size_t dst_offset_0 = oc * out_plane + ic * 2 * plane_size;
+                size_t dst_offset_1 = dst_offset_0 + plane_size;
+
+                std::memcpy(dst + dst_offset_0, src0 + src_offset, plane_size * sizeof(ov::float16));
+                std::memcpy(dst + dst_offset_1, src1 + src_offset, plane_size * sizeof(ov::float16));
+            }
+        }
+    } else {
+        OPENVINO_THROW("Unsupported self.proj.weight.raw element type");
+    }
+
+    auto weight_const = std::make_shared<ov::op::v0::Constant>(merged_weight);
+    set_name(weight_const, "self.proj.weight");
+
+    std::shared_ptr<ov::Node> weight_f32 = weight_const;
+    if (merged_weight.get_element_type() != ov::element::f32) {
+        weight_f32 = std::make_shared<ov::op::v0::Convert>(weight_const, ov::element::f32);
+    }
+
+    auto bias_const = std::make_shared<ov::op::v0::Constant>(bias);
+    set_name(bias_const, "self.proj.bias");
+    auto bias_f32 = std::make_shared<ov::op::v0::Convert>(bias_const, ov::element::f32);
+
+    // Reshape input from [N, ?] to [-1, 3, 2, 16, 16]
+    int patch_size = std::get<int>(configs.at("patch_size"));
+    auto input_shape = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64,
+        ov::Shape{5},
+        std::vector<int64_t>{-1, 3, 2, patch_size, patch_size});
+
+    auto reshaped_input = std::make_shared<ov::op::v1::Reshape>(
+        hidden_states,
+        input_shape,
+        false);
+
+    // Convolution
+    auto conv = std::make_shared<ov::op::v1::Convolution>(
+        reshaped_input,
+        weight_f32,
+        ov::Strides{2, static_cast<size_t>(patch_size), static_cast<size_t>(patch_size)},
+        ov::CoordinateDiff{0, 0, 0},
+        ov::CoordinateDiff{0, 0, 0},
+        ov::Strides{1, 1, 1});
+
+    // Add bias
+    auto bias_shape = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64,
+        ov::Shape{5},
+        std::vector<int64_t>{1, static_cast<int64_t>(bias.get_shape()[0]), 1, 1, 1});
+
+    auto bias_reshape = std::make_shared<ov::op::v1::Reshape>(
+        bias_f32,
+        bias_shape,
+        false);
+
+    auto conv_add = std::make_shared<ov::op::v1::Add>(
+        conv,
+        bias_reshape,
+        ov::op::AutoBroadcastType::NUMPY);
+
+    // Reshape output to [-1, 1024]
+    auto output_shape = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64,
+        ov::Shape{2},
+        std::vector<int64_t>{-1, static_cast<int64_t>(bias.get_shape()[0])});
+
+    auto last_hidden_state = std::make_shared<ov::op::v1::Reshape>(
+        conv_add,
+        output_shape,
+        false);
+
+    auto result = std::make_shared<ov::op::v0::Result>(last_hidden_state);
+    set_name(result, "last_hidden_state");
+
+    ov::ParameterVector inputs{hidden_states};
+    auto model = std::make_shared<ov::Model>(
+        ov::OutputVector({result->output(0)}),
+        inputs);
+
+    return model;
+}
+
 std::shared_ptr<ov::Model> create_vision_embeddings_pos_model(
     const std::map<std::string, GGUFMetaData>& configs,
     std::unordered_map<std::string, ov::Tensor>& consts,
@@ -398,16 +529,16 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
         }
     } else if (!model_arch.compare("clip")) {
 
-        // std::shared_ptr<ov::Model> vision_embeddings_model = create_vision_embeddings_model(config, consts, qtypes);
+        std::shared_ptr<ov::Model> vision_embeddings_model = create_vision_embeddings_model(config, consts, qtypes);
         std::shared_ptr<ov::Model> vision_embeddings_pos_model = create_vision_embeddings_pos_model(config, consts, qtypes);
         // std::shared_ptr<ov::Model> vision_embeddings_merger_model = create_vision_embeddings_merger_model(config, consts, qtypes);
 
         if (enable_save_ov_model) {
             std::filesystem::path gguf_model_path(model_path);
 
-            // std::filesystem::path vision_emb_save_path =
-            //     gguf_model_path.parent_path() / "openvino_vision_embeddings_model.xml";
-            // ov::genai::utils::save_openvino_model(vision_embeddings_model, vision_emb_save_path.string(), true);
+            std::filesystem::path vision_emb_save_path =
+                gguf_model_path.parent_path() / "openvino_vision_embeddings_model.xml";
+            ov::genai::utils::save_openvino_model(vision_embeddings_model, vision_emb_save_path.string(), true);
 
             std::filesystem::path vision_pos_save_path =
                 gguf_model_path.parent_path() / "openvino_vision_embeddings_pos_model.xml";
