@@ -427,8 +427,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("get_metrics", &ContinuousBatchingPipeline::get_metrics)
         .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("input_ids"), py::arg("generation_config"))
         .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("generation_config"))
-        .def("add_request", py::overload_cast<uint64_t, const std::string&, const std::vector<ov::Tensor>&, const std::vector<ov::Tensor>&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("images"), py::arg("videos"), py::arg("generation_config"))
         .def("add_request", py::overload_cast<uint64_t, const std::string&, const std::vector<ov::Tensor>&, const std::vector<ov::Tensor>&, const std::vector<ov::genai::VideoMetadata>&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("images"), py::arg("videos"), py::arg("videos_metadata"), py::arg("generation_config"))
+        .def("add_request", py::overload_cast<uint64_t, const std::string&, const std::vector<ov::Tensor>&, const std::vector<ov::Tensor>&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("images"), py::arg("videos"), py::arg("generation_config"))
         .def("add_request", py::overload_cast<uint64_t, const std::string&, const std::vector<ov::Tensor>&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("images"), py::arg("generation_config"))
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
@@ -559,9 +559,10 @@ void init_continuous_batching_pipeline(py::module_& m) {
                 -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
                 ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
                 std::vector<ov::genai::VLMDecodedResults> generated_results;
+                const std::vector<std::vector<ov::Tensor>> empty_images_vector(prompts.size());
                 {
                     py::gil_scoped_release rel;
-                    generated_results = pipe.generate(prompts, {}, videos, generation_config, streamer);
+                    generated_results = pipe.generate(prompts, empty_images_vector, videos, generation_config, streamer);
                 }  
                 return py::cast(generated_results);
             },
@@ -581,9 +582,10 @@ void init_continuous_batching_pipeline(py::module_& m) {
                 -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
                 ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
                 std::vector<ov::genai::VLMDecodedResults> generated_results;
+                const std::vector<std::vector<ov::Tensor>> empty_images_vector(prompts.size());
                 {
                     py::gil_scoped_release rel;
-                    generated_results = pipe.generate(prompts, {}, videos, videos_metadata, generation_config, streamer);
+                    generated_results = pipe.generate(prompts, empty_images_vector, videos, videos_metadata, generation_config, streamer);
                 }  
                 return py::cast(generated_results);
             },
