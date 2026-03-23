@@ -1166,3 +1166,253 @@ ov::Output<ov::Node> init_rope(
 
     return rope_const;
 }
+
+ov::Output<ov::Node> make_layer_norm_with_bias(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    float epsilon) {
+    auto axes = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i32, ov::Shape{1}, std::vector<int32_t>{1});
+
+    auto mvn = std::make_shared<ov::op::v6::MVN>(
+        input,
+        axes,
+        true,
+        epsilon,
+        ov::op::MVNEpsMode::INSIDE_SQRT);
+
+    auto weight_tensor = consts.at(key + ".weight");
+    weight_tensor.set_shape(ov::Shape{1, weight_tensor.get_shape()[0]});
+    auto weight_const = std::make_shared<ov::op::v0::Constant>(weight_tensor);
+    auto weight_f32 = std::make_shared<ov::op::v0::Convert>(weight_const, ov::element::f32);
+
+    auto mul = std::make_shared<ov::op::v1::Multiply>(
+        mvn, weight_f32, ov::op::AutoBroadcastType::NUMPY);
+
+    auto bias_tensor = consts.at(key + ".bias");
+    bias_tensor.set_shape(ov::Shape{1, bias_tensor.get_shape()[0]});
+    auto bias_const = std::make_shared<ov::op::v0::Constant>(bias_tensor);
+    auto bias_f32 = std::make_shared<ov::op::v0::Convert>(bias_const, ov::element::f32);
+
+    return std::make_shared<ov::op::v1::Add>(
+        mul, bias_f32, ov::op::AutoBroadcastType::NUMPY);
+}
+
+ov::Output<ov::Node> rotate_half_last_dim(
+    const ov::Output<ov::Node>& x) {
+    auto split_axis = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64, ov::Shape{}, 2);
+
+    auto split = std::make_shared<ov::op::v1::Split>(x, split_axis, 2);
+
+    ov::Output<ov::Node> first_half = split->output(0);
+    ov::Output<ov::Node> second_half = split->output(1);
+
+    auto minus_one = std::make_shared<ov::op::v0::Constant>(
+        ov::element::f32, ov::Shape{}, -1.0f);
+
+    auto neg_second = std::make_shared<ov::op::v1::Multiply>(
+        second_half, minus_one, ov::op::AutoBroadcastType::NUMPY);
+
+    return std::make_shared<ov::op::v0::Concat>(
+        ov::OutputVector{neg_second, first_half}, 2);
+}
+
+ov::Output<ov::Node> apply_rotary_pos_emb(
+    const ov::Output<ov::Node>& x,
+    const ov::Output<ov::Node>& rotary_pos_emb) {
+    auto emb = std::make_shared<ov::op::v0::Concat>(
+        ov::OutputVector{rotary_pos_emb, rotary_pos_emb}, -1);
+
+    auto cos_node = std::make_shared<ov::op::v0::Cos>(emb);
+    auto sin_node = std::make_shared<ov::op::v0::Sin>(emb);
+
+    auto unsqueeze_axis = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64, ov::Shape{}, 1);
+
+    auto cos_unsq = std::make_shared<ov::op::v0::Unsqueeze>(cos_node, unsqueeze_axis);
+    auto sin_unsq = std::make_shared<ov::op::v0::Unsqueeze>(sin_node, unsqueeze_axis);
+
+    auto x_cos = std::make_shared<ov::op::v1::Multiply>(
+        x, cos_unsq, ov::op::AutoBroadcastType::NUMPY);
+
+    auto x_rot = rotate_half_last_dim(x);
+    auto x_sin = std::make_shared<ov::op::v1::Multiply>(
+        x_rot, sin_unsq, ov::op::AutoBroadcastType::NUMPY);
+
+    return std::make_shared<ov::op::v1::Add>(
+        x_cos, x_sin, ov::op::AutoBroadcastType::NUMPY);
+}
+
+ov::Output<ov::Node> make_vision_mlp(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    const std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
+    auto fc1 = make_fc(
+        key + ".linear_fc1",
+        input,
+        consts,
+        qtypes.at(key + ".linear_fc1.qtype"));
+
+    auto gelu = std::make_shared<ov::op::v7::Gelu>(fc1, ov::op::GeluApproximationMode::ERF);
+
+    return make_fc(
+        key + ".linear_fc2",
+        gelu,
+        consts,
+        qtypes.at(key + ".linear_fc2.qtype"));
+}
+
+ov::Output<ov::Node> make_merger_block(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    const std::unordered_map<std::string, gguf_tensor_type>& qtypes,
+    float epsilon) {
+    auto norm = make_layer_norm_with_bias(
+        key + ".norm",
+        input,
+        consts,
+        epsilon);
+
+    auto fc1 = make_fc(
+        key + ".linear_fc1",
+        norm,
+        consts,
+        qtypes.at(key + ".linear_fc1.qtype"));
+
+    auto gelu = std::make_shared<ov::op::v7::Gelu>(fc1, ov::op::GeluApproximationMode::ERF);
+
+    return make_fc(
+        key + ".linear_fc2",
+        gelu,
+        consts,
+        qtypes.at(key + ".linear_fc2.qtype"));
+}
+
+std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>> make_vision_attention(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const ov::Output<ov::Node>& attention_mask,
+    const ov::Output<ov::Node>& rotary_pos_emb,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    const std::unordered_map<std::string, gguf_tensor_type>& qtypes,
+    int num_heads,
+    int head_dim) {
+    auto qkv = make_fc(
+        key + ".attn.qkv",
+        input,
+        consts,
+        qtypes.at(key + ".attn.qkv.qtype"));
+
+    auto qkv_shape = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64,
+        ov::Shape{4},
+        std::vector<int64_t>{-1, 3, num_heads, head_dim});
+
+    auto qkv_reshape = std::make_shared<ov::op::v1::Reshape>(
+        qkv,
+        qkv_shape,
+        false);
+
+    auto qkv_perm = std::make_shared<ov::op::v1::Transpose>(
+        qkv_reshape,
+        std::make_shared<ov::op::v0::Constant>(
+            ov::element::i64,
+            ov::Shape{4},
+            std::vector<int64_t>{1, 0, 2, 3}));
+
+    auto split_axis = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64, ov::Shape{}, 0);
+
+    auto qkv_split = std::make_shared<ov::op::v1::Split>(qkv_perm, split_axis, 3);
+
+    auto squeeze_axis = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64, ov::Shape{}, 0);
+
+    ov::Output<ov::Node> q = std::make_shared<ov::op::v0::Squeeze>(qkv_split->output(0), squeeze_axis);
+    ov::Output<ov::Node> k = std::make_shared<ov::op::v0::Squeeze>(qkv_split->output(1), squeeze_axis);
+    ov::Output<ov::Node> v = std::make_shared<ov::op::v0::Squeeze>(qkv_split->output(2), squeeze_axis);
+
+    q = apply_rotary_pos_emb(q, rotary_pos_emb);
+    k = apply_rotary_pos_emb(k, rotary_pos_emb);
+
+    auto q_t = std::make_shared<ov::op::v1::Transpose>(
+        q,
+        std::make_shared<ov::op::v0::Constant>(
+            ov::element::i64,
+            ov::Shape{3},
+            std::vector<int64_t>{1, 0, 2}));
+
+    auto k_t = std::make_shared<ov::op::v1::Transpose>(
+        k,
+        std::make_shared<ov::op::v0::Constant>(
+            ov::element::i64,
+            ov::Shape{3},
+            std::vector<int64_t>{1, 2, 0}));
+
+    auto v_t = std::make_shared<ov::op::v1::Transpose>(
+        v,
+        std::make_shared<ov::op::v0::Constant>(
+            ov::element::i64,
+            ov::Shape{3},
+            std::vector<int64_t>{1, 0, 2}));
+
+    auto scores = std::make_shared<ov::op::v0::MatMul>(
+        q_t,
+        k_t,
+        false,
+        false);
+
+    auto scale = std::make_shared<ov::op::v0::Constant>(
+        ov::element::f32,
+        ov::Shape{},
+        1.0f / std::sqrt(static_cast<float>(head_dim)));
+
+    auto scores_scaled = std::make_shared<ov::op::v1::Multiply>(
+        scores,
+        scale,
+        ov::op::AutoBroadcastType::NUMPY);
+
+    auto scores_masked = std::make_shared<ov::op::v1::Add>(
+        scores_scaled,
+        attention_mask,
+        ov::op::AutoBroadcastType::NUMPY);
+
+    auto softmax = std::make_shared<ov::op::v8::Softmax>(
+        scores_masked,
+        -1);
+
+    auto context = std::make_shared<ov::op::v0::MatMul>(
+        softmax,
+        v_t,
+        false,
+        false);
+
+    auto context_t = std::make_shared<ov::op::v1::Transpose>(
+        context,
+        std::make_shared<ov::op::v0::Constant>(
+            ov::element::i64,
+            ov::Shape{3},
+            std::vector<int64_t>{1, 0, 2}));
+
+    auto context_shape = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64,
+        ov::Shape{2},
+        std::vector<int64_t>{-1, num_heads * head_dim});
+
+    auto context_reshape = std::make_shared<ov::op::v1::Reshape>(
+        context_t,
+        context_shape,
+        false);
+
+    auto proj = make_fc(
+        key + ".attn.proj",
+        context_reshape,
+        consts,
+        qtypes.at(key + ".attn.proj.qtype"));
+
+    return {proj, softmax};
+}

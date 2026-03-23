@@ -65,3 +65,46 @@ ov::Output<ov::Node> inject_visual_embeds(
     const ov::Output<ov::Node>& deepstack_visual_embeds,
     const ov::Output<ov::Node>& visual_pos_masks,
     int64_t layer_idx);
+
+ov::Output<ov::Node> make_layer_norm_with_bias(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    float epsilon);
+
+ov::Output<ov::Node> rotate_half_last_dim(const ov::Output<ov::Node>& x);
+
+ov::Output<ov::Node> apply_rotary_pos_emb(
+    const ov::Output<ov::Node>& x,
+    const ov::Output<ov::Node>& rotary_pos_emb);
+
+ov::Output<ov::Node> make_vision_mlp(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    const std::unordered_map<std::string, gguf_tensor_type>& qtypes);
+
+ov::Output<ov::Node> make_merger_block(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    const std::unordered_map<std::string, gguf_tensor_type>& qtypes,
+    float epsilon);
+
+std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>> make_vision_attention(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const ov::Output<ov::Node>& attention_mask,
+    const ov::Output<ov::Node>& rotary_pos_emb,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    const std::unordered_map<std::string, gguf_tensor_type>& qtypes,
+    int num_heads,
+    int head_dim);
+
+ov::Output<ov::Node> make_fc(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    gguf_tensor_type qtype,
+    bool reorder,
+    int head_size);

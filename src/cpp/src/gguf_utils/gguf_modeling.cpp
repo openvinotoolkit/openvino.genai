@@ -486,6 +486,159 @@ std::shared_ptr<ov::Model> create_vision_embeddings_pos_model(
     return model;
 }
 
+std::shared_ptr<ov::Model> create_vision_embeddings_merger_model(
+    const std::map<std::string, GGUFMetaData>& configs,
+    std::unordered_map<std::string, ov::Tensor>& consts,
+    std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
+    const int hidden_size = std::get<int>(configs.at("hidden_size"));
+    const int num_heads = std::get<int>(configs.at("head_num"));
+    const int head_dim = std::get<int>(configs.at("head_size"));
+    const int layer_num = std::get<int>(configs.at("layer_num"));
+    const float epsilon = std::get<float>(configs.at("rms_norm_eps"));
+
+    auto hidden_states = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::f32, ov::PartialShape{-1, hidden_size});
+    set_name(hidden_states, "hidden_states");
+
+    auto attention_mask = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::f32, ov::PartialShape{1, -1, -1});
+    set_name(attention_mask, "attention_mask");
+
+    auto rotary_pos_emb = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::f32, ov::PartialShape{-1, 32});
+    set_name(rotary_pos_emb, "rotary_pos_emb");
+
+    ov::Output<ov::Node> current = hidden_states;
+    std::vector<ov::Output<ov::Node>> deepstack_outputs;
+
+    for (int i = 0; i < layer_num; ++i) {
+        auto norm1 = make_layer_norm_with_bias(
+            format("self.blocks.%d.norm1", i),
+            current,
+            consts,
+            epsilon);
+
+        auto [attn_out, attn_probs] = make_vision_attention(
+            format("self.blocks.%d", i),
+            norm1,
+            attention_mask,
+            rotary_pos_emb,
+            consts,
+            qtypes,
+            num_heads,
+            head_dim);
+
+        auto attn_add = std::make_shared<ov::op::v1::Add>(
+            current,
+            attn_out,
+            ov::op::AutoBroadcastType::NUMPY);
+
+        auto norm2 = make_layer_norm_with_bias(
+            format("self.blocks.%d.norm2", i),
+            attn_add,
+            consts,
+            epsilon);
+
+        auto mlp_out = make_vision_mlp(
+            format("self.blocks.%d.mlp", i),
+            norm2,
+            consts,
+            qtypes);
+
+        current = std::make_shared<ov::op::v1::Add>(
+            attn_add,
+            mlp_out,
+            ov::op::AutoBroadcastType::NUMPY);
+
+        if (i == 5 || i == 11 || i == 17) {
+            auto reshape_4096 = std::make_shared<ov::op::v1::Reshape>(
+                current,
+                std::make_shared<ov::op::v0::Constant>(
+                    ov::element::i64,
+                    ov::Shape{2},
+                    std::vector<int64_t>{-1, 4096}),
+                false);
+
+            int deep_idx = 0;
+            if (i == 11) {
+                deep_idx = 1;
+            } else if (i == 17) {
+                deep_idx = 2;
+            }
+
+            auto deep_out = make_merger_block(
+                format("self.deepstack_merger_list.%d", deep_idx),
+                reshape_4096,
+                consts,
+                qtypes,
+                epsilon);
+
+            deepstack_outputs.push_back(deep_out);
+        }
+    }
+
+    auto final_norm = make_layer_norm_with_bias(
+        "self.norm",
+        current,
+        consts,
+        epsilon);
+
+    auto final_reshape = std::make_shared<ov::op::v1::Reshape>(
+        final_norm,
+        std::make_shared<ov::op::v0::Constant>(
+            ov::element::i64,
+            ov::Shape{2},
+            std::vector<int64_t>{-1, 4096}),
+        false);
+
+    auto last_hidden_state = make_fc(
+        "self.merger.linear_fc1",
+        final_reshape,
+        consts,
+        qtypes.at("self.merger.linear_fc1.qtype"),
+        false,
+        -1);
+
+    auto last_hidden_state_gelu = std::make_shared<ov::op::v7::Gelu>(
+        last_hidden_state,
+        ov::op::GeluApproximationMode::ERF);
+
+    auto last_hidden_state_out = make_fc(
+        "self.merger.linear_fc2",
+        last_hidden_state_gelu,
+        consts,
+        qtypes.at("self.merger.linear_fc2.qtype"),
+        false,
+        -1);
+
+
+    OPENVINO_ASSERT(deepstack_outputs.size() == 3, "deepstack outputs must be 3");
+
+    auto unsq_axis = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
+
+    auto deep0 = std::make_shared<ov::op::v0::Unsqueeze>(deepstack_outputs[0], unsq_axis);
+    auto deep1 = std::make_shared<ov::op::v0::Unsqueeze>(deepstack_outputs[1], unsq_axis);
+    auto deep2 = std::make_shared<ov::op::v0::Unsqueeze>(deepstack_outputs[2], unsq_axis);
+
+    auto deepstack_feature_lists = std::make_shared<ov::op::v0::Concat>(
+        ov::OutputVector{deep0, deep1, deep2},
+        0);
+
+    auto result0 = std::make_shared<ov::op::v0::Result>(last_hidden_state_out);
+    set_name(result0, "last_hidden_state");
+
+    auto result1 = std::make_shared<ov::op::v0::Result>(deepstack_feature_lists);
+    set_name(result1, "deepstack_feature_lists");
+
+    ov::ParameterVector inputs{hidden_states, attention_mask, rotary_pos_emb};
+    auto model = std::make_shared<ov::Model>(
+        ov::OutputVector({result0->output(0), result1->output(0)}),
+        inputs);
+
+    return model;
+}
+
 } // namespace
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const bool enable_save_ov_model) {
@@ -531,7 +684,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
 
         std::shared_ptr<ov::Model> vision_embeddings_model = create_vision_embeddings_model(config, consts, qtypes);
         std::shared_ptr<ov::Model> vision_embeddings_pos_model = create_vision_embeddings_pos_model(config, consts, qtypes);
-        // std::shared_ptr<ov::Model> vision_embeddings_merger_model = create_vision_embeddings_merger_model(config, consts, qtypes);
+        std::shared_ptr<ov::Model> vision_embeddings_merger_model = create_vision_embeddings_merger_model(config, consts, qtypes);
 
         if (enable_save_ov_model) {
             std::filesystem::path gguf_model_path(model_path);
@@ -544,9 +697,9 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
                 gguf_model_path.parent_path() / "openvino_vision_embeddings_pos_model.xml";
             ov::genai::utils::save_openvino_model(vision_embeddings_pos_model, vision_pos_save_path.string(), true);
 
-            // std::filesystem::path vision_merger_save_path =
-            //     gguf_model_path.parent_path() / "openvino_vision_embeddings_merger_model.xml";
-            // ov::genai::utils::save_openvino_model(vision_embeddings_merger_model, vision_merger_save_path.string(), true);
+            std::filesystem::path vision_merger_save_path =
+                gguf_model_path.parent_path() / "openvino_vision_embeddings_merger_model.xml";
+            ov::genai::utils::save_openvino_model(vision_embeddings_merger_model, vision_merger_save_path.string(), true);
         }
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
