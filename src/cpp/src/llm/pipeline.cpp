@@ -269,6 +269,8 @@ ov::genai::LLMPipeline::LLMPipeline(
             || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
             GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
         } else {
+            GENAI_WARN("PA backend is incompatible with models using linear attention states; "
+                       "falling back to SDPA backend because ATTENTION_BACKEND was not explicitly set.");
             attention_backend = SDPA_BACKEND;
         }
     }

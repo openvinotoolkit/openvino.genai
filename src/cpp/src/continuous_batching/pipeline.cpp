@@ -132,8 +132,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
         m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_desr);
     } else if (embedder) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, embedder, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
-    }
-    else {
+    } else {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
     }
 
