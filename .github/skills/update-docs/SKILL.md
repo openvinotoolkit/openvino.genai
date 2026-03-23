@@ -53,14 +53,27 @@ Decide which site sections need updating based on what changed:
 
 If the model ID contains a version, that version must be reflected in the `name` field (e.g. `Qwen2`, `Phi3.5`, `HY-MT1.5`). Strip the organisation prefix and per-size suffixes (e.g. `-7B`, `-Instruct`). When a new version differs from an existing entry, add a new entry instead of appending to the existing one.
 
-### Step 3: Verify Completeness
+### Step 3: Lint and Build
+
+From the `site/` directory, run lint and then a production build to catch any errors:
+
+```bash
+cd site
+npm run lint:fix
+npm run build
+```
+
+Fix any errors reported before proceeding. Do not skip this step — a passing build confirms MDX syntax, broken imports, and broken internal links are all resolved.
+
+### Step 4: Verify Completeness
 
 Run the following checklist before declaring the documentation update done:
 
 - [ ] Site docs cover the new capability (use-case page, guide, or model table entry).
-- [ ] No broken internal links introduced.
+- [ ] `npm run lint:fix` passes with no errors.
+- [ ] `npm run build` completes successfully.
 
-### Step 4: Report
+### Step 5: Report
 
 Summarize to the user:
 
