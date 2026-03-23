@@ -10,6 +10,7 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/json_container.hpp"
+#include "openvino/genai/visual_language/video_metadata.hpp"
 
 namespace py = pybind11;
 using ov::genai::StreamerBase;
@@ -41,6 +42,8 @@ ov::AnyMap properties_to_any_map(const std::map<std::string, py::object>& proper
 ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs);
 
 std::filesystem::path ov_tokenizers_module_path();
+
+std::vector<ov::genai::VideoMetadata> get_videos_metadata_from_kwargs(const py::kwargs& kwargs);
 
 ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfig config, const py::kwargs& kwargs);
 

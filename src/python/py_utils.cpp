@@ -536,6 +536,16 @@ StructuredOutputConfig::StructuralTag py_obj_to_structural_tag(const py::object&
     }
 }
 
+std::vector<ov::genai::VideoMetadata> get_videos_metadata_from_kwargs(const py::kwargs& kwargs) {
+    std::vector<ov::genai::VideoMetadata> videos_metadata = {};
+    const auto kwargs_anymap = kwargs_to_any_map(kwargs);
+    const auto videos_metadata_it = kwargs_anymap.find(ov::genai::videos_metadata.name());
+    if (videos_metadata_it != kwargs_anymap.end() && videos_metadata_it->second.is<std::vector<ov::genai::VideoMetadata>>()) {
+        videos_metadata = videos_metadata_it->second.as<std::vector<ov::genai::VideoMetadata>>();
+    }
+    return videos_metadata;
+}
+
 ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfig config, const py::kwargs& kwargs) {
     config.update_generation_config(kwargs_to_any_map(kwargs));
     return config;
