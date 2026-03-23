@@ -62,8 +62,6 @@ When a previous run already passed some steps (e.g. export succeeded but inferen
 
 Do **not** use skip flags on the first run. Only use them when retrying after a targeted fix.
 
-**Important:** do not use `--skip-export` when investigating a WWB similarity failure. The exported IR must be regenerated together with fresh WWB runs to get a consistent comparison — reusing a previously exported IR with a freshly generated HF ground truth can produce misleading similarity scores.
-
 ### Step 2: Interpret Results
 
 The script prints a structured summary and exits with code 0 (pass) or 1 (fail).
@@ -83,15 +81,7 @@ The script prints a structured summary and exits with code 0 (pass) or 1 (fail).
 
 ### Step 3: Report Results
 
-Report results to the user or a next agent. If all steps pass, indicate success and provide performance metrics and accuracy data. If a step fails, analyze tool logs and provide a summary with the failed tool log path.
-
-## Constraints
-
-### Behavioral
-
-- This skill is read-only: report results, do not change anything to make a step pass.
-- If a step fails, report the error and stop. Do not proceed to the next step.
-- **Forbidden on failure:** modifying CLI arguments, changing `--task` or `--device`, editing `check_model.py`, editing model or config files, or retrying with altered inputs.
+Report results to the user. If all steps pass, indicate success and provide performance metrics and accuracy data. If a step fails, analyze tool logs and provide a summary with the failed tool log path.
 
 ### Security
 
