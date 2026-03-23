@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from shutil import rmtree
 
+import openvino as ov
 from openvino.frontend import OpExtension
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason, ChatHistory
 
@@ -32,6 +33,7 @@ from utils.ov_genai_pipelines import (
 from utils.comparation import compare_generation_results
 from data.models import CHAT_MODELS_LIST
 from data.test_dataset import get_test_dataset
+from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 
 #
 # e2e tests on random and real models
@@ -739,7 +741,7 @@ def test_dynamic_split_fuse_for_eagle3():
     compare_results_for_dynamic_split_fuse_config("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3")
 
 
-def test_continuous_batching_add_extension():
+def test_continuous_batching_add_extension_1():
     model_id = "katuni4ka/tiny-random-phi3"
 
     models_path = download_and_convert_model(model_id).models_path
@@ -750,3 +752,46 @@ def test_continuous_batching_add_extension():
 
     properties = {"extensions": [OpExtension("Relu", "MyRelu")]}
     ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
+
+
+@pytest.fixture(scope="module")
+def cb_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
+    return download_and_convert_model(request.param)
+
+
+@pytest.mark.parametrize("cb_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
+def test_continuous_batching_add_extension(
+    cb_model: OVConvertedModelSchema,
+    tmp_path: Path,
+) -> None:
+    myadd_model_path = get_extension_model(cb_model.models_path, tmp_path, "MyAdd")
+    assert_ir_contains_op_type(myadd_model_path, "MyAdd")
+
+    generation_config = GenerationConfig(max_new_tokens=20)
+    scheduler_config = SchedulerConfig()
+    prompt = "Generate json of a person"
+
+    # The custom op "MyAdd" is provided by a compiled extension library and is intended to behave like OpenVINO "Add".
+    properties_path = {"extensions": [str(get_extension_lib_path())]}
+    pipe_extension_path = ContinuousBatchingPipeline(myadd_model_path, scheduler_config, "CPU", properties=properties_path)
+    result_extension_path = pipe_extension_path.generate([prompt], [generation_config])
+
+    # The Python custom op "CustomAdd" is intended to behave like OpenVINO "Add", but it exercises Python ov.Op registration and callback-based evaluation.
+    customadd_model_path = get_extension_model(cb_model.models_path, tmp_path, "CustomAdd")
+    assert_ir_contains_op_type(customadd_model_path, "CustomAdd")
+    CustomAdd.evaluate_calls = 0
+    properties_obj = {"extensions": [ov.OpExtension(CustomAdd)]}
+    pipe_extension_obj = ContinuousBatchingPipeline(customadd_model_path, scheduler_config, "CPU", properties=properties_obj)
+    result_extension_obj = pipe_extension_obj.generate([prompt], [generation_config])
+    assert CustomAdd.evaluate_calls > 0, "Python custom op 'CustomAdd' was not called"
+
+    # Reference result with the original model and without custom extensions.
+    pipe_ref = ContinuousBatchingPipeline(cb_model.models_path, scheduler_config, "CPU")
+    result_ref = pipe_ref.generate([prompt], [generation_config])
+
+    assert result_extension_path[0].m_generation_ids[0].strip() == result_ref[0].m_generation_ids[0].strip(), (
+        "Result should be the same for model with extension 'MyAdd' and reference model."
+    )
+    assert result_extension_obj[0].m_generation_ids[0].strip() == result_ref[0].m_generation_ids[0].strip(), (
+        "Result should be the same for model with extension 'CustomAdd' and reference model."
+    )
