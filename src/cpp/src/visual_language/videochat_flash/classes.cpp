@@ -679,6 +679,7 @@ EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, co
 
 ov::Tensor VisionEncoderVideoChatFlashQwen::sample_video_if_needed(const ov::Tensor& video) const {
     const size_t frames_group_size = m_vlm_config.mm_local_num_frames;
+    OPENVINO_ASSERT(frames_group_size > 0, "mm_local_num_frames must be greater than 0.");
     const ov::Shape& video_shape = video.get_shape();
     OPENVINO_ASSERT(video_shape.size() == 4, "Input video tensor must be 4D [N, H, W, C].");
 

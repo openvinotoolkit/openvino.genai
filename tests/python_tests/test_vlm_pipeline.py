@@ -656,11 +656,6 @@ def car_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
 
 
 @pytest.fixture(scope="module")
-def synthetic_video_224x224_tensor(synthetic_video_224x224):
-    return openvino.Tensor(synthetic_video_224x224)
-
-
-@pytest.fixture(scope="module")
 def synthetic_video_32x32_tensor(synthetic_video_32x32):
     return openvino.Tensor(synthetic_video_32x32)
 
@@ -2224,9 +2219,6 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
         pytest.skip(
             "VideoChat-Flash-Qwen video cases are expected to fail in optimum-vs-genai resolution test due to lack of Optimum-intel support. See CVS-173635."
         )
-    # VideoChat-Flash-Qwen: image path is not supported in this suite; expect failure when has_image=True
-    if has_image and _is_videochat_flash_qwen_model(ov_pipe_model.model_id):
-        pytest.skip("VideoChat-Flash-Qwen image cases are expected to fail as not supported yet. See CVS-182928.")
     resized_image = None
     resized_video = None
     if has_image:
@@ -2600,13 +2592,12 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_videochat(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
     ov_continuous_batching_pipe_videochat: ContinuousBatchingPipeline,
     config: GenerationConfig,
-    request: pytest.FixtureRequest,
+    synthetic_video_32x32_tensor: openvino.Tensor
 ):
     generation_config = config
     generation_config.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
-    synthetic_video_224x224_tensor = request.getfixturevalue("synthetic_video_224x224_tensor")
     images = []
-    videos = [synthetic_video_224x224_tensor]
+    videos = [synthetic_video_32x32_tensor]
     res_generate = []
     prompt = "describe this video"
     res_generate.append(
