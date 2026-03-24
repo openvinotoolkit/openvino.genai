@@ -830,9 +830,7 @@ def test_vlm_continuous_batching_vs_stateful(
     res_cb = []
     for images in image_links_list:
         res_cb.append(
-            ov_continuous_batching_pipe.generate(
-                [PROMPTS[0]], images=[images], generation_config=[generation_config]
-            )
+            ov_continuous_batching_pipe.generate([PROMPTS[0]], images=[images], generation_config=[generation_config])
         )
 
     for idx, images in enumerate(image_links_list):
