@@ -620,11 +620,6 @@ def synthetic_video_32x32(synthetic_video):
 
 
 @pytest.fixture(scope="module")
-def synthetic_video_224x224(synthetic_video):
-    return resize_video(synthetic_video, (224, 224))
-
-
-@pytest.fixture(scope="module")
 def cat_image_448x448(cat_image):
     return cat_image.resize((448, 448))
 
