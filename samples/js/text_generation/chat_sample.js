@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import readline from 'readline';
 import { LLMPipeline, ChatHistory } from 'openvino-genai-node';
 import { basename } from 'node:path';

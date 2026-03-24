@@ -331,3 +331,12 @@ def get_speaker_embeddings(speaker_embeddings_file, expected_shape=(1, 512)):
         raise RuntimeError(f'==Failure FOUND==: Incorrect speaker embeddings file path:{speaker_embeddings_file}')
 
     return speaker_embeddings
+
+
+def setup_gen_config_use_custom_args():
+    from optimum.intel.utils.import_utils import is_transformers_version
+
+    additional_args = {}
+    if is_transformers_version(">=", "4.51") and is_transformers_version("<", "5.0"):
+        additional_args["use_model_defaults"] = False
+    return additional_args

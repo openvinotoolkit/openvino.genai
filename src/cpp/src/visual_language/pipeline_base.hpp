@@ -176,4 +176,4 @@ public:
         return m_load_time_ms;
     }
 };
-}
+}  // namespace ov::genai
