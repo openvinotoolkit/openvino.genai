@@ -2592,7 +2592,7 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_videochat(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
     ov_continuous_batching_pipe_videochat: ContinuousBatchingPipeline,
     config: GenerationConfig,
-    synthetic_video_32x32_tensor: openvino.Tensor
+    synthetic_video_32x32_tensor: openvino.Tensor,
 ):
     generation_config = config
     generation_config.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
