@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from __future__ import annotations
 
 from typing import Any, Union
@@ -12,7 +15,7 @@ from importlib.resources import files
 from tqdm import tqdm
 
 from .registry import register_evaluator, BaseEvaluator
-from .tts_similarity import TTSSimilarityEvaluator, print_report
+from .tts_similarity import TTSSimilarityEvaluator
 
 PROMPTS_FILE = "speech_generation_prompts.yaml"
 
@@ -111,22 +114,19 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             elif language is not None:
                 language = str(language)
 
-            result = self._evaluator.evaluate(
+            scores = self._evaluator.evaluate(
                 target_path=str(prediction_row["audio"]),
                 reference_path=str(gt_row["audio"]),
                 expected_text=expected_text,
                 language=language,
+                verbose=verbose,
             )
-            if verbose:
-                print_report(result)
 
-            scores = result.scores
-
-            speaker_scores.append(scores.speaker_score)
-            content_scores.append(scores.content_score)
-            prosody_scores.append(scores.prosody_score)
-            acoustic_scores.append(scores.acoustic_score)
-            overall_scores.append(scores.overall_score)
+            speaker_scores.append(scores.speaker)
+            content_scores.append(scores.content)
+            prosody_scores.append(scores.prosody)
+            acoustic_scores.append(scores.acoustic)
+            overall_scores.append(scores.overall)
 
         all_metrics_per_prompt = {
             SPEAKER_SCORE_COL: speaker_scores,
