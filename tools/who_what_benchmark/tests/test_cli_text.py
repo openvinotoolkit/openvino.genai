@@ -271,3 +271,52 @@ def test_text_genai_json_string_config():
     # Test with WWB log info to make sure the configurations are passed from strings to the GenAI APIs
     assert "INFO:whowhatbench.wwb:cb_config: {'max_num_batched_tokens': 4096}" in output
     assert "INFO:whowhatbench.model_loaders:OpenVINO Config: {'KV_CACHE_PRECISION': 'f16', 'ATTENTION_BACKEND': 'PA'}" in output
+
+
+def _create_messages_dataset(path, as_jsonl=False):
+    records = [
+        {
+            "messages": [{"role": "user", "content": "Say hello in one word."}],
+            "tools": [],
+        }
+    ]
+    if as_jsonl:
+        path.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
+    else:
+        path.write_text(json.dumps(records), encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("dataset_name", "as_jsonl"),
+    [
+        ("messages.json", False),
+        ("messages.jsonl", True),
+    ],
+)
+def test_text_dataset_json_with_chat_template(dataset_name, as_jsonl, tmp_path):
+    if sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
+
+    dataset_path = tmp_path / dataset_name
+    gt_path = tmp_path / f"gt_{dataset_name}.csv"
+    _create_messages_dataset(dataset_path, as_jsonl=as_jsonl)
+
+    output = run_wwb([
+        "--base-model",
+        "Qwen/Qwen2-0.5B",
+        "--gt-data",
+        gt_path,
+        "--dataset",
+        dataset_path,
+        "--num-samples",
+        "1",
+        "--device",
+        "CPU",
+        "--hf",
+    ])
+
+    data = pd.read_csv(gt_path)
+    assert len(data["prompts"].values) == 1
+    assert "Say hello in one word." in data["prompts"].values[0]
+    assert "Chat template loaded from tokenizer" in output
+    assert "overriding max_new_tokens from 128 to 1024" in output

@@ -28,17 +28,17 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _log_prompts_summary(prompts, source):
+def _log_prompts_summary(prompts, source, verbose=False):
     if not prompts:
-        logger.info("Prompts summary (%s): none", source)
-        return
+        raise ValueError(f"No prompts loaded from source: {source}")
     prompt_list = prompts.get("prompts", []) if isinstance(prompts, dict) else []
     logger.info("Prompts summary (%s): count=%d", source, len(prompt_list))
-    for idx, prompt in enumerate(prompt_list):
-        prompt_str = str(prompt).replace("\r", " ").replace("\n", " ")
-        preview = prompt_str[:200]
-        last_chars = prompt_str[-200:] if len(prompt_str) > 200 else ""
-        logger.info("Prompt %d: %s ... (last 200 chars: %s)", idx, preview, last_chars)
+    if verbose:
+        for idx, prompt in enumerate(prompt_list):
+            prompt_str = str(prompt).replace("\r", " ").replace("\n", " ")
+            preview = prompt_str[:200]
+            last_chars = prompt_str[-200:] if len(prompt_str) > 200 else ""
+            logger.info("Prompt %d: %s ... (last 200 chars: %s)", idx, preview, last_chars)
 
 
 def pruning_ratio_type(value: str) -> int:
@@ -129,7 +129,7 @@ def parse_args():
         default=None,
         help="Name of the dataset with prompts. The interface for dataset is load_dataset from datasets library."
         " Please provide this argument in format path,name (for example wikitext,wikitext-2-v1)."
-        " Local .json files are also supported for chat messages datasets (records with messages/tools)."
+        " Local .json/.jsonl files are also supported for chat messages datasets (records with messages/tools)."
         " If None then internal list of prompts will be used.",
     )
     parser.add_argument(
@@ -365,7 +365,7 @@ def load_prompts(args, tokenizer=None):
         data = read_json_dataset(resolved_path)
         model_path = args.base_model or args.target_model
         prompts = render_messages_dataset_to_prompts(data, tokenizer, model_path)
-        _log_prompts_summary(prompts, f"json:{resolved_path}")
+        _log_prompts_summary(prompts, f"json:{resolved_path}", verbose=args.verbose)
         return prompts
 
     dataset_split = "validation"
@@ -379,7 +379,7 @@ def load_prompts(args, tokenizer=None):
 
     res = data[args.dataset_field]
     prompts = {"prompts": list(res)}
-    _log_prompts_summary(prompts, f"dataset:{path}:{dataset_split}")
+    _log_prompts_summary(prompts, f"dataset:{path}:{dataset_split}", verbose=args.verbose)
     return prompts
 
 
@@ -658,7 +658,7 @@ def create_evaluator(base_model, args):
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
 
         if task == "text":
-            tokenizer = load_tokenizer(args)
+            tokenizer = load_tokenizer(args) if not args.llamacpp else None
             prompts = load_prompts(args, tokenizer=tokenizer)
 
             if args.genai:
@@ -669,8 +669,15 @@ def create_evaluator(base_model, args):
                 gen_answer_fn = None
 
             use_chat_template = (
-                tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template and not is_json_dataset(args.dataset)
+                tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
             )
+            if is_json_dataset(args.dataset):
+                logger.info(
+                    "JSON dataset detected: overriding max_new_tokens from 128 to 1024"
+                )
+                max_new_tokens = 1024
+            else:
+                max_new_tokens = 128
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -682,6 +689,7 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
                 long_prompt=args.long_prompt,
+                max_new_tokens=max_new_tokens,
                 num_assistant_tokens=(
                     int(args.num_assistant_tokens)
                     if args.num_assistant_tokens is not None else 0

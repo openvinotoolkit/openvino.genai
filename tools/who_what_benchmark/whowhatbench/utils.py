@@ -274,10 +274,10 @@ def strftime_now(format_string: str):
 
 
 def is_json_dataset(dataset: str) -> bool:
-    """Check if the dataset path has a .json extension."""
+    """Check if the dataset path has a .json or .jsonl extension."""
     if dataset is None:
         return False
-    return dataset.lower().endswith(".json")
+    return dataset.lower().endswith((".json", ".jsonl"))
 
 
 def resolve_json_dataset_path(dataset_path: str) -> str:
@@ -300,20 +300,32 @@ def resolve_json_dataset_path(dataset_path: str) -> str:
 
 def read_json_dataset(dataset_path: str):
     """Read JSON dataset from file. Supports both JSON array and JSONL (line-delimited JSON) formats."""
-    items = []
     logger.info(f"Reading JSON dataset from: {dataset_path}")
     with open(dataset_path, "r", encoding="utf-8") as input_file:
-        for line in input_file:
-            line = line.strip()
-            if line:
-                items.append(json.loads(line))
+        content = input_file.read()
+
+    # Try parsing as a standard JSON array first
+    try:
+        items = json.loads(content)
+        if not isinstance(items, list):
+            raise ValueError("Top-level JSON value is not an array")
+        logger.info(f"Loaded {len(items)} records from JSON dataset")
+        return items
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Fall back to JSONL (line-delimited JSON)
+    items = []
+    for line in content.splitlines():
+        line = line.strip()
+        if line:
+            items.append(json.loads(line))
     logger.info(f"Loaded {len(items)} records from JSON dataset")
     return items
 
 
 def get_chat_template_for_model(model_path, tokenizer=None):
     """Get the appropriate chat template for known models."""
-    import re
     
     # Extract model name from path
     model_name_lower = model_path.lower() if model_path else ""
@@ -331,7 +343,6 @@ def get_chat_template_for_model(model_path, tokenizer=None):
             logger.info(f"Matched model '{key}' with chat template source: {template_source}")
             return template_source
     
-    logger.info(f"No hardcoded chat template found for model: {model_path}, using tokenizer")
     return None
 
 
@@ -351,7 +362,9 @@ def render_messages_dataset_to_prompts(records, tokenizer, model_path=None):
         if chat_template_source.startswith("http://") or chat_template_source.startswith("https://"):
             import requests
             logger.info(f"Loading chat template from URL: {chat_template_source}")
-            chat_template = requests.get(chat_template_source).text
+            response = requests.get(chat_template_source, timeout=30)
+            response.raise_for_status()
+            chat_template = response.text
         else:
             from transformers import AutoTokenizer
             logger.info(f"Loading chat template from model: {chat_template_source}")
@@ -372,27 +385,33 @@ def render_messages_dataset_to_prompts(records, tokenizer, model_path=None):
     if chat_template is None:
         logger.error("Chat template is missing; cannot render prompts for JSON dataset")
         raise ValueError("Chat template is missing; cannot render prompts for JSON dataset.")
-    
+
+    jinja_env = jinja2.Environment()
+    jinja_env.policies["json.dumps_kwargs"]["ensure_ascii"] = False
+    jinja_env.globals["raise_exception"] = raise_exception
+    jinja_env.filters["from_json"] = json.loads
+    jinja_env.filters['strftime_now'] = strftime_now
+    chat_template_kwargs = {"add_generation_prompt": True}
+    if "enable_thinking" in chat_template:
+        chat_template_kwargs["enable_thinking"] = False
+    if "reasoning_effort" in chat_template:
+        chat_template_kwargs["reasoning_effort"] = "low"
+    compiled_template = jinja_env.from_string(chat_template)
+
     for item in records:
         messages = item["messages"]
-        tools = item["tools"]
+        tools = item.get("tools")
         
         try:
-            jinja_env = jinja2.Environment()
-            jinja_env.policies["json.dumps_kwargs"]["ensure_ascii"] = False
-            jinja_env.globals["raise_exception"] = raise_exception
-            jinja_env.filters["from_json"] = json.loads
-            jinja_env.filters['strftime_now'] = strftime_now
-            chat_template_kwargs = {"add_generation_prompt": True, "enable_thinking": False, "reasoning_effort": "low"}
-            prompt = jinja_env.from_string(chat_template).render(
+            prompt = compiled_template.render(
                 messages=messages,
                 tools=tools,
                 strftime_now=strftime_now,
                 **chat_template_kwargs
             )
         except Exception as e:
-            logger.warning(f"Error rendering template: {e}")
-            prompt = ""
+            logger.error(f"Error rendering template for item {len(prompts)}: {e}")
+            raise
         
         prompts.append(prompt)
     

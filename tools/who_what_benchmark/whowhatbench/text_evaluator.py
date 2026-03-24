@@ -30,7 +30,7 @@ class TextEvaluator(BaseEvaluator):
         test_data: Union[str, list] = None,
         metrics="similarity",
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
-        max_new_tokens=1024,
+        max_new_tokens=128,
         crop_question=True,
         num_samples=None,
         language="en",
@@ -197,7 +197,6 @@ class TextEvaluator(BaseEvaluator):
         )
 
         if generation_config is None:
-            self._log_greedy_generation_params(gen_answer_fn)
             for p in tqdm(prompts, desc="Evaluate pipeline"):
                 answers.append(
                     gen_answer_fn(
@@ -236,34 +235,3 @@ class TextEvaluator(BaseEvaluator):
         df["prompt_length_type"] = 'long' if self.long_prompt else 'short'
 
         return df
-
-    def _log_greedy_generation_params(self, gen_answer_fn):
-        if self._logged_generation_params:
-            return
-
-        self._logged_generation_params = True
-        gen_fn_name = getattr(gen_answer_fn, "__name__", "")
-        if gen_fn_name == "genai_gen_text":
-            backend = "genai"
-        elif gen_fn_name == "llamacpp_gen_text":
-            backend = "llamacpp"
-        else:
-            backend = "transformers"
-
-        params = {
-            "backend": backend,
-            "do_sample": False,
-            "max_new_tokens": self.max_new_tokens,
-            "use_chat_template": bool(self.use_chat_template),
-            "ignored_sampling_params": ["temperature", "top_p", "top_k"],
-        }
-        params.update(get_ignore_parameters_flag())
-
-        if backend == "genai":
-            params.pop("use_chat_template", None)
-            params["apply_chat_template"] = bool(self.use_chat_template)
-            params["num_assistant_tokens"] = int(self.num_assistant_tokens)
-            params["assistant_confidence_threshold"] = float(self.assistant_confidence_threshold)
-            params["empty_adapters"] = bool(self.empty_adapters)
-
-        logger.info("Text generation parameters: %s", params)
