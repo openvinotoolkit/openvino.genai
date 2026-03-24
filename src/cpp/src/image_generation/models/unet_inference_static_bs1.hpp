@@ -28,6 +28,7 @@ public:
         auto clone = std::make_shared<UNetInferenceStaticBS1>();
         clone->m_native_batch_size = m_native_batch_size;
         clone->m_requests.reserve(m_requests.size());
+        clone->m_is_blob = m_is_blob;
         for (auto& request : m_requests) {
             clone->m_requests.push_back(request.get_compiled_model().create_infer_request());
         }
@@ -74,7 +75,7 @@ public:
 
         size_t encoder_hidden_states_bs = encoder_hidden_states.get_shape()[0];
         if (m_is_blob && encoder_hidden_states_bs != m_native_batch_size) {
-            GENAI_INFO("UNet model was imported from blob. "
+            GENAI_WARN("UNet model was imported from blob. "
                        "The batch size of encoder hidden states does not match the batch size of native, therefore, "
                        "update native batch size to align batch size of encoder hidden states.");
 
