@@ -73,10 +73,10 @@ public:
 
         size_t encoder_hidden_states_bs = encoder_hidden_states.get_shape()[0];
         if (m_is_blob && encoder_hidden_states_bs != m_native_batch_size) {
-            std::cerr << "Warning: UNet model was imported from blob. " +
-            "The batch size of encoder hidden states does not match the batch size of native, therefore, " +
-            "update native batch size to align batch size of encoder hidden states." << std::endl;
-            
+            std::cerr << "Warning: UNet model was imported from blob. "
+                      << "The batch size of encoder hidden states does not match the batch size of native, therefore, "
+                      << "update native batch size to align batch size of encoder hidden states."
+                      << std::endl;
             auto compiled_model = m_requests[0].get_compiled_model();
             m_native_batch_size = encoder_hidden_states_bs;
             
