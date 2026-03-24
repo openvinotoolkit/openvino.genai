@@ -83,9 +83,10 @@ Apply https://huggingface.co/microsoft/Phi-4-multimodal-instruct/discussions/78/
 
 #### VideoChat-Flash {#videochat-flash-notes}
 
-1. Current implementation is video-only. Image inference is not supported for this model type.
-2. Visual history across rounds is not supported, so multi-round visual context is limited.
-3. If input frame count is not divisible by mm_local_num_frames in config.json, extra frames are dropped (e.g., 10 frames with mm_local_num_frames=4 drops the last 2 frames).
+1. The current implementation supports video input only; image inference is not supported for this model type.
+2. Visual history is not preserved across rounds, so multi-turn interactions have limited visual context.
+3. If the number of input frames is not divisible by `mm_local_num_frames` (as defined in `config.json`), the remaining frames are discarded. Example: 10 frames with mm_local_num_frames = 4, the last 2 frames are dropped.
+
 #### Qwen3-VL {#qwen3_vl-notes}
 
 The model requires `transformers>=4.57` for the export with `optimum-cli`.
