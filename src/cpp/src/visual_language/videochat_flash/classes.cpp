@@ -644,6 +644,9 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     );
     const size_t merge_dim = m_vlm_config.mm_hidden_size / num_attention_heads;
     auto merge_model = build_bipartite_soft_matching_merge_opt_model(merge_dim);
+    // TODO: CVS-183390 This pipeline is typically used with a GPU;
+    // however, when this model runs on the GPU as well,
+    // the GPU memory footprint does not meet the target requirements, so we must use the CPU for now.
     auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", {});
     m_ireq_queue_merge_model = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_merge_model.get_property(ov::optimal_number_of_infer_requests),
