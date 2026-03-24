@@ -17,6 +17,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/extensions.hpp"
 #include "openvino/genai/taylorseer_config.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
@@ -197,7 +198,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             return parsers;
         } else if (property_name == "extensions") {
             auto property_list = py_obj.cast<py::list>();
-            std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>> extensions;
+            ov::genai::ExtensionList extensions;
             py::object pathlib_path = py::module_::import("pathlib").attr("Path");
             py::object op_extension_ctor = py::module_::import("openvino").attr("OpExtension");
 
