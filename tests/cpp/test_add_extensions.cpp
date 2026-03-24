@@ -61,6 +61,7 @@ public:
         }
 
         OPENVINO_ASSERT(false, "CustomAdd unsupported element type");
+        return false;
     }
 
     bool has_evaluate() const override {

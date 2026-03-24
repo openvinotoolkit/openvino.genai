@@ -215,7 +215,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                         auto py_ext = op_extension_ctor(item);
                         extensions.push_back(py_ext.cast<std::shared_ptr<ov::Extension>>());
                         continue;
-                    } catch (const py::error_already_set&) {
+                    } catch (py::error_already_set& e) {
+                        e.clear();
                     }
                 }
                 OPENVINO_THROW("Incorrect value in \"",
