@@ -687,6 +687,12 @@ ov::Tensor VisionEncoderVideoChatFlashQwen::sample_video_if_needed(const ov::Ten
     OPENVINO_ASSERT(video_shape.size() == 4, "Input video tensor must be 4D [N, H, W, C].");
 
     const size_t frame_count = video_shape[0];
+    OPENVINO_ASSERT(frame_count >= frames_group_size,
+                    "Input video frame_count must be greater than or equal to frames_group_size. Got frame_count = ",
+                    frame_count,
+                    ", frames_group_size = ",
+                    frames_group_size,
+                    ".");
 
     const size_t remainder = frame_count % frames_group_size;
     if (remainder == 0) {
@@ -699,7 +705,6 @@ ov::Tensor VisionEncoderVideoChatFlashQwen::sample_video_if_needed(const ov::Ten
                frames_group_size,
                remainder,
                sampled_frame_count);
-    OPENVINO_ASSERT(sampled_frame_count > 0, "sampled_frame_count must be greater than 0.");
 
     ov::Shape sampled_shape = video_shape;
     sampled_shape[0] = sampled_frame_count;
