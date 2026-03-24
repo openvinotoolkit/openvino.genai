@@ -62,7 +62,7 @@ public:
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition batch-1 model");
 
-        for (int i = 0; i < m_native_batch_size; i++) {
+        for (size_t i = 0; i < m_native_batch_size; i++) {
             m_requests[i] = compiled_model.create_infer_request();
         }
     }
@@ -81,7 +81,7 @@ public:
             m_native_batch_size = encoder_hidden_states_bs;
             
             m_requests.resize(m_native_batch_size);
-            for (int i = 0; i < m_native_batch_size; i++) {
+            for (size_t i = 0; i < m_native_batch_size; i++) {
                 m_requests[i] = compiled_model.create_infer_request();
             }
         }
@@ -95,7 +95,7 @@ public:
         char* pHiddenStates = (char *)encoder_hidden_states.data();
         size_t hidden_states_batch_stride_bytes = encoder_hidden_states.get_strides()[0];
 
-        for (int i = 0; i < m_native_batch_size; i++)
+        for (size_t i = 0; i < m_native_batch_size; i++)
         {
             auto hidden_states_bs1 = m_requests[i].get_tensor(tensor_name);
 
@@ -138,7 +138,7 @@ public:
         auto bs1_sample_shape = sample.get_shape();
         bs1_sample_shape[0] = 1;
 
-        for (int i = 0; i < m_native_batch_size; i++) {
+        for (size_t i = 0; i < m_native_batch_size; i++) {
             m_requests[i].set_tensor("timestep", timestep);
 
             //wrap a portion of sample tensor as a batch-1 tensor, as set this as input tensor.
@@ -161,7 +161,7 @@ public:
             m_requests[i].start_async();
         }
 
-        for (int i = 0; i < m_native_batch_size; i++) {
+        for (size_t i = 0; i < m_native_batch_size; i++) {
             // wait for infer to complete.
             m_requests[i].wait();
         }
@@ -187,7 +187,7 @@ public:
 
         ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition batch-1 model");
 
-        for (int i = 0; i < m_native_batch_size; i++) {
+        for (size_t i = 0; i < m_native_batch_size; i++) {
             m_requests[i] = compiled_model.create_infer_request();
         }
     }
