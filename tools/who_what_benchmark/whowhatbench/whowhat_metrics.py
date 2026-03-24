@@ -32,11 +32,14 @@ def evaluate_similarity(
     answers_gold = data_gold["answers"].values
     answers_prediction = data_prediction["answers"].values
 
-    # gold, prediction are output of the model to compare
-    # type: str, in question mode
-    # type: list[str], in chat mode
     metric_per_chat_answer_list = []
     metric_per_question = []
+
+    # gold, prediction are output of the model to compare
+    # type: str, in question mode
+    # type: list, in chat mode
+    gold: list[str] | str
+    prediction: list[str] | str
     for i, (gold, prediction) in tqdm(
         enumerate(zip(answers_gold, answers_prediction)),
         total=min(len(answers_gold), len(answers_prediction)),
@@ -91,7 +94,7 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
         if isinstance(a_answer, list):
             if not isinstance(b_answer, list):
                 raise ValueError(
-                    "GT and prediction data are inconsistent. Prediction data is a list, but GT is a string."
+                    "GT and prediction data are inconsistent. GT data is a list, but prediction is a string."
                 )
             if not a_answer or not b_answer:
                 raise ValueError("List of answers can't be empty.")
