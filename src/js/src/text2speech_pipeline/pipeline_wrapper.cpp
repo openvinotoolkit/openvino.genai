@@ -155,7 +155,11 @@ Napi::Value Text2SpeechPipelineWrapper::generate(const Napi::CallbackInfo& info)
 
         auto inputs = js_to_cpp<ov::genai::StringInputs>(env, info[0]);
 
-        auto speaker_embedding = js_to_cpp<ov::Tensor>(env, info[1]);
+        ov::Tensor speaker_embedding;
+
+        if (!info[1].IsNull() && !info[1].IsUndefined()) {
+            speaker_embedding = js_to_cpp<ov::Tensor>(env, info[1]);
+        }
 
         auto properties = js_to_cpp<ov::AnyMap>(env, info[2]);
 

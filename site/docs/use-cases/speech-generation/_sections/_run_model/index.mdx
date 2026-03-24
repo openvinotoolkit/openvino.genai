@@ -48,7 +48,7 @@ Use CPU or GPU as devices without any other code change.
 ## Additional Usage Options
 
 :::tip
-Check out [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/speech_generation/text2speech.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/speech_generation/text2speech.cpp), and [Node.js](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/js/speech_generation/test.js) speech generation samples.
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/speech_generation/text2speech.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/speech_generation/text2speech.cpp), and [Node.js](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/js/speech_generation/text2speech.js) speech generation samples.
 :::
 
 ### Use Speaker Embedding File
@@ -106,21 +106,14 @@ python create_speaker_embedding.py
     </TabItemCpp>
     <TabItemJS>
         ```javascript
-        import { readFile, writeFile } from 'node:fs/promises';
+        import { writeFile } from 'node:fs/promises';
         import { Text2SpeechPipeline } from 'openvino-genai-node';
-        import { addon as ov } from 'openvino-node';
-        import { decode, encode } from 'node-wav';
+        import { encode } from 'node-wav';
+        import { readSpeakerEmbedding } from './embedding_utils.js';
 
         const pipeline = await Text2SpeechPipeline(modelPath, "CPU");
 
-        const embeddingWav = await readFile(embeddingPath);
-        const decodedEmbedding = decode(embeddingWav);
-        const maxEmbeddingLength = 512;
-        const speakerEmbedding = new ov.Tensor(
-            'f32',
-            [1, maxEmbeddingLength],
-            decodedEmbedding.channelData[0].slice(0, maxEmbeddingLength)
-        );
+        const speakerEmbedding = await readSpeakerEmbedding(embeddingPath);
         const result = await pipeline.generate(
             "Hello OpenVINO GenAI",
             { speakerEmbedding },

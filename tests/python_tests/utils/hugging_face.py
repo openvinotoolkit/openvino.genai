@@ -263,7 +263,7 @@ TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
 def download_and_convert_model_class(
     model_id: str, 
     model_class: Type[OVModel],
-    model_kwargs = {},
+    model_kwargs: dict | None = None,
     **tokenizer_kwargs,
 ) -> OVConvertedModelSchema:
     trust_remote_code = model_id in TRUST_REMOTE_CODE_MODELS
@@ -274,6 +274,9 @@ def download_and_convert_model_class(
     models_path = ov_cache_converted_dir / dir_name
 
     manager = AtomicDownloadManager(models_path)
+
+    if model_kwargs is None:
+        model_kwargs = {}
 
     if manager.is_complete() or (models_path / OV_MODEL_FILENAME).exists():
         opt_model, hf_tokenizer = get_huggingface_models(

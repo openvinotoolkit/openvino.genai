@@ -677,9 +677,7 @@ ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(c
 
 template <>
 ov::Tensor js_to_cpp<ov::Tensor>(const Napi::Env& env, const Napi::Value& value) {
-    if (value.IsNull() || value.IsUndefined()) {
-        return ov::Tensor();
-    }
+    OPENVINO_ASSERT(!value.IsNull() && !value.IsUndefined(), "Passed argument must not be null or undefined.");
     OPENVINO_ASSERT(value.IsObject(), "Passed argument must be an object.");
 
     auto tensor_wrap = value.As<Napi::Object>();

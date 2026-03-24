@@ -49,14 +49,25 @@ class TestTextToSpeechSample:
 
         # Run JS sample
         js_script = SAMPLES_JS_DIR / "speech_generation/text2speech.js"
-        js_command = ["node", js_script, convert_model, input_prompt,
-                      "--speaker_embedding", self.temp_speaker_embedding_file.name]
+        js_command = [
+            "node",
+            js_script,
+            convert_model,
+            input_prompt,
+            "--speaker_embedding",
+            self.temp_speaker_embedding_file.name,
+        ]
         js_result = run_sample(js_command)
 
-        assert "Text successfully converted to audio file" in cpp_result.stdout, "C++ sample text2speech must be successfully completed"
-        assert "Text successfully converted to audio file" in py_result.stdout, "Python sample text2speech must be successfully completed"
-        assert "Text successfully converted to audio file" in js_result.stdout, "JS sample text2speech must be successfully completed"
-
+        assert "Text successfully converted to audio file" in cpp_result.stdout, (
+            "C++ sample text2speech must be successfully completed"
+        )
+        assert "Text successfully converted to audio file" in py_result.stdout, (
+            "Python sample text2speech must be successfully completed"
+        )
+        assert "Text successfully converted to audio file" in js_result.stdout, (
+            "JS sample text2speech must be successfully completed"
+        )
 
     @pytest.mark.speech_generation
     @pytest.mark.samples
@@ -79,6 +90,12 @@ class TestTextToSpeechSample:
         js_command = ["node", js_script, convert_model, input_prompt]
         js_result = run_sample(js_command)
 
-        assert "Text successfully converted to audio file" in cpp_result.stdout, "C++ sample text2speech must be successfully completed"
-        assert "Text successfully converted to audio file" in py_result.stdout, "Python sample text2speech must be successfully completed"
-        assert "Text successfully converted to audio file" in js_result.stdout, "JS sample text2speech must be successfully completed"
+        assert "Text successfully converted to audio file" in cpp_result.stdout, (
+            "C++ sample text2speech must be successfully completed"
+        )
+        assert "Text successfully converted to audio file" in py_result.stdout, (
+            "Python sample text2speech must be successfully completed"
+        )
+        assert "Text successfully converted to audio file" in js_result.stdout, (
+            "JS sample text2speech must be successfully completed"
+        )

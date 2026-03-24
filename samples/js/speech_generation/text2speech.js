@@ -2,20 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { basename } from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
-import { decode, encode } from 'node-wav';
-import { addon as ov } from 'openvino-node';
+import { encode } from 'node-wav';
 import { Text2SpeechPipeline } from 'openvino-genai-node';
-
-async function readSpeakerEmbedding(filePath) {
-  const embeddingWav = await readFile(filePath);
-  const decodedEmbedding = decode(embeddingWav);
-  const maxEmbeddingLength = 512;
-  return new ov.Tensor('f32', [1, maxEmbeddingLength], decodedEmbedding.channelData[0].slice(0, maxEmbeddingLength));
-}
+import { readSpeakerEmbedding } from './embedding_utils.js';
 
 /**
  * Parse CLI arguments, run TTS inference and write the output WAV file.
