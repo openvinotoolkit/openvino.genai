@@ -79,6 +79,7 @@ public:
                        "The batch size of encoder hidden states does not match the batch size of native, therefore, "
                        "update native batch size to align batch size of encoder hidden states.");
 
+            // Re-create infer requests with new batch size which based on batch size of encoder hidden states
             auto compiled_model = m_requests[0].get_compiled_model();
             m_native_batch_size = encoder_hidden_states_bs;
             
