@@ -57,6 +57,7 @@ protected:
     ov::Tensor m_pos_emb;
 
 private:
+    ov::Tensor sample_video_if_needed(const ov::Tensor& video) const;
     void initialize_positional_embedding();
     void initialize_merge_model_queue();
 };

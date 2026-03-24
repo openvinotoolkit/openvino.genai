@@ -5,6 +5,7 @@
 #include "visual_language/videochat_flash/classes.hpp"
 
 #include "openvino/opsets/opset13.hpp"
+#include "logger.hpp"
 #include "visual_language/clip.hpp"
 #include "visual_language/vlm_utils.hpp"
 #include "utils.hpp"
@@ -138,13 +139,6 @@ ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t m
     const ov::Shape src_shape = src_tensor.get_shape();
     OPENVINO_ASSERT(src_shape.size() == 4, "Input tensor must be 4D [N, C, H, W].");
     OPENVINO_ASSERT(mm_local_num_frames > 0, "mm_local_num_frames must be greater than 0.");
-    OPENVINO_ASSERT(
-        src_shape[0] % mm_local_num_frames == 0,
-        "Batch N must be divisible by mm_local_num_frames. N=", src_shape[0],
-        ", mm_local_num_frames=", mm_local_num_frames,
-        ".\nPlease adjust the batch size to be divisible by mm_local_num_frames.\n"
-        "reference: https://huggingface.co/OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B/blob/main/modeling_videochat_flash.py#L152"
-    );
 
     const size_t n = src_shape[0];
     const size_t c = src_shape[1];
@@ -683,10 +677,47 @@ EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, co
     OPENVINO_THROW("VideoChat-Flash currently does not support image inference. Please use video input.");
 }
 
+ov::Tensor VisionEncoderVideoChatFlashQwen::sample_video_if_needed(const ov::Tensor& video) const {
+    const size_t frames_group_size = m_vlm_config.mm_local_num_frames;
+    const ov::Shape& video_shape = video.get_shape();
+    OPENVINO_ASSERT(video_shape.size() == 4, "Input video tensor must be 4D [N, H, W, C].");
+
+    const size_t frame_count = video_shape[0];
+
+    const size_t remainder = frame_count % frames_group_size;
+    if (remainder == 0) {
+        return video;
+    }
+
+    const size_t sampled_frame_count = frame_count - remainder;
+    GENAI_WARN("Video frame_count=%zu is not divisible by group_size=%zu. Dropping last %zu frame(s), sampled_frame_count=%zu.",
+               frame_count,
+               frames_group_size,
+               remainder,
+               sampled_frame_count);
+    OPENVINO_ASSERT(sampled_frame_count > 0, "sampled_frame_count must be greater than 0.");
+
+    ov::Shape sampled_shape = video_shape;
+    sampled_shape[0] = sampled_frame_count;
+    ov::Tensor sampled_video(video.get_element_type(), sampled_shape);
+
+    const size_t element_size = video.get_element_type().size();
+    OPENVINO_ASSERT(element_size > 0, "Unsupported tensor element type in sample_video_if_needed.");
+    
+    const size_t frame_volume = video_shape[1] * video_shape[2] * video_shape[3];
+    const size_t bytes_to_copy = sampled_frame_count * frame_volume * element_size;
+    const uint8_t* src_data = static_cast<const uint8_t*>(video.data());
+    uint8_t* dst_data = static_cast<uint8_t*>(sampled_video.data());
+    std::memcpy(dst_data, src_data, bytes_to_copy);
+
+    return sampled_video;
+}
+
 EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& video) {
     EncodedVideo encoded_video;
     ImageSize target_size{StaticConfig::image_size, StaticConfig::image_size};
-    auto preprocessed_video = preprocess(video, target_size, StaticConfig::image_mean, StaticConfig::image_std);
+    ov::Tensor sampled_video = sample_video_if_needed(video);
+    auto preprocessed_video = preprocess(sampled_video, target_size, StaticConfig::image_mean, StaticConfig::image_std);
     encoded_video.resized_source_size = target_size;
     encoded_video.frame_num = preprocessed_video.get_shape()[0];
     const size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
