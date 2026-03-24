@@ -72,7 +72,7 @@ public:
                         "UNet model must be compiled first");
 
         size_t encoder_hidden_states_bs = encoder_hidden_states.get_shape()[0];
-        if (is_blob_model && encoder_hidden_states_bs != m_native_batch_size) {
+        if (m_is_blob && encoder_hidden_states_bs != m_native_batch_size) {
             std::cerr << "Warning: UNet model was imported from blob. " +
             "The batch size of encoder hidden states does not match the batch size of native, therefore, " +
             "update native batch size to align batch size of encoder hidden states." << std::endl;
@@ -180,7 +180,7 @@ public:
     virtual void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties) override {
         auto compiled_model = utils::import_model(blob_path / "openvino_model.blob", device, properties);
 
-        is_blob_model = true;
+        m_is_blob = true;
 
         m_native_batch_size = compiled_model.input("sample").get_shape()[0];
         m_requests.resize(m_native_batch_size);
@@ -195,7 +195,7 @@ public:
 private:
     std::vector<ov::InferRequest> m_requests;
     size_t m_native_batch_size = 0;
-    bool is_blob_model = false;
+    bool m_is_blob = false;
 };
 
 }  // namespace genai
