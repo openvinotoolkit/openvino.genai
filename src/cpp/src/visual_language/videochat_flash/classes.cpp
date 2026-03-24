@@ -144,6 +144,9 @@ ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t m
     const size_t c = src_shape[1];
     const size_t h = src_shape[2];
     const size_t w = src_shape[3];
+    OPENVINO_ASSERT(n % mm_local_num_frames == 0,
+                    "Batch size N must be divisible by mm_local_num_frames. Got N = ",
+                    n, ", mm_local_num_frames = ", mm_local_num_frames, ".");
     const size_t n_prime = n / mm_local_num_frames;
     const ov::Shape dst_shape{n_prime, c, mm_local_num_frames, h, w};
     ov::Tensor dst_tensor(src_tensor.get_element_type(), dst_shape);
