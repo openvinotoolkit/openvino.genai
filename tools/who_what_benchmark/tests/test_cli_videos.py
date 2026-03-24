@@ -190,6 +190,7 @@ def run_test_with_lora(model_id, model_type, tmp_path, *, genai_threshold):
         ]
     )
     assert gt_file.exists(), f"GT wasn't generated: {gt_file}"
+    assert (tmp_path / "reference").exists()
 
     # 2) Target: GenAI + LoRA
     outputs_genai = tmp_path / "genai_lora"
@@ -220,6 +221,7 @@ def run_test_with_lora(model_id, model_type, tmp_path, *, genai_threshold):
     )
 
     assert "Metrics for model" in out_genai
+    assert (outputs_genai / "target").exists()
     similarity = get_similarity(out_genai)
     assert similarity >= genai_threshold
 
@@ -252,6 +254,7 @@ def run_test_with_lora(model_id, model_type, tmp_path, *, genai_threshold):
         ]
     )
     assert "Metrics for model" in out_empty
+    assert (outputs_empty / "target").exists()
 
 
 @pytest.mark.parametrize(
