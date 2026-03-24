@@ -223,6 +223,36 @@ def run_test_with_lora(model_id, model_type, tmp_path, *, genai_threshold):
     similarity = get_similarity(out_genai)
     assert similarity >= genai_threshold
 
+    # 3) GenAI + LoRA at load time, empty AdapterConfig at generate time
+    outputs_empty = tmp_path / "genai_empty_adapters"
+    out_empty = run_wwb(
+        [
+            "--target-model",
+            model_path,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            gt_file,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--genai",
+            "--num-inference-steps",
+            "2",
+            "--video-frames-num",
+            "9",
+            "--adapters",
+            str(lora_file),
+            "--alphas",
+            "0.9",
+            "--empty-adapters",
+            "--output",
+            outputs_empty,
+        ]
+    )
+    assert "Metrics for model" in out_empty
+
 
 @pytest.mark.parametrize(
     ("model_id", "model_type"),

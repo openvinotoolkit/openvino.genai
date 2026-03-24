@@ -86,10 +86,11 @@ class Text2VideoEvaluator(BaseEvaluator):
             all_metrics.update(metric_dict)
             all_metrics_per_prompt.update(metric_per_frame)
 
+        n = min(len(self.gt_data), len(predictions))
         self.last_cmp = all_metrics_per_prompt
-        self.last_cmp["prompts"] = predictions["prompt"].values
-        self.last_cmp["source_model"] = self.gt_data["videos"].values[: len(predictions)]
-        self.last_cmp["optimized_model"] = predictions["videos"].values
+        self.last_cmp["prompts"] = predictions["prompt"].values[:n]
+        self.last_cmp["source_model"] = self.gt_data["videos"].values[:n]
+        self.last_cmp["optimized_model"] = predictions["videos"].values[:n]
         self.last_cmp = pd.DataFrame(self.last_cmp)
 
         return pd.DataFrame(all_metrics_per_prompt), pd.DataFrame([all_metrics])
