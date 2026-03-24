@@ -16,14 +16,14 @@ namespace {
  * Handles resizing to a fixed square size and normalization.
  */
 clip_image_f32 preprocess_idefics3_image(const clip_image_u8& image, const ProcessorConfig& config) {
-    // Idefics3/SmolVLM uses a fixed 27x27 patch grid (378x378 image with 14x14 patches)
-    // The connector is hard-coded to reshape from [729, 1152] to [27, 9, 3456]
-    // Note: config.image_size may contain different values (e.g., 980 from other configs)
-    // but we must use 378 to match the connector's expected dimensions.
+    // Idefics3/SmolVLM architecture has a fixed connector that expects 27x27 patches
+    // The connector reshapes [729, 1152] → [27, 9, 3456], so output MUST be 729 patches
+    // This is a model architecture constraint, not configurable
     
-    int patch_size = config.patch_size > 0 ? config.patch_size : 14;
-    constexpr int target_patches_per_side = 27;
-    int target_size = target_patches_per_side * patch_size;  // 27 * 14 = 378
+    OPENVINO_ASSERT(config.patch_size > 0, "patch_size must be positive");
+    const int patch_size = config.patch_size;
+    constexpr int target_patches_per_side = 27;  // Fixed by model architecture
+    const int target_size = target_patches_per_side * patch_size;  // 27 * 14 = 378
     
     // Resize image to exactly 378x378
     clip_image_u8 resized_image;
@@ -65,22 +65,23 @@ EncodedImage VisionEncoderIdefics3::encode(const ov::Tensor& image, const ov::An
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
     
     // Preprocess image
-    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
-    clip_image_f32 preprocessed = preprocess_idefics3_image(input_image, config);
-    ov::Tensor pixel_values = clip_image_f32_to_tensor(preprocessed);
+    const clip_image_u8 input_image = tensor_to_clip_image_u8(image);
+    const clip_image_f32 preprocessed = preprocess_idefics3_image(input_image, config);
+    const ov::Tensor pixel_values = clip_image_f32_to_tensor(preprocessed);
     
     // Get dimensions for patch calculations
-    size_t height = pixel_values.get_shape()[2];
-    size_t width = pixel_values.get_shape()[3];
-    size_t patch_size = config.patch_size > 0 ? config.patch_size : 14;  // Default patch size for Idefics3
+    OPENVINO_ASSERT(config.patch_size > 0, "patch_size must be positive");
+    const size_t height = pixel_values.get_shape()[2];
+    const size_t width = pixel_values.get_shape()[3];
+    const size_t patch_size = static_cast<size_t>(config.patch_size);
     
-    size_t num_patches_h = height / patch_size;
-    size_t num_patches_w = width / patch_size;
-    size_t num_patches = num_patches_h * num_patches_w;
+    const size_t num_patches_h = height / patch_size;
+    const size_t num_patches_w = width / patch_size;
+    const size_t num_patches = num_patches_h * num_patches_w;
     
     // Create attention mask and position IDs
-    ov::Tensor patch_attention_mask = create_patch_attention_mask(num_patches_h, num_patches_w);
-    ov::Tensor patch_position_ids = create_patch_position_ids(num_patches);
+    const ov::Tensor patch_attention_mask = create_patch_attention_mask(num_patches_h, num_patches_w);
+    const ov::Tensor patch_position_ids = create_patch_position_ids(num_patches);
     
     // Set inputs
     encoder.set_tensor("pixel_values", pixel_values);
