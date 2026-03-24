@@ -85,16 +85,29 @@ protected:
     friend class SpeculativeDecodingImpl;
     friend class Eagle3DecodingImpl;
     friend class PromptLookupImpl;
-    friend class VLMPipeline;
 
     std::shared_ptr<IContinuousBatchingPipeline> m_impl;
 
     ContinuousBatchingPipeline() = default;
 
-    // Uses preloaded language model to avoid redundant read_model() during pipeline initialization.
+public:
+    /**
+    * @brief Constructs a ContinuousBatchingPipeline from pre-read models.
+    * The language model is expected under the "language" key. Other models
+    * (e.g. "vision_embeddings", "text_embeddings", "resampler") are used
+    * to construct the inputs embedder. This constructor enables building
+    * pipelines from pre-read models, e.g. from optimum-intel objects.
+    *
+    * @param models_map A map where key is model name and value is a pre-read ov::Model.
+    * @param tokenizer A manually initialized ov::genai::Tokenizer.
+    * @param scheduler_config Configuration for the scheduler.
+    * @param device The device to run the pipeline on (e.g., CPU, GPU).
+    * @param embedder_config_dir_path Optional path to a directory containing embedder config.
+    * @param properties Optional properties for the pipeline.
+    * @param generation_config Optional generation configuration for the pipeline.
+    */
     ContinuousBatchingPipeline(
-        const std::shared_ptr<ov::Model>& language_model,
-        const ModelsMap& models_map,
+        const std::map<std::string, std::shared_ptr<ov::Model>>& models_map,
         const ov::genai::Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
@@ -102,8 +115,6 @@ protected:
         const ov::AnyMap& properties = {},
         const ov::genai::GenerationConfig& generation_config = {}
     );
-
-public:
     ContinuousBatchingPipeline(const std::filesystem::path& models_path,
                                const SchedulerConfig& scheduler_config,
                                const std::string& device,

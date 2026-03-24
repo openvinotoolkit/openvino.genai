@@ -64,8 +64,14 @@ public:
         const ov::AnyMap& properties,
         const ov::genai::GenerationConfig& generation_config
     ): m_impl{
-        language_model,
-        models_map,
+        [&]() {
+            std::map<std::string, std::shared_ptr<ov::Model>> result;
+            for (const auto& [name, data] : models_map) {
+                result[name] = utils::singleton_core().read_model(data.first, data.second);
+            }
+            result["language"] = language_model;
+            return result;
+        }(),
         tokenizer,
         scheduler_config,
         device,

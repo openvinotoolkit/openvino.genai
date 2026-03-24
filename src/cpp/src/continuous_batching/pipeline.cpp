@@ -37,6 +37,17 @@ float get_load_time(std::chrono::steady_clock::time_point start_time) {
     auto stop_time = std::chrono::steady_clock::now();
     return std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
+
+namespace {
+std::map<std::string, std::shared_ptr<ov::Model>> read_all_models(const ModelsMap& models_map) {
+    std::map<std::string, std::shared_ptr<ov::Model>> result;
+    for (const auto& [name, model_data] : models_map) {
+        result[name] = utils::singleton_core().read_model(model_data.first, model_data.second);
+    }
+    return result;
+}
+}
+
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
@@ -243,52 +254,19 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         const std::string& device,
         std::optional<std::filesystem::path> embedder_config_dir_path,
         const ov::AnyMap& properties,
-        const ov::genai::GenerationConfig& generation_config) {
-    auto start_time = std::chrono::steady_clock::now();
-
-    auto properties_without_draft_model = properties;
-    auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
-    auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
-    auto model_pair = utils::get_model_weights_pair(models_map, "language");
-    auto model = utils::singleton_core().read_model(model_pair.first, model_pair.second);
-
-    auto rt_info = model->get_rt_info();
-    std::filesystem::path directory;
-    std::shared_ptr<InputsEmbedder> embedder = nullptr;
-    if (embedder_config_dir_path.has_value()) {
-        auto path = *embedder_config_dir_path;
-        embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, path, device, properties);
-    }
-    else if (rt_info.find("__weights_path") != rt_info.end()) {
-        std::string weights_path = rt_info.at("__weights_path").as<std::string>();
-        directory = std::filesystem::path(weights_path).parent_path();
-        if (std::filesystem::exists(directory / "openvino_text_embeddings_model.xml")) {
-            embedder = std::make_shared<InputsEmbedder>(directory, device, properties_without_draft_model);
-        }
-    }
-
-    utils::print_scheduler_config_info(scheduler_config);
-
-    if (is_prompt_lookup_enabled) {
-        OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
-        OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
-        m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
-    } else if (draft_model_desr.model != nullptr) {
-        OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
-        m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_desr);
-    } else if (embedder) {
-        m_impl = std::make_shared<ContinuousBatchingImpl>(model, embedder, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
-    } else {
-        m_impl = std::make_shared<ContinuousBatchingImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
-    }
-
-    m_impl->m_load_time_ms = get_load_time(start_time);
-}
+        const ov::genai::GenerationConfig& generation_config
+) : ContinuousBatchingPipeline{
+        read_all_models(models_map),
+        tokenizer,
+        scheduler_config,
+        device,
+        embedder_config_dir_path,
+        properties,
+        generation_config
+} {}
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline(
-        const std::shared_ptr<ov::Model>& language_model,
-        const ModelsMap& models_map,
+        const std::map<std::string, std::shared_ptr<ov::Model>>& models_map,
         const ov::genai::Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,
         const std::string& device,
@@ -300,7 +278,11 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model = properties;
     auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
-    auto model = language_model;
+
+    auto it = models_map.find("language");
+    OPENVINO_ASSERT(it != models_map.end(), "models_map must contain a \"language\" key for the language model");
+    const std::shared_ptr<ov::Model>& model = it->second;
+    OPENVINO_ASSERT(model != nullptr, "Language model in models_map cannot be null");
 
     auto rt_info = model->get_rt_info();
     std::filesystem::path directory;
