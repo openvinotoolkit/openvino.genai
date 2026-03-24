@@ -278,7 +278,6 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
     return expected_commit_prefix in local_version
 
 
-
 def _maybe_patch_pyav_for_videochat_flash_qwen(model_id: str) -> None:
     """
     Patch PyAV with a stub module on Windows if the model is
