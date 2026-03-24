@@ -3,6 +3,7 @@
 
 #include "visual_language/qwen3_vl/classes.hpp"
 #include "utils.hpp"
+#include "logger.hpp"
 
 namespace ov::genai {
 
@@ -520,6 +521,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
     ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
     int64_t vision_start_token_id = m_vision_token_ids.at("vision_start");
+    int64_t vision_end_token_id = m_vision_token_ids.at("vision_end");
     int64_t image_pad_token_id = m_vision_token_ids.at("image_pad");
     int64_t video_pad_token_id = m_vision_token_ids.at("video_pad");
 

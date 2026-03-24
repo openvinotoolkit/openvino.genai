@@ -2137,14 +2137,9 @@ CDPRUNER_SUPPORTED_MODELS = [
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
 ]
 
-# Models that only support PA backend for CDPruner (e.g. SDPA export not yet supported by optimum)
-CDPRUNER_PA_ONLY_MODELS = {
-    "optimum-intel-internal-testing/tiny-random-qwen3-vl",
-}
-
 parametrize_cdpruner_models = pytest.mark.parametrize(
     "ov_pipe_model",
-    [(m, b) for m in CDPRUNER_SUPPORTED_MODELS for b in ATTENTION_BACKEND if b == "PA" or m not in CDPRUNER_PA_ONLY_MODELS],
+    [(m, b) for m in CDPRUNER_SUPPORTED_MODELS for b in ATTENTION_BACKEND],
     ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],
 )
