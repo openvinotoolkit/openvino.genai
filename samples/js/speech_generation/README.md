@@ -41,7 +41,7 @@ From the `samples/js` directory, install dependencies (if not already done):
 npm install
 ```
 
-If you use the master branch, you may need to [build openvino-genai-node from source](../../src/js/README.md#build-bindings) first.
+If you use the master branch, you may need to [build openvino-genai-node from source](../../../src/js/README.md#build-bindings) first.
 
 Run the sample:
 
