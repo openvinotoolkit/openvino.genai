@@ -374,9 +374,6 @@ def check_args(args):
         )
     if args.hf and args.empty_adapters:
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
-    if args.model_type == "speech-generation" and (args.base_model or args.target_model):
-        if not args.genai and not args.hf:
-            raise ValueError("Speech generation in WWB requires either --genai or --hf backend.")
     if args.speaker_embedding_file_path is not None and not os.path.exists(args.speaker_embedding_file_path):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embedding_file_path}")
 
@@ -639,6 +636,31 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, voice=""):
     return speech, sample_rate
 
 
+def _get_default_speaker_embeddings():
+    import io
+    import zipfile
+    import torch as _torch
+    from huggingface_hub import hf_hub_download as _hf_hub_download
+
+    logger.warning(
+        "No --speaker-embedding-file-path provided but this model requires speaker embeddings. "
+        "Auto-loading a default xvector from 'Matthijs/cmu-arctic-xvectors'. "
+        "Pass --speaker-embedding-file-path for a consistent, reproducible speaker identity."
+    )
+    zip_path = _hf_hub_download(
+        repo_id="Matthijs/cmu-arctic-xvectors",
+        filename="spkrec-xvect.zip",
+        repo_type="dataset",
+    )
+    with zipfile.ZipFile(zip_path) as zf:
+        npy_files = [n for n in zf.namelist() if n.endswith(".npy")]
+        slt_files = [n for n in npy_files if "cmu_us_slt_arctic" in n]
+        selected_file = (slt_files + npy_files)[0]
+        with zf.open(selected_file) as f:
+            xvect = np.load(io.BytesIO(f.read()))
+    return _torch.tensor(xvect, dtype=_torch.float32).unsqueeze(0)
+
+
 def hf_gen_speech(model, prompt, speaker_embedding=None, voice=""):
     import torch as _torch
 
@@ -667,27 +689,7 @@ def hf_gen_speech(model, prompt, speaker_embedding=None, voice=""):
             raise
         if not hasattr(hf_gen_speech, "_default_speaker_embeddings"):
             try:
-                import io
-                import zipfile
-                from huggingface_hub import hf_hub_download as _hf_hub_download
-
-                logger.warning(
-                    "No --speaker-embedding-file-path provided but this model requires speaker embeddings. "
-                    "Auto-loading a default xvector from 'Matthijs/cmu-arctic-xvectors'. "
-                    "Pass --speaker-embedding-file-path for a consistent, reproducible speaker identity."
-                )
-                zip_path = _hf_hub_download(
-                    repo_id="Matthijs/cmu-arctic-xvectors",
-                    filename="spkrec-xvect.zip",
-                    repo_type="dataset",
-                )
-                with zipfile.ZipFile(zip_path) as zf:
-                    npy_files = [n for n in zf.namelist() if n.endswith(".npy")]
-                    slt_files = [n for n in npy_files if "cmu_us_slt_arctic" in n]
-                    selected_file = (slt_files + npy_files)[0]
-                    with zf.open(selected_file) as f:
-                        xvect = np.load(io.BytesIO(f.read()))
-                hf_gen_speech._default_speaker_embeddings = _torch.tensor(xvect, dtype=_torch.float32).unsqueeze(0)
+                hf_gen_speech._default_speaker_embeddings = _get_default_speaker_embeddings()
             except Exception as inner_exc:
                 raise ValueError(
                     "This model requires speaker embeddings but none were provided. "
@@ -725,6 +727,60 @@ def hf_gen_speech(model, prompt, speaker_embedding=None, voice=""):
         audio = audio.detach().cpu().numpy()
 
     return np.array(audio).reshape(-1), int(sampling_rate)
+
+
+def optimum_gen_speech(model, prompt, speaker_embedding=None, voice=""):
+    import torch as _torch
+
+    input_data = model.processor(text=[prompt], return_tensors="pt", padding=True, truncation=True)
+    if hasattr(input_data, "pop"):
+        input_data.pop("token_type_ids", None)
+
+    if hasattr(input_data, "keys") and "input_ids" in input_data:
+        input_tokens = input_data["input_ids"]
+    else:
+        input_tokens = input_data
+
+    if isinstance(input_tokens, np.ndarray):
+        input_tokens = _torch.from_numpy(input_tokens)
+    elif isinstance(input_tokens, (list, tuple)):
+        input_tokens = _torch.tensor(input_tokens, dtype=_torch.long)
+
+    if isinstance(input_tokens, _torch.Tensor) and input_tokens.ndim == 1:
+        input_tokens = input_tokens.unsqueeze(0)
+
+    if speaker_embedding is not None:
+        if hasattr(speaker_embedding, "data"):
+            emb = np.array(speaker_embedding.data, dtype=np.float32)
+        else:
+            emb = np.array(speaker_embedding, dtype=np.float32)
+        if emb.ndim == 1:
+            emb = emb.reshape(1, -1)
+        speaker_embedding_tensor = _torch.tensor(emb, dtype=_torch.float32)
+    else:
+        if not hasattr(optimum_gen_speech, "_default_speaker_embeddings"):
+            try:
+                optimum_gen_speech._default_speaker_embeddings = _get_default_speaker_embeddings()
+            except Exception as inner_exc:
+                raise ValueError(
+                    "This model requires speaker embeddings but none were provided. "
+                    "Pass --speaker-embedding-file-path with a binary float32 xvector file. "
+                    f"Auto-load also failed: {inner_exc}"
+                ) from inner_exc
+        speaker_embedding_tensor = optimum_gen_speech._default_speaker_embeddings
+
+    generation_kwargs = {"speaker_embeddings": speaker_embedding_tensor}
+    if model.vocoder is not None:
+        generation_kwargs["vocoder"] = model.vocoder
+
+    output = model.model.generate(input_tokens, **generation_kwargs)
+    if isinstance(output, tuple):
+        output = output[0]
+    if isinstance(output, _torch.Tensor):
+        output = output.detach().cpu().numpy()
+
+    speech = np.array(output[0] if np.ndim(output) > 1 else output).reshape(-1)
+    return speech, 16000
 
 
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
@@ -850,7 +906,7 @@ def create_evaluator(base_model, args):
                 gt_data=args.gt_data,
                 test_data=prompts,
                 num_samples=args.num_samples,
-                gen_speech_fn=genai_gen_speech if args.genai else (hf_gen_speech if args.hf else None),
+                gen_speech_fn=genai_gen_speech if args.genai else (hf_gen_speech if args.hf else optimum_gen_speech),
                 sample_rate=16000,
                 speaker_embedding_file_path=args.speaker_embedding_file_path,
                 whisper_model=args.tts_eval_whisper_model,
@@ -1143,7 +1199,7 @@ def main():
 
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,
-                evaluator.get_generation_fn() if args.genai or args.llamacpp else None,
+                evaluator.get_generation_fn() if args.genai or args.llamacpp or args.model_type == "speech-generation" else None,
                 output_dir=args.output,
                 verbose=args.verbose,
             )

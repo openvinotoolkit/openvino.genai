@@ -95,6 +95,19 @@ class GenAIModelWrapper:
             return getattr(self.model, attr)
 
 
+class OptimumTextToSpeechModelWrapper:
+    def __init__(self, model, processor, vocoder):
+        self.model = model
+        self.processor = processor
+        self.vocoder = vocoder
+        self.model_type = "speech-generation"
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return getattr(self, attr)
+        return getattr(self.model, attr)
+
+
 def configure_sparse_attention(scheduler_params, scheduler_config):
     """
     Configures sparse attention settings based on scheduler parameters.
@@ -793,9 +806,27 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         logger.info("Using OpenVINO GenAI API")
         return load_speech_generation_genai_pipeline(model_id, device, ov_config, **kwargs)
 
-    raise ValueError(
-        "Speech generation in WWB requires either --genai or --hf backend."
+    logger.info("Using Optimum API")
+    from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq
+    from transformers import SpeechT5Processor, SpeechT5HifiGan
+
+    remote_code = False
+    try:
+        model_config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+    except Exception:
+        model_config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        remote_code = True
+
+    model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
+        model_id,
+        device=device,
+        ov_config=ov_config,
+        config=model_config,
+        trust_remote_code=remote_code,
     )
+    processor = SpeechT5Processor.from_pretrained(model_id, trust_remote_code=remote_code)
+    vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
+    return OptimumTextToSpeechModelWrapper(model, processor, vocoder)
 
 
 def load_model(
