@@ -17,9 +17,10 @@ ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
                                                           const ov::Tensor& input_ids,
                                                           const ov::genai::GenerationConfig& sampling_params,
                                                           std::optional<ov::Tensor> token_type_ids,
-                                                          std::optional<ov::Tensor> prompt_ids) {
+                                                          std::optional<ov::Tensor> prompt_ids,
+                                                          std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     OPENVINO_ASSERT(sampling_params.is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
-    return m_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids);
+    return m_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
 }
 
 GenerationHandle
@@ -93,7 +94,8 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
                                                        const StreamerVariant& streamer,
                                                        const std::optional<std::vector<ov::Tensor>>& token_type_ids,
                                                        const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
-                                                       const std::optional<std::vector<ov::Tensor>>& prompt_ids) {
+                                                       const std::optional<std::vector<ov::Tensor>>& prompt_ids,
+                                                       const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
     m_perf_metrics = PerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 

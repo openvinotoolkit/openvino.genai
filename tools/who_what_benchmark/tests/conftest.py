@@ -5,7 +5,7 @@ import shutil
 import subprocess  # nosec B404
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 from ov_utils import AtomicDownloadManager, get_ov_cache_dir, retry_request  # noqa
 
@@ -50,15 +50,42 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-llava",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
+    "Qwen2-VL-2B-Instruct": {
+        "name": "Qwen/Qwen2-VL-2B-Instruct",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
     "tiny-random-stable-diffusion-xl": {"name": "echarlaix/tiny-random-stable-diffusion-xl", "convert_args": []},
     "stable-diffusion-3-tiny-random": {"name": "yujiepan/stable-diffusion-3-tiny-random", "convert_args": []},
     "tiny-random-flux": {"name": "optimum-intel-internal-testing/tiny-random-flux", "convert_args": []},
     "tiny-random-flux-fill": {"name": "optimum-intel-internal-testing/tiny-random-flux-fill", "convert_args": []},
+    "tiny-random-ltx-video": {"name": "optimum-intel-internal-testing/tiny-random-ltx-video", "convert_args": []},
 }
 
 
 def get_ov_cache_converted_models_dir():
     return get_ov_cache_dir() / "converted_models"
+
+
+def convert_text_model(
+    model_id: str,
+    dir_name: str,
+    convert_fn: Callable[[str, Path], None],
+) -> str:
+    models_dir = get_ov_cache_converted_models_dir()
+    model_path = Path(models_dir) / f"wwb_{dir_name}"
+
+    manager = AtomicDownloadManager(model_path)
+
+    logger.info(f"Start conversion of: {model_id} -> {dir_name}")
+    if manager.is_complete():
+        logger.info("Conversion is already completed")
+        return str(model_path)
+
+    def convert(temp_path: Path) -> None:
+        retry_request(lambda: convert_fn(model_id, temp_path))
+
+    manager.execute(convert)
+    return str(model_path)
 
 
 def convert_model(model_name: str) -> str:
@@ -82,14 +109,14 @@ def convert_model(model_name: str) -> str:
         return model_path
 
     def convert(temp_path: Path) -> None:
+        if "--weight-format" not in convert_args:
+            convert_args.extend(["--weight-format", "fp16"])
         command = [
             "optimum-cli",
             "export",
             "openvino",
             "--model",
-            model_name,
-            "--weight-format",
-            "fp16",
+            MODELS[model_id]["name"],
             *convert_args,
             str(temp_path),
         ]

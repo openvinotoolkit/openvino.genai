@@ -3,6 +3,8 @@
 
 #include "statefull_decoder.hpp"
 
+#include <utility>
+
 #include "openvino/op/softmax.hpp"
 #include "openvino/pass/manager.hpp"
 #include "utils.hpp"
@@ -28,7 +30,7 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
     : m_decompose_cross_attention_spda_ops(decompose_cross_attention_spda) {
     ov::Core core = utils::singleton_core();
 
-    auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
+    auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(properties));
 
     if (m_decompose_cross_attention_spda_ops) {
         ov::genai::decompose_scaled_dot_product_attention_for_whisper(model);

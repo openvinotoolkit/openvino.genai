@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 const eslint = require("@eslint/js");
 const prettierConfig = require("eslint-plugin-prettier/recommended");
 const globals = require("globals");
@@ -72,6 +75,21 @@ module.exports = defineConfig([
             "diversity_penalty",
             "num_return_sequences",
             "stop_token_ids",
+            "word_timestamps",
+            "return_timestamps",
+            "alignment_heads",
+            "decoder_start_token_id",
+            "pad_token_id",
+            "no_timestamps_token_id",
+            "transcribe_token_id",
+            "translate_token_id",
+            "prev_sot_token_id",
+            "lang_to_id",
+            "max_initial_timestamp_index",
+            "is_multilingual",
+            "begin_suppress_tokens",
+            "suppress_tokens",
+            "initial_prompt",
           ],
         },
       ],

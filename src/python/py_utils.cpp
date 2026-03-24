@@ -23,6 +23,37 @@
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 
 namespace py = pybind11;
+
+namespace {
+
+class GilSafeGeneratorWrapper : public ov::genai::Generator {
+    std::shared_ptr<ov::genai::Generator> m_impl;
+    py::object m_py_ref;
+
+public:
+    GilSafeGeneratorWrapper(std::shared_ptr<ov::genai::Generator>&& impl, py::object&& py_ref)
+        : m_impl(std::move(impl)), m_py_ref(std::move(py_ref)) {}
+
+    ~GilSafeGeneratorWrapper() override {
+        if (Py_IsInitialized()) {
+            try {
+                py::gil_scoped_acquire acquire;
+                m_impl.reset();
+                m_py_ref = py::object();
+                return;
+            } catch (...) {
+            }
+        }
+        m_py_ref.release();
+    }
+
+    float next() override { return m_impl->next(); }
+    ov::Tensor randn_tensor(const ov::Shape& shape) override { return m_impl->randn_tensor(shape); }
+    void seed(size_t new_seed) override { m_impl->seed(new_seed); }
+};
+
+}  // namespace
+
 namespace ov::genai::pybind::utils {
 
 py::str handle_utf8(const std::string& text) {
@@ -374,7 +405,10 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if (py::isinstance<ov::genai::StopCriteria>(py_obj)) {
         return py::cast<ov::genai::StopCriteria>(py_obj);
     } else if (py::isinstance<ov::genai::Generator>(py_obj)) {
-        return py::cast<std::shared_ptr<ov::genai::Generator>>(py_obj);
+        auto impl = py::cast<std::shared_ptr<ov::genai::Generator>>(py_obj);
+        std::shared_ptr<ov::genai::Generator> wrapper =
+            std::make_shared<GilSafeGeneratorWrapper>(std::move(impl), py::reinterpret_borrow<py::object>(py_obj));
+        return wrapper;
     } else if (py::isinstance<py::function>(py_obj) && property_name == "callback") {
         auto py_callback = py::cast<py::function>(py_obj);
         auto shared_callback = std::shared_ptr<py::function>(
