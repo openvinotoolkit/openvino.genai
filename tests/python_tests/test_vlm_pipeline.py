@@ -627,8 +627,8 @@ def _build_synthetic_video_frames(pytestconfig: pytest.Config, total_frames: int
 
 @pytest.fixture(scope="module")
 def synthetic_video(pytestconfig):
-    # Keep 12 frames for compatibility with existing multi-video tests.
-    return _build_synthetic_video_frames(pytestconfig, total_frames=12)
+    # Keep 10 frames for compatibility with existing multi-video tests.
+    return _build_synthetic_video_frames(pytestconfig, total_frames=10)
 
 
 @pytest.fixture(scope="module")

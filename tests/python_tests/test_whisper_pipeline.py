@@ -1,6 +1,6 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-
+import sys
 import patch_pyav_for_servercore
 
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
