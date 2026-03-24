@@ -681,13 +681,9 @@ ov::Tensor js_to_cpp<ov::Tensor>(const Napi::Env& env, const Napi::Value& value)
     OPENVINO_ASSERT(value.IsObject(), "Passed argument must be an object.");
 
     auto tensor_wrap = value.As<Napi::Object>();
-    auto tensor_prototype = get_prototype_from_ov_addon(env, "Tensor");
-    OPENVINO_ASSERT(tensor_wrap.InstanceOf(tensor_prototype), "Passed argument is not of type Tensor");
 
     Napi::Value get_external_tensor_val = tensor_wrap.Get("__getExternalTensor");
-    OPENVINO_ASSERT(get_external_tensor_val.IsFunction(),
-                    "Tensor object does not have a '__getExternalTensor' function. This may indicate an incompatible "
-                    "or outdated openvino-node version.");
+    OPENVINO_ASSERT(!get_external_tensor_val.IsUndefined() && !get_external_tensor_val.IsNull(), "Passed argument is not of type Tensor");
     auto native_tensor_func = get_external_tensor_val.As<Napi::Function>();
     Napi::Value native_tensor_value = native_tensor_func.Call(tensor_wrap, {});
     OPENVINO_ASSERT(native_tensor_value.IsExternal(), "__getExternalTensor() did not return an External object.");
