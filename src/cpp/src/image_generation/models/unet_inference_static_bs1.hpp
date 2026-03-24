@@ -72,6 +72,19 @@ public:
                         "UNet model must be compiled first");
 
         size_t encoder_hidden_states_bs = encoder_hidden_states.get_shape()[0];
+        if (is_blob_model && encoder_hidden_states_bs != m_native_batch_size) {
+            std::cerr << "Warning: UNet model was imported from blob. " +
+            "The batch size of encoder hidden states does not match the batch size of native, therefore, " +
+            "update native batch size to align batch size of encoder hidden states." << std::endl;
+            
+            auto compiled_model = m_requests[0].get_compiled_model();
+            m_native_batch_size = encoder_hidden_states_bs;
+            
+            m_requests.resize(m_native_batch_size);
+            for (int i = 0; i < m_native_batch_size; i++) {
+                m_requests[i] = compiled_model.create_infer_request();
+            }
+        }
 
         OPENVINO_ASSERT(
             encoder_hidden_states_bs == m_native_batch_size,
@@ -167,6 +180,8 @@ public:
     virtual void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties) override {
         auto compiled_model = utils::import_model(blob_path / "openvino_model.blob", device, properties);
 
+        is_blob_model = true;
+
         // we'll create a separate infer request for each batch.
         // todo: preserve original requested batch size when exporting the model
         // current implementation imports model with batch = 1 and creates a single infer request.
@@ -183,6 +198,7 @@ public:
 private:
     std::vector<ov::InferRequest> m_requests;
     size_t m_native_batch_size = 0;
+    bool is_blob_model = false;
 };
 
 }  // namespace genai
