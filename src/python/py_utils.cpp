@@ -201,18 +201,15 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             ov::genai::ExtensionList extensions;
             py::object pathlib_path = py::module_::import("pathlib").attr("Path");
             py::object op_extension_ctor = py::module_::import("openvino").attr("OpExtension");
-
             for (const auto& item : property_list) {
                 if (py::isinstance<py::str>(item) || py::isinstance<py::bytes>(item) || py::isinstance(item, pathlib_path)) {
                     extensions.push_back(item.cast<std::filesystem::path>());
                     continue;
                 }
-
                 if (py::isinstance<ov::Extension>(item)) {
                     extensions.push_back(item.cast<std::shared_ptr<ov::Extension>>());
                     continue;
                 }
-
                 if (py::isinstance<py::type>(item)) {
                     try {
                         auto py_ext = op_extension_ctor(item);
@@ -221,12 +218,10 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                     } catch (const py::error_already_set&) {
                     }
                 }
-
                 OPENVINO_THROW("Incorrect value in \"",
                                property_name,
                                "\". Expected extension path (str/bytes/pathlib.Path), ov::Extension object, or custom op type.");
             }
-
             return extensions;
         } else {
             auto _list = py_obj.cast<py::list>();
