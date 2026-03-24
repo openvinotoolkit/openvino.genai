@@ -751,6 +751,7 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
             adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+
             for idx, adapter in enumerate(adapters):
                 model.load_lora_weights(adapter, adapter_name=f"adapter_{idx}")
             model.set_adapters([f"adapter_{idx}" for idx in range(len(adapters))], adapter_weights=alphas)

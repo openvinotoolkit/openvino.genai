@@ -587,7 +587,6 @@ def genai_gen_text2video(
     kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
     if empty_adapters:
         import openvino_genai
-
         kwargs["adapters"] = openvino_genai.AdapterConfig()
     result = model.generate(
         prompt,
