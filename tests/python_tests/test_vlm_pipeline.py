@@ -295,6 +295,26 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
     local_version = _optimum_intel_version.split("+", 1)[1] if "+" in _optimum_intel_version else ""
     return expected_commit_prefix in local_version
 
+
+def _maybe_patch_pyav_for_videochat_flash_qwen(model_id: str) -> None:
+    """
+    Patch PyAV with a stub module on Windows if the model is
+    tiny-videochat-flash-qwen and the optimum-intel version is compatible,
+    to avoid DLL loading errors in tests that require PyAV.
+
+    See CVS-183222 for details.
+    """
+    if not _is_videochat_flash_qwen_model(model_id):
+        return
+
+    if not is_optimum_intel_version_for_videochat_flash_qwen():
+        return
+
+    import patch_pyav_for_servercore
+
+    patch_pyav_for_servercore.install_av_stub_module_for_windows()
+
+
 def _get_ov_model(model_id: str) -> str:
     if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
@@ -314,6 +334,8 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported commit prefix is 70056d0."
         )
+
+    _maybe_patch_pyav_for_videochat_flash_qwen(model_id)
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
@@ -2654,10 +2676,11 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_videochat(
     synthetic_video_224x224_tensor = request.getfixturevalue(video_fixture_name)
     images = []
     videos = [synthetic_video_224x224_tensor]
+    prompt = "describe this video"
     res_generate = []
     res_generate.append(
         ov_videochatflash_qwen_pipe_raw.generate(
-            "describe this video",
+            prompt,
             images=images,
             videos=videos,
             generation_config=generation_config,
@@ -2667,7 +2690,7 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_videochat(
     tokenizer = ov_continuous_batching_pipe_videochat.get_tokenizer()
     handle = ov_continuous_batching_pipe_videochat.add_request(
         0,
-        "describe this video",
+        prompt,
         images=images,
         videos=videos,
         generation_config=generation_config,

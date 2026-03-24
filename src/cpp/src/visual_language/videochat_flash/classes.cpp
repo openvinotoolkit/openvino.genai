@@ -580,6 +580,39 @@ ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferReque
 }
 
 } // namespace
+
+void VisionEncoderVideoChatFlashQwen::initialize_positional_embedding() {
+    const size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
+    const size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
+    const size_t grid_size = StaticConfig::get_grid_size();
+    m_pos_emb = get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
+    OPENVINO_ASSERT(
+        m_pos_emb.get_size() > 0,
+        "m_pos_emb must be initialized before vision embeddings model initialization."
+    );
+}
+
+void VisionEncoderVideoChatFlashQwen::initialize_merge_model_queue() {
+    const size_t num_attention_heads = StaticConfig::num_attention_heads;
+    OPENVINO_ASSERT(
+        m_vlm_config.mm_hidden_size % num_attention_heads == 0,
+        "mm_hidden_size must be divisible by num_attention_heads for VideoChat-Flash merge model. Got mm_hidden_size=",
+        m_vlm_config.mm_hidden_size, ", num_attention_heads=", num_attention_heads, "."
+    );
+
+    const size_t merge_dim = m_vlm_config.mm_hidden_size / num_attention_heads;
+    auto merge_model = build_bipartite_soft_matching_merge_opt_model(merge_dim);
+    // TODO: CVS-183390 This pipeline is typically used with a GPU;
+    // however, when this model runs on the GPU as well,
+    // the GPU memory footprint does not meet the target requirements, so we must use the CPU for now.
+    auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", {});
+    m_ireq_queue_merge_model = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_merge_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_merge_model]() -> ov::InferRequest {
+            return compiled_merge_model.create_infer_request();
+        });
+}
+
 VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     const std::filesystem::path& model_dir,
     const std::string& device,
@@ -588,20 +621,7 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(model_dir, "video_preprocessor_config.json");
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
 
-    // init 3d_sincos_pos_embed
-    const size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
-    const size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
-
-    // Can not obtain this from config for now
-    constexpr size_t img_size = 224;
-    constexpr size_t patch_size = 14;
-    const size_t grid_size = img_size / patch_size; // 16
-    m_pos_emb = get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
-
-    OPENVINO_ASSERT(
-        m_pos_emb.get_size() > 0,
-        "m_pos_emb must be initialized before vision embeddings model initialization."
-    );
+    initialize_positional_embedding();
     const ov::Shape pos_emb_shape = m_pos_emb.get_shape();
 
     OPENVINO_ASSERT(
@@ -634,25 +654,7 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
             return compiled_model_vision.create_infer_request();
         });
 
-    // Visual features are grouped into 16 attention-head views for ToMe matching.
-    // Can not obtain this from config for now
-    const size_t num_attention_heads = 16;
-    OPENVINO_ASSERT(
-        m_vlm_config.mm_hidden_size % num_attention_heads == 0,
-        "mm_hidden_size must be divisible by num_attention_heads for VideoChat-Flash merge model. Got mm_hidden_size=",
-        m_vlm_config.mm_hidden_size, ", num_attention_heads=", num_attention_heads, "."
-    );
-    const size_t merge_dim = m_vlm_config.mm_hidden_size / num_attention_heads;
-    auto merge_model = build_bipartite_soft_matching_merge_opt_model(merge_dim);
-    // TODO: CVS-183390 This pipeline is typically used with a GPU;
-    // however, when this model runs on the GPU as well,
-    // the GPU memory footprint does not meet the target requirements, so we must use the CPU for now.
-    auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", {});
-    m_ireq_queue_merge_model = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_merge_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_merge_model]() -> ov::InferRequest {
-            return compiled_merge_model.create_infer_request();
-        });
+    initialize_merge_model_queue();
 }
 
 VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
@@ -670,28 +672,8 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
             return compiled_model.create_infer_request();
         });
 
-    constexpr std::size_t num_attention_heads = 16;
-    OPENVINO_ASSERT(
-        m_vlm_config.mm_hidden_size % num_attention_heads == 0,
-        "mm_hidden_size must be divisible by 16 for VideoChat-Flash merge model. Got mm_hidden_size=",
-        m_vlm_config.mm_hidden_size
-    );
-    const auto merge_dim = m_vlm_config.mm_hidden_size / num_attention_heads;
-    auto merge_model = build_bipartite_soft_matching_merge_opt_model(merge_dim);
-    auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", {});
-    m_ireq_queue_merge_model = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_merge_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_merge_model]() -> ov::InferRequest {
-            return compiled_merge_model.create_infer_request();
-        });
-    // init 3d_sincos_pos_embed
-    const size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
-    const size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
-    // Can not obtain this from config for now
-    constexpr size_t img_size = 224;
-    constexpr size_t patch_size = 14;
-    const size_t grid_size = img_size / patch_size; // 16
-    m_pos_emb = get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
+    initialize_merge_model_queue();
+    initialize_positional_embedding();
 
 }
 
@@ -703,8 +685,8 @@ EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, co
 
 EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& video) {
     EncodedVideo encoded_video;
-    ImageSize target_size{224, 224};
-    auto preprocessed_video = preprocess(video, target_size, {0.485f, 0.456f, 0.406f}, {0.229f, 0.224f, 0.225f});
+    ImageSize target_size{StaticConfig::image_size, StaticConfig::image_size};
+    auto preprocessed_video = preprocess(video, target_size, StaticConfig::image_mean, StaticConfig::image_std);
     encoded_video.resized_source_size = target_size;
     encoded_video.frame_num = preprocessed_video.get_shape()[0];
     const size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;

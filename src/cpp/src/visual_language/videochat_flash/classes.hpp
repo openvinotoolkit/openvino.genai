@@ -15,6 +15,19 @@ namespace ov::genai {
 
 class VisionEncoderVideoChatFlashQwen : public VisionEncoder {
 public:
+    struct StaticConfig {
+        // Can not obtain this from config for now.
+        static constexpr size_t image_size = 224;
+        static constexpr size_t patch_size = 14;
+        static constexpr size_t num_attention_heads = 16;
+        static constexpr std::array<float, 3> image_mean = {0.485f, 0.456f, 0.406f};
+        static constexpr std::array<float, 3> image_std = {0.229f, 0.224f, 0.225f};
+
+        static constexpr size_t get_grid_size() {
+            return image_size / patch_size;
+        }
+    };
+
     VisionEncoderVideoChatFlashQwen(
         const std::filesystem::path& model_dir,
         const std::string& device,
@@ -42,6 +55,10 @@ protected:
 
     /// @brief pos_emb Tensor.
     ov::Tensor m_pos_emb;
+
+private:
+    void initialize_positional_embedding();
+    void initialize_merge_model_queue();
 };
 
 class InputsEmbedderVideoChatFlashQwen : public InputsEmbedder::IInputsEmbedder {
