@@ -24,7 +24,7 @@ cat_image ───────────┬── cat_tensor
 car_tensor
 handwritten_tensor
 ov_pipe_model
-ov_continious_batching_pipe
+ov_continuous_batching_pipe
 """
 
 import collections
@@ -278,6 +278,7 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
     return expected_commit_prefix in local_version
 
 
+
 def _maybe_patch_pyav_for_videochat_flash_qwen(model_id: str) -> None:
     """
     Patch PyAV with a stub module on Windows if the model is
@@ -314,7 +315,7 @@ def _get_ov_model(model_id: str) -> str:
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip(
-            "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported commit prefix is 70056d0."
+            "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported version is 1.27.0.dev0+70056d0."
         )
 
     _maybe_patch_pyav_for_videochat_flash_qwen(model_id)
@@ -540,7 +541,7 @@ parametrize_one_model_npu = _parametrize_npu_models(
 
 
 @pytest.fixture(scope="module")
-def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
+def ov_continuous_batching_pipe() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[0])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
@@ -581,6 +582,7 @@ def from_cache_or_download(pytestconfig: pytest.Config, link: str, file_name: st
 def cat_image(pytestconfig: pytest.Config):
     return from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['cat'], "cat.jpg")
 
+
 def resize_video(video, shape):
     video_resized = []
     for frame in video:
@@ -590,27 +592,27 @@ def resize_video(video, shape):
     return np.array(video_resized)
 
 
-def _build_synthetic_video_frames(pytestconfig: pytest.Config, total_frames: int) -> list[np.ndarray]:
+@pytest.fixture(scope="module")
+def synthetic_video(pytestconfig):
     # TODO: use real video
     car_url = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg"
     image = from_cache_or_download(pytestconfig, car_url, "car.jpg")
 
-    frames = [np.array(image)]
+    total_frames = 10
+    frames = []
+    frames.append(np.array(image))
     shift = 3
-    width, height = image.size
     for i in range(1, total_frames):
         new_frame = np.zeros(np.array(image).shape, np.array(image).dtype)
+
+        width, height = image.size
         for x in range(0, width):
             for y in range(0, height):
                 # shift previous frame
-                new_frame[y, x] = frames[i - 1][y, (x - shift + width) % width]
+                new_frame[y, x] = frames[i-1][y, (x - shift + width) % width]
         frames.append(new_frame)
-    return frames
 
-@pytest.fixture(scope="module")
-def synthetic_video(pytestconfig):
-    # Keep 10 frames for compatibility with existing multi-video tests.
-    return _build_synthetic_video_frames(pytestconfig, total_frames=10)
+    return frames
 
 
 @pytest.fixture(scope="module")
@@ -723,7 +725,7 @@ def test_vlm_readonly_image_tensor(ov_pipe_model: VlmModelInfo, cat_image_32x32)
 @parametrize_one_model_pa
 def test_vlm_continuous_batching_generate_vs_add_request(
     ov_pipe_model: VlmModelInfo,
-    ov_continious_batching_pipe: ContinuousBatchingPipeline,
+    ov_continuous_batching_pipe: ContinuousBatchingPipeline,
     config: GenerationConfig,
     request: pytest.FixtureRequest,
     cat_tensor: openvino.Tensor
@@ -754,11 +756,11 @@ def test_vlm_continuous_batching_generate_vs_add_request(
             )
         )
 
-    tokenizer = ov_continious_batching_pipe.get_tokenizer()
+    tokenizer = ov_continuous_batching_pipe.get_tokenizer()
 
     for idx, images in enumerate(images_list):
         videos = videos_list[idx]
-        handle = ov_continious_batching_pipe.add_request(
+        handle = ov_continuous_batching_pipe.add_request(
             idx,
             PROMPTS[0],
             images=images,
@@ -766,7 +768,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(
             generation_config=generation_config,
         )
         while handle.get_status() != GenerationStatus.FINISHED:
-            ov_continious_batching_pipe.step()
+            ov_continuous_batching_pipe.step()
         outputs = handle.read_all()
         for out_idx, output in enumerate(outputs):
             text = tokenizer.decode(output.generated_ids)
@@ -821,7 +823,7 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
 @parametrize_one_model_sdpa
 def test_vlm_continuous_batching_vs_stateful(
     ov_pipe_model: VlmModelInfo,
-    ov_continious_batching_pipe: ContinuousBatchingPipeline,
+    ov_continuous_batching_pipe: ContinuousBatchingPipeline,
     config: GenerationConfig,
     cat_tensor: openvino.Tensor,
 ):
@@ -833,7 +835,7 @@ def test_vlm_continuous_batching_vs_stateful(
     res_cb = []
     for images in image_links_list:
         res_cb.append(
-            ov_continious_batching_pipe.generate(
+            ov_continuous_batching_pipe.generate(
                 [PROMPTS[0]], images=[images], generation_config=[generation_config]
             )
         )
@@ -852,7 +854,7 @@ def test_vlm_continuous_batching_vs_stateful(
 @parametrize_one_model_sdpa
 def test_vlm_continuous_batching_vs_stateful_chat_history(
     ov_pipe_model: VlmModelInfo,
-    ov_continious_batching_pipe: ContinuousBatchingPipeline,
+    ov_continuous_batching_pipe: ContinuousBatchingPipeline,
     cat_tensor: openvino.Tensor,
     car_tensor: openvino.Tensor,
 ):
@@ -873,7 +875,7 @@ def test_vlm_continuous_batching_vs_stateful_chat_history(
     for images in image_links_list:
         for i in range(histories_batch):
             histories_cb[i].append({"role": "user", "content": PROMPTS[i]})
-        results = ov_continious_batching_pipe.generate(
+        results = ov_continuous_batching_pipe.generate(
             histories_cb,
             images=[images for _ in range(histories_batch)],
             generation_config=[generation_config for _ in range(histories_batch)],
@@ -928,16 +930,10 @@ def iteration_images(request) -> list[list[PIL.Image]]:
         id="3 images + 2 videos on first iteration, video on second iteration"
     ),
 ])
-def iteration_images_and_videos(request, ov_pipe_model: VlmModelInfo):
+def iteration_images_and_videos(request):
     params = []
     for param in request.param:
-        items = []
-        for bundle in param:
-            item_values = []
-            for item in bundle:
-                item_values.append(request.getfixturevalue(item))
-            items.append(item_values)
-        params.append(items)
+        params.append([[request.getfixturevalue(image) for image in bundle] for bundle in param])
     return params
 
 
@@ -1155,7 +1151,6 @@ def test_vlm_pipeline_chat_npu(ov_npu_pipe_model: VlmModelInfo, system_message, 
 @parametrize_all_models_with_video
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat_with_video(
-    request: pytest.FixtureRequest,
     ov_pipe_model: VlmModelInfo,
     system_message: str,
     iteration_images_and_videos,
@@ -1462,7 +1457,7 @@ def test_start_chat_clears_history(
 
 
 def test_start_chat_clears_history_cb_api(
-    ov_continious_batching_pipe: ContinuousBatchingPipeline, image_sequence: list[openvino.Tensor]
+    ov_continuous_batching_pipe: ContinuousBatchingPipeline, image_sequence: list[openvino.Tensor]
 ):
     callback_questions = [
         "Why is the Sun yellow?"
@@ -1470,17 +1465,17 @@ def test_start_chat_clears_history_cb_api(
     generation_config = GenerationConfig(max_new_tokens=DEFAULT_MAX_NEW_TOKENS)
 
     results_first_generate = ""
-    ov_continious_batching_pipe.start_chat("You are helpful assistant.")
-    results_first_generate = ov_continious_batching_pipe.generate(
+    ov_continuous_batching_pipe.start_chat("You are helpful assistant.")
+    results_first_generate = ov_continuous_batching_pipe.generate(
         [callback_questions[0]], images=[image_sequence], generation_config=[generation_config]
     )[0].texts[0]
 
     results_second_generate = ""
-    ov_continious_batching_pipe.start_chat("You are helpful assistant.")
-    results_second_generate += ov_continious_batching_pipe.generate(
+    ov_continuous_batching_pipe.start_chat("You are helpful assistant.")
+    results_second_generate += ov_continuous_batching_pipe.generate(
         [callback_questions[0]], images=[image_sequence], generation_config=[generation_config]
     )[0].texts[0]
-    ov_continious_batching_pipe.finish_chat()
+    ov_continuous_batching_pipe.finish_chat()
 
     assert results_first_generate == results_second_generate
 
@@ -1587,10 +1582,8 @@ def conversation_requests(
 
 @pytest.fixture(scope="module")
 def conversation_video_requests(
-    request: pytest.FixtureRequest,
-    ov_pipe_model: VlmModelInfo,
+    synthetic_video_32x32_tensor: openvino.Tensor,
 ) -> list[tuple[str, list[openvino.Tensor]]]:
-    synthetic_video_32x32_tensor = request.getfixturevalue("synthetic_video_32x32_tensor")
     return [
         ("Describe", [synthetic_video_32x32_tensor]),
         ("How many images are there?", [synthetic_video_32x32_tensor, synthetic_video_32x32_tensor]),
@@ -1710,8 +1703,9 @@ def test_model_tags_representation(
         ]
         templated_prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
 
-    input_tensor_fixture_name = "cat_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
-    input_tensor: openvino.Tensor = request.getfixturevalue(input_tensor_fixture_name)
+    input_tensor: openvino.Tensor = request.getfixturevalue(
+        "cat_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
+    )
     vision_inputs_kwargs = get_vision_inputs_kwargs([input_tensor], vision_type)
 
     def workaround_inconsistent_inference():
@@ -1861,8 +1855,9 @@ def test_model_tags_same_reference(
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=2, set_eos_token=False)
     ov_pipe.set_generation_config(generation_config)
 
-    input_tensor_fixture_name = "cat_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
-    input_tensor: openvino.Tensor = request.getfixturevalue(input_tensor_fixture_name)
+    input_tensor: openvino.Tensor = request.getfixturevalue(
+        "cat_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
+    )
 
     def workaround_inconsistent_inference():
         __tracebackhide__ = True
@@ -1890,8 +1885,9 @@ def test_model_tags_older(
 ):
     ov_pipe = ov_pipe_model.pipeline
 
-    input_tensor_fixture_name = "car_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
-    input_tensor: openvino.Tensor = request.getfixturevalue(input_tensor_fixture_name)
+    input_tensor: openvino.Tensor = request.getfixturevalue(
+        "car_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
+    )
 
     generation_config = _setup_generation_config(ov_pipe, set_eos_token=False)
     ov_pipe.set_generation_config(generation_config)
@@ -2611,8 +2607,8 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_videochat(
     synthetic_video_224x224_tensor = request.getfixturevalue("synthetic_video_224x224_tensor")
     images = []
     videos = [synthetic_video_224x224_tensor]
-    prompt = "describe this video"
     res_generate = []
+    prompt = "describe this video"
     res_generate.append(
         ov_videochatflash_qwen_pipe_raw.generate(
             prompt,
