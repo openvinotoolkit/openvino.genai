@@ -591,10 +591,10 @@ class ContinuousBatchingPipeline:
     def add_request(self, request_id: typing.SupportsInt, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
-    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
+    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos_metadata: collections.abc.Sequence[VideoMetadata], generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
-    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos_metadata: collections.abc.Sequence[VideoMetadata], generation_config: GenerationConfig) -> GenerationHandle:
+    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
     def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
@@ -4076,40 +4076,6 @@ class VLMPipeline:
             :param videos: list of frames
             :type videos: list[ov.Tensor]
         
-            :param videos_metadata: list of metadata for each video
-            :type videos_metadata: list[VideoMetadata]
-        
-            :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a dict
-        
-            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
-            :type : Callable[[str], bool], ov.genai.StreamerBase
-        
-            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : dict
-        
-            :return: return results in decoded form
-            :rtype: VLMDecodedResults
-        """
-    @typing.overload
-    def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos_metadata: collections.abc.Sequence[VideoMetadata], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
-        """
-            Generates sequences for VLMs.
-        
-            :param prompt: Input prompt
-            :type prompt: str
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
-        
-            :param images: image or list of images
-            :type images: list[ov.Tensor] or ov.Tensor
-        
-            :param videos: list of frames
-            :type videos: list[ov.Tensor]
-        
-            :param videos_metadata: list of metadata for each video
-            :type videos_metadata: list[VideoMetadata]
-        
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
         
@@ -4137,9 +4103,6 @@ class VLMPipeline:
         
             :param videos: list of frames
             :type videos: list[ov.Tensor]
-        
-            :param videos_metadata: list of metadata for each video
-            :type videos_metadata: list[VideoMetadata]
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
@@ -4169,40 +4132,6 @@ class VLMPipeline:
             :param videos: list of frames
             :type videos: list[ov.Tensor]
         
-            :param videos_metadata: list of metadata for each video
-            :type videos_metadata: list[VideoMetadata]
-        
-            :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a dict
-        
-            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
-            :type : Callable[[str], bool], ov.genai.StreamerBase
-        
-            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : dict
-        
-            :return: return results in decoded form
-            :rtype: VLMDecodedResults
-        """
-    @typing.overload
-    def generate(self, prompt: str, videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos_metadata: collections.abc.Sequence[VideoMetadata], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
-        """
-            Generates sequences for VLMs.
-        
-            :param prompt: Input prompt
-            :type prompt: str
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
-        
-            :param images: image or list of images
-            :type images: list[ov.Tensor] or ov.Tensor
-        
-            :param videos: list of frames
-            :type videos: list[ov.Tensor]
-        
-            :param videos_metadata: list of metadata for each video
-            :type videos_metadata: list[VideoMetadata]
-        
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
         
@@ -4230,9 +4159,6 @@ class VLMPipeline:
         
             :param videos: list of frames
             :type videos: list[ov.Tensor]
-        
-            :param videos_metadata: list of metadata for each video
-            :type videos_metadata: list[VideoMetadata]
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
@@ -4285,40 +4211,6 @@ class VLMPipeline:
             :param videos: list of frames
             :type videos: list[ov.Tensor]
         
-            :param videos_metadata: list of metadata for each video
-            :type videos_metadata: list[VideoMetadata]
-        
-            :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a dict
-        
-            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
-            :type : Callable[[str], bool], ov.genai.StreamerBase
-        
-            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : dict
-        
-            :return: return results in decoded form
-            :rtype: VLMDecodedResults
-        """
-    @typing.overload
-    def generate(self, history: ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos_metadata: collections.abc.Sequence[VideoMetadata], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
-        """
-            Generates sequences for VLMs.
-        
-            :param history: Chat history
-            :type history: ChatHistory
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
-        
-            :param images: image or list of images
-            :type images: list[ov.Tensor] or ov.Tensor
-        
-            :param videos: list of frames
-            :type videos: list[ov.Tensor]
-        
-            :param videos_metadata: list of metadata for each video
-            :type videos_metadata: list[VideoMetadata]
-        
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
         
@@ -4347,9 +4239,6 @@ class VLMPipeline:
             :param videos: list of frames
             :type videos: list[ov.Tensor]
         
-            :param videos_metadata: list of metadata for each video
-            :type videos_metadata: list[VideoMetadata]
-        
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
         
@@ -4377,40 +4266,6 @@ class VLMPipeline:
         
             :param videos: list of frames
             :type videos: list[ov.Tensor]
-        
-            :param videos_metadata: list of metadata for each video
-            :type videos_metadata: list[VideoMetadata]
-        
-            :param generation_config: generation_config
-            :type generation_config: GenerationConfig or a dict
-        
-            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
-            :type : Callable[[str], bool], ov.genai.StreamerBase
-        
-            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
-            :type : dict
-        
-            :return: return results in decoded form
-            :rtype: VLMDecodedResults
-        """
-    @typing.overload
-    def generate(self, history: ChatHistory, videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos_metadata: collections.abc.Sequence[VideoMetadata], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
-        """
-            Generates sequences for VLMs.
-        
-            :param history: Chat history
-            :type history: ChatHistory
-            For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
-        
-            :param images: image or list of images
-            :type images: list[ov.Tensor] or ov.Tensor
-        
-            :param videos: list of frames
-            :type videos: list[ov.Tensor]
-        
-            :param videos_metadata: list of metadata for each video
-            :type videos_metadata: list[VideoMetadata]
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
