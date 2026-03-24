@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <napi.h>
 
 #include "openvino/genai/whisper_pipeline.hpp"
@@ -19,6 +20,6 @@ public:
 
 private:
     std::shared_ptr<ov::genai::WhisperPipeline> pipe = nullptr;
-    std::shared_ptr<bool> is_initializing = std::make_shared<bool>(false);
-    std::shared_ptr<bool> is_generating = std::make_shared<bool>(false);
+    std::shared_ptr<std::atomic<bool>> is_initializing = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<std::atomic<bool>> is_generating = std::make_shared<std::atomic<bool>>(false);
 };
