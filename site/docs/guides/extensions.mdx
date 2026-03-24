@@ -42,76 +42,83 @@ Accepted C++ forms:
 - `std::vector<std::shared_ptr<ov::Extension>>`
 
 <LanguageTabs>
-	<TabItemPython>
-		```python
-		from pathlib import Path
+    <TabItemPython>
+        ```python
+        from pathlib import Path
 
-		import openvino as ov
+        import openvino as ov
         import openvino_genai as ov_genai
 
-		class CustomAdd(ov.Op):
+        class CustomAdd(ov.Op):
             class_type_info = ov.DiscreteTypeInfo("CustomAdd", "extension")
 
-		model_path = "path/to/model_with_custom_ops"
+        model_path = "path/to/model_with_custom_ops"
 
-		# Option 1: pass extension library paths
-		llm_pipe = ov_genai.LLMPipeline(
+        # Option 1: pass extension library paths
+        llm_pipe_path = ov_genai.LLMPipeline(
             model_path,
             "CPU",
             extensions=[Path("/path/to/libopenvino_custom_extension.so")],
         )
 
-		# Option 2: register a Python custom op.
-		vlm_pipe = ov_genai.VLMPipeline(
+        # Option 2: register a Python custom op.
+        llm_pipe_obj = ov_genai.LLMPipeline(
             model_path,
             "CPU",
             extensions=[ov.OpExtension(CustomAdd)],
         )
 
-        # Generate with custom ops
-        llm_pipe.generate("Generate story about", max_new_tokens=100)
-		```
-	</TabItemPython>
-	<TabItemCpp>
-		```cpp
-		#include <filesystem>
-		#include <memory>
-		#include <vector>
+        # Generate with custom ops via extension library path registration
+        llm_pipe_path.generate("Generate story about", max_new_tokens=100)
 
-		#include "openvino/core/op_extension.hpp"
-		#include "openvino/genai/extensions.hpp"
-		#include "openvino/genai/llm_pipeline.hpp"
+        # Generate with custom ops via extension object registration
+        llm_pipe_obj.generate("Generate story about", max_new_tokens=100)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include <filesystem>
+        #include <memory>
+        #include <vector>
 
-		class CustomAdd;
+        #include "openvino/core/op_extension.hpp"
+        #include "openvino/genai/extensions.hpp"
+        #include "openvino/genai/llm_pipeline.hpp"
 
-		int main() {
-			const std::filesystem::path model_path = "path/to/model_with_custom_ops";
+        // Replace with your custom op definition/include.
+        class CustomAdd;
 
-			// Option 1: pass extension library paths
-			ov::genai::LLMPipeline llm_pipe(
-				model_path,
-				"CPU",
-				ov::genai::extensions(std::vector<std::filesystem::path>{
-					"/path/to/libopenvino_custom_extension.so"
-				})
-			);
+        int main() {
+            const std::filesystem::path model_path = "path/to/model_with_custom_ops";
 
-			// Option 2: register a C++ custom op.
-			ov::genai::LLMPipeline ov_pipe(
-				model_path,
-				"CPU",
-				ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{
-					std::make_shared<ov::OpExtension<CustomAdd>>()
-				})
-			);
+            // Option 1: pass extension library paths
+            ov::genai::LLMPipeline llm_pipe_path(
+                model_path,
+                "CPU",
+                ov::genai::extensions(std::vector<std::filesystem::path>{
+                    "/path/to/libopenvino_custom_extension.so"
+                })
+            );
 
-            // Generate with custom ops
-            llm_pipe.generate("Generate story about", ov::genai::max_new_tokens(100));
+            // Option 2: register a C++ custom op.
+            ov::genai::LLMPipeline llm_pipe_obj(
+                model_path,
+                "CPU",
+                ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{
+                    std::make_shared<ov::OpExtension<CustomAdd>>()
+                })
+            );
 
-			return 0;
-		}
-		```
-	</TabItemCpp>
+            // Generate with custom ops via extension library path registration
+            llm_pipe_path.generate("Generate story about", ov::genai::max_new_tokens(100));
+
+            // Generate with custom ops via extension object registration
+            llm_pipe_obj.generate("Generate story about", ov::genai::max_new_tokens(100));
+
+            return 0;
+        }
+        ```
+    </TabItemCpp>
 </LanguageTabs>
 
 ## Notes
