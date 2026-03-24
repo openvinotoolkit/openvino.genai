@@ -23,14 +23,14 @@ clip_image_f32 preprocess_idefics3_image(const clip_image_u8& image, const Proce
     OPENVINO_ASSERT(config.patch_size > 0, "patch_size must be positive");
     const int patch_size = config.patch_size;
     constexpr int target_patches_per_side = 27;  // Fixed by model architecture
-    const int target_size = target_patches_per_side * patch_size;  // 27 * 14 = 378
+    const int target_size = target_patches_per_side * patch_size;  
     
-    // Resize image to exactly 378x378
+    // Resize image to a square of size (27 * patch_size) x (27 * patch_size), e.g. 378x378 when patch_size = 14
     clip_image_u8 resized_image;
     bicubic_resize(image, resized_image, target_size, target_size);
     
     // Normalize
-    clip_ctx ctx;
+    clip_ctx ctx{};
     ctx.image_size = target_size;
     std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
     std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
@@ -131,9 +131,13 @@ NormalizedPrompt InputsEmbedderIdefics3::normalize_prompt(
         const auto& encoded_image = images.at(new_image_id - base_id);
         
         // Each image produces image_seq_len tokens (729 for SmolVLM)
-        size_t num_tokens = encoded_image.resized_source.get_shape().at(1);
+        const auto& shape = encoded_image.resized_source.get_shape();
+        OPENVINO_ASSERT(shape.size() >= 2, "Vision encoder output must have at least 2 dimensions");
+        // Support both [seq_len, hidden] and [batch, seq_len, hidden] (or higher-rank with batch first)
+        size_t num_tokens = (shape.size() == 2) ? shape[0] : shape[1];
         
         std::string expanded_tag;
+        expanded_tag.reserve(num_tokens * image_token.size());
         for (size_t idx = 0; idx < num_tokens; ++idx) {
             expanded_tag += image_token;
         }
@@ -157,8 +161,12 @@ ov::Tensor InputsEmbedderIdefics3::get_inputs_embeds(
     
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
+    // images_sequence contains absolute image IDs, but images vector is 0-indexed
+    // Calculate base_id from the first element of images_sequence
+    size_t base_id = images_sequence.empty() ? 0 : images_sequence[0];
+    
     for (size_t new_image_id : images_sequence) {
-        image_embeds.push_back(images.at(new_image_id).resized_source);
+        image_embeds.push_back(images.at(new_image_id - base_id).resized_source);
     }
     
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
