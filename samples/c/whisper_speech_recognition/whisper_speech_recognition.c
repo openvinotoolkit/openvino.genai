@@ -124,9 +124,9 @@ int main(int argc, char* argv[]) {
     ov_genai_whisper_word_timing* current_word = NULL;
     char* current_word_text = NULL;
     if (words_count == 0) {
-        fprintf(stdout,
-                "Word-level timestamps are not available. Enable `word_timestamps` in the "
-                "generation config and ensure `alignment_heads` are configured for the model.\n");
+        fprintf(stderr,
+                "Word-level timestamps are not available. Make sure the whisper pipeline was constructed "
+                "with word timestamps enabled and that `alignment_heads` are configured for the model.\n");
     } else {
         for (size_t i = 0; i < words_count; i++) {
             current_word = NULL;
