@@ -18,7 +18,7 @@ import openvino_genai as ov_genai
 from utils.constants import extra_generate_kwargs
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model, OVConvertedModelSchema
 
-# model_tmp_path fixture import required
+# model_tmp_path fixture import is required so it could be triggered by pytest
 from utils.tokenizers import (
     delete_rt_info,
     model_tmp_path,  # noqa: F401

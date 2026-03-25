@@ -534,10 +534,8 @@ void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optio
     if (cache_state.num_tokens_to_trim == 0)
         return;
 
-    // Models with linear attention states must always take the full reset path above.
-    // Partial KV cache trimming is only valid for pure KV cache models.
     OPENVINO_ASSERT(!cache_state.has_linear(),
-                    "Model with linear state reached partial trim path. needs_reset() should have returned true.");
+                    "Model with linear state reached partial trim path, which is only valid for pure KV cache models.");
 
     auto states = request.query_state();
     OPENVINO_ASSERT(states.size() > 0, "Request contains no states.");

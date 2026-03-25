@@ -327,12 +327,7 @@ def download_and_convert_model_class(
             models_path, model_class, local_files_only=True, trust_remote_code=trust_remote_code
         )
     else:
-        force_cli_export = (
-            model_class.__name__ in ["OVModelForCausalLM"] and model_id in FORCE_OPTIMUM_CLI_EXPORT_MODELS
-        )
-
-        if force_cli_export:
-
+        if model_id in FORCE_OPTIMUM_CLI_EXPORT_MODELS:
             def convert_to_temp(temp_path: Path) -> None:
                 export_with_optimum_cli(model_id, temp_path, trust_remote_code=trust_remote_code)
 
