@@ -7,7 +7,7 @@
 #include <optional>
 
 #include "openvino/genai/image_generation/generation_config.hpp"
-
+#include "openvino/genai/lora_adapter.hpp"
 
 namespace ov::genai {
 /**
@@ -63,6 +63,9 @@ struct VideoGenerationConfig {
      * and predicts outputs using Taylor series approximation.
      */
     std::optional<TaylorSeerCacheConfig> taylorseer_config;
+
+    /// LoRA adapters applied during generation.
+    std::optional<AdapterConfig> adapters = std::nullopt;
 };
 
 /**
