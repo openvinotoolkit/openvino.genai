@@ -91,6 +91,7 @@ protected:
 
     ContinuousBatchingPipeline() = default;
 
+private:
     // Uses preloaded language model to avoid redundant read_model() during pipeline initialization.
     ContinuousBatchingPipeline(
         const std::shared_ptr<ov::Model>& language_model,
