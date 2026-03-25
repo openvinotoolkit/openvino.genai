@@ -6,7 +6,6 @@ import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
 
-from python import openvino_genai
 from utils.constants import NPUW_CPU_PROPERTIES
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
