@@ -352,7 +352,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_word_timing_at(const ov_genai_w
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        if (!results->object->words.has_value() || index >= results->object->words->size()) {
+        if (!results->object->words.has_value()) {
             return ov_status_e::OUT_OF_BOUNDS;
         }
         std::unique_ptr<ov_genai_whisper_word_timing> _word_timing = std::make_unique<ov_genai_whisper_word_timing>();
@@ -371,7 +371,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_word_at(const ov_genai_whisper_
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        if (!results->object->words.has_value() || index >= results->object->words->size()) {
+        if (!results->object->words.has_value()) {
             return ov_status_e::OUT_OF_BOUNDS;
         }
         std::unique_ptr<ov_genai_whisper_decoded_result_chunk> _word =
