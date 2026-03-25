@@ -378,12 +378,16 @@ ov_status_e ov_genai_whisper_decoded_results_get_word_at(const ov_genai_whisper_
         if (!results->object->words.has_value()) {
             return ov_status_e::OUT_OF_BOUNDS;
         }
+        if (index >= results->object->words->size()) {
+            return ov_status_e::OUT_OF_BOUNDS;
+        }
+        const ov::genai::WhisperWordTiming& selected_word = results->object->words->at(index);
         std::unique_ptr<ov_genai_whisper_decoded_result_chunk> _word =
             std::make_unique<ov_genai_whisper_decoded_result_chunk>();
         _word->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>();
-        _word->object->start_ts = results->object->words->at(index).start_ts;
-        _word->object->end_ts = results->object->words->at(index).end_ts;
-        _word->object->text = results->object->words->at(index).word;
+        _word->object->start_ts = selected_word.start_ts;
+        _word->object->end_ts = selected_word.end_ts;
+        _word->object->text = selected_word.word;
         *word = _word.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
