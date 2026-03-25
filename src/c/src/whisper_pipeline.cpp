@@ -353,10 +353,14 @@ ov_status_e ov_genai_whisper_decoded_results_get_word_timing_at(const ov_genai_w
     }
     try {
         if (!results->object->words.has_value()) {
+            return ov_status_e::NOT_FOUND;
+        }
+        const std::vector<ov::genai::WhisperWordTiming>& words = *(results->object->words);
+        if (index >= words.size()) {
             return ov_status_e::OUT_OF_BOUNDS;
         }
         std::unique_ptr<ov_genai_whisper_word_timing> _word_timing = std::make_unique<ov_genai_whisper_word_timing>();
-        _word_timing->object = std::make_shared<ov::genai::WhisperWordTiming>(results->object->words->at(index));
+        _word_timing->object = std::make_shared<ov::genai::WhisperWordTiming>(words[index]);
         *word_timing = _word_timing.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
