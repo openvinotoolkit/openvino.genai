@@ -360,7 +360,8 @@ ov_status_e ov_genai_whisper_decoded_results_get_word_timing_at(const ov_genai_w
             return ov_status_e::OUT_OF_BOUNDS;
         }
         std::unique_ptr<ov_genai_whisper_word_timing> _word_timing = std::make_unique<ov_genai_whisper_word_timing>();
-        _word_timing->object = std::make_shared<ov::genai::WhisperWordTiming>(words[index]);
+        _word_timing->object =
+            std::shared_ptr<ov::genai::WhisperWordTiming>(results->object, &words[index]);
         *word_timing = _word_timing.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
