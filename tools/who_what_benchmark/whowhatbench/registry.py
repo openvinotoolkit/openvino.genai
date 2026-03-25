@@ -1,4 +1,5 @@
 
+import csv
 from abc import ABC, abstractmethod
 
 
@@ -42,7 +43,21 @@ class Evaluator(ABC):
 
 class BaseEvaluator(Evaluator):
     def dump_gt(self, csv_name: str):
-        self.gt_data.to_csv(csv_name)
+        self.gt_data.to_csv(
+            csv_name,
+            index=False,
+            quoting=csv.QUOTE_ALL,
+            escapechar="\\",
+            lineterminator="\n",
+            encoding="utf-8",
+        )
 
     def dump_predictions(self, csv_name: str):
-        self.predictions.to_csv(csv_name)
+        self.predictions.to_csv(
+            csv_name,
+            index=False,
+            quoting=csv.QUOTE_ALL,
+            escapechar="\\",
+            lineterminator="\n",
+            encoding="utf-8",
+        )

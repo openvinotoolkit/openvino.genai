@@ -76,7 +76,7 @@ class TextEvaluator(BaseEvaluator):
                 base_model, gen_answer_fn, generation_config=generation_config
             )
         else:
-            self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
+            self.gt_data = pd.read_csv(gt_data, keep_default_na=False, escapechar="\\")
 
         # Take language ground truth if no base model provided
         if self.language is None and "language" in self.gt_data.columns:
@@ -100,7 +100,7 @@ class TextEvaluator(BaseEvaluator):
 
     def score(self, model_or_data, gen_answer_fn=None, **kwargs):
         if isinstance(model_or_data, str) and os.path.exists(model_or_data):
-            predictions = pd.read_csv(model_or_data, keep_default_na=False)
+            predictions = pd.read_csv(model_or_data, keep_default_na=False, escapechar="\\")
         else:
             predictions = self._generate_data(model_or_data, gen_answer_fn, self.generation_config)
         self.predictions = predictions
