@@ -20,7 +20,6 @@
 #include "openvino/op/tile.hpp"
 #include "openvino/op/if.hpp"
 #include "openvino/op/concat.hpp"
-#include "logger.hpp"
 
 #include "visual_language/vl_sdpa_transformations.hpp"
 
@@ -1179,16 +1178,6 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
             if (pruning_result->updated_rope_delta.has_value()) {
                 m_rope_delta = pruning_result->updated_rope_delta.value();
             }
-            
-            // Log pruning results
-            GENAI_INFO("[Qwen2VL/Qwen2.5-VL] [CDPruner] Visual tokens: %zu -> %zu (pruned %zu, %.1f%%)",
-                       pruning_result->original_visual_tokens,
-                       pruning_result->pruned_visual_tokens,
-                       pruning_result->original_visual_tokens - pruning_result->pruned_visual_tokens,
-                       100.0 * (pruning_result->original_visual_tokens - pruning_result->pruned_visual_tokens) / 
-                       pruning_result->original_visual_tokens);
-            
-            // Note: m_position_ids is already updated by execute_pruning_pipeline (adjust_position_ids)
         }
     };
 

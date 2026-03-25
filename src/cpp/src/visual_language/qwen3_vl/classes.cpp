@@ -3,7 +3,6 @@
 
 #include "visual_language/qwen3_vl/classes.hpp"
 #include "utils.hpp"
-#include "logger.hpp"
 
 namespace ov::genai {
 
@@ -596,16 +595,6 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
                 m_rope_delta = pruning_result->updated_rope_delta.value();
             }
             
-            // Log pruning results
-            GENAI_INFO("[Qwen3-VL] [CDPruner] Visual tokens: %zu -> %zu (pruned %zu, %.1f%%)",
-                       pruning_result->original_visual_tokens,
-                       pruning_result->pruned_visual_tokens,
-                       pruning_result->original_visual_tokens - pruning_result->pruned_visual_tokens,
-                       100.0 * (pruning_result->original_visual_tokens - pruning_result->pruned_visual_tokens) / 
-                       pruning_result->original_visual_tokens);
-            
-            // Note: m_position_ids is already updated by execute_pruning_pipeline (adjust_position_ids)
-            
             // Prune deepstack_visual_embeds
             // deepstack_visual_embeds shape: [num_layers, total_vision_tokens, hidden_size]
             auto& deepstack_embeds = m_lm_extra_inputs["deepstack_visual_embeds"];
@@ -656,10 +645,6 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
                         }
                         
                         m_lm_extra_inputs["deepstack_visual_embeds"] = std::move(pruned_deepstack);
-                        
-                        GENAI_INFO("[Qwen3-VL] [CDPruner] Pruned deepstack_visual_embeds: [%zu, %zu, %zu] -> [%zu, %zu, %zu]",
-                                   num_layers, original_tokens, hidden_size,
-                                   num_layers, pruning_result->pruned_visual_tokens, hidden_size);
                     }
                 }
             }
