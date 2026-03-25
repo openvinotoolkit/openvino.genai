@@ -253,7 +253,7 @@ ov_genai_whisper_decoded_results_get_string(const ov_genai_whisper_decoded_resul
  *
  * Example with properties:
  * ov_genai_whisper_pipeline_create(model_path, "GPU", 2, &pipeline,
- * "CACHE_DIR", "cache_dir");
+ *                                         "CACHE_DIR", "cache_dir");
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
                                                                       const char* device,
