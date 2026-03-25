@@ -21,8 +21,7 @@ PROMPTS_FILE = "speech_generation_prompts.yaml"
 
 SPEAKER_SCORE_COL = "speaker score"
 CONTENT_SCORE_COL = "content score"
-PROSODY_SCORE_COL = "prosody score"
-ACOUSTIC_SCORE_COL = "acoustic score"
+DURATION_SCORE_COL = "duration score"
 OVERALL_SCORE_COL = "overall score"
 
 
@@ -94,8 +93,7 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         max_samples = min(len(self.gt_data), len(predictions))
         speaker_scores = []
         content_scores = []
-        prosody_scores = []
-        acoustic_scores = []
+        duration_scores = []
         overall_scores = []
 
         for idx in tqdm(range(max_samples), desc="TTS similarity evaluation"):
@@ -125,23 +123,20 @@ class SpeechGenerationEvaluator(BaseEvaluator):
 
             speaker_scores.append(scores.speaker)
             content_scores.append(scores.content)
-            prosody_scores.append(scores.prosody)
-            acoustic_scores.append(scores.acoustic)
+            duration_scores.append(scores.duration)
             overall_scores.append(scores.overall)
 
         all_metrics_per_prompt = {
             SPEAKER_SCORE_COL: speaker_scores,
             CONTENT_SCORE_COL: content_scores,
-            PROSODY_SCORE_COL: prosody_scores,
-            ACOUSTIC_SCORE_COL: acoustic_scores,
+            DURATION_SCORE_COL: duration_scores,
             OVERALL_SCORE_COL: overall_scores,
         }
 
         all_metrics = {
             SPEAKER_SCORE_COL: _safe_metric_mean(speaker_scores),
             CONTENT_SCORE_COL: _safe_metric_mean(content_scores),
-            PROSODY_SCORE_COL: _safe_metric_mean(prosody_scores),
-            ACOUSTIC_SCORE_COL: _safe_metric_mean(acoustic_scores),
+            DURATION_SCORE_COL: _safe_metric_mean(duration_scores),
             OVERALL_SCORE_COL: _safe_metric_mean(overall_scores),
         }
 

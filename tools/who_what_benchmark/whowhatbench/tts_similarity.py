@@ -13,11 +13,10 @@ from typing import Any, Optional
 import librosa
 import numpy as np
 import soundfile as sf
-from jiwer import cer as jiwer_cer
-from jiwer import wer as jiwer_wer
+
 
 DEFAULT_SR = 22050
-DEFAULT_WHISPER_MODEL = "small"
+DEFAULT_WHISPER_MODEL = "base"
 
 
 # ---- Public result / config -------------------------------------------------
@@ -28,10 +27,8 @@ class Scores:
     speaker: Optional[float]
     # Content = same words?
     content: Optional[float]
-    # Prosody = same delivery?
-    prosody: Optional[float]
-    # Acoustic = same overall sound?
-    acoustic: Optional[float]
+    # Duration = similar overall utterance length / pacing?
+    duration: Optional[float]
     overall: Optional[float]
 
 
@@ -54,33 +51,15 @@ class ScoringConfig:
     content_expected_weight: float = 0.25
     content_reference_weight: float = 0.75
 
-    # Prosody = pitch contour + energy contour + speaking-rate difference.
-    prosody_f0_good: float = 0.05
-    prosody_f0_bad: float = 0.30
-    prosody_rms_good: float = 0.03
-    prosody_rms_bad: float = 0.20
-    prosody_rate_good: float = 0.05
-    prosody_rate_bad: float = 0.25
-    prosody_f0_weight: float = 0.50
-    prosody_rms_weight: float = 0.30
-    prosody_rate_weight: float = 0.20
+    # Duration = relative difference in overall clip length.
+    # ~1% is close; ~15% is a clearly noticeable drift.
+    duration_diff_good: float = 0.01
+    duration_diff_bad: float = 0.15
 
-    # Acoustic = coarse spectral similarity proxies.
-    acoustic_mfcc_good: float = 20.0
-    acoustic_mfcc_bad: float = 100.0
-    acoustic_logmel_good: float = 20.0
-    acoustic_logmel_bad: float = 100.0
-    acoustic_mcd_good: float = 120.0
-    acoustic_mcd_bad: float = 600.0
-    acoustic_mfcc_weight: float = 0.45
-    acoustic_logmel_weight: float = 0.45
-    acoustic_mcd_weight: float = 0.10
-
-    # Overall weighting: content matters most, then speaker, then prosody, then acoustic.
-    overall_content_weight: float = 0.35
-    overall_speaker_weight: float = 0.30
-    overall_prosody_weight: float = 0.20
-    overall_acoustic_weight: float = 0.15
+    # Overall weighting: content matters most, then speaker, then duration.
+    overall_content_weight: float = 0.50
+    overall_speaker_weight: float = 0.40
+    overall_duration_weight: float = 0.10
 
 
 # ---- Small helpers ----------------------------------------------------------
@@ -160,52 +139,9 @@ def duration_s(audio: np.ndarray, sr: int) -> float:
     return float(len(audio) / sr)
 
 
-def dtw_mean_distance(seq_a: np.ndarray, seq_b: np.ndarray) -> Optional[float]:
-    if seq_a.size == 0 or seq_b.size == 0:
-        return None
-    D, _ = librosa.sequence.dtw(X=seq_a, Y=seq_b, metric="euclidean")
-    if D.size == 0:
-        return None
-    path_len = max(1, D.shape[0] + D.shape[1])
-    return float(D[-1, -1] / path_len)
-
-
-def voiced_f0_stats(audio: np.ndarray, sr: int) -> tuple[Optional[np.ndarray], Optional[float], Optional[float]]:
-    """
-    Extract pitch-related summaries:
-      - f0: frame-by-frame pitch contour (Hz)
-      - voiced_ratio: fraction of frames classified as voiced
-      - median_hz: typical voiced pitch (robust summary)
-    """
-    try:
-        f0, voiced_flag, _ = librosa.pyin(
-            audio,
-            sr=sr,
-            fmin=librosa.note_to_hz("C2"),
-            fmax=librosa.note_to_hz("C7"),
-            frame_length=2048,
-            hop_length=256,
-        )
-        if f0 is None or voiced_flag is None:
-            return None, None, None
-        voiced_ratio = float(np.mean(voiced_flag.astype(np.float32)))
-        voiced_vals = f0[np.isfinite(f0)]
-        median_hz = float(np.median(voiced_vals)) if voiced_vals.size else None
-        return f0, voiced_ratio, median_hz
-    except Exception:
-        return None, None, None
-
-
 # ---- Core evaluator ---------------------------------------------------------
 
 class TTSSimilarityEvaluator:
-    """
-    Lean evaluator that returns just the final 4 category scores (+ overall).
-
-    Verbose mode prints intermediate metrics as they are computed instead of
-    storing a large result structure.
-    """
-
     def __init__(
         self,
         sample_rate: int = DEFAULT_SR,
@@ -246,7 +182,6 @@ class TTSSimilarityEvaluator:
             from speechbrain.inference.speaker import SpeakerRecognition
             self._speaker_model = SpeakerRecognition.from_hparams(
                 source="speechbrain/spkrec-ecapa-voxceleb",
-                savedir="pretrained_models/spkrec-ecapa-voxceleb",
             )
         return self._speaker_model
 
@@ -258,23 +193,12 @@ class TTSSimilarityEvaluator:
         try:
             import torch
 
-            verification = self.speaker_model
-            def _load_wav_tensor(path: str, target_sr: int = 16000):
-                wav, sr = sf.read(path, always_2d=False)
-                if getattr(wav, "ndim", 1) == 2:
-                    wav = np.mean(wav, axis=1)
-                wav = np.asarray(wav, dtype=np.float32)
-                if sr != target_sr:
-                    wav = librosa.resample(wav, orig_sr=sr, target_sr=target_sr)
-                peak = np.max(np.abs(wav)) if wav.size else 0.0
-                if peak > 1.0:
-                    wav = wav / peak
-                return torch.tensor(wav, dtype=torch.float32).unsqueeze(0)
-
-            ref_tensor = _load_wav_tensor(reference_path)
-            tgt_tensor = _load_wav_tensor(target_path)
-            emb_ref = verification.encode_batch(ref_tensor).reshape(1, -1)
-            emb_tgt = verification.encode_batch(tgt_tensor).reshape(1, -1)
+            ref_tensor, _ = load_audio_mono(reference_path, 16000)
+            tgt_tensor, _ = load_audio_mono(target_path, 16000)
+            ref_tensor = torch.tensor(ref_tensor, dtype=torch.float32).unsqueeze(0)
+            tgt_tensor = torch.tensor(tgt_tensor, dtype=torch.float32).unsqueeze(0)
+            emb_ref = self.speaker_model.encode_batch(ref_tensor).reshape(1, -1)
+            emb_tgt = self.speaker_model.encode_batch(tgt_tensor).reshape(1, -1)
             score = float(torch.nn.functional.cosine_similarity(emb_ref, emb_tgt, dim=1).item())
             pred = int(score >= 0.25)
             return score, pred, None
@@ -289,6 +213,9 @@ class TTSSimilarityEvaluator:
         language: Optional[str] = None,
         verbose: bool = False,
     ) -> Scores:
+        from jiwer import cer as jiwer_cer
+        from jiwer import wer as jiwer_wer
+
         target_audio, sr_t = load_audio_mono(target_path, self.sample_rate)
         reference_audio, sr_r = load_audio_mono(reference_path, self.sample_rate)
         if not (sr_t == sr_r == self.sample_rate):
@@ -296,12 +223,14 @@ class TTSSimilarityEvaluator:
                 f"Sample-rate mismatch after load: target={sr_t}, reference={sr_r}, requested={self.sample_rate}"
             )
 
+        target_duration = duration_s(target_audio, self.sample_rate)
+        reference_duration = duration_s(reference_audio, self.sample_rate)
+
         _log(verbose, "=== TTS Similarity Evaluation ===")
         _log(verbose, f"Target:    {target_path}")
         _log(verbose, f"Reference: {reference_path}")
         _log(verbose, f"Sample rate: {self.sample_rate}")
-        _log(verbose, f"Durations: target={format_float(duration_s(target_audio, self.sample_rate))}s, "
-                      f"reference={format_float(duration_s(reference_audio, self.sample_rate))}s")
+        _log(verbose, f"Durations: target={format_float(target_duration)}s, reference={format_float(reference_duration)}s")
         _log(verbose)
 
         # Speaker
@@ -354,90 +283,34 @@ class TTSSimilarityEvaluator:
         _log(verbose, f"Normalized transcripts match: {norm_tgt == norm_ref}")
         _log(verbose)
 
-        # Prosody
-        tgt_f0, tgt_voiced, tgt_med = voiced_f0_stats(target_audio, self.sample_rate)
-        ref_f0, ref_voiced, ref_med = voiced_f0_stats(reference_audio, self.sample_rate)
+        # Duration
+        duration_diff = abs(target_duration - reference_duration) / max(reference_duration, 1e-8)
+        duration_score = linear_distance_score(duration_diff, self.cfg.duration_diff_good, self.cfg.duration_diff_bad)
 
-        f0_dtw = None
-        if tgt_f0 is not None and ref_f0 is not None:
-            tgt_log = np.nan_to_num(np.log(np.where(np.isfinite(tgt_f0), tgt_f0, np.nan)), nan=0.0)[None, :]
-            ref_log = np.nan_to_num(np.log(np.where(np.isfinite(ref_f0), ref_f0, np.nan)), nan=0.0)[None, :]
-            f0_dtw = dtw_mean_distance(tgt_log, ref_log)
-
-        rms_tgt = librosa.feature.rms(y=target_audio, frame_length=2048, hop_length=256)
-        rms_ref = librosa.feature.rms(y=reference_audio, frame_length=2048, hop_length=256)
-        rms_dtw = dtw_mean_distance(rms_tgt, rms_ref)
-
-        tgt_rate = len(target_tx.strip()) / max(duration_s(target_audio, self.sample_rate), 1e-8) if target_tx.strip() else None
-        ref_rate = len(reference_tx.strip()) / max(duration_s(reference_audio, self.sample_rate), 1e-8) if reference_tx.strip() else None
-        rate_diff = None if (tgt_rate is None or ref_rate is None) else abs(tgt_rate - ref_rate) / max(ref_rate, 1e-8)
-
-        prosody_score = weighted_mean([
-            (linear_distance_score(f0_dtw, self.cfg.prosody_f0_good, self.cfg.prosody_f0_bad), self.cfg.prosody_f0_weight),
-            (linear_distance_score(rms_dtw, self.cfg.prosody_rms_good, self.cfg.prosody_rms_bad), self.cfg.prosody_rms_weight),
-            (linear_distance_score(rate_diff, self.cfg.prosody_rate_good, self.cfg.prosody_rate_bad), self.cfg.prosody_rate_weight),
-        ])
-
-        _log(verbose, "--- Prosody ---")
-        _log(verbose, f"F0 DTW distance:         {f0_dtw}")
-        _log(verbose, f"Voiced ratio (tgt/ref):  {tgt_voiced}, {ref_voiced}")
-        _log(verbose, f"Median F0 Hz (tgt/ref):  {tgt_med}, {ref_med}")
-        _log(verbose, f"RMS DTW distance:        {rms_dtw}")
-        _log(verbose, f"Speaking rate diff:      {rate_diff}")
-        _log(verbose)
-
-        # Acoustic
-        n_fft, hop, n_mels, n_mfcc = 1024, 256, 80, 13
-        tgt_mfcc = librosa.feature.mfcc(y=target_audio, sr=self.sample_rate, n_mfcc=n_mfcc, n_fft=n_fft, hop_length=hop)
-        ref_mfcc = librosa.feature.mfcc(y=reference_audio, sr=self.sample_rate, n_mfcc=n_mfcc, n_fft=n_fft, hop_length=hop)
-        tgt_mel = librosa.power_to_db(
-            librosa.feature.melspectrogram(y=target_audio, sr=self.sample_rate, n_fft=n_fft, hop_length=hop, n_mels=n_mels),
-            ref=np.max,
-        )
-        ref_mel = librosa.power_to_db(
-            librosa.feature.melspectrogram(y=reference_audio, sr=self.sample_rate, n_fft=n_fft, hop_length=hop, n_mels=n_mels),
-            ref=np.max,
-        )
-
-        mfcc_dtw = dtw_mean_distance(tgt_mfcc, ref_mfcc)
-        logmel_dtw = dtw_mean_distance(tgt_mel, ref_mel)
-
-        mcd_like = None
-        try:
-            _, wp = librosa.sequence.dtw(X=tgt_mfcc, Y=ref_mfcc, metric="euclidean")
-            if wp is not None and len(wp) > 0:
-                dists = [float(np.sqrt(np.sum((tgt_mfcc[:, i] - ref_mfcc[:, j]) ** 2))) for i, j in wp]
-                if dists:
-                    mcd_like = float((10.0 / np.log(10.0)) * np.sqrt(2.0) * np.mean(dists))
-        except Exception:
-            pass
-
-        acoustic_score = weighted_mean([
-            (linear_distance_score(mfcc_dtw, self.cfg.acoustic_mfcc_good, self.cfg.acoustic_mfcc_bad), self.cfg.acoustic_mfcc_weight),
-            (linear_distance_score(logmel_dtw, self.cfg.acoustic_logmel_good, self.cfg.acoustic_logmel_bad), self.cfg.acoustic_logmel_weight),
-            (linear_distance_score(mcd_like, self.cfg.acoustic_mcd_good, self.cfg.acoustic_mcd_bad), self.cfg.acoustic_mcd_weight),
-        ])
-
-        _log(verbose, "--- Acoustic ---")
-        _log(verbose, f"MFCC DTW mean distance:  {mfcc_dtw}")
-        _log(verbose, f"Log-mel DTW distance:    {logmel_dtw}")
-        _log(verbose, f"MCD-like distance:       {mcd_like}")
+        _log(verbose, "--- Duration ---")
+        _log(verbose, f"Target duration (s):    {target_duration}")
+        _log(verbose, f"Reference duration (s): {reference_duration}")
+        _log(verbose, f"Relative duration diff: {duration_diff}")
         _log(verbose)
 
         overall = weighted_mean([
             (content_score, self.cfg.overall_content_weight),
             (speaker_score, self.cfg.overall_speaker_weight),
-            (prosody_score, self.cfg.overall_prosody_weight),
-            (acoustic_score, self.cfg.overall_acoustic_weight),
+            (duration_score, self.cfg.overall_duration_weight),
         ])
 
         scores = Scores(
             speaker=speaker_score,
             content=content_score,
-            prosody=prosody_score,
-            acoustic=acoustic_score,
+            duration=duration_score,
             overall=overall,
         )
+
+        _log(verbose, "--- Scores ---")
+        _log(verbose, f"Speaker:  {format_float(scores.speaker)}")
+        _log(verbose, f"Content:  {format_float(scores.content)}")
+        _log(verbose, f"Duration: {format_float(scores.duration)}")
+        _log(verbose, f"Overall:  {format_float(scores.overall)}")
 
         return scores
 

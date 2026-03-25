@@ -186,8 +186,7 @@ The speech-generation evaluator reports these metrics:
 
 * `speaker score` - speaker similarity based on SpeechBrain speaker verification.
 * `content score` - transcript similarity based on faster-whisper transcription and normalized text comparison.
-* `prosody score` - rhythm, pitch, and energy similarity.
-* `acoustic score` - MFCC/log-mel style acoustic similarity.
+* `duration score` - relative utterance length similarity between target and reference.
 * `overall score` - aggregate score used for sorting worst examples.
 
 The optional input CSV for speech-generation may contain these columns:

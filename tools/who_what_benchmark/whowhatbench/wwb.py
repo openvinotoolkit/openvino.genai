@@ -1038,8 +1038,7 @@ def print_speech_results(evaluator):
         logger.info("## overall score: %s", _format_score(e["overall score"]))
         logger.info("## speaker score: %s", _format_score(e["speaker score"]))
         logger.info("## content score: %s", _format_score(e["content score"]))
-        logger.info("## prosody score: %s", _format_score(e["prosody score"]))
-        logger.info("## Acoustic score: %s", _format_score(e["acoustic score"]))
+        logger.info("## duration score: %s", _format_score(e["duration score"]))
         logger.info("## Reference audio path:\n%s\n", e["source_model"])
         logger.info("## Target audio path:\n%s\n", e["optimized_model"])
 
