@@ -18,6 +18,8 @@
  */
 typedef struct ov_genai_whisper_decoded_result_chunk_opaque ov_genai_whisper_decoded_result_chunk;
 
+typedef struct ov_genai_whisper_word_timing_opaque ov_genai_whisper_word_timing;
+
 /**
  * @struct ov_genai_whisper_decoded_results
  * @brief type define ov_genai_whisper_decoded_results from ov_genai_whisper_decoded_results_opaque
@@ -179,6 +181,30 @@ ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper_decoded_res
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_decoded_results_get_words_count(const ov_genai_whisper_decoded_results* results, size_t* count);
+
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_word_timing_create(ov_genai_whisper_word_timing** word_timing);
+
+OPENVINO_GENAI_C_EXPORTS void ov_genai_whisper_word_timing_free(ov_genai_whisper_word_timing* word_timing);
+
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_word_timing_get_start_ts(const ov_genai_whisper_word_timing* word_timing, float* start_ts);
+
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_word_timing_get_end_ts(const ov_genai_whisper_word_timing* word_timing, float* end_ts);
+
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_word_timing_get_word(const ov_genai_whisper_word_timing* word_timing, char* word, size_t* word_size);
+
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_word_timing_get_token_ids_count(const ov_genai_whisper_word_timing* word_timing, size_t* count);
+
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_word_timing_get_token_id_at(const ov_genai_whisper_word_timing* word_timing, size_t index, int64_t* token_id);
+
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_decoded_results_get_word_timing_at(const ov_genai_whisper_decoded_results* results,
+                                                    size_t index,
+                                                    ov_genai_whisper_word_timing** word_timing);
 
 /**
  * @brief Get word result at specific index from ov_genai_whisper_decoded_results.

@@ -243,6 +243,124 @@ ov_status_e ov_genai_whisper_decoded_results_get_words_count(const ov_genai_whis
     return ov_status_e::OK;
 }
 
+ov_status_e ov_genai_whisper_word_timing_create(ov_genai_whisper_word_timing** word_timing) {
+    if (!word_timing) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        std::unique_ptr<ov_genai_whisper_word_timing> _word_timing = std::make_unique<ov_genai_whisper_word_timing>();
+        _word_timing->object = std::make_shared<ov::genai::WhisperWordTiming>();
+        *word_timing = _word_timing.release();
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+void ov_genai_whisper_word_timing_free(ov_genai_whisper_word_timing* word_timing) {
+    if (word_timing) {
+        delete word_timing;
+    }
+}
+
+ov_status_e ov_genai_whisper_word_timing_get_start_ts(const ov_genai_whisper_word_timing* word_timing,
+                                                      float* start_ts) {
+    if (!word_timing || !(word_timing->object) || !start_ts) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        *start_ts = word_timing->object->start_ts;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_word_timing_get_end_ts(const ov_genai_whisper_word_timing* word_timing, float* end_ts) {
+    if (!word_timing || !(word_timing->object) || !end_ts) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        *end_ts = word_timing->object->end_ts;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_word_timing_get_word(const ov_genai_whisper_word_timing* word_timing,
+                                                  char* word,
+                                                  size_t* word_size) {
+    if (!word_timing || !(word_timing->object) || !word_size) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        const std::string& str = word_timing->object->word;
+        if (!word) {
+            *word_size = str.length() + 1;
+        } else {
+            if (*word_size < str.length() + 1) {
+                return ov_status_e::OUT_OF_BOUNDS;
+            }
+            strncpy(word, str.c_str(), str.length() + 1);
+            word[str.length()] = '\0';
+            *word_size = str.length() + 1;
+        }
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_word_timing_get_token_ids_count(const ov_genai_whisper_word_timing* word_timing,
+                                                             size_t* count) {
+    if (!word_timing || !(word_timing->object) || !count) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        *count = word_timing->object->token_ids.size();
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_word_timing_get_token_id_at(const ov_genai_whisper_word_timing* word_timing,
+                                                         size_t index,
+                                                         int64_t* token_id) {
+    if (!word_timing || !(word_timing->object) || !token_id) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        if (index >= word_timing->object->token_ids.size()) {
+            return ov_status_e::OUT_OF_BOUNDS;
+        }
+        *token_id = word_timing->object->token_ids[index];
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_decoded_results_get_word_timing_at(const ov_genai_whisper_decoded_results* results,
+                                                                size_t index,
+                                                                ov_genai_whisper_word_timing** word_timing) {
+    if (!results || !(results->object) || !word_timing) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        if (!results->object->words.has_value() || index >= results->object->words->size()) {
+            return ov_status_e::OUT_OF_BOUNDS;
+        }
+        std::unique_ptr<ov_genai_whisper_word_timing> _word_timing = std::make_unique<ov_genai_whisper_word_timing>();
+        _word_timing->object = std::make_shared<ov::genai::WhisperWordTiming>(results->object->words->at(index));
+        *word_timing = _word_timing.release();
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
 ov_status_e ov_genai_whisper_decoded_results_get_word_at(const ov_genai_whisper_decoded_results* results,
                                                          size_t index,
                                                          ov_genai_whisper_decoded_result_chunk** word) {
@@ -253,13 +371,12 @@ ov_status_e ov_genai_whisper_decoded_results_get_word_at(const ov_genai_whisper_
         if (!results->object->words.has_value() || index >= results->object->words->size()) {
             return ov_status_e::OUT_OF_BOUNDS;
         }
-        const auto& word_data = results->object->words->at(index);
         std::unique_ptr<ov_genai_whisper_decoded_result_chunk> _word =
             std::make_unique<ov_genai_whisper_decoded_result_chunk>();
         _word->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>();
-        _word->object->start_ts = word_data.start_ts;
-        _word->object->end_ts = word_data.end_ts;
-        _word->object->text = word_data.word;
+        _word->object->start_ts = results->object->words->at(index).start_ts;
+        _word->object->end_ts = results->object->words->at(index).end_ts;
+        _word->object->text = results->object->words->at(index).word;
         *word = _word.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
