@@ -57,7 +57,7 @@ int main(int argc, char* argv[]) {
         audio_length = resampled_length;
     }
 
-    ov_status_e status = ov_genai_whisper_pipeline_create(model_path, device, 2, &pipeline, "word_timestamps", "true");
+    ov_status_e status = ov_genai_whisper_pipeline_create(model_path, device, 0, &pipeline);
     if (status != OK) {
         if (status == UNKNOW_EXCEPTION) {
             fprintf(stderr, "Error: Failed to create Whisper pipeline. Please check:\n");
