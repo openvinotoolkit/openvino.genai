@@ -93,8 +93,11 @@ def _is_videochat_flash_qwen_model(model_id: str) -> bool:
     return "videochat-flash-qwen" in model_id.lower()
 
 
+VIDEOCHAT_FLASH_QWEN_MODEL_ID = "optimum-intel-internal-testing/tiny-videochat-flash-qwen"
+
+
 VIDEO_MODELS_WITH_UNSUPPORTED_IMAGE_INPUTS: list[str] = [
-    "optimum-intel-internal-testing/tiny-videochat-flash-qwen",  # CVS-182928
+    VIDEOCHAT_FLASH_QWEN_MODEL_ID,
 ]
 
 
@@ -131,8 +134,8 @@ VIDEO_MODEL_IDS = [
     "optimum-intel-internal-testing/tiny-random-llava-next-video",
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
-    "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
+    VIDEOCHAT_FLASH_QWEN_MODEL_ID,
 ]
 
 MODEL_IDS: list[str] = [
@@ -160,7 +163,6 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next": lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
-    "optimum-intel-internal-testing/tiny-videochat-flash-qwen": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
@@ -169,6 +171,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
+    VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
 
@@ -176,8 +179,8 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
-    "optimum-intel-internal-testing/tiny-videochat-flash-qwen": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
+    VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
 
@@ -196,7 +199,6 @@ RESOLUTION_BY_VIDEO_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 32,
 }
 
-VIDEOCHAT_FLASH_QWEN_MODEL_ID = "optimum-intel-internal-testing/tiny-videochat-flash-qwen"
 
 DEFAULT_RESOLUTION = 336
 
@@ -221,7 +223,7 @@ TEST_IMAGE_URLS = {
 
 NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-internvl2",
-    "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
+    VIDEOCHAT_FLASH_QWEN_MODEL_ID,
 }
 
 DEFAULT_NPUW_PROPERTIES = {
@@ -278,21 +280,13 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
     return expected_commit_prefix in local_version
 
 
-def _maybe_patch_pyav_for_videochat_flash_qwen(model_id: str) -> None:
+def _patch_pyav_for_videochat_flash_qwen() -> None:
     """
-    Patch PyAV with a stub module on Windows if the model is
-    tiny-videochat-flash-qwen and the optimum-intel version is compatible,
-    to avoid DLL loading errors in tests that require PyAV.
-
+    Patch PyAV with a stub module on Windows to avoid DLL loading errors in tests that require PyAV.
+    Currently, only videochat-flash-qwen model tests require PyAV, and they fail on Windows.
     See CVS-183222 for details.
     """
-    if not _is_videochat_flash_qwen_model(model_id):
-        return
-
-    if not is_optimum_intel_version_for_videochat_flash_qwen():
-        return
-
-    import patch_pyav_for_servercore
+    import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
     patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
@@ -317,7 +311,7 @@ def _get_ov_model(model_id: str) -> str:
             "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported version is 1.27.0.dev0+70056d0."
         )
 
-    _maybe_patch_pyav_for_videochat_flash_qwen(model_id)
+    _patch_pyav_for_videochat_flash_qwen()
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
@@ -351,7 +345,7 @@ def _get_ov_model(model_id: str) -> str:
                     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
-                    "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
+                    VIDEOCHAT_FLASH_QWEN_MODEL_ID,
                 },
             )
         )

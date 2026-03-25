@@ -57,8 +57,11 @@ protected:
     ov::Tensor m_pos_emb;
 
 private:
+    /// @brief Pads frames if frame count is not divisible by mm_local_num_frames.
     ov::Tensor sample_video_if_needed(const ov::Tensor& video) const;
+    /// @brief Initializes 3D sin-cos positional embedding tensor for vision encoder input.
     void initialize_positional_embedding();
+    /// @brief Builds and prepares infer request queue for token merge model.
     void initialize_merge_model_queue();
 };
 

@@ -295,6 +295,8 @@ std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim
     return std::make_shared<ov::Model>(ov::OutputVector{x_out, size_m}, ov::ParameterVector{x_p, size_p}, "bipartite_merge_opt");
 }
 
+// Merge visual tokens with iterative ToMe until reaching ``target_num_token``.
+// Each merge round removes at most half of current tokens due to bipartite matching constraints.
 ov::Tensor merge_tokens(const ov::Tensor& input, ov::InferRequest& merge_embeddings, const size_t target_num_token = 64) {
     const ov::Shape& x_shape = input.get_shape();
     OPENVINO_ASSERT(
@@ -632,7 +634,7 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
 
     // Accelerate model by using static rope shape.
     std::map<std::string, ov::PartialShape> input_shapes;
-    input_shapes["rotary_pos_emb"] = pos_emb_shape;
+    input_shapes["rotary_pos_emb"] = pos_emb_shape;  // it's a fixed shape: { 1, 1025, 1408 }
     model->reshape(input_shapes);
 
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
@@ -699,27 +701,39 @@ ov::Tensor VisionEncoderVideoChatFlashQwen::sample_video_if_needed(const ov::Ten
         return video;
     }
 
-    const size_t sampled_frame_count = frame_count - remainder;
-    GENAI_WARN("Video frame_count=%zu is not divisible by group_size=%zu. Dropping last %zu frame(s), sampled_frame_count=%zu.",
+    // The strategy of video sampling in original model is complex, here we just simply pad the video by replicating the
+    // last frame until the frame count is divisible by frames_group_size.
+    // Reference: https://huggingface.co/OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B/blob/main/mm_utils.py#L107
+    // TODO: CVS-183520 to implement the original sampling strategy.
+    const size_t pad_frame_count = frames_group_size - remainder;
+    const size_t padded_frame_count = frame_count + pad_frame_count;
+    GENAI_WARN("Video frame_count=%zu is not divisible by group_size=%zu. Padding %zu frame(s), padded_frame_count=%zu.",
                frame_count,
                frames_group_size,
-               remainder,
-               sampled_frame_count);
+               pad_frame_count,
+               padded_frame_count);
 
-    ov::Shape sampled_shape = video_shape;
-    sampled_shape[0] = sampled_frame_count;
-    ov::Tensor sampled_video(video.get_element_type(), sampled_shape);
+    ov::Shape padded_shape = video_shape;
+    padded_shape[0] = padded_frame_count;
+    ov::Tensor padded_video(video.get_element_type(), padded_shape);
 
     const size_t element_size = video.get_element_type().size();
     OPENVINO_ASSERT(element_size > 0, "Unsupported tensor element type in sample_video_if_needed.");
-    
-    const size_t frame_volume = video_shape[1] * video_shape[2] * video_shape[3];
-    const size_t bytes_to_copy = sampled_frame_count * frame_volume * element_size;
-    const uint8_t* src_data = static_cast<const uint8_t*>(video.data());
-    uint8_t* dst_data = static_cast<uint8_t*>(sampled_video.data());
-    std::memcpy(dst_data, src_data, bytes_to_copy);
 
-    return sampled_video;
+    const size_t frame_volume = video_shape[1] * video_shape[2] * video_shape[3];
+    const size_t frame_bytes = frame_volume * element_size;
+    const size_t original_bytes = frame_count * frame_bytes;
+    const uint8_t* src_data = static_cast<const uint8_t*>(video.data());
+    uint8_t* dst_data = static_cast<uint8_t*>(padded_video.data());
+    std::memcpy(dst_data, src_data, original_bytes);
+
+    // Replicate the last valid frame to fill the required group size.
+    const uint8_t* last_frame = src_data + (frame_count - 1) * frame_bytes;
+    for (size_t i = 0; i < pad_frame_count; ++i) {
+        std::memcpy(dst_data + (frame_count + i) * frame_bytes, last_frame, frame_bytes);
+    }
+
+    return padded_video;
 }
 
 EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& video) {
@@ -886,23 +900,4 @@ ov::Tensor InputsEmbedderVideoChatFlashQwen::get_inputs_embeds(
 
     return get_inputs_embeds(prompt, combined_images, metrics, recalculate_merged_embeddings, image_sequence);
 }
-
-void InputsEmbedderVideoChatFlashQwen::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
-    IInputsEmbedder::update_chat_history(decoded_results, generation_finish_status);
-    if (generation_finish_status == ov::genai::GenerationStatus::CANCEL)
-        m_tokens_per_images = m_prev_tokens_per_images;
-    else
-        m_prev_tokens_per_images = m_tokens_per_images;
-}
-
-void InputsEmbedderVideoChatFlashQwen::start_chat(const std::string& system_message) {
-    IInputsEmbedder::start_chat(system_message);
-    m_tokens_per_images.clear();
-}
-
-void InputsEmbedderVideoChatFlashQwen::finish_chat() {
-    IInputsEmbedder::finish_chat();
-    m_tokens_per_images.clear();
-}
-
 } // namespace ov::genai
