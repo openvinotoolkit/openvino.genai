@@ -650,7 +650,6 @@ def genai_gen_text2video(
 
 
 def genai_gen_speech(model, prompt, speaker_embedding=None, voice=""):
-
     if speaker_embedding is not None and not isinstance(speaker_embedding, ov.Tensor):
         speaker_embedding = ov.Tensor(np.array(speaker_embedding, dtype=np.float32).reshape(1, -1))
 
@@ -668,6 +667,8 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, voice=""):
     except AttributeError:
         sample_rate = 16000
     return speech, sample_rate
+
+
 def hf_gen_speech(model, prompt, speaker_embedding=None, voice=""):
     import torch as _torch
 
@@ -1099,7 +1100,7 @@ def print_speech_results(evaluator):
         logger.info(
             "======================================================================================================="
         )
-        logger.info(f"Top-{i+1} example:")
+        logger.info(f"Top-{i + 1} example:")
         logger.info("## Prompt:\n%s\n", e["prompt"])
         logger.info("## overall score: %s", _format_score(e["overall score"]))
         logger.info("## speaker score: %s", _format_score(e["speaker score"]))
@@ -1224,7 +1225,9 @@ def main():
 
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,
-                evaluator.get_generation_fn() if args.genai or args.llamacpp or args.model_type == "speech-generation" else None,
+                evaluator.get_generation_fn()
+                if args.genai or args.llamacpp or args.model_type == "speech-generation"
+                else None,
                 output_dir=args.output,
                 verbose=args.verbose,
             )

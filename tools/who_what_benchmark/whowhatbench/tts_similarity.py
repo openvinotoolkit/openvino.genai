@@ -21,6 +21,7 @@ DEFAULT_WHISPER_MODEL = "base"
 
 # ---- Public result / config -------------------------------------------------
 
+
 @dataclass
 class Scores:
     # Speaker = same voice?
@@ -63,6 +64,7 @@ class ScoringConfig:
 
 
 # ---- Small helpers ----------------------------------------------------------
+
 
 def normalize_text(text: str) -> str:
     """Normalize text for forgiving transcript comparison."""
@@ -110,6 +112,7 @@ def weighted_mean(items: list[tuple[Optional[float], float]]) -> Optional[float]
     total_w = sum(w for _, w in vals)
     return sum(v * w for v, w in vals) / total_w
 
+
 def format_float(x: Optional[float], digits: int = 3) -> str:
     return "None" if x is None else f"{x:.{digits}f}"
 
@@ -120,6 +123,7 @@ def _log(verbose: bool, msg: str = "") -> None:
 
 
 # ---- Audio / model utilities ------------------------------------------------
+
 
 def load_audio_mono(path: str, sr: int) -> tuple[np.ndarray, int]:
     audio, file_sr = sf.read(path, always_2d=False)
@@ -140,6 +144,7 @@ def duration_s(audio: np.ndarray, sr: int) -> float:
 
 
 # ---- Core evaluator ---------------------------------------------------------
+
 
 class TTSSimilarityEvaluator:
     def __init__(
@@ -162,6 +167,7 @@ class TTSSimilarityEvaluator:
     def whisper(self):
         if self._whisper is None:
             from faster_whisper import WhisperModel
+
             self._whisper = WhisperModel(
                 self.whisper_model_name,
                 device=self.whisper_device,
@@ -180,6 +186,7 @@ class TTSSimilarityEvaluator:
                 torchaudio.set_audio_backend = lambda _backend: None
 
             from speechbrain.inference.speaker import SpeakerRecognition
+
             self._speaker_model = SpeakerRecognition.from_hparams(
                 source="speechbrain/spkrec-ecapa-voxceleb",
             )
@@ -189,7 +196,9 @@ class TTSSimilarityEvaluator:
         segments, _info = self.whisper.transcribe(path, language=language, vad_filter=False)
         return " ".join(seg.text.strip() for seg in segments).strip()
 
-    def compute_speaker_similarity(self, target_path: str, reference_path: str) -> tuple[Optional[float], Optional[int], Optional[str]]:
+    def compute_speaker_similarity(
+        self, target_path: str, reference_path: str
+    ) -> tuple[Optional[float], Optional[int], Optional[str]]:
         try:
             import torch
 
@@ -230,7 +239,10 @@ class TTSSimilarityEvaluator:
         _log(verbose, f"Target:    {target_path}")
         _log(verbose, f"Reference: {reference_path}")
         _log(verbose, f"Sample rate: {self.sample_rate}")
-        _log(verbose, f"Durations: target={format_float(target_duration)}s, reference={format_float(reference_duration)}s")
+        _log(
+            verbose,
+            f"Durations: target={format_float(target_duration)}s, reference={format_float(reference_duration)}s",
+        )
         _log(verbose)
 
         # Speaker
@@ -252,25 +264,35 @@ class TTSSimilarityEvaluator:
 
         wer_ref_norm = safe_float(jiwer_wer(norm_ref, norm_tgt))
         cer_ref_norm = safe_float(jiwer_cer(norm_ref, norm_tgt))
-        ref_content = weighted_mean([
-            (linear_distance_score(wer_ref_norm, 0.0, self.cfg.content_wer_bad), self.cfg.content_wer_weight),
-            (linear_distance_score(cer_ref_norm, 0.0, self.cfg.content_cer_bad), self.cfg.content_cer_weight),
-        ])
+        ref_content = weighted_mean(
+            [
+                (linear_distance_score(wer_ref_norm, 0.0, self.cfg.content_wer_bad), self.cfg.content_wer_weight),
+                (linear_distance_score(cer_ref_norm, 0.0, self.cfg.content_cer_bad), self.cfg.content_cer_weight),
+            ]
+        )
 
         exp_content = None
         wer_exp_norm = cer_exp_norm = None
         if norm_exp is not None:
             wer_exp_norm = safe_float(jiwer_wer(norm_exp, norm_tgt))
             cer_exp_norm = safe_float(jiwer_cer(norm_exp, norm_tgt))
-            exp_content = weighted_mean([
-                (linear_distance_score(wer_exp_norm, 0.0, self.cfg.content_wer_bad), self.cfg.content_wer_weight),
-                (linear_distance_score(cer_exp_norm, 0.0, self.cfg.content_cer_bad), self.cfg.content_cer_weight),
-            ])
+            exp_content = weighted_mean(
+                [
+                    (linear_distance_score(wer_exp_norm, 0.0, self.cfg.content_wer_bad), self.cfg.content_wer_weight),
+                    (linear_distance_score(cer_exp_norm, 0.0, self.cfg.content_cer_bad), self.cfg.content_cer_weight),
+                ]
+            )
 
-        content_score = weighted_mean([
-            (exp_content, self.cfg.content_expected_weight),
-            (ref_content, self.cfg.content_reference_weight),
-        ]) if exp_content is not None else ref_content
+        content_score = (
+            weighted_mean(
+                [
+                    (exp_content, self.cfg.content_expected_weight),
+                    (ref_content, self.cfg.content_reference_weight),
+                ]
+            )
+            if exp_content is not None
+            else ref_content
+        )
 
         _log(verbose, "--- Content ---")
         _log(verbose, f"Reference transcript: {reference_tx}")
@@ -293,11 +315,13 @@ class TTSSimilarityEvaluator:
         _log(verbose, f"Relative duration diff: {duration_diff}")
         _log(verbose)
 
-        overall = weighted_mean([
-            (content_score, self.cfg.overall_content_weight),
-            (speaker_score, self.cfg.overall_speaker_weight),
-            (duration_score, self.cfg.overall_duration_weight),
-        ])
+        overall = weighted_mean(
+            [
+                (content_score, self.cfg.overall_content_weight),
+                (speaker_score, self.cfg.overall_speaker_weight),
+                (duration_score, self.cfg.overall_duration_weight),
+            ]
+        )
 
         scores = Scores(
             speaker=speaker_score,
@@ -316,6 +340,7 @@ class TTSSimilarityEvaluator:
 
 
 # ---- Convenience wrappers / CLI --------------------------------------------
+
 
 def evaluate_tts_similarity(
     target_path: str,
