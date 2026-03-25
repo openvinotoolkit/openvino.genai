@@ -235,8 +235,8 @@ class TestImageGenerationOnNpuByNpuwCpu:
 
         npuw_pipe = self._construct_reshaped(image_generation_model)
         npuw_pipe.compile("NPU", **NPUW_CPU_PROPERTIES)
-        npuw_pipe.export_model(image_generation_model / "exported_npuw_cpu")
-        imported_npuw_pipe = ov_genai.Text2ImagePipeline(image_generation_model, "NPU", blob_path=image_generation_model / "exported_npuw_cpu", **NPUW_CPU_PROPERTIES)
+        npuw_pipe.export_model("tmp_blob_model")
+        imported_npuw_pipe = ov_genai.Text2ImagePipeline(image_generation_model, "NPU", blob_path="tmp_blob_model", **NPUW_CPU_PROPERTIES)
         imported_npuw_image = imported_npuw_pipe.generate(**generation_args)
 
         assert cpu_image.data.shape == imported_npuw_image.data.shape
