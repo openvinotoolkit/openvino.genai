@@ -29,6 +29,8 @@ public:
         clone->m_native_batch_size = m_native_batch_size;
         clone->m_requests.reserve(m_requests.size());
         clone->m_is_blob = m_is_blob;
+        clone->m_adapter_controller = m_adapter_controller;
+        clone->m_last_adapter_config = m_last_adapter_config;
         for (auto& request : m_requests) {
             clone->m_requests.push_back(request.get_compiled_model().create_infer_request());
         }
@@ -87,6 +89,13 @@ public:
             for (size_t i = 0; i < m_native_batch_size; i++) {
                 m_requests[i] = compiled_model.create_infer_request();
             }
+
+            // Re-apply adapters to newly created infer requests
+            if (m_adapter_controller && m_last_adapter_config) {
+                for (size_t i = 0; i < m_native_batch_size; i++) {
+                    m_adapter_controller->apply(m_requests[i], *m_last_adapter_config);
+                }
+            }
         }
 
         OPENVINO_ASSERT(
@@ -119,7 +128,11 @@ public:
     virtual void set_adapters(AdapterController& adapter_controller, const AdapterConfig& adapters) override {
         OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
                         "UNet model must be compiled first");
-        for (int i = 0; i < m_native_batch_size; i++) {
+        if (m_is_blob) {
+            m_adapter_controller = &adapter_controller;
+            m_last_adapter_config = adapters;
+        }
+        for (size_t i = 0; i < m_native_batch_size; i++) {
             adapter_controller.apply(m_requests[i], adapters);
         }
     }
@@ -199,6 +212,8 @@ private:
     std::vector<ov::InferRequest> m_requests;
     size_t m_native_batch_size = 0;
     bool m_is_blob = false;
+    AdapterController* m_adapter_controller = nullptr;
+    std::optional<AdapterConfig> m_last_adapter_config;
 };
 
 }  // namespace genai
