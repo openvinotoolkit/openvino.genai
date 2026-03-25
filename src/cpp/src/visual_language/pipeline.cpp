@@ -812,17 +812,6 @@ VLMDecodedResults VLMPipeline::generate(
 VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
-    const std::vector<ov::Tensor>& videos,
-    const std::vector<VideoMetadata>& videos_metadata,
-    const GenerationConfig& generation_config,
-    const StreamerVariant& streamer
-) {
-    return m_pimpl->generate(prompt, images, videos, videos_metadata, generation_config, streamer);
-}
-
-VLMDecodedResults VLMPipeline::generate(
-    const std::string& prompt,
-    const std::vector<ov::Tensor>& images,
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
@@ -853,17 +842,6 @@ VLMDecodedResults VLMPipeline::generate(
     const StreamerVariant& streamer
 ) {
     return m_pimpl->generate(history, images, videos, generation_config, streamer);
-}
-
-VLMDecodedResults VLMPipeline::generate(
-    const ChatHistory& history,
-    const std::vector<ov::Tensor>& images,
-    const std::vector<ov::Tensor>& videos,
-    const std::vector<VideoMetadata>& videos_metadata,
-    const GenerationConfig& generation_config,
-    const StreamerVariant& streamer
-) {
-    return m_pimpl->generate(history, images, videos, videos_metadata, generation_config, streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(

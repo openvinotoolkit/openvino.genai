@@ -148,7 +148,14 @@ py::object call_vlm_generate(
     ov::genai::VLMDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res= pipe.generate(prompt, images, videos, videos_metadata, updated_config, streamer);
+        res= pipe.generate(
+            prompt,
+            ov::genai::images(images),
+            ov::genai::videos(videos),
+            ov::genai::videos_metadata(videos_metadata),
+            ov::genai::generation_config(updated_config),
+            ov::genai::streamer(streamer)
+        );
     }
     return py::cast(res);
 }
@@ -168,7 +175,14 @@ py::object call_vlm_generate_with_chat_history(
     ov::genai::VLMDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res = pipe.generate(history, images, videos, videos_metadata, updated_config, streamer);
+        res= pipe.generate(
+            history,
+            ov::genai::images(images),
+            ov::genai::videos(videos),
+            ov::genai::videos_metadata(videos_metadata),
+            ov::genai::generation_config(updated_config),
+            ov::genai::streamer(streamer)
+        );
     }
     return py::cast(res);
 }

@@ -128,27 +128,6 @@ public:
     /// @param prompt A prompt to respond to.
     /// For using image and video tags in prompt, see:
     /// https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
-    /// @param images Image to be prepended to a prompt.
-    /// @param videos Multiple videos, each providing multiple frames, to be prepended to a prompt.
-    /// @param videos_metadata Metadata for each video, providing additional information.
-    /// @param generation_config A config to follow for text generation.
-    /// @param streamer A streamer to acquire intermediate result.
-    /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
-    /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
-    VLMDecodedResults generate(
-        const std::string& prompt,
-        const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& videos,
-        const std::vector<VideoMetadata>& videos_metadata,
-        const GenerationConfig& generation_config,
-        const StreamerVariant& streamer
-    );
-
-    /// @brief Generate a response given a prompt and uint8 RGB image with [NHWC] or [HWC] layout.
-    /// @param prompt A prompt to respond to.
-    /// For using image and video tags in prompt, see:
-    /// https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
     /// @param image Image to be prepended to a prompt.
     /// @param generation_config A config to follow for text generation.
     /// @param streamer A streamer to acquire intermediate result.
@@ -229,26 +208,6 @@ public:
         const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
-        const GenerationConfig& generation_config,
-        const StreamerVariant& streamer
-    );
-
-    /// @brief Generate a response given a chat history and any number of
-    /// uint8 RGB images/videos with [NHWC] layout.
-    /// @param history Chat history with messages.
-    /// For using image and video tags in prompt, see:
-    /// https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
-    /// @param images Images to be associated with the last chat history user message.
-    /// @param videos Videos (each providing multiple frames) to be associated with the last chat history user message.
-    /// @param videos_metadata Metadata for each video, providing additional information.
-    /// @param generation_config A config to follow for text generation.
-    /// @param streamer A streamer to acquire intermediate result.
-    /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
-    VLMDecodedResults generate(
-        const ChatHistory& history,
-        const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& videos,
-        const std::vector<VideoMetadata>& videos_metadata,
         const GenerationConfig& generation_config,
         const StreamerVariant& streamer
     );
