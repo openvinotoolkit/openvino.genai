@@ -40,7 +40,7 @@ class ScoringConfig:
     # SpeechBrain verification score -> normalized speaker score.
     # These are heuristic anchors, not universal constants.
     speaker_bad: float = 0.10
-    speaker_good: float = 0.75
+    speaker_good: float = 0.98
 
     # Content score uses normalized WER/CER and is intentionally somewhat forgiving,
     # since ASR can disagree on punctuation, hyphens, split words, etc.
