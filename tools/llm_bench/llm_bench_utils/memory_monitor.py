@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -44,13 +44,12 @@ class MonitorLevel(Enum):
 
 
 class MonitorType(Enum):
-    DISABLED = 0
     THREAD = 1
     PROCESS = 2
 
 
 class MonitorMode(Enum):
-    NO_MONITORING = (MonitorLevel.DISABLED, MonitorType.DISABLED)
+    NO_MONITORING = (MonitorLevel.DISABLED, None)
     THREAD_WARMUP = (MonitorLevel.WARMUP, MonitorType.THREAD)
     THREAD_FULL = (MonitorLevel.FULL, MonitorType.THREAD)
     PROCESS_WARMUP = (MonitorLevel.WARMUP, MonitorType.PROCESS)
@@ -100,8 +99,8 @@ class MemoryMonitorHandler:
         self.mode = MonitorMode.from_code(args.memory_consumption)
         self.mth = MemThreadHandler(args) if self.mode.is_thread else None
         self.mmh = MemoryMarkerHandler(args) if self.mode.is_process else None
+        self.cooldown = args.memory_consumption_cooldown
         self.last_iter_number = None
-        self.args = args
 
         self.log_data = self._noop_log_data
         if self.mth:
@@ -157,12 +156,12 @@ class MemoryMonitorHandler:
             return self.mth.stop()
 
     def activate_cooldown(self, label):
-        cooldown = self.args.memory_consumption_cooldown
-        if cooldown is not None:
-            if self.mmh:
-                self.mmh.update_marker("cooldown")
-                log.info(f"MemoryMonitor: {label}: {cooldown}")
-            time.sleep(cooldown)
+        if self.cooldown is None:
+            return
+        if self.mmh:
+            self.mmh.update_marker("cooldown")
+            log.info(f"MemoryMonitor: {label}: {self.cooldown}")
+        time.sleep(self.cooldown)
 
     def iter_stop_and_collect_data(self, iter_num, dict_format=True):
         if self.mode.is_enabled:
@@ -181,7 +180,7 @@ class MemoryMonitorHandler:
 
 
 ######################################################
-# Memory Monitoring (in separated thread)
+# Memory Monitoring (in separate thread)
 
 
 class MemoryType(Enum):
@@ -644,7 +643,7 @@ def _subtract_first_element(data):
 
 
 ######################################################
-# Memory Marker Monitoring (in separated process)
+# Memory Marker Monitoring (in separate process)
 
 
 class SamplerTiming:
@@ -724,11 +723,11 @@ class MemorySampler(dict, SamplerTiming):
 
     def repr_metric(self, marker, metric):
         mx, mn, ave, cv = self.calc_metric_stats(marker, metric)
-        out = f"\t{metric} maximum: " + self.format_to_print(metric, mx)
-        out += f"\n\t{metric} minimum: " + self.format_to_print(metric, mn)
-        out += f"\n\t{metric} average: " + self.format_to_print(metric, ave)
+        out = f"\t{metric} maximum: {self.format_to_print(metric, mx)}"
+        out += f"\n\t{metric} minimum: {self.format_to_print(metric, mn)}"
+        out += f"\n\t{metric} average: {self.format_to_print(metric, ave)}"
         if self.metrics[metric]["cv"] and ave > 0:
-            out += f"\n\t{metric} cv: {round(cv, 1)}%"
+            out += f"\n\t{metric} cv: {cv:.1f}%"
         elif self.metrics[metric]["cv"] and ave == 0:
             out += f"\n\t{metric} cv: 0%"
         elif self.metrics[metric]["cv"]:
@@ -782,14 +781,16 @@ class MemorySampler(dict, SamplerTiming):
 
     def format_to_export(self, metric_value):
         metric, value = metric_value
-        mconf = self.metrics.get(metric)
-        formated_value = round(value / mconf["denom"], mconf["digits"])
+        digits = self.metrics.get(metric).get("digits")
+        denom = self.metrics.get(metric).get("denom")
+        formated_value = round(value / denom, digits)
         return formated_value
 
     def format_to_print(self, metric, value):
-        mconf = self.metrics.get(metric)
-        formated_value = round(value / mconf["denom"], mconf["digits"])
-        return f"{formated_value} {mconf['unit']}"
+        digits = self.metrics.get(metric).get("digits")
+        denom = self.metrics.get(metric).get("denom")
+        unit = self.metrics.get(metric).get("unit")
+        return f"{value / denom:.{digits}f} {unit}"
 
     def add_to_summary(self, marker, metric, val):
         self[marker][metric, "max"] = max(self[marker][metric, "max"], val)
