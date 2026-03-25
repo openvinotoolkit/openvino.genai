@@ -225,6 +225,7 @@ class TestImageGenerationOnNpuByNpuwCpu:
 
 
     @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
+    @pytest.mark.skipif(**should_skip_npuw_tests())
     def test_image_generation_cpu_vs_npuw_cpu_with_blob_model(self, image_generation_model):
         generation_args = self._get_generation_args()
 
