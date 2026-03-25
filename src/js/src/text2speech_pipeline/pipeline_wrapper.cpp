@@ -3,7 +3,6 @@
 
 #include "include/text2speech_pipeline/pipeline_wrapper.hpp"
 
-#include <future>
 #include <iostream>
 #include <memory>
 #include <thread>
@@ -203,7 +202,7 @@ Napi::Value Text2SpeechPipelineWrapper::set_generation_config(const Napi::Callba
         OPENVINO_ASSERT(this->pipe, "Text2SpeechPipeline is not initialized");
         VALIDATE_ARGS_COUNT(info, 1, "setGenerationConfig()");
         if (info[0].IsUndefined() || info[0].IsNull()) {
-            return env.Undefined();
+            OPENVINO_THROW("Generation config cannot be undefined or null");
         }
         this->pipe->set_generation_config(js_to_cpp<ov::genai::SpeechGenerationConfig>(env, info[0]));
     } catch (const std::exception& ex) {

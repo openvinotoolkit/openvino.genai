@@ -70,6 +70,8 @@ async function main() {
 
   const result = await pipeline.generate(text, generateOptions);
 
+  console.assert(result.speeches.length === 1, "Expected only one waveform for the requested input text");
+
   const sampleRate = 16000;
   const wavData = encode([result.speeches[0].data], { sampleRate });
   await writeFile(outputPath, wavData);
