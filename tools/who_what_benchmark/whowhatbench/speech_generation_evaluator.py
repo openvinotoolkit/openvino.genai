@@ -25,6 +25,74 @@ DURATION_SCORE_COL = "duration score"
 OVERALL_SCORE_COL = "overall score"
 
 
+class TextToSpeechModelWrapper:
+    """Wrapper for non-GenAI speech generation models (HF/Optimum) to provide evaluator-compatible interface."""
+
+    def __init__(self, model, processor, vocoder):
+        self.model = model
+        self.processor = processor
+        self.vocoder = vocoder
+        self.model_type = "speech-generation"
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return getattr(self, attr)
+        return getattr(self.model, attr)
+
+    def generate(self, prompt, speaker_embedding=None, **_kwargs):
+        if speaker_embedding is None:
+            raise ValueError(
+                "This model requires speaker embeddings but none were provided. "
+                "Pass --speaker_embeddings with a binary float32 xvector file."
+            )
+
+        import torch
+
+        input_data = self.processor(text=[prompt], return_tensors="pt", padding=True, truncation=True)
+        if hasattr(input_data, "pop"):
+            input_data.pop("token_type_ids", None)
+
+        input_tokens = (
+            input_data["input_ids"] if hasattr(input_data, "keys") and "input_ids" in input_data else input_data
+        )
+        if isinstance(input_tokens, (list, tuple)):
+            input_tokens = torch.tensor(input_tokens, dtype=torch.long)
+        elif not isinstance(input_tokens, torch.Tensor):
+            input_tokens = torch.as_tensor(input_tokens)
+        if input_tokens.ndim == 1:
+            input_tokens = input_tokens.unsqueeze(0)
+
+        emb = torch.as_tensor(
+            speaker_embedding.data if hasattr(speaker_embedding, "data") else speaker_embedding,
+            dtype=torch.float32,
+        )
+        if emb.ndim == 1:
+            emb = emb.unsqueeze(0)
+
+        generation_kwargs = {"speaker_embeddings": emb}
+        if self.vocoder is not None:
+            generation_kwargs["vocoder"] = self.vocoder
+
+        output = self.model.generate(input_tokens, **generation_kwargs)
+        if isinstance(output, tuple):
+            output = output[0]
+        if isinstance(output, torch.Tensor):
+            speech = output.detach().cpu().reshape(-1).numpy()
+        else:
+            speech = torch.as_tensor(output).cpu().reshape(-1).numpy()
+
+        class _Speech:
+            def __init__(self, data):
+                self.data = data
+
+        class _SpeechResult:
+            def __init__(self, data):
+                self.speeches = [_Speech(data)]
+                self.output_sample_rate = 16000
+
+        return _SpeechResult(speech)
+
+
 def _safe_metric_mean(values):
     arr = np.array([np.nan if value is None else value for value in values], dtype=float)
     if np.isnan(arr).all():

@@ -13,7 +13,6 @@ from transformers import (
     AutoModelForCausalLM,
     AutoModel,
     AutoTokenizer,
-    pipeline as transformers_pipeline,
     __version__,
 )
 
@@ -94,19 +93,6 @@ class GenAIModelWrapper:
             return getattr(self, attr)
         else:
             return getattr(self.model, attr)
-
-
-class OptimumTextToSpeechModelWrapper:
-    def __init__(self, model, processor, vocoder):
-        self.model = model
-        self.processor = processor
-        self.vocoder = vocoder
-        self.model_type = "speech-generation"
-
-    def __getattr__(self, attr):
-        if attr in self.__dict__:
-            return getattr(self, attr)
-        return getattr(self.model, attr)
 
 
 def configure_sparse_attention(scheduler_params, scheduler_config):
@@ -784,24 +770,39 @@ def load_speech_generation_genai_pipeline(model_dir, device="CPU", ov_config=Non
     )
 
 
+def _resolve_remote_code_and_config(model_id):
+    remote_code = False
+    try:
+        model_config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+    except Exception:
+        model_config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        remote_code = True
+    return remote_code, model_config
+
+
+def _load_speecht5_processor_and_vocoder(model_id, remote_code):
+    from transformers import SpeechT5Processor, SpeechT5HifiGan
+
+    processor = SpeechT5Processor.from_pretrained(model_id, trust_remote_code=remote_code)
+    vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
+    return processor, vocoder
+
+
 def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
+    from .speech_generation_evaluator import TextToSpeechModelWrapper
+
     if use_hf:
         logger.info("Using HF Transformers API")
-        pipeline_kwargs = {"task": "text-to-speech", "model": model_id}
-        if device.lower() == "cpu":
-            pipeline_kwargs["device"] = "cpu"
-        else:
-            pipeline_kwargs["device"] = device.lower()
+        from transformers import SpeechT5ForTextToSpeech
 
-        try:
-            return transformers_pipeline(trust_remote_code=False, **pipeline_kwargs)
-        except TypeError:
-            return transformers_pipeline(**pipeline_kwargs)
-        except Exception:
-            try:
-                return transformers_pipeline(trust_remote_code=True, **pipeline_kwargs)
-            except TypeError:
-                return transformers_pipeline(**pipeline_kwargs)
+        remote_code, _ = _resolve_remote_code_and_config(model_id)
+        model = SpeechT5ForTextToSpeech.from_pretrained(
+            model_id,
+            trust_remote_code=remote_code,
+            **PYTORCH_MODEL_DTYPE_KWARG,
+        )
+        processor, vocoder = _load_speecht5_processor_and_vocoder(model_id, remote_code)
+        return TextToSpeechModelWrapper(model, processor, vocoder)
 
     if use_genai:
         logger.info("Using OpenVINO GenAI API")
@@ -809,14 +810,8 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
     logger.info("Using Optimum API")
     from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq
-    from transformers import SpeechT5Processor, SpeechT5HifiGan
 
-    remote_code = False
-    try:
-        model_config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
-    except Exception:
-        model_config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-        remote_code = True
+    remote_code, model_config = _resolve_remote_code_and_config(model_id)
 
     model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
         model_id,
@@ -825,9 +820,8 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         config=model_config,
         trust_remote_code=remote_code,
     )
-    processor = SpeechT5Processor.from_pretrained(model_id, trust_remote_code=remote_code)
-    vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
-    return OptimumTextToSpeechModelWrapper(model, processor, vocoder)
+    processor, vocoder = _load_speecht5_processor_and_vocoder(model_id, remote_code)
+    return TextToSpeechModelWrapper(model, processor, vocoder)
 
 
 def load_model(

@@ -662,120 +662,8 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, voice=""):
         raise ValueError(f"Expected exactly one generated waveform per prompt, got {len(result.speeches)}")
 
     speech = np.array(result.speeches[0].data).reshape(-1)
-    try:
-        sample_rate = int(result.output_sample_rate)
-    except AttributeError:
-        sample_rate = 16000
+    sample_rate = 16000
     return speech, sample_rate
-
-
-def hf_gen_speech(model, prompt, speaker_embedding=None, voice=""):
-    import torch as _torch
-
-    forward_params = {}
-    if speaker_embedding is not None:
-        if hasattr(speaker_embedding, "data"):
-            emb = np.array(speaker_embedding.data, dtype=np.float32)
-        else:
-            emb = np.array(speaker_embedding, dtype=np.float32)
-        if emb.ndim == 1:
-            emb = emb.reshape(1, -1)
-        forward_params["speaker_embeddings"] = _torch.tensor(emb, dtype=_torch.float32)
-
-    if voice:
-        forward_params["voice"] = voice
-
-    def _call(fp):
-        if fp:
-            return model(prompt, forward_params=fp)
-        return model(prompt)
-
-    try:
-        output = _call(forward_params)
-    except ValueError as e:
-        if "speaker_embeddings" not in str(e):
-            raise
-        raise ValueError(
-            "This model requires speaker embeddings but none were provided. "
-            "Pass --speaker_embeddings with a binary float32 xvector file."
-        ) from e
-
-    if isinstance(output, list):
-        if not output:
-            raise ValueError("HF speech generation returned an empty output list")
-        output = output[0]
-
-    if not isinstance(output, dict):
-        raise ValueError(f"Unexpected HF speech generation output type: {type(output)}")
-
-    audio = None
-    for key in ("audio", "speech", "waveform"):
-        if key in output and output[key] is not None:
-            audio = output[key]
-            break
-    if audio is None:
-        raise ValueError("HF speech generation output does not contain audio data")
-
-    sampling_rate = None
-    for key in ("sampling_rate", "sample_rate"):
-        if key in output and output[key] is not None:
-            sampling_rate = int(output[key])
-            break
-    if sampling_rate is None:
-        sampling_rate = 22050
-
-    if isinstance(audio, _torch.Tensor):
-        audio = audio.detach().cpu().numpy()
-
-    return np.array(audio).reshape(-1), int(sampling_rate)
-
-
-def optimum_gen_speech(model, prompt, speaker_embedding=None, voice=""):
-    import torch as _torch
-
-    input_data = model.processor(text=[prompt], return_tensors="pt", padding=True, truncation=True)
-    if hasattr(input_data, "pop"):
-        input_data.pop("token_type_ids", None)
-
-    if hasattr(input_data, "keys") and "input_ids" in input_data:
-        input_tokens = input_data["input_ids"]
-    else:
-        input_tokens = input_data
-
-    if isinstance(input_tokens, np.ndarray):
-        input_tokens = _torch.from_numpy(input_tokens)
-    elif isinstance(input_tokens, (list, tuple)):
-        input_tokens = _torch.tensor(input_tokens, dtype=_torch.long)
-
-    if isinstance(input_tokens, _torch.Tensor) and input_tokens.ndim == 1:
-        input_tokens = input_tokens.unsqueeze(0)
-
-    if speaker_embedding is not None:
-        if hasattr(speaker_embedding, "data"):
-            emb = np.array(speaker_embedding.data, dtype=np.float32)
-        else:
-            emb = np.array(speaker_embedding, dtype=np.float32)
-        if emb.ndim == 1:
-            emb = emb.reshape(1, -1)
-        speaker_embedding_tensor = _torch.tensor(emb, dtype=_torch.float32)
-    else:
-        raise ValueError(
-            "This model requires speaker embeddings but none were provided. "
-            "Pass --speaker_embeddings with a binary float32 xvector file."
-        )
-
-    generation_kwargs = {"speaker_embeddings": speaker_embedding_tensor}
-    if model.vocoder is not None:
-        generation_kwargs["vocoder"] = model.vocoder
-
-    output = model.model.generate(input_tokens, **generation_kwargs)
-    if isinstance(output, tuple):
-        output = output[0]
-    if isinstance(output, _torch.Tensor):
-        output = output.detach().cpu().numpy()
-
-    speech = np.array(output[0] if np.ndim(output) > 1 else output).reshape(-1)
-    return speech, 16000
 
 
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
@@ -901,7 +789,7 @@ def create_evaluator(base_model, args):
                 gt_data=args.gt_data,
                 test_data=prompts,
                 num_samples=args.num_samples,
-                gen_speech_fn=genai_gen_speech if args.genai else (hf_gen_speech if args.hf else optimum_gen_speech),
+                gen_speech_fn=genai_gen_speech if args.genai else None,
                 sample_rate=16000,
                 speaker_embedding_file_path=args.speaker_embeddings,
                 whisper_model=args.tts_eval_whisper_model,

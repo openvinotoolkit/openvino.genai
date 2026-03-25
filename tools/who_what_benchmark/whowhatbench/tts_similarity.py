@@ -15,11 +15,8 @@ import numpy as np
 import soundfile as sf
 
 
-DEFAULT_SR = 22050
+DEFAULT_SR = 16000
 DEFAULT_WHISPER_MODEL = "base"
-
-
-# ---- Public result / config -------------------------------------------------
 
 
 @dataclass
@@ -61,9 +58,6 @@ class ScoringConfig:
     overall_content_weight: float = 0.50
     overall_speaker_weight: float = 0.40
     overall_duration_weight: float = 0.10
-
-
-# ---- Small helpers ----------------------------------------------------------
 
 
 def normalize_text(text: str) -> str:
@@ -122,9 +116,6 @@ def _log(verbose: bool, msg: str = "") -> None:
         print(msg)
 
 
-# ---- Audio / model utilities ------------------------------------------------
-
-
 def load_audio_mono(path: str, sr: int) -> tuple[np.ndarray, int]:
     audio, file_sr = sf.read(path, always_2d=False)
     if getattr(audio, "ndim", 1) == 2:
@@ -141,9 +132,6 @@ def load_audio_mono(path: str, sr: int) -> tuple[np.ndarray, int]:
 
 def duration_s(audio: np.ndarray, sr: int) -> float:
     return float(len(audio) / sr)
-
-
-# ---- Core evaluator ---------------------------------------------------------
 
 
 class TTSSimilarityEvaluator:
@@ -337,10 +325,6 @@ class TTSSimilarityEvaluator:
         _log(verbose, f"Overall:  {format_float(scores.overall)}")
 
         return scores
-
-
-# ---- Convenience wrappers / CLI --------------------------------------------
-
 
 def evaluate_tts_similarity(
     target_path: str,
