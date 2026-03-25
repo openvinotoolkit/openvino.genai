@@ -10,7 +10,7 @@ from optimum.modeling_base import OptimizedModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
 
-from optimum.intel import OVModelForCausalLM, OVModelForSequenceClassification
+from optimum.intel import OVModelForCausalLM
 from optimum.intel.openvino.modeling import OVModel
 
 from huggingface_hub import hf_hub_download, snapshot_download
@@ -328,6 +328,7 @@ def download_and_convert_model_class(
         )
     else:
         if model_id in FORCE_OPTIMUM_CLI_EXPORT_MODELS:
+
             def convert_to_temp(temp_path: Path) -> None:
                 export_with_optimum_cli(model_id, temp_path, trust_remote_code=trust_remote_code)
 
