@@ -58,10 +58,11 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         self.whisper_device = "cpu"
         self.whisper_compute_type = "default"
         self.last_cmp = None
-
-        if speaker_embedding_file_path is not None and not os.path.exists(speaker_embedding_file_path):
-            raise ValueError(f"Speaker embedding file does not exist: {speaker_embedding_file_path}")
         self.speaker_embedding_file_path = speaker_embedding_file_path
+        self.speaker_embedding = None
+
+        if self.speaker_embedding_file_path is not None and not os.path.exists(self.speaker_embedding_file_path):
+            raise ValueError(f"Speaker embedding file does not exist: {self.speaker_embedding_file_path}")
         self.speaker_embedding = self._load_speaker_embedding(self.speaker_embedding_file_path)
 
         self.gt_dir = os.path.dirname(gt_data) if gt_data else os.getcwd()
@@ -234,14 +235,14 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         voice_values = data["voice"].values if "voice" in data.columns else [""] * len(data)
 
         for idx, prompt in tqdm(enumerate(prompt_values), total=len(prompt_values), desc="Evaluate pipeline"):
-            embedding_file_path = self.speaker_embedding_file_path
-            if "speaker_embedding_file_path" in data.columns and pd.notna(data.iloc[idx]["speaker_embedding_file_path"]):
-                embedding_file_path = data.iloc[idx]["speaker_embedding_file_path"]
-                if isinstance(embedding_file_path, str) and embedding_file_path.strip() == "":
-                    embedding_file_path = None
+            speaker_embedding_file_path = self.speaker_embedding_file_path
+            if "speaker_embeddings" in data.columns and pd.notna(data.iloc[idx]["speaker_embeddings"]):
+                speaker_embedding_file_path = data.iloc[idx]["speaker_embeddings"]
+                if isinstance(speaker_embedding_file_path, str) and speaker_embedding_file_path.strip() == "":
+                    speaker_embedding_file_path = None
 
-            if embedding_file_path:
-                speaker_embedding = self._load_speaker_embedding(embedding_file_path)
+            if speaker_embedding_file_path:
+                speaker_embedding = self._load_speaker_embedding(speaker_embedding_file_path)
             else:
                 speaker_embedding = self.speaker_embedding
 

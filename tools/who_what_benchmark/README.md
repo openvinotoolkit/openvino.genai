@@ -159,15 +159,25 @@ wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type 
 pip install -r requirements-speech-generation.txt
 
 # Export SpeechT5 to OpenVINO.
-optimum-cli export openvino -m microsoft/speecht5_tts speecht5_tts_ov
+optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts_ov
+
+# Download speaker embeddings (Replace with your own embeddings if needed)
+# Linux
+wget https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_slt_arctic-wav-arctic_a0508.bin
+# Windows:
+curl.exe -L "https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_slt_arctic-wav-arctic_a0508.bin" -o "cmu_us_slt_arctic-wav-arctic_a0508.bin"
 
 # Collect reference audio with the Hugging Face baseline.
-# Reference wav files will be stored under t5/reference/.
-wwb --base-model microsoft/speecht5_tts --gt-data t5/gt.csv --model-type speech-generation --hf
+# Reference wav files will be stored under "reference" subfolder under the same path with .csv.
+wwb --base-model microsoft/speecht5_tts --gt-data speech_gen_test/gt.csv --model-type speech-generation --speaker_embeddings cmu_us_slt_arctic-wav-arctic_a0508.bin --hf
 
-# Compare the OpenVINO GenAI pipeline against the saved reference set.
-# Generated wav files will be stored under t5/target/ unless --output is specified.
-wwb --target-model speecht5_tts_ov --gt-data t5/gt.csv --model-type speech-generation --genai
+# Compute the metric
+# Target wav files will be stored in the "target" subfolder under the same path with .csv.
+# you can also specify the parameter: --output [custom folder], then the target wav files and the corresponding CSV files with metrics will be saved to that folder.
+# compute metrics with optimum-intel
+wwb --target-model speecht5_tts_ov --gt-data speech_gen_test/gt.csv --model-type speech-generation --output optimum_output --speaker_embeddings cmu_us_slt_arctic-wav-arctic_a0508.bin
+# compute metrics with GenAI
+wwb --target-model speecht5_tts_ov --gt-data speech_gen_test/gt.csv --model-type speech-generation --output genai_output --speaker_embeddings cmu_us_slt_arctic-wav-arctic_a0508.bin --genai
 ```
 
 Speech-generation evaluation uses the prompt text itself as the default expected transcript and writes audio at 16 kHz for both reference and target files before scoring.
@@ -184,7 +194,7 @@ The optional input CSV for speech-generation may contain these columns:
 
 * `prompts` or `prompt` - input text to synthesize.
 * `expected_text` - expected transcript used for content scoring. If omitted, `prompts` is used.
-* `speaker_embedding_file_path` - optional path to a binary float32 xvector file.
+* `speaker_embeddings` - optional path to a binary float32 xvector file.
 * `language` - reserved field for future multi-language TTS backends. It is currently unused for SpeechT5 evaluation/generation.
 * `voice` - reserved field for future multi-voice TTS backends. It is currently unused for SpeechT5.
 
