@@ -73,13 +73,14 @@ class TextToSpeechModelWrapper:
         if self.vocoder is not None:
             generation_kwargs["vocoder"] = self.vocoder
 
-        output = self.model.generate(input_tokens, **generation_kwargs)
-        if isinstance(output, tuple):
-            output = output[0]
-        if isinstance(output, torch.Tensor):
-            speech = output.detach().cpu().reshape(-1).numpy()
-        else:
-            speech = torch.as_tensor(output).cpu().reshape(-1).numpy()
+        with torch.inference_mode():
+            output = self.model.generate(input_tokens, **generation_kwargs)
+            if isinstance(output, tuple):
+                output = output[0]
+            if isinstance(output, torch.Tensor):
+                speech = output.detach().cpu().reshape(-1).numpy()
+            else:
+                speech = torch.as_tensor(output).cpu().reshape(-1).numpy()
 
         class _Speech:
             def __init__(self, data):
