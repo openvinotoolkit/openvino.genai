@@ -15,7 +15,7 @@ To set up locally:
 > **Note for Windows users:** Run `git config core.autocrlf input` first to avoid line-ending conflicts with the hooks.
 
 ```bash
-pip install pre-commit clang-format
+pip install pre-commit
 pre-commit install
 ```
 
