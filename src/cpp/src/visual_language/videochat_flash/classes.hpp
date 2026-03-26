@@ -94,6 +94,12 @@ public:
                                  const std::vector<size_t>& videos_sequence = {},
                                  const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
 
+    void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) override;
+
+    void start_chat(const std::string& system_message) override;
+
+    void finish_chat() override;
+
     NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,

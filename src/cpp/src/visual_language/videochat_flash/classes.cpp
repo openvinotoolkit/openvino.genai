@@ -886,4 +886,24 @@ ov::Tensor InputsEmbedderVideoChatFlashQwen::get_inputs_embeds(
 
     return get_inputs_embeds(prompt, combined_images, metrics, recalculate_merged_embeddings, image_sequence);
 }
+
+void InputsEmbedderVideoChatFlashQwen::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
+    IInputsEmbedder::update_chat_history(decoded_results, generation_finish_status);
+    if (generation_finish_status == ov::genai::GenerationStatus::CANCEL)
+        m_tokens_per_images = m_prev_tokens_per_images;
+    else
+        m_prev_tokens_per_images = m_tokens_per_images;
+}
+
+void InputsEmbedderVideoChatFlashQwen::start_chat(const std::string& system_message) {
+    IInputsEmbedder::start_chat(system_message);
+    m_tokens_per_images.clear();
+    m_prev_tokens_per_images.clear();
+}
+
+void InputsEmbedderVideoChatFlashQwen::finish_chat() {
+    IInputsEmbedder::finish_chat();
+    m_tokens_per_images.clear();
+    m_prev_tokens_per_images.clear();
+}
 } // namespace ov::genai
