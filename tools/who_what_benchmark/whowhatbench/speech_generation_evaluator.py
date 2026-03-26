@@ -144,7 +144,9 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         if base_model:
             self.gt_data = self._generate_data(base_model, gen_speech_fn, os.path.join(self.gt_dir, "reference"))
         else:
-            self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
+            self.gt_data = self._normalize_input_data(pd.read_csv(gt_data, keep_default_na=False))
+
+        self._validate_required_columns(self.gt_data, ["audio"], "ground truth data")
 
     def get_generation_fn(self):
         return self.generation_fn
@@ -153,9 +155,11 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         audio_folder = os.path.join(output_dir if output_dir else self.gt_dir, "target")
 
         if isinstance(model_or_data, str) and os.path.exists(model_or_data):
-            predictions = pd.read_csv(model_or_data, keep_default_na=False)
+            predictions = self._normalize_input_data(pd.read_csv(model_or_data, keep_default_na=False))
         else:
             predictions = self._generate_data(model_or_data, gen_speech_fn, audio_folder)
+
+        self._validate_required_columns(predictions, ["audio", "prompts"], "prediction data")
         self.predictions = predictions
 
         max_samples = min(len(self.gt_data), len(predictions))
@@ -236,6 +240,11 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             data["expected_text"] = data["prompts"]
 
         return data
+
+    def _validate_required_columns(self, data: pd.DataFrame, required_columns: list[str], data_name: str) -> None:
+        missing_columns = [column for column in required_columns if column not in data.columns]
+        if missing_columns:
+            raise ValueError(f"{data_name.capitalize()} is missing required columns: {', '.join(missing_columns)}")
 
     def _load_speaker_embedding(self, speaker_embedding_file_path: str):
         if speaker_embedding_file_path is None:
