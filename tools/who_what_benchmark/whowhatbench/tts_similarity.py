@@ -27,6 +27,8 @@ class Scores:
     content: Optional[float]
     # Duration = similar overall utterance length / pacing?
     duration: Optional[float]
+    # Acoustic = similar overall spectral character / bandwidth?
+    acoustic: Optional[float]
     overall: Optional[float]
 
 
@@ -54,9 +56,18 @@ class ScoringConfig:
     duration_diff_good: float = 0.01
     duration_diff_bad: float = 0.20
 
-    # Overall weighting: content matters most, then speaker, then duration.
-    overall_content_weight: float = 0.45
-    overall_speaker_weight: float = 0.45
+    # Acoustic = compare coarse spectral centroid / rolloff summaries.
+    acoustic_centroid_diff_good: float = 0.05
+    acoustic_centroid_diff_bad: float = 0.35
+    acoustic_rolloff_diff_good: float = 0.05
+    acoustic_rolloff_diff_bad: float = 0.35
+    acoustic_centroid_weight: float = 0.50
+    acoustic_rolloff_weight: float = 0.50
+
+    # Overall weighting: content matters most, then speaker, then acoustic, then duration.
+    overall_content_weight: float = 0.35
+    overall_speaker_weight: float = 0.30
+    overall_acoustic_weight: float = 0.25
     overall_duration_weight: float = 0.10
 
 
@@ -132,6 +143,12 @@ def load_audio_mono(path: str, sr: int) -> tuple[np.ndarray, int]:
 
 def duration_s(audio: np.ndarray, sr: int) -> float:
     return float(len(audio) / sr)
+
+
+def relative_diff(a: Optional[float], b: Optional[float]) -> Optional[float]:
+    if a is None or b is None:
+        return None
+    return abs(a - b) / max(abs(b), 1e-8)
 
 
 class TTSSimilarityEvaluator:
@@ -305,12 +322,50 @@ class TTSSimilarityEvaluator:
         _log(verbose, f"Relative duration diff: {duration_diff}")
         _log(verbose)
 
-        if content_score is None or speaker_score is None or duration_score is None:
+        # Acoustic-lite
+        centroid_tgt = safe_float(np.mean(librosa.feature.spectral_centroid(y=target_audio, sr=self.sample_rate)))
+        centroid_ref = safe_float(np.mean(librosa.feature.spectral_centroid(y=reference_audio, sr=self.sample_rate)))
+        rolloff_tgt = safe_float(np.mean(librosa.feature.spectral_rolloff(y=target_audio, sr=self.sample_rate)))
+        rolloff_ref = safe_float(np.mean(librosa.feature.spectral_rolloff(y=reference_audio, sr=self.sample_rate)))
+
+        centroid_diff = relative_diff(centroid_tgt, centroid_ref)
+        rolloff_diff = relative_diff(rolloff_tgt, rolloff_ref)
+        acoustic_score = weighted_mean(
+            [
+                (
+                    linear_distance_score(
+                        centroid_diff,
+                        self.cfg.acoustic_centroid_diff_good,
+                        self.cfg.acoustic_centroid_diff_bad,
+                    ),
+                    self.cfg.acoustic_centroid_weight,
+                ),
+                (
+                    linear_distance_score(
+                        rolloff_diff,
+                        self.cfg.acoustic_rolloff_diff_good,
+                        self.cfg.acoustic_rolloff_diff_bad,
+                    ),
+                    self.cfg.acoustic_rolloff_weight,
+                ),
+            ]
+        )
+
+        _log(verbose, "--- Acoustic ---")
+        _log(verbose, f"Mean spectral centroid (tgt/ref): {centroid_tgt}, {centroid_ref}")
+        _log(verbose, f"Mean spectral rolloff  (tgt/ref): {rolloff_tgt}, {rolloff_ref}")
+        _log(verbose, f"Relative centroid diff:           {centroid_diff}")
+        _log(verbose, f"Relative rolloff diff:            {rolloff_diff}")
+        _log(verbose)
+
+        valid = [content_score, speaker_score, duration_score, acoustic_score]
+        if any(v is None for v in valid):
             overall = None
         else:
             overall = (
                 content_score * self.cfg.overall_content_weight
                 + speaker_score * self.cfg.overall_speaker_weight
+                + acoustic_score * self.cfg.overall_acoustic_weight
                 + duration_score * self.cfg.overall_duration_weight
             )
 
@@ -318,6 +373,7 @@ class TTSSimilarityEvaluator:
             speaker=speaker_score,
             content=content_score,
             duration=duration_score,
+            acoustic=acoustic_score,
             overall=overall,
         )
 
@@ -325,6 +381,7 @@ class TTSSimilarityEvaluator:
         _log(verbose, f"Speaker:  {format_float(scores.speaker)}")
         _log(verbose, f"Content:  {format_float(scores.content)}")
         _log(verbose, f"Duration: {format_float(scores.duration)}")
+        _log(verbose, f"Acoustic: {format_float(scores.acoustic)}")
         _log(verbose, f"Overall:  {format_float(scores.overall)}")
 
         return scores
