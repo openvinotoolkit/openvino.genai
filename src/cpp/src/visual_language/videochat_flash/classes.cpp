@@ -92,42 +92,45 @@ ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8, ImageSize image_size, con
 }
 
 std::string normalize_prompt_impl(
-    const std::string& prompt, size_t base_id, size_t n_images, const std::regex& native_pattern, void(*write_native)(std::ostream& os, size_t idx)
+    const std::string& prompt, size_t base_id, size_t n_visuals, const std::regex& native_pattern, void(*write_native)(std::ostream& os, size_t idx)
 ) {
-    std::smatch match;
-    std::regex_search(prompt, match, native_pattern);
-    auto [image_prompt, image_sequence] = universal_to_native(prompt, write_native);
-    if (!image_sequence.empty()) {
-        OPENVINO_ASSERT(match.empty(), "Prompt can contain only one type of image tags.");
-        verify_ids(image_sequence, base_id, n_images);
-        return image_prompt;
+    // Reject unsupported universal image placeholders early to keep the text+video contract explicit.
+    std::smatch universal_image_match;
+    std::regex_search(prompt, universal_image_match, UNIVERSAL_IMAGE_PATTERN);
+    OPENVINO_ASSERT(
+        universal_image_match.empty(),
+        "VideoChat-Flash supports only text+video inputs now. "
+        "Use <ov_genai_video_i> or native visual tags (<|image_i|>) for visuals."
+    );
+
+    // Convert universal video placeholders into the shared native visual tags.
+    auto [normalized_prompt, visual_sequence] = universal_to_native(prompt, write_native, VisionType::VIDEO);
+    if (!visual_sequence.empty()) {
+        OPENVINO_ASSERT(
+            !std::regex_search(prompt, native_pattern),
+            "Prompt cannot mix universal video tags (<ov_genai_video_i>) with native visual tags (<|image_i|>)."
+        );
+        verify_ids(visual_sequence, base_id, n_visuals);
+        return normalized_prompt;
     }
-    // Restore ids from native tags
-    if (!match.empty()) {
-        size_t image_id = std::stoul(match.str(1));
-        OPENVINO_ASSERT(image_id != 0, "Image tags must be greater than 0");
-        image_sequence.push_back(image_id - 1);
-        constexpr int submatch_id_to_return = 1;
-        for (std::sregex_token_iterator iter{
-            match.suffix().first,
-            prompt.end(),
-            native_pattern,
-            submatch_id_to_return
-        }; iter != std::sregex_token_iterator{}; ++iter) {
-            size_t image_id = std::stoul(*iter);
-            OPENVINO_ASSERT(image_id != 0, "Image tags must be greater than 0");
-            image_sequence.push_back(image_id - 1);
-        }
-        if (!image_sequence.empty()) {
-            verify_ids(image_sequence, base_id, n_images);
-            return image_prompt;
-        }
+
+    // Preserve user-specified native tag ordering when the prompt already contains native visuals.
+    for (std::sregex_iterator iter(prompt.begin(), prompt.end(), native_pattern), end;
+         iter != end;
+         ++iter) {
+        size_t visual_id = std::stoul((*iter).str(1));
+        OPENVINO_ASSERT(visual_id != 0, "Image tags must be greater than 0");
+        visual_sequence.push_back(visual_id - 1);
     }
-    // Prepend native tags
+    if (!visual_sequence.empty()) {
+        verify_ids(visual_sequence, base_id, n_visuals);
+        return prompt;
+    }
+
+    // If the prompt has no visual placeholders, prepend them in the default input order.
     std::stringstream stream;
-    for (size_t relative_id = 0; relative_id < n_images; relative_id++) {
-        image_sequence.push_back(base_id + relative_id);
-        write_native(stream, image_sequence.back());
+    for (size_t relative_id = 0; relative_id < n_visuals; relative_id++) {
+        write_native(stream, base_id + relative_id);
     }
     stream << prompt;
     return stream.str();
