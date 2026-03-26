@@ -305,13 +305,14 @@ class TTSSimilarityEvaluator:
         _log(verbose, f"Relative duration diff: {duration_diff}")
         _log(verbose)
 
-        overall = weighted_mean(
-            [
-                (content_score, self.cfg.overall_content_weight),
-                (speaker_score, self.cfg.overall_speaker_weight),
-                (duration_score, self.cfg.overall_duration_weight),
-            ]
-        )
+        if content_score is None or speaker_score is None or duration_score is None:
+            overall = None
+        else:
+            overall = (
+                content_score * self.cfg.overall_content_weight
+                + speaker_score * self.cfg.overall_speaker_weight
+                + duration_score * self.cfg.overall_duration_weight
+            )
 
         scores = Scores(
             speaker=speaker_score,
