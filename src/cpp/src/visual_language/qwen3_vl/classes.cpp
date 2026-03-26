@@ -557,7 +557,6 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
     }
 
     // Apply CDPruner if active
-    ov::Tensor merged_video_embeddings_tensor = m_merged_video_embeddings;
     ov::Tensor merged_image_embeddings_tensor = m_merged_image_embeddings;
     
     auto apply_pruning = [&](size_t vision_count,
@@ -607,41 +606,46 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
                     const size_t original_tokens = deepstack_shape[1];
                     const size_t hidden_size = deepstack_shape[2];
                     
-                    // Build keep flags for all vision tokens across all regions
-                    std::vector<bool> global_keep_flags;
+                    OPENVINO_ASSERT(deepstack_embeds.get_element_type() == ov::element::f32,
+                                    "Expected f32 deepstack_visual_embeds, got ",
+                                    deepstack_embeds.get_element_type());
+                    
+                    // Pre-compute kept token indices once, reused across all layers
+                    std::vector<size_t> kept_indices;
+                    kept_indices.reserve(pruning_result->pruned_visual_tokens);
+                    size_t abs_idx = 0;
                     for (const auto& region_flags : pruning_result->keep_flags_per_region) {
-                        global_keep_flags.insert(global_keep_flags.end(), region_flags.begin(), region_flags.end());
+                        for (size_t i = 0; i < region_flags.size(); ++i) {
+                            if (region_flags[i]) {
+                                kept_indices.push_back(abs_idx);
+                            }
+                            ++abs_idx;
+                        }
                     }
                     
-                    OPENVINO_ASSERT(global_keep_flags.size() == original_tokens,
-                                    "Keep flags size (", global_keep_flags.size(),
+                    OPENVINO_ASSERT(abs_idx == original_tokens,
+                                    "Keep flags size (", abs_idx,
                                     ") != original tokens (", original_tokens, ")");
-                    
-                    const size_t actual_kept = std::count(global_keep_flags.begin(), global_keep_flags.end(), true);
-                    OPENVINO_ASSERT(actual_kept == pruning_result->pruned_visual_tokens,
-                                    "Actual kept tokens (", actual_kept,
+                    OPENVINO_ASSERT(kept_indices.size() == pruning_result->pruned_visual_tokens,
+                                    "Actual kept tokens (", kept_indices.size(),
                                     ") != pruned_visual_tokens (", pruning_result->pruned_visual_tokens, ")");
                     
                     if (pruning_result->pruned_visual_tokens < original_tokens) {
-                        ov::Tensor pruned_deepstack(deepstack_embeds.get_element_type(), 
-                                                    {num_layers, pruning_result->pruned_visual_tokens, hidden_size});
+                        const size_t kept_count = kept_indices.size();
+                        ov::Tensor pruned_deepstack(ov::element::f32,
+                                                    {num_layers, kept_count, hidden_size});
                         
                         const float* src_data = deepstack_embeds.data<const float>();
                         float* dst_data = pruned_deepstack.data<float>();
                         
                         for (size_t layer = 0; layer < num_layers; ++layer) {
-                            size_t dst_idx = 0;
-                            for (size_t token = 0; token < original_tokens; ++token) {
-                                if (global_keep_flags[token]) {
-                                    const size_t src_offset = (layer * original_tokens + token) * hidden_size;
-                                    const size_t dst_offset = (layer * pruning_result->pruned_visual_tokens + dst_idx) * hidden_size;
-                                    std::memcpy(dst_data + dst_offset, src_data + src_offset, hidden_size * sizeof(float));
-                                    dst_idx++;
-                                }
+                            const size_t layer_src_offset = layer * original_tokens * hidden_size;
+                            const size_t layer_dst_offset = layer * kept_count * hidden_size;
+                            for (size_t dst_idx = 0; dst_idx < kept_count; ++dst_idx) {
+                                std::memcpy(dst_data + layer_dst_offset + dst_idx * hidden_size,
+                                            src_data + layer_src_offset + kept_indices[dst_idx] * hidden_size,
+                                            hidden_size * sizeof(float));
                             }
-                            OPENVINO_ASSERT(dst_idx == pruning_result->pruned_visual_tokens,
-                                            "Layer ", layer, ": dst_idx (", dst_idx,
-                                            ") != pruned_visual_tokens (", pruning_result->pruned_visual_tokens, ")");
                         }
                         
                         m_lm_extra_inputs["deepstack_visual_embeds"] = std::move(pruned_deepstack);
