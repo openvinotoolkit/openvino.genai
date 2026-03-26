@@ -21,6 +21,7 @@ enum class VLMModelType {
     QWEN2_VL,
     QWEN2_5_VL,
     QWEN3_VL,
+    QWEN3_5,
     GEMMA3,
 };
 

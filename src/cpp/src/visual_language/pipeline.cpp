@@ -734,9 +734,22 @@ private:
         ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, { 1, history_size + inputs_embeds_size }};
         std::fill_n(new_atten_mask.data<int64_t>(), new_atten_mask.get_size(), 1);
 
-        ov::Tensor position_ids;
+        // Only compute and pass position_ids if the language model accepts them.
+        // Hybrid models (e.g. Qwen3.5) compute rotary embeddings internally.
+        std::optional<ov::Tensor> position_ids;
         std::optional<int64_t> rope_delta;
-        std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
+        bool has_position_ids_input = false;
+        for (const auto& input : m_language.get_compiled_model().inputs()) {
+            if (input.get_any_name() == "position_ids") {
+                has_position_ids_input = true;
+                break;
+            }
+        }
+        if (has_position_ids_input) {
+            auto [pos_ids, delta] = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
+            position_ids = std::move(pos_ids);
+            rope_delta = delta;
+        }
 
         const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
 
