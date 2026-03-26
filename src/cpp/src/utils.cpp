@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "utils.hpp"
+int x = 1;
 
 #include <variant>
 #include <fstream>
