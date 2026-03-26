@@ -22,6 +22,7 @@ PROMPTS_FILE = "speech_generation_prompts.yaml"
 SPEAKER_SCORE_COL = "speaker score"
 CONTENT_SCORE_COL = "content score"
 DURATION_SCORE_COL = "duration score"
+ACOUSTIC_SCORE_COL = "acoustic score"
 OVERALL_SCORE_COL = "overall score"
 
 
@@ -167,6 +168,7 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         speaker_scores = []
         content_scores = []
         duration_scores = []
+        acoustic_scores = []
         overall_scores = []
 
         for idx in tqdm(range(max_samples), desc="TTS similarity evaluation"):
@@ -197,12 +199,14 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             speaker_scores.append(scores.speaker)
             content_scores.append(scores.content)
             duration_scores.append(scores.duration)
+            acoustic_scores.append(scores.acoustic)
             overall_scores.append(scores.overall)
 
         all_metrics_per_prompt = {
             SPEAKER_SCORE_COL: speaker_scores,
             CONTENT_SCORE_COL: content_scores,
             DURATION_SCORE_COL: duration_scores,
+            ACOUSTIC_SCORE_COL: acoustic_scores,
             OVERALL_SCORE_COL: overall_scores,
         }
 
@@ -210,6 +214,7 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             SPEAKER_SCORE_COL: _safe_metric_mean(speaker_scores),
             CONTENT_SCORE_COL: _safe_metric_mean(content_scores),
             DURATION_SCORE_COL: _safe_metric_mean(duration_scores),
+            ACOUSTIC_SCORE_COL: _safe_metric_mean(acoustic_scores),
             OVERALL_SCORE_COL: _safe_metric_mean(overall_scores),
         }
 
