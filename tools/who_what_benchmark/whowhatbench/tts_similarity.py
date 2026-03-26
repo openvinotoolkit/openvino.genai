@@ -326,6 +326,7 @@ class TTSSimilarityEvaluator:
 
         return scores
 
+
 def evaluate_tts_similarity(
     target_path: str,
     reference_path: str,
