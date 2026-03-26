@@ -16,7 +16,7 @@ import soundfile as sf
 
 
 DEFAULT_SR = 16000
-DEFAULT_WHISPER_MODEL = "base"
+DEFAULT_WHISPER_MODEL = "base.en"
 
 
 @dataclass

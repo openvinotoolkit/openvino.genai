@@ -333,7 +333,7 @@ def parse_args():
     parser.add_argument(
         "--tts-eval-whisper-model",
         type=str,
-        default="small",
+        default="base.en",
         help="faster-whisper model name for TTS similarity content scoring.",
     )
     parser.add_argument(
