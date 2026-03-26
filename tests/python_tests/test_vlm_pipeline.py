@@ -26,6 +26,7 @@ handwritten_tensor
 ov_pipe_model
 ov_continuous_batching_pipe
 """
+
 import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
