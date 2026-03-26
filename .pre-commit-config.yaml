@@ -34,6 +34,11 @@ repos:
         language: system
         pass_filenames: false
         types_or: [c, c++]
+  - repo: https://github.com/cheshirekow/cmake-format-precommit
+    rev: v0.6.13
+    hooks:
+      - id: cmake-format
+        types: [cmake]
   - repo: https://github.com/akaihola/darker
     rev: v3.0.0
     hooks:
