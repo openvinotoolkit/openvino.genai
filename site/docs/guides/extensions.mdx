@@ -23,7 +23,7 @@ Accepted item types in the Python `extensions` list:
 
 - `str`, `bytes`, or `pathlib.Path` pointing to a compiled extension library
 - `openvino.Extension` objects such as `ov.OpExtension(...)`
-- Python custom-op classes, which are automatically wrapped as `openvino.OpExtension(...)`
+- Python custom operation classes, which are automatically wrapped as `openvino.OpExtension(...)`
 
 ### C++
 
@@ -43,6 +43,8 @@ Accepted C++ forms:
         import openvino as ov
         import openvino_genai as ov_genai
 
+        # Minimal custom operation stub for registration through ov.OpExtension.
+        # Replace the type info and implementation with the actual custom operation.
         class CustomAdd(ov.Op):
             class_type_info = ov.DiscreteTypeInfo("CustomAdd", "extension")
 
@@ -55,7 +57,7 @@ Accepted C++ forms:
             extensions=[Path("/path/to/libopenvino_custom_extension.so")],
         )
 
-        # Option 2: register a Python custom op.
+        # Option 2: register a Python custom operation.
         llm_pipe_obj = ov_genai.LLMPipeline(
             model_path,
             "CPU",
@@ -79,7 +81,7 @@ Accepted C++ forms:
         #include "openvino/genai/extensions.hpp"
         #include "openvino/genai/llm_pipeline.hpp"
 
-        // Replace with your custom op definition/include.
+        // Replace with your custom operation definition/include.
         class CustomAdd;
 
         int main() {
@@ -94,7 +96,7 @@ Accepted C++ forms:
                 })
             );
 
-            // Option 2: register a C++ custom op.
+            // Option 2: register a C++ custom operation.
             ov::genai::LLMPipeline llm_pipe_obj(
                 model_path,
                 "CPU",
@@ -118,4 +120,4 @@ Accepted C++ forms:
 ## Notes
 
 - Extensions are loaded into the underlying OpenVINO `Core` before the pipeline loads the model.
-- If you use Python custom ops, register them through `ov.OpExtension(...)` or pass the custom-op class directly where supported.
+- If you use Python custom ops, register them through `ov.OpExtension(...)` or pass the custom operation class directly where supported.
