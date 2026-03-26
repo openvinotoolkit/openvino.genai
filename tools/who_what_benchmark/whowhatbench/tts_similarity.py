@@ -178,6 +178,7 @@ class TTSSimilarityEvaluator:
             self._speaker_model = SpeakerRecognition.from_hparams(
                 source="speechbrain/spkrec-ecapa-voxceleb",
             )
+            self._speaker_model.eval()
         return self._speaker_model
 
     def transcribe(self, path: str, language: Optional[str]) -> str:
@@ -194,9 +195,10 @@ class TTSSimilarityEvaluator:
             tgt_tensor, _ = load_audio_mono(target_path, 16000)
             ref_tensor = torch.tensor(ref_tensor, dtype=torch.float32).unsqueeze(0)
             tgt_tensor = torch.tensor(tgt_tensor, dtype=torch.float32).unsqueeze(0)
-            emb_ref = self.speaker_model.encode_batch(ref_tensor).reshape(1, -1)
-            emb_tgt = self.speaker_model.encode_batch(tgt_tensor).reshape(1, -1)
-            score = float(torch.nn.functional.cosine_similarity(emb_ref, emb_tgt, dim=1).item())
+            with torch.no_grad():
+                emb_ref = self.speaker_model.encode_batch(ref_tensor).reshape(1, -1)
+                emb_tgt = self.speaker_model.encode_batch(tgt_tensor).reshape(1, -1)
+                score = float(torch.nn.functional.cosine_similarity(emb_ref, emb_tgt, dim=1).item())
             pred = int(score >= 0.25)
             return score, pred, None
         except Exception as e:
