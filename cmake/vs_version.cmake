@@ -9,10 +9,10 @@ set(PROJECT_COMMENTS "https://docs.openvino.ai/")
 
 # This function generates a version resource (.rc) file from a template and adds it to the given target.
 function(add_vs_version_resource TARGET_NAME)
-    set(VS_VERSION_TEMPLATE "${PROJECT_SOURCE_DIR}/cmake/templates/vs_version.rc.in")
-    set(VS_VERSION_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/vs_version.rc")
+  set(VS_VERSION_TEMPLATE "${PROJECT_SOURCE_DIR}/cmake/templates/vs_version.rc.in")
+  set(VS_VERSION_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/vs_version.rc")
 
-    configure_file("${VS_VERSION_TEMPLATE}" "${VS_VERSION_OUTPUT}" @ONLY)
+  configure_file("${VS_VERSION_TEMPLATE}" "${VS_VERSION_OUTPUT}" @ONLY)
 
-    target_sources(${TARGET_NAME} PRIVATE "${VS_VERSION_OUTPUT}")
+  target_sources(${TARGET_NAME} PRIVATE "${VS_VERSION_OUTPUT}")
 endfunction()

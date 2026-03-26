@@ -13,9 +13,9 @@ option(ENABLE_XGRAMMAR "Enable support for structured output generation with xgr
 
 # Disable building samples for NPM package
 if(CPACK_GENERATOR STREQUAL "NPM")
-    set(ENABLE_SAMPLES OFF)
-    set(ENABLE_PYTHON OFF)
-    set(ENABLE_JS ON)
+  set(ENABLE_SAMPLES OFF)
+  set(ENABLE_PYTHON OFF)
+  set(ENABLE_JS ON)
 else()
-    set(ENABLE_JS OFF)
+  set(ENABLE_JS OFF)
 endif()
