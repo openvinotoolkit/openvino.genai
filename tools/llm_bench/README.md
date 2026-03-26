@@ -180,7 +180,7 @@ python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --t
 - `--from_onnx`: "Load the model from an ONNX file instead of a pre-converted OpenVINO IR."
 
 ```sh
-# chat itration
+# chat iteration
 python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen --chat_iter 3
 python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen --pf ./prompts/chat_mode.jsonl
 ```
@@ -212,7 +212,7 @@ python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task 
 ```
 
 ```sh
-# chat itration
+# chat iteration
 python benchmark.py -m ./models/MiniCPM-V-2_6/ -p "What is on the picture?" -n 2 --task visual_text_gen --chat_iter 3 -i ./image.png
 python benchmark.py -m ./models/MiniCPM-V-2_6/ -n 2 --task visual_text_gen --pf ./prompts/chat_mode_vlm.jsonl
 ```

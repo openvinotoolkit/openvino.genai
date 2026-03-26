@@ -124,7 +124,7 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
 
     Returns
     -------
-    prompts : list[str]
+    prompts : list[str | list[str]]
         List of textual prompts, one entry per element in `inputs`, in the same
         order as processed.
 

@@ -4,6 +4,7 @@
 import os
 import time
 import datetime
+import torch
 import logging as log
 import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
@@ -13,7 +14,7 @@ import hashlib
 import threading
 import llm_bench_utils.metrics_print as metrics_print
 from llm_bench_utils.memory_monitor import MemoryMonitorHandler
-from transformers import set_seed
+from transformers import set_seed, DynamicCache
 from llm_bench_utils.ov_utils import get_genai_chunk_streamer, OptimumChunkStreamer
 import llm_bench_utils.output_file
 import llm_bench_utils.gen_output_data as gen_output_data
@@ -205,7 +206,7 @@ def run_text_generation_optimum(
     additional_args = setup_additional_args_optimum(args, model, tokenizer, streaming, tokens_len)
 
     # === Generate ===
-    mem_consumption.start()
+    mem_consumption.start(num)
     log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
     start = time.perf_counter()
     result = model.generate(
@@ -291,6 +292,63 @@ def run_text_generation_optimum(
         bench_hook.clear_time_infer_list()
 
 
+def align_kv_cache_and_tokenized_history(
+    model, full_chat_input_data, tokenized_chat_history, past_key_values, full_chat: bool = False
+):
+    if full_chat:
+        return tokenized_chat_history.shape[-1] - 1, past_key_values
+
+    # kv_cache doesn't include last generated token, len(past_key_values) == len(output tokens) - 1
+    kv_cache_len = tokenized_chat_history.shape[-1] - 1
+    # full_chat_input_data includes currently tokenized all history and input tokens
+    # tokenized_chat_history includes all tokens from previous generations
+    diff = full_chat_input_data[0][..., :kv_cache_len] != tokenized_chat_history[..., :kv_cache_len]
+    first_diff_idx = kv_cache_len
+    if diff.any():
+        first_diff_idx = diff.nonzero(as_tuple=True)[0][0].item()
+        if "transformers" in str(type(model)):
+            past_key_values.crop(max_length=first_diff_idx)
+            first_diff_idx = 0
+        else:
+            import openvino as ov
+
+            states = model.request.query_state()
+            for state in states:
+                old_tensor = state.state
+                # [BATCH_SIZE, num_kv_heads, seq_len, head_size]
+                data = np.array(old_tensor.data)
+                trimmed_tensor = data[:, :, :first_diff_idx, :]
+                new_tensor = ov.Tensor(trimmed_tensor)
+                state.state = new_tensor
+
+    if "transformers" not in str(type(model)) and past_key_values is None:
+        past_key_values = [past_key_values]
+
+    return first_diff_idx, past_key_values
+
+
+def align_input_data_with_kv_cache(model, tokenized_input_data: dict, first_diff_idx: int, full_chat: bool = False):
+    # if "transformers" in str(type(model)) or full_chat:
+    #     return tokenized_input_data
+
+    aligned_input_data = {}
+    aligned_input_data["input_ids"] = tokenized_input_data[..., first_diff_idx:]
+    aligned_input_data["attention_mask"] = torch.ones_like(tokenized_input_data, dtype=torch.long)
+    return aligned_input_data
+
+
+def update_tokenized_chat_history(
+    model, result: torch.tensor, input_tokens_num: int, full_tokenized_chat: torch.tensor, full_chat: bool = False
+):
+    if "transformers" in str(type(model)) or full_chat:
+        tokenized_chat_history = result.clone()
+    else:
+        answer_result = result[input_tokens_num:]
+        tokenized_chat_history = torch.cat([full_tokenized_chat[0], answer_result])
+
+    return tokenized_chat_history
+
+
 def run_text_generation_chat_optimum(
     input_text: str,
     num: int,
@@ -322,42 +380,76 @@ def run_text_generation_chat_optimum(
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args["infer_count"] is None else args["infer_count"]
     additional_args = setup_additional_args_optimum(args, model, tokenizer, streaming, tokens_len)
 
-    mem_consumption.start()
+    mem_consumption.start(num)
 
     # ===== Chat Conversation ======
     chat_history = []
     chat_iter_data_list = []
+    # For chat generation, we need to keep track of past_key_values for each turn to utilize the cache and speed up generation.
+    # However, not all models support past_key_values. For those models, we will set past_key_values
+
+    past_key_values = None
+    if "transformers" in str(type(model)):
+        past_key_values = DynamicCache()
+    additional_args["use_cache"] = not args.get("full_chat_hist")
+    tokenized_chat_history = torch.tensor([], dtype=torch.long)
     for prompt_index, prompt in enumerate(input_data):
         chat_history.append({"role": "user", "content": prompt})
         templated_input_text = tokenizer.apply_chat_template(chat_history, tokenize=False, add_generation_prompt=True)
 
         # ===== Tokenization =====
         tok_encode_start = time.perf_counter()
-        tokenized_input_data = tokenizer(templated_input_text, return_tensors="pt")
+        tokenized_chat = tokenizer(templated_input_text, return_tensors="pt")
         tok_encode_end = time.perf_counter()
         tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
-        tokenized_input_data.pop("token_type_ids", None)
+        tokenized_chat.pop("token_type_ids", None)
+        full_tokenized_chat_input_ids = tokenized_chat["input_ids"] if "input_ids" in tokenized_chat else tokenized_chat
+
+        # === Align KV Cache and Tokenized History for models supporting past_key_values ===
+        num_new_token_input_size = full_tokenized_chat_input_ids.shape[-1]
+        if tokenized_chat_history.numel() != 0:
+            first_diff_idx, past_key_values = align_kv_cache_and_tokenized_history(
+                model,
+                full_tokenized_chat_input_ids,
+                tokenized_chat_history,
+                past_key_values,
+                args.get("full_chat_hist"),
+            )
+            if not args.get("full_chat_hist"):
+                num_new_token_input_size = full_tokenized_chat_input_ids[..., first_diff_idx:].shape[-1]
+            tokenized_input_data = align_input_data_with_kv_cache(
+                model, full_tokenized_chat_input_ids, first_diff_idx, args.get("full_chat_hist")
+            )
+        else:
+            tokenized_input_data = tokenized_chat
+
         # Remove `token_type_ids` from inputs
         input_tokens = (
             tokenized_input_data["input_ids"] if "input_ids" in tokenized_input_data else tokenized_input_data
         )
         input_token_size = input_tokens[0].numel()
 
-        # === Generation ===
+        if not args.get("full_chat_hist"):
+            additional_args["past_key_values"] = past_key_values
+
+        # ===== Generation =====
         log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
         start = time.perf_counter()
         result = model.generate(
             **tokenized_input_data,
             max_new_tokens=int(max_gen_tokens),
             num_beams=args["num_beams"],
-            use_cache=True,
             do_sample=False,
+            return_dict_in_generate=True,
             **additional_args,
         )
         end = time.perf_counter()
         log.info("%s Text generation end: %s", prefix, datetime.datetime.now().isoformat())
         generation_time = end - start
-        answer_result = result[0][tokenized_input_data["input_ids"].shape[-1] :]
+        answer_result = result.sequences[0][input_token_size:]
+        tokenized_chat_history = update_tokenized_chat_history(
+            model, result.sequences[0], input_token_size, full_tokenized_chat_input_ids, args.get("full_chat_hist")
+        )
 
         # ===== Detokenization =====
         tok_decode_start = time.perf_counter()
@@ -369,7 +461,7 @@ def run_text_generation_chat_optimum(
         # ===== Performance Data Collection and Print Results =====
         batch_idx = 0
         generated_token_size = calc_generated_token_size_optimum(
-            result, batch_idx, model, input_tokens, input_token_size, args["model_name"]
+            result.sequences, batch_idx, model, input_tokens, input_token_size, args["model_name"]
         )
         if generated_token_size > max_gen_tokens:
             log.error("Output token size is over max output token size!")
@@ -410,7 +502,7 @@ def run_text_generation_chat_optimum(
                 )
         iter_data = gen_output_data.gen_iterate_data(
             iter_idx=num,
-            in_size=input_token_size * args["batch_size"],
+            in_size=num_new_token_input_size,
             infer_count=len(tm_infer_list),
             out_size=generated_token_size,
             gen_time=generation_time,
@@ -432,26 +524,22 @@ def run_text_generation_chat_optimum(
             prompt_idx=prompt_index,
             chat_idx=chat_index,
         )
-        
+
         if bench_hook is not None:
             bench_hook.clear_time_list()
             bench_hook.clear_time_infer_list()
 
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
-    # === ADD MEMORY METRICS for all chat iterartion ====
-    for iter in chat_iter_data_list:
-        mem_vlas = { key: val for key, val in gen_output_data.gen_iterate_data(**memory_metrics).items() if (val != '' and val != -1) }
-        iter.update(**mem_vlas)
     update_chat_iteration_with_memory_info(chat_iter_data_list, memory_metrics)
+
     metrics_print.print_memory_info(num, iter_data, chat_index)
 
     # === Save perf data ===
     iter_data_list.extend(chat_iter_data_list)
 
-    generated_text = "; ".join(str(replica) for replica in chat_history)
     if args["output_dir"] is not None:
         llm_bench_utils.output_file.output_gen_text(
-            generated_text, args, model_precision, chat_index, num, batchsize_idx=0, proc_id=proc_id, is_chat=True
+            chat_history, args, model_precision, chat_index, num, batchsize_idx=0, proc_id=proc_id, is_chat=True
         )
 
 
@@ -617,7 +705,7 @@ def run_text_generation_genai(
     gen_config = genai_generation_config_setup(model, max_gen_tokens, args)
 
     # ===== Generate =====
-    mem_consumption.start()
+    mem_consumption.start(num)
     generated_tokens, perf_metrics, generation_time = genai_generate(
         streaming, model, tokens_len, gen_config, args["empty_lora"], input_data, args["batch_size"], prefix
     )
@@ -817,6 +905,24 @@ def run_text_generation_genai_with_stream(
     streamer.reset()
 
 
+def calc_token_size_for_chat(tokenizer, chat_history, chat_token_size, full_chat_hist=False):
+    templ_chat = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True)
+    tokenized_input = tokenizer.encode(templ_chat)
+
+    # openvino_genai.TokenizedInputs includes input_ids, attention_mask and token_type_ids
+    new_chat_token_size = tokenized_input.input_ids.get_shape()[1]
+
+    # full_chat_hist is for models, which doesn't have query state
+    # and required full chat history each iteration
+    if chat_token_size == 0 or full_chat_hist:
+        input_size = new_chat_token_size
+    else:
+        input_size = new_chat_token_size - chat_token_size
+
+    chat_token_size = new_chat_token_size
+    return input_size, chat_token_size
+
+
 def run_text_generation_genai_chat_mode(
     input_text: str | list,
     iter_num: int,
@@ -847,22 +953,31 @@ def run_text_generation_genai_chat_mode(
     # ===== Setup Generation Config and Additional Args =====
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args["infer_count"] is None else args["infer_count"]
     gen_config = genai_generation_config_setup(model, max_gen_tokens, args)
-    gen_config.apply_chat_template = True
+    gen_config.ignore_eos = False
+    if hasattr(gen_config, "apply_chat_template"):
+        gen_config.apply_chat_template = True
     additional_args = (
         {"adapters": openvino_genai.AdapterConfig()}
         if (args["empty_lora"] and (gen_config.adapters is not None))
         else {}
     )
 
-    mem_consumption.start()
+    tokenizer = model.get_tokenizer()
+
+    mem_consumption.start(iter_num)
 
     # ===== Chat Conversation =====
     chat_history = openvino_genai.ChatHistory()
     chat_iter_data_list = []
+    chat_token_size = 0
+    num_input_size = 0
     for prompt_index, prompt in enumerate(input_data):
         chat_history.append({"role": "user", "content": prompt})
+        num_input_size, chat_token_size = calc_token_size_for_chat(
+            tokenizer, chat_history, chat_token_size, args.get("full_chat_hist")
+        )
 
-        # === Generation ===
+        # ===== Generation =====
         log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
         start = time.perf_counter()
         decoded_results = model.generate(
@@ -872,9 +987,12 @@ def run_text_generation_genai_chat_mode(
             **additional_args,
         )
         end = time.perf_counter()
-        log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
+        log.info("%s Text generation end: %s", prefix, datetime.datetime.now().isoformat())
         generation_time = end - start
         chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})
+
+        # update chat token size
+        chat_token_size += tokenizer.encode(decoded_results.texts[0]).input_ids.get_shape()[1]
 
         # ===== Performance Data Collection and Print Results =====
         perf_metrics = decoded_results.perf_metrics
@@ -922,7 +1040,7 @@ def run_text_generation_genai_chat_mode(
                 }
         iter_data = gen_output_data.gen_iterate_data(
             iter_idx=iter_num,
-            in_size=perf_metrics.get_num_input_tokens(),
+            in_size=num_input_size,
             infer_count=len(tm_list),
             out_size=num_tokens,
             gen_time=generation_time,
@@ -948,21 +1066,22 @@ def run_text_generation_genai_chat_mode(
         )
 
     memory_metrics = mem_consumption.iter_stop_and_collect_data(iter_num)
-    # === ADD MEMORY METRICS for all chat iterartion ====
-    for iter in chat_iter_data_list:
-        mem_vlas = { key: val for key, val in gen_output_data.gen_iterate_data(**memory_metrics).items() if (val != '' and val != -1) }
-        iter.update(**mem_vlas)
-
     update_chat_iteration_with_memory_info(chat_iter_data_list, memory_metrics)
     metrics_print.print_memory_info(iter_num, iter_data, chat_index)
 
     # === Save perf data ===
     iter_data_list.extend(chat_iter_data_list)
 
-    generated_text = "; ".join(str(replica) for replica in chat_history.get_messages())
     if args["output_dir"] is not None:
         llm_bench_utils.output_file.output_gen_text(
-            generated_text, args, model_precision, chat_index, iter_num, batchsize_idx=0, proc_id=proc_id, is_chat=True
+            chat_history.get_messages(),
+            args,
+            model_precision,
+            chat_index,
+            iter_num,
+            batchsize_idx=0,
+            proc_id=proc_id,
+            is_chat=True,
         )
 
 

@@ -261,6 +261,7 @@ def output_avg_statis_tokens(
         avg_2nd_tokens_latency = 0
         avg_2nd_token_tput = 0
         avg_input_size = 0
+        input_sizes = []
         index_num = 0
 
         if latency_unit is None:
@@ -278,9 +279,11 @@ def output_avg_statis_tokens(
                 avg_2nd_tokens_latency += (
                     iter_data["other_tokens_avg_latency"] if iter_data["other_tokens_avg_latency"] != "" else 0
                 )
-                # in chat mode we need just last input size
+                # chat includes several different inputs, but they are same on all interation
+                # let's collect it once
                 if chat_mode:
-                    avg_input_size = iter_data["input_size"] if iter_data["input_size"] != "" else 0
+                    if iter_data["iteration"] == 1:
+                        input_sizes.append(iter_data["input_size"] if iter_data["input_size"] != "" else 0)
                 else:
                     avg_input_size += iter_data["input_size"] if iter_data["input_size"] != "" else 0
                 index_num = index_num + 1
@@ -294,6 +297,7 @@ def output_avg_statis_tokens(
             if avg_2nd_tokens_latency > 0:
                 avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * batch_size * 1000
             tput_unit = latency_unit
+            display_unit = latency_unit
             if batch_size > 1:
                 display_unit = "{}{}s".format(batch_size, latency_unit)
             if avg_1st_token_latency >= 0:
@@ -315,6 +319,8 @@ def output_avg_statis_tokens(
                 output_info = ''
                 if avg_input_size > 0:
                     output_info = f" Input token size: {avg_input_size},"
+                elif len(input_sizes) > 0:
+                    output_info = f" Input token sizes: {input_sizes},"
                 inputs_dict[iter_idx] = (
                     "\n{}{} 1st token latency: {}, 2nd token latency: {}, 2nd tokens throughput: {}".format(
                         prefix, output_info, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput

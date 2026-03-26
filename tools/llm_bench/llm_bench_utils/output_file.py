@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import cv2
+import json
 
 import numpy as np
 import soundfile as sf
@@ -24,6 +25,12 @@ def save_text_to_file(input_text, text_file_name, args):
     input_text_file = open(save_path, "w")
     input_text_file.write(input_text)
     input_text_file.close()
+
+
+def save_text_to_json_file(generated_text, text_file_name, args):
+    save_path = get_file_path(args["output_dir"], text_file_name)
+    with open(save_path, "w", encoding="utf-8") as f:
+        json.dump(generated_text, f, ensure_ascii=False, indent=4)
 
 
 def save_image_file(img, img_file_name, args):
@@ -115,10 +122,13 @@ def output_gen_text(
         iteration,
         batchsize_idx,
         proc_id=proc_id,
-        suffix="_output.txt",
+        suffix="_output.json" if is_chat else "_output.txt",
         is_chat=is_chat,
     )
-    save_text_to_file(generated_text, text_file_name, args)
+    if is_chat:
+        save_text_to_json_file(generated_text, text_file_name, args)
+    else:
+        save_text_to_file(generated_text, text_file_name, args)
 
 
 def output_gen_image(img, args, prompt_idx, iteration, batchsize_idx, proc_id, suffix):

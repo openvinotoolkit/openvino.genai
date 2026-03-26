@@ -100,9 +100,9 @@ def get_argparser():
         "--num_iters",
         default=0,
         type=num_positive_integers,
-        help='number of benchmarking iterations, '
-        'if the value is greater than 0, the average numbers exclude the first(0th) iteration,\n'
-        'if the value equals 0 (default), execute the warm-up iteration(0th iteration).',
+        help="number of benchmarking iterations, "
+        "if the value is greater than 0, the average numbers exclude the first(0th) iteration,\n"
+        "if the value equals 0 (default), execute the warm-up iteration(0th iteration).",
     )
     parser.add_argument(
         "-i", "--images", default=None, help="test images for vision tasks. Can be directory or path to single image"

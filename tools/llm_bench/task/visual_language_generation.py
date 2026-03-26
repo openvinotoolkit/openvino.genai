@@ -334,6 +334,7 @@ def run_visual_language_generation_chat_genai(
     # ===== Setup Generation Config And Additional Args =====
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args["infer_count"] is None else args["infer_count"]
     gen_config = genai_generation_config_setup(model, max_gen_tokens, args)
+    gen_config.ignore_eos = False
 
     mem_consumption.start(num)
 
@@ -434,11 +435,8 @@ def run_visual_language_generation_chat_genai(
         )
 
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
-    # === ADD MEMORY METRICS for all chat iterartion ====
-    for iter in chat_iter_data_list:
-        mem_vlas = { key: val for key, val in gen_output_data.gen_iterate_data(**memory_metrics).items() if (val != '' and val != -1) }
-        iter.update(**mem_vlas)
     update_chat_iteration_with_memory_info(chat_iter_data_list, memory_metrics)
+
     metrics_print.print_memory_info(num, iter_data, chat_index)
     iter_data_list.extend(chat_iter_data_list)
 
