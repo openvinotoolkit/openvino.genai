@@ -7,13 +7,13 @@
 
 #ifdef _WIN32
 #    include <windows.h>
-#    define MAX_ABS_PATH _MAX_PATH
+#    define MAX_ABS_PATH                    _MAX_PATH
 #    define get_absolute_path(result, path) _fullpath(result, path.c_str(), MAX_ABS_PATH)
 #else
 #    include <dlfcn.h>
 #    include <limits.h>
 #    include <string.h>
-#    define MAX_ABS_PATH PATH_MAX
+#    define MAX_ABS_PATH                    PATH_MAX
 #    define get_absolute_path(result, path) realpath(path.c_str(), result)
 #endif
 
@@ -46,7 +46,9 @@ std::filesystem::path get_ov_genai_library_path() {
         ss << "GetModuleHandleExW returned " << GetLastError();
         throw std::runtime_error(ss.str());
     }
-    DWORD result = GetModuleFileNameW(hm, (LPWSTR)genai_library_path_w, sizeof(genai_library_path_w) / sizeof(genai_library_path_w[0]));
+    DWORD result = GetModuleFileNameW(hm,
+                                      (LPWSTR)genai_library_path_w,
+                                      sizeof(genai_library_path_w) / sizeof(genai_library_path_w[0]));
     if (result == 0) {
         std::stringstream ss;
         ss << "GetModuleFileNameW failed with error " << GetLastError();
@@ -64,9 +66,9 @@ std::filesystem::path get_ov_genai_library_path() {
 
 std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
 #if !defined(NDEBUG) && (defined(__APPLE__) || defined(_WIN32))
-# define LIB_POSTFIX "d"
+#    define LIB_POSTFIX "d"
 #else
-# define LIB_POSTFIX ""
+#    define LIB_POSTFIX ""
 #endif
 #ifdef _WIN32
     constexpr char tokenizers[] = "openvino_tokenizers" LIB_POSTFIX ".dll";
@@ -79,7 +81,7 @@ std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path
 #endif
     return path.parent_path() / tokenizers;
 }
-}
+}  // namespace
 
 std::filesystem::path tokenizers_relative_to_genai() {
     return with_openvino_tokenizers(get_ov_genai_library_path());

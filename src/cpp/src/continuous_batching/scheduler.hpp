@@ -7,15 +7,15 @@
 #include <cstdlib>
 #include <vector>
 
-#include "openvino/runtime/intel_gpu/properties.hpp"
-#include "openvino/genai/scheduler_config.hpp"
 #include "continuous_batching/block_manager.hpp"
-#include "sequence_group.hpp"
-#include "continuous_batching/cache_manager.hpp"
-#include "continuous_batching/timer.hpp"
-#include "continuous_batching/sparse_attention.hpp"
-#include "utils.hpp"
 #include "continuous_batching/cache_eviction.hpp"
+#include "continuous_batching/cache_manager.hpp"
+#include "continuous_batching/sparse_attention.hpp"
+#include "continuous_batching/timer.hpp"
+#include "openvino/genai/scheduler_config.hpp"
+#include "openvino/runtime/intel_gpu/properties.hpp"
+#include "sequence_group.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 class Scheduler {
@@ -29,11 +29,12 @@ class Scheduler {
 
     // Dynamic KV-cache allocation params
     size_t m_kv_blocks_initial_multiplier = 2;
-    const float m_cache_growth_num_tokens = 256; // Number of tokens by which KV-cache is increased
+    const float m_cache_growth_num_tokens = 256;  // Number of tokens by which KV-cache is increased
 
     std::shared_ptr<CacheManager> m_cache_manager;
 
     size_t m_snapkv_window_size = 1;
+
 public:
     struct Output {
         // IDs of scheduled groups
@@ -57,7 +58,8 @@ public:
         std::map<uint64_t, size_t> m_adaptive_rkv_evictable_sizes;
 
         // Reserved for future use
-        std::vector<std::map<size_t, std::vector<size_t>>> m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence;
+        std::vector<std::map<size_t, std::vector<size_t>>>
+            m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence;
 
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
@@ -69,12 +71,20 @@ public:
         size_t m_cache_size_in_bytes = 0;
     };
 
-    Scheduler(size_t block_size, std::shared_ptr<CacheManager> cache_manager, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true, size_t snapkv_window_size = 1) :
-        m_can_use_partial_preemption(can_use_partial_preemption),
-        m_config(config),
-        m_cache_manager(cache_manager),
-        m_snapkv_window_size(snapkv_window_size) {
-        m_block_manager = std::make_shared<BlockManager>(m_config.num_kv_blocks, m_config.enable_prefix_caching, block_size, num_layers);
+    Scheduler(size_t block_size,
+              std::shared_ptr<CacheManager> cache_manager,
+              const SchedulerConfig& config = {},
+              size_t num_layers = 1,
+              bool can_use_partial_preemption = true,
+              size_t snapkv_window_size = 1)
+        : m_can_use_partial_preemption(can_use_partial_preemption),
+          m_config(config),
+          m_cache_manager(cache_manager),
+          m_snapkv_window_size(snapkv_window_size) {
+        m_block_manager = std::make_shared<BlockManager>(m_config.num_kv_blocks,
+                                                         m_config.enable_prefix_caching,
+                                                         block_size,
+                                                         num_layers);
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
     }
 
@@ -116,7 +126,8 @@ public:
         m_cache_manager->allocate_cache_if_needed(m_block_manager->get_total_number_of_kv_blocks());
         _clear_waiting_sequences(sequence_groups);
         scheduler_output.m_cache_usage = m_block_manager->get_used_percentage();
-        scheduler_output.m_cache_size_in_bytes = m_block_manager->get_total_number_of_kv_blocks() * m_cache_manager->get_block_size_in_bytes();
+        scheduler_output.m_cache_size_in_bytes =
+            m_block_manager->get_total_number_of_kv_blocks() * m_cache_manager->get_block_size_in_bytes();
 
         static ManualTimer copy_blocks_timer("copy block");
         copy_blocks_timer.start();
@@ -167,12 +178,14 @@ public:
         return m_config;
     }
 
-    void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free) {
+    void free_blocks_from_sequence(size_t seq_id,
+                                   const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free) {
         m_block_manager->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free);
     }
 
     void clear_kv_cache() {
-        OPENVINO_ASSERT(m_config.enable_prefix_caching == false, "KV-cache should not be cleared if prefix caching is enabled.");
+        OPENVINO_ASSERT(m_config.enable_prefix_caching == false,
+                        "KV-cache should not be cleared if prefix caching is enabled.");
         m_cache_manager->clear();
         m_block_manager->clear();
     }
@@ -188,12 +201,12 @@ private:
         return num_running;
     }
 
-
     bool _preempt_by_recompute(SequenceGroup::Ptr sequence_group, size_t blocks_needed) {
         size_t processed_tokens = sequence_group->get_num_processed_tokens();
         size_t prev_blocks_count = m_block_manager->num_free_blocks();
         size_t preempted_tokens = 0;
-        size_t num_blocks_occupied_by_sequence = m_block_manager->get_number_of_blocks_occupied_by_sequence(sequence_group);
+        size_t num_blocks_occupied_by_sequence =
+            m_block_manager->get_number_of_blocks_occupied_by_sequence(sequence_group);
         bool was_evicted_from = (sequence_group->get_num_evicted_tokens() != 0);
 
         if (num_blocks_occupied_by_sequence <= blocks_needed || !m_can_use_partial_preemption || was_evicted_from) {
@@ -213,8 +226,7 @@ private:
         size_t logical_blocks_released;
         if (sequence_group->get_sampling_parameters().is_beam_search()) {
             logical_blocks_released = m_block_manager->free_partially_beam_search_group(sequence_group, blocks_needed);
-        }
-        else {
+        } else {
             logical_blocks_released = m_block_manager->free_group_partially(sequence_group, blocks_needed);
         }
 
@@ -224,13 +236,14 @@ private:
         if (tokens_in_last_block == 0) {
             tokens_in_last_block = block_size;
         }
-        preempted_tokens = tokens_in_last_block + (logical_blocks_released == 0 ? 0 : logical_blocks_released - 1) * block_size;
+        preempted_tokens =
+            tokens_in_last_block + (logical_blocks_released == 0 ? 0 : logical_blocks_released - 1) * block_size;
 
         // case when preemption requires preempt prompt tokens
         if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
             // preempt prompt fully to not leave partially generated prompt
             preempted_tokens = processed_tokens;
-            for (auto sequence: sequence_group->get_not_finished_sequences()) {
+            for (auto sequence : sequence_group->get_not_finished_sequences()) {
                 auto seq_id = sequence->get_id();
                 if (m_block_manager->has_block_table(seq_id)) {
                     m_block_manager->free_sequence(seq_id);
@@ -269,13 +282,14 @@ private:
                 break;
             }
             size_t blocks_needed = m_block_manager->required_blocks_count(sequence_group);
-            if (!_preempt_by_recompute(sequence_groups[evicted_sequence_group_id], blocks_needed)){
+            if (!_preempt_by_recompute(sequence_groups[evicted_sequence_group_id], blocks_needed)) {
                 break;
             }
         }
     }
 
-    void _schedule_prompt_phase_dynamic_split_fuse(std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
+    void _schedule_prompt_phase_dynamic_split_fuse(std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                                   Output& scheduler_output) {
         // in the current method we need to balance multiple prompts (or parts of prompts) between
         // available amount of tokens in megabatch
         // Considerations:
@@ -286,14 +300,16 @@ private:
 
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
-            if (!sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
+            if (!sequence_group->can_generate_tokens() && !sequence_group->is_waiting() &&
+                !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
                 Sequence::Ptr sequence = (*sequence_group)[0];
                 uint64_t seq_id = sequence->get_id();
 
-                size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
+                size_t num_tokens_in_megabatch =
+                    m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t num_available_tokens = sequence_group->get_num_available_tokens_for_batching();
 
                 // apply megabatch limitations
@@ -302,10 +318,12 @@ private:
                 // apply KV cache limitations
                 size_t block_size = get_block_size();
                 size_t currently_allocated_token_slots = sequence_group->get_num_blocks() * block_size;
-                size_t occupied_token_slots = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
+                size_t occupied_token_slots =
+                    sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
                 OPENVINO_ASSERT(currently_allocated_token_slots >= occupied_token_slots, "internal error");
                 size_t available_slots = currently_allocated_token_slots - occupied_token_slots,
-                       required_slots = num_scheduled_tokens > available_slots ? num_scheduled_tokens - available_slots : 0;
+                       required_slots =
+                           num_scheduled_tokens > available_slots ? num_scheduled_tokens - available_slots : 0;
                 size_t num_required_blocks = (required_slots + block_size - 1) / block_size;
                 while (num_required_blocks > m_block_manager->num_free_blocks()) {
                     if (!_try_increase_cache()) {
@@ -315,7 +333,8 @@ private:
                 size_t num_scheduled_blocks = std::min(num_required_blocks, m_block_manager->num_free_blocks());
                 // some scheduled blocks can be no fully occupied, so we need to take min between num_scheduled_blocks
                 // and total "scheduled capacity"
-                num_scheduled_tokens = std::min(num_scheduled_tokens, available_slots + num_scheduled_blocks * block_size);
+                num_scheduled_tokens =
+                    std::min(num_scheduled_tokens, available_slots + num_scheduled_blocks * block_size);
 
                 if (num_scheduled_tokens > 0) {
                     // allocate KV blocks if required
@@ -330,22 +349,29 @@ private:
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
 
-
-                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
-                        scheduler_output.m_apply_sparse_attention_mask = m_config.use_sparse_attention && m_config.sparse_attention_config.mode == SparseAttentionMode::TRISHAPE;
+                        scheduler_output.m_score_aggregation_windows[seq_id] =
+                            _schedule_scores_to_aggregate(sequence_group);
+                        scheduler_output.m_apply_sparse_attention_mask =
+                            m_config.use_sparse_attention &&
+                            m_config.sparse_attention_config.mode == SparseAttentionMode::TRISHAPE;
                         if (scheduler_output.m_apply_sparse_attention_mask) {
-                            TriShapeSparseAttentionTokenSkipper skipper(block_size,
-                                    m_config.sparse_attention_config.num_last_dense_tokens_in_prefill,
-                                    m_config.sparse_attention_config.num_retained_start_tokens_in_cache,
-                                    m_config.sparse_attention_config.num_retained_recent_tokens_in_cache);
-                            scheduler_output.m_sparse_attention_skipped_logical_blocks[seq_id] = skipper.get_skipped_blocks(sequence_group);
+                            TriShapeSparseAttentionTokenSkipper skipper(
+                                block_size,
+                                m_config.sparse_attention_config.num_last_dense_tokens_in_prefill,
+                                m_config.sparse_attention_config.num_retained_start_tokens_in_cache,
+                                m_config.sparse_attention_config.num_retained_recent_tokens_in_cache);
+                            scheduler_output.m_sparse_attention_skipped_logical_blocks[seq_id] =
+                                skipper.get_skipped_blocks(sequence_group);
                         }
-                        scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
-                        scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
+                        scheduler_output.m_xattention_thresholds[seq_id] =
+                            _schedule_xattention_threshold(sequence_group);
+                        scheduler_output.m_xattention_block_size =
+                            m_config.sparse_attention_config.xattention_block_size;
                         scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
 
                         scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
-                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
+                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] =
+                            _schedule_adaptive_rkv_evictable_size(sequence_group);
                     }
                 }
 
@@ -366,11 +392,13 @@ private:
             // Question: do we need to schedule preeempted first as it's done in vLLM?
             // Answer: preempted sequences have low priority, so they should be after "running" ones. So, here we
             //         keep latencies for sequence groups of high priority
-            if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
+            if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting() &&
+                !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 OPENVINO_ASSERT(!sequence_group->has_finished());
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 OPENVINO_ASSERT(num_running_seqs);
-                size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
+                size_t num_tokens_in_megabatch =
+                    m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t available_tokens_per_seq_in_megabatch = num_tokens_in_megabatch / num_running_seqs;
 
                 // we cannot schedule even a single token per each sequence in a group
@@ -381,10 +409,11 @@ private:
                 // of current sequence group were evicted before
                 size_t num_available_tokens_per_seq = sequence_group->get_num_available_tokens_for_batching();
 
-                size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
+                size_t num_scheduled_tokens_per_seq =
+                    std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
-                while (!m_block_manager->can_append_slots(sequence_group)){
+                while (!m_block_manager->can_append_slots(sequence_group)) {
                     if (!_try_increase_cache()) {
                         break;
                     }
@@ -408,22 +437,24 @@ private:
                     scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens_per_seq * num_running_seqs;
 
                     std::vector<Sequence::Ptr> running_seqs = sequence_group->get_running_sequences();
-                    for (const auto & seq : sequence_group->get_running_sequences()) {
+                    for (const auto& seq : sequence_group->get_running_sequences()) {
                         size_t seq_id = seq->get_id();
                         // block tables for each running sequence within a group
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
 
-                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
+                        scheduler_output.m_score_aggregation_windows[seq_id] =
+                            _schedule_scores_to_aggregate(sequence_group);
 
-                        scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
-                        scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
+                        scheduler_output.m_xattention_thresholds[seq_id] =
+                            _schedule_xattention_threshold(sequence_group);
+                        scheduler_output.m_xattention_block_size =
+                            m_config.sparse_attention_config.xattention_block_size;
                         scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
 
                         scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
-                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
+                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] =
+                            _schedule_adaptive_rkv_evictable_size(sequence_group);
                     }
-
-
 
                     // merge copy_blocks
                     for (const auto& src_dst : copy_blocks_map) {
@@ -448,29 +479,45 @@ private:
         //   - max_num_batched_tokens (max_model_length (and at least 2048) in vLLM's defaults)
 
         OPENVINO_ASSERT(!m_config.dynamic_split_fuse, "Internal error: we are in vLLM scheduling");
-        OPENVINO_ASSERT(m_config.max_num_seqs <= m_config.max_num_batched_tokens, "Max num batched tokens (", m_config.max_num_batched_tokens,
-            ") must be greater or equal to max num sequences (", m_config.max_num_seqs, ")");
-        OPENVINO_ASSERT(scheduler_output.m_scheduled_sequence_groups_ids.empty(), "Internal error: in vLLM scheduling, prompt phase is always first one");
+        OPENVINO_ASSERT(m_config.max_num_seqs <= m_config.max_num_batched_tokens,
+                        "Max num batched tokens (",
+                        m_config.max_num_batched_tokens,
+                        ") must be greater or equal to max num sequences (",
+                        m_config.max_num_seqs,
+                        ")");
+        OPENVINO_ASSERT(scheduler_output.m_scheduled_sequence_groups_ids.empty(),
+                        "Internal error: in vLLM scheduling, prompt phase is always first one");
 
-        // TODO: it currently does not handle beam search, where beam width should contribute to total number of "num running sequences"
+        // TODO: it currently does not handle beam search, where beam width should contribute to total number of "num
+        // running sequences"
         size_t num_running_sequence_groups = _num_running_sequence_groups(sequence_groups);
 
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
-            const bool recompute_evicted_sequences = sequence_group->get_num_processed_tokens() == 0 && !m_can_use_partial_preemption;
-            if ((!sequence_group->can_generate_tokens() || recompute_evicted_sequences) && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
+            const bool recompute_evicted_sequences =
+                sequence_group->get_num_processed_tokens() == 0 && !m_can_use_partial_preemption;
+            if ((!sequence_group->can_generate_tokens() || recompute_evicted_sequences) &&
+                !sequence_group->is_waiting() && !sequence_group->handle_stopped() &&
+                !sequence_group->handle_cancelled()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
-                // here we also assume that sequence must be scheduler in a single shot and has no already generated context
+                // here we also assume that sequence must be scheduler in a single shot and has no already generated
+                // context
                 if (!m_config.enable_prefix_caching)
                     OPENVINO_ASSERT(sequence_group->get_context_len() == 0);
-                size_t num_available_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
+                size_t num_available_tokens_in_megabatch =
+                    m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t sequence_len = sequence_group->get_num_available_tokens_for_batching();
 
                 // TODO: better handling
                 // e.g. return status that sequence is ignored and cannot be processed by current scheduling algorigthm
-                OPENVINO_ASSERT(m_config.max_num_batched_tokens >= sequence_len, "Sequence length (", sequence_len, ") is longer than max number of tokens in batch (", m_config.max_num_batched_tokens, ")");
+                OPENVINO_ASSERT(m_config.max_num_batched_tokens >= sequence_len,
+                                "Sequence length (",
+                                sequence_len,
+                                ") is longer than max number of tokens in batch (",
+                                m_config.max_num_batched_tokens,
+                                ")");
 
                 // if we limited by max_num_seqs condition
                 if (num_running_sequence_groups >= m_config.max_num_seqs)
@@ -483,7 +530,7 @@ private:
                 // apply KV cache limitations
                 size_t block_size = get_block_size();
                 const size_t num_required_blocks = (sequence_len + block_size - 1) / block_size;
-                while (!m_block_manager->can_allocate_blocks(num_required_blocks)){
+                while (!m_block_manager->can_allocate_blocks(num_required_blocks)) {
                     if (!_try_increase_cache()) {
                         break;
                     }
@@ -506,14 +553,18 @@ private:
                         scheduler_output.m_block_tables[seq_id] = m_block_manager->get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
 
-                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
+                        scheduler_output.m_score_aggregation_windows[seq_id] =
+                            _schedule_scores_to_aggregate(sequence_group);
 
-                        scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
-                        scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
+                        scheduler_output.m_xattention_thresholds[seq_id] =
+                            _schedule_xattention_threshold(sequence_group);
+                        scheduler_output.m_xattention_block_size =
+                            m_config.sparse_attention_config.xattention_block_size;
                         scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
 
                         scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
-                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
+                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] =
+                            _schedule_adaptive_rkv_evictable_size(sequence_group);
                     }
 
                     // update "is_prompt" flag
@@ -536,7 +587,8 @@ private:
         for (auto idx = 0; idx < sequence_groups.size(); idx++) {
             auto seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
             const auto& gen_config = sequence_groups[idx]->get_sampling_parameters();
-            seq_length = std::min(seq_length, sequence_groups[idx]->get_prompt_len() + sequence_groups[idx]->get_max_new_tokens());
+            seq_length = std::min(seq_length,
+                                  sequence_groups[idx]->get_prompt_len() + sequence_groups[idx]->get_max_new_tokens());
             size_t blocks_num = std::ceil(static_cast<float>(seq_length) / m_block_manager->get_block_size());
             if (gen_config.is_beam_search()) {
                 blocks_num *= gen_config.num_beams;
@@ -560,7 +612,9 @@ private:
         if (device.find("GPU") == std::string::npos) {
             m_block_manager->increase_kv_blocks_number(new_blocks_num);
         } else {
-            const size_t available_gpu_memory = utils::get_available_gpu_memory(m_cache_manager->get_device(), m_cache_manager->get_num_decoder_layers());
+            const size_t available_gpu_memory =
+                utils::get_available_gpu_memory(m_cache_manager->get_device(),
+                                                m_cache_manager->get_num_decoder_layers());
             const size_t block_size_in_bytes = m_cache_manager->get_block_size_in_bytes();
             size_t required_memory = (new_blocks_num - current_num_of_kv_blocks) * block_size_in_bytes;
             if (required_memory <= available_gpu_memory) {
@@ -588,7 +642,8 @@ private:
     }
 
     float _schedule_xattention_threshold(SequenceGroup::Ptr sequence_group) {
-        if (!(m_config.use_sparse_attention && m_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION)) {
+        if (!(m_config.use_sparse_attention &&
+              m_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION)) {
             return 0.0;
         }
         if (sequence_group->can_generate_tokens() && sequence_group->get_num_scheduled_tokens() == 1) {
@@ -597,9 +652,12 @@ private:
         }
 
         size_t prompt_len = sequence_group->get_prompt_len();
-        size_t num_processed_tokens_after_this_chunk = sequence_group->get_num_processed_tokens() + sequence_group->get_num_scheduled_tokens();
+        size_t num_processed_tokens_after_this_chunk =
+            sequence_group->get_num_processed_tokens() + sequence_group->get_num_scheduled_tokens();
 
-        if (num_processed_tokens_after_this_chunk < prompt_len && (prompt_len - num_processed_tokens_after_this_chunk) < m_config.sparse_attention_config.num_last_dense_tokens_in_prefill) {
+        if (num_processed_tokens_after_this_chunk < prompt_len &&
+            (prompt_len - num_processed_tokens_after_this_chunk) <
+                m_config.sparse_attention_config.num_last_dense_tokens_in_prefill) {
             // dense attention chunk, potentially overspilling to an extra chunk before that
             return 0.0;
         }
@@ -608,7 +666,8 @@ private:
     }
 
     size_t _schedule_adaptive_rkv_evictable_size(SequenceGroup::Ptr sequence_group) {
-        if (!(m_config.use_cache_eviction && m_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV)) {
+        if (!(m_config.use_cache_eviction &&
+              m_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV)) {
             return 0;
         }
         if (!sequence_group->can_generate_tokens()) {
@@ -622,15 +681,17 @@ private:
         }
 
         if (sequence_group->get_num_cached_tokens() % get_block_size() != 0) {
-            // Only request similarity computation once every block since eviction can only occur with a block granularity
+            // Only request similarity computation once every block since eviction can only occur with a block
+            // granularity
             return 0;
         }
 
-        size_t non_evictable_size = m_config.cache_eviction_config.get_max_cache_size() - m_config.cache_eviction_config.get_evictable_size();
+        size_t non_evictable_size =
+            m_config.cache_eviction_config.get_max_cache_size() - m_config.cache_eviction_config.get_evictable_size();
         OPENVINO_ASSERT(sequence_group->get_num_logical_blocks() * get_block_size() >= non_evictable_size);
 
         return sequence_group->get_num_logical_blocks() * get_block_size() - non_evictable_size;
     }
 };
 
-}
+}  // namespace ov::genai

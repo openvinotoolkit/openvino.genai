@@ -1,9 +1,8 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/image_generation/text2image_pipeline.hpp"
-
 #include "imwrite.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "progress_bar.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
@@ -52,7 +51,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     // Note that if there are device-specific properties that are needed, they can
     // be added using ov::device::properties groups, like this:
-    //ov::AnyMap properties = {ov::device::properties("CPU", ov::cache_dir("cpu_cache")),
+    // ov::AnyMap properties = {ov::device::properties("CPU", ov::cache_dir("cpu_cache")),
     //                         ov::device::properties("GPU", ov::cache_dir("gpu_cache")),
     //                         ov::device::properties("NPU", ov::cache_dir("npu_cache"))};
 

@@ -1,13 +1,12 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <vector>
 #include <string>
-
-#include "openvino/genai/image_generation/image2image_pipeline.hpp"
+#include <vector>
 
 #include "imwrite.hpp"
 #include "load_image.hpp"
+#include "openvino/genai/image_generation/image2image_pipeline.hpp"
 #include "progress_bar.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
@@ -36,16 +35,17 @@ int32_t main(int32_t argc, char* argv[]) try {
         pipelines.emplace_back(models_path);
         pipelines.back().reshape(num_images_per_prompt, height, width, guidance_scale);
         pipelines.back().compile(device);  // All models are compiled for NPU
-        //pipelines.back().compile("NPU", "NPU", "GPU");  // Compile for NPU and GPU, if needed
+        // pipelines.back().compile("NPU", "NPU", "GPU");  // Compile for NPU and GPU, if needed
 
         // Don't specify N, H, W, and guidance_scale in the properties map because they were made static
-        properties = ov::AnyMap{ov::genai::strength(0.8f),
-                                ov::genai::num_inference_steps(4)};
+        properties = ov::AnyMap{ov::genai::strength(0.8f), ov::genai::num_inference_steps(4)};
     } else {
         pipelines.emplace_back(models_path, device);
 
-        properties = ov::AnyMap{ov::genai::strength(0.8f),  // controls how initial image is noised after being converted to latent space. `1` means initial image is fully noised
-                                ov::genai::num_inference_steps(4)};
+        properties =
+            ov::AnyMap{ov::genai::strength(0.8f),  // controls how initial image is noised after being converted to
+                                                   // latent space. `1` means initial image is fully noised
+                       ov::genai::num_inference_steps(4)};
     }
 
     // Clone pipeline for concurrent usage
@@ -58,8 +58,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
         std::cout << "Starting to generate with prompt: '" << prompt << "'..." << std::endl;
 
-        threads.emplace_back([i, &pipe, prompt, image, &properties] () {
-
+        threads.emplace_back([i, &pipe, prompt, image, &properties]() {
             ov::Tensor generated_image = pipe.generate(prompt, image, properties);
 
             // writes `num_images_per_prompt` images by pattern name
@@ -75,11 +74,13 @@ int32_t main(int32_t argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

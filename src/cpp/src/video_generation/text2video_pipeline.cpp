@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/video_generation/text2video_pipeline.hpp"
+
 #include "video_generation/ltx_pipeline.hpp"
 
 using namespace ov::genai;

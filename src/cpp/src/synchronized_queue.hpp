@@ -3,13 +3,12 @@
 
 #pragma once
 
-#include <queue>
-#include <mutex>
 #include <condition_variable>
+#include <mutex>
+#include <queue>
 
 template <typename T>
-class SynchronizedQueue
-{
+class SynchronizedQueue {
     std::queue<T> m_queue;
     std::mutex m_mutex;
     std::condition_variable m_cv;
@@ -22,13 +21,17 @@ public:
 
     T back() {
         std::unique_lock<std::mutex> lock(m_mutex);
-        m_cv.wait(lock, [this]{return !m_queue.empty();});
+        m_cv.wait(lock, [this] {
+            return !m_queue.empty();
+        });
         return m_queue.back();
     }
 
     T pull() {
         std::unique_lock<std::mutex> lock(m_mutex);
-        m_cv.wait(lock, [this]{return !m_queue.empty();});
+        m_cv.wait(lock, [this] {
+            return !m_queue.empty();
+        });
         auto val = m_queue.front();
         m_queue.pop();
         return val;

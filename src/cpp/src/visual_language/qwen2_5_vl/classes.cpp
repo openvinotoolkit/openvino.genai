@@ -9,18 +9,17 @@ namespace ov::genai {
 
 namespace qwen2_5_vl_utils {
 
-std::pair<ov::Tensor, std::vector<int32_t>> get_window_index(
-    const std::vector<std::array<size_t, 3>>& grids_thw,
-    const ProcessorConfig& processor_config,
-    const VLMConfig& vlm_config
-) {
+std::pair<ov::Tensor, std::vector<int32_t>> get_window_index(const std::vector<std::array<size_t, 3>>& grids_thw,
+                                                             const ProcessorConfig& processor_config,
+                                                             const VLMConfig& vlm_config) {
     std::vector<int64_t> window_indices;
     std::vector<int32_t> cu_window_seqlens = {0};
     size_t window_index_id = 0;
 
     const size_t spatial_merge_size = processor_config.merge_size;
     const size_t spatial_merge_unit = spatial_merge_size * spatial_merge_size;
-    const size_t vit_merger_window_size = vlm_config.vision_config_window_size / spatial_merge_size / vlm_config.vision_config_patch_size;
+    const size_t vit_merger_window_size =
+        vlm_config.vision_config_window_size / spatial_merge_size / vlm_config.vision_config_patch_size;
 
     for (const auto& grid_thw : grids_thw) {
         size_t grid_t = grid_thw.at(0);
@@ -42,10 +41,12 @@ std::pair<ov::Tensor, std::vector<int32_t>> get_window_index(
                     int32_t valid_count = 0;
                     for (size_t h = 0; h < vit_merger_window_size; ++h) {
                         size_t gh = wh * vit_merger_window_size + h;
-                        if (gh >= llm_grid_h + pad_h) break;
+                        if (gh >= llm_grid_h + pad_h)
+                            break;
                         for (size_t w = 0; w < vit_merger_window_size; ++w) {
                             size_t gw = ww * vit_merger_window_size + w;
-                            if (gw >= llm_grid_w + pad_w) break;
+                            if (gw >= llm_grid_w + pad_w)
+                                break;
                             if (gh < llm_grid_h && gw < llm_grid_w) {
                                 int32_t idx = static_cast<int32_t>(t * llm_grid_h * llm_grid_w + gh * llm_grid_w + gw);
                                 window_indices.push_back(idx + window_index_id);
@@ -71,7 +72,7 @@ ov::Tensor get_window_attention_mask(const size_t hidden_states_size, const std:
     std::fill_n(window_mask_data, window_attention_mask.get_size(), -std::numeric_limits<float>::infinity());
 
     for (size_t i = 1; i < cu_window_seqlens.size(); ++i) {
-        size_t start = cu_window_seqlens[i-1];
+        size_t start = cu_window_seqlens[i - 1];
         size_t end = cu_window_seqlens[i];
         for (size_t row = start; row < end; ++row) {
             for (size_t col = start; col < end; ++col) {
@@ -89,49 +90,53 @@ ov::Tensor get_cu_window_seqlens(const std::vector<int32_t>& cu_window_seqlens) 
     return t_cu_seqlens;
 }
 
-} // namespace qwen2_5_vl_utils
+}  // namespace qwen2_5_vl_utils
 
-InputsEmbedderQwen2_5_VL::InputsEmbedderQwen2_5_VL(
-    const VLMConfig& vlm_config,
-    const std::filesystem::path& model_dir,
-    const std::string& device,
-    const ov::AnyMap device_config) :
-    InputsEmbedderQwen2VL(vlm_config, model_dir, device, device_config) {}
+InputsEmbedderQwen2_5_VL::InputsEmbedderQwen2_5_VL(const VLMConfig& vlm_config,
+                                                   const std::filesystem::path& model_dir,
+                                                   const std::string& device,
+                                                   const ov::AnyMap device_config)
+    : InputsEmbedderQwen2VL(vlm_config, model_dir, device, device_config) {}
 
-InputsEmbedderQwen2_5_VL::InputsEmbedderQwen2_5_VL(
-    const VLMConfig& vlm_config,
-    const ModelsMap& models_map,
-    const Tokenizer& tokenizer, 
-    const std::filesystem::path& config_dir_path,
-    const std::string& device,
-    const ov::AnyMap device_config) :
-    InputsEmbedderQwen2VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
+InputsEmbedderQwen2_5_VL::InputsEmbedderQwen2_5_VL(const VLMConfig& vlm_config,
+                                                   const ModelsMap& models_map,
+                                                   const Tokenizer& tokenizer,
+                                                   const std::filesystem::path& config_dir_path,
+                                                   const std::string& device,
+                                                   const ov::AnyMap device_config)
+    : InputsEmbedderQwen2VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL::run_video_image_embeddings_merger(
-    const std::vector<EncodedImage>& images, 
+    const std::vector<EncodedImage>& images,
     const std::vector<size_t>& images_sequence,
     const std::vector<EncodedVideo>& videos,
-    const std::vector<size_t>& videos_sequence
-) {
-    auto [reordered_image_embeds, reordered_images_grid_thw] = qwen2_vl_utils::reorder_image_embeds_and_grid_thw(images, images_sequence);
-    auto [reordered_video_embeds, reordered_videos_grid_thw] = qwen2_vl_utils::reorder_video_embeds_and_grid_thw(videos, videos_sequence);
+    const std::vector<size_t>& videos_sequence) {
+    auto [reordered_image_embeds, reordered_images_grid_thw] =
+        qwen2_vl_utils::reorder_image_embeds_and_grid_thw(images, images_sequence);
+    auto [reordered_video_embeds, reordered_videos_grid_thw] =
+        qwen2_vl_utils::reorder_video_embeds_and_grid_thw(videos, videos_sequence);
 
-    ov::Tensor concatenated_embeds = qwen2_vl_utils::concatenate_video_image_embeds(reordered_video_embeds, reordered_image_embeds);
+    ov::Tensor concatenated_embeds =
+        qwen2_vl_utils::concatenate_video_image_embeds(reordered_video_embeds, reordered_image_embeds);
 
     std::vector<std::array<size_t, 3>> reordered_vision_grid_thw;
     reordered_vision_grid_thw.reserve(reordered_videos_grid_thw.size() + reordered_images_grid_thw.size());
-    reordered_vision_grid_thw.insert(reordered_vision_grid_thw.end(), reordered_videos_grid_thw.begin(), reordered_videos_grid_thw.end());
-    reordered_vision_grid_thw.insert(reordered_vision_grid_thw.end(), reordered_images_grid_thw.begin(), reordered_images_grid_thw.end());
+    reordered_vision_grid_thw.insert(reordered_vision_grid_thw.end(),
+                                     reordered_videos_grid_thw.begin(),
+                                     reordered_videos_grid_thw.end());
+    reordered_vision_grid_thw.insert(reordered_vision_grid_thw.end(),
+                                     reordered_images_grid_thw.begin(),
+                                     reordered_images_grid_thw.end());
 
     ov::Tensor rotary_pos_emb = get_rotary_pos_emb(reordered_vision_grid_thw);
 
-    auto [window_index, cu_window_seqlens] = qwen2_5_vl_utils::get_window_index(
-        reordered_vision_grid_thw,
-        m_vision_encoder->get_processor_config(),
-        m_vlm_config
-    );
+    auto [window_index, cu_window_seqlens] =
+        qwen2_5_vl_utils::get_window_index(reordered_vision_grid_thw,
+                                           m_vision_encoder->get_processor_config(),
+                                           m_vlm_config);
 
-    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(
+        this->m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_embeds);
     if (m_with_cu_seqlens_input) {
@@ -139,11 +144,12 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL::run_video_image_embe
         ov::Tensor t_cu_window_seqlens = qwen2_5_vl_utils::get_cu_window_seqlens(cu_window_seqlens);
         vision_embeddings_merger.set_tensor("cu_seq_lens", cu_seq_lens);
         vision_embeddings_merger.set_tensor("cu_window_seqlens", t_cu_window_seqlens);
-    }
-    else {
-        ov::Tensor attention_mask = qwen2_vl_utils::get_attention_mask(reordered_images_grid_thw, reordered_videos_grid_thw);
+    } else {
+        ov::Tensor attention_mask =
+            qwen2_vl_utils::get_attention_mask(reordered_images_grid_thw, reordered_videos_grid_thw);
         size_t hidden_states_size = attention_mask.get_shape().at(1);
-        ov::Tensor window_attention_mask = qwen2_5_vl_utils::get_window_attention_mask(hidden_states_size, cu_window_seqlens);
+        ov::Tensor window_attention_mask =
+            qwen2_5_vl_utils::get_window_attention_mask(hidden_states_size, cu_window_seqlens);
         vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
         vision_embeddings_merger.set_tensor("window_attention_mask", window_attention_mask);
     }
@@ -164,7 +170,8 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL::run_video_image_embe
 
     ov::Shape video_fea_shape = ov::Shape({video_fea_count, out_vision_shape.at(1)});
     ov::Tensor res_video = ov::Tensor(processed_vision_embeds.get_element_type(), video_fea_shape);
-    OPENVINO_ASSERT(processed_vision_embeds.get_byte_size() >= res_video.get_byte_size(), "Vision embeds size should >= video embeds size.");
+    OPENVINO_ASSERT(processed_vision_embeds.get_byte_size() >= res_video.get_byte_size(),
+                    "Vision embeds size should >= video embeds size.");
     std::memcpy(res_video.data(), processed_vision_embeds.data(), res_video.get_byte_size());
 
     ov::Shape image_fea_shape({out_vision_shape.at(0) - video_fea_count, out_vision_shape.at(1)});
@@ -177,4 +184,4 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL::run_video_image_embe
     return {res_video, res_image};
 }
 
-} // namespace ov::genai
+}  // namespace ov::genai

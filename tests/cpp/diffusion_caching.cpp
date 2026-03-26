@@ -2,24 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
-#include <vector>
-#include <optional>
-#include <cstring>
-#include <string>
 
-#include "openvino/genai/taylorseer_config.hpp"
+#include <cstring>
+#include <optional>
+#include <string>
+#include <vector>
+
 #include "diffusion_caching/taylorseer_lite.hpp"
+#include "openvino/genai/taylorseer_config.hpp"
 
 using ov::genai::TaylorSeerCacheConfig;
 using ov::genai::TaylorSeerState;
 
-
 class TaylorSeerCacheConfigTest : public ::testing::Test {
 protected:
     void AssertConfigEquals(const TaylorSeerCacheConfig& config,
-                           size_t expected_interval,
-                           size_t expected_before,
-                           int expected_after) {
+                            size_t expected_interval,
+                            size_t expected_before,
+                            int expected_after) {
         EXPECT_EQ(config.cache_interval, expected_interval);
         EXPECT_EQ(config.disable_cache_before_step, expected_before);
         EXPECT_EQ(config.disable_cache_after_step, expected_after);
@@ -59,27 +59,22 @@ struct FullConstructorParams {
 };
 
 class TSFullConstructorTest : public TaylorSeerCacheConfigTest,
-                           public ::testing::WithParamInterface<FullConstructorParams> {};
+                              public ::testing::WithParamInterface<FullConstructorParams> {};
 
 TEST_P(TSFullConstructorTest, AllParameters) {
     auto params = GetParam();
     TaylorSeerCacheConfig config{params.cache_interval,
-                                  params.disable_cache_before_step,
-                                  params.disable_cache_after_step};
-    AssertConfigEquals(config, params.cache_interval,
-                      params.disable_cache_before_step,
-                      params.disable_cache_after_step);
+                                 params.disable_cache_before_step,
+                                 params.disable_cache_after_step};
+    AssertConfigEquals(config,
+                       params.cache_interval,
+                       params.disable_cache_before_step,
+                       params.disable_cache_after_step);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    CustomValues,
-    TSFullConstructorTest,
-    ::testing::Values(
-        FullConstructorParams{3, 6, -2},
-        FullConstructorParams{3, 1, 24}
-    )
-);
-
+INSTANTIATE_TEST_SUITE_P(CustomValues,
+                         TSFullConstructorTest,
+                         ::testing::Values(FullConstructorParams{3, 6, -2}, FullConstructorParams{3, 1, 24}));
 
 struct PartialConstructorParams {
     size_t cache_interval;
@@ -102,16 +97,13 @@ TEST_P(TSPartialConstructorTest, PartialParameters) {
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    PartialValues,
-    TSPartialConstructorTest,
-    ::testing::Values(
-        // Only cache_interval (should use default disable_cache_before_step = 6)
-        PartialConstructorParams{7, std::nullopt, 6},
-        // Both parameters
-        PartialConstructorParams{3, 0, 0}
-    )
-);
+INSTANTIATE_TEST_SUITE_P(PartialValues,
+                         TSPartialConstructorTest,
+                         ::testing::Values(
+                             // Only cache_interval (should use default disable_cache_before_step = 6)
+                             PartialConstructorParams{7, std::nullopt, 6},
+                             // Both parameters
+                             PartialConstructorParams{3, 0, 0}));
 
 // Parameterized test for to_string with various values
 struct ToStringParams {
@@ -120,32 +112,26 @@ struct ToStringParams {
     int disable_cache_after_step;
 };
 
-class TSToStringTest : public TaylorSeerCacheConfigTest,
-                       public ::testing::WithParamInterface<ToStringParams> {};
+class TSToStringTest : public TaylorSeerCacheConfigTest, public ::testing::WithParamInterface<ToStringParams> {};
 
 TEST_P(TSToStringTest, FormatsCorrectly) {
     auto params = GetParam();
     TaylorSeerCacheConfig config{params.cache_interval,
-                                  params.disable_cache_before_step,
-                                  params.disable_cache_after_step};
+                                 params.disable_cache_before_step,
+                                 params.disable_cache_after_step};
     std::string result = config.to_string();
 
     EXPECT_NE(result.find("TaylorSeerCacheConfig"), std::string::npos);
     EXPECT_NE(result.find("cache_interval: " + std::to_string(params.cache_interval)), std::string::npos);
-    EXPECT_NE(result.find("disable_cache_before_step: " + std::to_string(params.disable_cache_before_step)), std::string::npos);
-    EXPECT_NE(result.find("disable_cache_after_step: " + std::to_string(params.disable_cache_after_step)), std::string::npos);
+    EXPECT_NE(result.find("disable_cache_before_step: " + std::to_string(params.disable_cache_before_step)),
+              std::string::npos);
+    EXPECT_NE(result.find("disable_cache_after_step: " + std::to_string(params.disable_cache_after_step)),
+              std::string::npos);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    VariousConfigurations,
-    TSToStringTest,
-    ::testing::Values(
-        ToStringParams{3, 4, -2},
-        ToStringParams{5, 2, 26}
-    )
-);
-
-
+INSTANTIATE_TEST_SUITE_P(VariousConfigurations,
+                         TSToStringTest,
+                         ::testing::Values(ToStringParams{3, 4, -2}, ToStringParams{5, 2, 26}));
 
 class TaylorSeerStateTest : public ::testing::Test {
 protected:
@@ -187,7 +173,6 @@ TEST_F(TaylorSeerStateTest, SecondUpdateComputesDerivative) {
     AssertTensorsEqual(state.get_taylor_factor(1), expected_derivative);
 }
 
-
 struct ShouldComputeParams {
     size_t current_step;
     size_t cache_interval;
@@ -198,43 +183,37 @@ struct ShouldComputeParams {
     std::string description;
 };
 
-class TSShouldComputeTest : public TaylorSeerStateTest,
-                            public ::testing::WithParamInterface<ShouldComputeParams> {};
+class TSShouldComputeTest : public TaylorSeerStateTest, public ::testing::WithParamInterface<ShouldComputeParams> {};
 
 TEST_P(TSShouldComputeTest, ComputeDecisions) {
     auto params = GetParam();
-    TaylorSeerCacheConfig config{params.cache_interval,
-                                  params.disable_before,
-                                  params.disable_after};
+    TaylorSeerCacheConfig config{params.cache_interval, params.disable_before, params.disable_after};
     TaylorSeerState state(config, params.num_inference_steps);
     bool result = state.should_compute(params.current_step);
     EXPECT_EQ(result, params.expected_result) << params.description;
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    VariousScenarios,
-    TSShouldComputeTest,
-    ::testing::Values(
-        // Warm-up phase
-        ShouldComputeParams{0, 3, 6, -2, 50, true, "Step 0 in warm-up"},
-        ShouldComputeParams{5, 3, 6, -2, 50, true, "Step 5 in warm-up"},
+INSTANTIATE_TEST_SUITE_P(VariousScenarios,
+                         TSShouldComputeTest,
+                         ::testing::Values(
+                             // Warm-up phase
+                             ShouldComputeParams{0, 3, 6, -2, 50, true, "Step 0 in warm-up"},
+                             ShouldComputeParams{5, 3, 6, -2, 50, true, "Step 5 in warm-up"},
 
-        // Cache interval logic
-        ShouldComputeParams{6, 3, 6, -2, 50, false, "Step 6 - predict"},
-        ShouldComputeParams{8, 3, 6, -2, 50, true, "Step 8 - compute"},
-        ShouldComputeParams{12, 5, 6, -2, 50, false, "Step 12 - predict"},
+                             // Cache interval logic
+                             ShouldComputeParams{6, 3, 6, -2, 50, false, "Step 6 - predict"},
+                             ShouldComputeParams{8, 3, 6, -2, 50, true, "Step 8 - compute"},
+                             ShouldComputeParams{12, 5, 6, -2, 50, false, "Step 12 - predict"},
 
-        // Negative disable_after_step
-        ShouldComputeParams{46, 3, 6, -2, 50, false, "Step 46 < 50 - 2"},
-        ShouldComputeParams{48, 3, 6, -2, 50, true, "Step 48 >= 50 - 2"},
-        ShouldComputeParams{49, 3, 6, -2, 50, true, "Step 49 >= 50 - 2"},
+                             // Negative disable_after_step
+                             ShouldComputeParams{46, 3, 6, -2, 50, false, "Step 46 < 50 - 2"},
+                             ShouldComputeParams{48, 3, 6, -2, 50, true, "Step 48 >= 50 - 2"},
+                             ShouldComputeParams{49, 3, 6, -2, 50, true, "Step 49 >= 50 - 2"},
 
-        // Positive disable_after_step
-        ShouldComputeParams{25, 3, 6, 48, 50, false, "Step 25 < 48"},
-        ShouldComputeParams{48, 3, 6, 48, 50, true, "Step 48 >= 48"},
-        ShouldComputeParams{49, 3, 6, 48, 50, true, "Step 49 >= 48"}
-    )
-);
+                             // Positive disable_after_step
+                             ShouldComputeParams{25, 3, 6, 48, 50, false, "Step 25 < 48"},
+                             ShouldComputeParams{48, 3, 6, 48, 50, true, "Step 48 >= 48"},
+                             ShouldComputeParams{49, 3, 6, 48, 50, true, "Step 49 >= 48"}));
 
 TEST_F(TaylorSeerStateTest, DisableCacheBeforeStepGreaterThanNumSteps) {
     TaylorSeerCacheConfig config{3, 100, -2};

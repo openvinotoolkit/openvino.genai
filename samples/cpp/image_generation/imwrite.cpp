@@ -1,12 +1,12 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "imwrite.hpp"
+
 #include <fstream>
+#include <iostream>
 #include <limits>
 #include <string>
-#include <iostream>
-
-#include "imwrite.hpp"
 
 #include "openvino/core/except.hpp"
 
@@ -76,10 +76,12 @@ unsigned char info[40] = {
 void imwrite_single_image(const std::string& name, ov::Tensor image, bool convert_bgr2rgb) {
     const ov::Shape shape = image.get_shape();
     const size_t width = shape[2], height = shape[1], channels = shape[3];
-    OPENVINO_ASSERT(image.get_element_type() == ov::element::u8 &&
-        shape.size() == 4 && shape[0] == 1 && channels == 3,
-        "Image of u8 type and [1, H, W, 3] shape is expected.",
-        "Given image has shape ", shape, " and element type ", image.get_element_type());
+    OPENVINO_ASSERT(image.get_element_type() == ov::element::u8 && shape.size() == 4 && shape[0] == 1 && channels == 3,
+                    "Image of u8 type and [1, H, W, 3] shape is expected.",
+                    "Given image has shape ",
+                    shape,
+                    " and element type ",
+                    image.get_element_type());
 
     std::ofstream output_file(name, std::ofstream::binary);
     OPENVINO_ASSERT(output_file.is_open(), "Failed to open the output BMP image path");
@@ -131,19 +133,22 @@ void imwrite_single_image(const std::string& name, ov::Tensor image, bool conver
     }
 }
 
-} // namespace
-
+}  // namespace
 
 void imwrite(const std::string& name, ov::Tensor images, bool convert_bgr2rgb) {
     const ov::Shape shape = images.get_shape();
     OPENVINO_ASSERT(images.get_element_type() == ov::element::u8 && shape.size() == 4,
-        "Image of u8 type and [1, H, W, 3] shape is expected.",
-        "Given image has shape ", shape, " and element type ", images.get_element_type());
+                    "Image of u8 type and [1, H, W, 3] shape is expected.",
+                    "Given image has shape ",
+                    shape,
+                    " and element type ",
+                    images.get_element_type());
 
     const ov::Shape img_shape = {1, shape[1], shape[2], shape[3]};
     uint8_t* img_data = images.data<uint8_t>();
 
-    for (int img_num = 0, num_images = shape[0], img_size = ov::shape_size(img_shape); img_num < num_images; ++img_num, img_data += img_size) {
+    for (int img_num = 0, num_images = shape[0], img_size = ov::shape_size(img_shape); img_num < num_images;
+         ++img_num, img_data += img_size) {
         char img_name[25];
         sprintf(img_name, name.c_str(), img_num);
 

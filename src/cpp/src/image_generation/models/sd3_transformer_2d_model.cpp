@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
-#include "image_generation/models/sd3transformer_2d_inference_dynamic.hpp"
-#include "image_generation/models/sd3transformer_2d_inference_static_bs1.hpp"
 
 #include <fstream>
 
+#include "image_generation/models/sd3transformer_2d_inference_dynamic.hpp"
+#include "image_generation/models/sd3transformer_2d_inference_static_bs1.hpp"
 #include "json_utils.hpp"
-#include "utils.hpp"
 #include "lora/helper.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -45,8 +45,9 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::filesystem::path& root_d
 SD3Transformer2DModel::SD3Transformer2DModel(const std::string& model,
                                              const Tensor& weights,
                                              const Config& config,
-                                             const size_t vae_scale_factor) :
-    m_config(config), m_vae_scale_factor(vae_scale_factor) {
+                                             const size_t vae_scale_factor)
+    : m_config(config),
+      m_vae_scale_factor(vae_scale_factor) {
     m_model = utils::singleton_core().read_model(model, weights);
 }
 
@@ -55,18 +56,19 @@ SD3Transformer2DModel::SD3Transformer2DModel(const std::string& model,
                                              const Config& config,
                                              const size_t vae_scale_factor,
                                              const std::string& device,
-                                             const ov::AnyMap& properties) :
-    SD3Transformer2DModel(model, weights, config, vae_scale_factor) {
+                                             const ov::AnyMap& properties)
+    : SD3Transformer2DModel(model, weights, config, vae_scale_factor) {
     compile(device, properties);
 }
 
 SD3Transformer2DModel::SD3Transformer2DModel(const SD3Transformer2DModel&) = default;
 
 SD3Transformer2DModel SD3Transformer2DModel::clone() {
-    OPENVINO_ASSERT((m_model != nullptr) ^ (m_impl != nullptr), "SD3Transformer2DModel must have exactly one of m_model or m_impl initialized");
+    OPENVINO_ASSERT((m_model != nullptr) ^ (m_impl != nullptr),
+                    "SD3Transformer2DModel must have exactly one of m_model or m_impl initialized");
 
     SD3Transformer2DModel cloned = *this;
-    
+
     if (m_model) {
         cloned.m_model = m_model->clone();
     } else if (m_impl) {
@@ -110,8 +112,7 @@ SD3Transformer2DModel& SD3Transformer2DModel::compile(const std::string& device,
 
     if (device.find("NPU") != std::string::npos) {
         m_impl = std::make_shared<SD3Transformer2DModel::InferenceStaticBS1>();
-    }
-    else {
+    } else {
         m_impl = std::make_shared<SD3Transformer2DModel::InferenceDynamic>();
     }
 
@@ -125,7 +126,7 @@ SD3Transformer2DModel& SD3Transformer2DModel::compile(const std::string& device,
 
 void SD3Transformer2DModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
     OPENVINO_ASSERT(m_impl, "Transformer model must be compiled first");
-    if(adapters) {
+    if (adapters) {
         m_impl->set_adapters(m_adapter_controller, *adapters);
     }
 }

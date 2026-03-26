@@ -3,23 +3,18 @@
 
 #pragma once
 
-#include "openvino/genai/continuous_batching_pipeline.hpp"
-#include "visual_language/inputs_embedder.hpp"
-#include "visual_language/vision_registry.hpp"
-
 #include "continuous_batching/cache_manager.hpp"
-#include "sampling/sampler.hpp"
 #include "continuous_batching/model_runner.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "continuous_batching/threaded_streamer.hpp"
+#include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "sampling/sampler.hpp"
+#include "visual_language/inputs_embedder.hpp"
+#include "visual_language/vision_registry.hpp"
 
 namespace ov::genai {
 
-enum class ModelInputType {
-    TOKENS,
-    EMBEDDINGS
-};
-
+enum class ModelInputType { TOKENS, EMBEDDINGS };
 
 /**
  * Base interface for all continuous batching based pipelines
@@ -43,10 +38,10 @@ protected:
 
         ~PerfTime() {
             // std::cout << "Inference requests aggregated statistic: " << std::endl;
-            // std::cout << "Paged attention % of inference execution: " << (m_paged_attention_time_ms / m_infer_total_ms) * 100 << std::endl;
-            // std::cout << "MatMul % of inference execution: " << (m_matmul_time_ms / m_infer_total_ms) * 100 << std::endl;
-            // std::cout << "Total inference execution secs: " << m_infer_total_ms / 1000. << std::endl;
-            // std::cout << std::endl;
+            // std::cout << "Paged attention % of inference execution: " << (m_paged_attention_time_ms /
+            // m_infer_total_ms) * 100 << std::endl; std::cout << "MatMul % of inference execution: " <<
+            // (m_matmul_time_ms / m_infer_total_ms) * 100 << std::endl; std::cout << "Total inference execution secs: "
+            // << m_infer_total_ms / 1000. << std::endl; std::cout << std::endl;
         }
     } m_perf;
 
@@ -71,6 +66,7 @@ protected:
     std::shared_ptr<VisionRegistry> m_vision_registry;
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
+
 public:
     GenerationConfig get_config() const;
     void set_config(const GenerationConfig& config);
@@ -80,12 +76,13 @@ public:
     /**
      * Adds requests to awaiting queue using encoded inputs
      */
-    virtual GenerationHandle add_request(uint64_t request_id,
-                                         const ov::Tensor& input_ids,
-                                         const GenerationConfig& sampling_params,
-                                         std::optional<ov::Tensor> token_type_ids = std::nullopt,
-                                         std::optional<ov::Tensor> prompt_ids = std::nullopt,
-                                         std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) = 0;
+    virtual GenerationHandle add_request(
+        uint64_t request_id,
+        const ov::Tensor& input_ids,
+        const GenerationConfig& sampling_params,
+        std::optional<ov::Tensor> token_type_ids = std::nullopt,
+        std::optional<ov::Tensor> prompt_ids = std::nullopt,
+        std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) = 0;
 
     /**
      * Adds request to running queue based on string input
@@ -127,29 +124,27 @@ public:
     /**
      * Performs monolitic generation based on encoded prompts
      */
-    virtual std::vector<EncodedGenerationResult>
-    generate(const std::vector<ov::Tensor>& input_ids,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer,
-             const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
-             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
-             const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
-             const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) = 0;
+    virtual std::vector<EncodedGenerationResult> generate(
+        const std::vector<ov::Tensor>& input_ids,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer,
+        const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
+        const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
+        const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list =
+            std::nullopt) = 0;
 
     /**
      * Performs monolitic generation based on text prompts
      */
-    std::vector<GenerationResult>
-    generate(const std::vector<std::string>& prompts,
-             std::vector<GenerationConfig> sampling_params,
-             const StreamerVariant& streamer);
+    std::vector<GenerationResult> generate(const std::vector<std::string>& prompts,
+                                           std::vector<GenerationConfig> sampling_params,
+                                           const StreamerVariant& streamer);
 
-    virtual std::vector<VLMDecodedResults>
-    generate(
-             const std::vector<std::string>& prompts,
-             const std::vector<std::vector<ov::Tensor>>& rgbs,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer);
+    virtual std::vector<VLMDecodedResults> generate(const std::vector<std::string>& prompts,
+                                                    const std::vector<std::vector<ov::Tensor>>& rgbs,
+                                                    const std::vector<GenerationConfig>& sampling_params,
+                                                    const StreamerVariant& streamer);
 
     virtual std::vector<VLMDecodedResults> generate(const std::vector<std::string>& prompts,
                                                     const std::vector<std::vector<ov::Tensor>>& images,
@@ -157,21 +152,17 @@ public:
                                                     const std::vector<GenerationConfig>& sampling_params,
                                                     const StreamerVariant& streamer);
 
-    
     /**
      * Performs monolitic generation based on ChatHistory objects
      */
-    std::vector<GenerationResult>
-    generate(const std::vector<ChatHistory>& histories,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer);
+    std::vector<GenerationResult> generate(const std::vector<ChatHistory>& histories,
+                                           const std::vector<GenerationConfig>& sampling_params,
+                                           const StreamerVariant& streamer);
 
-    virtual std::vector<VLMDecodedResults>
-    generate(
-             const std::vector<ChatHistory>& histories,
-             const std::vector<std::vector<ov::Tensor>>& rgbs,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer);
+    virtual std::vector<VLMDecodedResults> generate(const std::vector<ChatHistory>& histories,
+                                                    const std::vector<std::vector<ov::Tensor>>& rgbs,
+                                                    const std::vector<GenerationConfig>& sampling_params,
+                                                    const StreamerVariant& streamer);
 
     virtual std::vector<VLMDecodedResults> generate(const std::vector<ChatHistory>& histories,
                                                     const std::vector<std::vector<ov::Tensor>>& images,
@@ -181,8 +172,9 @@ public:
 
     /**
      * Starts chat with a given system prompt
-     * 
-     * In chat scenario prompts passed to `generate` method are accumulated inside the pipeline until `finish_chat` is called
+     *
+     * In chat scenario prompts passed to `generate` method are accumulated inside the pipeline until `finish_chat` is
+     * called
      */
     void start_chat(const std::string& system_message);
 
@@ -193,4 +185,4 @@ public:
 
     ~IContinuousBatchingPipeline();
 };
-}
+}  // namespace ov::genai

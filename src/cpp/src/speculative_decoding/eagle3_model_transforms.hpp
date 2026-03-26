@@ -7,9 +7,8 @@
 #include <vector>
 
 #include "openvino/genai/generation_config.hpp"
-
-#include "openvino/runtime/core.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/runtime/core.hpp"
 
 namespace ov {
 namespace genai {

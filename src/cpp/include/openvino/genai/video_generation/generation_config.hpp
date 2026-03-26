@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include <string>
 #include <optional>
+#include <string>
 
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "openvino/genai/lora_adapter.hpp"
@@ -27,8 +27,8 @@ struct VideoGenerationConfig {
     size_t num_videos_per_prompt = 1;
 
     /**
-     * Random generator to initialize latents, add noise to initial images in case of image to image / inpainting pipelines
-     * By default, random generator is initialized as `CppStdGenerator(generation_config.rng_seed)`
+     * Random generator to initialize latents, add noise to initial images in case of image to image / inpainting
+     * pipelines By default, random generator is initialized as `CppStdGenerator(generation_config.rng_seed)`
      * @note If `generator` is specified, it has higher priority than `rng_seed` parameter.
      */
     std::shared_ptr<Generator> generator = nullptr;

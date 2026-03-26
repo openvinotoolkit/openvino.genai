@@ -3,11 +3,11 @@
 
 #pragma once
 
-#include "openvino/genai/video_generation/generation_config.hpp"
 #include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 #include "openvino/genai/image_generation/scheduler.hpp"
 #include "openvino/genai/image_generation/t5_encoder_model.hpp"
 #include "openvino/genai/video_generation/autoencoder_kl_ltx_video.hpp"
+#include "openvino/genai/video_generation/generation_config.hpp"
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
 
 namespace ov::genai {
@@ -39,14 +39,14 @@ public:
      * @note If you want to compile each model on a dedicated device or with specific properties, you can create
      * models individually and then combine a final pipeline using static methods
      */
-    Text2VideoPipeline(const std::filesystem::path& models_dir, const std::string& device, const AnyMap& properties = {});
+    Text2VideoPipeline(const std::filesystem::path& models_dir,
+                       const std::string& device,
+                       const AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    Text2VideoPipeline(const std::filesystem::path& models_path,
-                       const std::string& device,
-                       Properties&&... properties)
-        : Text2VideoPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    Text2VideoPipeline(const std::filesystem::path& models_path, const std::string& device, Properties&&... properties)
+        : Text2VideoPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     /**
      * Creates LTX pipeline from individual models
@@ -86,8 +86,9 @@ public:
      * @param num_frames A number of video frames to generate per 'generate()' call
      * @param height A height of resulting video
      * @param width A width of resulting video
-     * @param guidance_scale A guidance scale. Note, that it's important whether guidance_scale > 1, which affects whether negative prompts
-     * are used or not. For example, all values > 1 are the same for reshape perspective and may vary in subsequent 'generate()' calls.
+     * @param guidance_scale A guidance scale. Note, that it's important whether guidance_scale > 1, which affects
+     * whether negative prompts are used or not. For example, all values > 1 are the same for reshape perspective and
+     * may vary in subsequent 'generate()' calls.
      * @note If pipeline has been already compiled, it cannot be reshaped and an exception is thrown.
      *
      * Example how to reshape SD3 or Flux models for specific max sequence length:
@@ -96,10 +97,15 @@ public:
      *  ov::genai::VideoGenerationConfig default_config = pipe.get_generation_config();
      *  default_config.max_sequence_length = 30;
      *  pipe.set_generation_config(default_config);
-     *  pipe.reshape(1, 25, 512, 512, default_config.guidance_scale); // reshape will bypass `max_sequence_length` to T5 encoder model
+     *  pipe.reshape(1, 25, 512, 512, default_config.guidance_scale); // reshape will bypass `max_sequence_length` to T5
+     * encoder model
      * @endcode
      */
-    void reshape(const int64_t num_videos_per_prompt, const int64_t num_frames, const int64_t height, const int64_t width, const float guidance_scale);
+    void reshape(const int64_t num_videos_per_prompt,
+                 const int64_t num_frames,
+                 const int64_t height,
+                 const int64_t width,
+                 const float guidance_scale);
 
     /**
      * Compiles video generation pipeline for a given device
@@ -123,9 +129,7 @@ public:
                  const ov::AnyMap& properties = {});
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<void, Properties...> compile(
-            const std::string& device,
-            Properties&&... properties) {
+    ov::util::EnableIfAllStringAny<void, Properties...> compile(const std::string& device, Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -136,25 +140,26 @@ public:
                                                                 Properties&&... properties) {
         return compile(text_encode_device,
                        denoise_device,
-                       vae_device, ov::AnyMap{std::forward<Properties>(properties)...});
+                       vae_device,
+                       ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
     /**
      * Generates video(s) based on prompt and other video generation parameters
      * @param positive_prompt Prompt to generate video(s) from
-     * @param properties Video generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
+     * @param properties Video generation parameters specified as properties. Values in 'properties' override default
+     * value for generation parameters.
      * @returns VideoGenerationResult with:
      *   - video: a tensor shaped as [num_videos_per_prompt, num_frames, height, width, 3]
-     *   - performance_stat: ov::genai::VideoGenerationPerfMetrics with timing and other performance metrics for the generation run.
+     *   - performance_stat: ov::genai::VideoGenerationPerfMetrics with timing and other performance metrics for the
+     * generation run.
      */
 
     VideoGenerationResult generate(const std::string& positive_prompt, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<VideoGenerationResult, Properties...> generate(
-        const std::string& positive_prompt,
-        Properties&&... properties
-    ) {
+    ov::util::EnableIfAllStringAny<VideoGenerationResult, Properties...> generate(const std::string& positive_prompt,
+                                                                                  Properties&&... properties) {
         return generate(positive_prompt, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -162,8 +167,10 @@ public:
      * Performs latent video decoding. It can be useful to use within 'callback' which accepts current latent video
      * @param latent A latent video
      * @returns VideoGenerationResult with:
-     *   - video: a video tensor decoded with VAE auto encoder shaped as [num_videos_per_prompt, num_frames, height, width, 3]
-     *   - performance_stat: ov::genai::VideoGenerationPerfMetrics with timing and other performance metrics for the generation run.
+     *   - video: a video tensor decoded with VAE auto encoder shaped as [num_videos_per_prompt, num_frames, height,
+     * width, 3]
+     *   - performance_stat: ov::genai::VideoGenerationPerfMetrics with timing and other performance metrics for the
+     * generation run.
      */
     VideoGenerationResult decode(const ov::Tensor& latent);
 

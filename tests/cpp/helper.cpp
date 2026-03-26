@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "helper.hpp"
+
 #include "openvino/op/concat.hpp"
 
 std::shared_ptr<ov::Model> get_dummy_model(ov::Core core, size_t num_layers) {

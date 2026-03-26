@@ -1,24 +1,25 @@
 // Copyright (C) 2024-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "tokenizer/add_second_input_pass.hpp"
-#include "tokenizer/tokenizers_path.hpp"
-#include "gguf_utils/gguf_tokenizer.hpp"
 #include <gtest/gtest.h>
-#include <openvino/pass/manager.hpp>
-#include <openvino/op/parameter.hpp>
-#include <openvino/op/constant.hpp>
-#include <openvino/op/concat.hpp>
-#include <openvino/op/shape_of.hpp>
-#include <openvino/op/slice.hpp>
-#include <openvino/op/select.hpp>
-#include <openvino/op/equal.hpp>
-#include <openvino/op/maximum.hpp>
-#include <openvino/op/broadcast.hpp>
-#include <openvino/op/multiply.hpp>
+
 #include <filesystem>
 #include <memory>
+#include <openvino/op/broadcast.hpp>
+#include <openvino/op/concat.hpp>
+#include <openvino/op/constant.hpp>
+#include <openvino/op/equal.hpp>
+#include <openvino/op/maximum.hpp>
+#include <openvino/op/multiply.hpp>
+#include <openvino/op/parameter.hpp>
+#include <openvino/op/select.hpp>
+#include <openvino/op/shape_of.hpp>
+#include <openvino/op/slice.hpp>
+#include <openvino/pass/manager.hpp>
 
+#include "gguf_utils/gguf_tokenizer.hpp"
+#include "tokenizer/add_second_input_pass.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 
 using namespace ov::genai;
 using namespace ov;
@@ -34,11 +35,11 @@ static void initlize_shared_ov_tokenziers() {
     ScopedVar env_manager(openvino_genai_path.string());
     std::filesystem::path ov_tokenizer_filesystem_path;
 
-    #ifdef _WIN32
-            const wchar_t* ov_tokenizer_path = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
-    #else
-            const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
-    #endif
+#ifdef _WIN32
+    const wchar_t* ov_tokenizer_path = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
+#else
+    const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
+#endif
 
     if (std::filesystem::exists(ov_tokenizer_path)) {
         shared_object_ov_tokenizers = load_shared_object(ov_tokenizer_path);
@@ -55,14 +56,14 @@ static FactoryCreateType get_factory_create_func() {
     }
 
     if (shared_object_ov_tokenizers != nullptr) {
-        create_func = reinterpret_cast<FactoryCreateType>(get_symbol(shared_object_ov_tokenizers, "create_tokenizer_node"));
+        create_func =
+            reinterpret_cast<FactoryCreateType>(get_symbol(shared_object_ov_tokenizers, "create_tokenizer_node"));
         return create_func;
     }
 
     // If we made it here then we failed to load the shared object
     OPENVINO_THROW("Failed to load the shared object for tokenizer factory creation function.");
 }
-
 
 TEST(AddSecondInputTest, add_second_input_test_1) {
     std::shared_ptr<Model> model;
@@ -73,30 +74,38 @@ TEST(AddSecondInputTest, add_second_input_test_1) {
 
     auto ragged_begins = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{0});
     auto ragged_ends = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{3});
-    
+
     auto vocab_begins = std::make_shared<v0::Constant>(element::i32, Shape{2}, std::vector<int32_t>{0, 1});
     auto vocab_ends = std::make_shared<v0::Constant>(element::i32, Shape{2}, std::vector<int32_t>{1, 2});
     auto vocab_chars = std::make_shared<v0::Constant>(element::u8, Shape{2}, std::vector<uint8_t>{'a', 'b'});
-    
+
     auto merges_begins = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{0});
     auto merges_ends = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{3});
     auto merges_chars = std::make_shared<v0::Constant>(element::u8, Shape{3}, std::vector<uint8_t>{'a', 'b', 'c'});
 
     // Compose the input vector for BPETokenizer (11 inputs for minimal case)
-    std::vector<ov::Output<ov::Node>> bpe_inputs = {
-        ragged_begins, ragged_ends, outputs[0], outputs[1], outputs[2],
-        vocab_begins, vocab_ends, vocab_chars,
-        merges_begins, merges_ends, merges_chars
-    };
+    std::vector<ov::Output<ov::Node>> bpe_inputs = {ragged_begins,
+                                                    ragged_ends,
+                                                    outputs[0],
+                                                    outputs[1],
+                                                    outputs[2],
+                                                    vocab_begins,
+                                                    vocab_ends,
+                                                    vocab_chars,
+                                                    merges_begins,
+                                                    merges_ends,
+                                                    merges_chars};
 
     auto BPETokenizer = get_factory_create_func()("BPETokenizer", bpe_inputs, {});
 
     auto max_length = std::make_shared<v0::Constant>(element::i32, Shape{}, std::vector<int32_t>({10}));
     // Create trunc_side constant: "right" as u8 chars
-    auto trunc_side = std::make_shared<v0::Constant>(
-        element::u8, Shape{5}, std::vector<uint8_t>{'r', 'i', 'g', 'h', 't'}
-    );
-    auto truncate = get_factory_create_func()("Truncate", {BPETokenizer[0], BPETokenizer[1], BPETokenizer[2], max_length, trunc_side}, {});
+    auto trunc_side =
+        std::make_shared<v0::Constant>(element::u8, Shape{5}, std::vector<uint8_t>{'r', 'i', 'g', 'h', 't'});
+    auto truncate =
+        get_factory_create_func()("Truncate",
+                                  {BPETokenizer[0], BPETokenizer[1], BPETokenizer[2], max_length, trunc_side},
+                                  {});
 
     int32_t eos_token_id = 42;
     auto eos_begins = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{0});
@@ -107,34 +116,34 @@ TEST(AddSecondInputTest, add_second_input_test_1) {
     auto ids = std::make_shared<v0::Constant>(element::i32, Shape{2}, std::vector<int32_t>{0, 1});
 
     // Prepare CombineSegment inputs: [begins1, ends1, data1, begins2, ends2, data2, ..., ids]
-    ov::OutputVector combine_inputs = {
-        // Main BPETokenizer outputs which went through Truncate
-        truncate[0], truncate[1], truncate[2],
-        // EOS token tensors
-        eos_begins, eos_ends, eos_token,
-        // IDs tensor
-        ids
-    };
+    ov::OutputVector combine_inputs = {// Main BPETokenizer outputs which went through Truncate
+                                       truncate[0],
+                                       truncate[1],
+                                       truncate[2],
+                                       // EOS token tensors
+                                       eos_begins,
+                                       eos_ends,
+                                       eos_token,
+                                       // IDs tensor
+                                       ids};
 
     auto CombineSegments = get_factory_create_func()("CombineSegments", {combine_inputs}, {});
     model = std::make_shared<ov::Model>(OutputVector{CombineSegments}, ParameterVector{parameter_1});
-    
+
     // Add a valid post_processor to model's rt_info
     static const std::string PROCESSED_POST_PROCESSOR_NAME = "processed_post_processor_template";
     // Signature for single input [first_seq, eos]
     std::vector<int> input_signature = {-1, eos_token_id};
     // Signature for pair [first_seq, eos_seq, second_seq, eos]
     std::vector<int> pair_signature = {-1, eos_token_id, -1, eos_token_id};
-    
-    nlohmann::json post_processor = {
-        {"single", {{"ids", input_signature}}},
-        {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}
-    };
+
+    nlohmann::json post_processor = {{"single", {{"ids", input_signature}}},
+                                     {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}};
 
     model->get_rt_info()[PROCESSED_POST_PROCESSOR_NAME] = post_processor.dump();
 
     std::ostringstream pass_errors;
-    
+
     ov::pass::Manager manager;
     manager.register_pass<ov::genai::AddSecondInputPass>(shared_object_ov_tokenizers, pass_errors);
     manager.run_passes(model);
@@ -146,7 +155,8 @@ TEST(AddSecondInputTest, add_second_input_test_1) {
     // ASSERT_EQ(results.size(), 1);
     auto combine_segments_node = results[0]->get_input_node_shared_ptr(0);
     ASSERT_NE(combine_segments_node, nullptr);
-    ASSERT_EQ(combine_segments_node->get_input_size(), combine_inputs.size() + 6); // 6 extra inputs for the second input and eos token
+    ASSERT_EQ(combine_segments_node->get_input_size(),
+              combine_inputs.size() + 6);  // 6 extra inputs for the second input and eos token
 }
 
 // Additional negative tests for AddSecondInputPass error cases
@@ -156,16 +166,14 @@ static bool run_add_second_input_pass(std::shared_ptr<ov::Model> model, std::ost
     ov::pass::Manager manager;
     manager.register_pass<ov::genai::AddSecondInputPass>(shared_object_ov_tokenizers, pass_errors);
     manager.run_passes(model);
-    
+
     return pass_errors.str().empty();
 }
 
 // Helper to create a minimal valid model for negative tests
-static std::shared_ptr<ov::Model> make_minimal_model(
-    bool with_combine_segments = true,
-    bool with_string_unpack = true,
-    std::vector<ov::Output<ov::Node>>* combine_inputs_out = nullptr)
-{
+static std::shared_ptr<ov::Model> make_minimal_model(bool with_combine_segments = true,
+                                                     bool with_string_unpack = true,
+                                                     std::vector<ov::Output<ov::Node>>* combine_inputs_out = nullptr) {
     using namespace ov::op;
     auto parameter_1 = std::make_shared<v0::Parameter>(element::string, Shape{2});
     OutputVector outputs;
@@ -183,26 +191,33 @@ static std::shared_ptr<ov::Model> make_minimal_model(
     auto merges_ends = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{3});
     auto merges_chars = std::make_shared<v0::Constant>(element::u8, Shape{3}, std::vector<uint8_t>{'a', 'b', 'c'});
 
-    std::vector<ov::Output<ov::Node>> bpe_inputs = {
-        ragged_begins, ragged_ends, outputs[0], outputs[1], outputs[2],
-        vocab_begins, vocab_ends, vocab_chars,
-        merges_begins, merges_ends, merges_chars
-    };
+    std::vector<ov::Output<ov::Node>> bpe_inputs = {ragged_begins,
+                                                    ragged_ends,
+                                                    outputs[0],
+                                                    outputs[1],
+                                                    outputs[2],
+                                                    vocab_begins,
+                                                    vocab_ends,
+                                                    vocab_chars,
+                                                    merges_begins,
+                                                    merges_ends,
+                                                    merges_chars};
     auto BPETokenizer = get_factory_create_func()("BPETokenizer", bpe_inputs, {});
     auto max_length = std::make_shared<v0::Constant>(element::i32, Shape{}, std::vector<int32_t>({10}));
-    auto trunc_side = std::make_shared<v0::Constant>(element::u8, Shape{5}, std::vector<uint8_t>{'r', 'i', 'g', 'h', 't'});
-    auto truncate = get_factory_create_func()("Truncate", {BPETokenizer[0], BPETokenizer[1], BPETokenizer[2], max_length, trunc_side}, {});
+    auto trunc_side =
+        std::make_shared<v0::Constant>(element::u8, Shape{5}, std::vector<uint8_t>{'r', 'i', 'g', 'h', 't'});
+    auto truncate =
+        get_factory_create_func()("Truncate",
+                                  {BPETokenizer[0], BPETokenizer[1], BPETokenizer[2], max_length, trunc_side},
+                                  {});
     int32_t eos_token_id = 42;
     auto eos_begins = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{0});
     auto eos_ends = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{1});
     auto eos_token = std::make_shared<v0::Constant>(element::i32, Shape{1}, std::vector<int32_t>{eos_token_id});
     auto ids = std::make_shared<v0::Constant>(element::i32, Shape{2}, std::vector<int32_t>{0, 1});
-    ov::OutputVector combine_inputs = {
-        truncate[0], truncate[1], truncate[2],
-        eos_begins, eos_ends, eos_token,
-        ids
-    };
-    if (combine_inputs_out) *combine_inputs_out = combine_inputs;
+    ov::OutputVector combine_inputs = {truncate[0], truncate[1], truncate[2], eos_begins, eos_ends, eos_token, ids};
+    if (combine_inputs_out)
+        *combine_inputs_out = combine_inputs;
     std::shared_ptr<ov::Node> combine_node;
     if (with_combine_segments)
         combine_node = get_factory_create_func()("CombineSegments", {combine_inputs}, {})[0].get_node_shared_ptr();
@@ -249,10 +264,8 @@ TEST(AddSecondInputTest, error_parse_inputs_data_not_constant) {
     static const std::string PROCESSED_POST_PROCESSOR_NAME = "processed_post_processor_template";
     std::vector<int> input_signature = {-1, 42};
     std::vector<int> pair_signature = {-1, 42, -1, 42};
-    nlohmann::json post_processor = {
-        {"single", {{"ids", input_signature}}},
-        {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}
-    };
+    nlohmann::json post_processor = {{"single", {{"ids", input_signature}}},
+                                     {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}};
     model2->get_rt_info()[PROCESSED_POST_PROCESSOR_NAME] = post_processor.dump();
     std::ostringstream pass_errors;
     bool ok = run_add_second_input_pass(model2, pass_errors);
@@ -275,10 +288,8 @@ TEST(AddSecondInputTest, error_parse_inputs_begin_not_truncate) {
     static const std::string PROCESSED_POST_PROCESSOR_NAME = "processed_post_processor_template";
     std::vector<int> input_signature = {-1, 42};
     std::vector<int> pair_signature = {-1, 42, -1, 42};
-    nlohmann::json post_processor = {
-        {"single", {{"ids", input_signature}}},
-        {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}
-    };
+    nlohmann::json post_processor = {{"single", {{"ids", input_signature}}},
+                                     {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}};
     model2->get_rt_info()[PROCESSED_POST_PROCESSOR_NAME] = post_processor.dump();
     std::ostringstream pass_errors;
     bool ok = run_add_second_input_pass(model2, pass_errors);
@@ -304,7 +315,9 @@ TEST(AddSecondInputTest, error_post_processor_no_pair) {
     std::ostringstream pass_errors;
     bool ok = run_add_second_input_pass(model, pass_errors);
     ASSERT_FALSE(ok);
-    ASSERT_NE(pass_errors.str().find("Could not add second input. post_processor does not contain input signature for paired input"), std::string::npos);
+    ASSERT_NE(pass_errors.str().find(
+                  "Could not add second input. post_processor does not contain input signature for paired input"),
+              std::string::npos);
 }
 
 // 7. parse_and_assert_postprocessor: input_signature mismatch
@@ -314,10 +327,8 @@ TEST(AddSecondInputTest, error_post_processor_input_signature_mismatch) {
     std::vector<int> input_signature = {-1, 42};
     std::vector<int> wrong_input_signature = {-1, 99};
     std::vector<int> pair_signature = {-1, 42, -1, 42};
-    nlohmann::json post_processor = {
-        {"single", {{"ids", wrong_input_signature}}},
-        {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}
-    };
+    nlohmann::json post_processor = {{"single", {{"ids", wrong_input_signature}}},
+                                     {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}};
     model->get_rt_info()[PROCESSED_POST_PROCESSOR_NAME] = post_processor.dump();
     std::ostringstream pass_errors;
     bool ok = run_add_second_input_pass(model, pass_errors);
@@ -329,16 +340,15 @@ TEST(AddSecondInputTest, error_post_processor_pair_not_widening) {
     auto model = make_minimal_model();
     static const std::string PROCESSED_POST_PROCESSOR_NAME = "processed_post_processor_template";
     std::vector<int> input_signature = {-1, 42};
-    std::vector<int> pair_signature = {99, 42, -1, 42}; // first two do not match input_signature
-    nlohmann::json post_processor = {
-        {"single", {{"ids", input_signature}}},
-        {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}
-    };
+    std::vector<int> pair_signature = {99, 42, -1, 42};  // first two do not match input_signature
+    nlohmann::json post_processor = {{"single", {{"ids", input_signature}}},
+                                     {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}};
     model->get_rt_info()[PROCESSED_POST_PROCESSOR_NAME] = post_processor.dump();
     std::ostringstream pass_errors;
     bool ok = run_add_second_input_pass(model, pass_errors);
     ASSERT_FALSE(ok);
-    ASSERT_NE(pass_errors.str().find("Paired inputs are allowed only when it's widening the single input"), std::string::npos);
+    ASSERT_NE(pass_errors.str().find("Paired inputs are allowed only when it's widening the single input"),
+              std::string::npos);
 }
 
 // 9. parse_and_assert_postprocessor: not exactly 2 sequence inputs in pair
@@ -346,11 +356,9 @@ TEST(AddSecondInputTest, error_post_processor_pair_not_two_sequences) {
     auto model = make_minimal_model();
     static const std::string PROCESSED_POST_PROCESSOR_NAME = "processed_post_processor_template";
     std::vector<int> input_signature = {-1, 42};
-    std::vector<int> pair_signature = {-1, 42, 42, 42}; // only one -1
-    nlohmann::json post_processor = {
-        {"single", {{"ids", input_signature}}},
-        {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}
-    };
+    std::vector<int> pair_signature = {-1, 42, 42, 42};  // only one -1
+    nlohmann::json post_processor = {{"single", {{"ids", input_signature}}},
+                                     {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}};
     model->get_rt_info()[PROCESSED_POST_PROCESSOR_NAME] = post_processor.dump();
     std::ostringstream pass_errors;
     bool ok = run_add_second_input_pass(model, pass_errors);
@@ -362,17 +370,16 @@ TEST(AddSecondInputTest, error_post_processor_pair_not_two_sequences) {
 TEST(AddSecondInputTest, error_post_processor_single_not_one_sequence) {
     auto model = make_minimal_model();
     static const std::string PROCESSED_POST_PROCESSOR_NAME = "processed_post_processor_template";
-    std::vector<int> input_signature = {42, 42}; // no -1
+    std::vector<int> input_signature = {42, 42};  // no -1
     std::vector<int> pair_signature = {42, 42, -1, 42};
-    nlohmann::json post_processor = {
-        {"single", {{"ids", input_signature}}},
-        {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}
-    };
+    nlohmann::json post_processor = {{"single", {{"ids", input_signature}}},
+                                     {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}};
     model->get_rt_info()[PROCESSED_POST_PROCESSOR_NAME] = post_processor.dump();
     std::ostringstream pass_errors;
     bool ok = run_add_second_input_pass(model, pass_errors);
     ASSERT_FALSE(ok);
-    ASSERT_NE(pass_errors.str().find("Could not add second input. Input signature from rt_info does not "), std::string::npos);
+    ASSERT_NE(pass_errors.str().find("Could not add second input. Input signature from rt_info does not "),
+              std::string::npos);
 }
 
 // 11. get_new_inputs: post_processor["pair"] missing "type_ids"
@@ -383,7 +390,7 @@ TEST(AddSecondInputTest, error_post_processor_pair_missing_type_ids) {
     std::vector<int> pair_signature = {-1, 42, -1, 42};
     nlohmann::json post_processor = {
         {"single", {{"ids", input_signature}}},
-        {"pair", {{"ids", pair_signature}}} // no type_ids
+        {"pair", {{"ids", pair_signature}}}  // no type_ids
     };
     model->get_rt_info()[PROCESSED_POST_PROCESSOR_NAME] = post_processor.dump();
     std::ostringstream pass_errors;
@@ -402,13 +409,13 @@ TEST(AddSecondInputTest, error_no_target_inputs_for_parameter) {
     static const std::string PROCESSED_POST_PROCESSOR_NAME = "processed_post_processor_template";
     std::vector<int> input_signature = {-1, 42};
     std::vector<int> pair_signature = {-1, 42, -1, 42};
-    nlohmann::json post_processor = {
-        {"single", {{"ids", input_signature}}},
-        {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}
-    };
+    nlohmann::json post_processor = {{"single", {{"ids", input_signature}}},
+                                     {"pair", {{"ids", pair_signature}, {"type_ids", std::vector<int>{0, 0, 1, 1}}}}};
     model->get_rt_info()[PROCESSED_POST_PROCESSOR_NAME] = post_processor.dump();
     std::ostringstream pass_errors;
     bool ok = run_add_second_input_pass(model, pass_errors);
     ASSERT_FALSE(ok);
-    ASSERT_NE(pass_errors.str().find("Could not add second input. Input signature from rt_info does not match to the CombineSegments node inputs"), std::string::npos);
+    ASSERT_NE(pass_errors.str().find("Could not add second input. Input signature from rt_info does not match to the "
+                                     "CombineSegments node inputs"),
+              std::string::npos);
 }

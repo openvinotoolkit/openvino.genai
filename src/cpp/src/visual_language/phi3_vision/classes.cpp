@@ -4,10 +4,9 @@
 
 #include "visual_language/phi3_vision/classes.hpp"
 
-#include "visual_language/clip.hpp"
 #include "openvino/opsets/opset13.hpp"
-
 #include "utils.hpp"
+#include "visual_language/clip.hpp"
 
 namespace ov::genai {
 
@@ -98,24 +97,20 @@ void bicubic_resize_phi3(const clip_image_u8& img, clip_image_u8& dst, int targe
         const int y = static_cast<int>(fy);
         const float dy = fy - y;
 
-        const int y_coords[4] = {
-            clip_coord(y - 1, 0, ny - 1),
-            clip_coord(y, 0, ny - 1),
-            clip_coord(y + 1, 0, ny - 1),
-            clip_coord(y + 2, 0, ny - 1)
-        };
+        const int y_coords[4] = {clip_coord(y - 1, 0, ny - 1),
+                                 clip_coord(y, 0, ny - 1),
+                                 clip_coord(y + 1, 0, ny - 1),
+                                 clip_coord(y + 2, 0, ny - 1)};
 
         for (int j = 0; j < target_width; j++) {
             const float fx = tx * j;
             const int x = static_cast<int>(fx);
             const float dx = fx - x;
 
-            const int x_coords[4] = {
-                clip_coord(x - 1, 0, nx - 1),
-                clip_coord(x, 0, nx - 1),
-                clip_coord(x + 1, 0, nx - 1),
-                clip_coord(x + 2, 0, nx - 1)
-            };
+            const int x_coords[4] = {clip_coord(x - 1, 0, nx - 1),
+                                     clip_coord(x, 0, nx - 1),
+                                     clip_coord(x + 1, 0, nx - 1),
+                                     clip_coord(x + 2, 0, nx - 1)};
 
             const int dst_base_idx = (i * target_width + j) * 3;
 
@@ -124,12 +119,10 @@ void bicubic_resize_phi3(const clip_image_u8& img, clip_image_u8& dst, int targe
                     const int row_base = y_coords[jj] * nx;
                     const uint8_t* row_ptr = &img.buf[row_base * 3 + k];
 
-                    const float p[4] = {
-                        static_cast<float>(row_ptr[x_coords[0] * 3]),
-                        static_cast<float>(row_ptr[x_coords[1] * 3]),
-                        static_cast<float>(row_ptr[x_coords[2] * 3]),
-                        static_cast<float>(row_ptr[x_coords[3] * 3])
-                    };
+                    const float p[4] = {static_cast<float>(row_ptr[x_coords[0] * 3]),
+                                        static_cast<float>(row_ptr[x_coords[1] * 3]),
+                                        static_cast<float>(row_ptr[x_coords[2] * 3]),
+                                        static_cast<float>(row_ptr[x_coords[3] * 3])};
 
                     const float a0 = p[1];
                     const float d0 = p[0] - a0;
@@ -152,9 +145,7 @@ void bicubic_resize_phi3(const clip_image_u8& img, clip_image_u8& dst, int targe
 
                 const float result = a0 + dy * (a1 + dy * (a2 + dy * a3));
 
-                dst.buf[dst_base_idx + k] = static_cast<uint8_t>(
-                    std::min(std::max(std::round(result), 0.0f), 255.0f)
-                );
+                dst.buf[dst_base_idx + k] = static_cast<uint8_t>(std::min(std::max(std::round(result), 0.0f), 255.0f));
             }
         }
     }
@@ -184,9 +175,9 @@ ov::Tensor channels_first(const ov::Tensor& _1hw3) {
     float* _13hw_data = _13hw.data<float>();
 
     float* dst_channels[3] = {
-        _13hw_data,              // R channel
-        _13hw_data + hw,         // G channel
-        _13hw_data + 2 * hw      // B channel
+        _13hw_data,          // R channel
+        _13hw_data + hw,     // G channel
+        _13hw_data + 2 * hw  // B channel
     };
 
     for (size_t row = 0; row < height; ++row) {
@@ -195,9 +186,9 @@ ov::Tensor channels_first(const ov::Tensor& _1hw3) {
         for (size_t col = 0; col < width; ++col) {
             const size_t dst_offset = row_offset + col;
             const size_t src_offset = col * 3;
-            dst_channels[0][dst_offset] = src_row[src_offset];     // R
-            dst_channels[1][dst_offset] = src_row[src_offset + 1]; // G
-            dst_channels[2][dst_offset] = src_row[src_offset + 2]; // B
+            dst_channels[0][dst_offset] = src_row[src_offset];      // R
+            dst_channels[1][dst_offset] = src_row[src_offset + 1];  // G
+            dst_channels[2][dst_offset] = src_row[src_offset + 2];  // B
         }
     }
     return _13hw;
@@ -226,12 +217,12 @@ ov::Tensor slice_image(const ov::Tensor& image) {
                 for (size_t c = 0; c < C; ++c) {
                     for (size_t i = 0; i < INPUT_IMAGE_SIZE; ++i) {
                         for (size_t j = 0; j < INPUT_IMAGE_SIZE; ++j) {
-                            size_t src_idx = n * C * H * W + c * H * W + (h * INPUT_IMAGE_SIZE + i) * W + (w * INPUT_IMAGE_SIZE + j);
+                            size_t src_idx =
+                                n * C * H * W + c * H * W + (h * INPUT_IMAGE_SIZE + i) * W + (w * INPUT_IMAGE_SIZE + j);
                             size_t dst_idx = n * num_h_slices * num_w_slices * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
-                                                h * num_w_slices * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
-                                                w * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
-                                                c * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
-                                                i * INPUT_IMAGE_SIZE + j;
+                                             h * num_w_slices * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             w * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             c * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE + i * INPUT_IMAGE_SIZE + j;
                             reshaped_data[dst_idx] = image_data[src_idx];
                         }
                     }
@@ -252,13 +243,12 @@ ov::Tensor slice_image(const ov::Tensor& image) {
                     for (size_t i = 0; i < INPUT_IMAGE_SIZE; ++i) {
                         for (size_t j = 0; j < INPUT_IMAGE_SIZE; ++j) {
                             size_t src_idx = n * num_h_slices * num_w_slices * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
-                                                h * num_w_slices * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
-                                                w * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
-                                                c * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
-                                                i * INPUT_IMAGE_SIZE + j;
-                            size_t dst_idx = (n * num_h_slices * num_w_slices + h * num_w_slices + w) * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
-                                                c * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
-                                                i * INPUT_IMAGE_SIZE + j;
+                                             h * num_w_slices * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             w * C * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             c * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE + i * INPUT_IMAGE_SIZE + j;
+                            size_t dst_idx = (n * num_h_slices * num_w_slices + h * num_w_slices + w) * C *
+                                                 INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE +
+                                             c * INPUT_IMAGE_SIZE * INPUT_IMAGE_SIZE + i * INPUT_IMAGE_SIZE + j;
                             permuted_data[dst_idx] = reshaped_data[src_idx];
                         }
                     }
@@ -276,7 +266,9 @@ ov::Tensor concatenate_batch(const ov::Tensor& float_first, const ov::Tensor& fl
     OPENVINO_ASSERT(shape_first.at(1) == shape_second.at(1), "Channels must be the same");
     OPENVINO_ASSERT(shape_first.at(2) == shape_second.at(2), "Height must be the same");
     OPENVINO_ASSERT(shape_first.at(3) == shape_second.at(3), "Width must be the same");
-    ov::Tensor concatenated{ov::element::f32, {shape_first.at(0) + shape_second.at(0), shape_first.at(1), shape_first.at(2), shape_first.at(3)}};
+    ov::Tensor concatenated{
+        ov::element::f32,
+        {shape_first.at(0) + shape_second.at(0), shape_first.at(1), shape_first.at(2), shape_first.at(3)}};
     float* concatenated_data = concatenated.data<float>();
     auto first_data = float_first.data<float>();
     auto second_data = float_second.data<float>();
@@ -301,7 +293,9 @@ ov::Tensor pad_to_max_num_crops_tensor(const ov::Tensor& nchw, size_t max_crops)
 std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& image, const ProcessorConfig& config) {
     ov::Tensor hd_image = HD_transform(image, config.phi3_v.num_crops);
     ImageSize image_size{hd_image.get_shape().at(2), hd_image.get_shape().at(1)};
-    clip_image_u8 img{int(hd_image.get_shape().at(2)), int(hd_image.get_shape().at(1)), {hd_image.data<uint8_t>(), hd_image.data<uint8_t>() + hd_image.get_size()}};
+    clip_image_u8 img{int(hd_image.get_shape().at(2)),
+                      int(hd_image.get_shape().at(1)),
+                      {hd_image.data<uint8_t>(), hd_image.data<uint8_t>() + hd_image.get_size()}};
     clip_image_u8 dst;
     bicubic_resize_phi3(img, dst, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE);
     ov::Tensor global_image{ov::element::u8, {1, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE, 3}, dst.buf.data()};
@@ -353,15 +347,18 @@ std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& imag
 //             .reshape(num_images, h_crop * H // 2, w_crop * H // 2, 4 * C)  # n_img, h_crop*12, w_crop*12, 4096
 //         return {"o": image_features_hd}
 // model = Model()
-// example_input = {"image_features": torch.rand((4, 576, 1024), dtype=torch.float32), "h_crop": torch.tensor(2, dtype=torch.int32), "w_crop": torch.tensor(2, dtype=torch.int32)}
-// ov_model = ov.convert_model(model, example_input=example_input, input=ov.PartialShape([-1, 576, 1024]))
+// example_input = {"image_features": torch.rand((4, 576, 1024), dtype=torch.float32), "h_crop": torch.tensor(2,
+// dtype=torch.int32), "w_crop": torch.tensor(2, dtype=torch.int32)} ov_model = ov.convert_model(model,
+// example_input=example_input, input=ov.PartialShape([-1, 576, 1024]))
 // # ov_model.outputs[0].get_tensor().set_names({"out"})
 // ov.save_model(ov_model, "reshape_hd_patches_2x2merge.xml")
 // inp = np.arange(4 * 576 * 1024).reshape([4, 576, 1024])
 // test = ov.Core().compile_model(ov_model, "CPU")
 // print(ov_model)
 // print(test([inp, 2, 2])["o"].flatten())
-// 2. Run https://github.com/slyalin/openvino_devtools/blob/bcd4a51b1354b24b2316ac3e1c77b2f87ae7a497/openvino_devtools/ov2py.py with the IR.
+// 2. Run
+// https://github.com/slyalin/openvino_devtools/blob/bcd4a51b1354b24b2316ac3e1c77b2f87ae7a497/openvino_devtools/ov2py.py
+// with the IR.
 // 3. Translate the printed Python implementation to C++.
 ov::CompiledModel create_hd_feature_transformer() {
     using namespace ov;
@@ -439,12 +436,13 @@ ov::CompiledModel create_hd_feature_transformer() {
     auto t68 = make_shared<Concat>(NodeVector{t45, t61, t67, t37}, 0);
     auto t69 = make_shared<Reshape>(t54, t68, false);
     shared_ptr<Model> model = make_shared<Model>(make_shared<Result>(t69), ParameterVector{t0, t1, t2});
-    return utils::singleton_core().compile_model(
-        model, "CPU"
-    );
+    return utils::singleton_core().compile_model(model, "CPU");
 }
 
-ov::Tensor reshape_hd_patches_2x2merge(const ov::Tensor& image_features, size_t h_crop, size_t w_crop, InferRequest& hd_feature_transformer) {
+ov::Tensor reshape_hd_patches_2x2merge(const ov::Tensor& image_features,
+                                       size_t h_crop,
+                                       size_t w_crop,
+                                       InferRequest& hd_feature_transformer) {
     ov::Shape shape = image_features.get_shape();
     OPENVINO_ASSERT(3 == shape.size());
     OPENVINO_ASSERT(24 * 24 == shape.at(1));
@@ -468,23 +466,24 @@ ov::Tensor add_image_newline(const ov::Tensor& image_features_hd, const std::vec
     for (size_t batch_id = 0; batch_id < nhwc.at(0); ++batch_id) {
         for (size_t row_id = 0; row_id < nhwc.at(1); ++row_id) {
             for (size_t col_id = 0; col_id < nhwc.at(2); ++col_id) {
-                std::copy_n(
-                    in + batch_id * nhwc.at(1) * nhwc.at(2) * nhwc.at(3) + row_id * nhwc.at(2) * nhwc.at(3) + col_id * nhwc.at(3),
-                    nhwc.at(3),
-                    out + batch_id * nhwc.at(1) * (nhwc.at(2) + 1) * nhwc.at(3) + row_id * (nhwc.at(2) + 1) * nhwc.at(3) + col_id * nhwc.at(3)
-                );
+                std::copy_n(in + batch_id * nhwc.at(1) * nhwc.at(2) * nhwc.at(3) + row_id * nhwc.at(2) * nhwc.at(3) +
+                                col_id * nhwc.at(3),
+                            nhwc.at(3),
+                            out + batch_id * nhwc.at(1) * (nhwc.at(2) + 1) * nhwc.at(3) +
+                                row_id * (nhwc.at(2) + 1) * nhwc.at(3) + col_id * nhwc.at(3));
             }
-            std::copy(
-                sub_GN.begin(),
-                sub_GN.end(),
-                out + batch_id * nhwc.at(1) * (nhwc.at(2) + 1) * nhwc.at(3) + row_id * (nhwc.at(2) + 1) * nhwc.at(3) + nhwc.at(2) * nhwc.at(3)
-            );
+            std::copy(sub_GN.begin(),
+                      sub_GN.end(),
+                      out + batch_id * nhwc.at(1) * (nhwc.at(2) + 1) * nhwc.at(3) +
+                          row_id * (nhwc.at(2) + 1) * nhwc.at(3) + nhwc.at(2) * nhwc.at(3));
         }
     }
     return image_features_hd_new_line;
 }
 
-ov::Tensor concatenate_2d(const ov::Tensor& first_1lf, const std::vector<float>& second_f, const ov::Tensor& third_1lf) {
+ov::Tensor concatenate_2d(const ov::Tensor& first_1lf,
+                          const std::vector<float>& second_f,
+                          const ov::Tensor& third_1lf) {
     size_t first_l = first_1lf.get_shape().at(1);
     constexpr size_t second_l = 1;
     size_t third_l = third_1lf.get_shape().at(1);
@@ -499,12 +498,20 @@ ov::Tensor concatenate_2d(const ov::Tensor& first_1lf, const std::vector<float>&
 }
 
 // image_features.resized_source: (num_crops+1, 24*24, 1024)
-ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest& hd_feature_transformer, const std::vector<float>& sub_GN, const std::vector<float>& glb_GN, ov::InferRequest& vision_projection) {
+ov::Tensor hd_feature_transform(const EncodedImage& image_features,
+                                InferRequest& hd_feature_transformer,
+                                const std::vector<float>& sub_GN,
+                                const std::vector<float>& glb_GN,
+                                ov::InferRequest& vision_projection) {
     const ov::Shape& image_features_shape = image_features.resized_source.get_shape();
-    ov::Tensor global_image_features{ov::element::f32, {1, image_features_shape.at(1), image_features_shape.at(2)}, image_features.resized_source.data<float>()};
+    ov::Tensor global_image_features{ov::element::f32,
+                                     {1, image_features_shape.at(1), image_features_shape.at(2)},
+                                     image_features.resized_source.data<float>()};
     // global feature can be viewed as a special HD case with num_crops 1x1
-    ov::Tensor global_image_features_hd = reshape_hd_patches_2x2merge(global_image_features, 1, 1, hd_feature_transformer);
-    ov::Tensor global_image_features_hd_newline = add_image_newline(global_image_features_hd, sub_GN);  // [1,12*(12+1),4096]
+    ov::Tensor global_image_features_hd =
+        reshape_hd_patches_2x2merge(global_image_features, 1, 1, hd_feature_transformer);
+    ov::Tensor global_image_features_hd_newline =
+        add_image_newline(global_image_features_hd, sub_GN);  // [1,12*(12+1),4096]
     constexpr size_t INPUT_IMAGE_SIZE = 336;
     size_t h_crop = image_features.resized_source_size.height / INPUT_IMAGE_SIZE;
     size_t w_crop = image_features.resized_source_size.width / INPUT_IMAGE_SIZE;
@@ -512,14 +519,16 @@ ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest
 
     // NOTE: real num_crops is padded
     // (num_crops, 24*24, 1024)
-    ov::Tensor sub_image_features{ov::element::f32, {
-        num_crops,
-        image_features_shape.at(1),
-        image_features_shape.at(2)
-    }, image_features.resized_source.data<float>() + image_features_shape.at(1) * image_features_shape.at(2)};
-    ov::Tensor sub_image_features_hd = reshape_hd_patches_2x2merge(sub_image_features, h_crop, w_crop, hd_feature_transformer);  // [1, 24, 24, 4096]
-    ov::Tensor sub_image_features_hd_newline = add_image_newline(sub_image_features_hd, sub_GN);  // [1,h_crop*12*(w_crop*12+1), 4096]
-    ov::Tensor image_embeddings = concatenate_2d(sub_image_features_hd_newline, glb_GN, global_image_features_hd_newline);  // [1,l,4096]
+    ov::Tensor sub_image_features{
+        ov::element::f32,
+        {num_crops, image_features_shape.at(1), image_features_shape.at(2)},
+        image_features.resized_source.data<float>() + image_features_shape.at(1) * image_features_shape.at(2)};
+    ov::Tensor sub_image_features_hd =
+        reshape_hd_patches_2x2merge(sub_image_features, h_crop, w_crop, hd_feature_transformer);  // [1, 24, 24, 4096]
+    ov::Tensor sub_image_features_hd_newline =
+        add_image_newline(sub_image_features_hd, sub_GN);  // [1,h_crop*12*(w_crop*12+1), 4096]
+    ov::Tensor image_embeddings =
+        concatenate_2d(sub_image_features_hd_newline, glb_GN, global_image_features_hd_newline);  // [1,l,4096]
     vision_projection.set_input_tensor(image_embeddings);
     vision_projection.infer();
     ov::Tensor out = vision_projection.get_output_tensor();
@@ -528,7 +537,8 @@ ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest
     return res;
 }
 
-std::shared_ptr<ov::Node> create_bicubic_resize(std::shared_ptr<ov::Node> input, std::shared_ptr<ov::Node> target_size) {
+std::shared_ptr<ov::Node> create_bicubic_resize(std::shared_ptr<ov::Node> input,
+                                                std::shared_ptr<ov::Node> target_size) {
     using namespace ov::op;
 
     // Convert to float32 before interpolation (required for bicubic)
@@ -570,10 +580,14 @@ std::shared_ptr<ov::Node> create_mean_scale(std::shared_ptr<ov::Node> input_u8_o
 
     // Step 2: Create mean and std constants [R, G, B] - broadcasted along channel dimension
     // For NHWC format, we need shape [1, 1, 1, 3] to broadcast correctly
-    auto mean_const = v0::Constant::create(ov::element::f32, ov::Shape{1, 1, 1, 3},
-        std::vector<float>{config.image_mean[0], config.image_mean[1], config.image_mean[2]});
-    auto std_const = v0::Constant::create(ov::element::f32, ov::Shape{1, 1, 1, 3},
-        std::vector<float>{config.image_std[0], config.image_std[1], config.image_std[2]});
+    auto mean_const =
+        v0::Constant::create(ov::element::f32,
+                             ov::Shape{1, 1, 1, 3},
+                             std::vector<float>{config.image_mean[0], config.image_mean[1], config.image_mean[2]});
+    auto std_const =
+        v0::Constant::create(ov::element::f32,
+                             ov::Shape{1, 1, 1, 3},
+                             std::vector<float>{config.image_std[0], config.image_std[1], config.image_std[2]});
 
     // Step 3: (x/255.0 - mean)
     auto mean_subtracted = std::make_shared<v1::Subtract>(divided_by_255, mean_const);
@@ -598,11 +612,11 @@ std::shared_ptr<ov::Node> create_slice_image(std::shared_ptr<ov::Node> input_nch
     // Input: (N, C, H, W) -> Output: (N*num_h_slices*num_w_slices, C, 336, 336)
     auto shape_node = std::make_shared<v3::ShapeOf>(input_nchw);
     // Index constants for gathering shape dimensions
-    auto axis_0 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0}); // N
-    auto axis_1 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1}); // C
-    auto axis_2 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{2}); // H
-    auto axis_3 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{3}); // W
-    auto axis_0_node = v0::Constant::create(ov::element::i64, ov::Shape{}, std::vector<int64_t>{0}); // Gather axis
+    auto axis_0 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});      // N
+    auto axis_1 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});      // C
+    auto axis_2 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{2});      // H
+    auto axis_3 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{3});      // W
+    auto axis_0_node = v0::Constant::create(ov::element::i64, ov::Shape{}, std::vector<int64_t>{0});  // Gather axis
 
     auto N = std::make_shared<v8::Gather>(shape_node, axis_0, axis_0_node);
     auto C = std::make_shared<v8::Gather>(shape_node, axis_1, axis_0_node);
@@ -634,7 +648,8 @@ std::shared_ptr<ov::Node> create_slice_image(std::shared_ptr<ov::Node> input_nch
     return final_reshape;
 }
 
-std::shared_ptr<ov::Node> create_concatenate_batch(std::shared_ptr<ov::Node> global_processed, std::shared_ptr<ov::Node> hd_sliced) {
+std::shared_ptr<ov::Node> create_concatenate_batch(std::shared_ptr<ov::Node> global_processed,
+                                                   std::shared_ptr<ov::Node> hd_sliced) {
     using namespace ov::op;
 
     // Concatenate along batch dimension (axis 0)
@@ -644,13 +659,15 @@ std::shared_ptr<ov::Node> create_concatenate_batch(std::shared_ptr<ov::Node> glo
     return std::make_shared<v0::Concat>(ov::NodeVector{std::move(global_processed), std::move(hd_sliced)}, 0);
 }
 
-std::shared_ptr<ov::Node> create_pad_to_max_crops(std::shared_ptr<ov::Node> input_nchw, std::shared_ptr<ov::Node> max_crops_param) {
+std::shared_ptr<ov::Node> create_pad_to_max_crops(std::shared_ptr<ov::Node> input_nchw,
+                                                  std::shared_ptr<ov::Node> max_crops_param) {
     using namespace ov::op;
 
     // Get current input batch size (num_crops)
     auto shape_of = std::make_shared<v3::ShapeOf>(input_nchw);
     auto axis_0 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
-    auto axis_0_scalar = v0::Constant::create(ov::element::i64, ov::Shape{}, std::vector<int64_t>{0}); // Axis for Gather
+    auto axis_0_scalar =
+        v0::Constant::create(ov::element::i64, ov::Shape{}, std::vector<int64_t>{0});  // Axis for Gather
     auto num_crops = std::make_shared<v8::Gather>(shape_of, axis_0, axis_0_scalar);
 
     // Calculate required padding amount: padding_needed = max(0, max_crops - num_crops)
@@ -659,19 +676,19 @@ std::shared_ptr<ov::Node> create_pad_to_max_crops(std::shared_ptr<ov::Node> inpu
     auto padding_needed = std::make_shared<v1::Maximum>(diff, zero);
 
     // Configure Pad operation arguments (pads_end)
-    auto zero_3 = v0::Constant::create(ov::element::i64, ov::Shape{3}, std::vector<int64_t>{0, 0, 0}); // Zeros for C, H, W dimensions
-    auto zero_4 = v0::Constant::create(ov::element::i64, ov::Shape{4}, std::vector<int64_t>{0, 0, 0, 0}); // pads_begin
+    auto zero_3 = v0::Constant::create(ov::element::i64,
+                                       ov::Shape{3},
+                                       std::vector<int64_t>{0, 0, 0});  // Zeros for C, H, W dimensions
+    auto zero_4 = v0::Constant::create(ov::element::i64, ov::Shape{4}, std::vector<int64_t>{0, 0, 0, 0});  // pads_begin
     auto pads_end = std::make_shared<v0::Concat>(ov::OutputVector{padding_needed, zero_3}, 0);
 
     // Execute Pad operation (Constant mode, fill with 0)
     auto pad_value = v0::Constant::create(ov::element::f32, ov::Shape{}, std::vector<float>{0.0f});
-    auto padded = std::make_shared<v1::Pad>(
-        input_nchw,
-        zero_4,      // pads_begin
-        pads_end,    // pads_end
-        pad_value,   // pad_value
-        ov::op::PadMode::CONSTANT
-    );
+    auto padded = std::make_shared<v1::Pad>(input_nchw,
+                                            zero_4,     // pads_begin
+                                            pads_end,   // pads_end
+                                            pad_value,  // pad_value
+                                            ov::op::PadMode::CONSTANT);
 
     return padded;
 }
@@ -679,7 +696,6 @@ std::shared_ptr<ov::Node> create_pad_to_max_crops(std::shared_ptr<ov::Node> inpu
 std::shared_ptr<ov::Model> patch_image_preprocess_into_vision_encoder_model(
     const std::shared_ptr<ov::Model>& vision_encoder_model,
     const ProcessorConfig& config) {
-
     using namespace ov;
     using namespace ov::op;
 
@@ -714,16 +730,17 @@ std::shared_ptr<ov::Model> patch_image_preprocess_into_vision_encoder_model(
 
     return std::make_shared<Model>(
         std::move(vision_results),
-        ParameterVector{std::move(hd_image), std::move(global_target_size), std::move(max_crops)}
-    );
+        ParameterVector{std::move(hd_image), std::move(global_target_size), std::move(max_crops)});
 }
 
-} // namespace
+}  // namespace
 
 namespace phi_utils {
-std::string normalize_prompt(
-    const std::string& prompt, size_t base_id, size_t n_images, const std::regex& native_pattern, void(*write_native)(std::ostream& os, size_t idx)
-) {
+std::string normalize_prompt(const std::string& prompt,
+                             size_t base_id,
+                             size_t n_images,
+                             const std::regex& native_pattern,
+                             void (*write_native)(std::ostream& os, size_t idx)) {
     std::smatch match;
     std::regex_search(prompt, match, native_pattern);
     auto [image_prompt, image_sequence] = universal_to_native(prompt, write_native);
@@ -738,12 +755,9 @@ std::string normalize_prompt(
         OPENVINO_ASSERT(image_id != 0, "Image tags must be greater than 0");
         image_sequence.push_back(image_id - 1);
         constexpr int submatch_id_to_return = 1;
-        for (std::sregex_token_iterator iter{
-            match.suffix().first,
-            prompt.end(),
-            native_pattern,
-            submatch_id_to_return
-        }; iter != std::sregex_token_iterator{}; ++iter) {
+        for (std::sregex_token_iterator iter{match.suffix().first, prompt.end(), native_pattern, submatch_id_to_return};
+             iter != std::sregex_token_iterator{};
+             ++iter) {
             size_t image_id = std::stoul(*iter);
             OPENVINO_ASSERT(image_id != 0, "Image tags must be greater than 0");
             image_sequence.push_back(image_id - 1);
@@ -764,16 +778,20 @@ std::string normalize_prompt(
 }
 
 /// @brief ov::Tensor is tokenized text, size_t is image tag
-std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text, ov::genai::Tokenizer& tokenizer, const std::regex& native_pattern) {
+std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text,
+                                                             ov::genai::Tokenizer& tokenizer,
+                                                             const std::regex& native_pattern) {
     std::vector<std::variant<ov::Tensor, size_t>> tokenized;
     auto prefix_begin = text.begin();
     bool is_submatch = false;
     for (std::sregex_token_iterator iter{
-        prefix_begin,
-        text.end(),
-        native_pattern,
-        {0, 1}  // Every match emits two values: whole match and submatch
-    }; iter != std::sregex_token_iterator{}; ++iter) {
+             prefix_begin,
+             text.end(),
+             native_pattern,
+             {0, 1}  // Every match emits two values: whole match and submatch
+         };
+         iter != std::sregex_token_iterator{};
+         ++iter) {
         if (is_submatch) {
             size_t idx = std::stoul(iter->str());
             OPENVINO_ASSERT(idx != 0);
@@ -794,44 +812,36 @@ std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& 
     return tokenized;
 }
 
-ov::Tensor insert_image_placeholders(
-    const std::vector<std::variant<ov::Tensor, size_t>>& chunks,
-    const std::vector<size_t>& tokens_per_images
-) {
+ov::Tensor insert_image_placeholders(const std::vector<std::variant<ov::Tensor, size_t>>& chunks,
+                                     const std::vector<size_t>& tokens_per_images) {
     size_t merged_length = 0;
     for (const std::variant<ov::Tensor, size_t>& chunk : chunks) {
-        merged_length += std::visit(utils::overloaded{
-            [](const ov::Tensor& chunk) {
-                return chunk.get_shape().at(1);
-            },
-            [&](size_t image_id) {
-                return tokens_per_images.at(image_id);
-            }
-        }, chunk);
+        merged_length += std::visit(utils::overloaded{[](const ov::Tensor& chunk) {
+                                                          return chunk.get_shape().at(1);
+                                                      },
+                                                      [&](size_t image_id) {
+                                                          return tokens_per_images.at(image_id);
+                                                      }},
+                                    chunk);
     }
     ov::Tensor merged{ov::element::i64, {1, merged_length}};
     size_t offset = 0;
     for (const std::variant<ov::Tensor, size_t>& chunk : chunks) {
-        offset += std::visit(utils::overloaded{
-            [&](const ov::Tensor& chunk) {
-                size_t length = chunk.get_shape().at(1);
-                std::copy_n(
-                    chunk.data<int64_t>(),
-                    length,
-                    merged.data<int64_t>() + offset
-                );
-                return length;
-            },
-            [&](size_t image_id) {
-                int64_t fill_value = -(static_cast<int64_t>(image_id)) - 1;
-                std::fill_n(
-                    merged.data<int64_t>() + offset,
-                    tokens_per_images.at(image_id),
-                    fill_value  // -1 to distinguish 0 token and 0 image id.
-                );
-                return tokens_per_images.at(image_id);
-            }
-        }, chunk);
+        offset += std::visit(
+            utils::overloaded{[&](const ov::Tensor& chunk) {
+                                  size_t length = chunk.get_shape().at(1);
+                                  std::copy_n(chunk.data<int64_t>(), length, merged.data<int64_t>() + offset);
+                                  return length;
+                              },
+                              [&](size_t image_id) {
+                                  int64_t fill_value = -(static_cast<int64_t>(image_id)) - 1;
+                                  std::fill_n(merged.data<int64_t>() + offset,
+                                              tokens_per_images.at(image_id),
+                                              fill_value  // -1 to distinguish 0 token and 0 image id.
+                                  );
+                                  return tokens_per_images.at(image_id);
+                              }},
+            chunk);
     }
     return merged;
 }
@@ -842,22 +852,21 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
     size_t text_start = 0;
     for (size_t offset = 1; offset < tokens.get_shape().at(1); ++offset) {
         // If last_token and next_token are not negative, it's continuation of the current chunk text - skip
-        // If last_token is negative and next_token is not negative, it's a start of text - save the offset, add image placeholder
-        // If last token is not negative and next_token is negative, it's an end of text - push_back a chunk
+        // If last_token is negative and next_token is not negative, it's a start of text - save the offset, add image
+        // placeholder If last token is not negative and next_token is negative, it's an end of text - push_back a chunk
         // If last_token and next_token are negative, it's continuation of an image placeholder - skip
-        // if last_token and next_token are negative but different, it's a start of a new image placeholder - save the previous image placeholder
+        // if last_token and next_token are negative but different, it's a start of a new image placeholder - save the
+        // previous image placeholder
         int64_t next_token = tokens.data<int64_t>()[offset];
         if (last_token < 0 && next_token >= 0) {
             text_start = offset;
             chunks.push_back(size_t(-(last_token + 1)));
         } else if (last_token >= 0 && next_token < 0) {
             // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
-            chunks.emplace_back(
-                std::in_place_type<ov::Tensor>,
-                ov::element::i64,
-                ov::Shape{1, offset - text_start},
-                const_cast<int64_t*>(tokens.data<int64_t>()) + text_start
-            );
+            chunks.emplace_back(std::in_place_type<ov::Tensor>,
+                                ov::element::i64,
+                                ov::Shape{1, offset - text_start},
+                                const_cast<int64_t*>(tokens.data<int64_t>()) + text_start);
         } else if (last_token < 0 && next_token < 0 && last_token != next_token) {
             chunks.push_back(size_t(-(last_token + 1)));
         }
@@ -867,12 +876,10 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
     size_t full_length = tokens.get_shape().at(1);
     if (last_token >= 0) {
         // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
-        chunks.emplace_back(
-            std::in_place_type<ov::Tensor>,
-            ov::element::i64,
-            ov::Shape{1, full_length - text_start},
-            const_cast<int64_t*>(tokens.data<int64_t>()) + text_start
-        );
+        chunks.emplace_back(std::in_place_type<ov::Tensor>,
+                            ov::element::i64,
+                            ov::Shape{1, full_length - text_start},
+                            const_cast<int64_t*>(tokens.data<int64_t>()) + text_start);
     } else {
         chunks.push_back(size_t(-(last_token + 1)));
     }
@@ -913,11 +920,17 @@ EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMa
 
     EncodedImage encoded_image = {std::move(res), image_size};
 
-    CircularBufferQueueElementGuard<ov::InferRequest> hd_feature_transformer_ireq_guard(this->m_ireq_queue_hd_feature_transformer.get());
-    CircularBufferQueueElementGuard<ov::InferRequest> vision_projection_ireq_guard(this->m_ireq_queue_vision_projection.get());
+    CircularBufferQueueElementGuard<ov::InferRequest> hd_feature_transformer_ireq_guard(
+        this->m_ireq_queue_hd_feature_transformer.get());
+    CircularBufferQueueElementGuard<ov::InferRequest> vision_projection_ireq_guard(
+        this->m_ireq_queue_vision_projection.get());
     ov::InferRequest& hd_feature_transformer = hd_feature_transformer_ireq_guard.get();
     ov::InferRequest& vision_projection = vision_projection_ireq_guard.get();
-    encoded_image.images_features_projection = hd_feature_transform(encoded_image, hd_feature_transformer, m_vlm_config.sub_GN, m_vlm_config.glb_GN, vision_projection);
+    encoded_image.images_features_projection = hd_feature_transform(encoded_image,
+                                                                    hd_feature_transformer,
+                                                                    m_vlm_config.sub_GN,
+                                                                    m_vlm_config.glb_GN,
+                                                                    vision_projection);
     return encoded_image;
 }
 
@@ -932,7 +945,8 @@ VisionEncoderPhi3V::VisionEncoderPhi3V(const std::filesystem::path& model_dir,
     : VisionEncoder(model_dir, device, properties),
       use_ov_vision_preprocess(can_use_ov_vision_preprocess()) {
     if (use_ov_vision_preprocess) {
-        auto vision_encoder_model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
+        auto vision_encoder_model =
+            utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
         auto model = patch_image_preprocess_into_vision_encoder_model(vision_encoder_model, m_processor_config);
         auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
         m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -949,7 +963,8 @@ VisionEncoderPhi3V::VisionEncoderPhi3V(const std::filesystem::path& model_dir,
             return compiled_model.create_infer_request();
         });
 
-    compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
+    compiled_model =
+        utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model]() -> ov::InferRequest {
@@ -965,7 +980,8 @@ VisionEncoderPhi3V::VisionEncoderPhi3V(const ModelsMap& models_map,
     : VisionEncoder(models_map, config_dir_path, device, properties),
       use_ov_vision_preprocess(can_use_ov_vision_preprocess()) {
     if (use_ov_vision_preprocess) {
-        const auto& [vision_encoder_model, vision_encoder_weights] = utils::get_model_weights_pair(models_map, "vision_embeddings");
+        const auto& [vision_encoder_model, vision_encoder_weights] =
+            utils::get_model_weights_pair(models_map, "vision_embeddings");
         auto model_org = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
         auto model = patch_image_preprocess_into_vision_encoder_model(model_org, m_processor_config);
         auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
@@ -986,7 +1002,8 @@ VisionEncoderPhi3V::VisionEncoderPhi3V(const ModelsMap& models_map,
 
     const auto& vision_encoder_model = utils::get_model_weights_pair(models_map, "vision_projection").first;
     const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_projection").second;
-    compiled_model = utils::singleton_core().compile_model(vision_encoder_model, vision_encoder_weights, device, properties);
+    compiled_model =
+        utils::singleton_core().compile_model(vision_encoder_model, vision_encoder_weights, device, properties);
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model]() -> ov::InferRequest {
@@ -995,28 +1012,31 @@ VisionEncoderPhi3V::VisionEncoderPhi3V(const ModelsMap& models_map,
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
 }
 
-InputsEmbedderPhi3V::InputsEmbedderPhi3V(
-    const VLMConfig& vlm_config,
-    const std::filesystem::path& model_dir,
-    const std::string& device,
-    const ov::AnyMap device_config
-) : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
+InputsEmbedderPhi3V::InputsEmbedderPhi3V(const VLMConfig& vlm_config,
+                                         const std::filesystem::path& model_dir,
+                                         const std::string& device,
+                                         const ov::AnyMap device_config)
+    : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
 
+InputsEmbedderPhi3V::InputsEmbedderPhi3V(const VLMConfig& vlm_config,
+                                         const ModelsMap& models_map,
+                                         const Tokenizer& tokenizer,
+                                         const std::filesystem::path& config_dir_path,
+                                         const std::string& device,
+                                         const ov::AnyMap device_config)
+    : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-InputsEmbedderPhi3V::InputsEmbedderPhi3V(
-    const VLMConfig& vlm_config,
-    const ModelsMap& models_map,
-    const Tokenizer& tokenizer,
-    const std::filesystem::path& config_dir_path,
-    const std::string& device,
-    const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
-
-NormalizedPrompt InputsEmbedderPhi3V::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderPhi3V::normalize_prompt(const std::string& prompt,
+                                                       size_t base_id,
+                                                       const std::vector<EncodedImage>& images) const {
     return {phi_utils::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native), {}};
 }
 
-ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
+ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_prompt,
+                                                  const std::vector<ov::genai::EncodedImage>& images,
+                                                  ov::genai::VLMPerfMetrics& metrics,
+                                                  bool recalculate_merged_embeddings,
+                                                  const std::vector<size_t>& image_sequence) {
     size_t base_id = m_tokens_per_images.size();
     std::vector<ov::Tensor> images_features_proj;
     for (const ov::genai::EncodedImage& encoded_image : images) {
@@ -1028,7 +1048,8 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_promp
         auto start_tokenizer_time = std::chrono::steady_clock::now();
         new_chat_tokens = phi_utils::split_tokenize(image_prompt, m_tokenizer, NATIVE_PATTERN);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
-        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        metrics.raw_metrics.tokenization_durations.emplace_back(
+            PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     } else {
         std::string templated_prompt;
         if (m_apply_chat_template) {
@@ -1041,7 +1062,8 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_promp
         auto start_tokenizer_time = std::chrono::steady_clock::now();
         new_chat_tokens = phi_utils::split_tokenize(templated_prompt, m_tokenizer, NATIVE_PATTERN);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
-        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        metrics.raw_metrics.tokenization_durations.emplace_back(
+            PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     }
     ov::Tensor new_merged_tokens = phi_utils::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
     ov::Tensor new_tokens = update_history(new_merged_tokens);
@@ -1054,28 +1076,24 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_promp
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
     for (const std::variant<ov::Tensor, size_t>& chunk : tokens) {
-        offset += std::visit(utils::overloaded{
-            [&](const ov::Tensor& chunk) {
-                const ov::Tensor& text_embeds = m_embedding->infer(req, chunk);
-                size_t text_length = text_embeds.get_shape().at(1);
-                std::copy_n(
-                    text_embeds.data<float>(),
-                    text_embeds.get_size(),
-                    inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
-                );
-                return text_length;
-            },
-            [&](size_t image_id) {
-                const ov::Tensor& image_embeds = images_features_proj.at(image_id - base_id);
-                size_t im_length = image_embeds.get_shape().at(1);
-                std::copy_n(
-                    image_embeds.data<float>(),
-                    image_embeds.get_size(),
-                    inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
-                );
-                return im_length;
-            }
-        }, chunk);
+        offset += std::visit(
+            utils::overloaded{[&](const ov::Tensor& chunk) {
+                                  const ov::Tensor& text_embeds = m_embedding->infer(req, chunk);
+                                  size_t text_length = text_embeds.get_shape().at(1);
+                                  std::copy_n(text_embeds.data<float>(),
+                                              text_embeds.get_size(),
+                                              inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size);
+                                  return text_length;
+                              },
+                              [&](size_t image_id) {
+                                  const ov::Tensor& image_embeds = images_features_proj.at(image_id - base_id);
+                                  size_t im_length = image_embeds.get_shape().at(1);
+                                  std::copy_n(image_embeds.data<float>(),
+                                              image_embeds.get_size(),
+                                              inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size);
+                                  return im_length;
+                              }},
+            chunk);
     }
 
     if (!m_is_chat_conversation) {
@@ -1084,7 +1102,8 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_promp
     return inputs_embeds;
 }
 
-void InputsEmbedderPhi3V::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
+void InputsEmbedderPhi3V::update_chat_history(const std::string& decoded_results,
+                                              const ov::genai::GenerationStatus generation_finish_status) {
     IInputsEmbedder::update_chat_history(decoded_results, generation_finish_status);
     if (generation_finish_status == ov::genai::GenerationStatus::CANCEL)
         m_tokens_per_images = m_prev_tokens_per_images;
@@ -1102,4 +1121,4 @@ void InputsEmbedderPhi3V::finish_chat() {
     m_tokens_per_images.clear();
 }
 
-} // namespace ov::genai
+}  // namespace ov::genai

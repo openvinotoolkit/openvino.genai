@@ -5,45 +5,23 @@
 
 #include <ostream>
 
-#include "openvino/genai/image_generation/scheduler.hpp"
-
 #include "json_utils.hpp"
+#include "openvino/genai/image_generation/scheduler.hpp"
 
 namespace ov {
 namespace genai {
 
-enum class BetaSchedule {
-    LINEAR,
-    SCALED_LINEAR,
-    SQUAREDCOS_CAP_V2
-};
+enum class BetaSchedule { LINEAR, SCALED_LINEAR, SQUAREDCOS_CAP_V2 };
 
-enum class PredictionType {
-    EPSILON,
-    SAMPLE,
-    V_PREDICTION
-};
+enum class PredictionType { EPSILON, SAMPLE, V_PREDICTION };
 
-enum class TimestepSpacing {
-    LINSPACE,
-    TRAILING,
-    LEADING
-};
+enum class TimestepSpacing { LINSPACE, TRAILING, LEADING };
 
-enum class InterpolationType {
-    LINEAR,
-    LOG_LINEAR
-};
+enum class InterpolationType { LINEAR, LOG_LINEAR };
 
-enum class FinalSigmaType {
-    ZERO,
-    SIGMA_MIN
-};
+enum class FinalSigmaType { ZERO, SIGMA_MIN };
 
-enum class TimestepType {
-    DISCRETE,
-    CONTINUOUS
-};
+enum class TimestepType { DISCRETE, CONTINUOUS };
 
 namespace utils {
 

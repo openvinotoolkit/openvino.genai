@@ -3,9 +3,8 @@
 
 #include "visual_language/llava/classes.hpp"
 
-#include "visual_language/clip.hpp"
-
 #include "utils.hpp"
+#include "visual_language/clip.hpp"
 
 namespace ov::genai {
 clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const ProcessorConfig& config) {
@@ -40,9 +39,9 @@ ov::Tensor get_pixel_values_llava(const ov::Tensor& image, const ProcessorConfig
     return clip_image_f32_to_tensor(preprocessed_image);
 }
 
-} // namespace
+}  // namespace
 
-EncodedImage VisionEncoderLLaVA::encode( const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderLLaVA::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
@@ -56,26 +55,25 @@ EncodedImage VisionEncoderLLaVA::encode( const ov::Tensor& image, const ov::AnyM
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 
-    ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
+    ImageSize resized_source_size{config.crop_size_height / config.patch_size,
+                                  config.crop_size_width / config.patch_size};
 
     return {std::move(image_features), resized_source_size};
 }
 
-InputsEmbedderLLaVA::InputsEmbedderLLaVA(
-    const VLMConfig& vlm_config,
-    const std::filesystem::path& model_dir,
-    const std::string& device,
-    const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
+InputsEmbedderLLaVA::InputsEmbedderLLaVA(const VLMConfig& vlm_config,
+                                         const std::filesystem::path& model_dir,
+                                         const std::string& device,
+                                         const ov::AnyMap device_config)
+    : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
 
-InputsEmbedderLLaVA::InputsEmbedderLLaVA(
-    const VLMConfig& vlm_config,
-    const ModelsMap& models_map,
-    const Tokenizer& tokenizer,
-    const std::filesystem::path& config_dir_path,
-    const std::string& device,
-    const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
+InputsEmbedderLLaVA::InputsEmbedderLLaVA(const VLMConfig& vlm_config,
+                                         const ModelsMap& models_map,
+                                         const Tokenizer& tokenizer,
+                                         const std::filesystem::path& config_dir_path,
+                                         const std::string& device,
+                                         const ov::AnyMap device_config)
+    : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> embeds;
@@ -88,7 +86,9 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
     return embeds;
 }
 
-NormalizedPrompt InputsEmbedderLLaVA::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderLLaVA::normalize_prompt(const std::string& prompt,
+                                                       size_t base_id,
+                                                       const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
     auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
 
@@ -111,7 +111,11 @@ NormalizedPrompt InputsEmbedderLLaVA::normalize_prompt(const std::string& prompt
     return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
 
-ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_prompt,
+                                                  const std::vector<ov::genai::EncodedImage>& images,
+                                                  ov::genai::VLMPerfMetrics& metrics,
+                                                  bool recalculate_merged_embeddings,
+                                                  const std::vector<size_t>& images_sequence) {
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     for (size_t new_image_id : images_sequence) {
@@ -129,12 +133,14 @@ ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_pro
         return inputs_embeds;
     }
     auto start_tokenizer_time = std::chrono::steady_clock::now();
-    ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
+    ov::Tensor encoded_image_token =
+        m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
     auto end_tokenizer_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
-    metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+    metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] +=
+        ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
     return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 }
 
-} // namespace ov::genai
+}  // namespace ov::genai

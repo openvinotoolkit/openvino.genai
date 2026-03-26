@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "openvino/genai/image_generation/image2image_pipeline.hpp"
 #include "openvino/genai/common_types.hpp"
+#include "openvino/genai/image_generation/image2image_pipeline.hpp"
 
 namespace ov {
 namespace genai {
@@ -19,7 +19,7 @@ public:
     /**
      * Initializes text to image generation pipeline from a folder with models.
      * Note, such pipeline is not ready to use as models are not compiled internally.
-     * 
+     *
      * Typical scenario is to initialize models using this constructor and then reshape pipeline
      * with 'reshape()' method and then perform compilation using 'compile()' method.
      * @param models_path A models path to read models and config files from
@@ -31,18 +31,18 @@ public:
      * @param models_path A models path to read models and config files from
      * @param device A single device used for all models
      * @param properties Properties to pass to 'compile_model' or other pipeline properties like LoRA adapters
-     * @note If you want to compile each model on a dedicated device or with specific properties, you can create 
+     * @note If you want to compile each model on a dedicated device or with specific properties, you can create
      * models individually and then combine a final pipeline using static methods like 'latent_consistency_model' or
      * 'stable_diffusion_3'. See 'samples/cpp/image_generation/heterogeneous_stable_diffusion.cpp' for example
      */
-    Text2ImagePipeline(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties = {});
+    Text2ImagePipeline(const std::filesystem::path& models_path,
+                       const std::string& device,
+                       const ov::AnyMap& properties = {});
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    Text2ImagePipeline(const std::filesystem::path& models_path,
-                       const std::string& device,
-                       Properties&&... properties)
-        : Text2ImagePipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    Text2ImagePipeline(const std::filesystem::path& models_path, const std::string& device, Properties&&... properties)
+        : Text2ImagePipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     /**
      * Creates text to image pipeline based on image to image pipeline and shares models
@@ -65,11 +65,10 @@ public:
      * @param unet An Unet model
      * @param vae VAE auto encoder model
      */
-    static Text2ImagePipeline stable_diffusion(
-        const std::shared_ptr<Scheduler>& scheduler,
-        const CLIPTextModel& clip_text_model,
-        const UNet2DConditionModel& unet,
-        const AutoencoderKL& vae);
+    static Text2ImagePipeline stable_diffusion(const std::shared_ptr<Scheduler>& scheduler,
+                                               const CLIPTextModel& clip_text_model,
+                                               const UNet2DConditionModel& unet,
+                                               const AutoencoderKL& vae);
 
     /**
      * Creates Latent Consistency Model pipeline from individual models
@@ -78,11 +77,10 @@ public:
      * @param unet An Unet denoising model
      * @param vae VAE auto encoder model
      */
-    static Text2ImagePipeline latent_consistency_model(
-        const std::shared_ptr<Scheduler>& scheduler,
-        const CLIPTextModel& clip_text_model,
-        const UNet2DConditionModel& unet,
-        const AutoencoderKL& vae);
+    static Text2ImagePipeline latent_consistency_model(const std::shared_ptr<Scheduler>& scheduler,
+                                                       const CLIPTextModel& clip_text_model,
+                                                       const UNet2DConditionModel& unet,
+                                                       const AutoencoderKL& vae);
 
     /**
      * Creates Stable Diffusion XL pipeline from individual models
@@ -92,12 +90,11 @@ public:
      * @param unet An Unet denoising model
      * @param vae VAE auto encoder model
      */
-    static Text2ImagePipeline stable_diffusion_xl(
-        const std::shared_ptr<Scheduler>& scheduler,
-        const CLIPTextModel& clip_text_model,
-        const CLIPTextModelWithProjection& clip_text_model_with_projection,
-        const UNet2DConditionModel& unet,
-        const AutoencoderKL& vae);
+    static Text2ImagePipeline stable_diffusion_xl(const std::shared_ptr<Scheduler>& scheduler,
+                                                  const CLIPTextModel& clip_text_model,
+                                                  const CLIPTextModelWithProjection& clip_text_model_with_projection,
+                                                  const UNet2DConditionModel& unet,
+                                                  const AutoencoderKL& vae);
 
     /**
      * Creates Stable Diffusion 3 pipeline from individual models with T5 text encoder
@@ -108,13 +105,12 @@ public:
      * @param transformer A Transformer denoising model
      * @param vae VAE auto encoder model
      */
-    static Text2ImagePipeline stable_diffusion_3(
-        const std::shared_ptr<Scheduler>& scheduler,
-        const CLIPTextModelWithProjection& clip_text_model_1,
-        const CLIPTextModelWithProjection& clip_text_model_2,
-        const T5EncoderModel& t5_encoder_model,
-        const SD3Transformer2DModel& transformer,
-        const AutoencoderKL& vae);
+    static Text2ImagePipeline stable_diffusion_3(const std::shared_ptr<Scheduler>& scheduler,
+                                                 const CLIPTextModelWithProjection& clip_text_model_1,
+                                                 const CLIPTextModelWithProjection& clip_text_model_2,
+                                                 const T5EncoderModel& t5_encoder_model,
+                                                 const SD3Transformer2DModel& transformer,
+                                                 const AutoencoderKL& vae);
 
     /**
      * Creates Stable Diffusion 3 pipeline from individual models without T5 text encoder
@@ -124,12 +120,11 @@ public:
      * @param transformer A Transformer denoising model
      * @param vae VAE auto encoder model
      */
-    static Text2ImagePipeline stable_diffusion_3(
-        const std::shared_ptr<Scheduler>& scheduler,
-        const CLIPTextModelWithProjection& clip_text_model_1,
-        const CLIPTextModelWithProjection& clip_text_model_2,
-        const SD3Transformer2DModel& transformer,
-        const AutoencoderKL& vae);
+    static Text2ImagePipeline stable_diffusion_3(const std::shared_ptr<Scheduler>& scheduler,
+                                                 const CLIPTextModelWithProjection& clip_text_model_1,
+                                                 const CLIPTextModelWithProjection& clip_text_model_2,
+                                                 const SD3Transformer2DModel& transformer,
+                                                 const AutoencoderKL& vae);
 
     /**
      * Creates FLUX pipeline from individual models
@@ -139,12 +134,11 @@ public:
      * @param transformer A Transformer denoising model
      * @param vae VAE auto encoder model
      */
-    static Text2ImagePipeline flux(
-        const std::shared_ptr<Scheduler>& scheduler_type,
-        const CLIPTextModel& clip_text_model,
-        const T5EncoderModel t5_encoder_model,
-        const FluxTransformer2DModel& transformer,
-        const AutoencoderKL& vae);
+    static Text2ImagePipeline flux(const std::shared_ptr<Scheduler>& scheduler_type,
+                                   const CLIPTextModel& clip_text_model,
+                                   const T5EncoderModel t5_encoder_model,
+                                   const FluxTransformer2DModel& transformer,
+                                   const AutoencoderKL& vae);
 
     /**
      * Method to clone the pipeline to be used in parallel by another thread.
@@ -177,17 +171,19 @@ public:
      * @param num_images_per_prompt A number of image to generate per 'generate()' call
      * @param height A height of resulting image
      * @param width A width of resulting image
-     * @param guidance_scale A guidance scale. Note, that it's important whether guidance_scale > 1, which affects whether negative prompts
-     * are used or not. For example, all values > 1 are the same for reshape perspective and may vary in subsequent 'generate()' calls.
+     * @param guidance_scale A guidance scale. Note, that it's important whether guidance_scale > 1, which affects
+     * whether negative prompts are used or not. For example, all values > 1 are the same for reshape perspective and
+     * may vary in subsequent 'generate()' calls.
      * @note If pipeline has been already compiled, it cannot be reshaped and an exception is thrown.
-     * 
+     *
      * Example how to reshape SD3 or Flux models for specific max sequence length:
      * @code
      *  ov::genai::Text2ImagePipeline pipe("/path");
      *  ov::genai::ImageGenerationConfig default_config = pipe.get_generation_config();
      *  default_config.max_sequence_length = 30;
      *  pipe.set_generation_config(default_config);
-     *  pipe.reshape(1, 512, 512, default_config.guidance_scale); // reshape will bypass `max_sequence_length` to T5 encoder model
+     *  pipe.reshape(1, 512, 512, default_config.guidance_scale); // reshape will bypass `max_sequence_length` to T5
+     * encoder model
      * @endcode
      */
     void reshape(const int num_images_per_prompt, const int height, const int width, const float guidance_scale);
@@ -214,9 +210,7 @@ public:
                  const ov::AnyMap& properties = {});
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<void, Properties...> compile(
-            const std::string& device,
-            Properties&&... properties) {
+    ov::util::EnableIfAllStringAny<void, Properties...> compile(const std::string& device, Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -227,21 +221,22 @@ public:
                                                                 Properties&&... properties) {
         return compile(text_encode_device,
                        denoise_device,
-                       vae_device, ov::AnyMap{std::forward<Properties>(properties)...});
+                       vae_device,
+                       ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
     /**
      * Generates image(s) based on prompt and other image generation parameters
      * @param positive_prompt Prompt to generate image(s) from
-     * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
+     * @param properties Image generation parameters specified as properties. Values in 'properties' override default
+     * value for generation parameters.
      * @returns A tensor which has dimensions [num_images_per_prompt, height, width, 3]
      */
     ov::Tensor generate(const std::string& positive_prompt, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
-            const std::string& positive_prompt,
-            Properties&&... properties) {
+    ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(const std::string& positive_prompt,
+                                                                       Properties&&... properties) {
         return generate(positive_prompt, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -268,5 +263,5 @@ private:
     explicit Text2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl);
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

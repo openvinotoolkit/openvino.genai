@@ -3,12 +3,12 @@
 
 #pragma once
 
-#include <string>
+#include <functional>
 #include <memory>
 #include <optional>
-#include <vector>
+#include <string>
 #include <unordered_map>
-#include <functional>
+#include <vector>
 
 #include "openvino/genai/generation_config.hpp"
 #include "sampling/logit_transformers.hpp"
@@ -19,10 +19,10 @@ namespace genai {
 
 /**
  * Below is the structure of the structured output generation system:
- * 
- * Example below is for XGrammar backend. XGrammarLogitsTransformer, XGrammarStructuredOutput can replace with any other 
+ *
+ * Example below is for XGrammar backend. XGrammarLogitsTransformer, XGrammarStructuredOutput can replace with any other
  * structured output backend implementation.
- * 
+ *
  * +---------------------------+    uses   +--------------------------+   implements  +-----------------------+
  * | XGrammarLogitsTransformer |---------->| XGrammarStructuredOutput |-------------->| IStructuredOutputImpl |
  * +---------------------------+           +--------------------------+               +-----------------------+
@@ -46,8 +46,8 @@ namespace genai {
 class IStructuredOutputImpl {
 public:
     virtual ~IStructuredOutputImpl() = default;
-    virtual std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer>
-        get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) = 0;
+    virtual std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer> get_logits_transformer(
+        const ov::genai::GenerationConfig& sampling_parameters) = 0;
     virtual void validate_grammar(const std::optional<StructuredOutputConfig>& structured_output_config) = 0;
 };
 
@@ -62,27 +62,32 @@ public:
  */
 class StructuredOutputController {
     std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer> m_logits_transformer;
-    
+
     const std::unique_ptr<IStructuredOutputImpl>& get_backend(const std::string& backend_name);
+
 public:
-    using BackendFactory = std::function<std::unique_ptr<ov::genai::IStructuredOutputImpl>(
-        const ov::genai::Tokenizer::TokenizerImpl&, std::optional<int>)>;
+    using BackendFactory =
+        std::function<std::unique_ptr<ov::genai::IStructuredOutputImpl>(const ov::genai::Tokenizer::TokenizerImpl&,
+                                                                        std::optional<int>)>;
 
     StructuredOutputController(const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl,
-                              std::optional<int> vocab_size=std::nullopt);
-
+                               std::optional<int> vocab_size = std::nullopt);
 
     void validate_grammar(const std::optional<StructuredOutputConfig>& structured_output_config);
-    std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer> get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters);
+    std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer> get_logits_transformer(
+        const ov::genai::GenerationConfig& sampling_parameters);
 
     static void register_backend(const std::string& name, BackendFactory factory);
     static void set_default_backend(const std::string& name);
     static std::string& get_default_backend_name();
     static std::unordered_map<std::string, BackendFactory>& get_backend_registry();
-    
+
     std::pair<std::map<std::string, float>, std::vector<float>> get_times() const;
     void clear_compile_times();
-    std::optional<int> get_vocab_size() const { return m_vocab_size; }
+    std::optional<int> get_vocab_size() const {
+        return m_vocab_size;
+    }
+
 private:
     std::map<std::string, float> m_init_grammar_compiler_times;
     std::vector<float> m_grammar_compile_times;
@@ -92,5 +97,5 @@ private:
     mutable std::mutex m_mutex;
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

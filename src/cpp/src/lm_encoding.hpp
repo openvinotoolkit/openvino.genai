@@ -4,9 +4,10 @@
 #pragma once
 
 #include <optional>
+
 #include "openvino/genai/llm_pipeline.hpp"
-#include "visual_language/embedding_model.hpp"
 #include "sampling/sampler.hpp"
+#include "visual_language/embedding_model.hpp"
 
 namespace ov {
 namespace genai {
@@ -27,11 +28,9 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     const bool use_intermediate_remote_tensor = true,
     const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs = {});
 
-
 void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::KVCacheState& kv_cache_state);
-
 
 TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils::KVCacheState& kv_cache_state);
 
-}
-}
+}  // namespace genai
+}  // namespace ov

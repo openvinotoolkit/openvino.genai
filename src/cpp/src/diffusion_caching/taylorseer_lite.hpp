@@ -6,13 +6,12 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <openvino/core/except.hpp>
+#include <openvino/genai/taylorseer_config.hpp>
+#include <openvino/runtime/tensor.hpp>
 #include <optional>
 #include <sstream>
 #include <vector>
-
-#include <openvino/core/except.hpp>
-#include <openvino/runtime/tensor.hpp>
-#include <openvino/genai/taylorseer_config.hpp>
 
 namespace ov::genai {
 
@@ -48,8 +47,8 @@ public:
         }
 
         OPENVINO_ASSERT(config->cache_interval >= 2,
-                       "TaylorSeerCacheConfig: cache_interval must be at least 2, got ",
-                       config->cache_interval);
+                        "TaylorSeerCacheConfig: cache_interval must be at least 2, got ",
+                        config->cache_interval);
 
         // Check if TaylorSeer will be effective
         if (config->disable_cache_before_step >= num_inference_steps) {
@@ -59,7 +58,7 @@ public:
         int disable_cache_after_step = config->disable_cache_after_step;
         if (disable_cache_after_step < 0) {
             disable_cache_after_step = static_cast<int>(num_inference_steps) + disable_cache_after_step;
-            if (disable_cache_after_step < 0) { // If still negative, it means caching is disabled for all steps
+            if (disable_cache_after_step < 0) {  // If still negative, it means caching is disabled for all steps
                 return;
             }
         }
@@ -108,8 +107,11 @@ public:
      */
     const ov::Tensor& get_taylor_factor(std::size_t order) const {
         OPENVINO_ASSERT(order < m_max_order,
-                "Requested Taylor factor order ", order,
-                " is out of bounds. Maximum supported order is ", m_max_order - 1, ".");
+                        "Requested Taylor factor order ",
+                        order,
+                        " is out of bounds. Maximum supported order is ",
+                        m_max_order - 1,
+                        ".");
         return m_taylor_factors[order];
     }
 
@@ -120,7 +122,10 @@ public:
      */
     bool should_compute(std::size_t current_step) const {
         OPENVINO_ASSERT(current_step < m_schedule.size(),
-                       "Step ", current_step, " is out of bounds for precomputed schedule of size ", m_schedule.size());
+                        "Step ",
+                        current_step,
+                        " is out of bounds for precomputed schedule of size ",
+                        m_schedule.size());
         return m_schedule[current_step];
     }
 
@@ -140,16 +145,20 @@ public:
         const bool is_first_update = !m_last_update_step.has_value();
 
         OPENVINO_ASSERT(is_first_update || current_step > *m_last_update_step,
-                       "Current step (", current_step,
-                       ") must be greater than the last update step (",
-                       *m_last_update_step, ") for TaylorSeerState update.");
+                        "Current step (",
+                        current_step,
+                        ") must be greater than the last update step (",
+                        *m_last_update_step,
+                        ") for TaylorSeerState update.");
 
         // Validate tensor shape consistency
         if (!is_first_update) {
             const auto& prev_factor = get_taylor_factor(0);
             OPENVINO_ASSERT(output.get_shape() == prev_factor.get_shape(),
-                           "Output tensor shape ", output.get_shape(),
-                           " does not match previous tensor shape ", prev_factor.get_shape());
+                            "Output tensor shape ",
+                            output.get_shape(),
+                            " does not match previous tensor shape ",
+                            prev_factor.get_shape());
         }
 
         std::array<ov::Tensor, m_max_order> new_factors;
@@ -196,16 +205,18 @@ public:
      */
     ov::Tensor predict(std::size_t current_step) const {
         OPENVINO_ASSERT(m_taylor_factors.size() >= m_max_order,
-                       "Insufficient Taylor factors available for prediction. Required: ",
-                       m_max_order, ", Available: ", m_taylor_factors.size());
+                        "Insufficient Taylor factors available for prediction. Required: ",
+                        m_max_order,
+                        ", Available: ",
+                        m_taylor_factors.size());
 
-        OPENVINO_ASSERT(m_last_update_step.has_value(),
-                       "Cannot predict before first update.");
+        OPENVINO_ASSERT(m_last_update_step.has_value(), "Cannot predict before first update.");
 
         OPENVINO_ASSERT(current_step > *m_last_update_step,
-                       "Cannot predict for step ", current_step,
-                       " as it is not after the last update step ",
-                       *m_last_update_step);
+                        "Cannot predict for step ",
+                        current_step,
+                        " as it is not after the last update step ",
+                        *m_last_update_step);
 
         const std::size_t step_offset = current_step - *m_last_update_step;
 
@@ -312,4 +323,4 @@ private:
     std::optional<std::size_t> m_last_prediction_step = std::nullopt;
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

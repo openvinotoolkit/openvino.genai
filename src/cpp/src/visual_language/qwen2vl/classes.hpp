@@ -5,19 +5,23 @@
 
 #include <filesystem>
 
-#include "visual_language/vlm_config.hpp"
-
-#include "visual_language/vision_encoder.hpp"
-#include "visual_language/inputs_embedder.hpp"
 #include "circular_buffer_queue.hpp"
 #include "visual_language/cdpruner/cdpruner.hpp"
+#include "visual_language/inputs_embedder.hpp"
+#include "visual_language/vision_encoder.hpp"
+#include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
 
 class VisionEncoderQwen2VL : public VisionEncoder {
 public:
-    explicit VisionEncoderQwen2VL(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
-    explicit VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir_path, const std::string& device, const ov::AnyMap properties);
+    explicit VisionEncoderQwen2VL(const std::filesystem::path& model_dir,
+                                  const std::string& device,
+                                  const ov::AnyMap properties);
+    explicit VisionEncoderQwen2VL(const ModelsMap& models_map,
+                                  const std::filesystem::path& config_dir_path,
+                                  const std::string& device,
+                                  const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
     EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
@@ -28,65 +32,73 @@ protected:
      * and saves results into the encoded_video struct.
      * The config can be ProcessorConfig or a derived class (e.g. VideoProcessorConfig for Qwen3-VL).
      */
-    void encode_frames_with_config(EncodedVideo& encoded_video, const std::vector<ov::Tensor>& frames, const ProcessorConfig& config);
+    void encode_frames_with_config(EncodedVideo& encoded_video,
+                                   const std::vector<ov::Tensor>& frames,
+                                   const ProcessorConfig& config);
 
 private:
-    using EncodeFunc = std::function<void(const std::vector<ov::Tensor>&, const ProcessorConfig&, ov::Tensor&, ImageSize&, size_t, size_t)>;
+    using EncodeFunc = std::function<
+        void(const std::vector<ov::Tensor>&, const ProcessorConfig&, ov::Tensor&, ImageSize&, size_t, size_t)>;
 
     EncodeFunc get_encode_func();
 
-    void encode_with_imagepreprocess_cpp(
-        const std::vector<ov::Tensor>& image,
-        const ProcessorConfig& config,
-        ov::Tensor& out_tensor,
-        ImageSize& out_rsz_size,
-        size_t frame_num = 1,
-        size_t frame_id = 0);
+    void encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& image,
+                                         const ProcessorConfig& config,
+                                         ov::Tensor& out_tensor,
+                                         ImageSize& out_rsz_size,
+                                         size_t frame_num = 1,
+                                         size_t frame_id = 0);
 
-    void encode_with_imagepreprocess_ov(
-        const std::vector<ov::Tensor>& image,
-        const ProcessorConfig& config,
-        ov::Tensor& out_tensor,
-        ImageSize& out_rsz_size,
-        size_t frame_num = 1,
-        size_t frame_id = 0);
+    void encode_with_imagepreprocess_ov(const std::vector<ov::Tensor>& image,
+                                        const ProcessorConfig& config,
+                                        ov::Tensor& out_tensor,
+                                        ImageSize& out_rsz_size,
+                                        size_t frame_num = 1,
+                                        size_t frame_id = 0);
 
-    bool use_ov_vision_preprocess = true; // default use ov vision preprocess, control by env VISION_PREPROCESS=CPP to use cpp vision preprocess
+    bool use_ov_vision_preprocess =
+        true;  // default use ov vision preprocess, control by env VISION_PREPROCESS=CPP to use cpp vision preprocess
 };
 
 class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
 public:
-    InputsEmbedderQwen2VL(
-        const VLMConfig& vlm_config,
-        const std::filesystem::path& model_dir,
-        const std::string& device,
-        const ov::AnyMap device_config);
+    InputsEmbedderQwen2VL(const VLMConfig& vlm_config,
+                          const std::filesystem::path& model_dir,
+                          const std::string& device,
+                          const ov::AnyMap device_config);
 
-    InputsEmbedderQwen2VL(
-        const VLMConfig& vlm_config,
-        const ModelsMap& models_map,
-        const Tokenizer& tokenizer, 
-        const std::filesystem::path& config_dir_path,
-        const std::string& device,
-        const ov::AnyMap device_config);
+    InputsEmbedderQwen2VL(const VLMConfig& vlm_config,
+                          const ModelsMap& models_map,
+                          const Tokenizer& tokenizer,
+                          const std::filesystem::path& config_dir_path,
+                          const std::string& device,
+                          const ov::AnyMap device_config);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
     ov::Tensor get_inputs_embeds(const std::string& prompt,
                                  const std::vector<ov::genai::EncodedImage>& images,
-                                 const std::vector<ov::genai::EncodedVideo>& videos,
                                  ov::genai::VLMPerfMetrics& metrics,
                                  bool recalculate_merged_embeddings = true,
-                                 const std::vector<size_t>& image_sequence = {},
-                                 const std::vector<size_t>& videos_sequence = {},
-                                 const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
+                                 const std::vector<size_t>& image_sequence = {}) override;
+    ov::Tensor get_inputs_embeds(
+        const std::string& prompt,
+        const std::vector<ov::genai::EncodedImage>& images,
+        const std::vector<ov::genai::EncodedVideo>& videos,
+        ov::genai::VLMPerfMetrics& metrics,
+        bool recalculate_merged_embeddings = true,
+        const std::vector<size_t>& image_sequence = {},
+        const std::vector<size_t>& videos_sequence = {},
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos) override;
 
-    std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
+    std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size,
+                                                                   const size_t history_size) override;
 
-    std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) override;
+    std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size,
+                                                                                    const size_t history_size,
+                                                                                    int64_t rope_delta) override;
 
     void start_chat(const std::string& system_message) override;
 
@@ -94,20 +106,18 @@ public:
 
     void finish_chat() override;
 
-    NormalizedPrompt normalize_prompt(
-        const std::string& prompt,
-        size_t base_id,
-        const std::vector<EncodedImage>& images) const override {
+    NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                      size_t base_id,
+                                      const std::vector<EncodedImage>& images) const override {
         auto norm_prompt = normalize_prompt(prompt, base_id, 0, images, {});
         return {norm_prompt.unified_prompt, norm_prompt.images_sequence};
     }
 
-    NormalizedPrompt normalize_prompt(
-        const std::string& prompt,
-        size_t image_base_id,
-        size_t video_base_id,
-        const std::vector<EncodedImage>& images,
-        const std::vector<EncodedVideo>& videos) const override;
+    NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                      size_t image_base_id,
+                                      size_t video_base_id,
+                                      const std::vector<EncodedImage>& images,
+                                      const std::vector<EncodedVideo>& videos) const override;
 
 protected:
     // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
@@ -128,15 +138,13 @@ protected:
 
     bool m_with_cu_seqlens_input = false;
 
-    virtual void expand_video_tags_in_prompt(
-        std::string& unified_prompt,
-        const std::vector<EncodedVideo>& encoded_videos,
-        const std::vector<size_t>& videos_sequence,
-        size_t video_base_id
-    ) const;
+    virtual void expand_video_tags_in_prompt(std::string& unified_prompt,
+                                             const std::vector<EncodedVideo>& encoded_videos,
+                                             const std::vector<size_t>& videos_sequence,
+                                             size_t video_base_id) const;
 
     virtual std::pair<ov::Tensor, ov::Tensor> run_video_image_embeddings_merger(
-        const std::vector<EncodedImage>& images, 
+        const std::vector<EncodedImage>& images,
         const std::vector<size_t>& images_sequence,
         const std::vector<EncodedVideo>& videos,
         const std::vector<size_t>& videos_sequence);
@@ -150,20 +158,17 @@ protected:
         const std::vector<std::array<size_t, 3>>& videos_grid_thw,
         const std::vector<size_t>& videos_sequence,
         const size_t video_id,
-        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
-    ) const;
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) const;
 
-    ov::Tensor create_position_ids(
-        const ov::Tensor& input_ids_tensor,
-        const std::vector<std::array<size_t, 3>>& images_grid_thw,
-        const std::vector<size_t>& images_sequence,
-        const size_t image_id,
-        const std::vector<std::array<size_t, 3>>& videos_grid_thw,
-        const std::vector<size_t>& videos_sequence,
-        const size_t video_id,
-        const int64_t vision_start_token_id,
-        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
-    );
+    ov::Tensor create_position_ids(const ov::Tensor& input_ids_tensor,
+                                   const std::vector<std::array<size_t, 3>>& images_grid_thw,
+                                   const std::vector<size_t>& images_sequence,
+                                   const size_t image_id,
+                                   const std::vector<std::array<size_t, 3>>& videos_grid_thw,
+                                   const std::vector<size_t>& videos_sequence,
+                                   const size_t video_id,
+                                   const int64_t vision_start_token_id,
+                                   const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count);
 
     void encode_vision_placeholder_tokens();
 
@@ -183,20 +188,21 @@ std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_v
     const std::vector<EncodedVideo>& videos,
     const std::vector<size_t>& videos_sequence);
 
-ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw, const std::vector<std::array<size_t, 3>>& reordered_videos_grid_thw);
-ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw, const std::vector<std::array<size_t, 3>>& reordered_videos_grid_thw);
+ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
+                              const std::vector<std::array<size_t, 3>>& reordered_videos_grid_thw);
+ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
+                          const std::vector<std::array<size_t, 3>>& reordered_videos_grid_thw);
 
-ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reordered_video_embeds, const std::vector<ov::Tensor>& reordered_image_embeds);
+ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reordered_video_embeds,
+                                          const std::vector<ov::Tensor>& reordered_image_embeds);
 
-ov::Tensor merge_text_and_video_image_embeddings(
-    const ov::Tensor& input_ids,
-    const ov::Tensor& text_embeds, 
-    const ov::Tensor& processed_image_embeds,
-    const ov::Tensor& processed_video_embeds,
-    const int64_t image_pad_token_id,
-    const int64_t video_pad_token_id
-);
+ov::Tensor merge_text_and_video_image_embeddings(const ov::Tensor& input_ids,
+                                                 const ov::Tensor& text_embeds,
+                                                 const ov::Tensor& processed_image_embeds,
+                                                 const ov::Tensor& processed_video_embeds,
+                                                 const int64_t image_pad_token_id,
+                                                 const int64_t video_pad_token_id);
 
-} // namespace qwen2vl_utils
+}  // namespace qwen2_vl_utils
 
-} // namespace ov::genai
+}  // namespace ov::genai

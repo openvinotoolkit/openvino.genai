@@ -5,8 +5,9 @@
 
 #pragma once
 
-#include "visibility.h"
 #include <stddef.h>
+
+#include "visibility.h"
 
 // Forward declaration for JsonContainer
 typedef struct ov_genai_json_container_opaque ov_genai_json_container;
@@ -42,10 +43,9 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_cr
  * @param messages A JsonContainer containing an array of message objects.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_create_from_json_container(
-    ov_genai_chat_history** history,
-    const ov_genai_json_container* messages
-    );
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e
+ov_genai_chat_history_create_from_json_container(ov_genai_chat_history** history,
+                                                 const ov_genai_json_container* messages);
 
 /**
  * @brief Release the memory allocated by ov_genai_chat_history.
@@ -59,9 +59,8 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_chat_history_free(ov_genai_chat_history* 
  * @param message A JsonContainer containing a message object (e.g., {"role": "user", "content": "Hello"}).
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_push_back(
-    ov_genai_chat_history* history,
-    const ov_genai_json_container* message);
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e
+ov_genai_chat_history_push_back(ov_genai_chat_history* history, const ov_genai_json_container* message);
 
 /**
  * @brief Remove the last message from the chat history.
@@ -76,9 +75,8 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_po
  * @param messages A pointer to store the returned JsonContainer containing all messages.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_messages(
-    const ov_genai_chat_history* history,
-    ov_genai_json_container** messages);
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e
+ov_genai_chat_history_get_messages(const ov_genai_chat_history* history, ov_genai_json_container** messages);
 
 /**
  * @brief Get a message at a specific index as a JsonContainer.
@@ -87,10 +85,10 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_ge
  * @param message A pointer to store the returned JsonContainer containing the message.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_message(
-    const ov_genai_chat_history* history,
-    size_t index,
-    ov_genai_json_container** message);
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e
+ov_genai_chat_history_get_message(const ov_genai_chat_history* history,
+                                  size_t index,
+                                  ov_genai_json_container** message);
 
 /**
  * @brief Get the first message as a JsonContainer.
@@ -98,9 +96,8 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_ge
  * @param message A pointer to store the returned JsonContainer containing the first message.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_first(
-    const ov_genai_chat_history* history,
-    ov_genai_json_container** message);
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e
+ov_genai_chat_history_get_first(const ov_genai_chat_history* history, ov_genai_json_container** message);
 
 /**
  * @brief Get the last message as a JsonContainer.
@@ -108,9 +105,8 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_ge
  * @param message A pointer to store the returned JsonContainer containing the last message.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_last(
-    const ov_genai_chat_history* history,
-    ov_genai_json_container** message);
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e
+ov_genai_chat_history_get_last(const ov_genai_chat_history* history, ov_genai_json_container** message);
 
 /**
  * @brief Clear all messages from the chat history.
@@ -125,9 +121,8 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_cl
  * @param size A pointer to store the size (number of messages).
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_size(
-    const ov_genai_chat_history* history,
-    size_t* size);
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_size(const ov_genai_chat_history* history,
+                                                                                   size_t* size);
 
 /**
  * @brief Check if the chat history is empty.
@@ -135,9 +130,8 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_si
  * @param empty A pointer to store the boolean result (1 for empty, 0 for not empty).
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_empty(
-    const ov_genai_chat_history* history,
-    int* empty);
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e
+ov_genai_chat_history_empty(const ov_genai_chat_history* history, int* empty);
 
 /**
  * @brief Set tools definitions (for function calling) as a JsonContainer (array).
@@ -145,9 +139,8 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_em
  * @param tools A JsonContainer containing an array of tool definitions.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_set_tools(
-    ov_genai_chat_history* history,
-    const ov_genai_json_container* tools);
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e
+ov_genai_chat_history_set_tools(ov_genai_chat_history* history, const ov_genai_json_container* tools);
 
 /**
  * @brief Get tools definitions as a JsonContainer (array).
@@ -155,9 +148,8 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_se
  * @param tools A pointer to store the returned JsonContainer containing tools definitions.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_tools(
-    const ov_genai_chat_history* history,
-    ov_genai_json_container** tools);
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e
+ov_genai_chat_history_get_tools(const ov_genai_chat_history* history, ov_genai_json_container** tools);
 
 /**
  * @brief Set extra context (for custom template variables) as a JsonContainer (object).
@@ -165,9 +157,8 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_ge
  * @param extra_context A JsonContainer containing an object with extra context.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_set_extra_context(
-    ov_genai_chat_history* history,
-    const ov_genai_json_container* extra_context);
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e
+ov_genai_chat_history_set_extra_context(ov_genai_chat_history* history, const ov_genai_json_container* extra_context);
 
 /**
  * @brief Get extra context as a JsonContainer (object).
@@ -175,6 +166,5 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_se
  * @param extra_context A pointer to store the returned JsonContainer containing extra context.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_extra_context(
-    const ov_genai_chat_history* history,
-    ov_genai_json_container** extra_context);
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e
+ov_genai_chat_history_get_extra_context(const ov_genai_chat_history* history, ov_genai_json_container** extra_context);

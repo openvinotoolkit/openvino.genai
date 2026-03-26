@@ -3,30 +3,22 @@
 
 #pragma once
 
-#include <vector>
 #include <cassert>
-#include <set>
 #include <cstdlib>
-#include <string_view>
 #include <memory>
 #include <optional>
+#include <set>
+#include <string_view>
+#include <vector>
 
-#include "openvino/genai/generation_handle.hpp"
-#include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
+#include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/generation_handle.hpp"
 
 namespace ov::genai {
-enum class SequenceStatus {
-    RUNNING = 0,
-    FINISHED = 1,
-    OUT_OF_MEMORY = 2,
-    WAITING = 3
-};
+enum class SequenceStatus { RUNNING = 0, FINISHED = 1, OUT_OF_MEMORY = 2, WAITING = 3 };
 
-enum class SequenceGroupType {
-    TOKENS,
-    EMBEDDINGS
-};
+enum class SequenceGroupType { TOKENS, EMBEDDINGS };
 
 using TokenIds = std::vector<int64_t>;
 using LogProbs = std::vector<float>;
@@ -58,30 +50,34 @@ class Sequence {
     int64_t m_rope_delta;
 
     // Embeddings hash calculation params
-    static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
-    static constexpr size_t m_embeddings_hash_calculation_stride = 50; // the stride with which values are taken from embeddings vector
+    static constexpr size_t m_embeddings_hash_max_num_values =
+        10;  // max number of values used for embeddings hash calculation
+    static constexpr size_t m_embeddings_hash_calculation_stride =
+        50;  // the stride with which values are taken from embeddings vector
 
     size_t _make_hash(size_t content_length);
 
     static std::vector<int64_t> _reduce_embedding(const std::vector<float>& embedding);
 
-    explicit Sequence(const uint64_t id, const SequenceGroupType type, const size_t hidden_size) : m_grouped_id(id), m_type(type), m_hidden_size(hidden_size) {}
+    explicit Sequence(const uint64_t id, const SequenceGroupType type, const size_t hidden_size)
+        : m_grouped_id(id),
+          m_type(type),
+          m_hidden_size(hidden_size) {}
 
-    Sequence(const Sequence& seq, const uint64_t id) :
-        m_generated_ids(seq.m_generated_ids),
-        m_generated_log_probs(seq.m_generated_log_probs),
-        m_grouped_id(id),
-        m_hidden_state(seq.m_hidden_state),
-        m_status(seq.m_status),
-        m_cumulative_log_prob(seq.m_cumulative_log_prob),
-        m_sequence_group(seq.m_sequence_group),
-        m_type(seq.m_type),
-        m_hidden_size(seq.m_hidden_size),
-        m_prefix_hashes(seq.m_prefix_hashes),
-        m_generated_ids_embeds(seq.m_generated_ids_embeds),
-        m_position_ids_list(seq.m_position_ids_list),
-        m_rope_delta(seq.m_rope_delta)
-         {
+    Sequence(const Sequence& seq, const uint64_t id)
+        : m_generated_ids(seq.m_generated_ids),
+          m_generated_log_probs(seq.m_generated_log_probs),
+          m_grouped_id(id),
+          m_hidden_state(seq.m_hidden_state),
+          m_status(seq.m_status),
+          m_cumulative_log_prob(seq.m_cumulative_log_prob),
+          m_sequence_group(seq.m_sequence_group),
+          m_type(seq.m_type),
+          m_hidden_size(seq.m_hidden_size),
+          m_prefix_hashes(seq.m_prefix_hashes),
+          m_generated_ids_embeds(seq.m_generated_ids_embeds),
+          m_position_ids_list(seq.m_position_ids_list),
+          m_rope_delta(seq.m_rope_delta) {
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
 
@@ -89,7 +85,9 @@ public:
     using Ptr = std::shared_ptr<Sequence>;
     using CPtr = std::shared_ptr<const Sequence>;
 
-    static Sequence::Ptr create(const uint64_t id, const SequenceGroupType type = SequenceGroupType::TOKENS, const size_t hidden_size = 0) {
+    static Sequence::Ptr create(const uint64_t id,
+                                const SequenceGroupType type = SequenceGroupType::TOKENS,
+                                const size_t hidden_size = 0) {
         return Sequence::Ptr(new Sequence(id, type, hidden_size));
     }
 
@@ -97,7 +95,7 @@ public:
         return Sequence::Ptr(new Sequence(*sequence, id));
     }
 
-    bool operator ==(const Sequence& other) const {
+    bool operator==(const Sequence& other) const {
         return other.m_id == m_id;
     }
 
@@ -181,8 +179,10 @@ public:
                 auto offset = get_generated_len() - token_cnt - num_token_to_ignore;
                 auto offset_back = get_generated_len() - num_token_to_ignore;
 
-                std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.begin() + offset_back);
-                std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.begin() + offset_back);
+                std::vector<int64_t> token_id(generated_token_id.begin() + offset,
+                                              generated_token_id.begin() + offset_back);
+                std::vector<float> log_probs(generated_log_probs.begin() + offset,
+                                             generated_log_probs.begin() + offset_back);
 
                 output.generated_ids = std::move(token_id);
                 output.generated_log_probs = std::move(log_probs);
@@ -196,11 +196,11 @@ public:
         return m_generated_ids.size();
     }
 
-    const TokenIds & get_generated_ids() const {
+    const TokenIds& get_generated_ids() const {
         return m_generated_ids;
     }
 
-    const LogProbs & get_generated_log_probs() const {
+    const LogProbs& get_generated_log_probs() const {
         return m_generated_log_probs;
     }
 
@@ -239,8 +239,9 @@ public:
         for (size_t i = current_embeds_size, idx = 0; i < current_embeds_size + embeds_count; i++, idx++) {
             m_generated_ids_embeds.emplace_back(std::vector<float>());
             m_generated_ids_embeds[i].resize(m_hidden_size);
-            std::copy_n(generated_ids_embeds.data<float>() + idx * m_hidden_size, m_hidden_size, m_generated_ids_embeds[i].begin());
-
+            std::copy_n(generated_ids_embeds.data<float>() + idx * m_hidden_size,
+                        m_hidden_size,
+                        m_generated_ids_embeds[i].begin());
         }
     }
 
@@ -254,8 +255,7 @@ public:
         ov::Shape position_ids_elem_shape = position_ids.get_shape();
         position_ids_elem_shape[seq_len_shape_idx] = 1;
 
-        for (size_t idx = 0; idx < position_ids_len; idx ++) {
-
+        for (size_t idx = 0; idx < position_ids_len; idx++) {
             ov::Tensor position_ids_elem(position_ids.get_element_type(), position_ids_elem_shape);
             const auto [begin, end] = get_position_ids_elem_coordinates(position_ids_elem.get_shape(), idx, true);
 
@@ -286,26 +286,24 @@ public:
     // hash(prefix tokens + block tokens) <--> KV Block
     size_t get_hash(size_t content_length = 0);
 
-    static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(const ov::Shape& position_ids_elem_shape, size_t idx, bool need_batch_dimention) {
-
+    static std::pair<ov::Coordinate, ov::Coordinate>
+    get_position_ids_elem_coordinates(const ov::Shape& position_ids_elem_shape, size_t idx, bool need_batch_dimention) {
         ov::Coordinate begin;
         ov::Coordinate end;
         if (position_ids_elem_shape.size() == 3) {
             begin = ov::Coordinate{0, 0, idx};
             end = ov::Coordinate{3, 1, idx + 1};
-        }
-        else if (position_ids_elem_shape.size() == 2) {
+        } else if (position_ids_elem_shape.size() == 2) {
             if (need_batch_dimention) {
                 begin = ov::Coordinate{0, idx};
                 end = ov::Coordinate{1, idx + 1};
-            }
-            else {
+            } else {
                 begin = ov::Coordinate{idx};
                 end = ov::Coordinate{idx + 1};
             }
-        }
-        else {
-            OPENVINO_THROW("Unexpected rank of position ids element. Expected rank 2 or 3, got: " + std::to_string(position_ids_elem_shape.size()));
+        } else {
+            OPENVINO_THROW("Unexpected rank of position ids element. Expected rank 2 or 3, got: " +
+                           std::to_string(position_ids_elem_shape.size()));
         }
         return {begin, end};
     }
@@ -315,7 +313,7 @@ public:
 // - each sequence shares the same prompt and KV-caches for prompt
 // - in case of beam search each sequence also shares specific part of generic phase
 //   via reference counter mechanism on BlockManager level
-class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
+class SequenceGroup : public std::enable_shared_from_this<SequenceGroup> {
     uint64_t m_request_id;
     std::vector<Sequence::Ptr> m_sequences;
     ov::genai::GenerationConfig m_sampling_params;
@@ -356,7 +354,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
           m_sampling_params(sampling_params),
           m_block_size(block_size),
           m_sequence_group_type(SequenceGroupType::TOKENS),
-          m_generation_stream(GenerationStream::create()) { }
+          m_generation_stream(GenerationStream::create()) {}
 
     bool out_of_memory() const {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
@@ -372,9 +370,17 @@ public:
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
     // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
-    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, block_size, std::nullopt, std::nullopt) {
-    }
+    SequenceGroup(uint64_t request_id,
+                  const TokenIds& input_ids,
+                  const ov::genai::GenerationConfig& sampling_params,
+                  std::size_t block_size)
+        : SequenceGroup(
+              request_id,
+              ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())),
+              sampling_params,
+              block_size,
+              std::nullopt,
+              std::nullopt) {}
 
     SequenceGroup(uint64_t request_id,
                   const ov::Tensor& input_ids,
@@ -424,14 +430,14 @@ public:
                         m_deepstack_visual_embeds = ov::Tensor(tensor.get_element_type(), tensor.get_shape());
                         tensor.copy_to(m_deepstack_visual_embeds);
                     } else if (input_name == "visual_pos_masks") {
-                        m_visual_pos_masks = std::vector<bool>(tensor.data<const bool>(), tensor.data<const bool>() + tensor.get_size());
+                        m_visual_pos_masks =
+                            std::vector<bool>(tensor.data<const bool>(), tensor.data<const bool>() + tensor.get_size());
                     }
                 }
             }
-            
+
             m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
-        }
-        else {
+        } else {
             OPENVINO_THROW("Unknown tensor format.");
         }
         m_prompt_log_probs.reserve(prompt_len);
@@ -449,13 +455,13 @@ public:
         add_sequence(sequence);
     }
 
-    void add_sequence(const Sequence::Ptr & sequence) {
+    void add_sequence(const Sequence::Ptr& sequence) {
         sequence->set_sequence_group_ptr(this);
         m_sequences.emplace_back(sequence);
     }
 
     void remove_sequence(uint64_t sequence_id) {
-        auto remove_it = std::remove_if(m_sequences.begin(), m_sequences.end(), [sequence_id] (Sequence::Ptr seq) {
+        auto remove_it = std::remove_if(m_sequences.begin(), m_sequences.end(), [sequence_id](Sequence::Ptr seq) {
             return seq->get_id() == sequence_id;
         });
         OPENVINO_ASSERT(remove_it != m_sequences.end(), "Failed to remove sequence with specified ID");
@@ -465,11 +471,9 @@ public:
     size_t get_prompt_len() const {
         if (m_sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             return m_input_embeds.size();
-        }
-        else if (m_sequence_group_type == SequenceGroupType::TOKENS) {
+        } else if (m_sequence_group_type == SequenceGroupType::TOKENS) {
             return m_prompt_ids.size();
-        }
-        else {
+        } else {
             OPENVINO_THROW("Not implemented.");
         }
     }
@@ -483,12 +487,12 @@ public:
         return m_max_content_len + m_num_validation_tokens >= get_prompt_len() && !m_is_gen_paused;
     }
 
-    Sequence::Ptr operator[] (size_t index) {
+    Sequence::Ptr operator[](size_t index) {
         OPENVINO_ASSERT(m_sequences.size() > index);
         return m_sequences[index];
     }
 
-    Sequence::CPtr operator[] (size_t index) const {
+    Sequence::CPtr operator[](size_t index) const {
         OPENVINO_ASSERT(m_sequences.size() > index);
         return m_sequences[index];
     }
@@ -498,7 +502,7 @@ public:
     }
 
     size_t num_running_seqs() const {
-        return std::count_if(m_sequences.begin(), m_sequences.end(), [] (Sequence::CPtr seq) {
+        return std::count_if(m_sequences.begin(), m_sequences.end(), [](Sequence::CPtr seq) {
             return seq->is_running();
         });
     }
@@ -520,7 +524,9 @@ public:
      * @return Whether this group has the sequence with this ID.
      */
     bool has_sequence_with_id(size_t seq_id) const {
-        auto it = std::find_if(m_sequences.begin(), m_sequences.end(), [seq_id](const Sequence::Ptr& val) {return val->get_id() == seq_id;});
+        auto it = std::find_if(m_sequences.begin(), m_sequences.end(), [seq_id](const Sequence::Ptr& val) {
+            return val->get_id() == seq_id;
+        });
         return it != m_sequences.end();
     }
 
@@ -530,8 +536,14 @@ public:
      * @throw ov::Exception if the sequence with ID seq_id is not in this SequenceGroup
      */
     Sequence::Ptr get_sequence_by_id(size_t seq_id) const {
-        auto it = std::find_if(m_sequences.begin(), m_sequences.end(), [seq_id](const Sequence::Ptr& val) {return val->get_id() == seq_id;});
-        OPENVINO_ASSERT(it != m_sequences.end(), "sequence with id ", seq_id, " not found in sequence group with request id ", m_request_id);
+        auto it = std::find_if(m_sequences.begin(), m_sequences.end(), [seq_id](const Sequence::Ptr& val) {
+            return val->get_id() == seq_id;
+        });
+        OPENVINO_ASSERT(it != m_sequences.end(),
+                        "sequence with id ",
+                        seq_id,
+                        " not found in sequence group with request id ",
+                        m_request_id);
         return *it;
     }
 
@@ -542,18 +554,23 @@ public:
         finished_seqs.reserve(num_total_seqs());
 
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory() || handle_stopped() || handle_cancelled()) {
+            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory() || handle_stopped() ||
+                handle_cancelled()) {
                 finished_seqs.push_back(m_sequences[seq_id]);
             }
         }
 
-        OPENVINO_ASSERT(finished_seqs.size() == num_total_seqs(), "Internal error: get_finished_sequences() must be called when all sequences are "
+        OPENVINO_ASSERT(
+            finished_seqs.size() == num_total_seqs(),
+            "Internal error: get_finished_sequences() must be called when all sequences are "
             "either finished / ignored by OOM or dropped via GenerationStream::stop() / GenerationStream::cancel()");
 
-        std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) -> bool {
+        std::sort(finished_seqs.begin(), finished_seqs.end(), [=](Sequence::CPtr s1, Sequence::CPtr s2) -> bool {
             bool is_beam_search = m_sampling_params.is_beam_search();
-            const float score_1 = is_beam_search ? s1->get_beam_search_score(m_sampling_params) : s1->get_cumulative_log_prob();
-            const float score_2 = is_beam_search ? s2->get_beam_search_score(m_sampling_params) : s2->get_cumulative_log_prob();
+            const float score_1 =
+                is_beam_search ? s1->get_beam_search_score(m_sampling_params) : s1->get_cumulative_log_prob();
+            const float score_2 =
+                is_beam_search ? s2->get_beam_search_score(m_sampling_params) : s2->get_cumulative_log_prob();
             return score_1 > score_2;
         });
 
@@ -651,7 +668,8 @@ public:
     }
 
     bool requires_sampling() const {
-        return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len && get_max_new_tokens() > 0;
+        return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len &&
+               get_max_new_tokens() > 0;
     }
 
     void schedule_tokens(size_t num_tokens) {
@@ -686,7 +704,8 @@ public:
 
     size_t get_num_available_tokens_for_batching() const {
         OPENVINO_ASSERT(!has_finished(), "Internal error: this function cannot be called on finished sequence group");
-        OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
+        OPENVINO_ASSERT(get_num_scheduled_tokens() == 0,
+                        "Internal error: this function cannot be called when we are already in scheduling phase");
         // if sequence group has not finished, it has at least one token to process
         size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len);
         return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validation_tokens;
@@ -762,7 +781,8 @@ public:
     }
 
     /**
-     * @return The number of logical KV cache blocks required to host all the tokens in this sequence group, taking into account previous token evictions.
+     * @return The number of logical KV cache blocks required to host all the tokens in this sequence group, taking into
+     * account previous token evictions.
      */
     size_t get_num_logical_blocks() const {
         return (get_context_len() - get_num_evicted_tokens() + m_block_size - 1) / m_block_size;
@@ -834,15 +854,18 @@ public:
 
     void push_outputs() {
         GenerationOutputs outputs;
-        for (auto& sequence: m_sequences) {
+        for (auto& sequence : m_sequences) {
             GenerationOutput output;
             output.generated_ids = sequence->get_generated_ids();
             output.generated_log_probs = sequence->get_generated_log_probs();
             if (m_sampling_params.echo) {
                 output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
-                output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
+                output.generated_log_probs.insert(output.generated_log_probs.begin(),
+                                                  m_prompt_log_probs.begin(),
+                                                  m_prompt_log_probs.end());
             }
-            output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_prob();
+            output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params)
+                                                              : sequence->get_cumulative_log_prob();
             output.finish_reason = sequence->get_finish_reason();
             outputs.emplace(sequence->get_grouped_id(), output);
         }
@@ -857,7 +880,9 @@ public:
             auto output = sequence->get_last_generation_output(token_cnt, m_stream_window_size);
             if (m_sampling_params.echo && !m_has_echoed) {
                 output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
-                output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
+                output.generated_log_probs.insert(output.generated_log_probs.begin(),
+                                                  m_prompt_log_probs.begin(),
+                                                  m_prompt_log_probs.end());
             }
             outputs.emplace(sequence->get_grouped_id(), output);
         }
@@ -877,8 +902,8 @@ public:
                 push_outputs();
             }
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
-            // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
-            // (after stop string is detected its tokens are already sent)
+            // We can stream only when one sequence is returned and we don't use stop strings that would be excluded
+            // from the output (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1) {
                 const auto generated_len = m_sequences.front()->get_generated_len();
                 if (has_finished()) {
@@ -905,25 +930,28 @@ public:
         }
     }
 
-
-    // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
+    // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only
+    // process prompt
     void notify_handle_echo_only() {
         // This method is called after scheduling and before sampling,
         // so m_num_processed_tokens does not include recently forwarded tokens hence this is our starting position
-        // we return m_num_scheduled_tokens tokens as they were forwarded in the current step, meaning context length is our last position.
+        // we return m_num_scheduled_tokens tokens as they were forwarded in the current step, meaning context length is
+        // our last position.
         size_t first_token_position = m_num_processed_tokens;
         size_t last_token_position = get_context_len();
 
         GenerationOutput output;
-        output.generated_ids = std::vector<int64_t>(m_prompt_ids.begin() + first_token_position, m_prompt_ids.begin() + last_token_position);
-        output.generated_log_probs = std::vector<float>(m_prompt_log_probs.begin() + first_token_position, m_prompt_log_probs.begin() + last_token_position);
-        output.score = 0.0; // Should we accumulate prompt log probs here?
+        output.generated_ids = std::vector<int64_t>(m_prompt_ids.begin() + first_token_position,
+                                                    m_prompt_ids.begin() + last_token_position);
+        output.generated_log_probs = std::vector<float>(m_prompt_log_probs.begin() + first_token_position,
+                                                        m_prompt_log_probs.begin() + last_token_position);
+        output.score = 0.0;  // Should we accumulate prompt log probs here?
         output.finish_reason = GenerationFinishReason::NONE;
 
         if (last_token_position == get_prompt_len()) {
             output.finish_reason = GenerationFinishReason::LENGTH;
             set_generation_status(GenerationStatus::FINISHED);
-            m_sequences[0]->set_status(SequenceStatus::FINISHED); // for cleanup
+            m_sequences[0]->set_status(SequenceStatus::FINISHED);  // for cleanup
         }
         GenerationOutputs outputs;
         outputs.emplace(0, output);
@@ -940,4 +968,4 @@ inline std::shared_ptr<SequenceGroup> Sequence::get_sequence_group_ptr() const {
     return m_sequence_group->shared_from_this();
 }
 
-}
+}  // namespace ov::genai

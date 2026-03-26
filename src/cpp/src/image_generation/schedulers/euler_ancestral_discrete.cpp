@@ -1,12 +1,13 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "image_generation/schedulers/euler_ancestral_discrete.hpp"
+
 #include <cassert>
-#include <random>
 #include <fstream>
 #include <iterator>
+#include <random>
 
-#include "image_generation/schedulers/euler_ancestral_discrete.hpp"
 #include "image_generation/numpy_utils.hpp"
 
 namespace ov {
@@ -18,7 +19,7 @@ EulerAncestralDiscreteScheduler::Config::Config(const std::filesystem::path& sch
 
     nlohmann::json data = nlohmann::json::parse(file);
     using utils::read_json_param;
-    
+
     read_json_param(data, "num_train_timesteps", num_train_timesteps);
     read_json_param(data, "beta_start", beta_start);
     read_json_param(data, "beta_end", beta_end);
@@ -30,11 +31,11 @@ EulerAncestralDiscreteScheduler::Config::Config(const std::filesystem::path& sch
     read_json_param(data, "rescale_betas_zero_snr", rescale_betas_zero_snr);
 }
 
-EulerAncestralDiscreteScheduler::EulerAncestralDiscreteScheduler(const std::filesystem::path& scheduler_config_path) 
-    : EulerAncestralDiscreteScheduler(Config(scheduler_config_path)) {
-}
+EulerAncestralDiscreteScheduler::EulerAncestralDiscreteScheduler(const std::filesystem::path& scheduler_config_path)
+    : EulerAncestralDiscreteScheduler(Config(scheduler_config_path)) {}
 
-EulerAncestralDiscreteScheduler::EulerAncestralDiscreteScheduler(const Config& scheduler_config): m_config(scheduler_config) {
+EulerAncestralDiscreteScheduler::EulerAncestralDiscreteScheduler(const Config& scheduler_config)
+    : m_config(scheduler_config) {
     std::vector<float> alphas, betas;
 
     using numpy_utils::linspace;
@@ -50,7 +51,7 @@ EulerAncestralDiscreteScheduler::EulerAncestralDiscreteScheduler(const Config& s
         std::for_each(betas.begin(), betas.end(), [](float& x) {
             x *= x;
         });
-    // TODO: else if beta_schedule == "squaredcos_cap_v2"
+        // TODO: else if beta_schedule == "squaredcos_cap_v2"
     } else {
         OPENVINO_THROW(
             "'beta_schedule' must be one of 'LINEAR' or 'SCALED_LINEAR'. Please, add support of other types");
@@ -140,7 +141,8 @@ void EulerAncestralDiscreteScheduler::set_timesteps(size_t num_inference_steps, 
     m_sigmas.push_back(0.0f);
 
     // apply 'strength' used in image generation
-    // in diffusers, it's https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl_img2img.py#L650
+    // in diffusers, it's
+    // https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl_img2img.py#L650
     {
         size_t init_timestep = std::min<size_t>(num_inference_steps * strength, num_inference_steps);
         size_t t_start = std::max<size_t>(num_inference_steps - init_timestep, 0);
@@ -151,12 +153,17 @@ void EulerAncestralDiscreteScheduler::set_timesteps(size_t num_inference_steps, 
         m_begin_index = t_start;
 
         OPENVINO_ASSERT(!m_timesteps.empty(),
-                        "After adjusting the num_inference_steps by strength parameter: ", strength,
-                        " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a different strength value.");
+                        "After adjusting the num_inference_steps by strength parameter: ",
+                        strength,
+                        " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please "
+                        "set a different strength value.");
     }
 }
 
-std::map<std::string, ov::Tensor> EulerAncestralDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
+std::map<std::string, ov::Tensor> EulerAncestralDiscreteScheduler::step(ov::Tensor noise_pred,
+                                                                        ov::Tensor latents,
+                                                                        size_t inference_step,
+                                                                        std::shared_ptr<Generator> generator) {
     // noise_pred - model_output
     // latents - sample
     // inference_step
@@ -192,7 +199,8 @@ std::map<std::string, ov::Tensor> EulerAncestralDiscreteScheduler::step(ov::Tens
 
     float sigma_from = m_sigmas[m_step_index];
     float sigma_to = m_sigmas[m_step_index + 1];
-    float sigma_up = std::sqrt(std::pow(sigma_to, 2) * (std::pow(sigma_from, 2) - std::pow(sigma_to, 2)) / std::pow(sigma_from, 2));
+    float sigma_up =
+        std::sqrt(std::pow(sigma_to, 2) * (std::pow(sigma_from, 2) - std::pow(sigma_to, 2)) / std::pow(sigma_from, 2));
     float sigma_down = std::sqrt(std::pow(sigma_to, 2) - std::pow(sigma_up, 2));
     float dt = sigma_down - sigma;
 
@@ -222,12 +230,14 @@ size_t EulerAncestralDiscreteScheduler::_index_for_timestep(int64_t timestep) co
     OPENVINO_THROW("Failed to find index for timestep ", timestep);
 }
 
-void EulerAncestralDiscreteScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const {
+void EulerAncestralDiscreteScheduler::add_noise(ov::Tensor init_latent,
+                                                ov::Tensor noise,
+                                                int64_t latent_timestep) const {
     size_t index_for_timestep = _index_for_timestep(latent_timestep);
     const float sigma = m_sigmas[index_for_timestep];
 
-    float * init_latent_data = init_latent.data<float>();
-    const float * noise_data = noise.data<float>();
+    float* init_latent_data = init_latent.data<float>();
+    const float* noise_data = noise.data<float>();
 
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
         init_latent_data[i] = init_latent_data[i] + sigma * noise_data[i];
@@ -263,5 +273,5 @@ float EulerAncestralDiscreteScheduler::get_init_noise_sigma() const {
     return std::sqrt(std::pow(max_sigma, 2) + 1);
 }
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

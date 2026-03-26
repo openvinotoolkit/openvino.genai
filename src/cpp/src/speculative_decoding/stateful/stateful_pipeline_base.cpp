@@ -124,15 +124,15 @@ DecodedResults StatefulSpeculativePipelineBase::generate(StringInputs inputs,
     generate_timer.start();
 
     // Extract prompt string
-    std::string prompt = std::visit(
-        overloaded{[](const std::string& prompt_str) {
-                       return prompt_str;
-                   },
-                   [](std::vector<std::string>& prompts) {
-                       OPENVINO_ASSERT(prompts.size() == 1u, "Currently only batch size=1 is supported");
-                       return prompts.front();
-                   }},
-        inputs);
+    std::string prompt =
+        std::visit(overloaded{[](const std::string& prompt_str) {
+                                  return prompt_str;
+                              },
+                              [](std::vector<std::string>& prompts) {
+                                  OPENVINO_ASSERT(prompts.size() == 1u, "Currently only batch size=1 is supported");
+                                  return prompts.front();
+                              }},
+                   inputs);
 
     GenerationConfig config = resolve_generation_config(generation_config);
 
@@ -212,7 +212,7 @@ EncodedResults StatefulSpeculativePipelineBase::generate(const EncodedInputs& in
                                                          StreamerVariant streamer) {
     // Resolve configuration
     GenerationConfig config = resolve_generation_config(generation_config);
-    
+
     // Delegate to generate_tokens (implemented by child classes)
     return generate_tokens(inputs, config, streamer);
 }

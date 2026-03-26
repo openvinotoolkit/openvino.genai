@@ -5,8 +5,8 @@
 
 #include <map>
 #include <memory>
-#include <string>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "openvino/op/constant.hpp"
@@ -23,13 +23,14 @@ struct LoRAParts {
     LoRAParts(const T& alpha, const T& A, const T& B) : alpha(alpha), A(A), B(B) {}
 
     template <typename Other>
-    LoRAParts(const LoRAParts<Other>& other) : alpha(other.alpha), A(other.A), B(other.B) {}
+    LoRAParts(const LoRAParts<Other>& other) : alpha(other.alpha),
+                                               A(other.A),
+                                               B(other.B) {}
 };
-
 
 using LoRAWeight = LoRAParts<std::shared_ptr<ov::op::v0::Constant>>;
 using LoRATensors = std::map<std::string, LoRAWeight>;
 
-}
-}
-}
+}  // namespace utils
+}  // namespace genai
+}  // namespace ov

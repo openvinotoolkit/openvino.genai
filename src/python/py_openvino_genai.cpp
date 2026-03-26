@@ -1,19 +1,18 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <filesystem>
-
+#include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <pybind11/stl_bind.h>
 #include <pybind11/stl/filesystem.h>
-#include <pybind11/functional.h>
+#include <pybind11/stl_bind.h>
 #include <pybind11/typing.h>
+
+#include <filesystem>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/version.hpp"
-
 #include "py_utils.hpp"
 
 namespace py = pybind11;
@@ -22,12 +21,12 @@ namespace pyutils = ov::genai::pybind::utils;
 using ov::genai::CallbackTypeVariant;
 using ov::genai::DecodedResults;
 using ov::genai::EncodedResults;
+using ov::genai::get_version;
 using ov::genai::StreamerBase;
-using ov::genai::StringInputs;
 using ov::genai::StreamingStatus;
+using ov::genai::StringInputs;
 using ov::genai::TextStreamer;
 using ov::genai::Tokenizer;
-using ov::genai::get_version;
 
 void init_lora_adapter(py::module_& m);
 void init_perf_metrics(py::module_& m);
@@ -76,8 +75,7 @@ auto encoded_results_docstring = R"(
                            applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
 )";
 
-} // namespace
-
+}  // namespace
 
 #ifdef Py_GIL_DISABLED
 PYBIND11_MODULE(py_openvino_genai, m, py::mod_gil_not_used()) {
@@ -86,35 +84,43 @@ PYBIND11_MODULE(py_openvino_genai, m) {
 #endif
     m.doc() = "Pybind11 binding for OpenVINO GenAI library";
 
-    m.def("get_version", [] () -> py::str {
-        return get_version().buildNumber;
-    }, get_version().description);
+    m.def(
+        "get_version",
+        []() -> py::str {
+            return get_version().buildNumber;
+        },
+        get_version().description);
 
     init_perf_metrics(m);
 
     py::class_<DecodedResults>(m, "DecodedResults", decoded_results_docstring)
         .def(py::init<>())
-        .def_property_readonly("texts", [](const DecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })
+        .def_property_readonly("texts",
+                               [](const DecodedResults& dr) -> py::typing::List<py::str> {
+                                   return pyutils::handle_utf8((std::vector<std::string>)dr);
+                               })
         .def_readonly("scores", &DecodedResults::scores)
-        .def_property_readonly("parsed", [](const DecodedResults& dr) -> py::list {
-            py::list result_dicts;
-            for (const auto& parsed: dr.parsed) {
-                result_dicts.append(pyutils::json_container_to_py_object(parsed));
-            }
-            return result_dicts;
-        })
+        .def_property_readonly("parsed",
+                               [](const DecodedResults& dr) -> py::list {
+                                   py::list result_dicts;
+                                   for (const auto& parsed : dr.parsed) {
+                                       result_dicts.append(pyutils::json_container_to_py_object(parsed));
+                                   }
+                                   return result_dicts;
+                               })
         .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
         .def_readonly("extended_perf_metrics", &DecodedResults::extended_perf_metrics)
-        .def("__str__", [](const DecodedResults &dr) -> py::str {
+        .def("__str__", [](const DecodedResults& dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);
             py::str res;
             if (valid_utf8_strings.size() == 1)
                 return valid_utf8_strings[0];
-            
+
             for (size_t i = 0; i < valid_utf8_strings.size() - 1; i++) {
                 res += py::str(std::to_string(dr.scores[i])) + py::str(": ") + valid_utf8_strings[i] + py::str("\n");
             }
-            res += py::str(std::to_string(dr.scores.back())) + py::str(": ") + valid_utf8_strings[valid_utf8_strings.size() - 1];
+            res += py::str(std::to_string(dr.scores.back())) + py::str(": ") +
+                   valid_utf8_strings[valid_utf8_strings.size() - 1];
             return res;
         });
 

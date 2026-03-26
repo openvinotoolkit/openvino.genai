@@ -4,41 +4,39 @@
 
 #pragma once
 
-#include <vector>
-#include <set>
-#include <optional>
-
 #include <nlohmann/json.hpp>
-
-#include <openvino/core/except.hpp>
 #include <openvino/core/any.hpp>
+#include <openvino/core/except.hpp>
+#include <optional>
+#include <set>
+#include <vector>
 
 #include "openvino/genai/json_container.hpp"
 
 namespace nlohmann {
 
-template<>
+template <>
 struct adl_serializer<ov::genai::JsonContainer> {
     static void to_json(ordered_json& json, const ov::genai::JsonContainer& container) {
         auto json_value_ptr = static_cast<const ordered_json*>(container._get_json_value_ptr());
         json = *json_value_ptr;
     }
-    
+
     static ov::genai::JsonContainer from_json(const ordered_json& json) {
         return ov::genai::JsonContainer::from_json_string(json.dump());
     }
 };
 
-} // namespace nlohmann
+}  // namespace nlohmann
 
 namespace ov {
 namespace genai {
 namespace utils {
 
-template<typename, typename = void>
+template <typename, typename = void>
 constexpr bool is_std_array = false;
 
-template<typename T, std::size_t N>
+template <typename T, std::size_t N>
 constexpr bool is_std_array<std::array<T, N>> = true;
 
 /// @brief reads value to param if T argument type is aligned with value stores in json
@@ -46,9 +44,8 @@ constexpr bool is_std_array<std::array<T, N>> = true;
 template <typename T>
 void read_json_param(const nlohmann::json& data, const std::string& name, T& param) {
     if (data.contains(name) && !data[name].is_null()) {
-        if (data[name].is_number() || data[name].is_boolean() || data[name].is_string() || data[name].is_object()
-            || (is_std_array<T> && data[name].is_array())
-        ) {
+        if (data[name].is_number() || data[name].is_boolean() || data[name].is_string() || data[name].is_object() ||
+            (is_std_array<T> && data[name].is_array())) {
             param = data[name].get<T>();
         }
     } else if (name.find(".") != std::string::npos) {
@@ -151,8 +148,6 @@ inline nlohmann::ordered_json any_map_to_json(const ov::AnyMap& any_map) {
     }
     return object_json;
 }
-
-
 
 }  // namespace utils
 }  // namespace genai

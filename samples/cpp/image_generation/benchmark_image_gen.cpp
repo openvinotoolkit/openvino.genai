@@ -1,18 +1,19 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/image_generation/text2image_pipeline.hpp"
-#include "openvino/genai/image_generation/image2image_pipeline.hpp"
-#include "openvino/genai/image_generation/inpainting_pipeline.hpp"
-#include <cxxopts.hpp>
 #include <chrono>
+#include <cxxopts.hpp>
+
 #include "imwrite.hpp"
 #include "load_image.hpp"
+#include "openvino/genai/image_generation/image2image_pipeline.hpp"
+#include "openvino/genai/image_generation/inpainting_pipeline.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "progress_bar.hpp"
 
 inline float get_total_text_encoder_infer_duration(ov::genai::ImageGenerationPerfMetrics& metrics) {
     float text_encoder_duration = 0.0f;
-    for(auto text_encoder : metrics.get_text_encoder_infer_duration()) {
+    for (auto text_encoder : metrics.get_text_encoder_infer_duration()) {
         text_encoder_duration += text_encoder.second;
     }
     return text_encoder_duration;
@@ -22,8 +23,7 @@ inline void print_one_generate(ov::genai::ImageGenerationPerfMetrics& metrics, s
     std::string prefix_idx = "[" + prefix + "-" + std::to_string(idx) + "]";
     std::cout << "\n";
     std::cout << prefix_idx << " generate time: " << metrics.get_generate_duration()
-              << " ms, total infer time:" << metrics.get_inference_duration()
-              << " ms" << std::endl;
+              << " ms, total infer time:" << metrics.get_inference_duration() << " ms" << std::endl;
     std::cout << prefix_idx << " text encoder infer time: " << get_total_text_encoder_infer_duration(metrics) << " ms"
               << std::endl;
     float first_iter_time, other_iter_avg_time;
@@ -52,19 +52,18 @@ inline void print_one_generate(ov::genai::ImageGenerationPerfMetrics& metrics, s
 }
 
 inline float calculate_average(std::vector<float>& durations) {
-    float duration_mean = std::accumulate(durations.begin(),
-                                           durations.end(),
-                                           0.0f,
-                                           [](const float& acc, const float& duration) -> float {
-                                               return acc + duration;
-                                           });
+    float duration_mean =
+        std::accumulate(durations.begin(), durations.end(), 0.0f, [](const float& acc, const float& duration) -> float {
+            return acc + duration;
+        });
     if (!durations.empty()) {
         duration_mean /= durations.size();
     }
     return duration_mean;
 }
 
-inline void print_statistic(std::vector<ov::genai::ImageGenerationPerfMetrics>& warmup_metrics, std::vector<ov::genai::ImageGenerationPerfMetrics>& iter_metrics) {
+inline void print_statistic(std::vector<ov::genai::ImageGenerationPerfMetrics>& warmup_metrics,
+                            std::vector<ov::genai::ImageGenerationPerfMetrics>& iter_metrics) {
     std::vector<float> generate_durations;
     std::vector<float> total_inference_durations;
     std::vector<float> text_encoder_durations;
@@ -210,7 +209,8 @@ void image2image(cxxopts::ParseResult& result) {
 
     std::vector<ov::genai::ImageGenerationPerfMetrics> iter_metrics;
     for (size_t i = 0; i < num_iter; i++) {
-        ov::Tensor image = pipe.generate(prompt, image_input, ov::genai::strength(strength), ov::genai::callback(progress_bar));
+        ov::Tensor image =
+            pipe.generate(prompt, image_input, ov::genai::strength(strength), ov::genai::callback(progress_bar));
         ov::genai::ImageGenerationPerfMetrics metrics = pipe.get_performance_metrics();
         iter_metrics.emplace_back(metrics);
         std::string image_name = output_dir + "/image_" + std::to_string(i) + ".bmp";
@@ -268,26 +268,43 @@ int main(int argc, char* argv[]) try {
     cxxopts::Options options("benchmark_image_generation", "Help command");
 
     options.add_options()
-    //common parameters
-    ("t,pipeline_type", "pipeline type: text2image/image2image/inpainting", cxxopts::value<std::string>()->default_value("text2image"))
-    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>())
-    ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value("The Sky is blue because"))
-    ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
-    ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
-    ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("o,output_dir", "Path to save output image", cxxopts::value<std::string>()->default_value("."))
-    ("is,num_inference_steps", "The number of inference steps used to denoise initial noised latent to final image", cxxopts::value<size_t>()->default_value(std::to_string(20)))
-    ("ni,num_images_per_prompt", "The number of images to generate per generate() call", cxxopts::value<size_t>()->default_value(std::to_string(1)))
-    ("i,image", "Image path", cxxopts::value<std::string>())
-    //special parameters of text2image pipeline
-    ("w,width", "The width of the resulting image", cxxopts::value<size_t>()->default_value(std::to_string(512)))
-    ("ht,height", "The height of the resulting image", cxxopts::value<size_t>()->default_value(std::to_string(512)))
-    //special parameters of image2image pipeline
-    ("s,strength", "Indicates extent to transform the reference `image`. Must be between 0 and 1", cxxopts::value<float>()->default_value(std::to_string(0.8)))
-    //special parameters of inpainting pipeline
-    ("mi,mask_image", "Mask image path", cxxopts::value<std::string>())
-    ("r,reshape", "Reshape pipeline before compilation", cxxopts::value<bool>()->default_value("false"))
-    ("h,help", "Print usage");
+        // common parameters
+        ("t,pipeline_type",
+         "pipeline type: text2image/image2image/inpainting",
+         cxxopts::value<std::string>()->default_value(
+             "text2image"))("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>())(
+            "p,prompt",
+            "Prompt",
+            cxxopts::value<std::string>()->default_value("The Sky is blue because"))(
+            "nw,num_warmup",
+            "Number of warmup iterations",
+            cxxopts::value<size_t>()->default_value(std::to_string(
+                1)))("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))(
+            "d,device",
+            "device",
+            cxxopts::value<std::string>()->default_value(
+                "CPU"))("o,output_dir", "Path to save output image", cxxopts::value<std::string>()->default_value("."))(
+            "is,num_inference_steps",
+            "The number of inference steps used to denoise initial noised latent to final image",
+            cxxopts::value<size_t>()->default_value(std::to_string(20)))(
+            "ni,num_images_per_prompt",
+            "The number of images to generate per generate() call",
+            cxxopts::value<size_t>()->default_value(
+                std::to_string(1)))("i,image", "Image path", cxxopts::value<std::string>())
+        // special parameters of text2image pipeline
+        ("w,width", "The width of the resulting image", cxxopts::value<size_t>()->default_value(std::to_string(512)))(
+            "ht,height",
+            "The height of the resulting image",
+            cxxopts::value<size_t>()->default_value(std::to_string(512)))
+        // special parameters of image2image pipeline
+        ("s,strength",
+         "Indicates extent to transform the reference `image`. Must be between 0 and 1",
+         cxxopts::value<float>()->default_value(std::to_string(0.8)))
+        // special parameters of inpainting pipeline
+        ("mi,mask_image", "Mask image path", cxxopts::value<std::string>())(
+            "r,reshape",
+            "Reshape pipeline before compilation",
+            cxxopts::value<bool>()->default_value("false"))("h,help", "Print usage");
 
     cxxopts::ParseResult result;
     try {
@@ -318,11 +335,13 @@ int main(int argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

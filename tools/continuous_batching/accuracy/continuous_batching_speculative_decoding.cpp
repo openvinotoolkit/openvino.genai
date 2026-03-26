@@ -1,14 +1,15 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <openvino/openvino.hpp>
 #include <cxxopts.hpp>
+#include <openvino/openvino.hpp>
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 
 void print_cb_generation_result(const ov::genai::GenerationResult& generation_result) {
     for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
-        std::cout << "Answer " << output_id << " (" << generation_result.m_scores[output_id] << ") : " << generation_result.m_generation_ids[output_id] << std::endl;
+        std::cout << "Answer " << output_id << " (" << generation_result.m_scores[output_id]
+                  << ") : " << generation_result.m_generation_ids[output_id] << std::endl;
     }
 }
 
@@ -33,7 +34,6 @@ ov::genai::GenerationConfig multinomial_config() {
 }
 
 std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_examples() {
-    
     // sampling param for speulative decoding
     ov::genai::GenerationConfig generation_config_greedy_constant = greedy_config();
     {
@@ -69,13 +69,18 @@ int main(int argc, char* argv[]) try {
 
     cxxopts::Options options("accuracy_sample", "Help command");
 
-    options.add_options()
-    ("n,num_prompts", "A number of prompts", cxxopts::value<size_t>()->default_value("1"))
-    ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("false"))
-    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
-    ("a,draft_model", "Path to assisting model base directory", cxxopts::value<std::string>()->default_value("."))
-    ("d,device", "Target device to run the model", cxxopts::value<std::string>()->default_value("CPU"))
-    ("h,help", "Print usage");
+    options.add_options()("n,num_prompts", "A number of prompts", cxxopts::value<size_t>()->default_value("1"))(
+        "dynamic_split_fuse",
+        "Whether to use dynamic split-fuse or vLLM scheduling",
+        cxxopts::value<bool>()->default_value("false"))("m,model",
+                                                        "Path to model and tokenizers base directory",
+                                                        cxxopts::value<std::string>()->default_value("."))(
+        "a,draft_model",
+        "Path to assisting model base directory",
+        cxxopts::value<std::string>()->default_value("."))(
+        "d,device",
+        "Target device to run the model",
+        cxxopts::value<std::string>()->default_value("CPU"))("h,help", "Print usage");
 
     cxxopts::ParseResult result;
     try {
@@ -125,20 +130,22 @@ int main(int argc, char* argv[]) try {
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
     // vLLM specific params
     scheduler_config.max_num_seqs = 2;
-    
-    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, {ov::genai::draft_model(draft_models_path, device)});
+
+    ov::genai::ContinuousBatchingPipeline pipe(models_path,
+                                               scheduler_config,
+                                               device,
+                                               {ov::genai::draft_model(draft_models_path, device)});
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, generation_config);
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
-        const ov::genai::GenerationResult & generation_result = generation_results[request_id];
+        const ov::genai::GenerationResult& generation_result = generation_results[request_id];
         std::cout << "Question: " << prompts[request_id] << std::endl;
-        switch (generation_result.m_status)
-        {
+        switch (generation_result.m_status) {
         case ov::genai::GenerationStatus::FINISHED:
             print_cb_generation_result(generation_result);
             break;
         case ov::genai::GenerationStatus::IGNORED:
-            std::cout << "Request was ignored due to lack of memory." <<std::endl;
+            std::cout << "Request was ignored due to lack of memory." << std::endl;
             if (generation_result.m_generation_ids.size() > 0) {
                 std::cout << "Partial result:" << std::endl;
                 print_cb_generation_result(generation_result);
@@ -146,12 +153,12 @@ int main(int argc, char* argv[]) try {
             break;
         case ov::genai::GenerationStatus::STOP:
         case ov::genai::GenerationStatus::CANCEL:
-            std::cout << "Request was aborted." <<std::endl;
+            std::cout << "Request was aborted." << std::endl;
             if (generation_result.m_generation_ids.size() > 0) {
                 std::cout << "Partial result:" << std::endl;
                 print_cb_generation_result(generation_result);
             }
-            break;   
+            break;
         default:
             break;
         }
@@ -160,11 +167,13 @@ int main(int argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

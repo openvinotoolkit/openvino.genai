@@ -8,11 +8,11 @@
 #include <vector>
 
 #include "openvino/core/any.hpp"
+#include "openvino/genai/lora_adapter.hpp"
+#include "openvino/genai/visibility.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
-#include "openvino/genai/lora_adapter.hpp"
-#include "openvino/genai/visibility.hpp"
 
 namespace ov::genai {
 
@@ -30,8 +30,8 @@ public:
     explicit LTXVideoTransformer3DModel(const std::filesystem::path& root_dir);
 
     LTXVideoTransformer3DModel(const std::filesystem::path& root_dir,
-                          const std::string& device,
-                          const ov::AnyMap& properties = {});
+                               const std::string& device,
+                               const ov::AnyMap& properties = {});
 
     LTXVideoTransformer3DModel(const LTXVideoTransformer3DModel&);
 
@@ -41,7 +41,7 @@ public:
 
     template <typename... Properties>
     ov::util::EnableIfAllStringAny<LTXVideoTransformer3DModel&, Properties...> compile(const std::string& device,
-                                                                                  Properties&&... properties) {
+                                                                                       Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -51,7 +51,11 @@ public:
 
     ov::Tensor infer(const ov::Tensor& latent, const ov::Tensor& timestep);
 
-    LTXVideoTransformer3DModel& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width, int64_t tokenizer_model_max_length);
+    LTXVideoTransformer3DModel& reshape(int64_t batch_size,
+                                        int64_t num_frames,
+                                        int64_t height,
+                                        int64_t width,
+                                        int64_t tokenizer_model_max_length);
 
     size_t get_expected_batch_size() const;
     size_t get_request_input_batch();
@@ -66,7 +70,8 @@ private:
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
     size_t m_expected_batch_size = 0;
-    int64_t m_spatial_compression_ratio, m_temporal_compression_ratio; // calculated based on vae config, needed for reshape
+    int64_t m_spatial_compression_ratio,
+        m_temporal_compression_ratio;  // calculated based on vae config, needed for reshape
 
     class InferenceDynamic;
     class InferenceStaticBS1;

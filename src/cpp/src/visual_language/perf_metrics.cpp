@@ -29,8 +29,8 @@ VLMPerfMetrics VLMPerfMetrics::operator+(const VLMPerfMetrics& right) const {
     auto& result_prepare_embeddings_durations = result.vlm_raw_metrics.prepare_embeddings_durations;
     auto& right_prepare_embeddings_durations = right.vlm_raw_metrics.prepare_embeddings_durations;
     result_prepare_embeddings_durations.insert(result_prepare_embeddings_durations.end(),
-                                                right_prepare_embeddings_durations.begin(),
-                                                right_prepare_embeddings_durations.end());
+                                               right_prepare_embeddings_durations.begin(),
+                                               right_prepare_embeddings_durations.end());
     return result;
 }
-}
+}  // namespace ov::genai

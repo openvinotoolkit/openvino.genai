@@ -64,9 +64,9 @@ StreamingStatus TextStreamer::write(int64_t token) {
         // Print to output only if text length is increased.
         res << std::string_view{text.data() + m_printed_len, print_until - m_printed_len} << std::flush;
     }
-    
+
     auto status = run_callback_if_needed(res.str());
-    
+
     if (print_until > -1 && print_until > m_printed_len) {
         m_printed_len = print_until;
     }
@@ -136,20 +136,21 @@ StreamerBase::~StreamerBase() = default;
 // Is used to hide internal states of TextParserStreamer
 class TextParserStreamer::TextParserStreamerImpl {
 public:
+    std::vector<std::shared_ptr<IncrementalParser>> m_parsers;
+    JsonContainer m_parsed_message;
 
-std::vector<std::shared_ptr<IncrementalParser>> m_parsers;
-JsonContainer m_parsed_message;
-
-TextParserStreamerImpl(std::vector<std::shared_ptr<IncrementalParser>> parsers) : m_parsers{parsers} {}
-
+    TextParserStreamerImpl(std::vector<std::shared_ptr<IncrementalParser>> parsers) : m_parsers{parsers} {}
 };
 
-TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers) 
-    : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
-                return this->write(s);
-    }), m_pimpl{std::make_unique<TextParserStreamerImpl>(parsers)} {
-        m_pimpl->m_parsed_message["content"] = "";
-    }
+TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer,
+                                       std::vector<std::shared_ptr<IncrementalParser>> parsers)
+    : TextStreamer(tokenizer,
+                   [this](std::string s) -> CallbackTypeVariant {
+                       return this->write(s);
+                   }),
+      m_pimpl{std::make_unique<TextParserStreamerImpl>(parsers)} {
+    m_pimpl->m_parsed_message["content"] = "";
+}
 
 CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     // When 'write' is called with string, it means new chunk of tokens is decoded into text
@@ -169,11 +170,14 @@ CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
 
         // Find where the last printed tokens are located based on m_printed_len and print_until
         auto print_until = m_decoded_lengths[m_decoded_lengths.size() - delay_n_tokens];
-        auto first = std::upper_bound(m_decoded_lengths.begin(), m_decoded_lengths.end(), static_cast<long long>(m_printed_len))
-                     - m_decoded_lengths.begin();
-        auto last  = std::upper_bound(m_decoded_lengths.begin(), m_decoded_lengths.end(), static_cast<long long>(print_until))
-                     - m_decoded_lengths.begin();
-        
+        auto first = std::upper_bound(m_decoded_lengths.begin(),
+                                      m_decoded_lengths.end(),
+                                      static_cast<long long>(m_printed_len)) -
+                     m_decoded_lengths.begin();
+        auto last =
+            std::upper_bound(m_decoded_lengths.begin(), m_decoded_lengths.end(), static_cast<long long>(print_until)) -
+            m_decoded_lengths.begin();
+
         // Before calling base write from TextStreamer save the current token.
         if (last >= first) {
             flushed_tokens.assign(m_tokens_cache.begin() + first, m_tokens_cache.begin() + last);
@@ -185,12 +189,12 @@ CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     // to delta_message or set string fields whose values will be concatenated with the accumulated message.
     JsonContainer delta_message;
     // Iterate over all parsers and apply them to the message
-    for (auto& parser: m_pimpl->m_parsers) {
+    for (auto& parser : m_pimpl->m_parsers) {
         delta_text = parser->parse(delta_message, delta_text, flushed_tokens);
         // Message can be modified inside parser, if parser for example extracted tool calling from message content
     }
     delta_message["content"] = delta_text;
-    
+
     m_pimpl->m_parsed_message.concatenate(delta_message);
     return write(delta_message);
 }

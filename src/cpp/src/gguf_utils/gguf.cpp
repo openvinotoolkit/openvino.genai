@@ -374,19 +374,19 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
     config["architecture"] = arch;
     config["layer_num"] = metadata_to_int(metadata, arch + ".block_count");
     config["head_num"] = metadata_to_int(metadata, arch + ".attention.head_count");
-    config["head_size"] = metadata.count(arch + ".attention.key_length") ?
-                     metadata_to_int(metadata, arch + ".attention.key_length") :
-                     (metadata_to_int(metadata, arch + ".embedding_length") / 
-                     metadata_to_int(metadata, arch + ".attention.head_count"));
-    config["head_num_kv"] = metadata.count(arch + ".attention.head_count_kv") ?
-            metadata_to_int(metadata, arch + ".attention.head_count_kv") :
-            metadata_to_int(metadata, arch + ".attention.head_count");
+    config["head_size"] = metadata.count(arch + ".attention.key_length")
+                              ? metadata_to_int(metadata, arch + ".attention.key_length")
+                              : (metadata_to_int(metadata, arch + ".embedding_length") /
+                                 metadata_to_int(metadata, arch + ".attention.head_count"));
+    config["head_num_kv"] = metadata.count(arch + ".attention.head_count_kv")
+                                ? metadata_to_int(metadata, arch + ".attention.head_count_kv")
+                                : metadata_to_int(metadata, arch + ".attention.head_count");
     config["hidden_size"] = metadata_to_int(metadata, arch + ".embedding_length");
-    config["max_position_embeddings"] = metadata.count(arch + ".context_length") ?
-            metadata_to_int(metadata, arch + ".context_length") : 2048;
+    config["max_position_embeddings"] =
+        metadata.count(arch + ".context_length") ? metadata_to_int(metadata, arch + ".context_length") : 2048;
     config["rms_norm_eps"] = metadata_to_float(metadata, arch + ".attention.layer_norm_rms_epsilon");
-    config["rope_freq_base"] = metadata.count(arch + ".rope.freq_base") ?
-            metadata_to_float(metadata, arch + ".rope.freq_base") : 10000.0f;
+    config["rope_freq_base"] =
+        metadata.count(arch + ".rope.freq_base") ? metadata_to_float(metadata, arch + ".rope.freq_base") : 10000.0f;
     config["file_type"] = metadata_to_int(metadata, "general.file_type");
     return config;
 }
@@ -418,8 +418,9 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
     // Process layer weights
     for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
         consts[format("model.layers[%d].input_layernorm.weight", i)] = weights.at(format("blk.%d.attn_norm.weight", i));
-        consts[format("model.layers[%d].post_attention_layernorm.weight", i)] = weights.at(format("blk.%d.ffn_norm.weight", i));
-        
+        consts[format("model.layers[%d].post_attention_layernorm.weight", i)] =
+            weights.at(format("blk.%d.ffn_norm.weight", i));
+
         // Attention weights
         consts[format("model.layers[%d].self_attn.q_proj.weight", i)] = weights.at(format("blk.%d.attn_q.weight", i));
         if (weights.count(format("blk.%d.attn_q.bias", i))) {
@@ -433,17 +434,21 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
         if (weights.count(format("blk.%d.attn_v.bias", i))) {
             consts[format("model.layers[%d].self_attn.v_proj.bias", i)] = weights.at(format("blk.%d.attn_v.bias", i));
         }
-        consts[format("model.layers[%d].self_attn.o_proj.weight", i)] = weights.at(format("blk.%d.attn_output.weight", i));
+        consts[format("model.layers[%d].self_attn.o_proj.weight", i)] =
+            weights.at(format("blk.%d.attn_output.weight", i));
         if (weights.count(format("blk.%d.attn_output.bias", i))) {
-            consts[format("model.layers[%d].self_attn.o_proj.bias", i)] = weights.at(format("blk.%d.attn_output.bias", i));
+            consts[format("model.layers[%d].self_attn.o_proj.bias", i)] =
+                weights.at(format("blk.%d.attn_output.bias", i));
         }
 
-        //Qwen3
+        // Qwen3
         if (weights.count(format("blk.%d.attn_k_norm.weight", i))) {
-            consts[format("model.layers[%d].self_attn.k_norm.weight", i)] = weights.at(format("blk.%d.attn_k_norm.weight", i));
+            consts[format("model.layers[%d].self_attn.k_norm.weight", i)] =
+                weights.at(format("blk.%d.attn_k_norm.weight", i));
         }
         if (weights.count(format("blk.%d.attn_q_norm.weight", i))) {
-            consts[format("model.layers[%d].self_attn.q_norm.weight", i)] = weights.at(format("blk.%d.attn_q_norm.weight", i));
+            consts[format("model.layers[%d].self_attn.q_norm.weight", i)] =
+                weights.at(format("blk.%d.attn_q_norm.weight", i));
         }
 
         // MLP weights
@@ -460,51 +465,65 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
             consts[format("model.layers[%d].mlp.down_proj.bias", i)] = weights.at(format("blk.%d.ffn_down.bias", i));
         }
 
-        // Quantization parameters 
-        // If file_type not ALL_F32 = 0 or MOSTLY_F16 = 1, get dequant scales and biases 
-        if (std::get<int>(config.at("file_type")) != 0 && std::get<int>(config.at("file_type")) != 1) { 
+        // Quantization parameters
+        // If file_type not ALL_F32 = 0 or MOSTLY_F16 = 1, get dequant scales and biases
+        if (std::get<int>(config.at("file_type")) != 0 && std::get<int>(config.at("file_type")) != 1) {
             if (weights.count(format("blk.%d.attn_q.scales", i))) {
-                consts[format("model.layers[%d].self_attn.q_proj.scales", i)] = weights.at(format("blk.%d.attn_q.scales", i));
+                consts[format("model.layers[%d].self_attn.q_proj.scales", i)] =
+                    weights.at(format("blk.%d.attn_q.scales", i));
             }
             if (weights.count(format("blk.%d.attn_k.scales", i))) {
-                consts[format("model.layers[%d].self_attn.k_proj.scales", i)] = weights.at(format("blk.%d.attn_k.scales", i));
+                consts[format("model.layers[%d].self_attn.k_proj.scales", i)] =
+                    weights.at(format("blk.%d.attn_k.scales", i));
             }
             if (weights.count(format("blk.%d.attn_v.scales", i))) {
-                consts[format("model.layers[%d].self_attn.v_proj.scales", i)] = weights.at(format("blk.%d.attn_v.scales", i));
+                consts[format("model.layers[%d].self_attn.v_proj.scales", i)] =
+                    weights.at(format("blk.%d.attn_v.scales", i));
             }
             if (weights.count(format("blk.%d.attn_output.scales", i))) {
-                consts[format("model.layers[%d].self_attn.o_proj.scales", i)] = weights.at(format("blk.%d.attn_output.scales", i));
+                consts[format("model.layers[%d].self_attn.o_proj.scales", i)] =
+                    weights.at(format("blk.%d.attn_output.scales", i));
             }
             if (weights.count(format("blk.%d.ffn_gate.scales", i))) {
-                consts[format("model.layers[%d].mlp.gate_proj.scales", i)] = weights.at(format("blk.%d.ffn_gate.scales", i));
+                consts[format("model.layers[%d].mlp.gate_proj.scales", i)] =
+                    weights.at(format("blk.%d.ffn_gate.scales", i));
             }
             if (weights.count(format("blk.%d.ffn_up.scales", i))) {
-                consts[format("model.layers[%d].mlp.up_proj.scales", i)] = weights.at(format("blk.%d.ffn_up.scales", i));
+                consts[format("model.layers[%d].mlp.up_proj.scales", i)] =
+                    weights.at(format("blk.%d.ffn_up.scales", i));
             }
             if (weights.count(format("blk.%d.ffn_down.scales", i))) {
-                consts[format("model.layers[%d].mlp.down_proj.scales", i)] = weights.at(format("blk.%d.ffn_down.scales", i));
+                consts[format("model.layers[%d].mlp.down_proj.scales", i)] =
+                    weights.at(format("blk.%d.ffn_down.scales", i));
             }
 
             if (weights.count(format("blk.%d.attn_q.biases", i))) {
-                consts[format("model.layers[%d].self_attn.q_proj.biases", i)] = weights.at(format("blk.%d.attn_q.biases", i));
-            }  
+                consts[format("model.layers[%d].self_attn.q_proj.biases", i)] =
+                    weights.at(format("blk.%d.attn_q.biases", i));
+            }
             if (weights.count(format("blk.%d.attn_k.biases", i))) {
-                consts[format("model.layers[%d].self_attn.k_proj.biases", i)] = weights.at(format("blk.%d.attn_k.biases", i));
-            }    
+                consts[format("model.layers[%d].self_attn.k_proj.biases", i)] =
+                    weights.at(format("blk.%d.attn_k.biases", i));
+            }
             if (weights.count(format("blk.%d.attn_v.biases", i))) {
-                consts[format("model.layers[%d].self_attn.v_proj.biases", i)] = weights.at(format("blk.%d.attn_v.biases", i));
+                consts[format("model.layers[%d].self_attn.v_proj.biases", i)] =
+                    weights.at(format("blk.%d.attn_v.biases", i));
             }
             if (weights.count(format("blk.%d.attn_output.biases", i))) {
-                consts[format("model.layers[%d].self_attn.o_proj.biases", i)] = weights.at(format("blk.%d.attn_output.biases", i));
-            }      
+                consts[format("model.layers[%d].self_attn.o_proj.biases", i)] =
+                    weights.at(format("blk.%d.attn_output.biases", i));
+            }
             if (weights.count(format("blk.%d.ffn_gate.biases", i))) {
-                consts[format("model.layers[%d].mlp.gate_proj.biases", i)] = weights.at(format("blk.%d.ffn_gate.biases", i));
-            }        
+                consts[format("model.layers[%d].mlp.gate_proj.biases", i)] =
+                    weights.at(format("blk.%d.ffn_gate.biases", i));
+            }
             if (weights.count(format("blk.%d.ffn_up.biases", i))) {
-                consts[format("model.layers[%d].mlp.up_proj.biases", i)] = weights.at(format("blk.%d.ffn_up.biases", i));
-            }           
+                consts[format("model.layers[%d].mlp.up_proj.biases", i)] =
+                    weights.at(format("blk.%d.ffn_up.biases", i));
+            }
             if (weights.count(format("blk.%d.ffn_down.biases", i))) {
-                consts[format("model.layers[%d].mlp.down_proj.biases", i)] = weights.at(format("blk.%d.ffn_down.biases", i));
+                consts[format("model.layers[%d].mlp.down_proj.biases", i)] =
+                    weights.at(format("blk.%d.ffn_down.biases", i));
             }
         }
     }
@@ -531,25 +550,31 @@ std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(
 
     for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
         if (qtype.count(format("blk.%d.attn_norm.qtype", i))) {
-            qtype_map[format("model.layers[%d].input_layernorm.qtype", i)] = qtype.at(format("blk.%d.attn_norm.qtype", i));
+            qtype_map[format("model.layers[%d].input_layernorm.qtype", i)] =
+                qtype.at(format("blk.%d.attn_norm.qtype", i));
         }
 
         if (qtype.count(format("blk.%d.ffn_norm.qtype", i))) {
-            qtype_map[format("model.layers[%d].post_attention_layernorm.qtype", i)] = qtype.at(format("blk.%d.ffn_norm.qtype", i));
+            qtype_map[format("model.layers[%d].post_attention_layernorm.qtype", i)] =
+                qtype.at(format("blk.%d.ffn_norm.qtype", i));
         }
 
         // Attention weights
         if (qtype.count(format("blk.%d.attn_q.qtype", i))) {
-            qtype_map[format("model.layers[%d].self_attn.q_proj.qtype", i)] = qtype.at(format("blk.%d.attn_q.qtype", i));
+            qtype_map[format("model.layers[%d].self_attn.q_proj.qtype", i)] =
+                qtype.at(format("blk.%d.attn_q.qtype", i));
         }
         if (qtype.count(format("blk.%d.attn_k.qtype", i))) {
-            qtype_map[format("model.layers[%d].self_attn.k_proj.qtype", i)] = qtype.at(format("blk.%d.attn_k.qtype", i));
+            qtype_map[format("model.layers[%d].self_attn.k_proj.qtype", i)] =
+                qtype.at(format("blk.%d.attn_k.qtype", i));
         }
         if (qtype.count(format("blk.%d.attn_v.qtype", i))) {
-            qtype_map[format("model.layers[%d].self_attn.v_proj.qtype", i)] = qtype.at(format("blk.%d.attn_v.qtype", i));
+            qtype_map[format("model.layers[%d].self_attn.v_proj.qtype", i)] =
+                qtype.at(format("blk.%d.attn_v.qtype", i));
         }
         if (qtype.count(format("blk.%d.attn_output.qtype", i))) {
-            qtype_map[format("model.layers[%d].self_attn.o_proj.qtype", i)] = qtype.at(format("blk.%d.attn_output.qtype", i));
+            qtype_map[format("model.layers[%d].self_attn.o_proj.qtype", i)] =
+                qtype.at(format("blk.%d.attn_output.qtype", i));
         }
 
         // MLP weights

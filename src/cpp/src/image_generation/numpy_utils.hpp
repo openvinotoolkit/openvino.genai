@@ -3,13 +3,13 @@
 
 #pragma once
 
-#include <vector>
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <numeric>
-#include <algorithm>
-#include <cmath>
+#include <vector>
 
 #include "openvino/core/shape.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -44,7 +44,9 @@ std::vector<T> linspace(U start, U end, size_t num, bool endpoint = false) {
 void rescale_zero_terminal_snr(std::vector<float>& betas);
 
 // np.interp(...) implementation
-std::vector<float> interp(const std::vector<std::int64_t>& x, const std::vector<size_t>& xp, const std::vector<float>& fp);
+std::vector<float> interp(const std::vector<std::int64_t>& x,
+                          const std::vector<size_t>& xp,
+                          const std::vector<float>& fp);
 
 // concats two tensors by a given dimension
 ov::Tensor concat(ov::Tensor tensor_1, ov::Tensor tensor_2, int axis);
@@ -52,6 +54,6 @@ ov::Tensor concat(ov::Tensor tensor_1, ov::Tensor tensor_2, int axis);
 void batch_copy(ov::Tensor src, ov::Tensor dst, size_t src_batch, size_t dst_batch, size_t batch_size = 1);
 ov::Tensor repeat(const ov::Tensor input, const size_t num_images_per_prompt);
 
-} // namespace ov
-} // namespace genai
-} // namespace numpy_utils
+}  // namespace numpy_utils
+}  // namespace genai
+}  // namespace ov

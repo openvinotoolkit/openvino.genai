@@ -4,9 +4,8 @@
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 
 #include <fstream>
-#include <utility>
-
 #include <nlohmann/json.hpp>
+#include <utility>
 
 #include "json_utils.hpp"
 #include "logger.hpp"

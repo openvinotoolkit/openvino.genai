@@ -16,7 +16,9 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 void init_video_generation_pipelines(py::module_& m) {
-    py::class_<ov::genai::VideoGenerationPerfMetrics, ov::genai::ImageGenerationPerfMetrics>(m, "VideoGenerationPerfMetrics")
+    py::class_<ov::genai::VideoGenerationPerfMetrics, ov::genai::ImageGenerationPerfMetrics>(
+        m,
+        "VideoGenerationPerfMetrics")
         .def(py::init<>());
 
     py::class_<ov::genai::VideoGenerationConfig>(m, "VideoGenerationConfig")

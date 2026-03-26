@@ -6,8 +6,8 @@
 #include <utility>
 
 #include "add_second_input_pass.hpp"
-#include "sampling/structured_output/structured_output_controller.hpp"
 #include "openvino/genai/version.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
 
 namespace ov {
 namespace genai {
@@ -32,7 +32,7 @@ ov::Core core_with_extension() {
     OPENVINO_ASSERT(ov_tokenizer_path, "openvino_tokenizers path is not set");
     core.add_extension(ov_tokenizer_path);
 #endif
-    
+
     return core;
 }
 
@@ -80,10 +80,8 @@ void parse_chat_template_from_file(const std::filesystem::path& path, std::strin
     // e.g. for CohereLabs/aya-23-8B & CohereLabs/c4ai-command-r-v01 models
     if (chat_template_field.is_array()) {
         for (const auto& item : chat_template_field) {
-            if (
-                item.is_object() && item.contains("name") && item["name"] == "default" &&
-                item.contains("template") && item["template"].is_string()
-            ) {
+            if (item.is_object() && item.contains("name") && item["name"] == "default" && item.contains("template") &&
+                item["template"].is_string()) {
                 value = item["template"].get<std::string>();
                 return;
             }
@@ -112,7 +110,8 @@ void parse_chat_template_from_tokenizer(std::shared_ptr<ov::Model> ov_tokenizer,
             return;
         }
     }
-    std::cerr << "[ WARNING ] Unsupported type for 'chat_template' in ov_tokenizer model: " << chat_template_value.type_info().name() << std::endl;
+    std::cerr << "[ WARNING ] Unsupported type for 'chat_template' in ov_tokenizer model: "
+              << chat_template_value.type_info().name() << std::endl;
 }
 
 template <typename T>
@@ -157,7 +156,9 @@ std::vector<std::string> read_vocab_from_detokenizer_model(const std::shared_ptr
 }
 
 template <typename T>
-void Tokenizer::TokenizerImpl::set_state_value(ov::VariableState& state, std::optional<T> value, ov::AnyMap& state_flags) {
+void Tokenizer::TokenizerImpl::set_state_value(ov::VariableState& state,
+                                               std::optional<T> value,
+                                               ov::AnyMap& state_flags) {
     // better to store which value is in the state locally so that get_state is not called every infer request
     std::optional<T> last_value;
     ov::genai::utils::read_anymap_param(state_flags, state.get_name(), last_value);
@@ -180,7 +181,9 @@ void Tokenizer::TokenizerImpl::set_state_value(ov::VariableState& state, std::op
     }
 }
 
-void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params) {
+void Tokenizer::TokenizerImpl::set_state_if_necessary(
+    CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard,
+    const ov::AnyMap& params) {
     if (m_older_than_24_5) {
         // Changing add_special_tokens at runtime was introduced in
         // 24.5. Older tokenizers still allow manipulating their
@@ -195,7 +198,7 @@ void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElement
     std::optional<int32_t> max_length_val;
     std::optional<bool> pad_to_max_length_val = false;
     std::optional<std::string> padding_side_val = std::nullopt;
-    
+
     ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
     ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
     ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
@@ -203,13 +206,12 @@ void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElement
     ov::genai::utils::read_anymap_param(params, padding_side.name(), padding_side_val);
     std::optional<bool> pad_right;
 
-    // If padding_side is not set, we should leave nullopt this will indicate that default value from RaggetToDense attribute will be used.
+    // If padding_side is not set, we should leave nullopt this will indicate that default value from RaggetToDense
+    // attribute will be used.
     if (padding_side_val.has_value()) {
-        OPENVINO_ASSERT(
-            padding_side_val == "left" || padding_side_val == "right",
-            "padding_side should be either 'left' or 'right', but got: ",
-            *padding_side_val
-        );
+        OPENVINO_ASSERT(padding_side_val == "left" || padding_side_val == "right",
+                        "padding_side should be either 'left' or 'right', but got: ",
+                        *padding_side_val);
         pad_right = (*padding_side_val == "right") ? true : false;
     }
 
@@ -240,7 +242,8 @@ Tokenizer::TokenizerImpl::TokenizerImpl(const std::filesystem::path& models_path
     setup_tokenizer(models_path, properties);
 }
 
-Tokenizer::TokenizerImpl::TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties) {
+Tokenizer::TokenizerImpl::TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models,
+                                        const ov::AnyMap& properties) {
     setup_tokenizer(models, properties);
 }
 
@@ -271,7 +274,8 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     ScopedVar env_manager(tokenizers_relative_to_genai());
     auto core = get_core_singleton();
 
-    OPENVINO_ASSERT(models_path.extension() != ".xml", "'models_path' parameter should be a path to a dir not a xml file");
+    OPENVINO_ASSERT(models_path.extension() != ".xml",
+                    "'models_path' parameter should be a path to a dir not a xml file");
 
     std::filesystem::path ov_tokenizer_filesystem_path;
 #ifdef _WIN32
@@ -288,7 +292,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
     std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
     auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
-    
+
     if (ov::genai::is_gguf_model(models_path)) {
         std::map<std::string, GGUFMetaData> tokenizer_config{};
         std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
@@ -305,7 +309,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         }
         if (auto val = get_if_exist<std::string>(tokenizer_config, "chat_template")) {
             m_chat_template = *val;
-        }         
+        }
         if (!m_chat_template.empty()) {
             m_original_chat_template = m_chat_template;
             m_chat_template = patch_gguf_chat_template(m_chat_template);
@@ -313,7 +317,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         ov_tokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
         ov_detokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
 
-        if (enable_save_ov_model){
+        if (enable_save_ov_model) {
             std::filesystem::path gguf_model_path(models_path);
             std::filesystem::path save_ov_tokenizer_path = gguf_model_path.parent_path() / "openvino_tokenizer.xml";
             std::filesystem::path save_ov_detokenizer_path = gguf_model_path.parent_path() / "openvino_detokenizer.xml";
@@ -339,7 +343,8 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     }
 
     if (std::filesystem::exists(models_path / "openvino_detokenizer.xml")) {
-        ov_detokenizer = core.read_model(models_path / "openvino_detokenizer.xml", {}, std::as_const(filtered_properties));
+        ov_detokenizer =
+            core.read_model(models_path / "openvino_detokenizer.xml", {}, std::as_const(filtered_properties));
     }
 
     read_config(models_path);
@@ -354,7 +359,9 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     setup_tokenizer(std::make_pair(ov_tokenizer, ov_detokenizer), filtered_properties);
 }
 
-void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, ov::AnyMap properties) {
+void Tokenizer::TokenizerImpl::setup_tokenizer(
+    const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models,
+    ov::AnyMap properties) {
     auto [ov_tokenizer, ov_detokenizer] = models;
     bool two_input_requested = false;
 
@@ -366,9 +373,9 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
 
     // Filter properties by leaving only params from the allowlist
     filter_properties(properties);
-    
+
     is_paired_input = ov_tokenizer && ov_tokenizer->get_parameters().size() == 2;
-    
+
     // buffer to store the error messages from the pass
     std::ostringstream pass_errors;
 
@@ -378,10 +385,11 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
         manager.register_pass<ov::genai::AddSecondInputPass>(m_shared_object_ov_tokenizers, pass_errors);
         manager.run_passes(ov_tokenizer);
     }
-    
+
     is_paired_input = pass_errors.str().empty() && ov_tokenizer && ov_tokenizer->get_parameters().size() == 2;
-    OPENVINO_ASSERT(!two_input_requested || is_paired_input || !ov_tokenizer, "Two input requested but AddSecondInputPass failed with " + pass_errors.str());
-    
+    OPENVINO_ASSERT(!two_input_requested || is_paired_input || !ov_tokenizer,
+                    "Two input requested but AddSecondInputPass failed with " + pass_errors.str());
+
     // temporary allow absence both tokenizer and detokenizer for GGUF support
     // TODO: remove this code once Tokenizers can be created from GGUF file
     if (!ov_tokenizer && !ov_detokenizer) {
@@ -445,10 +453,9 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
 
             req.set_callback([queue = m_ireq_queue_tokenizer.get(), idx, warmup_text, &req](std::exception_ptr) {
                 // this empty placeholder keeps input data alive until request is finished
-                (void) warmup_text;
+                (void)warmup_text;
                 queue->return_to(idx);
                 req.set_callback({});
-
             });
             req.start_async();
         }
@@ -474,23 +481,23 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
             m_bos_token = decode(std::vector{m_bos_token_id}, {ov::genai::skip_special_tokens(false)});
         if (m_eos_token_id != -1 && m_eos_token.empty())
             m_eos_token = decode(std::vector{m_eos_token_id}, {ov::genai::skip_special_tokens(false)});
-            
+
         // Initialize detokenizer's cache to save time later.
         {
             int idx = m_ireq_queue_detokenizer->get_idle().get();
             auto& req = m_ireq_queue_detokenizer->get(idx);
 
             // shared_ptr to keep input data alive until async request is finished
-            auto warmup_tokens = std::make_shared<std::vector<int64_t>>(
-                std::initializer_list<int64_t>{1, 33, 199, 42, 42}
-            );
+            auto warmup_tokens =
+                std::make_shared<std::vector<int64_t>>(std::initializer_list<int64_t>{1, 33, 199, 42, 42});
 
-            auto warmup_tensor = ov::Tensor(ov::element::i64, ov::Shape{1, warmup_tokens->size()}, warmup_tokens->data());
+            auto warmup_tensor =
+                ov::Tensor(ov::element::i64, ov::Shape{1, warmup_tokens->size()}, warmup_tokens->data());
             req.set_input_tensor(0, warmup_tensor);
 
             req.set_callback([queue = m_ireq_queue_detokenizer.get(), idx, warmup_tokens, &req](std::exception_ptr) {
                 // this empty placeholder keeps input data alive until request is finished
-                (void) warmup_tokens;
+                (void)warmup_tokens;
                 queue->return_to(idx);
                 req.set_callback({});
             });
@@ -540,9 +547,9 @@ void Tokenizer::TokenizerImpl::read_special_tokens_map(const std::filesystem::pa
 // Also tries to load special token ids from added_tokens_decoder if they exist.
 // Will not override special token strings or ids if they already exist.
 void Tokenizer::TokenizerImpl::read_tokenizer_config_if_necessary(const std::filesystem::path& tokenizer_path) {
-    if (m_pad_token_id != -1 && m_bos_token_id != -1 && m_eos_token_id != -1 &&
-        !m_pad_token.empty() && !m_bos_token.empty() && !m_eos_token.empty()) {
-        return ;
+    if (m_pad_token_id != -1 && m_bos_token_id != -1 && m_eos_token_id != -1 && !m_pad_token.empty() &&
+        !m_bos_token.empty() && !m_eos_token.empty()) {
+        return;
     }
 
     auto tokenizer_config_file_path = tokenizer_path / "tokenizer_config.json";
@@ -556,7 +563,9 @@ void Tokenizer::TokenizerImpl::read_tokenizer_config_if_necessary(const std::fil
     // if they are presented directly {"bos_token": "<bos>"}
     using ov::genai::utils::read_json_param;
     auto read_token_str = [&data](std::string key_name, std::string& val) {
-        if (val.empty()) { read_json_param(data, key_name, val); }
+        if (val.empty()) {
+            read_json_param(data, key_name, val);
+        }
     };
     read_token_str(pad_token_key_name, m_pad_token);
     read_token_str(bos_token_key_name, m_bos_token);
@@ -565,7 +574,9 @@ void Tokenizer::TokenizerImpl::read_tokenizer_config_if_necessary(const std::fil
     // if special tokens are not loaded directly, try to read
     // if they are in the format {"bos_token": { "content": "<s>",... }}
     auto read_token_content_str = [&data](std::string key_name, std::string& val) {
-        if (val.empty() && data.contains(key_name)) { read_json_param(data[key_name], "content", val); }
+        if (val.empty() && data.contains(key_name)) {
+            read_json_param(data[key_name], "content", val);
+        }
     };
     read_token_content_str(pad_token_key_name, m_pad_token);
     read_token_content_str(bos_token_key_name, m_bos_token);
@@ -622,8 +633,9 @@ void Tokenizer::TokenizerImpl::infer_special_tokens_if_necessary() {
 }
 
 TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::string& prompt, const ov::AnyMap& tokenization_params) {
-    OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
-                                            "Tokenizer::encode is not available");
+    OPENVINO_ASSERT(m_ireq_queue_tokenizer,
+                    "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
+                    "Tokenizer::encode is not available");
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_tokenizer.get());
     set_state_if_necessary(infer_request_guard, tokenization_params);
@@ -631,7 +643,9 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::string& prompt, cons
     // When the model has more than one input, calling set_input_tensor without specifying an index may fail.
     // If the model has two inputs, explicitly set the first input while leaving the second input tensor empty.
     // The subgraph within the ov::Model will handle this scenario, ensuring the output remains correct.
-    infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {batch_size}, const_cast<std::string*>(&prompt)});
+    infer_request_guard.get().set_input_tensor(
+        0,
+        ov::Tensor{ov::element::string, {batch_size}, const_cast<std::string*>(&prompt)});
 
     if (infer_request_guard.get().get_compiled_model().inputs().size() > 1) {
         // Set the second input tensor to an empty tensor to avoid errors.
@@ -641,15 +655,15 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::string& prompt, cons
 
     infer_request_guard.get().infer();
 
-    return get_copied_results(
-        infer_request_guard.get().get_tensor("input_ids"),
-        infer_request_guard.get().get_tensor("attention_mask")
-    );
+    return get_copied_results(infer_request_guard.get().get_tensor("input_ids"),
+                              infer_request_guard.get().get_tensor("attention_mask"));
 }
 
-TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::pair<std::string, std::string>>& prompts_pairs, const ov::AnyMap& tokenization_params) {
-    OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
-                                            "Tokenizer::encode is not available");
+TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::pair<std::string, std::string>>& prompts_pairs,
+                                                 const ov::AnyMap& tokenization_params) {
+    OPENVINO_ASSERT(m_ireq_queue_tokenizer,
+                    "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
+                    "Tokenizer::encode is not available");
     size_t batch_size = prompts_pairs.size();
     std::vector<std::string> prompts_1(batch_size);
     std::vector<std::string> prompts_2(batch_size);
@@ -661,9 +675,12 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::pair<std
     return encode(prompts_1, prompts_2, tokenization_params);
 }
 
-TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params) {
-    OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
-                                            "Tokenizer::encode is not available");
+TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>& prompts_1,
+                                                 const std::vector<std::string>& prompts_2,
+                                                 const ov::AnyMap& tokenization_params) {
+    OPENVINO_ASSERT(m_ireq_queue_tokenizer,
+                    "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
+                    "Tokenizer::encode is not available");
     OPENVINO_ASSERT(prompts_1.size() == prompts_2.size() || prompts_1.size() == 1 || prompts_2.size() == 1,
                     "prompts_1 and prompts_2 should be of the same size or one of them should be of size 1");
 
@@ -671,15 +688,17 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>&
     {
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
         set_state_if_necessary(infer_request_guard, tokenization_params);
-        infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {prompts_1.size()}, const_cast<std::string*>(prompts_1.data())});
-        infer_request_guard.get().set_input_tensor(1, ov::Tensor{ov::element::string, {prompts_2.size()}, const_cast<std::string*>(prompts_2.data())});
+        infer_request_guard.get().set_input_tensor(
+            0,
+            ov::Tensor{ov::element::string, {prompts_1.size()}, const_cast<std::string*>(prompts_1.data())});
+        infer_request_guard.get().set_input_tensor(
+            1,
+            ov::Tensor{ov::element::string, {prompts_2.size()}, const_cast<std::string*>(prompts_2.data())});
 
         infer_request_guard.get().infer();
 
-        result = get_copied_results(
-            infer_request_guard.get().get_tensor("input_ids"),
-            infer_request_guard.get().get_tensor("attention_mask")
-        );
+        result = get_copied_results(infer_request_guard.get().get_tensor("input_ids"),
+                                    infer_request_guard.get().get_tensor("attention_mask"));
 
         // If the model has a token_type_ids output, copy it to the result
         for (const auto& output : infer_request_guard.get().get_compiled_model().outputs()) {
@@ -695,9 +714,11 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>&
     return {result.input_ids, result.attention_mask, result.token_type_ids};
 }
 
-TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {
-    OPENVINO_ASSERT(m_ireq_queue_tokenizer, "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
-                                            "Tokenizer::encode is not available");
+TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>& prompts,
+                                                 const ov::AnyMap& tokenization_params) {
+    OPENVINO_ASSERT(m_ireq_queue_tokenizer,
+                    "Either openvino_tokenizer.xml was not provided or it was not loaded correctly. "
+                    "Tokenizer::encode is not available");
 
     TokenizedInputs unpadded;
     {
@@ -708,7 +729,9 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>&
         // The subgraph within the ov::Model will handle this scenario, ensuring the output remains correct.
         // The use of const_cast here is necessary because the ov::Tensor API does not accept const data pointers.
         // The prompts vector is not declared as const, and the underlying data is not modified by this operation.
-        infer_request_guard.get().set_input_tensor(0, ov::Tensor{ov::element::string, {prompts.size()}, const_cast<std::string*>(prompts.data())});
+        infer_request_guard.get().set_input_tensor(
+            0,
+            ov::Tensor{ov::element::string, {prompts.size()}, const_cast<std::string*>(prompts.data())});
         if (infer_request_guard.get().get_compiled_model().inputs().size() > 1) {
             // Set the second input tensor to an empty tensor to avoid errors.
             // The subgraph within the ov::Model will handle this scenario, ensuring the output remains correct.
@@ -716,10 +739,8 @@ TokenizedInputs Tokenizer::TokenizerImpl::encode(const std::vector<std::string>&
         }
         infer_request_guard.get().infer();
 
-        unpadded = get_copied_results(
-            infer_request_guard.get().get_tensor("input_ids"),
-            infer_request_guard.get().get_tensor("attention_mask")
-        );
+        unpadded = get_copied_results(infer_request_guard.get().get_tensor("input_ids"),
+                                      infer_request_guard.get().get_tensor("attention_mask"));
     }
 
     return {unpadded.input_ids, unpadded.attention_mask};
@@ -734,19 +755,24 @@ TokenizedInputs Tokenizer::TokenizerImpl::get_copied_results(ov::Tensor input_id
     return {input_ids_, attention_mask_};
 }
 
-std::string Tokenizer::TokenizerImpl::decode(const std::vector<int64_t>& tokens, const ov::AnyMap& detokenization_params) {
-    OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
+std::string Tokenizer::TokenizerImpl::decode(const std::vector<int64_t>& tokens,
+                                             const ov::AnyMap& detokenization_params) {
+    OPENVINO_ASSERT(m_ireq_queue_detokenizer,
+                    "Detokenizer model has not been provided. Tokenizer::decode is not available");
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
     set_state_if_necessary(infer_request_guard, detokenization_params);
     size_t batch_size = 1;
-    infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, const_cast<int64_t*>(tokens.data())});
+    infer_request_guard.get().set_input_tensor(
+        ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, const_cast<int64_t*>(tokens.data())});
     infer_request_guard.get().infer();
     return infer_request_guard.get().get_output_tensor().data<std::string>()[0];
 }
 
-std::vector<std::string> Tokenizer::TokenizerImpl::decode(const ov::Tensor& tokens, const ov::AnyMap& detokenization_params) {
-    OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
+std::vector<std::string> Tokenizer::TokenizerImpl::decode(const ov::Tensor& tokens,
+                                                          const ov::AnyMap& detokenization_params) {
+    OPENVINO_ASSERT(m_ireq_queue_detokenizer,
+                    "Detokenizer model has not been provided. Tokenizer::decode is not available");
     OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64, "tokens tensor element type should be an i64");
     OPENVINO_ASSERT(tokens.get_shape().size() == 2, "tokens tensor should of rank 2 with shape [batch_size, seq_len]");
 
@@ -760,8 +786,10 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const ov::Tensor& toke
     return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
 }
 
-std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std::vector<int64_t>>& lines, const ov::AnyMap& detokenization_params) {
-    OPENVINO_ASSERT(m_ireq_queue_detokenizer, "Detokenizer model has not been provided. Tokenizer::decode is not available");
+std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std::vector<int64_t>>& lines,
+                                                          const ov::AnyMap& detokenization_params) {
+    OPENVINO_ASSERT(m_ireq_queue_detokenizer,
+                    "Detokenizer model has not been provided. Tokenizer::decode is not available");
 
     auto compare_lengths = [](const std::vector<int64_t>& a, const std::vector<int64_t>& b) {
         return a.size() < b.size();
@@ -787,13 +815,11 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std:
     return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
 }
 
-std::string Tokenizer::TokenizerImpl::apply_chat_template(
-    const ChatHistory& history,
-    bool add_generation_prompt,
-    const std::string& chat_template,
-    const std::optional<JsonContainer>& tools,
-    const std::optional<JsonContainer>& extra_context
-) const {
+std::string Tokenizer::TokenizerImpl::apply_chat_template(const ChatHistory& history,
+                                                          bool add_generation_prompt,
+                                                          const std::string& chat_template,
+                                                          const std::optional<JsonContainer>& tools,
+                                                          const std::optional<JsonContainer>& extra_context) const {
     std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_template(chat_template);
     OPENVINO_ASSERT(!chat_tpl.empty(),
                     "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
@@ -804,12 +830,14 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     auto resolved_extra_context = extra_context.value_or(history.get_extra_context());
 
     OPENVINO_ASSERT(resolved_tools.is_array(),
-                    "Tools should be an array-like JsonContainer, got: ", resolved_tools.type_name());
+                    "Tools should be an array-like JsonContainer, got: ",
+                    resolved_tools.type_name());
     OPENVINO_ASSERT(resolved_extra_context.is_object(),
-                    "Extra context should be an object-like JsonContainer, got: ", resolved_extra_context.type_name());
+                    "Extra context should be an object-like JsonContainer, got: ",
+                    resolved_extra_context.type_name());
 
     minja::chat_template minja_template(chat_tpl, m_bos_token, m_eos_token);
-    
+
     minja::chat_template_inputs minja_inputs;
     minja_inputs.messages = history.get_messages();
     if (!resolved_tools.empty()) {
@@ -823,21 +851,23 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     if (!resolved_extra_context.empty()) {
         minja_inputs.extra_context.update(resolved_extra_context);
     }
-    
+
     std::string result;
     try {
         result = minja_template.apply(minja_inputs);
     } catch (const std::exception& error) {
         OPENVINO_THROW("Minja failed to apply chat template. Possible solutions are\n"
-                        "* Provide a simplified chat template with set_chat_template().\n"
-                        "* Set apply_chat_template to false in GenerationConfig. "
-                        "It's possible to apply the template manually to your prompt before calling generate. "
-                        "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
-                        "Minja's error: ", error.what());
+                       "* Provide a simplified chat template with set_chat_template().\n"
+                       "* Set apply_chat_template to false in GenerationConfig. "
+                       "It's possible to apply the template manually to your prompt before calling generate. "
+                       "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
+                       "Minja's error: ",
+                       error.what());
     }
-    OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
-                                     "Please check the chat template or apply template manually to your prompt before calling generate."
-                                     "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+    OPENVINO_ASSERT(!result.empty(),
+                    "Applied chat template resulted in an empty string. "
+                    "Please check the chat template or apply template manually to your prompt before calling generate."
+                    "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
     return result;
 }
 
@@ -854,7 +884,8 @@ std::string Tokenizer::TokenizerImpl::get_original_chat_template() const {
     return m_original_chat_template;
 }
 
-std::shared_ptr<StructuredOutputController> Tokenizer::TokenizerImpl::get_structured_output_controller(std::optional<int> vocab_size) {
+std::shared_ptr<StructuredOutputController> Tokenizer::TokenizerImpl::get_structured_output_controller(
+    std::optional<int> vocab_size) {
     if (m_structured_output_controller == nullptr || vocab_size.has_value()) {
         if (m_structured_output_controller != nullptr && vocab_size.has_value() &&
             m_structured_output_controller->get_vocab_size() == *vocab_size) {
@@ -864,5 +895,5 @@ std::shared_ptr<StructuredOutputController> Tokenizer::TokenizerImpl::get_struct
     }
     return m_structured_output_controller;
 }
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

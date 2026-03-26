@@ -4,18 +4,17 @@
 #pragma once
 
 #include <filesystem>
-#include <vector>
-#include <string>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "openvino/core/any.hpp"
 #include "openvino/core/model.hpp"
-#include "openvino/runtime/tensor.hpp"
+#include "openvino/genai/lora_adapter.hpp"
+#include "openvino/genai/visibility.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
-
-#include "openvino/genai/visibility.hpp"
-#include "openvino/genai/lora_adapter.hpp"
+#include "openvino/runtime/tensor.hpp"
 
 namespace ov {
 namespace genai {
@@ -50,10 +49,8 @@ public:
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    UNet2DConditionModel(const std::filesystem::path& root_dir,
-                         const std::string& device,
-                         Properties&&... properties)
-        : UNet2DConditionModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    UNet2DConditionModel(const std::filesystem::path& root_dir, const std::string& device, Properties&&... properties)
+        : UNet2DConditionModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
@@ -68,7 +65,7 @@ public:
                                config,
                                vae_scale_factor,
                                device,
-                               ov::AnyMap{std::forward<Properties>(properties)...}) { }
+                               ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     UNet2DConditionModel(const UNet2DConditionModel&);
 
@@ -81,9 +78,8 @@ public:
     UNet2DConditionModel& compile(const std::string& device, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<UNet2DConditionModel&, Properties...> compile(
-            const std::string& device,
-            Properties&&... properties) {
+    ov::util::EnableIfAllStringAny<UNet2DConditionModel&, Properties...> compile(const std::string& device,
+                                                                                 Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -114,11 +110,13 @@ private:
     std::shared_ptr<ov::Model> m_model;
     size_t m_vae_scale_factor;
 
-    void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties = {});
+    void import_model(const std::filesystem::path& blob_path,
+                      const std::string& device,
+                      const ov::AnyMap& properties = {});
 
     class UNetInferenceDynamic;
     class UNetInferenceStaticBS1;
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

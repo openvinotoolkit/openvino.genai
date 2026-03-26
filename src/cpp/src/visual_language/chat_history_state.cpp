@@ -32,10 +32,10 @@ void ChatHistoryInternalState::add_message_metadata(MessageMetadata metadata) {
  */
 std::vector<size_t> ChatHistoryInternalState::register_images(const std::vector<ov::Tensor>& images) {
     auto vision_registry = get_vision_registry();
-    
+
     std::vector<size_t> indices;
     indices.reserve(images.size());
-    
+
     for (const auto& image : images) {
         VisionID id = vision_registry->register_image(image);
         size_t global_idx = m_image_index_to_id.size();
@@ -50,10 +50,10 @@ std::vector<size_t> ChatHistoryInternalState::register_images(const std::vector<
  */
 std::vector<size_t> ChatHistoryInternalState::register_videos(const std::vector<ov::Tensor>& videos) {
     auto vision_registry = get_vision_registry();
-    
+
     std::vector<size_t> indices;
     indices.reserve(videos.size());
-    
+
     for (const auto& video : videos) {
         VisionID id = vision_registry->register_video(video);
         size_t global_idx = m_video_index_to_id.size();
@@ -65,7 +65,7 @@ std::vector<size_t> ChatHistoryInternalState::register_videos(const std::vector<
 
 std::vector<EncodedImage> ChatHistoryInternalState::get_encoded_images(const std::vector<size_t>& indices) const {
     auto vision_registry = get_vision_registry();
-    
+
     std::vector<EncodedImage> result;
     result.reserve(indices.size());
     for (size_t idx : indices) {
@@ -77,7 +77,7 @@ std::vector<EncodedImage> ChatHistoryInternalState::get_encoded_images(const std
 
 std::vector<EncodedVideo> ChatHistoryInternalState::get_encoded_videos(const std::vector<size_t>& indices) const {
     auto vision_registry = get_vision_registry();
-    
+
     std::vector<EncodedVideo> result;
     result.reserve(indices.size());
     for (size_t idx : indices) {
@@ -90,30 +90,29 @@ std::vector<EncodedVideo> ChatHistoryInternalState::get_encoded_videos(const std
 /**
  * @brief Converts global vision indices to encoded vision data with corresponding
  * deduplicated index sequences.
- * 
- * Takes optional sequences of global image/video indices to get sliced 
+ *
+ * Takes optional sequences of global image/video indices to get sliced
  * encoded vision data and sequences (e.g. for last message).
  * If sequences are not provided, full sequences are built from all messages.
- * 
+ *
  * @note Duplicate VisionIDs in the sequence will result in duplicate encoded data,
  *       but sequence indices will reference the first occurrence (deduplicated).
  * @todo Return deduplicated encoded data once it is supported in `get_input_embeds()` for all models.
  */
 ChatHistoryInternalState::ResolvedVisions ChatHistoryInternalState::resolve_visions_with_sequence(
     std::optional<const std::vector<size_t>> image_sequence,
-    std::optional<const std::vector<size_t>> video_sequence
-) const {
+    std::optional<const std::vector<size_t>> video_sequence) const {
     auto vision_registry = get_vision_registry();
-    
+
     ResolvedVisions result;
-    
+
     std::vector<size_t> global_image_sequence = image_sequence.value_or(build_full_image_sequence());
     std::vector<size_t> global_video_sequence = video_sequence.value_or(build_full_video_sequence());
-    
+
     std::unordered_map<VisionID, size_t> image_id_to_dedup_index;
     for (size_t global_idx : global_image_sequence) {
         VisionID id = m_image_index_to_id.at(global_idx);
-        
+
         auto it = image_id_to_dedup_index.find(id);
         if (it == image_id_to_dedup_index.end()) {
             size_t dedup_idx = result.encoded_images.size();
@@ -125,11 +124,11 @@ ChatHistoryInternalState::ResolvedVisions ChatHistoryInternalState::resolve_visi
             result.image_sequence.push_back(it->second);
         }
     }
-    
+
     std::unordered_map<VisionID, size_t> video_id_to_dedup_index;
     for (size_t global_idx : global_video_sequence) {
         VisionID id = m_video_index_to_id.at(global_idx);
-        
+
         auto it = video_id_to_dedup_index.find(id);
         if (it == video_id_to_dedup_index.end()) {
             size_t dedup_idx = result.encoded_videos.size();
@@ -141,16 +140,14 @@ ChatHistoryInternalState::ResolvedVisions ChatHistoryInternalState::resolve_visi
             result.video_sequence.push_back(it->second);
         }
     }
-    
+
     return result;
 }
 
 std::vector<size_t> ChatHistoryInternalState::build_full_image_sequence() const {
     std::vector<size_t> sequence;
     for (const auto& metadata : m_messages_metadata) {
-        sequence.insert(sequence.end(),
-                        metadata.image_sequence.begin(),
-                        metadata.image_sequence.end());
+        sequence.insert(sequence.end(), metadata.image_sequence.begin(), metadata.image_sequence.end());
     }
     return sequence;
 }
@@ -158,9 +155,7 @@ std::vector<size_t> ChatHistoryInternalState::build_full_image_sequence() const 
 std::vector<size_t> ChatHistoryInternalState::build_full_video_sequence() const {
     std::vector<size_t> sequence;
     for (const auto& metadata : m_messages_metadata) {
-        sequence.insert(sequence.end(),
-                        metadata.video_sequence.begin(),
-                        metadata.video_sequence.end());
+        sequence.insert(sequence.end(), metadata.video_sequence.begin(), metadata.video_sequence.end());
     }
     return sequence;
 }
@@ -176,9 +171,12 @@ std::vector<std::pair<size_t, size_t>> ChatHistoryInternalState::build_vision_co
 
 ChatHistory ChatHistoryInternalState::build_normalized_history(const ChatHistory& history) const {
     OPENVINO_ASSERT(m_messages_metadata.size() == history.size(),
-                    "Internal state size (", m_messages_metadata.size(),
-                    ") doesn't match history size (", history.size(), ")");
-    
+                    "Internal state size (",
+                    m_messages_metadata.size(),
+                    ") doesn't match history size (",
+                    history.size(),
+                    ")");
+
     ChatHistory normalized_history;
 
     normalized_history.set_tools(history.get_tools());
@@ -198,8 +196,7 @@ ChatHistory ChatHistoryInternalState::build_normalized_history(const ChatHistory
 
 std::shared_ptr<ChatHistoryInternalState> ChatHistoryInternalState::get_or_create(
     const ChatHistory& history,
-    const std::shared_ptr<VisionRegistry>& vision_registry
-) {
+    const std::shared_ptr<VisionRegistry>& vision_registry) {
     if (!history.m_internal_state) {
         history.m_internal_state = std::make_shared<ChatHistoryInternalState>(vision_registry);
     } else if (vision_registry && !history.m_internal_state->m_vision_registry.lock()) {
@@ -211,14 +208,14 @@ std::shared_ptr<ChatHistoryInternalState> ChatHistoryInternalState::get_or_creat
 
 const size_t ChatHistoryInternalState::find_matching_history_length(const ChatHistory& history) const {
     size_t matching_history_length = 0;
-    
+
     for (size_t i = 0; i < std::min(m_messages_metadata.size(), history.size()); ++i) {
         if (m_messages_metadata[i].original_message != history[i]) {
             break;
         }
         matching_history_length = i + 1;
     }
-    
+
     return std::min(matching_history_length, history.size());
 }
 
@@ -238,7 +235,7 @@ void ChatHistoryInternalState::truncate_to(size_t size) {
 
     m_image_index_to_id.resize(new_image_base_index);
     m_video_index_to_id.resize(new_video_base_index);
-    
+
     m_messages_metadata.resize(size);
 }
 
@@ -254,7 +251,7 @@ void ChatHistoryInternalState::release_refs_from(size_t image_index, size_t vide
     auto vision_registry = m_vision_registry.lock();
     if (!vision_registry)
         return;
-    
+
     for (size_t i = image_index; i < m_image_index_to_id.size(); ++i) {
         vision_registry->release_ref(m_image_index_to_id[i]);
     }
@@ -287,7 +284,7 @@ void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& his
     const auto& last_user_message = history[m_last_user_message_index];
 
     OPENVINO_ASSERT(last_user_message.contains("content"),
-        "Unknown chat history format: user message does not contain 'content' field.");
+                    "Unknown chat history format: user message does not contain 'content' field.");
 
     if (last_user_message["content"].is_string()) {
         detected_format = ChatHistoryFormat::STRING_CONTENT;
@@ -298,9 +295,8 @@ void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& his
             const auto& item = last_user_message["content"][i];
             if (item.is_object() && item.contains("type")) {
                 std::string type = item["type"].get_string();
-                if ((type == "text" && item.contains("text") && item["text"].is_string()) ||
-                     type == "image" || type == "video"
-                ) {
+                if ((type == "text" && item.contains("text") && item["text"].is_string()) || type == "image" ||
+                    type == "video") {
                     detected_format = ChatHistoryFormat::MULTIPART_CONTENT;
                     break;
                 }
@@ -309,15 +305,14 @@ void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& his
     }
 
     OPENVINO_ASSERT(detected_format != ChatHistoryFormat::UNKNOWN,
-        "Unknown chat history format. Supported formats schemas are "
-        "`{role: user, content: string}` and "
-        "`{role: user, content: [{type: text/image/video, ...}, ...]}`.");
+                    "Unknown chat history format. Supported formats schemas are "
+                    "`{role: user, content: string}` and "
+                    "`{role: user, content: [{type: text/image/video, ...}, ...]}`.");
 
-    OPENVINO_ASSERT(m_chat_history_format == ChatHistoryFormat::UNKNOWN ||
-                    m_chat_history_format == detected_format,
+    OPENVINO_ASSERT(m_chat_history_format == ChatHistoryFormat::UNKNOWN || m_chat_history_format == detected_format,
                     "Mixed chat history formats detected.");
 
     m_chat_history_format = detected_format;
 }
 
-} // namespace ov::genai
+}  // namespace ov::genai

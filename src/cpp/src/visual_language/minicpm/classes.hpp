@@ -5,10 +5,9 @@
 
 #include <filesystem>
 
-#include "visual_language/vlm_config.hpp"
-
-#include "visual_language/vision_encoder.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include "visual_language/vision_encoder.hpp"
+#include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
 
@@ -26,47 +25,45 @@ class VisionEncoderMiniCPM : public VisionEncoder {
 
     ov::Tensor resample(const ov::Tensor& encoded_image, const ImageSize& target_size, size_t pad_to_max);
 
-    ResampledImage resample_encoded_image(const EncodedImage& image, const ov::Tensor& slices, const ImageSize& target_sizes);
+    ResampledImage resample_encoded_image(const EncodedImage& image,
+                                          const ov::Tensor& slices,
+                                          const ImageSize& target_sizes);
+
 public:
-    VisionEncoderMiniCPM(
-        const std::filesystem::path& model_dir,
-        const std::string& device,
-        const ov::AnyMap properties);
+    VisionEncoderMiniCPM(const std::filesystem::path& model_dir,
+                         const std::string& device,
+                         const ov::AnyMap properties);
 
-
-    VisionEncoderMiniCPM(
-        const ModelsMap& models_map,
-        const std::filesystem::path& config_dir_path,
-        const std::string& device,
-        const ov::AnyMap device_config);
+    VisionEncoderMiniCPM(const ModelsMap& models_map,
+                         const std::filesystem::path& config_dir_path,
+                         const std::string& device,
+                         const ov::AnyMap device_config);
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 };
 
 class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
-
 public:
-    InputsEmbedderMiniCPM(
-        const VLMConfig& vlm_config,
-        const std::filesystem::path& model_dir,
-        const std::string& device,
-        const ov::AnyMap device_config);
-    
-    InputsEmbedderMiniCPM(
-        const VLMConfig& vlm_config,
-        const ModelsMap& models_map,
-        const Tokenizer& tokenizer,
-        const std::filesystem::path& config_dir_path,
-        const std::string& device,
-        const ov::AnyMap device_config);
+    InputsEmbedderMiniCPM(const VLMConfig& vlm_config,
+                          const std::filesystem::path& model_dir,
+                          const std::string& device,
+                          const ov::AnyMap device_config);
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
+    InputsEmbedderMiniCPM(const VLMConfig& vlm_config,
+                          const ModelsMap& models_map,
+                          const Tokenizer& tokenizer,
+                          const std::filesystem::path& config_dir_path,
+                          const std::string& device,
+                          const ov::AnyMap device_config);
 
-    NormalizedPrompt normalize_prompt(
-        const std::string& prompt,
-        size_t base_id,
-        const std::vector<EncodedImage>& images
-    ) const override;
+    ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings = true,
+                                 const std::vector<size_t>& image_sequence = {}) override;
 
+    NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                      size_t base_id,
+                                      const std::vector<EncodedImage>& images) const override;
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

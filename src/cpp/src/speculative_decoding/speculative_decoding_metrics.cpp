@@ -1,9 +1,10 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "speculative_decoding/speculative_decoding_metrics.hpp"
+
 #include <numeric>
 
-#include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "openvino/runtime/exception.hpp"
 
 namespace ov::genai {
@@ -39,7 +40,7 @@ void SpeculativeDecodingMetrics::update_acceptance_rate(int64_t request_id, floa
     if (m_acceptance_rate.count(request_id)) {
         m_acceptance_rate[request_id].push_back(acceptance_rate);
     } else {
-        m_acceptance_rate.insert({ request_id, std::vector<float>{acceptance_rate} });
+        m_acceptance_rate.insert({request_id, std::vector<float>{acceptance_rate}});
     }
 }
 
@@ -155,7 +156,6 @@ void SpeculativeDecodingMetrics::print(bool is_printing_per_request) {
         }
         print_acceptance_rates();
     }
-
 }
 
 void SpeculativeDecodingMetrics::clean_up() {
@@ -168,4 +168,4 @@ void SpeculativeDecodingMetrics::clean_up() {
     total_duration = 0;
 }
 
-}
+}  // namespace ov::genai

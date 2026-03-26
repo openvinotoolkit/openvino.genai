@@ -4,16 +4,15 @@
 #pragma once
 
 #include <filesystem>
-#include <vector>
 #include <string>
+#include <vector>
 
 #include "openvino/core/any.hpp"
-#include "openvino/runtime/tensor.hpp"
+#include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/visibility.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
-
-#include "openvino/genai/visibility.hpp"
-#include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/runtime/tensor.hpp"
 
 namespace ov::genai {
 
@@ -36,17 +35,16 @@ public:
 
     explicit AutoencoderKLLTXVideo(const std::filesystem::path& vae_decoder_path);
 
-    AutoencoderKLLTXVideo(const std::filesystem::path& vae_encoder_path,
-                  const std::filesystem::path& vae_decoder_path);
+    AutoencoderKLLTXVideo(const std::filesystem::path& vae_encoder_path, const std::filesystem::path& vae_decoder_path);
 
     AutoencoderKLLTXVideo(const std::filesystem::path& vae_decoder_path,
-                  const std::string& device,
-                  const ov::AnyMap& properties = {});
+                          const std::string& device,
+                          const ov::AnyMap& properties = {});
 
     AutoencoderKLLTXVideo(const std::filesystem::path& vae_encoder_path,
-                  const std::filesystem::path& vae_decoder_path,
-                  const std::string& device,
-                  const ov::AnyMap& properties = {});
+                          const std::filesystem::path& vae_decoder_path,
+                          const std::string& device,
+                          const ov::AnyMap& properties = {});
 
     AutoencoderKLLTXVideo& compile(const std::string& device, const ov::AnyMap& properties = {});
 
@@ -68,4 +66,4 @@ private:
     int64_t m_transformer_patch_size = -1, m_transformer_patch_size_t = -1;
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

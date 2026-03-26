@@ -19,13 +19,10 @@ int main(int argc, char* argv[]) try {
 
     std::string model_path = argv[1];
     std::string prompt = argv[2];
-    
+
     std::string device = "CPU";
 
-    ov::genai::LLMPipeline pipe(
-        model_path,
-        device,
-        ov::genai::prompt_lookup(true));
+    ov::genai::LLMPipeline pipe(model_path, device, ov::genai::prompt_lookup(true));
 
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;
@@ -39,11 +36,13 @@ int main(int argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

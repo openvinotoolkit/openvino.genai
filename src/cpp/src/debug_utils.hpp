@@ -3,16 +3,15 @@
 
 #pragma once
 
+#include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <filesystem>
-#include <sstream>
-#include <vector>
 #include <iterator>
-#include <algorithm>
-
 #include <openvino/runtime/tensor.hpp>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include "openvino/genai/tokenizer.hpp"
 
@@ -226,10 +225,7 @@ inline float max_diff(const ov::Tensor& lhs, const ov::Tensor& rhs) {
     float max_diff = 0.0f;
     for (size_t idx = 0; idx < lhs.get_size(); ++idx) {
         OPENVINO_SUPPRESS_DEPRECATED_START
-        max_diff = std::max(
-            max_diff,
-            std::abs(lhs.data<const float>()[idx] - rhs.data<const float>()[idx])
-        );
+        max_diff = std::max(max_diff, std::abs(lhs.data<const float>()[idx] - rhs.data<const float>()[idx]));
         OPENVINO_SUPPRESS_DEPRECATED_END
     }
     return max_diff;
@@ -247,4 +243,4 @@ inline ostream& operator<<(ostream& os, const vector<float>& floats) {
     copy(floats.begin(), floats.end(), ostream_iterator<float>(os, " "));
     return os;
 }
-}
+}  // namespace std

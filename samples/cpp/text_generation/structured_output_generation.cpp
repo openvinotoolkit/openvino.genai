@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) try {
     // Default device is CPU; can be overridden by the second argument
     std::string device = (argc == 3) ? argv[2] : "CPU";  // GPU, NPU can be used as well
     ov::genai::LLMPipeline pipe(models_path, device);
-    
+
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 1000;
     config.do_sample = false;
@@ -53,9 +53,8 @@ int main(int argc, char* argv[]) try {
         "title": "MathReasoning",
         "type": "object"
     })";
-    config.structured_output_config = ov::genai::StructuredOutputConfig(
-        ov::AnyMap{{ov::genai::json_schema(json_schema)}}
-    );
+    config.structured_output_config =
+        ov::genai::StructuredOutputConfig(ov::AnyMap{{ov::genai::json_schema(json_schema)}});
 
     std::string sys_message = R"(
     Decompose the task and do it step by step and include it in a structured JSON.
@@ -71,7 +70,7 @@ int main(int argc, char* argv[]) try {
     ], "final_answer": "x = 5 or x = -3"}.
     "output" field should contain only mathematical notations without text.
     )";
-    
+
     auto streamer = [](std::string word) {
         std::cout << word << std::flush;
         // Return flag corresponds whether generation should be stopped.
@@ -92,16 +91,18 @@ int main(int argc, char* argv[]) try {
         ov::genai::DecodedResults decoded_results = pipe.generate(chat_history, config, streamer);
         chat_history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
         std::cout << "\n----------\n"
-            "> ";
+                     "> ";
     }
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

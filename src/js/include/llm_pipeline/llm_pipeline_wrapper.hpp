@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include <atomic>
 #include <napi.h>
 
+#include <atomic>
 #include <thread>
 
 #include "openvino/genai/llm_pipeline.hpp"

@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "continuous_batching_for_prompt_lookup.hpp"
+#include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "utils.hpp"
 
@@ -27,8 +27,13 @@ public:
                      const ov::AnyMap& properties,
                      const ov::genai::GenerationConfig& generation_config) {
         m_tokenizer = tokenizer;
-        m_perf_metrics.raw_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
-        m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(model, tokenizer, scheduler_config, device, properties, generation_config);
+        m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+        m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(model,
+                                                                             tokenizer,
+                                                                             scheduler_config,
+                                                                             device,
+                                                                             properties,
+                                                                             generation_config);
     };
 
     PromptLookupImpl(const std::shared_ptr<ov::Model>& model,
@@ -52,12 +57,13 @@ public:
                                                                              generation_config);
     };
 
-    GenerationHandle add_request(uint64_t request_id,
-                                 const ov::Tensor& input_ids,
-                                 const ov::genai::GenerationConfig& sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt,
-                                 std::optional<ov::Tensor> prompt_ids = std::nullopt,
-                                 std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
+    GenerationHandle add_request(
+        uint64_t request_id,
+        const ov::Tensor& input_ids,
+        const ov::genai::GenerationConfig& sampling_params,
+        std::optional<ov::Tensor> token_type_ids = std::nullopt,
+        std::optional<ov::Tensor> prompt_ids = std::nullopt,
+        std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  const ov::genai::GenerationConfig& sampling_params) override;
@@ -66,16 +72,17 @@ public:
 
     void step() override;
 
-    std::vector<EncodedGenerationResult>
-    generate(const std::vector<ov::Tensor>& input_ids,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer,
-             const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
-             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
-             const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
-             const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
+    std::vector<EncodedGenerationResult> generate(
+        const std::vector<ov::Tensor>& input_ids,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer,
+        const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
+        const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
+        const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list =
+            std::nullopt) override;
 
     SpeculativeDecodingMetrics get_metrics();
 };
 
-}
+}  // namespace ov::genai

@@ -1,15 +1,16 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "load_image.hpp"
-#include <openvino/core/except.hpp>
-#include <openvino/genai/visual_language/pipeline.hpp>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <openvino/core/except.hpp>
+#include <openvino/genai/visual_language/pipeline.hpp>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include "load_image.hpp"
 
 ov::genai::StreamingStatus print_subword(std::string&& subword) {
     std::cout << subword << std::flush;
@@ -18,8 +19,10 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
 int main(int argc, char* argv[]) try {
     // At least one LoRA adapter must be provided.
     OPENVINO_ASSERT(argc >= 6 && ((argc - 4) % 2) == 0,
-                   "Usage: ", argv[0],
-                   " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...]");
+                    "Usage: ",
+                    argv[0],
+                    " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT> <LORA_SAFETENSORS> <ALPHA> "
+                    "[<LORA_SAFETENSORS> <ALPHA> ...]");
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
 
@@ -59,11 +62,13 @@ int main(int argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

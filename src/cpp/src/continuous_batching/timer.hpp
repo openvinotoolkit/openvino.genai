@@ -3,21 +3,17 @@
 
 #pragma once
 
-#include <string>
 #include <chrono>
 #include <iostream>
+#include <string>
 
 class ManualTimer {
     double m_total;
     std::chrono::steady_clock::time_point m_start, m_end;
     std::string m_title;
+
 public:
-    ManualTimer(const std::string& title) :
-        m_total(0.),
-        m_start(),
-        m_end(),
-        m_title(title) {
-    }
+    ManualTimer(const std::string& title) : m_total(0.), m_start(), m_end(), m_title(title) {}
 
     void start() {
         m_start = std::chrono::steady_clock::now();

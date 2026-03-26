@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "visual_language/vlm_config.hpp"
 #include "visual_language/llava/classes.hpp"
 #include "visual_language/llava_next/classes.hpp"
+#include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
 
@@ -17,12 +17,14 @@ public:
 
     ov::Tensor preprocess_frames_cpp(const std::vector<ov::Tensor>& frames);
 
-    VisionEncoderLLaVANextVideo(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
+    VisionEncoderLLaVANextVideo(const std::filesystem::path& model_dir,
+                                const std::string& device,
+                                const ov::AnyMap properties);
 
     VisionEncoderLLaVANextVideo(const ModelsMap& models_map,
-        const std::filesystem::path& config_dir_path,
-        const std::string& device,
-        const ov::AnyMap device_config);
+                                const std::filesystem::path& config_dir_path,
+                                const std::string& device,
+                                const ov::AnyMap device_config);
 
     CircularBufferQueueElementGuard<ov::InferRequest> get_multi_modal_projector() {
         return m_ireq_queue_multi_modal_projector.get();
@@ -48,49 +50,44 @@ private:
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_multi_modal_projector;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_resampler;
     size_t m_patch_size;
-    bool use_ov_vision_preprocess = true; // default use ov vision preprocessing, control by env VISION_PREPROCESS=CPP to use CPU vision preprocessing
+    bool use_ov_vision_preprocess = true;  // default use ov vision preprocessing, control by env VISION_PREPROCESS=CPP
+                                           // to use CPU vision preprocessing
 };
 
 class InputsEmbedderLLaVANextVideo : public InputsEmbedderLLaVANext {
 public:
-    InputsEmbedderLLaVANextVideo(
-        const VLMConfig& vlm_config,
-        const std::filesystem::path& model_dir,
-        const std::string& device,
-        const ov::AnyMap device_config);
+    InputsEmbedderLLaVANextVideo(const VLMConfig& vlm_config,
+                                 const std::filesystem::path& model_dir,
+                                 const std::string& device,
+                                 const ov::AnyMap device_config);
 
-    InputsEmbedderLLaVANextVideo(
-        const VLMConfig& vlm_config,
-        const ModelsMap& models_map,
-        const Tokenizer& tokenizer,
-        const std::filesystem::path& config_dir_path,
-        const std::string& device,
-        const ov::AnyMap device_config);
-        
-    ov::Tensor get_inputs_embeds(
-        const std::string& prompt,
-        const std::vector<ov::genai::EncodedImage>& images,
-        const std::vector<ov::genai::EncodedVideo>& videos,
-        ov::genai::VLMPerfMetrics& metrics,
-        bool recalculate_merged_embeddings,
-        const std::vector<size_t>& images_sequence,
-        const std::vector<size_t>& videos_sequence,
-        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) override;
+    InputsEmbedderLLaVANextVideo(const VLMConfig& vlm_config,
+                                 const ModelsMap& models_map,
+                                 const Tokenizer& tokenizer,
+                                 const std::filesystem::path& config_dir_path,
+                                 const std::string& device,
+                                 const ov::AnyMap device_config);
+
+    ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 const std::vector<ov::genai::EncodedVideo>& videos,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings,
+                                 const std::vector<size_t>& images_sequence,
+                                 const std::vector<size_t>& videos_sequence,
+                                 const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) override;
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos) override;
 
-    NormalizedPrompt normalize_prompt(
-        const std::string& prompt,
-            size_t base_image_id,
-            size_t base_video_id,
-            const std::vector<EncodedImage>& images,
-            const std::vector<EncodedVideo>& videos) const override;
+    NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                      size_t base_image_id,
+                                      size_t base_video_id,
+                                      const std::vector<EncodedImage>& images,
+                                      const std::vector<EncodedVideo>& videos) const override;
 
-
-    NormalizedPrompt normalize_prompt(
-        const std::string& prompt,
-        size_t base_id,
-        const std::vector<EncodedImage>& images) const override;
+    NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                      size_t base_id,
+                                      const std::vector<EncodedImage>& images) const override;
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

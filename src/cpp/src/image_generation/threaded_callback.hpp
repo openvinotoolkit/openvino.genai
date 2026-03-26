@@ -12,14 +12,13 @@ namespace ov {
 namespace genai {
 
 enum class CallbackStatus {
-    RUNNING = 0, // Continue to run callback
-    STOP = 1 // Stop callback
+    RUNNING = 0,  // Continue to run callback
+    STOP = 1      // Stop callback
 };
 
 class ThreadedCallbackWrapper {
 public:
-    ThreadedCallbackWrapper(std::function<bool(size_t, size_t, ov::Tensor&)> callback)
-        : m_callback{callback} {}
+    ThreadedCallbackWrapper(std::function<bool(size_t, size_t, ov::Tensor&)> callback) : m_callback{callback} {}
 
     void start() {
         if (!m_callback) {
@@ -70,7 +69,7 @@ private:
             if (auto callback_data = std::get_if<std::tuple<size_t, size_t, ov::Tensor>>(&item)) {
                 auto& [step, num_steps, latent] = *callback_data;
                 const auto should_stop = m_callback(step, num_steps, latent);
-                
+
                 if (should_stop) {
                     m_status = CallbackStatus::STOP;
                 }

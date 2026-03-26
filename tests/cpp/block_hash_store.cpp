@@ -3,10 +3,12 @@
 //
 
 #include <gtest/gtest.h>
-#include "openvino/runtime/core.hpp"
-#include "continuous_batching/scheduler.hpp"
+
 #include <chrono>
 #include <thread>
+
+#include "continuous_batching/scheduler.hpp"
+#include "openvino/runtime/core.hpp"
 
 TEST(TestBlockHashStore, general_test) {
     ov::genai::OverwritableBlocksHashStore block_hash_store(1);

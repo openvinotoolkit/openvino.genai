@@ -3,21 +3,17 @@
 
 #pragma once
 #include <memory>
-#include "openvino/runtime/infer_request.hpp"
 
+#include "circular_buffer_queue.hpp"
 #include "openvino/genai/common_types.hpp"
-#include "visual_language/vlm_config.hpp"
+#include "openvino/runtime/infer_request.hpp"
 #include "visual_language/processor_config.hpp"
 #include "visual_language/video_processor_config.hpp"
-#include "circular_buffer_queue.hpp"
-
+#include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
 
-enum class VisionType {
-    IMAGE,
-    VIDEO
-};
+enum class VisionType { IMAGE, VIDEO };
 
 /// @brief A pair describing image size.
 struct ImageSize {
@@ -26,7 +22,6 @@ struct ImageSize {
     /// @brief Width of a corresponding image.
     size_t width = 0;
 };
-
 
 struct ResampledImage {
     ov::Tensor resampled_source;
@@ -45,7 +40,7 @@ struct EncodedImage {
     /// divided by ProcessorConfig's patch_size.
     ImageSize resized_source_size;
 
-    /// @brief Shape of embeddings of images obtained from a source image by slicing 
+    /// @brief Shape of embeddings of images obtained from a source image by slicing
     /// at no more than max_slice_nums pieces and resizing,
     /// This shape is [slice_y, slice_x, number_of_embeddings, embedding_size].
     /// Used only by MiniCPM
@@ -54,13 +49,13 @@ struct EncodedImage {
     /// @brief Patches grid after llava_next preprocessing.
     /// Format: [num_patches_height, num_patches_width]
     std::pair<int, int> patches_grid;
-    
+
     /// @brief Original size of the image
     ImageSize original_image_size;
 
     /// @brief Images features projection, used only by Phi3 and phi4mm.
     ov::Tensor images_features_projection;
-  
+
     /// @brief Resampled image, used only by MiniCPM.
     ResampledImage resampled_image;
 
@@ -74,9 +69,10 @@ struct VideoMetadata {
     std::vector<size_t> frames_indices;
 };
 
-/// @brief Embeddings of a given video. 
+/// @brief Embeddings of a given video.
 struct EncodedVideo {
-    /// @brief Embeddings of a given video obtained by applying preprocessing to frames and feature extracting models (resampler, mm_projector, etc.)
+    /// @brief Embeddings of a given video obtained by applying preprocessing to frames and feature extracting models
+    /// (resampler, mm_projector, etc.)
     ov::Tensor video_features;
 
     /// @brief Number of video tokens required to append to a normalized prompt
@@ -106,11 +102,10 @@ public:
     /// @param device A device to compile the encoder for.
     /// @param properties A config to be passed to
     /// ov::Core::compile_model().
-    static VisionEncoder::Ptr create(
-        const std::filesystem::path& model_dir,
-        const VLMModelType model_type,
-        const std::string& device,
-        const ov::AnyMap properties = {});
+    static VisionEncoder::Ptr create(const std::filesystem::path& model_dir,
+                                     const VLMModelType model_type,
+                                     const std::string& device,
+                                     const ov::AnyMap properties = {});
 
     /// @brief Constructs the encoder from models map.
     /// @param models_map Models map
@@ -119,12 +114,11 @@ public:
     /// @param device A device to compile the encoder for.
     /// @param properties A config to be passed to
     /// ov::Core::compile_model().
-    static VisionEncoder::Ptr create(
-        const ModelsMap& models_map,
-        const std::filesystem::path& config_dir_path,
-        const VLMModelType model_type,
-        const std::string& device,
-        const ov::AnyMap properties = {});
+    static VisionEncoder::Ptr create(const ModelsMap& models_map,
+                                     const std::filesystem::path& config_dir_path,
+                                     const VLMModelType model_type,
+                                     const std::string& device,
+                                     const ov::AnyMap properties = {});
 
     /// @brief Compute embeddings of an image given
     /// ProcessorConfig members.
@@ -151,22 +145,18 @@ protected:
 
     /// @brief A config to follow.
     ProcessorConfig m_processor_config;
-    
+
     /// @brief A config for video input processing.
     /// Used by models with separate video processor (e.g. Qwen3-VL).
     VideoProcessorConfig m_video_processor_config;
 
 public:
-    VisionEncoder(
-        const std::filesystem::path& model_dir,
-        const std::string& device,
-        const ov::AnyMap properties);
+    VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
 
-    VisionEncoder(
-        const ModelsMap& models_map,
-        const std::filesystem::path& config_dir_path,
-        const std::string& device,
-        const ov::AnyMap properties);
+    VisionEncoder(const ModelsMap& models_map,
+                  const std::filesystem::path& config_dir_path,
+                  const std::string& device,
+                  const ov::AnyMap properties);
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

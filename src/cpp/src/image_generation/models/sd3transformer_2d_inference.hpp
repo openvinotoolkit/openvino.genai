@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <optional>
+
 #include "openvino/core/model.hpp"
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
 
@@ -43,7 +44,7 @@ public:
                 if (width) {
                     name_to_shape[input_name][3] = *width;
                 }
-            }  else if (input_name == "encoder_hidden_states") {
+            } else if (input_name == "encoder_hidden_states") {
                 if (batch_size) {
                     name_to_shape[input_name][0] = *batch_size;
                 }

@@ -8,11 +8,11 @@
 #include <vector>
 
 #include "openvino/core/any.hpp"
+#include "openvino/genai/lora_adapter.hpp"
+#include "openvino/genai/visibility.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
-#include "openvino/genai/visibility.hpp"
-#include "openvino/genai/lora_adapter.hpp"
 
 namespace ov {
 namespace genai {
@@ -59,7 +59,12 @@ public:
                           const size_t vae_scale_factor,
                           const std::string& device,
                           Properties&&... properties)
-        : SD3Transformer2DModel(model, weights, config, vae_scale_factor, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
+        : SD3Transformer2DModel(model,
+                                weights,
+                                config,
+                                vae_scale_factor,
+                                device,
+                                ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     SD3Transformer2DModel(const SD3Transformer2DModel&);
 

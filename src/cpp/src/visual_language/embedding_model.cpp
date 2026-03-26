@@ -1,17 +1,16 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "embedding_model.hpp"
+
 #include <fstream>
 #include <memory>
 
-#include "openvino/runtime/core.hpp"
 #include "openvino/core/preprocess/pre_post_process.hpp"
-#include "openvino/op/multiply.hpp"
 #include "openvino/op/constant.hpp"
-
+#include "openvino/op/multiply.hpp"
+#include "openvino/runtime/core.hpp"
 #include "utils.hpp"
-
-#include "embedding_model.hpp"
 
 namespace {
 
@@ -45,7 +44,8 @@ EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
                                  const std::string& device,
                                  const ov::AnyMap& properties) {
     ov::Core core = utils::singleton_core();
-    std::shared_ptr<ov::Model> m_model = core.read_model(model_dir / "openvino_text_embeddings_model.xml", {}, properties);
+    std::shared_ptr<ov::Model> m_model =
+        core.read_model(model_dir / "openvino_text_embeddings_model.xml", {}, properties);
     // apply embedding postprocessing step by merging them into the model
     merge_postprocess(m_model, scale_emb);
 
@@ -95,5 +95,5 @@ void EmbeddingsModel::merge_postprocess(std::shared_ptr<ov::Model> model, float 
     ppp.build();
 }
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

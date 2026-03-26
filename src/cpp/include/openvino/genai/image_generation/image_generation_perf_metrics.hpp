@@ -3,32 +3,35 @@
 
 #pragma once
 
-#include <vector>
 #include <chrono>
 #include <map>
 #include <string>
+#include <vector>
 
-#include "openvino/genai/visibility.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/visibility.hpp"
 
 namespace ov::genai {
 
 struct RawImageGenerationPerfMetrics {
-    std::vector<MicroSeconds> unet_inference_durations; // unet inference durations for each step
-    std::vector<MicroSeconds> transformer_inference_durations; // transformer inference durations for each step
-    std::vector<MicroSeconds> iteration_durations;  //  durations of each step
+    std::vector<MicroSeconds> unet_inference_durations;         // unet inference durations for each step
+    std::vector<MicroSeconds> transformer_inference_durations;  // transformer inference durations for each step
+    std::vector<MicroSeconds> iteration_durations;              //  durations of each step
 };
 
 struct OPENVINO_GENAI_EXPORTS ImageGenerationPerfMetrics {
-    float load_time; // model load time (includes reshape & read_model time), ms
-    float generate_duration; // duration of method generate(...), ms
+    float load_time;          // model load time (includes reshape & read_model time), ms
+    float generate_duration;  // duration of method generate(...), ms
 
-    MeanStdPair iteration_duration; // Mean-Std time of one generation iteration, ms
-    std::map<std::string, float> encoder_inference_duration; // inference durations for each encoder, ms
-    MeanStdPair unet_inference_duration; // inference duration for unet model, should be filled with zeros if we don't have unet, ms
-    MeanStdPair transformer_inference_duration; // inference duration for transformer model, should be filled with zeros if we don't have transformer, ms
-    float vae_encoder_inference_duration; // inference duration of vae_encoder model, should be filled with zeros if we don't use it, ms
-    float vae_decoder_inference_duration; // inference duration of vae_decoder model, ms
+    MeanStdPair iteration_duration;                           // Mean-Std time of one generation iteration, ms
+    std::map<std::string, float> encoder_inference_duration;  // inference durations for each encoder, ms
+    MeanStdPair unet_inference_duration;  // inference duration for unet model, should be filled with zeros if we don't
+                                          // have unet, ms
+    MeanStdPair transformer_inference_duration;  // inference duration for transformer model, should be filled with
+                                                 // zeros if we don't have transformer, ms
+    float vae_encoder_inference_duration;  // inference duration of vae_encoder model, should be filled with zeros if we
+                                           // don't use it, ms
+    float vae_decoder_inference_duration;  // inference duration of vae_decoder model, ms
 
     bool m_evaluated = false;
 
@@ -50,4 +53,4 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationPerfMetrics {
     void get_first_and_other_unet_infer_duration(float& first_infer, float& other_infer_avg);
     void get_first_and_other_trans_infer_duration(float& first_infer, float& other_infer_avg);
 };
-}
+}  // namespace ov::genai

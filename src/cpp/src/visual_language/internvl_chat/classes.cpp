@@ -3,9 +3,8 @@
 
 #include "visual_language/internvl_chat/classes.hpp"
 
-#include "visual_language/clip.hpp"
-
 #include "utils.hpp"
+#include "visual_language/clip.hpp"
 
 namespace ov::genai {
 
@@ -13,12 +12,11 @@ namespace {
 
 std::string NATIVE_TAG = "<image>";
 
-std::vector<clip_image_u8> split_image_internvl(
-    const clip_image_u8& image,
-    int image_size,
-    int min_num = 1,
-    int max_num = 12,
-    bool use_thumbnail = true) {
+std::vector<clip_image_u8> split_image_internvl(const clip_image_u8& image,
+                                                int image_size,
+                                                int min_num = 1,
+                                                int max_num = 12,
+                                                bool use_thumbnail = true) {
     int orig_width = image.nx;
     int orig_height = image.ny;
     float aspect_ratio = static_cast<float>(orig_width) / orig_height;
@@ -33,8 +31,9 @@ std::vector<clip_image_u8> split_image_internvl(
             }
         }
     }
-    std::sort(target_ratios.begin(), target_ratios.end(),
-        [](const auto& a, const auto& b) { return a.first * a.second < b.first * b.second; });
+    std::sort(target_ratios.begin(), target_ratios.end(), [](const auto& a, const auto& b) {
+        return a.first * a.second < b.first * b.second;
+    });
 
     auto find_closest_aspect_ratio = [&](float ar, const std::vector<std::pair<int, int>>& ratios) {
         float best_ratio_diff = std::numeric_limits<float>::max();
@@ -47,7 +46,8 @@ std::vector<clip_image_u8> split_image_internvl(
             if (ratio_diff < best_ratio_diff) {
                 best_ratio_diff = ratio_diff;
                 best_ratio = ratio;
-            } else if (ratio_diff == best_ratio_diff && area > 0.5 * image_size * image_size * ratio.first * ratio.second) {
+            } else if (ratio_diff == best_ratio_diff &&
+                       area > 0.5 * image_size * image_size * ratio.first * ratio.second) {
                 best_ratio = ratio;
             }
         }
@@ -128,7 +128,7 @@ ov::Tensor get_pixel_values_internvl(const ov::Tensor& image, const ProcessorCon
     return output_tensor;
 }
 
-} // namespace
+}  // namespace
 
 EncodedImage VisionEncoderInternVLChat::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
@@ -144,18 +144,18 @@ EncodedImage VisionEncoderInternVLChat::encode(const ov::Tensor& image, const ov
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 
-    ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
+    ImageSize resized_source_size{config.crop_size_height / config.patch_size,
+                                  config.crop_size_width / config.patch_size};
 
     return {std::move(image_features), resized_source_size};
 }
 
 namespace {
 
-ov::Tensor merge_text_and_image_embeddings_internvl(
-    const ov::Tensor& input_ids,
-    const ov::Tensor& text_embeds,
-    const std::vector<ov::Tensor>& image_embeds,
-    int64_t image_context_token_id) {
+ov::Tensor merge_text_and_image_embeddings_internvl(const ov::Tensor& input_ids,
+                                                    const ov::Tensor& text_embeds,
+                                                    const std::vector<ov::Tensor>& image_embeds,
+                                                    int64_t image_context_token_id) {
     auto text_embeds_shape = text_embeds.get_shape();
     size_t batch_size = text_embeds_shape.at(0);
     size_t seq_len = text_embeds_shape.at(1);
@@ -189,12 +189,14 @@ ov::Tensor merge_text_and_image_embeddings_internvl(
 
             if (image_context_tokens_mask[flat_idx]) {
                 const ov::Tensor& single_image_embeds = image_embeds[image_idx];
-                const size_t num_all_image_tokens = single_image_embeds.get_shape().at(0) * single_image_embeds.get_shape().at(1); // num_patches * num_image_tokens
+                const size_t num_all_image_tokens =
+                    single_image_embeds.get_shape().at(0) *
+                    single_image_embeds.get_shape().at(1);  // num_patches * num_image_tokens
                 const float* image_embeds_data = single_image_embeds.data<float>();
                 std::copy_n(image_embeds_data + image_context_token_idx * embed_dim,
                             embed_dim,
                             merged_embeds_data + offset);
-                
+
                 ++image_context_token_idx;
 
                 if (image_context_token_idx == num_all_image_tokens) {
@@ -210,28 +212,27 @@ ov::Tensor merge_text_and_image_embeddings_internvl(
     return merged_embeds;
 }
 
-} // namespace
+}  // namespace
 
-InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(
-    const VLMConfig& vlm_config,
-    const std::filesystem::path& model_dir,
-    const std::string& device,
-    const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
+InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(const VLMConfig& vlm_config,
+                                                       const std::filesystem::path& model_dir,
+                                                       const std::string& device,
+                                                       const ov::AnyMap device_config)
+    : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
 
-InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(
-    const VLMConfig& vlm_config,
-    const ModelsMap& models_map,
-    const Tokenizer& tokenizer,
-    const std::filesystem::path& config_dir_path,
-    const std::string& device,
-    const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
+InputsEmbedderInternVLChat::InputsEmbedderInternVLChat(const VLMConfig& vlm_config,
+                                                       const ModelsMap& models_map,
+                                                       const Tokenizer& tokenizer,
+                                                       const std::filesystem::path& config_dir_path,
+                                                       const std::string& device,
+                                                       const ov::AnyMap device_config)
+    : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-
-NormalizedPrompt InputsEmbedderInternVLChat::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderInternVLChat::normalize_prompt(const std::string& prompt,
+                                                              size_t base_id,
+                                                              const std::vector<EncodedImage>& images) const {
     auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG + '\n', base_id, images.size());
-    
+
     std::string image_start_token = m_vlm_config.image_start_token;
     std::string image_context_token = m_vlm_config.image_context_token;
     std::string image_end_token = m_vlm_config.image_end_token;
@@ -243,7 +244,7 @@ NormalizedPrompt InputsEmbedderInternVLChat::normalize_prompt(const std::string&
 
         const size_t num_patches = image_embeds.back().get_shape().at(0);
         const size_t num_image_tokens = image_embeds.back().get_shape().at(1);
-        
+
         std::string expanded_tag{image_start_token};
         for (size_t idx = 0; idx < num_patches * num_image_tokens; ++idx) {
             expanded_tag += image_context_token;
@@ -259,7 +260,11 @@ NormalizedPrompt InputsEmbedderInternVLChat::normalize_prompt(const std::string&
     return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
 
-ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& unified_prompt,
+                                                         const std::vector<ov::genai::EncodedImage>& images,
+                                                         ov::genai::VLMPerfMetrics& metrics,
+                                                         bool recalculate_merged_embeddings,
+                                                         const std::vector<size_t>& images_sequence) {
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     size_t searched_pos = 0;
@@ -279,12 +284,15 @@ ov::Tensor InputsEmbedderInternVLChat::get_inputs_embeds(const std::string& unif
         return inputs_embeds;
     }
     auto start_tokenizer_time = std::chrono::steady_clock::now();
-    ov::Tensor encoded_image_context_token = m_tokenizer.encode(image_context_token, ov::genai::add_special_tokens(false)).input_ids;
+    ov::Tensor encoded_image_context_token =
+        m_tokenizer.encode(image_context_token, ov::genai::add_special_tokens(false)).input_ids;
     auto end_tokenizer_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
-    metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-    int64_t image_context_token_id = encoded_image_context_token.data<int64_t>()[encoded_image_context_token.get_size() - 1];
+    metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] +=
+        ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+    int64_t image_context_token_id =
+        encoded_image_context_token.data<int64_t>()[encoded_image_context_token.get_size() - 1];
     return merge_text_and_image_embeddings_internvl(input_ids, text_embeds, image_embeds, image_context_token_id);
 }
 
-} // namespace ov::genai
+}  // namespace ov::genai

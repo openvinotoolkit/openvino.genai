@@ -6,17 +6,15 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 
-#include "stb_image.h"
 #include "load_image.hpp"
+#include "stb_image.h"
 
 namespace fs = std::filesystem;
 
 ov::Tensor utils::load_image(const std::filesystem::path& image_path) {
     int x = 0, y = 0, channels_in_file = 0;
     constexpr int desired_channels = 3;
-    unsigned char* image = stbi_load(
-        image_path.string().c_str(),
-        &x, &y, &channels_in_file, desired_channels);
+    unsigned char* image = stbi_load(image_path.string().c_str(), &x, &y, &channels_in_file, desired_channels);
     if (!image) {
         std::stringstream error_message;
         error_message << "Failed to load the image '" << image_path << "'";
@@ -35,11 +33,11 @@ ov::Tensor utils::load_image(const std::filesystem::path& image_path) {
             stbi_image_free(image);
             image = nullptr;
         }
-        bool is_equal(const SharedImageAllocator& other) const noexcept {return this == &other;}
+        bool is_equal(const SharedImageAllocator& other) const noexcept {
+            return this == &other;
+        }
     };
-    return ov::Tensor(
-        ov::element::u8,
-        ov::Shape{1, size_t(y), size_t(x), size_t(desired_channels)},
-        SharedImageAllocator{image, desired_channels, y, x}
-    );
+    return ov::Tensor(ov::element::u8,
+                      ov::Shape{1, size_t(y), size_t(x), size_t(desired_channels)},
+                      SharedImageAllocator{image, desired_channels, y, x});
 }

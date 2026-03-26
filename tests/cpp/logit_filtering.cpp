@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
+
 #include <openvino/core/except.hpp>
 
 #include "sampling/logit_processor.hpp"
@@ -25,24 +26,20 @@ TEST_P(TemperatureTransformTest, TransformResultEqualToReference) {
     auto transform = TemperatureLogitTransform(test_struct.temperature);
     transform.apply(logits);
     ASSERT_FALSE(logits.is_vector_initialized());
-    ASSERT_EQ(logits.m_size, TemperatureTransformTestStruct::size); // temperature transform should not change buffer size
+    ASSERT_EQ(logits.m_size,
+              TemperatureTransformTestStruct::size);  // temperature transform should not change buffer size
     for (size_t i = 0; i < logits.m_size; i++) {
         EXPECT_NEAR(logits.m_data[i], test_struct.expected_output[i], 1e-6);
     }
 }
 
-
 const std::vector<TemperatureTransformTestStruct> TEMPERATURE_TRANSFORM_TEST_CASES = {
-    {1.0f, { 1.0f, 2.0f, 3.0f }, { 0.090031, 0.244728, 0.665241 } },
-    {2.0f, { 3.0f, 2.0f, 1.0f }, { 0.506480, 0.307195, 0.186323 } },
-    {1.0f, { 3.0f, 1.0f, 2.0f }, { 0.665241, 0.090031, 0.244728 } },
+    {1.0f, {1.0f, 2.0f, 3.0f}, {0.090031, 0.244728, 0.665241}},
+    {2.0f, {3.0f, 2.0f, 1.0f}, {0.506480, 0.307195, 0.186323}},
+    {1.0f, {3.0f, 1.0f, 2.0f}, {0.665241, 0.090031, 0.244728}},
 };
 
-INSTANTIATE_TEST_SUITE_P(VariousInputs,
-                         TemperatureTransformTest,
-                         testing::ValuesIn(TEMPERATURE_TRANSFORM_TEST_CASES));
-
-
+INSTANTIATE_TEST_SUITE_P(VariousInputs, TemperatureTransformTest, testing::ValuesIn(TEMPERATURE_TRANSFORM_TEST_CASES));
 
 struct TopPTestStruct {
     static inline const size_t size = 3;
@@ -68,17 +65,12 @@ TEST_P(TopPFilteringTest, FilterResultEqualToReference) {
     }
 }
 
-
 const std::vector<TopPTestStruct> TOP_P_TRANSFORM_TEST_CASES = {
-    {0.2f, { 0.090031, 0.244728, 0.665241 }, { {0.665241, 2} } },
-    {0.9f, { 0.090031, 0.244728, 0.665241 }, { {0.665241, 2}, {0.244728, 1} } },
+    {0.2f, {0.090031, 0.244728, 0.665241}, {{0.665241, 2}}},
+    {0.9f, {0.090031, 0.244728, 0.665241}, {{0.665241, 2}, {0.244728, 1}}},
 };
 
-INSTANTIATE_TEST_SUITE_P(VariousInputs,
-                         TopPFilteringTest,
-                         testing::ValuesIn(TOP_P_TRANSFORM_TEST_CASES));
-
-
+INSTANTIATE_TEST_SUITE_P(VariousInputs, TopPFilteringTest, testing::ValuesIn(TOP_P_TRANSFORM_TEST_CASES));
 
 struct TopKTestStruct {
     static inline const size_t size = 3;
@@ -104,19 +96,16 @@ TEST_P(TopKFilteringTest, FilterResultEqualToReference) {
     }
 }
 
-
 const std::vector<TopKTestStruct> TOP_K_TRANSFORM_TEST_CASES = {
-    {1, { 0.090031, 0.244728, 0.665241 }, { {0.665241, 2} } },
-    {2, { 0.090031, 0.244728, 0.665241 }, { {0.665241, 2}, {0.244728, 1} } },
+    {1, {0.090031, 0.244728, 0.665241}, {{0.665241, 2}}},
+    {2, {0.090031, 0.244728, 0.665241}, {{0.665241, 2}, {0.244728, 1}}},
 };
 
-INSTANTIATE_TEST_SUITE_P(VariousInputs,
-                         TopKFilteringTest,
-                         testing::ValuesIn(TOP_K_TRANSFORM_TEST_CASES));
+INSTANTIATE_TEST_SUITE_P(VariousInputs, TopKFilteringTest, testing::ValuesIn(TOP_K_TRANSFORM_TEST_CASES));
 
 TEST(TopKFilteringTest, FilterNotAppliedTopKGreaterThanInputSize) {
     float input[]{0.090031, 0.244728, 0.665241};
-    float expected_output[]{0.090031, 0.244728, 0.665241}; // no change expected
+    float expected_output[]{0.090031, 0.244728, 0.665241};  // no change expected
     size_t top_k = 5;
     auto logits = Logits(input, 3);
     auto transform = TopKFilter(top_k);
@@ -145,32 +134,29 @@ TEST_P(RepetitionPenaltyTransformTest, TransformResultEqualToReference) {
     auto transform = RepetitionPenaltyTransform(test_struct.penalty);
     transform.apply(logits, test_struct.input_ids);
     ASSERT_FALSE(logits.is_vector_initialized());
-    ASSERT_EQ(logits.m_size, RepetitionPenaltyTransformTestStruct::size); // penalty transform should not change buffer size
+    ASSERT_EQ(logits.m_size,
+              RepetitionPenaltyTransformTestStruct::size);  // penalty transform should not change buffer size
     for (size_t i = 0; i < logits.m_size; i++) {
         EXPECT_NEAR(logits.m_data[i], test_struct.expected_output[i], 1e-6);
     }
 }
 
-
 const std::vector<RepetitionPenaltyTransformTestStruct> REPETITION_PENALTY_TRANSFORM_TEST_CASES = {
-    RepetitionPenaltyTransformTestStruct{ // basic case, indices are applied, order is left as-is
-        1.2f,
-        { 1.0f, 2.0f, 3.0f },
-        TokenIds{ 2, 0 },
-        { 0.8333333f, 2.0f, 2.5f }
-    },
-    RepetitionPenaltyTransformTestStruct{ // negative scores case
-        2.0f,
-        { -1.0f, 2.0f, 3.0f },
-        TokenIds{ 0, 1 },
-        { -2.0f, 1.0f, 3.0f }
-    },
-    RepetitionPenaltyTransformTestStruct{ // repeated tokens in prompt, check that the penalty is only applied once
-        0.5f,
-        { -1.0f, 2.0f, 3.0f },
-        TokenIds{ 1, 1 },
-        { -1.0f, 4.0f, 3.0f }
-    },
+    RepetitionPenaltyTransformTestStruct{// basic case, indices are applied, order is left as-is
+                                         1.2f,
+                                         {1.0f, 2.0f, 3.0f},
+                                         TokenIds{2, 0},
+                                         {0.8333333f, 2.0f, 2.5f}},
+    RepetitionPenaltyTransformTestStruct{// negative scores case
+                                         2.0f,
+                                         {-1.0f, 2.0f, 3.0f},
+                                         TokenIds{0, 1},
+                                         {-2.0f, 1.0f, 3.0f}},
+    RepetitionPenaltyTransformTestStruct{// repeated tokens in prompt, check that the penalty is only applied once
+                                         0.5f,
+                                         {-1.0f, 2.0f, 3.0f},
+                                         TokenIds{1, 1},
+                                         {-1.0f, 4.0f, 3.0f}},
 };
 
 INSTANTIATE_TEST_SUITE_P(VariousInputs,
@@ -185,7 +171,6 @@ TEST(RepetitionPenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
     input[0] = {18.0f};
     EXPECT_THROW(transform.apply(logits, {0, -1}), ov::Exception);
 }
-
 
 struct FrequencyPenaltyTransformTestStruct {
     static inline const size_t size = 3;
@@ -204,32 +189,29 @@ TEST_P(FrequencyPenaltyTransformTest, TransformResultEqualToReference) {
     auto transform = FrequencyPenaltyTransform(test_struct.penalty);
     transform.apply(logits, test_struct.input_ids);
     ASSERT_FALSE(logits.is_vector_initialized());
-    ASSERT_EQ(logits.m_size, FrequencyPenaltyTransformTestStruct::size); // penalty transform should not change buffer size
+    ASSERT_EQ(logits.m_size,
+              FrequencyPenaltyTransformTestStruct::size);  // penalty transform should not change buffer size
     for (size_t i = 0; i < logits.m_size; i++) {
         EXPECT_NEAR(logits.m_data[i], test_struct.expected_output[i], 1e-6);
     }
 };
 
-
 const std::vector<FrequencyPenaltyTransformTestStruct> FREQUENCY_PENALTY_TRANSFORM_TEST_CASES = {
-    FrequencyPenaltyTransformTestStruct{ // basic case, indices are applied, order is left as-is
-        0.5f,
-        { -1.0f, 2.0f, 3.0f },
-        TokenIds{ 1, 0 },
-        { -0.5f, 1.5f, 3.0f }
-    },
-    FrequencyPenaltyTransformTestStruct{ // negative scores case
-        -0.6f,
-        { -1.0f, 2.0f, 3.0f },
-        TokenIds{ 0, 1, 1 },
-        { -1.6f, 3.2f, 3.0f }
-    },
-    FrequencyPenaltyTransformTestStruct{ // repeated tokens in prompt, check that the penalty is only applied once
-        0.2f,
-        { 1.0f, 2.0f, 3.0f },
-        TokenIds{ 2, 0, 2 },
-        { 0.8f, 2.0f, 2.6f }
-    },
+    FrequencyPenaltyTransformTestStruct{// basic case, indices are applied, order is left as-is
+                                        0.5f,
+                                        {-1.0f, 2.0f, 3.0f},
+                                        TokenIds{1, 0},
+                                        {-0.5f, 1.5f, 3.0f}},
+    FrequencyPenaltyTransformTestStruct{// negative scores case
+                                        -0.6f,
+                                        {-1.0f, 2.0f, 3.0f},
+                                        TokenIds{0, 1, 1},
+                                        {-1.6f, 3.2f, 3.0f}},
+    FrequencyPenaltyTransformTestStruct{// repeated tokens in prompt, check that the penalty is only applied once
+                                        0.2f,
+                                        {1.0f, 2.0f, 3.0f},
+                                        TokenIds{2, 0, 2},
+                                        {0.8f, 2.0f, 2.6f}},
 };
 
 INSTANTIATE_TEST_SUITE_P(VariousInputs,
@@ -244,7 +226,6 @@ TEST(FrequencyPenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
     input[0] = {18.0f};
     EXPECT_THROW(transform.apply(logits, {0, -1}), ov::Exception);
 }
-
 
 struct PresencePenaltyTransformTestStruct {
     static inline const size_t size = 3;
@@ -263,32 +244,29 @@ TEST_P(PresencePenaltyTransformTest, TransformResultEqualToReference) {
     auto transform = PresencePenaltyTransform(test_struct.penalty);
     transform.apply(logits, test_struct.input_ids);
     ASSERT_FALSE(logits.is_vector_initialized());
-    ASSERT_EQ(logits.m_size, PresencePenaltyTransformTestStruct::size); // penalty transform should not change buffer size
+    ASSERT_EQ(logits.m_size,
+              PresencePenaltyTransformTestStruct::size);  // penalty transform should not change buffer size
     for (size_t i = 0; i < logits.m_size; i++) {
         EXPECT_NEAR(logits.m_data[i], test_struct.expected_output[i], 1e-6);
     }
 };
 
-
 const std::vector<PresencePenaltyTransformTestStruct> PRESENCE_PENALTY_TRANSFORM_TEST_CASES = {
-    PresencePenaltyTransformTestStruct{ // basic case, indices are applied, order is left as-is
-        0.5f,
-        { -1.0f, 2.0f, 3.0f },
-        TokenIds{ 1, 0 },
-        { -0.5f, 1.5f, 3.0f }
-    },
-    PresencePenaltyTransformTestStruct{ // negative scores case
-        -0.6f,
-        { -1.0f, 2.0f, 3.0f },
-        TokenIds{ 0, 1, 1 },
-        { -1.6f, 2.6f, 3.0f }
-    },
-    PresencePenaltyTransformTestStruct{ // repeated tokens in prompt, check that the penalty is only applied once
-        0.2f,
-        { 1.0f, 2.0f, 3.0f },
-        TokenIds{ 2, 0, 2 },
-        { 0.8f, 2.0f, 2.8f }
-    },
+    PresencePenaltyTransformTestStruct{// basic case, indices are applied, order is left as-is
+                                       0.5f,
+                                       {-1.0f, 2.0f, 3.0f},
+                                       TokenIds{1, 0},
+                                       {-0.5f, 1.5f, 3.0f}},
+    PresencePenaltyTransformTestStruct{// negative scores case
+                                       -0.6f,
+                                       {-1.0f, 2.0f, 3.0f},
+                                       TokenIds{0, 1, 1},
+                                       {-1.6f, 2.6f, 3.0f}},
+    PresencePenaltyTransformTestStruct{// repeated tokens in prompt, check that the penalty is only applied once
+                                       0.2f,
+                                       {1.0f, 2.0f, 3.0f},
+                                       TokenIds{2, 0, 2},
+                                       {0.8f, 2.0f, 2.8f}},
 };
 
 INSTANTIATE_TEST_SUITE_P(VariousInputs,
@@ -320,26 +298,24 @@ TEST_P(EOSPenaltyTransformTest, TransformResultEqualToReference) {
     auto transform = EOSPenaltyTransform(test_struct.stop_token_ids, std::numeric_limits<size_t>::max());
     transform.apply(logits);
     ASSERT_FALSE(logits.is_vector_initialized());
-    ASSERT_EQ(logits.m_size, EOSPenaltyTransformTestStruct::size); // penalty transform should not change buffer size
+    ASSERT_EQ(logits.m_size, EOSPenaltyTransformTestStruct::size);  // penalty transform should not change buffer size
     for (size_t i = 0; i < logits.m_size; i++) {
         EXPECT_NEAR(logits.m_data[i], test_struct.expected_output[i], 1e-6);
     }
 }
 
-
 const std::vector<EOSPenaltyTransformTestStruct> EOS_PENALTY_TRANSFORM_TEST_CASES = {
-    EOSPenaltyTransformTestStruct{ // basic case, indices are applied, order is left as-is
-        { 1 },
-        { 1.0f, 2.0f, 3.0f },
-        { 1.0f, 0.0f, 3.0f },
+    EOSPenaltyTransformTestStruct{
+        // basic case, indices are applied, order is left as-is
+        {1},
+        {1.0f, 2.0f, 3.0f},
+        {1.0f, 0.0f, 3.0f},
     },
     EOSPenaltyTransformTestStruct{
-        { 1, 0 },
-        { 1.0f, 2.0f, 3.0f },
-        { 0.0f, 0.0f, 3.0f },
+        {1, 0},
+        {1.0f, 2.0f, 3.0f},
+        {0.0f, 0.0f, 3.0f},
     },
 };
 
-INSTANTIATE_TEST_SUITE_P(VariousInputs,
-                         EOSPenaltyTransformTest,
-                         testing::ValuesIn(EOS_PENALTY_TRANSFORM_TEST_CASES));
+INSTANTIATE_TEST_SUITE_P(VariousInputs, EOSPenaltyTransformTest, testing::ValuesIn(EOS_PENALTY_TRANSFORM_TEST_CASES));

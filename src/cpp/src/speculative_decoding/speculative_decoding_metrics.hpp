@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include <vector>
 #include <chrono>
 #include <map>
+#include <vector>
 
 namespace ov::genai {
 class SpeculativeDecodingMetrics {
@@ -45,4 +45,4 @@ public:
 
     void clean_up();
 };
-}
+}  // namespace ov::genai

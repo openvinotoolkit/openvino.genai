@@ -3,26 +3,38 @@
 
 #include <cxxopts.hpp>
 #include <filesystem>
-
-#include "load_image.hpp"
 #include <openvino/genai/visual_language/pipeline.hpp>
+
 #include "../text_generation/read_prompt_from_file.h"
+#include "load_image.hpp"
 
 int main(int argc, char* argv[]) try {
     cxxopts::Options options("benchmark_vlm", "Help command");
 
-    options.add_options()
-    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
-    ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
-    ("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
-    ("i,image", "Image", cxxopts::value<std::string>()->default_value("image.jpg"))
-    ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
-    ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
-    ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
-    ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("pr,pruning_ratio", "(optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.", cxxopts::value<size_t>())
-    ("rw,relevance_weight", "(optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.", cxxopts::value<float>())
-    ("h,help", "Print usage");
+    options.add_options()("m,model",
+                          "Path to model and tokenizers base directory",
+                          cxxopts::value<std::string>()->default_value(
+                              "."))("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))(
+        "pf,prompt_file",
+        "Read prompt from file",
+        cxxopts::value<std::string>())("i,image", "Image", cxxopts::value<std::string>()->default_value("image.jpg"))(
+        "nw,num_warmup",
+        "Number of warmup iterations",
+        cxxopts::value<size_t>()->default_value(std::to_string(
+            1)))("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))(
+        "mt,max_new_tokens",
+        "Maximal number of new tokens",
+        cxxopts::value<size_t>()->default_value(
+            std::to_string(20)))("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))(
+        "pr,pruning_ratio",
+        "(optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, "
+        "pruning is disabled.",
+        cxxopts::value<size_t>())(
+        "rw,relevance_weight",
+        "(optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens "
+        "pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, "
+        "making pruning more conservative on borderline tokens.",
+        cxxopts::value<float>())("h,help", "Print usage");
 
     cxxopts::ParseResult result;
     try {
@@ -46,13 +58,14 @@ int main(int argc, char* argv[]) try {
         if (result.count("prompt_file")) {
             prompt = utils::read_prompt(result["prompt_file"].as<std::string>());
         } else {
-            prompt = result["prompt"].as<std::string>().empty() ? "What is on the image?" : result["prompt"].as<std::string>();
+            prompt = result["prompt"].as<std::string>().empty() ? "What is on the image?"
+                                                                : result["prompt"].as<std::string>();
         }
     }
     if (prompt.empty()) {
         std::cout << "Prompt is empty!" << std::endl;
         return EXIT_FAILURE;
-    } 
+    }
 
     const std::string models_path = result["model"].as<std::string>();
     const std::string image_path = result["image"].as<std::string>();
@@ -77,11 +90,14 @@ int main(int argc, char* argv[]) try {
     if (device == "NPU")
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device);
     else {
-        // Setting of Scheduler config will trigger usage of ContinuousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
+        // Setting of Scheduler config will trigger usage of ContinuousBatching pipeline, which is not default for
+        // Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
         ov::genai::SchedulerConfig scheduler_config;
         scheduler_config.enable_prefix_caching = false;
         scheduler_config.max_num_batched_tokens = std::numeric_limits<std::size_t>::max();
-        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
+        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path,
+                                                        device,
+                                                        ov::genai::scheduler_config(scheduler_config));
     }
 
     auto input_data = pipe->get_tokenizer().encode(prompt);
@@ -90,7 +106,7 @@ int main(int argc, char* argv[]) try {
 
     for (size_t i = 0; i < num_warmup; i++)
         pipe->generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
-    
+
     auto res = pipe->generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
     auto metrics = res.perf_metrics;
     for (size_t i = 0; i < num_iter - 1; i++) {
@@ -101,23 +117,30 @@ int main(int argc, char* argv[]) try {
     std::cout << std::fixed << std::setprecision(2);
     std::cout << "Output token size:" << res.perf_metrics.get_num_generated_tokens() << std::endl;
     std::cout << "Load time: " << metrics.get_load_time() << " ms" << std::endl;
-    std::cout << "Generate time: " << metrics.get_generate_duration().mean << " ± " << metrics.get_generate_duration().std << " ms" << std::endl;
-    std::cout << "Tokenization time: " << metrics.get_tokenization_duration().mean << " ± " << metrics.get_tokenization_duration().std << " ms" << std::endl;
-    std::cout << "Detokenization time: " << metrics.get_detokenization_duration().mean << " ± " << metrics.get_detokenization_duration().std << " ms" << std::endl;
-    std::cout << "Embeddings preparation time: " << metrics.get_prepare_embeddings_duration().mean << " ± " << metrics.get_prepare_embeddings_duration().std << " ms" << std::endl;
-    std::cout << "TTFT: " << metrics.get_ttft().mean  << " ± " << metrics.get_ttft().std << " ms" << std::endl;
-    std::cout << "TPOT: " << metrics.get_tpot().mean  << " ± " << metrics.get_tpot().std << " ms/token " << std::endl;
-    std::cout << "Throughput: " << metrics.get_throughput().mean  << " ± " << metrics.get_throughput().std << " tokens/s" << std::endl;
+    std::cout << "Generate time: " << metrics.get_generate_duration().mean << " ± "
+              << metrics.get_generate_duration().std << " ms" << std::endl;
+    std::cout << "Tokenization time: " << metrics.get_tokenization_duration().mean << " ± "
+              << metrics.get_tokenization_duration().std << " ms" << std::endl;
+    std::cout << "Detokenization time: " << metrics.get_detokenization_duration().mean << " ± "
+              << metrics.get_detokenization_duration().std << " ms" << std::endl;
+    std::cout << "Embeddings preparation time: " << metrics.get_prepare_embeddings_duration().mean << " ± "
+              << metrics.get_prepare_embeddings_duration().std << " ms" << std::endl;
+    std::cout << "TTFT: " << metrics.get_ttft().mean << " ± " << metrics.get_ttft().std << " ms" << std::endl;
+    std::cout << "TPOT: " << metrics.get_tpot().mean << " ± " << metrics.get_tpot().std << " ms/token " << std::endl;
+    std::cout << "Throughput: " << metrics.get_throughput().mean << " ± " << metrics.get_throughput().std << " tokens/s"
+              << std::endl;
 
     return 0;
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

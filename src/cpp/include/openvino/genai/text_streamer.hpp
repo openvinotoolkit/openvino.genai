@@ -3,9 +3,9 @@
 
 #pragma once
 
+#include "openvino/genai/parsers.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
-#include "openvino/genai/parsers.hpp"
 
 namespace ov {
 namespace genai {
@@ -27,7 +27,9 @@ public:
 
     void end() override;
 
-    TextStreamer(const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string)> callback, const ov::AnyMap& detokenization_params = {});
+    TextStreamer(const Tokenizer& tokenizer,
+                 std::function<CallbackTypeVariant(std::string)> callback,
+                 const ov::AnyMap& detokenization_params = {});
 
 protected:
     Tokenizer m_tokenizer;
@@ -51,17 +53,18 @@ class OPENVINO_GENAI_EXPORTS TextParserStreamer : public TextStreamer {
 public:
     class TextParserStreamerImpl;
     using TextStreamer::write;
-    
+
     TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers = {});
     ~TextParserStreamer();
-    
+
     virtual StreamingStatus write(JsonContainer& message) = 0;
 
     CallbackTypeVariant write(std::string message);
-    
+
     JsonContainer get_parsed_message() const;
 
     void reset();
+
 private:
     std::unique_ptr<TextParserStreamerImpl> m_pimpl;
 };

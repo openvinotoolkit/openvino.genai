@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/c/chat_history.h"
-#include "openvino/genai/c/json_container.h"
 
+#include <cstring>
+#include <memory>
+#include <string>
+
+#include "openvino/core/except.hpp"
+#include "openvino/genai/c/json_container.h"
 #include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/json_container.hpp"
-#include "openvino/core/except.hpp"
 #include "types_c.h"
-#include <cstring>
-#include <string>
-#include <memory>
 
 ov_genai_chat_history_status_e ov_genai_chat_history_create(ov_genai_chat_history** history) {
     if (!history) {
@@ -28,8 +29,7 @@ ov_genai_chat_history_status_e ov_genai_chat_history_create(ov_genai_chat_histor
 
 ov_genai_chat_history_status_e ov_genai_chat_history_create_from_json_container(
     ov_genai_chat_history** history,
-    const ov_genai_json_container* messages
-) {
+    const ov_genai_json_container* messages) {
     if (!messages || !(messages->object) || !history) {
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }
@@ -52,9 +52,8 @@ void ov_genai_chat_history_free(ov_genai_chat_history* history) {
     }
 }
 
-ov_genai_chat_history_status_e ov_genai_chat_history_push_back(
-    ov_genai_chat_history* history,
-    const ov_genai_json_container* message) {
+ov_genai_chat_history_status_e ov_genai_chat_history_push_back(ov_genai_chat_history* history,
+                                                               const ov_genai_json_container* message) {
     if (!history || !(history->object) || !message || !(message->object)) {
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }
@@ -84,9 +83,8 @@ ov_genai_chat_history_status_e ov_genai_chat_history_pop_back(ov_genai_chat_hist
     return OV_GENAI_CHAT_HISTORY_OK;
 }
 
-ov_genai_chat_history_status_e ov_genai_chat_history_get_messages(
-    const ov_genai_chat_history* history,
-    ov_genai_json_container** messages) {
+ov_genai_chat_history_status_e ov_genai_chat_history_get_messages(const ov_genai_chat_history* history,
+                                                                  ov_genai_json_container** messages) {
     if (!history || !(history->object) || !messages) {
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }
@@ -101,10 +99,9 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_messages(
     return OV_GENAI_CHAT_HISTORY_OK;
 }
 
-ov_genai_chat_history_status_e ov_genai_chat_history_get_message(
-    const ov_genai_chat_history* history,
-    size_t index,
-    ov_genai_json_container** message) {
+ov_genai_chat_history_status_e ov_genai_chat_history_get_message(const ov_genai_chat_history* history,
+                                                                 size_t index,
+                                                                 ov_genai_json_container** message) {
     if (!history || !(history->object) || !message) {
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }
@@ -122,9 +119,8 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_message(
     return OV_GENAI_CHAT_HISTORY_OK;
 }
 
-ov_genai_chat_history_status_e ov_genai_chat_history_get_first(
-    const ov_genai_chat_history* history,
-    ov_genai_json_container** message) {
+ov_genai_chat_history_status_e ov_genai_chat_history_get_first(const ov_genai_chat_history* history,
+                                                               ov_genai_json_container** message) {
     if (!history || !(history->object) || !message) {
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }
@@ -142,9 +138,8 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_first(
     return OV_GENAI_CHAT_HISTORY_OK;
 }
 
-ov_genai_chat_history_status_e ov_genai_chat_history_get_last(
-    const ov_genai_chat_history* history,
-    ov_genai_json_container** message) {
+ov_genai_chat_history_status_e ov_genai_chat_history_get_last(const ov_genai_chat_history* history,
+                                                              ov_genai_json_container** message) {
     if (!history || !(history->object) || !message) {
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }
@@ -174,9 +169,7 @@ ov_genai_chat_history_status_e ov_genai_chat_history_clear(ov_genai_chat_history
     return OV_GENAI_CHAT_HISTORY_OK;
 }
 
-ov_genai_chat_history_status_e ov_genai_chat_history_size(
-    const ov_genai_chat_history* history,
-    size_t* size) {
+ov_genai_chat_history_status_e ov_genai_chat_history_size(const ov_genai_chat_history* history, size_t* size) {
     if (!history || !(history->object) || !size) {
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }
@@ -188,9 +181,7 @@ ov_genai_chat_history_status_e ov_genai_chat_history_size(
     return OV_GENAI_CHAT_HISTORY_OK;
 }
 
-ov_genai_chat_history_status_e ov_genai_chat_history_empty(
-    const ov_genai_chat_history* history,
-    int* empty) {
+ov_genai_chat_history_status_e ov_genai_chat_history_empty(const ov_genai_chat_history* history, int* empty) {
     if (!history || !(history->object) || !empty) {
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }
@@ -202,9 +193,8 @@ ov_genai_chat_history_status_e ov_genai_chat_history_empty(
     return OV_GENAI_CHAT_HISTORY_OK;
 }
 
-ov_genai_chat_history_status_e ov_genai_chat_history_set_tools(
-    ov_genai_chat_history* history,
-    const ov_genai_json_container* tools) {
+ov_genai_chat_history_status_e ov_genai_chat_history_set_tools(ov_genai_chat_history* history,
+                                                               const ov_genai_json_container* tools) {
     if (!history || !(history->object) || !tools || !(tools->object)) {
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }
@@ -219,9 +209,8 @@ ov_genai_chat_history_status_e ov_genai_chat_history_set_tools(
     return OV_GENAI_CHAT_HISTORY_OK;
 }
 
-ov_genai_chat_history_status_e ov_genai_chat_history_get_tools(
-    const ov_genai_chat_history* history,
-    ov_genai_json_container** tools) {
+ov_genai_chat_history_status_e ov_genai_chat_history_get_tools(const ov_genai_chat_history* history,
+                                                               ov_genai_json_container** tools) {
     if (!history || !(history->object) || !tools) {
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }
@@ -236,9 +225,8 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_tools(
     return OV_GENAI_CHAT_HISTORY_OK;
 }
 
-ov_genai_chat_history_status_e ov_genai_chat_history_set_extra_context(
-    ov_genai_chat_history* history,
-    const ov_genai_json_container* extra_context) {
+ov_genai_chat_history_status_e ov_genai_chat_history_set_extra_context(ov_genai_chat_history* history,
+                                                                       const ov_genai_json_container* extra_context) {
     if (!history || !(history->object) || !extra_context || !(extra_context->object)) {
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }
@@ -253,9 +241,8 @@ ov_genai_chat_history_status_e ov_genai_chat_history_set_extra_context(
     return OV_GENAI_CHAT_HISTORY_OK;
 }
 
-ov_genai_chat_history_status_e ov_genai_chat_history_get_extra_context(
-    const ov_genai_chat_history* history,
-    ov_genai_json_container** extra_context) {
+ov_genai_chat_history_status_e ov_genai_chat_history_get_extra_context(const ov_genai_chat_history* history,
+                                                                       ov_genai_json_container** extra_context) {
     if (!history || !(history->object) || !extra_context) {
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }

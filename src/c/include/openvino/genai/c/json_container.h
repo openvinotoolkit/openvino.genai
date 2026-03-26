@@ -5,8 +5,9 @@
 
 #pragma once
 
-#include "visibility.h"
 #include <stddef.h>
+
+#include "visibility.h"
 
 /**
  * @struct ov_genai_json_container
@@ -30,7 +31,8 @@ typedef enum {
  * @param container A pointer to the newly created ov_genai_json_container.
  * @return ov_genai_json_container_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e ov_genai_json_container_create(ov_genai_json_container** container);
+OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e
+ov_genai_json_container_create(ov_genai_json_container** container);
 
 /**
  * @brief Create a JsonContainer instance from a JSON string.
@@ -38,23 +40,24 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e ov_genai_json_containe
  * @param json_str A JSON string (object, array, or primitive).
  * @return ov_genai_json_container_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e ov_genai_json_container_create_from_json_string(
-    ov_genai_json_container** container,
-    const char* json_str);
+OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e
+ov_genai_json_container_create_from_json_string(ov_genai_json_container** container, const char* json_str);
 
 /**
  * @brief Create a JsonContainer instance as an empty JSON object.
  * @param container A pointer to the newly created ov_genai_json_container.
  * @return ov_genai_json_container_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e ov_genai_json_container_create_object(ov_genai_json_container** container);
+OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e
+ov_genai_json_container_create_object(ov_genai_json_container** container);
 
 /**
  * @brief Create a JsonContainer instance as an empty JSON array.
  * @param container A pointer to the newly created ov_genai_json_container.
  * @return ov_genai_json_container_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e ov_genai_json_container_create_array(ov_genai_json_container** container);
+OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e
+ov_genai_json_container_create_array(ov_genai_json_container** container);
 
 /**
  * @brief Release the memory allocated by ov_genai_json_container.
@@ -73,10 +76,8 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_json_container_free(ov_genai_json_contain
  * OUT_OF_BOUNDS(-3).
  * @return ov_genai_json_container_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e ov_genai_json_container_to_json_string(
-    const ov_genai_json_container* container,
-    char* output,
-    size_t* output_size);
+OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e
+ov_genai_json_container_to_json_string(const ov_genai_json_container* container, char* output, size_t* output_size);
 
 /**
  * @brief Create a copy of JsonContainer.
@@ -84,6 +85,5 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e ov_genai_json_containe
  * @param target A pointer to store the copied ov_genai_json_container.
  * @return ov_genai_json_container_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e ov_genai_json_container_copy(
-    const ov_genai_json_container* source,
-    ov_genai_json_container** target);
+OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e
+ov_genai_json_container_copy(const ov_genai_json_container* source, ov_genai_json_container** target);

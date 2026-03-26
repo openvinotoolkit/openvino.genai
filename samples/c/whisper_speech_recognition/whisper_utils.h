@@ -12,7 +12,6 @@
 #include "openvino/c/ov_common.h"
 #include "openvino/genai/c/whisper_pipeline.h"
 
-
 #define MAX_PATH_LENGTH 1024
 
 // Error handling macro

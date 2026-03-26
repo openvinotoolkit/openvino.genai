@@ -28,36 +28,26 @@ struct LLMPipelineFactory {
 
 class StatefulLLMPipeline : public LLMPipelineImplBase {
 public:
-    StatefulLLMPipeline(
-        const std::filesystem::path& path,
-        const ov::genai::Tokenizer& tokenizer,
-        const ov::AnyMap& config
-    );
+    StatefulLLMPipeline(const std::filesystem::path& path,
+                        const ov::genai::Tokenizer& tokenizer,
+                        const ov::AnyMap& config);
 
-    StatefulLLMPipeline(
-        const std::shared_ptr<ov::Model>& model,
-        const ov::genai::Tokenizer& tokenizer,
-        const ov::AnyMap& properties,
-        const ov::genai::GenerationConfig& generation_config
-    );
+    StatefulLLMPipeline(const std::shared_ptr<ov::Model>& model,
+                        const ov::genai::Tokenizer& tokenizer,
+                        const ov::AnyMap& properties,
+                        const ov::genai::GenerationConfig& generation_config);
 
-    DecodedResults generate(
-        StringInputs inputs,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) override;
+    DecodedResults generate(StringInputs inputs,
+                            OptionalGenerationConfig generation_config,
+                            StreamerVariant streamer) override;
 
-    DecodedResults generate(
-        const ChatHistory& history,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) override;
+    DecodedResults generate(const ChatHistory& history,
+                            OptionalGenerationConfig generation_config,
+                            StreamerVariant streamer) override;
 
-    EncodedResults generate(
-        const EncodedInputs& inputs,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) override;
+    EncodedResults generate(const EncodedInputs& inputs,
+                            OptionalGenerationConfig generation_config,
+                            StreamerVariant streamer) override;
 
     void start_chat(const std::string& system_message) override;
     void finish_chat() override;

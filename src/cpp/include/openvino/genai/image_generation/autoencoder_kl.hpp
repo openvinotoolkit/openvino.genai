@@ -4,16 +4,15 @@
 #pragma once
 
 #include <filesystem>
-#include <vector>
 #include <string>
+#include <vector>
 
 #include "openvino/core/any.hpp"
-#include "openvino/runtime/tensor.hpp"
+#include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/visibility.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
-
-#include "openvino/genai/visibility.hpp"
-#include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/runtime/tensor.hpp"
 
 namespace ov {
 namespace genai {
@@ -26,15 +25,14 @@ public:
         size_t out_channels = 3;
         float scaling_factor = 1.0f;
         float shift_factor = 0.0f;
-        std::vector<size_t> block_out_channels = { 64 };
+        std::vector<size_t> block_out_channels = {64};
 
         explicit Config(const std::filesystem::path& config_path);
     };
 
     explicit AutoencoderKL(const std::filesystem::path& vae_decoder_path);
 
-    AutoencoderKL(const std::filesystem::path& vae_encoder_path,
-                  const std::filesystem::path& vae_decoder_path);
+    AutoencoderKL(const std::filesystem::path& vae_encoder_path, const std::filesystem::path& vae_decoder_path);
 
     AutoencoderKL(const std::filesystem::path& vae_decoder_path,
                   const std::string& device,
@@ -71,10 +69,8 @@ public:
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    AutoencoderKL(const std::filesystem::path& vae_decoder_path,
-                  const std::string& device,
-                  Properties&&... properties)
-        : AutoencoderKL(vae_decoder_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    AutoencoderKL(const std::filesystem::path& vae_decoder_path, const std::string& device, Properties&&... properties)
+        : AutoencoderKL(vae_decoder_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
@@ -82,7 +78,10 @@ public:
                   const std::filesystem::path& vae_decoder_path,
                   const std::string& device,
                   Properties&&... properties)
-        : AutoencoderKL(vae_encoder_path, vae_decoder_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+        : AutoencoderKL(vae_encoder_path,
+                        vae_decoder_path,
+                        device,
+                        ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
@@ -95,7 +94,7 @@ public:
                         vae_decoder_weights,
                         vae_decoder_config,
                         device,
-                        ov::AnyMap{std::forward<Properties>(properties)...}) { }
+                        ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
@@ -112,7 +111,7 @@ public:
                         vae_decoder_weights,
                         vae_decoder_config,
                         device,
-                        ov::AnyMap{std::forward<Properties>(properties)...}) { }
+                        ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     AutoencoderKL(const AutoencoderKL&);
 
@@ -123,9 +122,8 @@ public:
     AutoencoderKL& compile(const std::string& device, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<AutoencoderKL&, Properties...> compile(
-            const std::string& device,
-            Properties&&... properties) {
+    ov::util::EnableIfAllStringAny<AutoencoderKL&, Properties...> compile(const std::string& device,
+                                                                          Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -147,12 +145,14 @@ public:
 
 private:
     void merge_vae_image_post_processing() const;
-    void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties = {});
+    void import_model(const std::filesystem::path& blob_path,
+                      const std::string& device,
+                      const ov::AnyMap& properties = {});
 
     Config m_config;
     ov::InferRequest m_encoder_request, m_decoder_request;
     std::shared_ptr<ov::Model> m_encoder_model = nullptr, m_decoder_model = nullptr;
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

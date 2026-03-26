@@ -4,21 +4,19 @@
 #pragma once
 
 #include <filesystem>
-#include <vector>
-#include <string>
 #include <memory>
+#include <openvino/openvino.hpp>
+#include <string>
+#include <vector>
 
+#include "circular_buffer_queue.hpp"
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/core.hpp"
-#include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
-
-#include "visual_language/vlm_config.hpp"
-
-#include <openvino/openvino.hpp>
+#include "openvino/runtime/tensor.hpp"
 #include "visual_language/processor_config.hpp"
-#include "circular_buffer_queue.hpp"
+#include "visual_language/vlm_config.hpp"
 
 namespace ov {
 namespace genai {
@@ -62,14 +60,16 @@ public:
     }
 
     // We have getter for the request queue, so we can reserve request outside of infer scope
-    // Tensor produced by infer is stored in the request and used further in the pipeline, so we can't free it right after infer call
+    // Tensor produced by infer is stored in the request and used further in the pipeline, so we can't free it right
+    // after infer call
     std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>>& get_request_queue();
-    ov::Tensor infer(EmbeddingsRequest& req, const ov::Tensor& input_idx, bool return_remote_tensor=false);
+    ov::Tensor infer(EmbeddingsRequest& req, const ov::Tensor& input_idx, bool return_remote_tensor = false);
+
 private:
     void merge_postprocess(std::shared_ptr<ov::Model> model, float scale_emb) const;
 
     std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>> m_embeddings_requests_queue;
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

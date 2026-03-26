@@ -1,10 +1,10 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <numeric>
-#include <cmath>
-
 #include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
+
+#include <cmath>
+#include <numeric>
 
 namespace ov {
 namespace genai {
@@ -73,7 +73,7 @@ MeanStdPair ImageGenerationPerfMetrics::get_iteration_duration() {
     return iteration_duration;
 }
 
-void ImageGenerationPerfMetrics::get_first_and_other_unet_infer_duration(float &first_infer, float &other_infer_avg) {
+void ImageGenerationPerfMetrics::get_first_and_other_unet_infer_duration(float& first_infer, float& other_infer_avg) {
     first_infer = 0.0f;
     other_infer_avg = 0.0f;
     if (!raw_metrics.unet_inference_durations.empty()) {
@@ -90,7 +90,7 @@ void ImageGenerationPerfMetrics::get_first_and_other_unet_infer_duration(float &
     }
 }
 
-void ImageGenerationPerfMetrics::get_first_and_other_trans_infer_duration(float &first_infer, float &other_infer_avg) {
+void ImageGenerationPerfMetrics::get_first_and_other_trans_infer_duration(float& first_infer, float& other_infer_avg) {
     first_infer = 0.0f;
     other_infer_avg = 0.0f;
     if (!raw_metrics.transformer_inference_durations.empty()) {
@@ -159,7 +159,7 @@ float ImageGenerationPerfMetrics::get_generate_duration() {
     return generate_duration;
 }
 
-void ImageGenerationPerfMetrics::get_first_and_other_iter_duration(float &first_iter, float &other_iter_avg) {
+void ImageGenerationPerfMetrics::get_first_and_other_iter_duration(float& first_iter, float& other_iter_avg) {
     first_iter = 0.0f;
     other_iter_avg = 0.0f;
     if (!raw_metrics.iteration_durations.empty()) {

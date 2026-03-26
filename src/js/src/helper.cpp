@@ -795,8 +795,7 @@ ov::genai::VLMPerfMetrics& unwrap<ov::genai::VLMPerfMetrics>(const Napi::Env& en
 }
 
 template <>
-ov::genai::WhisperPerfMetrics& unwrap<ov::genai::WhisperPerfMetrics>(const Napi::Env& env,
-                                                                      const Napi::Value& value) {
+ov::genai::WhisperPerfMetrics& unwrap<ov::genai::WhisperPerfMetrics>(const Napi::Env& env, const Napi::Value& value) {
     const auto obj = value.As<Napi::Object>();
     const auto& prototype = env.GetInstanceData<AddonData>()->whisper_perf_metrics;
     OPENVINO_ASSERT(prototype, "Invalid pointer to prototype.");

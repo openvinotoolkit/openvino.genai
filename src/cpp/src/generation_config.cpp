@@ -1,17 +1,17 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "openvino/genai/generation_config.hpp"
+
 #include <fstream>
 #include <limits>
-
 #include <nlohmann/json.hpp>
 #include <openvino/runtime/core.hpp>
-#include "openvino/genai/generation_config.hpp"
+
+#include "json_utils.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
-#include "json_utils.hpp"
 #include "utils.hpp"
-
 
 namespace ov {
 namespace genai {
@@ -160,7 +160,6 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "relevance_weight", relevance_weight);
 }
 
-
 StructuralTagItem::StructuralTagItem(const ov::AnyMap& properties) {
     update_config(properties);
 }
@@ -173,18 +172,13 @@ void StructuralTagItem::update_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "end", end);
 }
 
-
 std::string StructuralTagItem::to_string() const {
-    return "StructuralTagItem(begin=" + begin +
-           ", schema=" + schema +
-           ", end=" + end + ")";
+    return "StructuralTagItem(begin=" + begin + ", schema=" + schema + ", end=" + end + ")";
 }
-
 
 StructuralTagsConfig::StructuralTagsConfig(const ov::AnyMap& properties) {
     update_config(properties);
 }
-
 
 void StructuralTagsConfig::update_config(const ov::AnyMap& properties) {
     using utils::read_anymap_param;
@@ -193,12 +187,12 @@ void StructuralTagsConfig::update_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "triggers", triggers);
 }
 
-
 std::string StructuralTagsConfig::to_string() const {
     std::ostringstream tags_repr;
     tags_repr << "[";
     for (auto it = structural_tags.begin(); it != structural_tags.end(); ++it) {
-        if (it != structural_tags.begin()) tags_repr << ", ";
+        if (it != structural_tags.begin())
+            tags_repr << ", ";
         tags_repr << it->to_string();
     }
     tags_repr << "]";
@@ -206,13 +200,13 @@ std::string StructuralTagsConfig::to_string() const {
     std::ostringstream triggers_repr;
     triggers_repr << "[";
     for (auto it = triggers.begin(); it != triggers.end(); ++it) {
-        if (it != triggers.begin()) triggers_repr << ", ";
+        if (it != triggers.begin())
+            triggers_repr << ", ";
         triggers_repr << *it;
     }
     triggers_repr << "]";
 
-    return "StructuralTagsConfig(structural_tags=" + tags_repr.str() +
-           ", triggers=" + triggers_repr.str() + ")";
+    return "StructuralTagsConfig(structural_tags=" + tags_repr.str() + ", triggers=" + triggers_repr.str() + ")";
 }
 
 std::string StructuralTagsConfig::to_json() const {
@@ -245,7 +239,8 @@ size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
     if (max_new_tokens != SIZE_MAX) {
         return max_new_tokens;
     } else {
-        OPENVINO_ASSERT(max_length > prompt_length, "Internal error: generation_config.max_length should be bigger than number of prompt tokens");
+        OPENVINO_ASSERT(max_length > prompt_length,
+                        "Internal error: generation_config.max_length should be bigger than number of prompt tokens");
         return max_length - prompt_length;
     }
 }
@@ -261,7 +256,6 @@ bool GenerationConfig::is_beam_search() const {
 bool GenerationConfig::is_multinomial() const {
     return do_sample;
 }
-
 
 bool GenerationConfig::is_assisting_generation() const {
     return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
@@ -280,52 +274,88 @@ void GenerationConfig::validate() const {
 
     // Stop conditions
 
-    OPENVINO_ASSERT(eos_token_id == -1 || stop_token_ids.find(eos_token_id) != stop_token_ids.end(),
+    OPENVINO_ASSERT(
+        eos_token_id == -1 || stop_token_ids.find(eos_token_id) != stop_token_ids.end(),
         "'stop_token_ids' must contain 'eos_token_id'. Please, call 'set_eos_token_id' with 'eos_token_id' value");
 
-    auto stop_token_ids_it = std::find_if(stop_token_ids.begin(), stop_token_ids.end(), [] (int64_t stop_token_id) -> bool {
-        return stop_token_id < 0;
-    });
-    OPENVINO_ASSERT(stop_token_ids_it == stop_token_ids.end(), "'stop_token_ids' must be non-negative, but it contains a value ", *stop_token_ids_it);
+    auto stop_token_ids_it =
+        std::find_if(stop_token_ids.begin(), stop_token_ids.end(), [](int64_t stop_token_id) -> bool {
+            return stop_token_id < 0;
+        });
+    OPENVINO_ASSERT(stop_token_ids_it == stop_token_ids.end(),
+                    "'stop_token_ids' must be non-negative, but it contains a value ",
+                    *stop_token_ids_it);
 
     OPENVINO_ASSERT(!ignore_eos || max_new_tokens != SIZE_MAX || max_length != SIZE_MAX,
                     "ignore_eos is true, in this case either 'max_new_tokens', or 'max_length' should be defined.");
 
-    OPENVINO_ASSERT(eos_token_id != -1 || !stop_token_ids.empty() || !stop_strings.empty() || max_new_tokens != SIZE_MAX || max_length != SIZE_MAX,
-                    "Either 'eos_token_id', or 'stop_token_ids', or 'stop_strings', or 'max_new_tokens', or 'max_length' should be defined.");
+    OPENVINO_ASSERT(eos_token_id != -1 || !stop_token_ids.empty() || !stop_strings.empty() ||
+                        max_new_tokens != SIZE_MAX || max_length != SIZE_MAX,
+                    "Either 'eos_token_id', or 'stop_token_ids', or 'stop_strings', or 'max_new_tokens', or "
+                    "'max_length' should be defined.");
 
-    OPENVINO_ASSERT(max_new_tokens > 0 || (max_new_tokens == 0 && echo), "'max_new_tokens' must be greater than 0, if `echo` is set, 0 is also accepted");
+    OPENVINO_ASSERT(max_new_tokens > 0 || (max_new_tokens == 0 && echo),
+                    "'max_new_tokens' must be greater than 0, if `echo` is set, 0 is also accepted");
     OPENVINO_ASSERT(min_new_tokens <= max_new_tokens, "min_new_tokens must be less or equal max_new_tokens");
 
     // Sampling strategies
 
-    OPENVINO_ASSERT(num_return_sequences == 1 || (is_multinomial() || is_beam_search()), 
-        "'num_return_sequences' can be more than 1 only in case of beam search or multinomial sampling, but got ", num_return_sequences);
+    OPENVINO_ASSERT(
+        num_return_sequences == 1 || (is_multinomial() || is_beam_search()),
+        "'num_return_sequences' can be more than 1 only in case of beam search or multinomial sampling, but got ",
+        num_return_sequences);
 
     // generic penalties, but not supported by beam search currently
     if (!is_beam_search()) {
-        OPENVINO_ASSERT(frequency_penalty >= -2.0f && frequency_penalty <= 2.0f, "'frequence_penalty' penalty must be within [-2.0; 2.0], but got ", frequency_penalty);
-        OPENVINO_ASSERT(presence_penalty >= -2.0f && presence_penalty <= 2.0f, "'presence_penalty' penalty must be within [-2.0; 2.0], but got ", presence_penalty);
-        OPENVINO_ASSERT(repetition_penalty > 0.0f, "'repetition_penalty' must be a strictly positive float, but got ", repetition_penalty);
+        OPENVINO_ASSERT(frequency_penalty >= -2.0f && frequency_penalty <= 2.0f,
+                        "'frequence_penalty' penalty must be within [-2.0; 2.0], but got ",
+                        frequency_penalty);
+        OPENVINO_ASSERT(presence_penalty >= -2.0f && presence_penalty <= 2.0f,
+                        "'presence_penalty' penalty must be within [-2.0; 2.0], but got ",
+                        presence_penalty);
+        OPENVINO_ASSERT(repetition_penalty > 0.0f,
+                        "'repetition_penalty' must be a strictly positive float, but got ",
+                        repetition_penalty);
     } else {
-        OPENVINO_ASSERT(frequency_penalty == 0.0f, "'frequency_penalty' is not currently supported by beam search and should be 0.0f, but got ", frequency_penalty);
-        OPENVINO_ASSERT(presence_penalty == 0.0f, "'presence_penalty' is not currently supported by beam search and should be 0.0f, but got ", presence_penalty);
-        OPENVINO_ASSERT(repetition_penalty == 1.0f, "'repetition_penalty' is not currently supported by beam search and should be 1.0f, but got ", repetition_penalty);
+        OPENVINO_ASSERT(frequency_penalty == 0.0f,
+                        "'frequency_penalty' is not currently supported by beam search and should be 0.0f, but got ",
+                        frequency_penalty);
+        OPENVINO_ASSERT(presence_penalty == 0.0f,
+                        "'presence_penalty' is not currently supported by beam search and should be 0.0f, but got ",
+                        presence_penalty);
+        OPENVINO_ASSERT(repetition_penalty == 1.0f,
+                        "'repetition_penalty' is not currently supported by beam search and should be 1.0f, but got ",
+                        repetition_penalty);
     }
 
     if (is_multinomial()) {
-        OPENVINO_ASSERT(top_p > 0 && top_p <= 1.0f, "When 'do_sample' is true, top_p must be a positive float > 0.0 and <= 1.0, but got ", top_p);
-        OPENVINO_ASSERT(temperature > 0, "When 'do_sample' is true, temperature must be a strictly positive float, but got ", temperature);
+        OPENVINO_ASSERT(top_p > 0 && top_p <= 1.0f,
+                        "When 'do_sample' is true, top_p must be a positive float > 0.0 and <= 1.0, but got ",
+                        top_p);
+        OPENVINO_ASSERT(temperature > 0,
+                        "When 'do_sample' is true, temperature must be a strictly positive float, but got ",
+                        temperature);
     } else {
         // parameters requiring multinomial
-        // OPENVINO_ASSERT(top_k == std::numeric_limits<size_t>::max(), "When 'do_sample' is false, top_k must be max of size_t, but got ", top_k);
-        // OPENVINO_ASSERT(top_p == 1.0f, "When 'do_sample' is false, top_p must be 1.0f, but got ", top_p);
-        // OPENVINO_ASSERT(temperature == 1.0f, "When 'do_sample' is false, temperature must be a 1.0f, but got ", temperature);
+        // OPENVINO_ASSERT(top_k == std::numeric_limits<size_t>::max(), "When 'do_sample' is false, top_k must be max of
+        // size_t, but got ", top_k); OPENVINO_ASSERT(top_p == 1.0f, "When 'do_sample' is false, top_p must be 1.0f, but
+        // got ", top_p); OPENVINO_ASSERT(temperature == 1.0f, "When 'do_sample' is false, temperature must be a 1.0f,
+        // but got ", temperature);
     }
 
     if (is_beam_search()) {
-        OPENVINO_ASSERT(num_beams % num_beam_groups == 0, "'num_beams' (", num_beams, ") should be divisible by 'num_beam_groups' (", num_beam_groups, ")");
-        OPENVINO_ASSERT(num_beams >= num_return_sequences, "'num_beams' (", num_beams, ") must be greater equal than 'num_return_sequences' (", num_return_sequences, ")");
+        OPENVINO_ASSERT(num_beams % num_beam_groups == 0,
+                        "'num_beams' (",
+                        num_beams,
+                        ") should be divisible by 'num_beam_groups' (",
+                        num_beam_groups,
+                        ")");
+        OPENVINO_ASSERT(num_beams >= num_return_sequences,
+                        "'num_beams' (",
+                        num_beams,
+                        ") must be greater equal than 'num_return_sequences' (",
+                        num_return_sequences,
+                        ")");
 
         OPENVINO_ASSERT(!do_sample,
                         "Beam search with sampling is not supported yet. "
@@ -334,30 +364,41 @@ void GenerationConfig::validate() const {
 
         OPENVINO_ASSERT(no_repeat_ngram_size > 0, "'no_repeat_ngram_size' must be positive");
         if (num_beam_groups > 1) {
-            OPENVINO_ASSERT(diversity_penalty != 0.0f, "For grouped beam search 'diversity_penalty' should not be zero, otherwise it fallbacks to non-grouped beam search");
+            OPENVINO_ASSERT(diversity_penalty != 0.0f,
+                            "For grouped beam search 'diversity_penalty' should not be zero, otherwise it fallbacks to "
+                            "non-grouped beam search");
         } else {
-            OPENVINO_ASSERT(diversity_penalty == 0.0f, "For beam search 'diversity_penalty' is applicable only when grouped beam search is used, but got 'num_beam_groups' == 1");
+            OPENVINO_ASSERT(diversity_penalty == 0.0f,
+                            "For beam search 'diversity_penalty' is applicable only when grouped beam search is used, "
+                            "but got 'num_beam_groups' == 1");
         }
     } else {
         // parameters requiring beam search
-        // OPENVINO_ASSERT(num_beam_groups == 1, "'num_beam_groups' is supported by beam search only and should be 1 otherwise, but got ", num_beam_groups);
-        // OPENVINO_ASSERT(no_repeat_ngram_size == std::numeric_limits<size_t>::max(), "'no_repeat_ngram_size' is supported only by beam search, otherwise should be set to max of size_t, but got ", no_repeat_ngram_size);
-        // OPENVINO_ASSERT(diversity_penalty == 0.0f, "'diversity_penalty' is set to ", diversity_penalty, " (default is 0.0f), which is supported only by beam search sampling");
-        // OPENVINO_ASSERT(length_penalty == 1.0f, "'length_penalty' is set to ", length_penalty, " (default is 1.0f), which is supported only by beam search sampling");
+        // OPENVINO_ASSERT(num_beam_groups == 1, "'num_beam_groups' is supported by beam search only and should be 1
+        // otherwise, but got ", num_beam_groups); OPENVINO_ASSERT(no_repeat_ngram_size ==
+        // std::numeric_limits<size_t>::max(), "'no_repeat_ngram_size' is supported only by beam search, otherwise
+        // should be set to max of size_t, but got ", no_repeat_ngram_size); OPENVINO_ASSERT(diversity_penalty == 0.0f,
+        // "'diversity_penalty' is set to ", diversity_penalty, " (default is 0.0f), which is supported only by beam
+        // search sampling"); OPENVINO_ASSERT(length_penalty == 1.0f, "'length_penalty' is set to ", length_penalty, "
+        // (default is 1.0f), which is supported only by beam search sampling");
     }
 
     // assistant generation
 
     if (is_assisting_generation()) {
-        OPENVINO_ASSERT(!is_beam_search() && num_return_sequences == 1, "Beam search and parallel sampling are not compatible with assistant generation");
-        OPENVINO_ASSERT(assistant_confidence_threshold == 0.0f || num_assistant_tokens == 0, "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive in `GenerationConfig`");
+        OPENVINO_ASSERT(!is_beam_search() && num_return_sequences == 1,
+                        "Beam search and parallel sampling are not compatible with assistant generation");
+        OPENVINO_ASSERT(assistant_confidence_threshold == 0.0f || num_assistant_tokens == 0,
+                        "Parameters `assistant_confidence_threshold` and `num_assistant_tokens` are mutually exclusive "
+                        "in `GenerationConfig`");
     }
 
     if (num_assistant_tokens == 0) {
-        OPENVINO_ASSERT(max_ngram_size == 0, "'max_ngram_size' should be set to default value 0 when prompt lookup is disabled");
+        OPENVINO_ASSERT(max_ngram_size == 0,
+                        "'max_ngram_size' should be set to default value 0 when prompt lookup is disabled");
     }
 
-    if(is_structured_output_generation()) {
+    if (is_structured_output_generation()) {
         (*structured_output_config).validate();
     }
 }
@@ -366,29 +407,44 @@ void StructuredOutputConfig::validate() const {
     auto& registry = StructuredOutputController::get_backend_registry();
     std::string backend_name = backend.has_value() ? *backend : StructuredOutputController::get_default_backend_name();
     std::string upper_name = backend_name;
-    std::transform(upper_name.begin(), upper_name.end(), upper_name.begin(), [](unsigned char c){ return std::toupper(c); });
+    std::transform(upper_name.begin(), upper_name.end(), upper_name.begin(), [](unsigned char c) {
+        return std::toupper(c);
+    });
 
     OPENVINO_ASSERT(registry.find(backend_name) != registry.end(),
-                    "Structured output backend '", backend_name, "' is not registered. "
-                    "Please recompile with -DENABLE_" + upper_name + "=ON option to enable it.");
+                    "Structured output backend '",
+                    backend_name,
+                    "' is not registered. "
+                    "Please recompile with -DENABLE_" +
+                        upper_name + "=ON option to enable it.");
 
     OPENVINO_ASSERT(
-        (json_schema.has_value() + regex.has_value() + grammar.has_value() + structural_tags_config.has_value() + compound_grammar.has_value()) == 1,
-        "Only one of json, regex, grammar, structural_tags_config, or compound_grammar should be set in StructuredOutputConfig, but got: ",
-        (json_schema.has_value() ? "json=" + *json_schema +", " : ""),
+        (json_schema.has_value() + regex.has_value() + grammar.has_value() + structural_tags_config.has_value() +
+         compound_grammar.has_value()) == 1,
+        "Only one of json, regex, grammar, structural_tags_config, or compound_grammar should be set in "
+        "StructuredOutputConfig, but got: ",
+        (json_schema.has_value() ? "json=" + *json_schema + ", " : ""),
         (regex.has_value() ? "regex=" + *regex + ", " : ""),
         (grammar.has_value() ? "grammar=" + *grammar : ""),
-        (structural_tags_config.has_value() ? "structural_tags_config=" + std::visit([](const auto& config) -> std::string {
-            if constexpr (std::is_same_v<std::decay_t<decltype(config)>, StructuralTagsConfig>) {
-                return config.to_string();
-            } else {
-                return StructuredOutputConfig::structural_tag_to_string(config);
-            }
-        }, *structural_tags_config) : ""),
-        (compound_grammar.has_value() ? "compound_grammar=" + std::visit([](const auto& g) -> std::string {
-            return StructuredOutputConfig::structural_tag_to_string(g);
-        }, *compound_grammar) : "")
-    );
+        (structural_tags_config.has_value()
+             ? "structural_tags_config=" +
+                   std::visit(
+                       [](const auto& config) -> std::string {
+                           if constexpr (std::is_same_v<std::decay_t<decltype(config)>, StructuralTagsConfig>) {
+                               return config.to_string();
+                           } else {
+                               return StructuredOutputConfig::structural_tag_to_string(config);
+                           }
+                       },
+                       *structural_tags_config)
+             : ""),
+        (compound_grammar.has_value()
+             ? "compound_grammar=" + std::visit(
+                                         [](const auto& g) -> std::string {
+                                             return StructuredOutputConfig::structural_tag_to_string(g);
+                                         },
+                                         *compound_grammar)
+             : ""));
 }
 
 void StructuredOutputConfig::validate(Tokenizer& tokenizer) const {
@@ -397,10 +453,9 @@ void StructuredOutputConfig::validate(Tokenizer& tokenizer) const {
     tokenizer.m_pimpl->get_structured_output_controller()->validate_grammar(*this);
 }
 
-
-std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>
-operator+(const ov::genai::StructuredOutputConfig::StructuralTag& lhs,
-          const ov::genai::StructuredOutputConfig::StructuralTag& rhs) {
+std::shared_ptr<ov::genai::StructuredOutputConfig::Concat> operator+(
+    const ov::genai::StructuredOutputConfig::StructuralTag& lhs,
+    const ov::genai::StructuredOutputConfig::StructuralTag& rhs) {
     using SOC = ov::genai::StructuredOutputConfig;
     const auto lhs_concat = std::get_if<std::shared_ptr<SOC::Concat>>(&lhs);
     const auto rhs_concat = std::get_if<std::shared_ptr<SOC::Concat>>(&rhs);
@@ -430,9 +485,9 @@ operator+(const ov::genai::StructuredOutputConfig::StructuralTag& lhs,
     }
 }
 
-std::shared_ptr<ov::genai::StructuredOutputConfig::Union>
-operator|(const ov::genai::StructuredOutputConfig::StructuralTag& lhs,
-          const ov::genai::StructuredOutputConfig::StructuralTag& rhs) {
+std::shared_ptr<ov::genai::StructuredOutputConfig::Union> operator|(
+    const ov::genai::StructuredOutputConfig::StructuralTag& lhs,
+    const ov::genai::StructuredOutputConfig::StructuralTag& rhs) {
     using SOC = ov::genai::StructuredOutputConfig;
     const auto lhs_union = std::get_if<std::shared_ptr<SOC::Union>>(&lhs);
     const auto rhs_union = std::get_if<std::shared_ptr<SOC::Union>>(&rhs);

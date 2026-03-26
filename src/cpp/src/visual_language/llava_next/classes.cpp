@@ -4,9 +4,8 @@
 
 #include "visual_language/llava_next/classes.hpp"
 
-#include "visual_language/clip.hpp"
-
 #include "utils.hpp"
+#include "visual_language/clip.hpp"
 
 namespace ov::genai {
 
@@ -59,11 +58,13 @@ EncodedImage VisionEncoderLLaVANext::encode(const ov::Tensor& image, const ov::A
     ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 
-    ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
+    ImageSize resized_source_size{config.crop_size_height / config.patch_size,
+                                  config.crop_size_width / config.patch_size};
 
     // Gen number of patches
     ImageSize original_image_size{image.get_shape().at(1), image.get_shape().at(2)};
-    auto best_resolution = select_best_resolution({original_image_size.width, original_image_size.height}, config.image_grid_pinpoints);
+    auto best_resolution =
+        select_best_resolution({original_image_size.width, original_image_size.height}, config.image_grid_pinpoints);
     int num_patches_w = best_resolution.first / config.size_shortest_edge;
     int num_patches_h = best_resolution.second / config.size_shortest_edge;
 
@@ -125,12 +126,11 @@ ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size)
     return unpadded_tensor;
 }
 
-ov::Tensor reshape_and_rearrange_image_feature(
-    const ov::Tensor& image_feature,
-    int num_patch_height,
-    int num_patch_width,
-    int height,
-    int width) {
+ov::Tensor reshape_and_rearrange_image_feature(const ov::Tensor& image_feature,
+                                               int num_patch_height,
+                                               int num_patch_width,
+                                               int height,
+                                               int width) {
     auto shape = image_feature.get_shape();
     OPENVINO_ASSERT(shape.size() == 3, "image_feature tensor must have 3 dimensions");
 
@@ -138,15 +138,11 @@ ov::Tensor reshape_and_rearrange_image_feature(
     size_t patch_seq_len = shape[1];
     size_t embed_dim = shape[2];
 
-    OPENVINO_ASSERT(
-        num_patches == num_patch_height * num_patch_width,
-        "Number of patches does not match the specified grid size"
-    );
+    OPENVINO_ASSERT(num_patches == num_patch_height * num_patch_width,
+                    "Number of patches does not match the specified grid size");
 
-    OPENVINO_ASSERT(
-        patch_seq_len == height * width,
-        "Patch sequence length does not match the specified height and width"
-    );
+    OPENVINO_ASSERT(patch_seq_len == height * width,
+                    "Patch sequence length does not match the specified height and width");
 
     // Reshape tensor data and permute dimensions
     // [num_patches, patch_seq_len, embed_dim] -> [embed_dim, num_patch_height, height, num_patch_width, width]
@@ -167,21 +163,20 @@ ov::Tensor reshape_and_rearrange_image_feature(
     }
 
     ov::Tensor result(image_feature.get_element_type(),
-                        {static_cast<size_t>(embed_dim),
-                        static_cast<size_t>(num_patch_height * height),
-                        static_cast<size_t>(num_patch_width * width)}
-    );
+                      {static_cast<size_t>(embed_dim),
+                       static_cast<size_t>(num_patch_height * height),
+                       static_cast<size_t>(num_patch_width * width)});
     std::copy(reshaped_data.begin(), reshaped_data.end(), result.data<float>());
     return result;
 }
 
 /**
-* @brief Flattens and transposes tensor.
-* Used for packing image features of llava_next models.
-*
-* @param tensor A tensor with a shape (embed_dim, height, width)
-* @return A tensor with a shape (height * width, embed_dim)
-*/
+ * @brief Flattens and transposes tensor.
+ * Used for packing image features of llava_next models.
+ *
+ * @param tensor A tensor with a shape (embed_dim, height, width)
+ * @return A tensor with a shape (height * width, embed_dim)
+ */
 ov::Tensor flatten_and_transpose(const ov::Tensor& tensor) {
     auto shape = tensor.get_shape();
     OPENVINO_ASSERT(shape.size() == 3, "Flattening tensor must have 3 dimensions");
@@ -222,7 +217,8 @@ ov::Tensor add_image_newline(const ov::Tensor& image_feature, const ov::Tensor& 
     size_t height = shape[1];
     size_t width = shape[2];
 
-    OPENVINO_ASSERT(image_newline.get_shape()[0] == embed_dim, "image_newline dimension must match embed_dim of image_feature");
+    OPENVINO_ASSERT(image_newline.get_shape()[0] == embed_dim,
+                    "image_newline dimension must match embed_dim of image_feature");
 
     const float* image_feature_data = image_feature.data<float>();
     const float* newline_data = image_newline.data<float>();
@@ -233,11 +229,9 @@ ov::Tensor add_image_newline(const ov::Tensor& image_feature, const ov::Tensor& 
     for (size_t e = 0; e < embed_dim; ++e) {
         for (size_t h = 0; h < height; ++h) {
             // Copy original image feature data
-            std::copy(
-                image_feature_data + (e * height * width + h * width),
-                image_feature_data + (e * height * width + (h + 1) * width),
-                feature_with_newline_data + (e * height * (width + 1) + h * (width + 1))
-            );
+            std::copy(image_feature_data + (e * height * width + h * width),
+                      image_feature_data + (e * height * width + (h + 1) * width),
+                      feature_with_newline_data + (e * height * (width + 1) + h * (width + 1)));
             // Add image newline
             feature_with_newline_data[e * height * (width + 1) + h * (width + 1) + width] = newline_data[e];
         }
@@ -245,7 +239,7 @@ ov::Tensor add_image_newline(const ov::Tensor& image_feature, const ov::Tensor& 
 
     return feature_with_newline;
 }
-} // namespace
+}  // namespace
 
 /**
  * @brief Processes base and patches image features extracted from encoded image.
@@ -256,9 +250,8 @@ ov::Tensor add_image_newline(const ov::Tensor& image_feature, const ov::Tensor& 
  * @param image_newline An image newline tensor with a shape (embed_dim)
  * @return A tensor with a shape (1, new_seq_len, embed_dim)
  */
-ov::Tensor InputsEmbedderLLaVANext::pack_image_features_llava_next(
-    const EncodedImage& encoded_image,
-    const ov::Tensor& image_newline) const {
+ov::Tensor InputsEmbedderLLaVANext::pack_image_features_llava_next(const EncodedImage& encoded_image,
+                                                                   const ov::Tensor& image_newline) const {
     auto image_feature = encoded_image.resized_source;
     auto image_feature_shape = image_feature.get_shape();
     size_t num_patches = image_feature_shape[0];
@@ -278,9 +271,7 @@ ov::Tensor InputsEmbedderLLaVANext::pack_image_features_llava_next(
         // Extract other grid patches
         ov::Tensor patches_image_feature(image_feature.get_element_type(), {num_patches - 1, patch_seq_len, embed_dim});
         dst_data = patches_image_feature.data<float>();
-        std::copy(src_data + patch_seq_len * embed_dim,
-                src_data + num_patches * patch_seq_len * embed_dim,
-                dst_data);
+        std::copy(src_data + patch_seq_len * embed_dim, src_data + num_patches * patch_seq_len * embed_dim, dst_data);
 
         // Process grid patches image feature
         size_t height = encoded_image.resized_source_size.height;
@@ -288,7 +279,11 @@ ov::Tensor InputsEmbedderLLaVANext::pack_image_features_llava_next(
         size_t num_patch_height = encoded_image.patches_grid.first;
         size_t num_patch_width = encoded_image.patches_grid.second;
 
-        ov::Tensor reshaped_image_feature = reshape_and_rearrange_image_feature(patches_image_feature, num_patch_height, num_patch_width, height, width);
+        ov::Tensor reshaped_image_feature = reshape_and_rearrange_image_feature(patches_image_feature,
+                                                                                num_patch_height,
+                                                                                num_patch_width,
+                                                                                height,
+                                                                                width);
 
         ov::Tensor unpadded_image_feature = unpad_image(reshaped_image_feature, encoded_image.original_image_size);
 
@@ -308,20 +303,16 @@ ov::Tensor InputsEmbedderLLaVANext::pack_image_features_llava_next(
         std::copy(base_data, base_data + base_shape[1] * embed_dim, result.data<float>());
         // Copy processed image feature data
         std::copy(processed_data,
-                processed_data + processed_shape[0] * embed_dim,
-                result.data<float>() + base_shape[1] * embed_dim);
+                  processed_data + processed_shape[0] * embed_dim,
+                  result.data<float>() + base_shape[1] * embed_dim);
         return result;
     } else {
         // If there is only one patch, return the original (base) image feature concatenated with image_newline
         ov::Tensor result(image_feature.get_element_type(), {1, patch_seq_len + 1, embed_dim});
         // Copy base image feature data
-        std::copy(image_feature_data + embed_dim,
-                image_feature_data + patch_seq_len * embed_dim,
-                result.data<float>());
+        std::copy(image_feature_data + embed_dim, image_feature_data + patch_seq_len * embed_dim, result.data<float>());
         // Append image_newline data
-        std::copy(newline_data,
-                newline_data + embed_dim,
-                result.data<float>() + patch_seq_len * embed_dim);
+        std::copy(newline_data, newline_data + embed_dim, result.data<float>() + patch_seq_len * embed_dim);
         return result;
     }
 }
@@ -336,7 +327,9 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVANext::encode_images(cons
     return embeds;
 }
 
-NormalizedPrompt InputsEmbedderLLaVANext::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderLLaVANext::normalize_prompt(const std::string& prompt,
+                                                           size_t base_id,
+                                                           const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
     auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
     std::vector<ov::Tensor> image_embeds;
@@ -367,8 +360,11 @@ NormalizedPrompt InputsEmbedderLLaVANext::normalize_prompt(const std::string& pr
     return {std::move(unified_prompt), std::move(images_sequence)};
 }
 
-ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
-    
+ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified_prompt,
+                                                      const std::vector<ov::genai::EncodedImage>& images,
+                                                      ov::genai::VLMPerfMetrics& metrics,
+                                                      bool recalculate_merged_embeddings,
+                                                      const std::vector<size_t>& images_sequence) {
     ov::Tensor image_newline;
     size_t searched_pos = 0;
     std::vector<ov::Tensor> image_embeds;
@@ -384,7 +380,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified
 
         image_embeds.push_back(pack_image_features_llava_next(encoded_image, image_newline));
     }
-    
+
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
@@ -396,12 +392,14 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified
         return inputs_embeds;
     }
     auto start_tokenizer_time = std::chrono::steady_clock::now();
-    ov::Tensor encoded_image_token = m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
+    ov::Tensor encoded_image_token =
+        m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
     auto end_tokenizer_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
-    metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+    metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] +=
+        ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
     return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 }
 
-} // namespace ov::genai
+}  // namespace ov::genai

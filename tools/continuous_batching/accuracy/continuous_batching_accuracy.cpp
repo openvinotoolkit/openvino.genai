@@ -1,14 +1,15 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <openvino/openvino.hpp>
 #include <cxxopts.hpp>
+#include <openvino/openvino.hpp>
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 
 void print_generation_result(const ov::genai::GenerationResult& generation_result) {
     for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
-        std::cout << "Answer " << output_id << " (" << generation_result.m_scores[output_id] << ") : " << generation_result.m_generation_ids[output_id] << std::endl;
+        std::cout << "Answer " << output_id << " (" << generation_result.m_scores[output_id]
+                  << ") : " << generation_result.m_generation_ids[output_id] << std::endl;
     }
 }
 
@@ -47,13 +48,17 @@ int main(int argc, char* argv[]) try {
 
     cxxopts::Options options("accuracy_sample", "Help command");
 
-    options.add_options()
-    ("n,num_prompts", "A number of prompts", cxxopts::value<size_t>()->default_value("1"))
-    ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("false"))
-    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
-    ("d,device", "Target device to run the model", cxxopts::value<std::string>()->default_value("CPU"))
-    ("use_prefix", "Whether to use a prefix or not", cxxopts::value<bool>()->default_value("false"))
-    ("h,help", "Print usage");
+    options.add_options()("n,num_prompts", "A number of prompts", cxxopts::value<size_t>()->default_value("1"))(
+        "dynamic_split_fuse",
+        "Whether to use dynamic split-fuse or vLLM scheduling",
+        cxxopts::value<bool>()->default_value("false"))(
+        "m,model",
+        "Path to model and tokenizers base directory",
+        cxxopts::value<std::string>()->default_value(
+            "."))("d,device", "Target device to run the model", cxxopts::value<std::string>()->default_value("CPU"))(
+        "use_prefix",
+        "Whether to use a prefix or not",
+        cxxopts::value<bool>()->default_value("false"))("h,help", "Print usage");
 
     cxxopts::ParseResult result;
     try {
@@ -90,7 +95,7 @@ int main(int argc, char* argv[]) try {
         "What is OpenVINO?",
     };
 
-    std::vector<ov::genai::GenerationConfig> sampling_params_examples {
+    std::vector<ov::genai::GenerationConfig> sampling_params_examples{
         beam_search_config(),
         greedy_config(),
         multinomial_config(),
@@ -118,7 +123,10 @@ int main(int argc, char* argv[]) try {
 
     // It's possible to construct a Tokenizer from a different path.
     // If the Tokenizer isn't specified, it's loaded from the same folder.
-    ov::genai::ContinuousBatchingPipeline pipe(models_path, ov::genai::Tokenizer{models_path}, scheduler_config, device);
+    ov::genai::ContinuousBatchingPipeline pipe(models_path,
+                                               ov::genai::Tokenizer{models_path},
+                                               scheduler_config,
+                                               device);
 
     if (use_prefix) {
         std::cout << "Running inference for prefix to compute the shared prompt's KV cache..." << std::endl;
@@ -130,15 +138,14 @@ int main(int argc, char* argv[]) try {
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
-        const ov::genai::GenerationResult & generation_result = generation_results[request_id];
+        const ov::genai::GenerationResult& generation_result = generation_results[request_id];
         std::cout << "Question: " << prompts[request_id] << std::endl;
-        switch (generation_result.m_status)
-        {
+        switch (generation_result.m_status) {
         case ov::genai::GenerationStatus::FINISHED:
             print_generation_result(generation_result);
             break;
         case ov::genai::GenerationStatus::IGNORED:
-            std::cout << "Request was ignored due to lack of memory." <<std::endl;
+            std::cout << "Request was ignored due to lack of memory." << std::endl;
             if (generation_result.m_generation_ids.size() > 0) {
                 std::cout << "Partial result:" << std::endl;
                 print_generation_result(generation_result);
@@ -146,12 +153,12 @@ int main(int argc, char* argv[]) try {
             break;
         case ov::genai::GenerationStatus::STOP:
         case ov::genai::GenerationStatus::CANCEL:
-            std::cout << "Request was aborted." <<std::endl;
+            std::cout << "Request was aborted." << std::endl;
             if (generation_result.m_generation_ids.size() > 0) {
                 std::cout << "Partial result:" << std::endl;
                 print_generation_result(generation_result);
             }
-            break;   
+            break;
         default:
             break;
         }
@@ -160,11 +167,13 @@ int main(int argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

@@ -3,29 +3,22 @@
 
 #pragma once
 
+#include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 
-#include "continuous_batching/pipeline_impl.hpp"
-
 namespace ov::genai {
-class ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
+class ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl
+    : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
 public:
     ContinuousBatchingForPromptLookupImpl() = default;
 
-    ContinuousBatchingForPromptLookupImpl(
-        const std::shared_ptr<ov::Model>& model,
-        const Tokenizer& tokenizer,
-        const SchedulerConfig& scheduler_config,
-        const std::string& device,
-        const ov::AnyMap& properties,
-        const ov::genai::GenerationConfig& generation_config) :
-    ContinuousBatchingImpl{ model,
-                            tokenizer,
-                            scheduler_config,
-                            device,
-                            properties,
-                            generation_config,
-                            true } {};
+    ContinuousBatchingForPromptLookupImpl(const std::shared_ptr<ov::Model>& model,
+                                          const Tokenizer& tokenizer,
+                                          const SchedulerConfig& scheduler_config,
+                                          const std::string& device,
+                                          const ov::AnyMap& properties,
+                                          const ov::genai::GenerationConfig& generation_config)
+        : ContinuousBatchingImpl{model, tokenizer, scheduler_config, device, properties, generation_config, true} {};
 
     ContinuousBatchingForPromptLookupImpl(const std::shared_ptr<ov::Model>& model,
                                           std::shared_ptr<InputsEmbedder> inputs_embedder,
@@ -54,7 +47,8 @@ public:
     size_t get_processed_tokens_per_iteration();
 
     using ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests;
+
 protected:
     TokenIds generate_candidates(const TokenIds& input_ids, size_t num_pred_tokens, size_t max_ngram_size);
 };
-}
+}  // namespace ov::genai

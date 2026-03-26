@@ -3,9 +3,8 @@
 
 #include <algorithm>
 #include <filesystem>
-#include <utility>
-
 #include <openvino/openvino.hpp>
+#include <utility>
 #include <variant>
 
 #include "openvino/genai/text_streamer.hpp"
@@ -84,13 +83,15 @@ public:
         ov::Core core = utils::singleton_core();
         ov::CompiledModel compiled_model;
         if (device == "NPU") {
-            auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, std::as_const(properties_copy));
+            auto encoder_model =
+                core.read_model(models_path / "openvino_encoder_model.xml", {}, std::as_const(properties_copy));
             // NB: only batch_size == 1 is supported now for NPU
             reshape_to_static_encoder(encoder_model, 1, m_feature_extractor.feature_size);
             compiled_model = core.compile_model(encoder_model, "NPU", properties_copy);
 
             // WA: Push eos_token to NPUW to stop infer() if KVcache is full
-            auto eos_token = m_generation_config.eos_token_id == -1 ? m_tokenizer.get_eos_token_id() : m_generation_config.eos_token_id;
+            auto eos_token = m_generation_config.eos_token_id == -1 ? m_tokenizer.get_eos_token_id()
+                                                                    : m_generation_config.eos_token_id;
             properties_copy.insert({"WHISPER_EOS_TOKEN", eos_token});
         } else {
             compiled_model = core.compile_model(models_path / "openvino_encoder_model.xml", device, properties_copy);

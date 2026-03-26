@@ -44,7 +44,7 @@ public:
 
         /**
          * @brief Last token embeddings
-         * 
+         *
          * @note Specifying `ov::genai::padding_side = "left"` can optimize performance for this pooling type.
          */
         LAST_TOKEN = 2,
@@ -68,7 +68,7 @@ public:
 
         /**
          * @brief Batch size of embedding model.
-         * Useful for database population. If set, the pipeline will fix model shape for inference optimization. 
+         * Useful for database population. If set, the pipeline will fix model shape for inference optimization.
          * Number of documents passed to pipeline should be equal to batch_size.
          * For query embeddings, batch_size should be set to 1 or not set.
          */

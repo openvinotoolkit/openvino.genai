@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/parsers.hpp"
+
+#include <cctype>
 #include <regex>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <cctype>
-#include <stdexcept>
 
 namespace ov::genai {
 
@@ -26,11 +27,11 @@ private:
 
     /**
      * @brief Find the longest suffix of text that is a prefix of the close tag.
-     * 
+     *
      * This is used to detect if the close tag is split across multiple chunks.
-     * For example, if text ends with "</th" and m_close_tag is "</think>", 
+     * For example, if text ends with "</th" and m_close_tag is "</think>",
      * this returns 4 (the length of "</th").
-     * 
+     *
      * @param text The text to check (using string_view for efficient read-only access)
      * @return The number of characters at the end of text that match the start of m_close_tag
      */
@@ -49,16 +50,20 @@ private:
     /**
      * @brief Handle the case where both open and close tags are found in the same chunk.
      */
-    void handle_complete_reasoning(JsonContainer& message, std::string_view txt_chunk,
-                                   size_t open_idx, size_t close_idx, std::string& delta_text) {
+    void handle_complete_reasoning(JsonContainer& message,
+                                   std::string_view txt_chunk,
+                                   size_t open_idx,
+                                   size_t close_idx,
+                                   std::string& delta_text) {
         // Extract reasoning content between tags
-        message["reasoning_content"] = std::string(txt_chunk.substr(open_idx + m_open_tag.size(), close_idx - (open_idx + m_open_tag.size())));
+        message["reasoning_content"] =
+            std::string(txt_chunk.substr(open_idx + m_open_tag.size(), close_idx - (open_idx + m_open_tag.size())));
         message["content"] = std::string(txt_chunk.substr(close_idx + m_close_tag.size()));
-        
+
         if (!m_keep_original_content) {
             delta_text = std::string(txt_chunk.substr(close_idx + m_close_tag.size()));
         }
-        
+
         m_think_tag_opened = false;
         m_deactivated = true;
         m_text_cache.clear();
@@ -67,10 +72,13 @@ private:
     /**
      * @brief Handle the case where only the open tag is found.
      */
-    void handle_open_tag(JsonContainer& delta_message, std::string_view txt_chunk, size_t open_idx, std::string& delta_text) {
+    void handle_open_tag(JsonContainer& delta_message,
+                         std::string_view txt_chunk,
+                         size_t open_idx,
+                         std::string& delta_text) {
         // Start accumulating reasoning content
         delta_message["reasoning_content"] = std::string(txt_chunk.substr(open_idx + m_open_tag.size()));
-        
+
         if (!m_keep_original_content) {
             delta_text.clear();
         } else {
@@ -84,17 +92,20 @@ private:
     /**
      * @brief Handle the case where the close tag is found.
      */
-    void handle_close_tag(JsonContainer& delta_message, std::string_view txt_chunk, size_t close_idx, std::string& delta_text) {
+    void handle_close_tag(JsonContainer& delta_message,
+                          std::string_view txt_chunk,
+                          size_t close_idx,
+                          std::string& delta_text) {
         // Append text before close tag to reasoning content
         delta_message["reasoning_content"] = std::move(std::string(txt_chunk.substr(0, close_idx)));
         auto content = std::string(txt_chunk.substr(close_idx + m_close_tag.size()));
         delta_message["content"] = content;
-        
+
         if (!m_keep_original_content) {
             // Despite the fact that we put txt_chunk to delta_text it's correct.
             // Since txt_chunk contains some cached parts from the previous calls that were not yet processed yet
-            // and we kept them in cache until we decide what to do with them. Here we definitely know that that cached parts
-            // belonged to reasoning_content so we can discard them.
+            // and we kept them in cache until we decide what to do with them. Here we definitely know that that cached
+            // parts belonged to reasoning_content so we can discard them.
             delta_text = std::move(content);
         } else {
             delta_text = txt_chunk;
@@ -111,7 +122,7 @@ private:
     void handle_inside_reasoning(JsonContainer& delta_message, std::string_view txt_chunk, std::string& delta_text) {
         // Find if the end of txt_chunk might be the start of a close tag
         const size_t num_chars_to_keep = find_close_tag_prefix_length(txt_chunk);
-        
+
         std::string reason_str;
         if (num_chars_to_keep > 0) {
             // Keep potential partial close tag in cache
@@ -132,21 +143,19 @@ private:
 
 public:
     ReasoningParserImpl() = default;
-    
+
     ReasoningParserImpl(bool expect_open_tag,
-                    bool keep_original_content,
-                    const std::string& open_tag, 
-                    const std::string& close_tag)
+                        bool keep_original_content,
+                        const std::string& open_tag,
+                        const std::string& close_tag)
         : m_expect_open_tag(expect_open_tag),
           m_keep_original_content(keep_original_content),
           m_open_tag(open_tag),
           m_close_tag(close_tag) {}
 
-    std::string parse(
-        JsonContainer&  delta_message,
-        std::string& delta_text,
-        const std::optional<std::vector<int64_t>>& delta_tokens
-    ) {
+    std::string parse(JsonContainer& delta_message,
+                      std::string& delta_text,
+                      const std::optional<std::vector<int64_t>>& delta_tokens) {
         if (m_deactivated) {
             return delta_text;
         }
@@ -155,7 +164,6 @@ public:
         }
         m_first_run = false;
 
-        
         std::string txt_chunk = m_text_cache + delta_text;
 
         // Cache find() results to avoid redundant searches
@@ -164,9 +172,9 @@ public:
 
         if (!m_think_tag_opened && open_idx != std::string::npos && m_expect_open_tag) {
             // Check if close tag is also present after the open tag
-            const auto close_idx_after_open = (close_idx != std::string::npos && close_idx > open_idx) 
-                                               ? close_idx : std::string::npos;
-            
+            const auto close_idx_after_open =
+                (close_idx != std::string::npos && close_idx > open_idx) ? close_idx : std::string::npos;
+
             if (close_idx_after_open != std::string::npos) {
                 handle_complete_reasoning(delta_message, txt_chunk, open_idx, close_idx_after_open, delta_text);
             } else {
@@ -195,17 +203,18 @@ public:
     }
 };
 
-ReasoningIncrementalParser::ReasoningIncrementalParser(bool expect_open_tag, bool keep_original_content, const std::string& open_tag, const std::string& close_tag) {
+ReasoningIncrementalParser::ReasoningIncrementalParser(bool expect_open_tag,
+                                                       bool keep_original_content,
+                                                       const std::string& open_tag,
+                                                       const std::string& close_tag) {
     m_impl = std::make_unique<ReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
 }
 
 ReasoningIncrementalParser::~ReasoningIncrementalParser() = default;
 
-std::string ReasoningIncrementalParser::parse(
-    JsonContainer& delta_message,
-    std::string& delta_text,
-    const std::optional<std::vector<int64_t>>& delta_tokens
-) {
+std::string ReasoningIncrementalParser::parse(JsonContainer& delta_message,
+                                              std::string& delta_text,
+                                              const std::optional<std::vector<int64_t>>& delta_tokens) {
     return m_impl->parse(delta_message, delta_text, delta_tokens);
 }
 
@@ -233,8 +242,8 @@ public:
 
         size_t pos = call.find('(');
         std::string name = call.substr(0, pos);
-        std::string args = call.substr(pos + 1, call.size() - pos - 2); // inside (...)
-        
+        std::string args = call.substr(pos + 1, call.size() - pos - 2);  // inside (...)
+
         JsonContainer kv;
         // Parse arguments of the form key="value"
         std::regex arg_re(R"((\w+)\s*=\s*\"([^"]*)\")");
@@ -242,7 +251,7 @@ public:
         for (; it != std::sregex_iterator(); ++it) {
             kv[std::string((*it)[1])] = std::string((*it)[2]);
         }
-        
+
         // Split function name and arguments
         message["tool_calls"] = JsonContainer::array();
         message["tool_calls"].push_back(JsonContainer({{"name", name}, {"arguments", kv}}));
@@ -289,13 +298,13 @@ Llama3JsonToolParser::~Llama3JsonToolParser() = default;
 class ReasoningParser::ReasoningParserImpl {
 public:
     ReasoningParserImpl(bool expect_open_tag,
-                            bool keep_original_content,
-                            const std::string& open_tag,
-                            const std::string& close_tag):
-    m_expect_open_tag(expect_open_tag),
-    m_keep_original_content(keep_original_content),
-    m_open_tag(open_tag),
-    m_close_tag(close_tag) {};
+                        bool keep_original_content,
+                        const std::string& open_tag,
+                        const std::string& close_tag)
+        : m_expect_open_tag(expect_open_tag),
+          m_keep_original_content(keep_original_content),
+          m_open_tag(open_tag),
+          m_close_tag(close_tag) {};
 
     void parse(JsonContainer& message) {
         std::string reasoning_content;
@@ -316,6 +325,7 @@ public:
 
         message["reasoning_content"] = reasoning_content;
     }
+
 private:
     bool m_expect_open_tag;
     bool m_keep_original_content;
@@ -323,7 +333,10 @@ private:
     std::string m_close_tag;
 };
 
-ReasoningParser::ReasoningParser(bool expect_open_tag, bool keep_original_content, const std::string& open_tag, const std::string& close_tag) {
+ReasoningParser::ReasoningParser(bool expect_open_tag,
+                                 bool keep_original_content,
+                                 const std::string& open_tag,
+                                 const std::string& close_tag) {
     m_impl = std::make_unique<ReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
 }
 
@@ -335,4 +348,4 @@ ReasoningParser::~ReasoningParser() = default;
 
 Parser::~Parser() = default;
 
-} // namespace ov::genai
+}  // namespace ov::genai

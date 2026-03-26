@@ -13,7 +13,7 @@ namespace genai {
 
 /**
  * @brief Base class for stateful speculative decoding pipelines
- * 
+ *
  * Provides common functionality for Fast Draft and Eagle3 pipelines including:
  * - Chat history management
  * - Token tokenization/detokenization with timing
@@ -61,10 +61,10 @@ protected:
 
     /**
      * @brief Resolve and validate generation configuration
-     * 
+     *
      * Child classes should override this to apply their specific defaults
      * and validations (e.g., num_assistant_tokens handling).
-     * 
+     *
      * @param generation_config Optional config from user
      * @return Fully resolved GenerationConfig
      */
@@ -72,22 +72,22 @@ protected:
 
     /**
      * @brief Core token generation logic - must be implemented by child classes
-     * 
+     *
      * @param inputs Tokenized input (ov::Tensor or TokenizedInputs)
      * @param config Resolved generation configuration
      * @param streamer Optional streamer for real-time output
      * @return Encoded results with tokens and performance metrics
      */
     virtual EncodedResults generate_tokens(const EncodedInputs& inputs,
-                                          const GenerationConfig& config,
-                                          StreamerVariant streamer) = 0;
+                                           const GenerationConfig& config,
+                                           StreamerVariant streamer) = 0;
 
     /**
      * @brief Tokenize prompt with timing measurement
-     * 
+     *
      * Handles chat mode, chat templates, and special tokens correctly.
      * Updates m_raw_perf_metrics with tokenization duration.
-     * 
+     *
      * @param prompt Raw text prompt
      * @param config Generation configuration (for chat template settings)
      * @return Tokenized inputs ready for model inference
@@ -96,9 +96,9 @@ protected:
 
     /**
      * @brief Detokenize tokens with timing measurement
-     * 
+     *
      * Updates m_raw_perf_metrics with detokenization duration.
-     * 
+     *
      * @param tokens Token IDs to decode
      * @return Decoded text
      */

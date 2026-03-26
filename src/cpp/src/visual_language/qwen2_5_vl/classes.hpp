@@ -5,11 +5,10 @@
 
 #include <filesystem>
 
-#include "visual_language/vlm_config.hpp"
-
-#include "visual_language/vision_encoder.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/qwen2vl/classes.hpp"
+#include "visual_language/vision_encoder.hpp"
+#include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
 
@@ -20,26 +19,24 @@ public:
 
 class InputsEmbedderQwen2_5_VL : public InputsEmbedderQwen2VL {
 public:
-    InputsEmbedderQwen2_5_VL(
-        const VLMConfig& vlm_config,
-        const std::filesystem::path& model_dir,
-        const std::string& device,
-        const ov::AnyMap device_config);
+    InputsEmbedderQwen2_5_VL(const VLMConfig& vlm_config,
+                             const std::filesystem::path& model_dir,
+                             const std::string& device,
+                             const ov::AnyMap device_config);
 
-    InputsEmbedderQwen2_5_VL(
-        const VLMConfig& vlm_config,
-        const ModelsMap& models_map,
-        const Tokenizer& tokenizer, 
-        const std::filesystem::path& config_dir_path,
-        const std::string& device,
-        const ov::AnyMap device_config);
+    InputsEmbedderQwen2_5_VL(const VLMConfig& vlm_config,
+                             const ModelsMap& models_map,
+                             const Tokenizer& tokenizer,
+                             const std::filesystem::path& config_dir_path,
+                             const std::string& device,
+                             const ov::AnyMap device_config);
 
 protected:
     std::pair<ov::Tensor, ov::Tensor> run_video_image_embeddings_merger(
-        const std::vector<EncodedImage>& images, 
+        const std::vector<EncodedImage>& images,
         const std::vector<size_t>& images_sequence,
         const std::vector<EncodedVideo>& videos,
         const std::vector<size_t>& videos_sequence) override;
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

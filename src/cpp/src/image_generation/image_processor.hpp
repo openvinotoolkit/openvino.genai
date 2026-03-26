@@ -4,9 +4,8 @@
 #pragma once
 
 #include "openvino/core/layout.hpp"
-#include "openvino/runtime/infer_request.hpp"
-
 #include "openvino/op/interpolate.hpp"
+#include "openvino/runtime/infer_request.hpp"
 
 namespace ov {
 namespace genai {
@@ -28,14 +27,23 @@ protected:
 
 class ImageProcessor : public IImageProcessor {
 public:
-    explicit ImageProcessor(const std::string& device, bool do_normalize = true, bool do_binarize = false, bool gray_scale_source = false);
+    explicit ImageProcessor(const std::string& device,
+                            bool do_normalize = true,
+                            bool do_binarize = false,
+                            bool gray_scale_source = false);
 
-    static void merge_image_preprocessing(std::shared_ptr<ov::Model> model, bool do_normalize = true, bool do_binarize = false, bool gray_scale_source = false);
+    static void merge_image_preprocessing(std::shared_ptr<ov::Model> model,
+                                          bool do_normalize = true,
+                                          bool do_binarize = false,
+                                          bool gray_scale_source = false);
 };
 
 class ImageResizer {
 public:
-    ImageResizer(const std::string& device, ov::element::Type type, ov::Layout layout, ov::op::v11::Interpolate::InterpolateMode interpolation_mode);
+    ImageResizer(const std::string& device,
+                 ov::element::Type type,
+                 ov::Layout layout,
+                 ov::op::v11::Interpolate::InterpolateMode interpolation_mode);
 
     ov::Tensor execute(ov::Tensor image, int64_t dst_height, int64_t dst_width);
 
@@ -46,5 +54,5 @@ private:
     ov::InferRequest m_request;
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

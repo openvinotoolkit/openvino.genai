@@ -4,8 +4,8 @@
 #pragma once
 
 #include <cstddef>
-#include <string>
 #include <sstream>
+#include <string>
 
 #include "openvino/core/except.hpp"
 
@@ -34,4 +34,4 @@ public:
     int disable_cache_after_step = -2;
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

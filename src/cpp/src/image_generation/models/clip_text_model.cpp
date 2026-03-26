@@ -3,9 +3,9 @@
 
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 
+#include <fstream>
 #include <iostream>
 #include <memory>
-#include <fstream>
 
 #include "json_utils.hpp"
 #include "lora/helper.hpp"
@@ -19,7 +19,12 @@ std::filesystem::path get_tokenizer_path_by_text_encoder(const std::filesystem::
     std::string text_encoder_path_str = text_encoder_path.string();
 
     size_t pos = text_encoder_path_str.find(to_replace);
-    OPENVINO_ASSERT(pos != std::string::npos, "Failed to find '", to_replace, "' substring in '", text_encoder_path_str, "'");
+    OPENVINO_ASSERT(pos != std::string::npos,
+                    "Failed to find '",
+                    to_replace,
+                    "' substring in '",
+                    text_encoder_path_str,
+                    "'");
     text_encoder_path_str.replace(pos, to_replace.length(), replacement);
 
     return text_encoder_path_str;
@@ -36,9 +41,9 @@ CLIPTextModel::Config::Config(const std::filesystem::path& config_path) {
     read_json_param(data, "num_hidden_layers", num_hidden_layers);
 }
 
-CLIPTextModel::CLIPTextModel(const std::filesystem::path& root_dir) :
-    m_clip_tokenizer(get_tokenizer_path_by_text_encoder(root_dir)),
-    m_config(root_dir / "config.json") {
+CLIPTextModel::CLIPTextModel(const std::filesystem::path& root_dir)
+    : m_clip_tokenizer(get_tokenizer_path_by_text_encoder(root_dir)),
+      m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
 }
 
@@ -61,8 +66,9 @@ CLIPTextModel::CLIPTextModel(const std::filesystem::path& root_dir,
 CLIPTextModel::CLIPTextModel(const std::string& model,
                              const Tensor& weights,
                              const Config& config,
-                             const Tokenizer& clip_tokenizer) :
-    m_clip_tokenizer(clip_tokenizer), m_config(config) {
+                             const Tokenizer& clip_tokenizer)
+    : m_clip_tokenizer(clip_tokenizer),
+      m_config(config) {
     m_model = utils::singleton_core().read_model(model, weights);
 }
 
@@ -71,15 +77,16 @@ CLIPTextModel::CLIPTextModel(const std::string& model,
                              const Config& config,
                              const Tokenizer& clip_tokenizer,
                              const std::string& device,
-                             const ov::AnyMap& properties) :
-    CLIPTextModel(model, weights, config, clip_tokenizer) {
+                             const ov::AnyMap& properties)
+    : CLIPTextModel(model, weights, config, clip_tokenizer) {
     compile(device, properties);
 }
 
 CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
 
 std::shared_ptr<CLIPTextModel> CLIPTextModel::clone() {
-    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request), "CLIPTextModel must have exactly one of m_model or m_request initialized");
+    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request),
+                    "CLIPTextModel must have exactly one of m_model or m_request initialized");
 
     std::shared_ptr<CLIPTextModel> cloned = std::make_shared<CLIPTextModel>(*this);
 
@@ -131,7 +138,9 @@ void CLIPTextModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
     }
 }
 
-ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance) {
+ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt,
+                                const std::string& neg_prompt,
+                                bool do_classifier_free_guidance) {
     OPENVINO_ASSERT(m_request, "CLIP text encoder model must be compiled first. Cannot infer non-compiled model");
 
     const int32_t pad_token_id = m_clip_tokenizer.get_pad_token_id();
@@ -142,10 +151,14 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
 
         if (input_ids.get_element_type() == ov::element::i32) {
             std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
-            std::copy_n(input_ids_token.data<int32_t>(), std::min(input_ids_token.get_size(), input_ids.get_size()), input_ids.data<int32_t>());
+            std::copy_n(input_ids_token.data<int32_t>(),
+                        std::min(input_ids_token.get_size(), input_ids.get_size()),
+                        input_ids.data<int32_t>());
         } else {
             std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), pad_token_id);
-            std::copy_n(input_ids_token.data<int64_t>(), std::min(input_ids_token.get_size(), input_ids.get_size()), input_ids.data<int64_t>());
+            std::copy_n(input_ids_token.data<int64_t>(),
+                        std::min(input_ids_token.get_size(), input_ids.get_size()),
+                        input_ids.data<int64_t>());
         }
     };
 
@@ -159,27 +172,33 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
         auto compiled_input_shape = input_ids.get_shape();
         OPENVINO_ASSERT(compiled_input_shape.size() == 2, "CLIP text encoder model input must have rank of 2");
         OPENVINO_ASSERT(text_embedding_batch_size <= compiled_input_shape[0],
-                        "text_embedding_batch_size (", text_embedding_batch_size,
-                        ") > CLIP text encoder model batch size (",compiled_input_shape[0], ").");
+                        "text_embedding_batch_size (",
+                        text_embedding_batch_size,
+                        ") > CLIP text encoder model batch size (",
+                        compiled_input_shape[0],
+                        ").");
         OPENVINO_ASSERT(m_config.max_position_embeddings == compiled_input_shape[1],
-                        "max_position_embeddings (", m_config.max_position_embeddings,
-                        ") != what CLIP text encoder model was compiled for (", compiled_input_shape[1], ").");
+                        "max_position_embeddings (",
+                        m_config.max_position_embeddings,
+                        ") != what CLIP text encoder model was compiled for (",
+                        compiled_input_shape[1],
+                        ").");
     }
 
     size_t current_batch_idx = 0;
 
     if (input_ids.get_shape()[0] == 2) {
-        perform_tokenization(neg_prompt,
-                             ov::Tensor(input_ids, {current_batch_idx    , 0},
-                                                   {current_batch_idx + 1, m_config.max_position_embeddings}));
+        perform_tokenization(
+            neg_prompt,
+            ov::Tensor(input_ids, {current_batch_idx, 0}, {current_batch_idx + 1, m_config.max_position_embeddings}));
         ++current_batch_idx;
     } else {
         // Negative prompt is ignored when --guidanceScale < 1.0
     }
 
-    perform_tokenization(pos_prompt,
-                         ov::Tensor(input_ids, {current_batch_idx    , 0},
-                                               {current_batch_idx + 1, m_config.max_position_embeddings}));
+    perform_tokenization(
+        pos_prompt,
+        ov::Tensor(input_ids, {current_batch_idx, 0}, {current_batch_idx + 1, m_config.max_position_embeddings}));
 
     // text embeddings
     m_request.infer();
@@ -193,7 +212,7 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
 ov::Tensor CLIPTextModel::get_output_tensor(const size_t idx) {
     auto infer_out_tensor = m_request.get_output_tensor(idx);
     if (m_slice_batch1_output) {
-        //Slice and return batch index 1 output.
+        // Slice and return batch index 1 output.
         auto out_shape = infer_out_tensor.get_shape();
         auto begin_coord = ov::Coordinate(out_shape.size(), 0);
         begin_coord[0] = 1;
@@ -220,5 +239,5 @@ void CLIPTextModel::import_model(const std::filesystem::path& blob_path,
     m_request = compiled_model.create_infer_request();
 }
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

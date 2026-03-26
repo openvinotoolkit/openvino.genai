@@ -6,7 +6,7 @@
 namespace ov::genai::common_bindings::utils {
 
 template <typename T, typename U>
-std::vector<float> get_ms(const T& instance, U T::*member) {
+std::vector<float> get_ms(const T& instance, U T::* member) {
     // Converts c++ duration to float so that it can be used in API bindings.
     std::vector<float> res;
     const auto& durations = instance.*member;
@@ -18,7 +18,7 @@ std::vector<float> get_ms(const T& instance, U T::*member) {
 }
 
 template <typename T, typename U>
-std::vector<double> timestamp_to_ms(const T& instance, U T::*member) {
+std::vector<double> timestamp_to_ms(const T& instance, U T::* member) {
     // Converts c++ duration to double so that it can be used in API bindings.
     // Use double instead of float bacuse timestamp in ms contains 14 digits
     // while float only allows to store ~7 significant digits.

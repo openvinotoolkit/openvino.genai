@@ -3,8 +3,8 @@
 
 #include "openvino/genai/image_generation/generation_config.hpp"
 
-#include <ctime>
 #include <cstdlib>
+#include <ctime>
 
 #include "utils.hpp"
 
@@ -17,7 +17,7 @@ Generator::~Generator() = default;
 
 ov::Tensor Generator::randn_tensor(const ov::Shape& shape) {
     ov::Tensor rand_tensor(ov::element::f32, shape);
-    float * rand_tensor_data = rand_tensor.data<float>();
+    float* rand_tensor_data = rand_tensor.data<float>();
 
     for (size_t i = 0; i < rand_tensor.get_size(); ++i) {
         rand_tensor_data[i] = next();
@@ -26,9 +26,7 @@ ov::Tensor Generator::randn_tensor(const ov::Shape& shape) {
     return rand_tensor;
 }
 
-CppStdGenerator::CppStdGenerator(uint32_t seed)
-    : m_gen(seed), m_normal(0.0f, 1.0f) {
-}
+CppStdGenerator::CppStdGenerator(uint32_t seed) : m_gen(seed), m_normal(0.0f, 1.0f) {}
 
 float CppStdGenerator::next() {
     return m_normal(m_gen);
@@ -91,9 +89,12 @@ void ImageGenerationConfig::update_generation_config(const ov::AnyMap& propertie
 }
 
 void ImageGenerationConfig::validate() const {
-    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt");
-    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt_2 == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt 2");
-    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt_3 == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt 3");
+    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt == std::nullopt,
+                    "Guidance scale <= 1.0 ignores negative prompt");
+    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt_2 == std::nullopt,
+                    "Guidance scale <= 1.0 ignores negative prompt 2");
+    OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt_3 == std::nullopt,
+                    "Guidance scale <= 1.0 ignores negative prompt 3");
 }
 
 }  // namespace genai

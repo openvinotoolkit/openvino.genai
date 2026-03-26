@@ -13,15 +13,14 @@ ChatHistory::ChatHistory(const JsonContainer& messages) : m_messages(messages) {
         OPENVINO_THROW("Chat history must be initialized with a JSON array.");
     }
 }
-ChatHistory::ChatHistory(const std::vector<ov::AnyMap>& messages) :
-    m_messages(JsonContainer::array()) {
+ChatHistory::ChatHistory(const std::vector<ov::AnyMap>& messages) : m_messages(JsonContainer::array()) {
     for (const auto& message : messages) {
         m_messages.push_back(JsonContainer(message));
     }
 }
 
-ChatHistory::ChatHistory(std::initializer_list<std::initializer_list<std::pair<std::string, ov::Any>>> messages) :
-    m_messages(JsonContainer::array()) {
+ChatHistory::ChatHistory(std::initializer_list<std::initializer_list<std::pair<std::string, ov::Any>>> messages)
+    : m_messages(JsonContainer::array()) {
     for (const auto& message : messages) {
         m_messages.push_back(JsonContainer(message));
     }
@@ -123,5 +122,5 @@ const JsonContainer& ChatHistory::get_extra_context() const {
     return m_extra_context;
 }
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

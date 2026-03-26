@@ -3,8 +3,9 @@
 
 #pragma once
 
-#include "visual_language/vision_encoder.hpp"
 #include <optional>
+
+#include "visual_language/vision_encoder.hpp"
 
 namespace ov::genai {
 
@@ -18,7 +19,7 @@ public:
     VisionRegistry& operator=(const VisionRegistry&) = delete;
     VisionRegistry(VisionRegistry&&) = delete;
     VisionRegistry& operator=(VisionRegistry&&) = delete;
-    
+
     ~VisionRegistry() = default;
 
     VisionID register_image(const ov::Tensor& image);
@@ -51,11 +52,11 @@ private:
         std::optional<EncodedImage> encoded_image;
         std::optional<EncodedVideo> encoded_video;
         std::atomic<size_t> ref_count{0};
-        
+
         VisionEntry(VisionType t, ov::Tensor tensor);
         VisionEntry(VisionEntry&& other) noexcept;
         VisionEntry& operator=(VisionEntry&& other) noexcept;
-        
+
         VisionEntry(const VisionEntry&) = delete;
         VisionEntry& operator=(const VisionEntry&) = delete;
 
@@ -71,4 +72,4 @@ private:
     static VisionID compute_hash(const ov::Tensor& tensor);
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

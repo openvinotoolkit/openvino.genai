@@ -6,8 +6,8 @@
 #include <fstream>
 
 #include "json_utils.hpp"
-#include "utils.hpp"
 #include "lora/helper.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -32,8 +32,8 @@ FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root
 }
 
 FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root_dir,
-                                             const std::string& device,
-                                             const ov::AnyMap& properties)
+                                               const std::string& device,
+                                               const ov::AnyMap& properties)
     : FluxTransformer2DModel(root_dir) {
     compile(device, properties);
 }
@@ -41,8 +41,9 @@ FluxTransformer2DModel::FluxTransformer2DModel(const std::filesystem::path& root
 FluxTransformer2DModel::FluxTransformer2DModel(const std::string& model,
                                                const Tensor& weights,
                                                const Config& config,
-                                               const size_t vae_scale_factor) :
-    m_config(config), m_vae_scale_factor(vae_scale_factor) {
+                                               const size_t vae_scale_factor)
+    : m_config(config),
+      m_vae_scale_factor(vae_scale_factor) {
     m_model = utils::singleton_core().read_model(model, weights);
 }
 
@@ -51,15 +52,16 @@ FluxTransformer2DModel::FluxTransformer2DModel(const std::string& model,
                                                const Config& config,
                                                const size_t vae_scale_factor,
                                                const std::string& device,
-                                               const ov::AnyMap& properties) :
-    FluxTransformer2DModel(model, weights, config, vae_scale_factor) {
+                                               const ov::AnyMap& properties)
+    : FluxTransformer2DModel(model, weights, config, vae_scale_factor) {
     compile(device, properties);
 }
 
 FluxTransformer2DModel::FluxTransformer2DModel(const FluxTransformer2DModel&) = default;
 
 FluxTransformer2DModel FluxTransformer2DModel::clone() {
-    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request), "FluxTransformer2DModel must have exactly one of m_model or m_request initialized");
+    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request),
+                    "FluxTransformer2DModel must have exactly one of m_model or m_request initialized");
 
     FluxTransformer2DModel cloned = *this;
 
@@ -143,7 +145,7 @@ void FluxTransformer2DModel::set_hidden_states(const std::string& tensor_name, o
 
 void FluxTransformer2DModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
-    if(adapters) {
+    if (adapters) {
         m_adapter_controller.apply(m_request, *adapters);
     }
 }

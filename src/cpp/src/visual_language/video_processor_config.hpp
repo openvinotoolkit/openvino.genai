@@ -3,13 +3,14 @@
 
 #pragma once
 
-#include "visual_language/processor_config.hpp"
 #include <fstream>
+
 #include "json_utils.hpp"
+#include "visual_language/processor_config.hpp"
 
 namespace ov::genai {
 /**
- * @brief A Configuration class passed to VisionEncoder and 
+ * @brief A Configuration class passed to VisionEncoder and
  * used to change VisionEncoder's behavior for video processing.
  * Corresponds to video_preprocessor_config.json
  */
@@ -25,9 +26,7 @@ public:
 
     VideoProcessorConfig() = default;
 
-    explicit VideoProcessorConfig(const std::filesystem::path& json_path)
-        : ProcessorConfig(json_path)
-    {
+    explicit VideoProcessorConfig(const std::filesystem::path& json_path) : ProcessorConfig(json_path) {
         std::ifstream stream(json_path);
         OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with video processor config");
         nlohmann::json parsed = nlohmann::json::parse(stream);

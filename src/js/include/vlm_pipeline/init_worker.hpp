@@ -3,8 +3,9 @@
 
 #pragma once
 
-#include <atomic>
 #include <napi.h>
+
+#include <atomic>
 
 #include "openvino/genai/visual_language/pipeline.hpp"
 

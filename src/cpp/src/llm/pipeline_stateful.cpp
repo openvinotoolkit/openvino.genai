@@ -4,20 +4,18 @@
 
 #include "llm/pipeline_stateful.hpp"
 
-#include "lora/helper.hpp"
 #include "lm_encoding.hpp"
+#include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
-
 #include "utils.hpp"
 
 namespace ov::genai {
 
-StatefulLLMPipeline::StatefulLLMPipeline(
-    const ov::InferRequest& request,
-    const ov::genai::Tokenizer& tokenizer,
-    OptionalGenerationConfig generation_config)
+StatefulLLMPipeline::StatefulLLMPipeline(const ov::InferRequest& request,
+                                         const ov::genai::Tokenizer& tokenizer,
+                                         OptionalGenerationConfig generation_config)
     : LLMPipelineImplBase(tokenizer, generation_config.value_or(GenerationConfig())),
-    m_model_runner(request) {
+      m_model_runner(request) {
     auto compiled_model = m_model_runner.get_compiled_model();
     auto execution_devices = compiled_model.get_property(ov::execution_devices);
     if (execution_devices[0].find("NPU") != std::string::npos) {
@@ -29,26 +27,23 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     }
 }
 
-StatefulLLMPipeline::StatefulLLMPipeline(
-    const std::filesystem::path& models_path,
-    const ov::genai::Tokenizer& tokenizer,
-    const std::string& device,
-    const ov::AnyMap& properties)
-    : StatefulLLMPipeline{
-        utils::read_model(models_path, properties),
-        tokenizer,
-        device,
-        properties,
-        utils::from_config_json_if_exists(models_path)
-    } {}
+StatefulLLMPipeline::StatefulLLMPipeline(const std::filesystem::path& models_path,
+                                         const ov::genai::Tokenizer& tokenizer,
+                                         const std::string& device,
+                                         const ov::AnyMap& properties)
+    : StatefulLLMPipeline{utils::read_model(models_path, properties),
+                          tokenizer,
+                          device,
+                          properties,
+                          utils::from_config_json_if_exists(models_path)} {}
 
-StatefulLLMPipeline::StatefulLLMPipeline(
-    const std::shared_ptr<ov::Model>& model,
-    const ov::genai::Tokenizer& tokenizer,
-    const std::string& device,
-    const ov::AnyMap& properties,
-    const ov::genai::GenerationConfig& generation_config)
-    : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
+StatefulLLMPipeline::StatefulLLMPipeline(const std::shared_ptr<ov::Model>& model,
+                                         const ov::genai::Tokenizer& tokenizer,
+                                         const std::string& device,
+                                         const ov::AnyMap& properties,
+                                         const ov::genai::GenerationConfig& generation_config)
+    : LLMPipelineImplBase(tokenizer, generation_config),
+      m_sampler(m_tokenizer) {
     if (device.find("NPU") != std::string::npos) {
         m_is_npu = true;
         m_use_full_chat_history = true;
@@ -66,10 +61,12 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         m_kv_cache_state.seq_length_axis = kv_pos.seq_len;
 
     auto [filtered_properties_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties);
-    auto filtered_properties = extract_adapters_from_properties(filtered_properties_without_gguf, &m_generation_config.adapters);
+    auto filtered_properties =
+        extract_adapters_from_properties(filtered_properties_without_gguf, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
-        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
+        m_adapter_controller =
+            AdapterController(model, *m_generation_config.adapters, device);  // TODO: Make the prefix name configurable
     }
     ov::CompiledModel compiled_model;
     if (m_is_npu) {
@@ -78,7 +75,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         m_max_prompt_len = kv_desc.max_prompt_len;
         m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
     } else {
-       compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
+        compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
     }
     m_model_runner = compiled_model.create_infer_request();
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Stateful LLM model");
@@ -90,10 +87,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     m_sampler.set_seed(m_generation_config.rng_seed);
 }
 
-StatefulLLMPipeline::StatefulLLMPipeline(
-    const std::filesystem::path& models_path,
-    const std::string& device,
-    const ov::AnyMap& plugin_config)
+StatefulLLMPipeline::StatefulLLMPipeline(const std::filesystem::path& models_path,
+                                         const std::string& device,
+                                         const ov::AnyMap& plugin_config)
     : StatefulLLMPipeline{models_path, Tokenizer(models_path, plugin_config), device, plugin_config} {}
 
 GenerationConfig StatefulLLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) const {
@@ -108,18 +104,16 @@ GenerationConfig StatefulLLMPipeline::resolve_generation_config(OptionalGenerati
     return config;
 }
 
-DecodedResults StatefulLLMPipeline::get_decoded_results(
-    TokenizedInputs encoded_input,
-    OptionalGenerationConfig generation_config,
-    StreamerVariant streamer,
-    std::chrono::steady_clock::time_point start_time
-) {
-    auto encode_stop_time =  std::chrono::steady_clock::now();
+DecodedResults StatefulLLMPipeline::get_decoded_results(TokenizedInputs encoded_input,
+                                                        OptionalGenerationConfig generation_config,
+                                                        StreamerVariant streamer,
+                                                        std::chrono::steady_clock::time_point start_time) {
+    auto encode_stop_time = std::chrono::steady_clock::now();
     auto encoded_results = generate(encoded_input, generation_config, streamer);
 
-    auto decode_start_time =  std::chrono::steady_clock::now();
+    auto decode_start_time = std::chrono::steady_clock::now();
     DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
-    auto decode_stop_time =  std::chrono::steady_clock::now();
+    auto decode_stop_time = std::chrono::steady_clock::now();
 
     // generate_durations
     decoded_results.perf_metrics = encoded_results.perf_metrics;
@@ -137,16 +131,16 @@ DecodedResults StatefulLLMPipeline::get_decoded_results(
     return decoded_results;
 }
 
-DecodedResults StatefulLLMPipeline::generate(
-    StringInputs inputs,
-    OptionalGenerationConfig generation_config,
-    StreamerVariant streamer) {
+DecodedResults StatefulLLMPipeline::generate(StringInputs inputs,
+                                             OptionalGenerationConfig generation_config,
+                                             StreamerVariant streamer) {
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::STRING;
 
     if (is_chat_conversation)
         OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::STRING,
-                        "Chat doesn't support switching between input types. Please, continue using StringInputs or restart the chat.");
+                        "Chat doesn't support switching between input types. Please, continue using StringInputs or "
+                        "restart the chat.");
 
     auto start_time = std::chrono::steady_clock::now();
 
@@ -196,7 +190,8 @@ DecodedResults StatefulLLMPipeline::generate(
                 ov::genai::align_kv_cache_and_history(new_chat_tokens.input_ids, m_kv_cache_state);
                 encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_kv_cache_state);
             }
-            // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
+            // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history
+            // with LoRA applied
         } else {
             if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
                 ChatHistory history({{{"role", "user"}, {"content", prompt}}});
@@ -227,26 +222,27 @@ DecodedResults StatefulLLMPipeline::generate(
     return decoded_results;
 }
 
-DecodedResults StatefulLLMPipeline::generate(
-    const ChatHistory& history,
-    OptionalGenerationConfig generation_config,
-    StreamerVariant streamer
-) {
+DecodedResults StatefulLLMPipeline::generate(const ChatHistory& history,
+                                             OptionalGenerationConfig generation_config,
+                                             StreamerVariant streamer) {
     is_chat_conversation = true;
-    
+
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::CHAT_HISTORY;
 
     if (is_chat_conversation)
         OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::CHAT_HISTORY,
-                        "Chat doesn't support switching between input types. Please, continue using ChatHistory or restart the chat.");
+                        "Chat doesn't support switching between input types. Please, continue using ChatHistory or "
+                        "restart the chat.");
 
     auto start_time = std::chrono::steady_clock::now();
-    
+
     GenerationConfig config = resolve_generation_config(generation_config);
 
-    OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
-    OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
+    OPENVINO_ASSERT(config.apply_chat_template,
+                    "Chat template must be applied when using ChatHistory in generate method.");
+    OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(),
+                    "Chat template must not be empty when using ChatHistory in generate method.");
     OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
 
     bool is_history_continuation = history.size() > m_history.size();
@@ -281,17 +277,19 @@ DecodedResults StatefulLLMPipeline::generate(
     return get_decoded_results(encoded_input, config, streamer, start_time);
 }
 
-EncodedResults StatefulLLMPipeline::generate(
-    const EncodedInputs& inputs,
-    OptionalGenerationConfig generation_config,
-    StreamerVariant streamer) {
+EncodedResults StatefulLLMPipeline::generate(const EncodedInputs& inputs,
+                                             OptionalGenerationConfig generation_config,
+                                             StreamerVariant streamer) {
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS;
 
     if (is_chat_conversation)
-        // if chat was run in StringInputs mode, but it was called EncodedInputs generate, last m_history entry will be with assistant role
-        OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS || m_history.last()["role"] == "user",
-                        "Chat doesn't support switching between input types. Please, continue using StringInputs or restart the chat.");
+        // if chat was run in StringInputs mode, but it was called EncodedInputs generate, last m_history entry will be
+        // with assistant role
+        OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS ||
+                            m_history.last()["role"] == "user",
+                        "Chat doesn't support switching between input types. Please, continue using StringInputs or "
+                        "restart the chat.");
 
     if (!is_chat_conversation) {
         reset_kv_state();
@@ -306,11 +304,11 @@ EncodedResults StatefulLLMPipeline::generate(
         if (m_is_npu) {
             // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
             OPENVINO_ASSERT(data->get_size() <= m_max_prompt_len,
-                "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
-                m_max_prompt_len,
-                " tokens. ",
-                data->get_size(),
-                " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+                            "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
+                            m_max_prompt_len,
+                            " tokens. ",
+                            data->get_size(),
+                            " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
         }
         input_ids = ov::Tensor(data->get_element_type(), data->get_shape());
         data->copy_to(input_ids);
@@ -319,11 +317,11 @@ EncodedResults StatefulLLMPipeline::generate(
         if (m_is_npu) {
             // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
             OPENVINO_ASSERT(data->input_ids.get_size() <= m_max_prompt_len,
-                "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
-                m_max_prompt_len,
-                " tokens. ",
-                data->input_ids.get_size(),
-                " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+                            "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
+                            m_max_prompt_len,
+                            " tokens. ",
+                            data->input_ids.get_size(),
+                            " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
         }
         input_ids = ov::Tensor(data->input_ids.get_element_type(), data->input_ids.get_shape());
         data->input_ids.copy_to(input_ids);
@@ -332,8 +330,10 @@ EncodedResults StatefulLLMPipeline::generate(
         data->attention_mask.copy_to(attention_mask);
     }
 
-    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) 
-        std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(m_tokenized_chat_history));
+    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS)
+        std::copy(input_ids.data<int64_t>(),
+                  input_ids.data<int64_t>() + input_ids.get_size(),
+                  std::back_inserter(m_tokenized_chat_history));
 
     size_t real_input_ids_size = input_ids.get_shape().at(1);
 
@@ -342,7 +342,8 @@ EncodedResults StatefulLLMPipeline::generate(
 
     // Tail of previous output in chat mode is missing in KV cache.
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
-        ov::Tensor new_chat_tokens = ov::Tensor{ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data()};
+        ov::Tensor new_chat_tokens =
+            ov::Tensor{ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data()};
         ov::genai::align_kv_cache_and_history(new_chat_tokens, m_kv_cache_state);
 
         auto encoded_input = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state);
@@ -357,9 +358,9 @@ EncodedResults StatefulLLMPipeline::generate(
     if (m_is_npu) {
         OPENVINO_ASSERT(batch_size == 1u, "Currently only batch size equal to 1 is supported for NPU device!");
         OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
-            "Currently only greedy and multinomial decoding are supported for NPU device!");
+                        "Currently only greedy and multinomial decoding are supported for NPU device!");
         OPENVINO_ASSERT(config.num_return_sequences == 1u,
-            "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
+                        "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
     }
 
     // Stateful pipeline does not provide logprobs for prompt tokens
@@ -367,15 +368,18 @@ EncodedResults StatefulLLMPipeline::generate(
 
     std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
-    OPENVINO_ASSERT(streamer_ptr == nullptr || batch_size == 1 && config.num_return_sequences == 1 &&
-        (config.is_greedy_decoding() || config.is_multinomial()),
+    OPENVINO_ASSERT(
+        streamer_ptr == nullptr || batch_size == 1 && config.num_return_sequences == 1 &&
+                                       (config.is_greedy_decoding() || config.is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
     auto num_inputs = m_model_runner.get_compiled_model().inputs().size();
-    OPENVINO_ASSERT(num_inputs == 4 || num_inputs == 3, "Model should have 3 or 4 inputs: "
+    OPENVINO_ASSERT(num_inputs == 4 || num_inputs == 3,
+                    "Model should have 3 or 4 inputs: "
                     "either (input_ids, attention_mask, beam_idx) or "
                     "(input_ids, attention_mask, position_ids, beam_idx) "
-                    "but you have '" + std::to_string(num_inputs) + "' inputs");
+                    "but you have '" +
+                        std::to_string(num_inputs) + "' inputs");
 
     if (is_chat_conversation) {
         if (m_use_full_chat_history)
@@ -398,10 +402,10 @@ EncodedResults StatefulLLMPipeline::generate(
         ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, {batch_size, kv_cache_len + prompt_len}};
         auto start_atten_hst = atten_mask_history.data<int64_t>();
 
-        std::copy(start_atten_hst, start_atten_hst + kv_cache_len,
-                new_atten_mask.data<int64_t>());
-        std::copy(attention_mask.data<int64_t>(), attention_mask.data<int64_t>() + prompt_len,
-                new_atten_mask.data<int64_t>() + kv_cache_len);
+        std::copy(start_atten_hst, start_atten_hst + kv_cache_len, new_atten_mask.data<int64_t>());
+        std::copy(attention_mask.data<int64_t>(),
+                  attention_mask.data<int64_t>() + prompt_len,
+                  new_atten_mask.data<int64_t>() + kv_cache_len);
         concatenated_attention_mask = new_atten_mask;
     } else {
         concatenated_attention_mask = attention_mask;
@@ -416,7 +420,7 @@ EncodedResults StatefulLLMPipeline::generate(
         utils::initialize_position_ids(*position_ids, attention_mask, kv_cache_len);
     }
 
-    if(m_adapter_controller) {
+    if (m_adapter_controller) {
         m_adapter_controller->apply(m_model_runner, config.adapters);
     }
 
@@ -430,8 +434,14 @@ EncodedResults StatefulLLMPipeline::generate(
             std::vector<int64_t> tokenized_chat_hist;
             tokenized_chat_hist.reserve(state.size() + input_ids.get_size());
             std::copy(state.begin(), state.end(), std::back_inserter(tokenized_chat_hist));
-            std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(tokenized_chat_hist));
-            sequence_group = std::make_shared<SequenceGroup>(request_id,  ov::Tensor(ov::element::i64, {1, tokenized_chat_hist.size()}, tokenized_chat_hist.data()), config, block_size);
+            std::copy(input_ids.data<int64_t>(),
+                      input_ids.data<int64_t>() + input_ids.get_size(),
+                      std::back_inserter(tokenized_chat_hist));
+            sequence_group = std::make_shared<SequenceGroup>(
+                request_id,
+                ov::Tensor(ov::element::i64, {1, tokenized_chat_hist.size()}, tokenized_chat_hist.data()),
+                config,
+                block_size);
         } else {
             size_t seq_len = input_ids.get_shape().at(1);
             size_t batch_offset = request_id * seq_len;
@@ -448,8 +458,18 @@ EncodedResults StatefulLLMPipeline::generate(
         m_sampler.set_seed(config.rng_seed);
     }
 
-    ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr, m_sampler,
-                                                                                requests, position_ids, std::nullopt, m_kv_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
+    ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner,
+                                                                                input_ids,
+                                                                                concatenated_attention_mask,
+                                                                                streamer_ptr,
+                                                                                m_sampler,
+                                                                                requests,
+                                                                                position_ids,
+                                                                                std::nullopt,
+                                                                                m_kv_cache_state,
+                                                                                nullptr,
+                                                                                std::nullopt,
+                                                                                m_max_kv_cache_size);
     ov::genai::EncodedResults& result = finish_info.results;
     m_chat_generation_finish_status = finish_info.streaming_finish_status;
 
@@ -460,11 +480,14 @@ EncodedResults StatefulLLMPipeline::generate(
             if (m_chat_generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
                 m_tokenized_chat_history.resize(m_tokenized_chat_history.size() - real_input_ids_size);
             } else {
-                std::copy(result.tokens[0].begin(), result.tokens[0].end(), std::back_inserter(m_tokenized_chat_history));
+                std::copy(result.tokens[0].begin(),
+                          result.tokens[0].end(),
+                          std::back_inserter(m_tokenized_chat_history));
             }
         }
         if (config.is_beam_search()) {
-            m_kv_cache_state.num_tokens_to_trim = m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
+            m_kv_cache_state.num_tokens_to_trim =
+                m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
         }
     }
 
@@ -490,9 +513,9 @@ void StatefulLLMPipeline::start_chat(const std::string& system_message) {
 }
 
 void StatefulLLMPipeline::reset_kv_state() {
-    if(m_adapter_controller) {
-        for(auto& state: m_model_runner.query_state()) {
-            if(!m_adapter_controller->has_state_name(state.get_name())) {
+    if (m_adapter_controller) {
+        for (auto& state : m_model_runner.query_state()) {
+            if (!m_adapter_controller->has_state_name(state.get_name())) {
                 state.reset();
             }
         }
@@ -518,4 +541,4 @@ StatefulLLMPipeline::~StatefulLLMPipeline() {
     m_model_runner.get_compiled_model().release_memory();
 }
 
-} // namespace ov::genai
+}  // namespace ov::genai

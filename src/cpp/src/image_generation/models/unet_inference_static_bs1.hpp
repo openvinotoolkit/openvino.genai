@@ -5,8 +5,8 @@
 
 #include <memory>
 
-#include "lora/helper.hpp"
 #include "image_generation/models/unet_inference.hpp"
+#include "lora/helper.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -14,7 +14,6 @@ namespace genai {
 
 // Static Batch-Size 1 variant of UNetInference
 class UNet2DConditionModel::UNetInferenceStaticBS1 : public UNet2DConditionModel::UNetInference {
-
     UNetInferenceStaticBS1(const UNetInferenceStaticBS1&) = delete;
     UNetInferenceStaticBS1(UNetInferenceStaticBS1&&) = delete;
     UNetInferenceStaticBS1(UNetInferenceStaticBS1& other) = delete;
@@ -36,8 +35,7 @@ public:
     virtual void compile(std::shared_ptr<ov::Model> model,
                          const std::string& device,
                          const ov::AnyMap& properties) override {
-
-        // All shapes for input/output tensors should be static. 
+        // All shapes for input/output tensors should be static.
         // Double check this and throw runtime error if it's not the case.
         for (auto& input : model->inputs()) {
             OPENVINO_ASSERT(!input.get_partial_shape().is_dynamic(),
@@ -48,14 +46,14 @@ public:
         for (auto& output : model->outputs()) {
             OPENVINO_ASSERT(!output.get_partial_shape().is_dynamic(),
                             "UNetInferenceStaticBS1::compile: output tensor " + output.get_any_name() +
-                            " shape is dynamic. Tensors must be reshaped to be static before compile is invoked.");
+                                " shape is dynamic. Tensors must be reshaped to be static before compile is invoked.");
         }
 
         // we'll create a separate infer request for each batch.
         m_native_batch_size = model->input("sample").get_shape()[0];
         m_requests.resize(m_native_batch_size);
 
-        //reshape to batch-1
+        // reshape to batch-1
         UNetInference::reshape(model, 1);
 
         ov::Core core = utils::singleton_core();
@@ -75,15 +73,13 @@ public:
 
         OPENVINO_ASSERT(
             encoder_hidden_states_bs == m_native_batch_size,
-            ("UNetInferenceStaticBS1::set_hidden_states: native batch size is "
-            + std::to_string(m_native_batch_size) +
+            ("UNetInferenceStaticBS1::set_hidden_states: native batch size is " + std::to_string(m_native_batch_size) +
              ", but encoder_hidden_states has batch size of " + std::to_string(encoder_hidden_states_bs)));
 
-        char* pHiddenStates = (char *)encoder_hidden_states.data();
+        char* pHiddenStates = (char*)encoder_hidden_states.data();
         size_t hidden_states_batch_stride_bytes = encoder_hidden_states.get_strides()[0];
 
-        for (int i = 0; i < m_native_batch_size; i++)
-        {
+        for (int i = 0; i < m_native_batch_size; i++) {
             auto hidden_states_bs1 = m_requests[i].get_tensor(tensor_name);
 
             // wrap current pHiddenStates location as batch-1 tensor.
@@ -112,8 +108,7 @@ public:
         OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
                         "UNet model must be compiled first");
 
-        OPENVINO_ASSERT(sample.get_shape()[0] == m_native_batch_size,
-                        "sample batch size must match native batch size");
+        OPENVINO_ASSERT(sample.get_shape()[0] == m_native_batch_size, "sample batch size must match native batch size");
 
         char* pSample = (char*)sample.data();
         size_t sample_batch_stride_bytes = sample.get_strides()[0];
@@ -128,7 +123,7 @@ public:
         for (int i = 0; i < m_native_batch_size; i++) {
             m_requests[i].set_tensor("timestep", timestep);
 
-            //wrap a portion of sample tensor as a batch-1 tensor, as set this as input tensor.
+            // wrap a portion of sample tensor as a batch-1 tensor, as set this as input tensor.
             {
                 ov::Tensor bs1_wrapper(sample.get_element_type(), bs1_sample_shape, pSample, sample.get_strides());
                 m_requests[i].set_tensor("sample", bs1_wrapper);
@@ -136,7 +131,10 @@ public:
 
             // wrap a portion of out_sample tensor as a batch-1 tensor, as set this as output tensor.
             {
-                ov::Tensor bs1_wrapper(sample.get_element_type(), bs1_sample_shape, pOutSample, out_sample.get_strides());
+                ov::Tensor bs1_wrapper(sample.get_element_type(),
+                                       bs1_sample_shape,
+                                       pOutSample,
+                                       out_sample.get_strides());
                 m_requests[i].set_tensor("out_sample", bs1_wrapper);
             }
 
@@ -164,7 +162,9 @@ public:
         utils::export_model(compiled_model, blob_path / "openvino_model.blob");
     }
 
-    virtual void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties) override {
+    virtual void import_model(const std::filesystem::path& blob_path,
+                              const std::string& device,
+                              const ov::AnyMap& properties) override {
         auto compiled_model = utils::import_model(blob_path / "openvino_model.blob", device, properties);
 
         // we'll create a separate infer request for each batch.

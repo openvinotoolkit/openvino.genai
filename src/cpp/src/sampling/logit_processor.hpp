@@ -15,61 +15,66 @@ class LogitProcessor {
 protected:
     std::vector<std::shared_ptr<LogitTransformers::ILogitTransformer>> m_logit_transformers;
     std::vector<std::shared_ptr<LogitTransformers::IStatefulLogitTransformer>> m_stateful_logit_transformers;
-    
-    std::shared_ptr<std::map<int64_t, size_t>> m_unique_generated_token_ids = std::shared_ptr<std::map<int64_t, size_t>>(new std::map<int64_t, size_t>);
-    std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
+
+    std::shared_ptr<std::map<int64_t, size_t>> m_unique_generated_token_ids =
+        std::shared_ptr<std::map<int64_t, size_t>>(new std::map<int64_t, size_t>);
+    std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids =
+        std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
     size_t m_generated_tokens = 0;
 
     // speculative decoding parameters
     float m_assistant_confidence_threshold = 0.f;
 
-
 public:
     LogitProcessor(const ov::genai::GenerationConfig& sampling_params,
                    const LogitTransformers::TokenIds& input_ids,
-                   std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr
-    ) {
+                   std::shared_ptr<ov::genai::StructuredOutputController> structured_output_controller = nullptr) {
         for (const auto& input_id : input_ids) {
             m_unique_prompt_token_ids->insert(input_id);
         }
 
         if (sampling_params.min_new_tokens > 0) {
             m_logit_transformers.emplace_back(
-                new LogitTransformers::EOSPenaltyTransform(sampling_params.stop_token_ids, sampling_params.min_new_tokens)
-            );
+                new LogitTransformers::EOSPenaltyTransform(sampling_params.stop_token_ids,
+                                                           sampling_params.min_new_tokens));
         }
 
-        OPENVINO_ASSERT(structured_output_controller != nullptr || !sampling_params.is_structured_output_generation(), "Structured output controller is not set for structured output generation");
+        OPENVINO_ASSERT(structured_output_controller != nullptr || !sampling_params.is_structured_output_generation(),
+                        "Structured output controller is not set for structured output generation");
         if (sampling_params.is_structured_output_generation() && structured_output_controller != nullptr) {
             auto transformer = structured_output_controller->get_logits_transformer(sampling_params);
             m_logit_transformers.push_back(transformer);
-            m_stateful_logit_transformers.emplace_back(std::dynamic_pointer_cast<LogitTransformers::IStatefulLogitTransformer>(transformer));
+            m_stateful_logit_transformers.emplace_back(
+                std::dynamic_pointer_cast<LogitTransformers::IStatefulLogitTransformer>(transformer));
         }
 
         if (sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) {
             if (sampling_params.repetition_penalty != 1.0f) {
                 std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform> transformer =
-                    std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform>(new LogitTransformers::RepetitionPenaltyTransform(sampling_params.repetition_penalty));
+                    std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform>(
+                        new LogitTransformers::RepetitionPenaltyTransform(sampling_params.repetition_penalty));
                 transformer->set_unique_prompt_token_ids(m_unique_prompt_token_ids);
                 transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
                 m_logit_transformers.push_back(transformer);
             }
             if (sampling_params.presence_penalty != 0.0f) {
-                std::shared_ptr<LogitTransformers::PresencePenaltyTransform> transformer = 
-                    std::shared_ptr<LogitTransformers::PresencePenaltyTransform>(new LogitTransformers::PresencePenaltyTransform(sampling_params.presence_penalty)); 
+                std::shared_ptr<LogitTransformers::PresencePenaltyTransform> transformer =
+                    std::shared_ptr<LogitTransformers::PresencePenaltyTransform>(
+                        new LogitTransformers::PresencePenaltyTransform(sampling_params.presence_penalty));
                 transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
                 m_logit_transformers.push_back(transformer);
-                
             }
             if (sampling_params.frequency_penalty != 0.0f) {
-                std::shared_ptr<LogitTransformers::FrequencyPenaltyTransform> transformer = 
-                    std::shared_ptr<LogitTransformers::FrequencyPenaltyTransform>(new LogitTransformers::FrequencyPenaltyTransform(sampling_params.frequency_penalty));
+                std::shared_ptr<LogitTransformers::FrequencyPenaltyTransform> transformer =
+                    std::shared_ptr<LogitTransformers::FrequencyPenaltyTransform>(
+                        new LogitTransformers::FrequencyPenaltyTransform(sampling_params.frequency_penalty));
                 transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
                 m_logit_transformers.push_back(transformer);
             }
 
             if (sampling_params.is_multinomial()) {
-                m_logit_transformers.emplace_back(new LogitTransformers::TemperatureLogitTransform(sampling_params.temperature));
+                m_logit_transformers.emplace_back(
+                    new LogitTransformers::TemperatureLogitTransform(sampling_params.temperature));
                 if (sampling_params.top_p != 1.0f) {
                     m_logit_transformers.emplace_back(new LogitTransformers::TopPFilter(sampling_params.top_p));
                 }
@@ -121,7 +126,6 @@ public:
         OPENVINO_ASSERT(m_unique_generated_token_ids->count(token_id) > 0);
         m_unique_generated_token_ids->at(token_id)--;
     }
-
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

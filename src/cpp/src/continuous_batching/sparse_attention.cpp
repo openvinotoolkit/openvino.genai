@@ -1,15 +1,15 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-
-#include <vector>
-#include <cstdlib>
-#include <cmath>
-
 #include "continuous_batching/sparse_attention.hpp"
 
+#include <cmath>
+#include <cstdlib>
+#include <vector>
+
 namespace ov::genai {
-std::set<size_t> TriShapeSparseAttentionTokenSkipper::get_skipped_blocks(const SequenceGroup::CPtr& sequence_group) const {
+std::set<size_t> TriShapeSparseAttentionTokenSkipper::get_skipped_blocks(
+    const SequenceGroup::CPtr& sequence_group) const {
     std::set<size_t> skipped_logical_block_ids;
     size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
     size_t num_processed_tokens_after_this_chunk = sequence_group->get_num_processed_tokens() + num_scheduled_tokens;
@@ -33,4 +33,4 @@ std::set<size_t> TriShapeSparseAttentionTokenSkipper::get_skipped_blocks(const S
     // else skip nothing, dense attention phase
     return skipped_logical_block_ids;
 }
-}
+}  // namespace ov::genai

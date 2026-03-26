@@ -13,4 +13,4 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
 
 std::pair<std::string, ov::Any> generation_config(const VideoGenerationConfig& generation_config);
 
-} // namespace ov::genai::utils
+}  // namespace ov::genai::utils

@@ -1,22 +1,27 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/llm_pipeline.hpp"
 #include <cxxopts.hpp>
+
+#include "openvino/genai/llm_pipeline.hpp"
 #include "read_prompt_from_file.h"
 
 int main(int argc, char* argv[]) try {
     cxxopts::Options options("benchmark_vanilla_genai", "Help command");
 
-    options.add_options()
-    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>())
-    ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
-    ("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
-    ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
-    ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
-    ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
-    ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("h,help", "Print usage");
+    options.add_options()("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>())(
+        "p,prompt",
+        "Prompt",
+        cxxopts::value<std::string>()->default_value(
+            ""))("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())(
+        "nw,num_warmup",
+        "Number of warmup iterations",
+        cxxopts::value<size_t>()->default_value(std::to_string(
+            1)))("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))(
+        "mt,max_new_tokens",
+        "Maximal number of new tokens",
+        cxxopts::value<size_t>()->default_value(std::to_string(
+            20)))("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))("h,help", "Print usage");
 
     cxxopts::ParseResult result;
     try {
@@ -40,7 +45,8 @@ int main(int argc, char* argv[]) try {
         if (result.count("prompt_file")) {
             prompt = utils::read_prompt(result["prompt_file"].as<std::string>());
         } else {
-            prompt = result["prompt"].as<std::string>().empty() ? "The Sky is blue because" : result["prompt"].as<std::string>();
+            prompt = result["prompt"].as<std::string>().empty() ? "The Sky is blue because"
+                                                                : result["prompt"].as<std::string>();
         }
     }
     if (prompt.empty()) {
@@ -67,7 +73,9 @@ int main(int argc, char* argv[]) try {
     if (device == "NPU")
         pipe = std::make_unique<ov::genai::LLMPipeline>(models_path, device);
     else
-        pipe = std::make_unique<ov::genai::LLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
+        pipe = std::make_unique<ov::genai::LLMPipeline>(models_path,
+                                                        device,
+                                                        ov::genai::scheduler_config(scheduler_config));
 
     auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
@@ -86,22 +94,28 @@ int main(int argc, char* argv[]) try {
     std::cout << std::fixed << std::setprecision(2);
     std::cout << "Output token size:" << res.perf_metrics.get_num_generated_tokens() << std::endl;
     std::cout << "Load time: " << metrics.get_load_time() << " ms" << std::endl;
-    std::cout << "Generate time: " << metrics.get_generate_duration().mean << " ± " << metrics.get_generate_duration().std << " ms" << std::endl;
-    std::cout << "Tokenization time: " << metrics.get_tokenization_duration().mean << " ± " << metrics.get_tokenization_duration().std << " ms" << std::endl;
-    std::cout << "Detokenization time: " << metrics.get_detokenization_duration().mean << " ± " << metrics.get_detokenization_duration().std << " ms" << std::endl;
-    std::cout << "TTFT: " << metrics.get_ttft().mean  << " ± " << metrics.get_ttft().std << " ms" << std::endl;
-    std::cout << "TPOT: " << metrics.get_tpot().mean  << " ± " << metrics.get_tpot().std << " ms/token " << std::endl;
-    std::cout << "Throughput: " << metrics.get_throughput().mean  << " ± " << metrics.get_throughput().std << " tokens/s" << std::endl;
+    std::cout << "Generate time: " << metrics.get_generate_duration().mean << " ± "
+              << metrics.get_generate_duration().std << " ms" << std::endl;
+    std::cout << "Tokenization time: " << metrics.get_tokenization_duration().mean << " ± "
+              << metrics.get_tokenization_duration().std << " ms" << std::endl;
+    std::cout << "Detokenization time: " << metrics.get_detokenization_duration().mean << " ± "
+              << metrics.get_detokenization_duration().std << " ms" << std::endl;
+    std::cout << "TTFT: " << metrics.get_ttft().mean << " ± " << metrics.get_ttft().std << " ms" << std::endl;
+    std::cout << "TPOT: " << metrics.get_tpot().mean << " ± " << metrics.get_tpot().std << " ms/token " << std::endl;
+    std::cout << "Throughput: " << metrics.get_throughput().mean << " ± " << metrics.get_throughput().std << " tokens/s"
+              << std::endl;
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

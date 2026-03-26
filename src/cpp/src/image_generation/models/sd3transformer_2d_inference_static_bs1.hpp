@@ -13,7 +13,6 @@ namespace genai {
 
 // Static Batch-Size 1 variant of SD3Transformer2DModel::Inference
 class SD3Transformer2DModel::InferenceStaticBS1 : public SD3Transformer2DModel::Inference {
-
     InferenceStaticBS1(const InferenceStaticBS1&) = delete;
     InferenceStaticBS1(InferenceStaticBS1&&) = delete;
     InferenceStaticBS1(InferenceStaticBS1& other) = delete;
@@ -45,7 +44,8 @@ public:
 
         for (auto& output : model->outputs()) {
             OPENVINO_ASSERT(!output.get_partial_shape().is_dynamic(),
-                            "SD3Transformer2DModel::InferenceStaticBS1::compile: output tensor " + output.get_any_name() +
+                            "SD3Transformer2DModel::InferenceStaticBS1::compile: output tensor " +
+                                output.get_any_name() +
                                 " shape is dynamic. Tensors must be reshaped to be static before compile is invoked.");
         }
 
@@ -78,10 +78,10 @@ public:
 
         size_t encoder_hidden_states_bs = encoder_hidden_states.get_shape()[0];
 
-        OPENVINO_ASSERT(
-            encoder_hidden_states_bs == m_native_batch_size,
-            ("SD3Transformer2DModel::InferenceStaticBS1::set_hidden_states: native batch size is " + std::to_string(m_native_batch_size) +
-             ", but encoder_hidden_states has batch size of " + std::to_string(encoder_hidden_states_bs)));
+        OPENVINO_ASSERT(encoder_hidden_states_bs == m_native_batch_size,
+                        ("SD3Transformer2DModel::InferenceStaticBS1::set_hidden_states: native batch size is " +
+                         std::to_string(m_native_batch_size) + ", but encoder_hidden_states has batch size of " +
+                         std::to_string(encoder_hidden_states_bs)));
 
         char* pHiddenStates = (char*)encoder_hidden_states.data();
         size_t hidden_states_batch_stride_bytes = encoder_hidden_states.get_strides()[0];

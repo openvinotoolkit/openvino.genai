@@ -3,22 +3,20 @@
 
 #include "utils.hpp"
 
-#include <variant>
 #include <fstream>
 #include <memory>
+#include <variant>
 
+#include "gguf_utils/gguf_modeling.hpp"
+#include "openvino/genai/text_streamer.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/gather.hpp"
-#include "openvino/op/multiply.hpp"
 #include "openvino/op/matmul.hpp"
+#include "openvino/op/multiply.hpp"
 #include "openvino/op/slice.hpp"
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
-#include "openvino/genai/text_streamer.hpp"
-#include "gguf_utils/gguf_modeling.hpp"
-
-
 #include "sampling/sampler.hpp"
 
 namespace ov {
@@ -26,8 +24,8 @@ namespace ov {
 namespace genai {
 const std::string PA_BACKEND = "PA";
 const std::string SDPA_BACKEND = "SDPA";
-}
-}
+}  // namespace genai
+}  // namespace ov
 
 namespace {
 
@@ -89,8 +87,8 @@ void update_npu_config(ov::AnyMap& config,
     rename_key(config, "PREFILL_HINT", "NPUW_LLM_PREFILL_HINT");
     rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
-    rename_key(config, "SHARED_HEAD_CONFIG", "NPUW_LLM_SHARED_HEAD_CONFIG"); 
-    
+    rename_key(config, "SHARED_HEAD_CONFIG", "NPUW_LLM_SHARED_HEAD_CONFIG");
+
     rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
     rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "++SHARED_HEAD_CONFIG", "++NPUW_LLM_SHARED_HEAD_CONFIG");
@@ -140,7 +138,7 @@ inline bool is_paged_attention_available() {
 #endif
 }
 
-} // anonymous
+}  // namespace
 
 namespace ov {
 namespace genai {
@@ -201,20 +199,22 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
 }
 
 std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenizer tokenizer) {
-    return std::visit(overloaded{
-        [](std::monostate) -> std::shared_ptr<StreamerBase> {
-            return nullptr;
-        },
-        [](const std::shared_ptr<StreamerBase>& streamer) {
-            return streamer;
-        },
-        [&tokenizer = tokenizer](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return std::make_unique<TextStreamer>(tokenizer, streamer);
-        },
-        [&tokenizer = tokenizer](const std::function<ov::genai::StreamingStatus(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-            return std::make_unique<TextStreamer>(tokenizer, streamer);
-        }
-    }, streamer);
+    return std::visit(
+        overloaded{[](std::monostate) -> std::shared_ptr<StreamerBase> {
+                       return nullptr;
+                   },
+                   [](const std::shared_ptr<StreamerBase>& streamer) {
+                       return streamer;
+                   },
+                   [&tokenizer =
+                        tokenizer](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+                       return std::make_unique<TextStreamer>(tokenizer, streamer);
+                   },
+                   [&tokenizer = tokenizer](const std::function<ov::genai::StreamingStatus(std::string)>& streamer)
+                       -> std::shared_ptr<StreamerBase> {
+                       return std::make_unique<TextStreamer>(tokenizer, streamer);
+                   }},
+        streamer);
 }
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
@@ -224,13 +224,9 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
         return std::nullopt;
 }
 
-ProcessorConfig from_any_map(
-    const ov::AnyMap& config_map,
-    const ProcessorConfig& initial
-) {
+ProcessorConfig from_any_map(const ov::AnyMap& config_map, const ProcessorConfig& initial) {
     auto iter = config_map.find("processor_config");
-    ProcessorConfig extracted_config = config_map.end() != iter ?
-        iter->second.as<ProcessorConfig>() : initial;
+    ProcessorConfig extracted_config = config_map.end() != iter ? iter->second.as<ProcessorConfig>() : initial;
     using utils::read_anymap_param;
     read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
     read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
@@ -270,7 +266,8 @@ bool is_npu_requested(const std::string& device, const ov::AnyMap& properties) {
     return false;
 }
 
-ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
+ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend,
+                                                          const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
     auto subtrahend_size = subtrahend.input_ids.get_size();
     ov::Shape new_shape{1, minuend_size - subtrahend_size};
@@ -314,7 +311,8 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
             matmul = ov::as_type_ptr<ov::op::v0::MatMul>(add->input_value(0).get_node_shared_ptr());
         } else if (auto transpose = ov::as_type_ptr<ov::op::v1::Transpose>(last_node)) {
             matmul = ov::as_type_ptr<ov::op::v0::MatMul>(transpose->input_value(0).get_node_shared_ptr());
-            auto order = ov::as_type_ptr<ov::op::v0::Constant>(transpose->input_value(1).get_node_shared_ptr())->get_axis_vector_val();
+            auto order = ov::as_type_ptr<ov::op::v0::Constant>(transpose->input_value(1).get_node_shared_ptr())
+                             ->get_axis_vector_val();
             slice_gather_dim = order[slice_gather_dim];
         } else if (auto multiply = ov::as_type_ptr<ov::op::v1::Multiply>(last_node)) {
             if (auto tanh = ov::as_type_ptr<ov::op::v0::Tanh>(multiply->input_value(0).get_node_shared_ptr())) {
@@ -327,7 +325,7 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
     return std::make_tuple(matmul, slice_gather_dim);
 }
 
-} // namespace
+}  // namespace
 
 void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model) {
     std::shared_ptr<ov::Node> matmul = nullptr;
@@ -338,7 +336,9 @@ void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model) 
         auto start = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
         auto stop = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-2});
         auto step = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
-        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{slice_gather_dim});
+        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64,
+                                                           ov::Shape{1},
+                                                           std::vector<int64_t>{slice_gather_dim});
         auto slice = std::make_shared<ov::op::v8::Slice>(matmul->input_value(0), start, stop, step, axis);
         matmul->input(0).replace_source_output(slice);
     }
@@ -353,7 +353,9 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
         auto indices = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
         indices->set_friendly_name("sampled_tokens_indices");
         indices->output(0).get_tensor().set_names({"sampled_tokens_indices"});
-        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{slice_gather_dim});
+        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64,
+                                                           ov::Shape{1},
+                                                           std::vector<int64_t>{slice_gather_dim});
         auto gather = std::make_shared<ov::op::v8::Gather>(matmul->input_value(0), indices, axis);
         matmul->input(0).replace_source_output(gather);
         model->add_parameters({indices});
@@ -365,13 +367,12 @@ ov::Core& singleton_core() {
     return core;
 }
 
-
 namespace {
 bool is_gguf_model(const std::filesystem::path& file_path) {
     return file_path.extension() == ".gguf";
 }
 
-} // namespace
+}  // namespace
 
 std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
     bool enable_save_ov_model = false;
@@ -391,17 +392,19 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
         auto serialize_start_time = std::chrono::high_resolution_clock::now();
         ov::save_model(model, save_path, compress_to_fp16);
         auto serialize_finish_time = std::chrono::high_resolution_clock::now();
-        auto serialize_duration = std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
+        auto serialize_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(serialize_finish_time - serialize_start_time).count();
         std::stringstream ss;
         ss << "Save generated OpenVINO model to: " << save_path << " done. Time: " << serialize_duration << " ms";
         ov::genai::utils::print_gguf_debug_info(ss.str());
-    }
-    catch (const ov::Exception& e) {
-        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disable it by setting 'ov::genai::enable_save_ov_model' property to false");
+    } catch (const ov::Exception& e) {
+        OPENVINO_THROW("Exception during model serialization ",
+                       e.what(),
+                       ", user can disable it by setting 'ov::genai::enable_save_ov_model' property to false");
     }
 }
 
-std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
+std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir, const ov::AnyMap& properties) {
     auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
     if (is_gguf_model(model_dir)) {
 #ifdef ENABLE_GGUF
@@ -427,7 +430,7 @@ std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  c
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history) {
     size_t idx = 0;
     auto encoded_history_data = encoded_history.data<int64_t>();
-    while(idx < encoded_history.get_size() && idx < tokenized_history.size()) {
+    while (idx < encoded_history.get_size() && idx < tokenized_history.size()) {
         if (encoded_history_data[idx] != tokenized_history[idx])
             break;
         idx++;
@@ -439,7 +442,7 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
 KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
     // therefore usually seq_length_axis = 2 and batch = 0
-    KVAxesPosition kv_pos { 0u, 2u };
+    KVAxesPosition kv_pos{0u, 2u};
 
     // "ReadValue" node is KV cache representation in stateful model
     std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
@@ -468,11 +471,13 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     return kv_pos;
 }
 
-void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller) {
+void trim_kv_cache(ov::InferRequest request,
+                   KVCacheState& kv_cache_state,
+                   std::optional<AdapterController> adapter_controller) {
     if (kv_cache_state.reset_mem_state) {
         if (adapter_controller) {
-            for(auto& state: request.query_state()) {
-                if(!adapter_controller->has_state_name(state.get_name())) {
+            for (auto& state : request.query_state()) {
+                if (!adapter_controller->has_state_name(state.get_name())) {
                     state.reset();
                 }
             }
@@ -492,7 +497,7 @@ void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::
     OPENVINO_ASSERT(states.size() > 0, "Request contains no states.");
 
     for (auto& state : states) {
-        if(adapter_controller && adapter_controller->has_state_name(state.get_name()))
+        if (adapter_controller && adapter_controller->has_state_name(state.get_name()))
             continue;
 
         ov::Tensor old_tensor = state.get_state();
@@ -513,7 +518,8 @@ void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::
 }
 
 ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front) {
-    ov::Tensor new_tensor = ov::Tensor{ov::element::i64, {base_tensor.get_shape().at(0), base_tensor.get_shape().at(1) + 1}};
+    ov::Tensor new_tensor =
+        ov::Tensor{ov::element::i64, {base_tensor.get_shape().at(0), base_tensor.get_shape().at(1) + 1}};
     auto new_tensor_data = new_tensor.data<int64_t>();
     new_tensor_data[0] = add_to_front;
     std::copy_n(base_tensor.data<int64_t>(), base_tensor.get_size(), new_tensor_data + 1);
@@ -571,14 +577,14 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
     }
 }
 
-void print_gguf_debug_info(const std::string &debug_info) {
+void print_gguf_debug_info(const std::string& debug_info) {
     if (!env_setup_for_print_debug_info()) {
         return;
     }
     std::cout << "[GGUF Reader]: " << debug_info << std::endl;
 }
 
-void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {
+void print_scheduler_config_info(const SchedulerConfig& scheduler_config) {
     if (!env_setup_for_print_debug_info()) {
         return;
     }
@@ -647,11 +653,12 @@ void get_npu_text_embedding_config(ov::AnyMap& properties,
     update_npu_config_text_embedding(properties, kv_pos, kv_desc);
 }
 
-std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_impl(const std::shared_ptr<ov::Model>& model,
-                                                                  const ov::AnyMap& config,
-                                                                  const KVAxesPosition& kv_pos,
-                                                                  ModelType model_type,
-                                                                  const TextEmbeddingPipeline::Config& text_embed_config = {}) {
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_impl(
+    const std::shared_ptr<ov::Model>& model,
+    const ov::AnyMap& config,
+    const KVAxesPosition& kv_pos,
+    ModelType model_type,
+    const TextEmbeddingPipeline::Config& text_embed_config = {}) {
     ov::CompiledModel compiled;
     ov::AnyMap properties = config;
     KVDesc kv_desc;
@@ -696,10 +703,11 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu(const std::shared_p
     return compile_decoder_for_npu_impl(model, config, kv_pos, is_whisper ? ModelType::Whisper : ModelType::Default);
 }
 
-std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(const std::shared_ptr<ov::Model>& model,
-                                                                            const ov::AnyMap& config,
-                                                                            const KVAxesPosition& kv_pos,
-                                                                            const TextEmbeddingPipeline::Config& text_embed_config) {
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(
+    const std::shared_ptr<ov::Model>& model,
+    const ov::AnyMap& config,
+    const KVAxesPosition& kv_pos,
+    const TextEmbeddingPipeline::Config& text_embed_config) {
     return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::TextEmbedding, text_embed_config);
 }
 
@@ -720,7 +728,8 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
     OPENVINO_THROW("Model with key '", key, "' not found in models map.");
 }
 
-std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config) {
+std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties,
+                                                                std::optional<SchedulerConfig> default_config) {
     ov::AnyMap plugin_config = properties;
     auto it = plugin_config.find(ov::genai::scheduler_config.name());
     SchedulerConfig scheduler_config;
@@ -735,8 +744,8 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
 
 SchedulerConfig get_latency_oriented_scheduler_config() {
     SchedulerConfig default_config;
-    default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
-    default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
+    default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max();  // don't limit total batch size
+    default_config.enable_prefix_caching = true;                                 // for better TTFT in chat scenarios
     return default_config;
 }
 
@@ -748,7 +757,8 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
         if (is_paged_attention_available()) {
             return true;
         } else {
-            OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
+            OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available "
+                           "on x86_64 or ARM64 platforms only");
         }
     }
 
@@ -756,7 +766,8 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
         if (is_paged_attention_available()) {
             return true;
         } else {
-            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support on non-NPU devices, which is available on x86_64 or ARM64 platforms only");
+            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support on non-NPU devices, which "
+                           "is available on x86_64 or ARM64 platforms only");
         }
     }
 
@@ -765,7 +776,8 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
         if (is_paged_attention_available()) {
             return true;
         } else {
-            OPENVINO_THROW("Prompt lookup decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
+            OPENVINO_THROW("Prompt lookup decoding requires PagedAttention operation support, which is available on "
+                           "x86_64 or ARM64 platforms only");
         }
     }
     return false;
@@ -789,13 +801,20 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
     if (it != properties.end()) {
         attention_backend = it->second.as<std::string>();
         OPENVINO_ASSERT(attention_backend == PA_BACKEND || attention_backend == SDPA_BACKEND,
-            "Attention backend must be either '", PA_BACKEND, "' or '", SDPA_BACKEND, "', got '", attention_backend, "'");
+                        "Attention backend must be either '",
+                        PA_BACKEND,
+                        "' or '",
+                        SDPA_BACKEND,
+                        "', got '",
+                        attention_backend,
+                        "'");
         properties.erase(it);
     }
 
     if (explicitly_requires_paged_attention(external_properties, is_npu_requested)) {
         OPENVINO_ASSERT(attention_backend == PA_BACKEND,
-            "User properties are conflicting: some of them requires PagedAttention backend, while 'ATTENTION_BACKEND' is set to 'SDPA'");
+                        "User properties are conflicting: some of them requires PagedAttention backend, while "
+                        "'ATTENTION_BACKEND' is set to 'SDPA'");
     }
 
     return {properties, attention_backend};
@@ -810,7 +829,10 @@ void release_core_plugin(const std::string& device) {
     }
 }
 
-ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_token_id) {
+ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids,
+                                                 ov::Tensor& text_embeds,
+                                                 const std::vector<ov::Tensor>& image_embeds,
+                                                 int64_t image_token_id) {
     auto text_embeds_shape = text_embeds.get_shape();
     size_t text_embeds_seq_length = text_embeds_shape[1];
     size_t hidden_size = text_embeds_shape[2];
@@ -840,15 +862,13 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
         size_t n_floats = n_tokens * hidden_size;
         auto text_embeds_idx = text_embeds_data + (changed_token_offset + 1) * hidden_size;
         OPENVINO_ASSERT(text_embeds_idx + n_floats <= text_embeds_end);
-        std::copy_n(
-            image_embed_it->data<const float>() + image_embed_it->get_size() - n_floats,
-            n_floats,
-            text_embeds_idx
-        );
+        std::copy_n(image_embed_it->data<const float>() + image_embed_it->get_size() - n_floats,
+                    n_floats,
+                    text_embeds_idx);
         token_offset -= n_tokens + 1;
     }
-    // text_embeds is bound to infer request that can be used by another thread after leaving embeddings calculation scope
-    // so we need to return a copy to make sure data does not get corrupted
+    // text_embeds is bound to infer request that can be used by another thread after leaving embeddings calculation
+    // scope so we need to return a copy to make sure data does not get corrupted
     ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
     std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
     return inputs_embeds;
@@ -864,7 +884,7 @@ size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_la
     // sum up all used device memory
     std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
     size_t used_device_mem = 0;
-    for (const auto& mem_type: device_memory_types) {
+    for (const auto& mem_type : device_memory_types) {
         used_device_mem += memory_statistics[mem_type];
     }
 
@@ -890,7 +910,8 @@ size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_la
     return std::min(total_device_memory - used_device_mem, max_allocatable_kv_cache);
 }
 
-std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties) {
+std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(
+    const ov::AnyMap& external_properties) {
     ov::AnyMap properties = external_properties;
     std::optional<std::filesystem::path> blob_path;
 
@@ -931,7 +952,10 @@ bool has_input(const std::shared_ptr<ov::Model>& model, const std::string& name)
     return it != inputs.end();
 }
 
-std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape, const size_t dim, const size_t range_start, const size_t range_end) {
+std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape,
+                                                   const size_t dim,
+                                                   const size_t range_start,
+                                                   const size_t range_end) {
     ov::Coordinate start(shape.size(), 0), end(shape.begin(), shape.end());
     for (size_t d = 0; d < shape.size(); ++d) {
         if (d == dim) {
