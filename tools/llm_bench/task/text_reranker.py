@@ -23,7 +23,14 @@ FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 
 
 class TextRerankerOptimum(CommonPipeline):
-    def __init__(self, model: object, tokenizer: object | None, args: dict, model_path: Path, mem_consumption_meter: MemMonitorWrapper):
+    def __init__(
+        self,
+        model: object,
+        tokenizer: object | None,
+        args: dict,
+        model_path: Path,
+        mem_consumption_meter: MemMonitorWrapper,
+    ):
         super().__init__(model, tokenizer, args, model_path, mem_consumption_meter)
         self.genai = False
 
@@ -37,15 +44,19 @@ class TextRerankerOptimum(CommonPipeline):
     # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
     @execution_time_in_sec
     def tokenize_qwen(self, input_text):
-        prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the '\
-                 + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+        prefix = (
+            "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the "
+            + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+        )
         suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
         task = "Given a web search query, retrieve relevant passages that answer the query"
         max_length = self.max_length or 8192
         pairs = []
         for doc in self.texts:
             pairs.append(f"{prefix}<Instruct>: {task}\n<Query>: {input_text}\n<Document>: {doc}{suffix}")
-        inputs = self.tokenizer(pairs, padding=True, truncation=True, max_length=max_length, return_tensors="pt", padding_side='left')
+        inputs = self.tokenizer(
+            pairs, padding=True, truncation=True, max_length=max_length, return_tensors="pt", padding_side="left"
+        )
         return inputs
 
     @execution_time_in_sec
@@ -61,7 +72,9 @@ class TextRerankerOptimum(CommonPipeline):
         iter_str = "warm-up" if iter_num == 0 else f"{iter_num}"
         prefix = f"[{iter_str}][P{prompt_idx}]"
         for index, score in generation_result:
-            metrics_print.print_unicode(f"{prefix} Document {index}, score: {score:.4f}{': ' + self.texts[index] if iter_num == 0 else ''}")
+            metrics_print.print_unicode(
+                f"{prefix} Document {index}, score: {score:.4f}{': ' + self.texts[index] if iter_num == 0 else ''}"
+            )
 
     @execution_time_in_sec
     def generate(self, input_data: Any, **kwargs):
@@ -176,7 +189,9 @@ class TextRerankerOptimum(CommonPipeline):
 
         return iter_data, []
 
-    def run(self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
+    def run(
+        self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None
+    ) -> tuple[dict, list]:
         if self.model.config.model_type == "qwen3":
             tokenized_input, tokenization_time = self.tokenize_qwen(input_text)
         else:
@@ -194,7 +209,9 @@ class TextRerankerOptimum(CommonPipeline):
         generation_result, generation_time = self.generate(tokenized_input)
         if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
             self.mem_consumption_meter.stop_and_collect_data(f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}")
-            max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = self.mem_consumption_meter.get_data()
+            max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = (
+                self.mem_consumption_meter.get_data()
+            )
 
         iter_data, _ = self.postprocess_output_info(
             generation_result,
@@ -221,7 +238,14 @@ class TextRerankerOptimum(CommonPipeline):
 
 
 class TextRerankerGenAI(CommonPipeline):
-    def __init__(self, model: object, tokenizer: object | None, args: dict, model_path: Path, mem_consumption_meter: MemMonitorWrapper):
+    def __init__(
+        self,
+        model: object,
+        tokenizer: object | None,
+        args: dict,
+        model_path: Path,
+        mem_consumption_meter: MemMonitorWrapper,
+    ):
         super().__init__(model, tokenizer, args, model_path, mem_consumption_meter)
 
         if self.batch_size != 1:
@@ -251,7 +275,9 @@ class TextRerankerGenAI(CommonPipeline):
         iter_str = "warm-up" if iter_num == 0 else f"{iter_num}"
         prefix = f"[{iter_str}][P{prompt_idx}]"
         for index, score in generation_result:
-            metrics_print.print_unicode(f"{prefix} Document {index}, score: {score:.4f}{': ' + self.texts[index] if iter_num == 0 else ''}")
+            metrics_print.print_unicode(
+                f"{prefix} Document {index}, score: {score:.4f}{': ' + self.texts[index] if iter_num == 0 else ''}"
+            )
 
     def gen_iterate_data(
         self,
@@ -330,7 +356,9 @@ class TextRerankerGenAI(CommonPipeline):
 
         return iter_data, []
 
-    def run(self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
+    def run(
+        self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None
+    ) -> tuple[dict, list]:
         tokenized_input = self.tokenize(input_text)
         input_token_size = tokenized_input[0].numel() * len(self.texts)
         self.print_batch_size_info(iter_num, input_token_size)
@@ -344,7 +372,9 @@ class TextRerankerGenAI(CommonPipeline):
         generation_result, generation_time = self.generate(input_text)
         if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
             self.mem_consumption_meter.stop_and_collect_data(f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}")
-            max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = self.mem_consumption_meter.get_data()
+            max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = (
+                self.mem_consumption_meter.get_data()
+            )
 
         iter_data, _ = self.postprocess_output_info(
             generation_result,
@@ -368,7 +398,9 @@ class TextRerankerGenAI(CommonPipeline):
 def run_text_reranker_benchmark(
     model_path: Path, framework: str, device: str, args: dict, num_iters: int, mem_consumption: MemMonitorWrapper
 ) -> tuple[list, float, dict]:
-    model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_reranker_model(model_path, device, mem_consumption, **args)
+    model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_reranker_model(
+        model_path, device, mem_consumption, **args
+    )
     iter_data_list = []
     text_list, prompt_idx_list = collect_prompts_step(args, get_text_prompt)
 
@@ -383,27 +415,42 @@ def run_text_reranker_benchmark(
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
                 p_idx = prompt_idx_list[idx]
-                iter_data_list.append(launch(text_reranker_pipeline, num, p_idx, iter_timestamp, input_text, proc_id, bench_hook))
+                iter_data_list.append(
+                    launch(text_reranker_pipeline, num, p_idx, iter_timestamp, input_text, proc_id, bench_hook)
+                )
     else:
         for idx, input_text in enumerate(text_list):
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
-                iter_data_list.append(launch(text_reranker_pipeline, num, p_idx, iter_timestamp, input_text, proc_id, bench_hook))
+                iter_data_list.append(
+                    launch(text_reranker_pipeline, num, p_idx, iter_timestamp, input_text, proc_id, bench_hook)
+                )
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args["batch_size"], False, True, latency_unit="text")
     return iter_data_list, pretrain_time, iter_timestamp
 
 
-def launch(pipeline: CommonPipeline, iter_num: int, prompt_idx: int, iter_timestamp: dict, input_text: str, proc_id: int, bench_hook: object | None) -> dict:
+def launch(
+    pipeline: CommonPipeline,
+    iter_num: int,
+    prompt_idx: int,
+    iter_timestamp: dict,
+    input_text: str,
+    proc_id: int,
+    bench_hook: object | None,
+) -> dict:
     if iter_num == 0:
         metrics_print.print_unicode(
-            f"[warm-up][P{prompt_idx}] Input query: {input_text}\n Input texts: {pipeline.texts}", f"[warm-up][P{prompt_idx}] Unable print input text"
+            f"[warm-up][P{prompt_idx}] Input query: {input_text}\n Input texts: {pipeline.texts}",
+            f"[warm-up][P{prompt_idx}] Unable print input text",
         )
     iter_timestamp[iter_num][prompt_idx]["start"] = datetime.datetime.now().isoformat()
     iter_data, _ = pipeline.run(input_text, iter_num, prompt_idx, proc_id, bench_hook)
     iter_timestamp[iter_num][prompt_idx]["end"] = datetime.datetime.now().isoformat()
     prefix = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
-    log.info(f"{prefix}[P{prompt_idx}] start: {iter_timestamp[iter_num][prompt_idx]['start']}, end: {iter_timestamp[iter_num][prompt_idx]['end']}")
+    log.info(
+        f"{prefix}[P{prompt_idx}] start: {iter_timestamp[iter_num][prompt_idx]['start']}, end: {iter_timestamp[iter_num][prompt_idx]['end']}"
+    )
 
     return iter_data
 
@@ -411,7 +458,9 @@ def launch(pipeline: CommonPipeline, iter_num: int, prompt_idx: int, iter_timest
 def get_texts_from_file(args: dict) -> list:
     texts_list = []
     if args["rerank_texts_file"] is not None and args["rerank_texts"] is not None:
-        raise RuntimeError("== --texts and --texts_file are set together, they define lists of texts both, please choose one of them ==")
+        raise RuntimeError(
+            "== --texts and --texts_file are set together, they define lists of texts both, please choose one of them =="
+        )
 
     if args["rerank_texts_file"] is not None:
         for input_texts_file in args["rerank_texts_file"]:
@@ -431,6 +480,6 @@ def get_texts_from_file(args: dict) -> list:
             texts_list = [
                 "Intel Core Ultra processors incorporate an AI-optimized architecture that supports "
                 + "new user experiences and the next wave of commercial applications.",
-                "Intel Core Ultra processors are designed to provide enhanced performance and efficiency for a wide range of computing tasks."
+                "Intel Core Ultra processors are designed to provide enhanced performance and efficiency for a wide range of computing tasks.",
             ]
     return texts_list

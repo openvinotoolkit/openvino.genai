@@ -45,7 +45,7 @@ class AtomicDownloadManager:
         try:
             self.temp_path.rename(self.final_path)
         except Exception:
-            logger.warning(f"Rename failed, falling back to shutil.move")
+            logger.warning("Rename failed, falling back to shutil.move")
             if self.final_path.exists():
                 logger.info(f"Destination created by another process during rename attempt: {self.final_path}")
                 self._cleanup_temp()

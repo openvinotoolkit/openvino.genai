@@ -36,7 +36,7 @@ def main():
 
     save_video("genai_video.avi", output.video, frame_rate)
 
-    print(f"\nPerformance metrics:")
+    print("\nPerformance metrics:")
     print(f"  Load time: {output.perf_metrics.get_load_time():.2f} ms")
     print(f"  Generate duration: {output.perf_metrics.get_generate_duration():.2f} ms")
     print(f"  Transformer duration: {output.perf_metrics.get_transformer_infer_duration().mean:.2f} ms")

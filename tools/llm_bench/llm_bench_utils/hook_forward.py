@@ -6,12 +6,12 @@ import types
 import statistics
 
 
-class MeanStdPair():
+class MeanStdPair:
     def __init__(self, mean):
         self.mean = mean
 
 
-class RawImGenPerfMetrics():
+class RawImGenPerfMetrics:
     def __init__(self, main_model_inference_durations):
         # genAI separates unet and transformers, StableDiffusionHook has one
         self.unet_inference_durations = main_model_inference_durations
@@ -50,8 +50,10 @@ class StableDiffusionHook:
         return self.get_first_and_other_unet_infer_duration()
 
     def get_text_encoder_infer_duration(self):
-        duration = (self.text_encoder_time / self.text_encoder_step_count) * 1000 if self.text_encoder_step_count > 0 else 0
-        return {'text_encoder': duration}
+        duration = (
+            (self.text_encoder_time / self.text_encoder_step_count) * 1000 if self.text_encoder_step_count > 0 else 0
+        )
+        return {"text_encoder": duration}
 
     def get_main_model_infer_duration(self):
         mean = (
@@ -98,6 +100,7 @@ class StableDiffusionHook:
             self.text_encoder_time += text_encoder_time
             self.text_encoder_step_count += 1
             return r
+
         pipe.text_encoder.request = my_text_encoder
 
     def new_main_model(self, pipe):
@@ -127,6 +130,7 @@ class StableDiffusionHook:
             self.vae_decoder_time += vae_decoder_time
             self.vae_decoder_step_count += 1
             return r
+
         pipe.vae_decoder.request = my_vae_decoder
 
     def new_vae_encoder(self, pipe):
@@ -198,6 +202,7 @@ class RAGForwardHook:
                     t2 = time.time()
                     self_.tm_infer_list.append(t2 - t1)
                     return r
+
                 model.request = new_request
 
 
@@ -225,12 +230,13 @@ class TTSHook:
             encoder_time = t2 - t1
             self.encoder_model_time += encoder_time
             return r
+
         pipe.encoder.request = new_encoder_model
 
     def new_decoder(self, pipe):
         old_decoder = pipe.decoder.request
 
-        class new_decoder_model():
+        class new_decoder_model:
             def __init__(self, old_decoder):
                 self.decoder = old_decoder
                 self.decoder_model_time_list = []
@@ -259,6 +265,7 @@ class TTSHook:
             postnet_time = t2 - t1
             self.postnet_model_time_list.append(postnet_time)
             return r
+
         pipe.postnet.request = new_postnet_model
 
     def new_vocoder(self, pipe):
@@ -271,6 +278,7 @@ class TTSHook:
             vocoder_time = t2 - t1
             self.vocoder_model_time += vocoder_time
             return r
+
         pipe.vocoder.request = new_vocoder_model
 
     def print_tts_latency(self, iter_str, prompt_idx):
@@ -278,16 +286,20 @@ class TTSHook:
         if self.new_decoder_model:
             decoder_model_time_list = self.new_decoder_model.decoder_model_time_list
         self.decoder_model_time_list = self.new_decoder_model.decoder_model_time_list
-        info = f'[{iter_str}][P{prompt_idx}] ' \
-               f'encoder duration: {self.encoder_model_time * 1000:.4f}ms; ' \
-               f'decoder duration: {sum(decoder_model_time_list) * 1000:.4f}ms, iter num: {len(decoder_model_time_list)}, '
+        info = (
+            f"[{iter_str}][P{prompt_idx}] "
+            f"encoder duration: {self.encoder_model_time * 1000:.4f}ms; "
+            f"decoder duration: {sum(decoder_model_time_list) * 1000:.4f}ms, iter num: {len(decoder_model_time_list)}, "
+        )
         if len(decoder_model_time_list) > 1:
-            info += f'1st decoder token latency: {self.decoder_model_time_list[0] * 1000:.4f}ms, ' \
-                    f'2nd decoder token latency: {statistics.mean(self.decoder_model_time_list[1:]) * 1000:.4f}ms; '
+            info += (
+                f"1st decoder token latency: {self.decoder_model_time_list[0] * 1000:.4f}ms, "
+                f"2nd decoder token latency: {statistics.mean(self.decoder_model_time_list[1:]) * 1000:.4f}ms; "
+            )
         elif len(decoder_model_time_list) > 0:
-            info += f'decoder latency: {self.decoder_model_time_list[0] * 1000:.4f}ms; '
-        info += f'postnet duration: {sum(self.postnet_model_time_list) * 1000:.4f}ms, iter num: {len(self.postnet_model_time_list)}, '
+            info += f"decoder latency: {self.decoder_model_time_list[0] * 1000:.4f}ms; "
+        info += f"postnet duration: {sum(self.postnet_model_time_list) * 1000:.4f}ms, iter num: {len(self.postnet_model_time_list)}, "
         if len(self.postnet_model_time_list) > 0:
-            info += f'postnet latency: {statistics.mean(self.postnet_model_time_list) * 1000:.4f}ms; '
-        info += f'vocoder duration: {self.vocoder_model_time * 1000:.4f}ms;'
+            info += f"postnet latency: {statistics.mean(self.postnet_model_time_list) * 1000:.4f}ms; "
+        info += f"vocoder duration: {self.vocoder_model_time * 1000:.4f}ms;"
         return info

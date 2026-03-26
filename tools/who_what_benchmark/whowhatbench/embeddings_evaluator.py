@@ -25,11 +25,11 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24
     set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, 'v2.1', split="test", streaming=True
-    ).shuffle(42).take(NUM_SAMPLES)
+    default_dataset = (
+        datasets.load_dataset(DATASET_NAME, "v2.1", split="test", streaming=True).shuffle(42).take(NUM_SAMPLES)
+    )
     return default_dataset.map(
-        lambda x: {'passages': x['passages']['passage_text']}, remove_columns=default_dataset.column_names
+        lambda x: {"passages": x["passages"]["passage_text"]}, remove_columns=default_dataset.column_names
     )
 
 
@@ -46,9 +46,7 @@ def last_token_pool(last_hidden_states: Tensor, attention_mask: Tensor) -> Tenso
 
 
 def mean_pooling(last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
-    input_mask_expanded = (
-        attention_mask.unsqueeze(-1).expand(last_hidden_states.size()).to(last_hidden_states.dtype)
-    )
+    input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_states.size()).to(last_hidden_states.dtype)
     sum_embeddings = torch.sum(last_hidden_states * input_mask_expanded, 1)
     sum_mask = input_mask_expanded.sum(1)
     sum_mask = torch.clamp(sum_mask, min=1e-9)
@@ -56,9 +54,7 @@ def mean_pooling(last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
     return sum_embeddings / sum_mask
 
 
-@register_evaluator(
-    "text-embedding"
-)
+@register_evaluator("text-embedding")
 class EmbeddingsEvaluator(BaseEvaluator):
     def __init__(
         self,
@@ -71,26 +67,24 @@ class EmbeddingsEvaluator(BaseEvaluator):
         pooling_type=None,
         normalize=None,
         padding_side=None,
-        batch_size=None
+        batch_size=None,
     ) -> None:
-        assert (
-            base_model is not None or gt_data is not None
-        ), "Text generation pipeline for evaluation or ground trush data must be defined"
+        assert base_model is not None or gt_data is not None, (
+            "Text generation pipeline for evaluation or ground trush data must be defined"
+        )
 
         self.test_data = test_data
         self.tokenizer = tokenizer
         self.num_samples = num_samples
         self.generation_fn = gen_embeds_fn
-        self.pooling_type = pooling_type or 'cls'
+        self.pooling_type = pooling_type or "cls"
         self.normalize = normalize or False
-        self.padding_side = padding_side or 'right'
+        self.padding_side = padding_side or "right"
         self.gt_dir = os.path.dirname(gt_data)
         self.batch_size = batch_size
 
         if base_model:
-            self.gt_data = self._generate_data(
-                base_model, gen_embeds_fn, os.path.join(self.gt_dir, "reference")
-            )
+            self.gt_data = self._generate_data(base_model, gen_embeds_fn, os.path.join(self.gt_dir, "reference"))
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
@@ -114,9 +108,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
 
         all_metrics_per_prompt = {}
         all_metrics = {}
-        all_metrics, all_metrics_per_prompt = self.similarity.evaluate(
-            self.gt_data, predictions
-        )
+        all_metrics, all_metrics_per_prompt = self.similarity.evaluate(self.gt_data, predictions)
 
         self.last_cmp = all_metrics_per_prompt
         self.last_cmp["passages"] = predictions["passages"].values
@@ -136,8 +128,12 @@ class EmbeddingsEvaluator(BaseEvaluator):
             device = "cpu"
             if hasattr(model, "device"):
                 device = model.device
-            tokenizer_kwargs = {'padding': 'max_length', 'max_length': DEFAULT_MAX_LENGTH,
-                                'truncation': True, 'padding_side': kwargs.get('padding_side', 'right')}
+            tokenizer_kwargs = {
+                "padding": "max_length",
+                "max_length": DEFAULT_MAX_LENGTH,
+                "truncation": True,
+                "padding_side": kwargs.get("padding_side", "right"),
+            }
             inputs = self.tokenizer(passages, return_tensors="pt", **tokenizer_kwargs).to(device)
 
             with torch.no_grad():
@@ -171,19 +167,13 @@ class EmbeddingsEvaluator(BaseEvaluator):
 
         embeds_paths = []
         passages = []
-        inputs = (
-            data.values
-            if self.num_samples is None
-            else data.values[: self.num_samples]
-        )
+        inputs = data.values if self.num_samples is None else data.values[: self.num_samples]
 
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
 
         for i, data in tqdm(enumerate(inputs), total=len(inputs), desc="Evaluate pipeline"):
-            kwargs = {'padding_side': self.padding_side,
-                      'pooling_type': self.pooling_type,
-                      'normalize': self.normalize}
+            kwargs = {"padding_side": self.padding_side, "pooling_type": self.pooling_type, "normalize": self.normalize}
 
             batch_size = self.batch_size or len(data[0])
             data_len = len(data[0])
@@ -198,7 +188,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
 
             passages.append(data_input)
             result_path = os.path.join(result_dir, f"embeds_{i}.npy")
-            with open(result_path, 'wb') as f:
+            with open(result_path, "wb") as f:
                 np.save(f, result)
             embeds_paths.append(result_path)
 

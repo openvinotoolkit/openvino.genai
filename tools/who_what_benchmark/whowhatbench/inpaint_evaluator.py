@@ -44,12 +44,16 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "phiyodr/InpaintCOCO"
     NUM_SAMPLES = 10 if num_samples is None else num_samples
     set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, split="test", streaming=True,
-    ).filter(lambda example: example["inpaint_caption"] != "").take(NUM_SAMPLES)
-    return default_dataset.map(
-        lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
+    default_dataset = (
+        datasets.load_dataset(
+            DATASET_NAME,
+            split="test",
+            streaming=True,
+        )
+        .filter(lambda example: example["inpaint_caption"] != "")
+        .take(NUM_SAMPLES)
     )
+    return default_dataset.map(lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names)
 
 
 @register_evaluator("image-inpainting")
@@ -68,9 +72,9 @@ class InpaintingEvaluator(Text2ImageEvaluator):
         seed=42,
         is_genai=False,
     ) -> None:
-        assert (
-            base_model is not None or gt_data is not None
-        ), "Text generation pipeline for evaluation or ground trush data must be defined"
+        assert base_model is not None or gt_data is not None, (
+            "Text generation pipeline for evaluation or ground trush data must be defined"
+        )
         self.test_data = test_data
         self.metrics = metrics
         self.crop_prompt = crop_prompts
@@ -86,9 +90,7 @@ class InpaintingEvaluator(Text2ImageEvaluator):
         self.resolution = None
 
         if base_model:
-            self.gt_data = self._generate_data(
-                base_model, gen_image_fn, os.path.join(self.gt_dir, "reference")
-            )
+            self.gt_data = self._generate_data(base_model, gen_image_fn, os.path.join(self.gt_dir, "reference"))
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
@@ -143,7 +145,7 @@ class InpaintingEvaluator(Text2ImageEvaluator):
                 image=image,
                 mask=mask,
                 num_inference_steps=self.num_inference_steps,
-                generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng
+                generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng,
             )
             image_path = os.path.join(image_dir, f"{i}.png")
             output.save(image_path)

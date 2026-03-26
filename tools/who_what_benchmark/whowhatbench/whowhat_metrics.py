@@ -213,9 +213,7 @@ def evaluate_image_similarity(processor, model, data_gold, data_prediction):
         prediction_image = Image.open(prediction)
 
         gold_inputs = processor(images=gold_image, return_tensors="pt")["pixel_values"]
-        prediction_inputs = processor(images=prediction_image, return_tensors="pt")[
-            "pixel_values"
-        ]
+        prediction_inputs = processor(images=prediction_image, return_tensors="pt")["pixel_values"]
 
         with torch.no_grad():
             gold_outputs = model.get_image_features(gold_inputs)

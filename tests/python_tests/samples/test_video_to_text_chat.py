@@ -3,10 +3,9 @@
 
 import os
 import pytest
-import subprocess  # nosec B404
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
 
 
@@ -30,4 +29,4 @@ class TestVisualLanguageChat:
         py_result = run_sample(py_command, questions)
 
         # Compare results
-        assert py_result.stdout == cpp_result.stdout, f"Results should match"
+        assert py_result.stdout == cpp_result.stdout, "Results should match"

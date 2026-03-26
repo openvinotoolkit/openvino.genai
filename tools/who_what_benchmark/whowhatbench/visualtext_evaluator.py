@@ -35,11 +35,11 @@ class VisualTextEvaluator(TextEvaluator):
         seqs_per_request=None,
         pruning_ratio=None,
         relevance_weight=None,
-        task_type: Literal['visual-text', 'visual-video-text'] = "visual-text",
+        task_type: Literal["visual-text", "visual-video-text"] = "visual-text",
         frames_num: int | None = None,
     ) -> None:
         self.processor = processor
-        self.is_image_input = (task_type == "visual-text")
+        self.is_image_input = task_type == "visual-text"
         self.frames_num = frames_num or DEF_VIDEO_FRAMES_AMOUNT
         self.pruning_ratio = pruning_ratio
         self.relevance_weight = relevance_weight
@@ -69,16 +69,12 @@ class VisualTextEvaluator(TextEvaluator):
         all_metrics = {}
 
         if self.similarity:
-            metric_dict, metric_per_question = self.similarity.evaluate(
-                self.gt_data, predictions
-            )
+            metric_dict, metric_per_question = self.similarity.evaluate(self.gt_data, predictions)
             all_metrics.update(metric_dict)
             all_metrics_per_prompt.update(metric_per_question)
 
         if self.divergency:
-            metric_dict, metric_per_question = self.divergency.evaluate(
-                self.gt_data, predictions
-            )
+            metric_dict, metric_per_question = self.divergency.evaluate(self.gt_data, predictions)
             all_metrics.update(metric_dict)
             all_metrics_per_prompt.update(metric_per_question)
 
@@ -132,7 +128,7 @@ class VisualTextEvaluator(TextEvaluator):
                 do_sample=False,
                 max_new_tokens=max_new_tokens,
                 tokenizer=tokenizer,
-                **get_ignore_parameters_flag()
+                **get_ignore_parameters_flag(),
             )
             if isinstance(tokens, tuple) and isinstance(tokens[0], list) and isinstance(tokens[0][0], str):
                 # Some models return a decoded output, like miniCPM-o
@@ -157,7 +153,11 @@ class VisualTextEvaluator(TextEvaluator):
                     data = dict(self.test_data)
                 data = pd.DataFrame.from_dict(data)
         else:
-            input_data = prepare_default_data_image(self.num_samples) if self.is_image_input else prepare_default_data_video(self.num_samples, self.frames_num)
+            input_data = (
+                prepare_default_data_image(self.num_samples)
+                if self.is_image_input
+                else prepare_default_data_video(self.num_samples, self.frames_num)
+            )
             data = pd.DataFrame.from_dict(input_data)
 
         prompt_data = data["prompts"]

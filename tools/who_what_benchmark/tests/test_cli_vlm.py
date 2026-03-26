@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
-    if sys.platform == 'darwin':
+    if sys.platform == "darwin":
         pytest.xfail("Ticket 173169")
     if sys.platform == "win32":
         pytest.xfail("Ticket 178790")
@@ -23,71 +23,79 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
     MODEL_PATH = convert_model(model_id)
 
     # Collect reference with HF model
-    run_wwb([
-        "--base-model",
-        model_id,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--hf",
-    ])
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--hf",
+        ]
+    )
 
     # test Optimum
-    output = run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-    ])
+    output = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+        ]
+    )
     if optimum_threshold is not None:
         similarity = get_similarity(output)
         assert similarity >= optimum_threshold
 
     # test GenAI
-    output = run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--genai",
-        "--output",
-        tmp_path,
-    ])
+    output = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--genai",
+            "--output",
+            tmp_path,
+        ]
+    )
     if genai_threshold is not None:
         similarity = get_similarity(output)
         assert similarity >= genai_threshold
 
     # test w/o models
-    run_wwb([
-        "--target-data",
-        tmp_path / "target.csv",
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--genai",
-    ])
+    run_wwb(
+        [
+            "--target-data",
+            tmp_path / "target.csv",
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--genai",
+        ]
+    )
 
 
 def run_test_with_lora(

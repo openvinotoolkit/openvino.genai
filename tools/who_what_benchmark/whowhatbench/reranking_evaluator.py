@@ -42,17 +42,13 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24
     set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, 'v2.1', split="test", streaming=True
-    ).shuffle(42).take(NUM_SAMPLES)
-    return default_dataset.map(
-        lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
+    default_dataset = (
+        datasets.load_dataset(DATASET_NAME, "v2.1", split="test", streaming=True).shuffle(42).take(NUM_SAMPLES)
     )
+    return default_dataset.map(lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names)
 
 
-@register_evaluator(
-    "text-reranking"
-)
+@register_evaluator("text-reranking")
 class RerankingEvaluator(BaseEvaluator):
     def __init__(
         self,
@@ -61,11 +57,11 @@ class RerankingEvaluator(BaseEvaluator):
         gt_data: str = None,
         test_data: Union[str, list] = None,
         num_samples=None,
-        gen_rerank_fn=None
+        gen_rerank_fn=None,
     ) -> None:
-        assert (
-            base_model is not None or gt_data is not None
-        ), "Text generation pipeline for evaluation or ground trush data must be defined"
+        assert base_model is not None or gt_data is not None, (
+            "Text generation pipeline for evaluation or ground trush data must be defined"
+        )
 
         self.test_data = test_data
         self.tokenizer = tokenizer
@@ -74,9 +70,7 @@ class RerankingEvaluator(BaseEvaluator):
         self.gt_dir = os.path.dirname(gt_data)
 
         if base_model:
-            self.gt_data = self._generate_data(
-                base_model, gen_rerank_fn, os.path.join(self.gt_dir, "reference")
-            )
+            self.gt_data = self._generate_data(base_model, gen_rerank_fn, os.path.join(self.gt_dir, "reference"))
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
@@ -98,9 +92,7 @@ class RerankingEvaluator(BaseEvaluator):
             predictions = self._generate_data(model_or_data, gen_answer_fn, result_folder)
         self.predictions = predictions
 
-        all_metrics, all_metrics_per_query = self.similarity.evaluate(
-            self.gt_data, predictions
-        )
+        all_metrics, all_metrics_per_query = self.similarity.evaluate(self.gt_data, predictions)
 
         self.last_cmp = all_metrics_per_query
         self.last_cmp["query"] = predictions["query"].values
@@ -135,7 +127,14 @@ class RerankingEvaluator(BaseEvaluator):
             # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
             if is_qwen3(model.config):
                 pairs = [f"{query}{passage}" for passage in passages]
-                input_data = tokenizer(pairs, padding=True, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN, return_tensors="pt", padding_side="left")
+                input_data = tokenizer(
+                    pairs,
+                    padding=True,
+                    truncation=True,
+                    max_length=DEFAULT_MAX_LENGTH_QWEN,
+                    return_tensors="pt",
+                    padding_side="left",
+                )
             else:
                 tokenizer_kwargs = {"truncation": True, "padding": True, "max_length": DEFAULT_MAX_LENGTH}
                 inputs = [query] * len(passages)
@@ -172,11 +171,7 @@ class RerankingEvaluator(BaseEvaluator):
         scores_path = []
         passages = []
         queries = []
-        inputs = (
-            df.values
-            if self.num_samples is None
-            else df.values[: self.num_samples]
-        )
+        inputs = df.values if self.num_samples is None else df.values[: self.num_samples]
 
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
@@ -190,7 +185,7 @@ class RerankingEvaluator(BaseEvaluator):
             queries.append(data[0])
             passages.append(data[1])
             result_path = os.path.join(result_dir, f"scores_{i}.npy")
-            with open(result_path, 'wb') as f:
+            with open(result_path, "wb") as f:
                 np.save(f, result)
             scores_path.append(result_path)
 

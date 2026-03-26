@@ -14,7 +14,7 @@ def get_file_path(output_dir, file_name):
             os.mkdir(output_dir)
         out_path = output_dir
     else:
-        out_path = '.'
+        out_path = "."
 
     return out_path + os.sep + file_name
 

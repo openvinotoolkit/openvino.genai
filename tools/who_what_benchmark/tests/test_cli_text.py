@@ -56,108 +56,120 @@ base_model_path = convert_text_model(model_id, "opt125m", _convert_base)
 target_model_path = convert_text_model(model_id, "opt125m_int8", _convert_int8)
 
 
-@pytest.mark.skipif((sys.platform == "darwin"), reason='173169')
+@pytest.mark.skipif((sys.platform == "darwin"), reason="173169")
 def test_text_target_model():
-    run_wwb([
-        "--base-model",
-        base_model_path,
-        "--target-model",
-        target_model_path,
-        "--num-samples",
-        "2",
-        "--device",
-        "CPU",
-        "--model-type",
-        "text",
-    ])
+    run_wwb(
+        [
+            "--base-model",
+            base_model_path,
+            "--target-model",
+            target_model_path,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--model-type",
+            "text",
+        ]
+    )
 
 
 @pytest.fixture
 def test_text_gt_data(tmp_path):
     temp_file_name = tmp_path / "gt.csv"
-    run_wwb([
-        "--base-model",
-        base_model_path,
-        "--gt-data",
-        temp_file_name,
-        "--dataset",
-        "EleutherAI/lambada_openai,en",
-        "--dataset-field",
-        "text",
-        "--split",
-        "test",
-        "--num-samples",
-        "2",
-        "--device",
-        "CPU",
-    ])
+    run_wwb(
+        [
+            "--base-model",
+            base_model_path,
+            "--gt-data",
+            temp_file_name,
+            "--dataset",
+            "EleutherAI/lambada_openai,en",
+            "--dataset-field",
+            "text",
+            "--split",
+            "test",
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+        ]
+    )
     data = pd.read_csv(temp_file_name)
     assert len(data["questions"].values) == 2
 
 
 def test_text_output_directory(tmp_path):
     temp_file_name = tmp_path / "gt.csv"
-    output = run_wwb([
-        "--base-model",
-        base_model_path,
-        "--gt-data",
-        temp_file_name,
-        "--target-model",
-        target_model_path,
-        "--num-samples",
-        "2",
-        "--device",
-        "CPU",
-        "--output",
-        tmp_path,
-    ])
+    output = run_wwb(
+        [
+            "--base-model",
+            base_model_path,
+            "--gt-data",
+            temp_file_name,
+            "--target-model",
+            target_model_path,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--output",
+            tmp_path,
+        ]
+    )
     assert "Metrics for model" in output
     assert (tmp_path / "metrics_per_question.csv").exists()
     assert (tmp_path / "metrics.csv").exists()
     assert (tmp_path / "target.csv").exists()
 
-    measurement_without_models = run_wwb([
-        "--gt-data",
-        temp_file_name,
-        "--target-data",
-        tmp_path / "target.csv",
-        "--num-samples",
-        "2",
-        "--device",
-        "CPU",
-    ])
+    measurement_without_models = run_wwb(
+        [
+            "--gt-data",
+            temp_file_name,
+            "--target-data",
+            tmp_path / "target.csv",
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+        ]
+    )
     assert "Metrics for model" in measurement_without_models
 
 
 def test_text_verbose():
-    output = run_wwb([
-        "--base-model",
-        base_model_path,
-        "--target-model",
-        target_model_path,
-        "--num-samples",
-        "2",
-        "--device",
-        "CPU",
-        "--verbose",
-    ])
+    output = run_wwb(
+        [
+            "--base-model",
+            base_model_path,
+            "--target-model",
+            target_model_path,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--verbose",
+        ]
+    )
     assert "## Diff:" in output
 
 
 def test_text_language(tmp_path):
     temp_file_name = tmp_path / "gt.csv"
-    run_wwb([
-        "--base-model",
-        "Qwen/Qwen2-0.5B",
-        "--gt-data",
-        temp_file_name,
-        "--num-samples",
-        "2",
-        "--device",
-        "CPU",
-        "--language",
-        "cn",
-    ])
+    run_wwb(
+        [
+            "--base-model",
+            "Qwen/Qwen2-0.5B",
+            "--gt-data",
+            temp_file_name,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--language",
+            "cn",
+        ]
+    )
     data = pd.read_csv(temp_file_name)
     assert "马克" in data["prompts"].values[0]
 
@@ -168,33 +180,37 @@ def test_text_language(tmp_path):
 )
 def test_text_hf_model(model_id, tmp_path):
     temp_file_name = tmp_path / "gt.csv"
-    run_wwb([
-        "--base-model",
-        model_id,
-        "--gt-data",
-        temp_file_name,
-        "--num-samples",
-        "1",
-        "--device",
-        "CPU",
-        "--hf",
-    ])
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--gt-data",
+            temp_file_name,
+            "--num-samples",
+            "1",
+            "--device",
+            "CPU",
+            "--hf",
+        ]
+    )
     data = pd.read_csv(temp_file_name)
     assert len(data["prompts"].values) == 1
 
 
 def test_text_genai_model():
-    output = run_wwb([
-        "--base-model",
-        base_model_path,
-        "--target-model",
-        target_model_path,
-        "--num-samples",
-        "2",
-        "--device",
-        "CPU",
-        "--genai",
-    ])
+    output = run_wwb(
+        [
+            "--base-model",
+            base_model_path,
+            "--target-model",
+            target_model_path,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+        ]
+    )
     assert "Metrics for model" in output
     assert "## Reference text" not in output
 
@@ -209,41 +225,38 @@ def test_text_genai_cb_model(tmp_path):
         config = {
             "dynamic_split_fuse": True,
             "use_cache_eviction": True,
-            "cache_eviction_config":
-            {
-                "start_size": 32,
-                "recent_size": 32,
-                "max_cache_size": 96
-            }
+            "cache_eviction_config": {"start_size": 32, "recent_size": 32, "max_cache_size": 96},
         }
         json.dump(config, f)
 
     ov_config_path = tmp_path / "ov_config.json"
     with open(ov_config_path, "w") as f:
-        config = {
-            "KV_CACHE_PRECISION": "f16",
-            "ATTENTION_BACKEND": "PA"
-        }
+        config = {"KV_CACHE_PRECISION": "f16", "ATTENTION_BACKEND": "PA"}
         json.dump(config, f)
 
-    output = run_wwb([
-        "--base-model",
-        base_model_path,
-        "--target-model",
-        target_model_path,
-        "--num-samples",
-        "2",
-        "--device",
-        "CPU",
-        "--genai",
-        "--cb-config",
-        config_path,
-        "--ov-config",
-        ov_config_path
-    ])
+    output = run_wwb(
+        [
+            "--base-model",
+            base_model_path,
+            "--target-model",
+            target_model_path,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--cb-config",
+            config_path,
+            "--ov-config",
+            ov_config_path,
+        ]
+    )
     assert "Metrics for model" in output
     assert "## Reference text" not in output
-    assert "INFO:whowhatbench.model_loaders:OpenVINO Config: {'KV_CACHE_PRECISION': 'f16', 'ATTENTION_BACKEND': 'PA'}" in output
+    assert (
+        "INFO:whowhatbench.model_loaders:OpenVINO Config: {'KV_CACHE_PRECISION': 'f16', 'ATTENTION_BACKEND': 'PA'}"
+        in output
+    )
 
 
 def test_text_genai_json_string_config():
@@ -252,28 +265,33 @@ def test_text_genai_json_string_config():
             "Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only"
         )
 
-    cb_json_string = "{\"max_num_batched_tokens\": 4096}"
-    ov_json_string = "{\"KV_CACHE_PRECISION\":\"f16\", \"ATTENTION_BACKEND\": \"PA\"}"
+    cb_json_string = '{"max_num_batched_tokens": 4096}'
+    ov_json_string = '{"KV_CACHE_PRECISION":"f16", "ATTENTION_BACKEND": "PA"}'
 
-    output = run_wwb([
-        "--base-model",
-        base_model_path,
-        "--target-model",
-        target_model_path,
-        "--num-samples",
-        "2",
-        "--device",
-        "CPU",
-        "--genai",
-        "--cb-config",
-        cb_json_string,
-        "--ov-config",
-        ov_json_string
-    ])
+    output = run_wwb(
+        [
+            "--base-model",
+            base_model_path,
+            "--target-model",
+            target_model_path,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--cb-config",
+            cb_json_string,
+            "--ov-config",
+            ov_json_string,
+        ]
+    )
 
     # Test with WWB log info to make sure the configurations are passed from strings to the GenAI APIs
     assert "INFO:whowhatbench.wwb:cb_config: {'max_num_batched_tokens': 4096}" in output
-    assert "INFO:whowhatbench.model_loaders:OpenVINO Config: {'KV_CACHE_PRECISION': 'f16', 'ATTENTION_BACKEND': 'PA'}" in output
+    assert (
+        "INFO:whowhatbench.model_loaders:OpenVINO Config: {'KV_CACHE_PRECISION': 'f16', 'ATTENTION_BACKEND': 'PA'}"
+        in output
+    )
 
 
 @pytest.mark.parametrize(

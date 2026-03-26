@@ -31,6 +31,7 @@ def normalize_answer(s):
 
     return white_space_fix(remove_articles(remove_punc(lower(s))))
 
+
 def normalize_zh_answer(s):
     """Lower text and remove punctuation, extra whitespace."""
 
@@ -47,6 +48,7 @@ def normalize_zh_answer(s):
 
     return white_space_fix(remove_punc(lower(s)))
 
+
 def count_score(prediction, ground_truth, **kwargs):
     numbers = re.findall(r"\d+", prediction)
     right_num = 0
@@ -56,8 +58,9 @@ def count_score(prediction, ground_truth, **kwargs):
     final_score = 0.0 if len(numbers) == 0 else right_num / len(numbers)
     return float(final_score)
 
+
 def retrieval_score(prediction, ground_truth, **kwargs):
-    pattern = r'Paragraph (\d+)'
+    pattern = r"Paragraph (\d+)"
     matches = re.findall(pattern, ground_truth)
     ground_truth_id = matches[0]
     numbers = re.findall(r"\d+", prediction)
@@ -68,8 +71,9 @@ def retrieval_score(prediction, ground_truth, **kwargs):
     final_score = 0.0 if len(numbers) == 0 else right_num / len(numbers)
     return float(final_score)
 
+
 def retrieval_zh_score(prediction, ground_truth, **kwargs):
-    pattern = r'段落(\d+)'
+    pattern = r"段落(\d+)"
     matches = re.findall(pattern, ground_truth)
     ground_truth_id = matches[0]
     numbers = re.findall(r"\d+", prediction)
@@ -79,16 +83,19 @@ def retrieval_zh_score(prediction, ground_truth, **kwargs):
             right_num += 1
     final_score = 0.0 if len(numbers) == 0 else right_num / len(numbers)
     return float(final_score)
+
 
 def code_sim_score(prediction, ground_truth, **kwargs):
     from fuzzywuzzy import fuzz
-    all_lines = prediction.lstrip('\n').split('\n')
+
+    all_lines = prediction.lstrip("\n").split("\n")
     prediction = ""
     for line in all_lines:
-        if ('`' not in line) and ('#' not in line) and ('//' not in line):
+        if ("`" not in line) and ("#" not in line) and ("//" not in line):
             prediction = line
             break
-    return (fuzz.ratio(prediction, ground_truth) / 100)
+    return fuzz.ratio(prediction, ground_truth) / 100
+
 
 def classification_score(prediction, ground_truth, **kwargs):
     em_match_list = []
@@ -100,18 +107,20 @@ def classification_score(prediction, ground_truth, **kwargs):
         if match_term in ground_truth and match_term != ground_truth:
             em_match_list.remove(match_term)
     if ground_truth in em_match_list:
-        score = (1.0 / len(em_match_list))
+        score = 1.0 / len(em_match_list)
     else:
         score = 0.0
     return score
+
 
 def rouge_score(prediction, ground_truth, **kwargs):
     rouge = Rouge()
     try:
         scores = rouge.get_scores([prediction], [ground_truth], avg=True)
-    except:
+    except Exception:
         return 0.0
     return scores["rouge-l"]["f"]
+
 
 def f1_score(prediction, ground_truth, **kwargs):
     common = Counter(prediction) & Counter(ground_truth)
@@ -122,6 +131,7 @@ def f1_score(prediction, ground_truth, **kwargs):
     recall = 1.0 * num_same / len(ground_truth)
     f1 = (2 * precision * recall) / (precision + recall)
     return f1
+
 
 def qa_f1_score(prediction, ground_truth, **kwargs):
     normalized_prediction = normalize_answer(prediction)
@@ -174,12 +184,12 @@ dataset2maxlen = {
     "passage_retrieval_en": 32,
     "passage_retrieval_zh": 32,
     "lcc": 64,
-    "repobench-p": 64
+    "repobench-p": 64,
 }
 
 dataset2prompt = {
     "narrativeqa": "You are given a story, which can be either a novel or a movie script, and a question. Answer the question asconcisely as you can, using a single phrase if possible. Do not provide any explanation.\n\nStory: {context}\n\nNow, answer the question based on the story asconcisely as you can, using a single phrase if possible. Do not provide any explanation.\n\nQuestion: {input}\n\nAnswer:",
-    "qasper": "You are given a scientific article and a question. Answer the question as concisely as you can, using a single phrase or sentence if possible. If the question cannot be answered based on the information in the article, write \"unanswerable\". If the question is a yes/no question, answer \"yes\", \"no\", or \"unanswerable\". Do not provide any explanation.\n\nArticle: {context}\n\n Answer the question based on the above article as concisely as you can, using a single phrase or sentence if possible. If the question cannot be answered based on the information in the article, write \"unanswerable\". If the question is a yes/no question, answer \"yes\", \"no\", or \"unanswerable\". Do not provide any explanation.\n\nQuestion: {input}\n\nAnswer:",
+    "qasper": 'You are given a scientific article and a question. Answer the question as concisely as you can, using a single phrase or sentence if possible. If the question cannot be answered based on the information in the article, write "unanswerable". If the question is a yes/no question, answer "yes", "no", or "unanswerable". Do not provide any explanation.\n\nArticle: {context}\n\n Answer the question based on the above article as concisely as you can, using a single phrase or sentence if possible. If the question cannot be answered based on the information in the article, write "unanswerable". If the question is a yes/no question, answer "yes", "no", or "unanswerable". Do not provide any explanation.\n\nQuestion: {input}\n\nAnswer:',
     "multifieldqa_en": "Read the following text and answer briefly.\n\n{context}\n\nNow, answer the following question based on the above text, only give me the answer and do not output any other words.\n\nQuestion: {input}\nAnswer:",
     "multifieldqa_zh": "阅读以下文字并用中文简短回答：\n\n{context}\n\n现在请基于上面的文章回答下面的问题，只告诉我答案，不要输出任何其他字词。\n\n问题：{input}\n回答：",
     "hotpotqa": "Answer the question based on the given passages. Only give me the answer and do not output any other words.\n\nThe following are given passages.\n{context}\n\nAnswer the question based on the given passages. Only give me the answer and do not output any other words.\n\nQuestion: {input}\nAnswer:",
@@ -195,19 +205,19 @@ dataset2prompt = {
     "samsum": "Summarize the dialogue into a few short sentences. The following are some examples.\n\n{context}\n\n{input}",
     "lsht": "请判断给定新闻的类别，下面是一些例子。\n\n{context}\n{input}",
     "passage_count": "There are some paragraphs below sourced from Wikipedia. Some of them may be duplicates. Please carefully read these paragraphs and determine how many unique paragraphs there are after removing duplicates. In other words, how many non-repeating paragraphs are there in total?\n\n{context}\n\nPlease enter the final count of unique paragraphs after removing duplicates. The output format should only contain the number, such as 1, 2, 3, and so on.\n\nThe final answer is: ",
-    "passage_retrieval_en": "Here are 30 paragraphs from Wikipedia, along with an abstract. Please determine which paragraph the abstract is from.\n\n{context}\n\nThe following is an abstract.\n\n{input}\n\nPlease enter the number of the paragraph that the abstract is from. The answer format must be like \"Paragraph 1\", \"Paragraph 2\", etc.\n\nThe answer is: ",
-    "passage_retrieval_zh": "以下是若干段落文字，以及其中一个段落的摘要。请确定给定的摘要出自哪一段。\n\n{context}\n\n下面是一个摘要\n\n{input}\n\n请输入摘要所属段落的编号。答案格式必须是\"段落1\"，\"段落2\"等格式\n\n答案是：",
+    "passage_retrieval_en": 'Here are 30 paragraphs from Wikipedia, along with an abstract. Please determine which paragraph the abstract is from.\n\n{context}\n\nThe following is an abstract.\n\n{input}\n\nPlease enter the number of the paragraph that the abstract is from. The answer format must be like "Paragraph 1", "Paragraph 2", etc.\n\nThe answer is: ',
+    "passage_retrieval_zh": '以下是若干段落文字，以及其中一个段落的摘要。请确定给定的摘要出自哪一段。\n\n{context}\n\n下面是一个摘要\n\n{input}\n\n请输入摘要所属段落的编号。答案格式必须是"段落1"，"段落2"等格式\n\n答案是：',
     "lcc": "Please complete the code given below. \n{context}Next line of code:\n",
-    "repobench-p": "Please complete the code given below. \n{context}{input}Next line of code:\n"
+    "repobench-p": "Please complete the code given below. \n{context}{input}Next line of code:\n",
 }
 
 
 def scorer(dataset, predictions, answers, all_classes):
-    total_score = 0.
-    for (prediction, ground_truths) in zip(predictions, answers):
-        score = 0.
+    total_score = 0.0
+    for prediction, ground_truths in zip(predictions, answers):
+        score = 0.0
         if dataset in ["trec", "triviaqa", "samsum", "lsht"]:
-            prediction = prediction.lstrip('\n').split('\n')[0]
+            prediction = prediction.lstrip("\n").split("\n")[0]
         for ground_truth in ground_truths:
             score = max(score, dataset2metric[dataset](prediction, ground_truth, all_classes=all_classes))
         total_score += score
@@ -244,11 +254,11 @@ def preprocess_prompt(data_sample, subset, model_name):
 
 def post_process_pred(pred, subset, model_name):
     if subset in ["samsum", "qsum", "hotpotqa", "qasper"] and "Llama-3" in model_name:
-        pred = pred[:pred.find("assistant")]
+        pred = pred[: pred.find("assistant")]
     elif subset == "samsum":
-        pred = pred[:pred.find("\nDialogue")]
+        pred = pred[: pred.find("\nDialogue")]
     elif "Phi-3" in model_name and subset == "hotpotqa":
-        pred = pred.lstrip('\n').split('\n')[0]
+        pred = pred.lstrip("\n").split("\n")[0]
     elif subset in ["trec", "hotpotqa", "qasper"] and "Qwen" in model_name:
-        pred = pred[:pred.find("\nQuestion")]
+        pred = pred[: pred.find("\nQuestion")]
     return pred

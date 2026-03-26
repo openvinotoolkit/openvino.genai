@@ -144,10 +144,7 @@ class MileBenchDataset:
         if "choice_list" in ann["task_instance"].keys():
             choice_str = "\nChoice list: \n"
             choice_str += "\n".join(
-                [
-                    (f"{chr(65+idx)}. ") + f"{item}"
-                    for idx, item in enumerate(ann["task_instance"]["choice_list"])
-                ]
+                [(f"{chr(65 + idx)}. ") + f"{item}" for idx, item in enumerate(ann["task_instance"]["choice_list"])]
             )
             choice_str += "\nYour answer is: "
             context += choice_str
@@ -223,9 +220,7 @@ class Eval:
     def processPunctuation(self, inText):
         outText = inText
         for p in self.punct:
-            if (p + " " in inText or " " + p in inText) or (
-                re.search(self.commaStrip, inText) is not None
-            ):
+            if (p + " " in inText or " " + p in inText) or (re.search(self.commaStrip, inText) is not None):
                 outText = outText.replace(p, "")
             else:
                 outText = outText.replace(p, " ")
@@ -292,32 +287,19 @@ class Eval:
         try:
             # Maybe start from the head
             # 1. Char+Choice: `A. Blastomycosis`
-            option_str = "|".join(
-                [preprocess_option_string(f"{k} {v}") for k, v in option.items()]
-            )
+            option_str = "|".join([preprocess_option_string(f"{k} {v}") for k, v in option.items()])
             option_pattern = rf"({option_str})"
-            option_res = re.search(
-                option_pattern, text, re.S
-            )  # NOTE we dont use match_all
+            option_res = re.search(option_pattern, text, re.S)  # NOTE we dont use match_all
             if option_res:
                 return (option_res.group(0)[0]).upper()
 
             # 2. Choice: `Blastomycosis`
-            option_str = "|".join(
-                [
-                    preprocess_option_string(v).replace(" ", "")
-                    for k, v in option.items()
-                ]
-            )
+            option_str = "|".join([preprocess_option_string(v).replace(" ", "") for k, v in option.items()])
             option_pattern = rf"({option_str})"
-            option_res = re.search(
-                option_pattern, text.replace(" ", ""), re.S
-            )  # NOTE we dont use match_all
+            option_res = re.search(option_pattern, text.replace(" ", ""), re.S)  # NOTE we dont use match_all
             if option_res:
                 for k, v in option.items():
-                    if option_res[0].strip() == preprocess_option_string(v).replace(
-                        " ", ""
-                    ):
+                    if option_res[0].strip() == preprocess_option_string(v).replace(" ", ""):
                         return k.upper()
 
             # 3. Char: `A` `AB`
@@ -382,9 +364,7 @@ class Eval:
 
     def evaluate(self, predictions, dataset_name, question_type):
         if "NeedleInAHaystack" in dataset_name or "MMCoQA" in dataset_name:
-            return self.evaluate_needle(
-                predictions, needle="NeedleInAHaystack" in dataset_name
-            )
+            return self.evaluate_needle(predictions, needle="NeedleInAHaystack" in dataset_name)
         elif question_type == "open-ended":
             return self.evaluate_rouge(predictions)
         elif question_type == "multi-choice":
@@ -414,9 +394,9 @@ def main():
         "--data_dir",
         type=str,
         default=None,
-        help="Path to MileBench data directory. If not provided, data will be downloaded to ./milebench_data"
+        help="Path to MileBench data directory. If not provided, data will be downloaded to ./milebench_data",
     )
-    parser.add_argument("--enable_cache_eviction", action='store_true', help="Whether to apply cache eviction")
+    parser.add_argument("--enable_cache_eviction", action="store_true", help="Whether to apply cache eviction")
     parser.add_argument(
         "--num_kv_blocks",
         type=int,
@@ -424,7 +404,7 @@ def main():
         help=(
             "Number of blocks to statically pre-allocate in the KV cache. "
             "If unspecified, blocks are allocated dynamically based on generation length."
-        )
+        ),
     )
     parser.add_argument("--seqs_per_request", type=int, default=1, help="Number of sequences per request")
 
@@ -484,7 +464,7 @@ def main():
                 prompts.clear()
                 images.clear()
 
-    question_type = data.annotation['meta_data']['question_type']
+    question_type = data.annotation["meta_data"]["question_type"]
     scorer = Eval()
     score = scorer.evaluate(answers, args.subset, question_type)
     print(f"Score: {score}")
@@ -493,5 +473,5 @@ def main():
     print(f"Cache usage: max {pipeline_metrics.max_cache_usage:.3f}, avg {pipeline_metrics.avg_cache_usage:.3f}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

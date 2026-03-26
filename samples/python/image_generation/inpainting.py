@@ -9,20 +9,22 @@ import numpy as np
 
 from PIL import Image
 
+
 def read_image(path: str) -> openvino.Tensor:
     pic = Image.open(path).convert("RGB")
     image_data = np.array(pic)[None]
     return openvino.Tensor(image_data)
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
-    parser.add_argument('prompt')
-    parser.add_argument('image')
-    parser.add_argument('mask')
+    parser.add_argument("model_dir")
+    parser.add_argument("prompt")
+    parser.add_argument("image")
+    parser.add_argument("mask")
     args = parser.parse_args()
 
-    device = 'CPU'  # GPU can be used as well
+    device = "CPU"  # GPU can be used as well
     pipe = openvino_genai.InpaintingPipeline(args.model_dir, device)
 
     image = read_image(args.image)
@@ -38,5 +40,5 @@ def main():
     image.save("image.bmp")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

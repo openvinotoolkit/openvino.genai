@@ -41,9 +41,7 @@ def setup_and_teardown():
             logger.info(f"Removing temporary directory: {ov_cache_dir}")
             shutil.rmtree(ov_cache_dir)
         else:
-            logger.info(
-                f"Skipped temporary directory cleanup because it doesn't exist: {ov_cache_dir}"
-            )
+            logger.info(f"Skipped temporary directory cleanup because it doesn't exist: {ov_cache_dir}")
 
 
 def pytest_make_parametrize_id(config, val, argname):
@@ -117,7 +115,7 @@ def image_generation_model(request):
 def run_gc_after_test():
     """
     Fixture to run garbage collection after each test module.
-    This is a workaround to minimize memory consumption during tests 
+    This is a workaround to minimize memory consumption during tests
     and allow the use of less powerful CI runners.
     """
     yield

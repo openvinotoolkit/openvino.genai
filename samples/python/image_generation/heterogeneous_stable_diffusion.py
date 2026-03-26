@@ -8,16 +8,17 @@ import openvino_genai
 
 from PIL import Image
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
-    parser.add_argument('prompt')
+    parser.add_argument("model_dir")
+    parser.add_argument("prompt")
 
     # Set devices to command-line args if specified, otherwise default to CPU.
     # Note that these can be set to CPU, GPU, or NPU.
-    parser.add_argument('text_encoder_device', nargs='?', default='CPU')
-    parser.add_argument('unet_device', nargs='?', default='CPU')
-    parser.add_argument('vae_decoder_device', nargs='?', default='CPU')
+    parser.add_argument("text_encoder_device", nargs="?", default="CPU")
+    parser.add_argument("unet_device", nargs="?", default="CPU")
+    parser.add_argument("vae_decoder_device", nargs="?", default="CPU")
 
     args = parser.parse_args()
 
@@ -51,14 +52,14 @@ def main():
 
     # Note that if there are device-specific properties that are needed, they can
     # be added using a "DEVICE_PROPERTIES" entry, like this:
-    #properties = {
+    # properties = {
     #    "DEVICE_PROPERTIES":
     #    {
     #        "CPU": {"CACHE_DIR": "cpu_cache"},
     #        "GPU": {"CACHE_DIR": "gpu_cache"},
     #        "NPU": {"CACHE_DIR": "npu_cache"}
     #    }
-    #}
+    # }
 
     pipe.compile(args.text_encoder_device, args.unet_device, args.vae_decoder_device, config=properties)
 
@@ -76,5 +77,5 @@ def main():
         image.save("image_" + str(imagei) + ".bmp")
 
 
-if '__main__' == __name__:
+if "__main__" == __name__:
     main()

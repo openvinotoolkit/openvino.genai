@@ -13,17 +13,18 @@ from openvino import get_version
 
 
 def read_image(path: str) -> Tensor:
-    '''
+    """
 
     Args:
         path: The path to the image.
 
     Returns: the ov.Tensor containing the image.
 
-    '''
+    """
     pic = Image.open(path).convert("RGB")
     image_data = np.array(pic)
     return Tensor(image_data)
+
 
 def read_images(path: str) -> list[Tensor]:
     entry = Path(path)
@@ -72,17 +73,17 @@ def main():
     args = parser.parse_args()
 
     if args.prompt is not None and args.prompt_file is not None:
-        raise RuntimeError(f'Prompt and prompt file should not exist together!')
+        raise RuntimeError("Prompt and prompt file should not exist together!")
     else:
         if args.prompt_file is not None:
-            with open(args.prompt_file, 'r', encoding='utf-8') as f:
+            with open(args.prompt_file, "r", encoding="utf-8") as f:
                 prompt = f.read()
         else:
-            prompt = 'What is on the image?' if args.prompt is None else args.prompt
+            prompt = "What is on the image?" if args.prompt is None else args.prompt
     if len(prompt) == 0:
-        raise RuntimeError(f'Prompt is empty!')
+        raise RuntimeError("Prompt is empty!")
 
-    print(f'openvino runtime version: {get_version()}, genai version: {ov_genai.__version__}')
+    print(f"openvino runtime version: {get_version()}, genai version: {ov_genai.__version__}")
 
     # Perf metrics is stored in VLMDecodedResults.
     # In order to get VLMDecodedResults instead of a string input should be a list.
@@ -124,13 +125,17 @@ def main():
     print(f"Output token size: {res.perf_metrics.get_num_generated_tokens()}")
     print(f"Load time: {perf_metrics.get_load_time():.2f} ms")
     print(
-        f"Generate time: {perf_metrics.get_generate_duration().mean:.2f} ± {perf_metrics.get_generate_duration().std:.2f} ms")
+        f"Generate time: {perf_metrics.get_generate_duration().mean:.2f} ± {perf_metrics.get_generate_duration().std:.2f} ms"
+    )
     print(
-        f"Tokenization time: {perf_metrics.get_tokenization_duration().mean:.2f} ± {perf_metrics.get_tokenization_duration().std:.2f} ms")
+        f"Tokenization time: {perf_metrics.get_tokenization_duration().mean:.2f} ± {perf_metrics.get_tokenization_duration().std:.2f} ms"
+    )
     print(
-        f"Detokenization time: {perf_metrics.get_detokenization_duration().mean:.2f} ± {perf_metrics.get_detokenization_duration().std:.2f} ms")
+        f"Detokenization time: {perf_metrics.get_detokenization_duration().mean:.2f} ± {perf_metrics.get_detokenization_duration().std:.2f} ms"
+    )
     print(
-        f"Embeddings preparation time: {perf_metrics.get_prepare_embeddings_duration().mean:.2f} ± {perf_metrics.get_prepare_embeddings_duration().std:.2f} ms")
+        f"Embeddings preparation time: {perf_metrics.get_prepare_embeddings_duration().mean:.2f} ± {perf_metrics.get_prepare_embeddings_duration().std:.2f} ms"
+    )
     print(f"TTFT: {perf_metrics.get_ttft().mean:.2f} ± {perf_metrics.get_ttft().std:.2f} ms")
     print(f"TPOT: {perf_metrics.get_tpot().mean:.2f} ± {perf_metrics.get_tpot().std:.2f} ms")
     print(f"Throughput : {perf_metrics.get_throughput().mean:.2f} ± {perf_metrics.get_throughput().std:.2f} tokens/s")

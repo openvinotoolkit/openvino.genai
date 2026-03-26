@@ -12,29 +12,29 @@ from pathlib import Path
 
 
 def streamer(subword: str) -> bool:
-    '''
+    """
 
     Args:
         subword: sub-word of the generated text.
 
     Returns: Return flag corresponds whether generation should be stopped.
 
-    '''
-    print(subword, end='', flush=True)
+    """
+    print(subword, end="", flush=True)
 
     # No value is returned as in this example we don't want to stop the generation in this method.
     # "return None" will be treated the same as "return openvino_genai.StreamingStatus.RUNNING".
 
 
 def read_image(path: str) -> Tensor:
-    '''
+    """
 
     Args:
         path: The path to the image.
 
     Returns: the ov.Tensor containing the image.
 
-    '''
+    """
     pic = Image.open(path).convert("RGB")
     image_data = np.array(pic)
     return Tensor(image_data)
@@ -80,15 +80,14 @@ def main():
         config.max_ngram_size = 3
 
     history = openvino_genai.ChatHistory()
-    prompt = input('question:\n')
+    prompt = input("question:\n")
     history.append({"role": "user", "content": prompt})
     decoded_results = pipe.generate(history, images=rgbs, generation_config=config, streamer=streamer)
     history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
     while True:
         try:
-            prompt = input("\n----------\n"
-                "question:\n")
+            prompt = input("\n----------\nquestion:\n")
         except EOFError:
             break
 
@@ -98,5 +97,5 @@ def main():
         history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
 
-if '__main__' == __name__:
+if "__main__" == __name__:
     main()

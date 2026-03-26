@@ -36,7 +36,7 @@ def main():
     }
 
     # Generate baseline for comparison
-    print(f"\nGenerating baseline video without caching...")
+    print("\nGenerating baseline video without caching...")
     start_time = time.time()
     baseline_output = pipe.generate(args.prompt, **generate_kwargs)
     baseline_time = time.time() - start_time
@@ -48,7 +48,7 @@ def main():
     print(f"Baseline video saved to {baseline_filename}")
 
     # Configure TaylorSeer caching
-    print(f"\nGenerating video with TaylorSeer caching...")
+    print("\nGenerating video with TaylorSeer caching...")
 
     taylorseer_config = openvino_genai.TaylorSeerCacheConfig()
     taylorseer_config.cache_interval = cache_interval
@@ -70,7 +70,7 @@ def main():
     time_saved = baseline_time - taylorseer_time if baseline_time > 0 else 0.0
     percentage = (baseline_time - taylorseer_time) / baseline_time * 100 if baseline_time > 0 else 0.0
 
-    print(f"\nPerformance Comparison:")
+    print("\nPerformance Comparison:")
     print(f"  Baseline time: {baseline_time:.2f}s")
     print(f"  TaylorSeer time: {taylorseer_time:.2f}s")
     print(f"  Speedup: {speedup:.2f}x")

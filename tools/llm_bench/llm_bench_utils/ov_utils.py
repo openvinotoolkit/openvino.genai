@@ -14,11 +14,7 @@ from llm_bench_utils.hook_common import get_bench_hook
 from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
 from llm_bench_utils.model_utils import get_version_in_format_to_pars
-from llm_bench_utils.config_class import (
-    UseCaseSpeech2Text,
-    UseCaseTextGen,
-    PA_ATTENTION_BACKEND
-)
+from llm_bench_utils.config_class import UseCaseSpeech2Text, UseCaseTextGen, PA_ATTENTION_BACKEND
 from transformers import pipeline
 import queue
 from transformers.generation.streamers import BaseStreamer
@@ -71,7 +67,7 @@ def get_lora_config(lora_paths, lora_alphas, lora_mode=None):
         "fuse": openvino_genai.AdapterConfig.Mode.MODE_FUSE,
         "dynamic": openvino_genai.AdapterConfig.Mode.MODE_DYNAMIC,
         "static": openvino_genai.AdapterConfig.Mode.MODE_STATIC,
-        "static_rank": openvino_genai.AdapterConfig.Mode.MODE_DYNAMIC
+        "static_rank": openvino_genai.AdapterConfig.Mode.MODE_DYNAMIC,
     }
     if lora_mode is not None:
         lora_mode = modes[lora_mode]
@@ -82,20 +78,22 @@ def get_lora_config(lora_paths, lora_alphas, lora_mode=None):
         return adapter_config
 
     if len(lora_paths) != len(lora_alphas):
-        log.warning('Amount of provided LoRA paths and alphas is not eq. LoRA will be ignored.')
+        log.warning("Amount of provided LoRA paths and alphas is not eq. LoRA will be ignored.")
         return adapter_config
 
     for idx in range(len(lora_paths)):
         if not Path(lora_paths[idx]).exists():
-            log.warning(f'LoRA path is not exists: {lora_paths[idx]}. LoRA will be ignored.')
+            log.warning(f"LoRA path is not exists: {lora_paths[idx]}. LoRA will be ignored.")
             continue
-        adapter_config = openvino_genai.AdapterConfig() if lora_mode is None else openvino_genai.AdapterConfig(mode=lora_mode)
+        adapter_config = (
+            openvino_genai.AdapterConfig() if lora_mode is None else openvino_genai.AdapterConfig(mode=lora_mode)
+        )
         adapter = openvino_genai.Adapter(lora_paths[idx])
         alpha = float(lora_alphas[idx])
         adapter_config.add(adapter, alpha)
 
     if adapter_config:
-        log.info('LoRA adapter(s) are added to config.')
+        log.info("LoRA adapter(s) are added to config.")
 
     return adapter_config
 
@@ -107,24 +105,30 @@ def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
     - device: can be CPU or GPU
     - model_type:
     """
-    use_case = kwargs['use_case']
+    use_case = kwargs["use_case"]
     model_class = use_case.ov_cls
     token_class = use_case.tokenizer_cls
     model_path = Path(model_path)
     # specify the model path
-    if model_path.name.endswith('xml'):
+    if model_path.name.endswith("xml"):
         model_path = model_path.parents[2]
 
-    ov_config = kwargs['config']
+    ov_config = kwargs["config"]
 
     model_path_existed = Path(model_path).exists()
     # load model
     if not model_path_existed:
-        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+        raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
-            if model_class != UseCaseTextGen.ov_cls and "mpt" not in use_case.model_types and "chatglm" not in use_case.model_types:
-                log.warning("OpenVINO GenAI based benchmarking is not available for required model type. Will be switched to default benchmarking")
+            if (
+                model_class != UseCaseTextGen.ov_cls
+                and "mpt" not in use_case.model_types
+                and "chatglm" not in use_case.model_types
+            ):
+                log.warning(
+                    "OpenVINO GenAI based benchmarking is not available for required model type. Will be switched to default benchmarking"
+                )
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs)
@@ -148,15 +152,15 @@ def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
             config=model_config,
             stateful=kwargs.get("stateful", None),
             trust_remote_code=remote_code,
-            from_onnx=kwargs.get("from_onnx", False)
+            from_onnx=kwargs.get("from_onnx", False),
         )
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_data_collector.stop_and_collect_data("compilation")
             memory_data_collector.log_data(compilation_phase=True)
-    bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
+    bench_hook = get_bench_hook(kwargs["num_beams"], ov_model)
     from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f"From pretrained time: {from_pretrained_time:.2f}s")
     # load token
     tokenizer = token_class.from_pretrained(model_path, trust_remote_code=True)
     if kwargs.get("convert_tokenizer", False):
@@ -166,35 +170,46 @@ def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
 
 def get_scheduler_config_genai(config_data, config_name="CB config"):
     import openvino_genai
+
     user_config = copy.deepcopy(config_data)
 
     scheduler_config = openvino_genai.SchedulerConfig()
     if user_config:
         log.info(f"Scheduler parameters for {config_name}:\n{user_config}")
 
-        if 'cache_eviction_config' in user_config.keys():
-            cache_eviction_kwargs = user_config.pop('cache_eviction_config')
+        if "cache_eviction_config" in user_config.keys():
+            cache_eviction_kwargs = user_config.pop("cache_eviction_config")
             if "aggregation_mode" in cache_eviction_kwargs.keys():
-                cache_eviction_kwargs["aggregation_mode"] = getattr(openvino_genai.AggregationMode, cache_eviction_kwargs["aggregation_mode"])
+                cache_eviction_kwargs["aggregation_mode"] = getattr(
+                    openvino_genai.AggregationMode, cache_eviction_kwargs["aggregation_mode"]
+                )
 
-            if "kvcrush_config" in cache_eviction_kwargs.keys() and isinstance(cache_eviction_kwargs["kvcrush_config"], dict):
+            if "kvcrush_config" in cache_eviction_kwargs.keys() and isinstance(
+                cache_eviction_kwargs["kvcrush_config"], dict
+            ):
                 crush_config_kwargs = cache_eviction_kwargs["kvcrush_config"]
                 if "anchor_point_mode" in crush_config_kwargs.keys():
-                    crush_config_kwargs['anchor_point_mode'] = getattr(openvino_genai.KVCrushAnchorPointMode, crush_config_kwargs['anchor_point_mode'])
+                    crush_config_kwargs["anchor_point_mode"] = getattr(
+                        openvino_genai.KVCrushAnchorPointMode, crush_config_kwargs["anchor_point_mode"]
+                    )
                 cache_eviction_kwargs["kvcrush_config"] = openvino_genai.KVCrushConfig(**crush_config_kwargs)
 
             scheduler_config.use_cache_eviction = True
             scheduler_config.cache_eviction_config = openvino_genai.CacheEvictionConfig(**cache_eviction_kwargs)
             log.info("Cache Eviction mode ON")
 
-        if 'sparse_attention_config' in user_config.keys():
-            sparse_attention_kwargs = user_config.pop('sparse_attention_config')
+        if "sparse_attention_config" in user_config.keys():
+            sparse_attention_kwargs = user_config.pop("sparse_attention_config")
             if "mode" in sparse_attention_kwargs.keys():
-                sparse_attention_kwargs["mode"] = getattr(openvino_genai.SparseAttentionMode, sparse_attention_kwargs["mode"])
+                sparse_attention_kwargs["mode"] = getattr(
+                    openvino_genai.SparseAttentionMode, sparse_attention_kwargs["mode"]
+                )
 
-            if user_config.pop('use_sparse_attention', True):
+            if user_config.pop("use_sparse_attention", True):
                 scheduler_config.use_sparse_attention = True
-                scheduler_config.sparse_attention_config = openvino_genai.SparseAttentionConfig(**sparse_attention_kwargs)
+                scheduler_config.sparse_attention_config = openvino_genai.SparseAttentionConfig(
+                    **sparse_attention_kwargs
+                )
                 log.info("Sparse Attention mode ON")
             else:
                 raise RuntimeError("sparse_attention_config cannot be specified when use_sparse_attention is False")
@@ -206,45 +221,67 @@ def get_scheduler_config_genai(config_data, config_name="CB config"):
 
 
 def cb_pipeline_required(args):
-    return args['config'].get("ATTENTION_BACKEND", PA_ATTENTION_BACKEND) == PA_ATTENTION_BACKEND and args.get("cb_config") is not None and\
-        (args["cb_config"].get("cache_eviction_config") is not None or args["cb_config"].get("sparse_attention_config") is not None)
+    return (
+        args["config"].get("ATTENTION_BACKEND", PA_ATTENTION_BACKEND) == PA_ATTENTION_BACKEND
+        and args.get("cb_config") is not None
+        and (
+            args["cb_config"].get("cache_eviction_config") is not None
+            or args["cb_config"].get("sparse_attention_config") is not None
+        )
+    )
 
 
 def create_genai_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs):
     import openvino_genai
     from packaging.version import parse
 
-    if Path(model_path).suffix != '.gguf'\
-       and (not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists()):
-        raise ValueError("OpenVINO Tokenizer model is not found in model directory. Please convert tokenizer using following command:\n"
-                         "convert_tokenizer --with-detokenizer MODEL_DIR --output MODEL_DIR ")
+    if Path(model_path).suffix != ".gguf" and (
+        not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists()
+    ):
+        raise ValueError(
+            "OpenVINO Tokenizer model is not found in model directory. Please convert tokenizer using following command:\n"
+            "convert_tokenizer --with-detokenizer MODEL_DIR --output MODEL_DIR "
+        )
 
     config = {}
-    draft_model_path = kwargs.get("draft_model", '')
+    draft_model_path = kwargs.get("draft_model", "")
     cb_config = kwargs.get("cb_config")
     use_streamer_metrics = False
     if cb_config is not None:
         config["scheduler_config"] = get_scheduler_config_genai(cb_config)
         version = get_version_in_format_to_pars(openvino_genai.get_version())
-        use_streamer_metrics = parse(version) < parse("2025.0.0") or (draft_model_path and parse(version) < parse("2025.1.0"))
+        use_streamer_metrics = parse(version) < parse("2025.0.0") or (
+            draft_model_path and parse(version) < parse("2025.1.0")
+        )
 
     if draft_model_path:
         if not Path(draft_model_path).exists():
-            raise RuntimeError(f'==Failure ==: draft model by path:{draft_model_path} is not exists')
+            raise RuntimeError(f"==Failure ==: draft model by path:{draft_model_path} is not exists")
         log.info("Speculative Decoding is activated")
-        draft_device = kwargs.get('draft_device', None) or device
-        draft_model_load_kwargs = {'scheduler_config': get_scheduler_config_genai(kwargs.get("draft_cb_config"), config_name="draft CB config")}\
-            if kwargs.get("draft_cb_config") is not None else {}
-        config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
+        draft_device = kwargs.get("draft_device", None) or device
+        draft_model_load_kwargs = (
+            {
+                "scheduler_config": get_scheduler_config_genai(
+                    kwargs.get("draft_cb_config"), config_name="draft CB config"
+                )
+            }
+            if kwargs.get("draft_cb_config") is not None
+            else {}
+        )
+        config["draft_model"] = openvino_genai.draft_model(
+            draft_model_path, draft_device.upper(), **draft_model_load_kwargs
+        )
 
-    if kwargs.get('max_ngram_size') and kwargs.get('num_assistant_tokens'):
+    if kwargs.get("max_ngram_size") and kwargs.get("num_assistant_tokens"):
         log.info("Prompt Lookup decoding is activated")
-        config['prompt_lookup'] = True
+        config["prompt_lookup"] = True
         use_streamer_metrics = True
 
-    adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []), kwargs.get("lora_mode", None))
+    adapter_config = get_lora_config(
+        kwargs.get("lora", None), kwargs.get("lora_alphas", []), kwargs.get("lora_mode", None)
+    )
     if adapter_config:
-        config['adapters'] = adapter_config
+        config["adapters"] = adapter_config
 
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
@@ -252,11 +289,13 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
     if cb_pipeline_required(kwargs):
         ov_config.pop("ATTENTION_BACKEND", None)
         log.info("Pipeline will be initialized with ContinuousBatchingPipeline")
-        llm_pipe = openvino_genai.ContinuousBatchingPipeline(model_path, device=device.upper(), properties=ov_config, **config)
+        llm_pipe = openvino_genai.ContinuousBatchingPipeline(
+            model_path, device=device.upper(), properties=ov_config, **config
+        )
     else:
         llm_pipe = openvino_genai.LLMPipeline(model_path, device.upper(), **config, **ov_config)
     end = time.perf_counter()
-    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    log.info(f"Pipeline initialization time: {end - start:.2f}s")
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation_phase=True)
@@ -288,6 +327,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
 
         def get_time_list(self):
             return self.token_generation_time
+
     streamer = TokenStreamer(llm_pipe.get_tokenizer()) if use_streamer_metrics else None
 
     return llm_pipe, None, end - start, streamer, True
@@ -304,12 +344,18 @@ def convert_ov_tokenizer(tokenizer_path):
 
 def is_inpainting_model(model_args, use_case, model_index_data):
     is_inpainting_by_class_name = "Inpaint" in model_index_data.get("_class_name", "")
-    all_inputs_for_inpainting_set = ((model_args.get("media") or model_args.get("images")) and model_args.get("mask_image"))
-    return (model_args.get("task", "") == use_case.TASK["inpainting"]["name"] or all_inputs_for_inpainting_set or is_inpainting_by_class_name)
+    all_inputs_for_inpainting_set = (model_args.get("media") or model_args.get("images")) and model_args.get(
+        "mask_image"
+    )
+    return (
+        model_args.get("task", "") == use_case.TASK["inpainting"]["name"]
+        or all_inputs_for_inpainting_set
+        or is_inpainting_by_class_name
+    )
 
 
 def is_image_to_image_model(model_args, use_case):
-    all_inputs_for_im2im_set = (model_args.get("media") or model_args.get("images"))
+    all_inputs_for_im2im_set = model_args.get("media") or model_args.get("images")
     return model_args.get("task", "") == use_case.TASK["img2img"]["name"] or all_inputs_for_im2im_set
 
 
@@ -320,10 +366,10 @@ def is_text_to_image_model(model_args, use_case):
 
 def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
     model_index_data = {}
-    with open(str(model_path / "model_index.json"), 'r') as f:
+    with open(str(model_path / "model_index.json"), "r") as f:
         model_index_data = json.load(f)
 
-    image_gen_use_case = kwargs['use_case']
+    image_gen_use_case = kwargs["use_case"]
     model_class = image_gen_use_case.TASK["text2img"]["ov_cls"]
     if is_inpainting_model(kwargs, image_gen_use_case, model_index_data):
         model_class = image_gen_use_case.TASK["inpainting"]["ov_cls"]
@@ -331,13 +377,15 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
         model_class = image_gen_use_case.TASK["img2img"]["ov_cls"]
 
     model_path = Path(model_path)
-    ov_config = kwargs['config']
+    ov_config = kwargs["config"]
     if not Path(model_path).exists():
-        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+        raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             log.info("Selected OpenVINO GenAI for benchmarking")
-            return create_genai_image_gen_model(model_path, device, ov_config, model_index_data, memory_data_collector, **kwargs)
+            return create_genai_image_gen_model(
+                model_path, device, ov_config, model_index_data, memory_data_collector, **kwargs
+            )
 
         if kwargs.get("mem_consumption"):
             memory_data_collector.start()
@@ -348,7 +396,9 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
             num_images_per_prompt = kwargs.get("batch_size", 1)
             height = kwargs.get("height", 512)
             width = kwargs.get("width", 512)
-            log.info(f"Image Pipeline reshape(batch_size=1, height={height}, width={width}, num_images_per_prompt={num_images_per_prompt})")
+            log.info(
+                f"Image Pipeline reshape(batch_size=1, height={height}, width={width}, num_images_per_prompt={num_images_per_prompt})"
+            )
             ov_model.reshape(batch_size=1, height=height, width=width, num_images_per_prompt=num_images_per_prompt)
             ov_model.compile()
         else:
@@ -358,39 +408,48 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
             memory_data_collector.stop_and_collect_data("compilation")
             memory_data_collector.log_data(compilation_phase=True)
     from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f"From pretrained time: {from_pretrained_time:.2f}s")
     return ov_model, from_pretrained_time, False, None
 
 
 def get_genai_clip_text_encoder(model_index_data, model_path, device, ov_config):
     import openvino_genai
+
     text_encoder_type = model_index_data.get("text_encoder", [])
-    if ("CLIPTextModel" in text_encoder_type):
+    if "CLIPTextModel" in text_encoder_type:
         text_encoder = openvino_genai.CLIPTextModel(model_path / "text_encoder", device.upper(), **ov_config)
     else:
-        raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported text encoder type {text_encoder_type}')
+        raise RuntimeError(
+            f"==Failure ==: model by path:{model_path} has unsupported text encoder type {text_encoder_type}"
+        )
 
     return text_encoder
 
 
 def get_genai_clip_text_encoder_with_projection(model_index_data, model_path, text_encoder_path, device, ov_config):
     import openvino_genai
+
     text_encoder_type = model_index_data.get(text_encoder_path, [])
-    if ("CLIPTextModelWithProjection" in text_encoder_type):
-        text_encoder = openvino_genai.CLIPTextModelWithProjection(model_path / text_encoder_path, device.upper(), **ov_config)
+    if "CLIPTextModelWithProjection" in text_encoder_type:
+        text_encoder = openvino_genai.CLIPTextModelWithProjection(
+            model_path / text_encoder_path, device.upper(), **ov_config
+        )
     else:
-        raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported {text_encoder_path} type {text_encoder_type}')
+        raise RuntimeError(
+            f"==Failure ==: model by path:{model_path} has unsupported {text_encoder_path} type {text_encoder_type}"
+        )
 
     return text_encoder
 
 
 def get_genai_unet_model(model_index_data, model_path, device, ov_config):
     import openvino_genai
+
     unet_type = model_index_data.get("unet", [])
-    if ("UNet2DConditionModel" in unet_type):
+    if "UNet2DConditionModel" in unet_type:
         unet = openvino_genai.UNet2DConditionModel(model_path / "unet", device.upper(), **ov_config)
     else:
-        raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported UNet type {unet_type}')
+        raise RuntimeError(f"==Failure ==: model by path:{model_path} has unsupported UNet type {unet_type}")
 
     return unet
 
@@ -419,7 +478,11 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
             return self.iteration_time[0] * 1000 if len(self.iteration_time) > 0 else 0
 
         def get_2nd_unet_latency(self):
-            return sum(self.iteration_time[1:]) / (len(self.iteration_time) - 1) * 1000 if len(self.iteration_time) > 1 else 0
+            return (
+                sum(self.iteration_time[1:]) / (len(self.iteration_time) - 1) * 1000
+                if len(self.iteration_time) > 1
+                else 0
+            )
 
         def get_first_and_other_unet_infer_duration(self):
             first = self.get_1st_unet_latency()
@@ -446,7 +509,7 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
         def raw_metrics(self):
             return RawImGenPerfMetrics(self.iteration_time)
 
-    image_gen_use_case = kwargs['use_case']
+    image_gen_use_case = kwargs["use_case"]
     image_gen_pipeline_class = openvino_genai.Text2ImagePipeline
     if is_inpainting_model(kwargs, image_gen_use_case, model_index_data):
         log.info("Selected Inpainting image generation pipeline")
@@ -457,11 +520,13 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     elif is_text_to_image_model(kwargs, image_gen_use_case):
         log.info("Selected Text to Image image generation pipeline")
     else:
-        log.warning(f'Task {kwargs.get("task")} is not defined. Text to Image image generation pipeline will be used.')
+        log.warning(f"Task {kwargs.get('task')} is not defined. Text to Image image generation pipeline will be used.")
 
-    adapter_config = get_lora_config(kwargs.get("lora", None), kwargs.get("lora_alphas", []), kwargs.get("lora_mode", None))
+    adapter_config = get_lora_config(
+        kwargs.get("lora", None), kwargs.get("lora_alphas", []), kwargs.get("lora_mode", None)
+    )
     if adapter_config:
-        ov_config['adapters'] = adapter_config
+        ov_config["adapters"] = adapter_config
 
     model_class_name = model_index_data.get("_class_name", "")
     main_model_name = "unet" if "unet" in model_index_data else "transformer"
@@ -475,21 +540,33 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     start = time.perf_counter()
 
     scheduler_type = model_index_data.get("scheduler", ["", ""])[1]
-    if (scheduler_type not in ["LCMScheduler", "DDIMScheduler", "PNDMScheduler", "EulerDiscreteScheduler",
-                               "FlowMatchEulerDiscreteScheduler", "EulerAncestralDiscreteScheduler"]):
+    if scheduler_type not in [
+        "LCMScheduler",
+        "DDIMScheduler",
+        "PNDMScheduler",
+        "EulerDiscreteScheduler",
+        "FlowMatchEulerDiscreteScheduler",
+        "EulerAncestralDiscreteScheduler",
+    ]:
         # It's possible we could support --static_reshape here, but initially it seems too complicated to be worth it..
         # (as we'd need to refactor each get_*_model calls below to perform explicit reshape + compile)
         if kwargs.get("static_reshape", False):
-            raise RuntimeError(f'Type of scheduler {scheduler_type} is unsupported. Right now this is unsupported if --static_reshape is also specified. ')
+            raise RuntimeError(
+                f"Type of scheduler {scheduler_type} is unsupported. Right now this is unsupported if --static_reshape is also specified. "
+            )
 
-        scheduler = openvino_genai.Scheduler.from_config(model_path / "scheduler/scheduler_config.json", openvino_genai.Scheduler.Type.DDIM)
-        log.warning(f'Type of scheduler {scheduler_type} is unsupported. Please, be aware that it will be replaced to DDIMScheduler')
+        scheduler = openvino_genai.Scheduler.from_config(
+            model_path / "scheduler/scheduler_config.json", openvino_genai.Scheduler.Type.DDIM
+        )
+        log.warning(
+            f"Type of scheduler {scheduler_type} is unsupported. Please, be aware that it will be replaced to DDIMScheduler"
+        )
 
         vae_type = model_index_data.get("vae", [])
-        if ("AutoencoderKL" in vae_type):
+        if "AutoencoderKL" in vae_type:
             vae = openvino_genai.AutoencoderKL(model_path / "vae_decoder", device.upper(), **ov_config)
         else:
-            raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported vae decoder type {vae_type}')
+            raise RuntimeError(f"==Failure ==: model by path:{model_path} has unsupported vae decoder type {vae_type}")
 
         if model_class_name == "StableDiffusionPipeline":
             text_encoder = get_genai_clip_text_encoder(model_index_data, model_path, device, ov_config)
@@ -501,11 +578,17 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
             image_gen_pipe = image_gen_pipeline_class.latent_consistency_model(scheduler, text_encoder, unet, vae)
         elif model_class_name == "StableDiffusionXLPipeline":
             clip_text_encoder = get_genai_clip_text_encoder(model_index_data, model_path, device, ov_config)
-            clip_text_encoder_2 = get_genai_clip_text_encoder_with_projection(model_index_data, model_path, "text_encoder_2", device, ov_config)
+            clip_text_encoder_2 = get_genai_clip_text_encoder_with_projection(
+                model_index_data, model_path, "text_encoder_2", device, ov_config
+            )
             unet = get_genai_unet_model(model_index_data, model_path, device, ov_config)
-            image_gen_pipe = image_gen_pipeline_class.stable_diffusion_xl(scheduler, clip_text_encoder, clip_text_encoder_2, unet, vae)
+            image_gen_pipe = image_gen_pipeline_class.stable_diffusion_xl(
+                scheduler, clip_text_encoder, clip_text_encoder_2, unet, vae
+            )
         else:
-            raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported _class_name {model_class_name}')
+            raise RuntimeError(
+                f"==Failure ==: model by path:{model_path} has unsupported _class_name {model_class_name}"
+            )
     else:
         if kwargs.get("static_reshape", False):
             image_gen_pipe = image_gen_pipeline_class(model_path)
@@ -513,8 +596,12 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
             num_images_per_prompt = kwargs.get("batch_size", 1)
             height = kwargs.get("height", 512)
             width = kwargs.get("width", 512)
-            log.info(f"Image Pipeline reshape(num_images_per_prompt={num_images_per_prompt}, height={height}, width={width}, guidance_scale={guidance_scale})")
-            image_gen_pipe.reshape(num_images_per_prompt=num_images_per_prompt, height=height, width=width, guidance_scale=guidance_scale)
+            log.info(
+                f"Image Pipeline reshape(num_images_per_prompt={num_images_per_prompt}, height={height}, width={width}, guidance_scale={guidance_scale})"
+            )
+            image_gen_pipe.reshape(
+                num_images_per_prompt=num_images_per_prompt, height=height, width=width, guidance_scale=guidance_scale
+            )
             image_gen_pipe.compile(device.upper(), **ov_config)
         else:
             image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **ov_config)
@@ -523,15 +610,15 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation_phase=True)
-    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    log.info(f"Pipeline initialization time: {end - start:.2f}s")
     return image_gen_pipe, end - start, True, callback
 
 
 def create_ldm_super_resolution_model(model_path, device, memory_data_collector, **kwargs):
     core = Core()
-    ov_config = kwargs['config']
+    ov_config = kwargs["config"]
     core.set_property(ov_config)
-    model_class = kwargs['use_case'].ov_cls
+    model_class = kwargs["use_case"].ov_cls
     model_path = Path(model_path)
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
@@ -542,17 +629,18 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation_phase=True)
     from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f"From pretrained time: {from_pretrained_time:.2f}s")
     return ov_model, from_pretrained_time
 
 
 def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs):
     import openvino_genai as ov_genai
+
     if kwargs.get("genai", True) is False:
-        raise RuntimeError('==Failure the command line does not set --genai ==')
+        raise RuntimeError("==Failure the command line does not set --genai ==")
     if is_genai_available(log_msg=True) is False:
-        raise RuntimeError('==Failure genai is not enable ==')
-    ov_config = kwargs['config']
+        raise RuntimeError("==Failure genai is not enable ==")
+    ov_config = kwargs["config"]
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
     start = time.perf_counter()
@@ -561,7 +649,7 @@ def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, *
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation_phase=True)
-    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    log.info(f"Pipeline initialization time: {end - start:.2f}s")
     processor = AutoProcessor.from_pretrained(model_path)
     return genai_pipe, processor, end - start, True
 
@@ -574,41 +662,39 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
     """
     from optimum.intel.utils.import_utils import is_transformers_version
 
-    use_case = kwargs['use_case']
+    use_case = kwargs["use_case"]
     model_class = use_case.ov_cls
     model_path = Path(model_path)
     model_path_existed = model_path.exists()
     # load model
     if not model_path_existed:
-        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+        raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             if model_class not in [UseCaseSpeech2Text.ov_cls]:
-                log.warning("OpenVINO GenAI based benchmarking is not available for required model type. Will be switched to default benchmarking")
+                log.warning(
+                    "OpenVINO GenAI based benchmarking is not available for required model type. Will be switched to default benchmarking"
+                )
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
                 return create_genai_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs)
         log.info("Selected Optimum Intel for benchmarking")
-        ov_config = kwargs['config']
+        ov_config = kwargs["config"]
         if kwargs.get("mem_consumption"):
             memory_data_collector.start()
         start = time.perf_counter()
-        ov_model = model_class.from_pretrained(
-            model_path,
-            device=device,
-            ov_config=ov_config
-        )
+        ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_data_collector.stop_and_collect_data("compilation")
             memory_data_collector.log_data(compilation_phase=True)
     from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f"From pretrained time: {from_pretrained_time:.2f}s")
     if is_transformers_version(">=", "4.51.0"):
         ov_model.config.forced_decoder_ids = None
 
-        if hasattr(ov_model, 'generation_config'):
-            if hasattr(ov_model.generation_config, 'forced_decoder_ids'):
+        if hasattr(ov_model, "generation_config"):
+            if hasattr(ov_model.generation_config, "forced_decoder_ids"):
                 ov_model.generation_config.forced_decoder_ids = None
 
     processor = AutoProcessor.from_pretrained(model_path)
@@ -616,7 +702,7 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
         "automatic-speech-recognition",
         model=ov_model,
         tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor
+        feature_extractor=processor.feature_extractor,
     )
 
     return pipe, processor, from_pretrained_time, False
@@ -657,7 +743,7 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_data
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation_phase=True)
-    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    log.info(f"Pipeline initialization time: {end - start:.2f}s")
 
     return llm_pipe, None, end - start, None, True
 
@@ -701,7 +787,7 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation_phase=True)
-    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    log.info(f"Pipeline initialization time: {end - start:.2f}s")
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_path)
     except Exception:
@@ -711,15 +797,15 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
 
 def create_text_embeddings_model(model_path, device, memory_data_collector, **kwargs):
     model_path = Path(model_path)
-    if model_path.name.endswith('xml'):
+    if model_path.name.endswith("xml"):
         model_path = model_path.parents[2]
 
-    ov_config = kwargs['config']
+    ov_config = kwargs["config"]
 
     model_path_existed = Path(model_path).exists()
     # load model
     if not model_path_existed:
-        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+        raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
 
     trust_remote_code = False
     try:
@@ -738,15 +824,12 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
             )
 
         log.info("Selected Optimum Intel for benchmarking")
-    model_class = kwargs['use_case'].ov_cls
+    model_class = kwargs["use_case"].ov_cls
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
     start = time.perf_counter()
     ov_model = model_class.from_pretrained(
-        model_path,
-        device=device,
-        ov_config=ov_config,
-        trust_remote_code=trust_remote_code
+        model_path, device=device, ov_config=ov_config, trust_remote_code=trust_remote_code
     )
     end = time.perf_counter()
     pooling_type = kwargs.get("emb_pooling_type") or "cls"
@@ -756,11 +839,14 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
 
     def forward_with_pooling(self, input_ids, attention_mask, token_type_ids=None, **kwargs):
         import torch
-        outputs = self._embed_forward(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, **kwargs)
+
+        outputs = self._embed_forward(
+            input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, **kwargs
+        )
         token_embeddings = outputs.last_hidden_state
         if pooling_type == "cls":
             out_embd = token_embeddings[:, 0]
-        elif pooling_type == 'last_token':
+        elif pooling_type == "last_token":
             # from transformers Qwen3-Embedding-0.6B model card: https://huggingface.co/Qwen/Qwen3-Embedding-0.6B#transformers-usage
             left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
             if left_padding:
@@ -793,22 +879,22 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
         memory_data_collector.log_data(compilation_phase=True)
     bench_hook = get_bench_hook(1, ov_model, rag=True)
     from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f"From pretrained time: {from_pretrained_time:.2f}s")
     return ov_model, tokenizer, from_pretrained_time, bench_hook, False
 
 
 def create_image_text_gen_model(model_path, device, memory_data_collector, **kwargs):
     model_path = Path(model_path)
     # specify the model path
-    if model_path.name.endswith('xml'):
+    if model_path.name.endswith("xml"):
         model_path = model_path.parents[2]
 
-    ov_config = kwargs['config']
+    ov_config = kwargs["config"]
 
     model_path_existed = Path(model_path).exists()
     # load model
     if not model_path_existed:
-        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+        raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
     else:
         remote_code = False
         try:
@@ -828,24 +914,20 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
 
         log.info("Selected Optimum Intel for benchmarking")
         ov_config.pop("ATTENTION_BACKEND", None)
-        model_class = kwargs['use_case'].ov_cls
+        model_class = kwargs["use_case"].ov_cls
         if kwargs.get("mem_consumption"):
             memory_data_collector.start()
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(
-            model_path,
-            device=device,
-            ov_config=ov_config,
-            config=model_config,
-            trust_remote_code=remote_code
+            model_path, device=device, ov_config=ov_config, config=model_config, trust_remote_code=remote_code
         )
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_data_collector.stop_and_collect_data("compilation")
             memory_data_collector.log_data(compilation_phase=True)
-    bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
+    bench_hook = get_bench_hook(kwargs["num_beams"], ov_model)
     from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f"From pretrained time: {from_pretrained_time:.2f}s")
     processor_config = get_vlm_processor(model_path)
     return ov_model, processor_config, from_pretrained_time, bench_hook, False
 
@@ -856,7 +938,7 @@ def create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
         convert_ov_tokenizer(model_path)
 
-    tokenizer_class = kwargs['use_case'].tokenizer_cls
+    tokenizer_class = kwargs["use_case"].tokenizer_cls
     processor = tokenizer_class.from_pretrained(model_path)
 
     if kwargs.get("mem_consumption"):
@@ -868,7 +950,7 @@ def create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation_phase=True)
-    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    log.info(f"Pipeline initialization time: {end - start:.2f}s")
 
     return pipe, processor, None, end - start, True
 
@@ -876,15 +958,15 @@ def create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_
 def create_text_2_speech_model(model_path, device, memory_data_collector, **kwargs):
     model_path = Path(model_path)
     # specify the model path
-    if model_path.name.endswith('xml'):
+    if model_path.name.endswith("xml"):
         model_path = model_path.parents[2]
 
-    ov_config = kwargs['config']
+    ov_config = kwargs["config"]
 
     model_path_existed = Path(model_path).exists()
     # load model
     if not model_path_existed:
-        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+        raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
     else:
         remote_code = False
         try:
@@ -903,39 +985,38 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
                 )
 
         log.info("Selected Optimum Intel for benchmarking")
-        use_case = kwargs['use_case']
+        use_case = kwargs["use_case"]
         model_class = use_case.ov_cls
         tokenizer_class = use_case.tokenizer_cls
         if kwargs.get("mem_consumption"):
             memory_data_collector.start()
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(
-            model_path,
-            device=device,
-            ov_config=ov_config,
-            config=model_config,
-            trust_remote_code=remote_code
+            model_path, device=device, ov_config=ov_config, config=model_config, trust_remote_code=remote_code
         )
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_data_collector.stop_and_collect_data("compilation")
             memory_data_collector.log_data(compilation_phase=True)
     from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f"From pretrained time: {from_pretrained_time:.2f}s")
     processor = tokenizer_class.from_pretrained(model_path)
     vocoder = None
-    if kwargs.get('vocoder_path') is not None:
-        vocoder = kwargs['use_case'].vocoder_cls.from_pretrained(kwargs.get('vocoder_path'))
+    if kwargs.get("vocoder_path") is not None:
+        vocoder = kwargs["use_case"].vocoder_cls.from_pretrained(kwargs.get("vocoder_path"))
     return ov_model, processor, vocoder, from_pretrained_time, False
 
 
 def is_genai_available(log_msg=False):
     import importlib
+
     try:
-        importlib.import_module('openvino_genai')
+        importlib.import_module("openvino_genai")
     except ImportError as ex:
         if log_msg:
-            log.warning("Attempt to load OpenVINO GenaAI package failed. Please install openvino_genai package. Full error message available in debug mode")
+            log.warning(
+                "Attempt to load OpenVINO GenaAI package failed. Please install openvino_genai package. Full error message available in debug mode"
+            )
             log.warning(ex)
             return False
     return True
@@ -1022,10 +1103,10 @@ def get_genai_chunk_streamer():
             if len(self.tokens_cache) % self.tokens_len == 0:
                 text = self.tokenizer.decode(self.tokens_cache)
 
-                word = ''
-                if len(text) > self.print_len and '\n' == text[-1]:
+                word = ""
+                if len(text) > self.print_len and "\n" == text[-1]:
                     # Flush the cache after the new line symbol.
-                    word = text[self.print_len:]
+                    word = text[self.print_len :]
                     self.tokens_cache = []
                     self.print_len = 0
                 elif len(text) >= 3 and text[-1] == chr(65533):
@@ -1034,7 +1115,7 @@ def get_genai_chunk_streamer():
                 elif len(text) > self.print_len:
                     # It is possible to have a shorter text after adding new token.
                     # Print to output only if text length is increased.
-                    word = text[self.print_len:]
+                    word = text[self.print_len :]
                     self.print_len = len(text)
                 self.put_word(word)
 
@@ -1053,7 +1134,7 @@ def get_genai_chunk_streamer():
             """
             text = self.tokenizer.decode(self.tokens_cache)
             if len(text) > self.print_len:
-                word = text[self.print_len:]
+                word = text[self.print_len :]
                 self.put_word(word)
                 self.tokens_cache = []
                 self.print_len = 0
@@ -1087,8 +1168,8 @@ class OptimumChunkStreamer(BaseStreamer):
         An increasing sequence: one, two, three, four, five, six, seven, eight, nine, ten, eleven,
         ```
     """
-    def __init__(self, tokenizer: "AutoTokenizer", skip_prompt: bool = False,
-                 tokens_len: int = 1, **decode_kwargs):
+
+    def __init__(self, tokenizer: "AutoTokenizer", skip_prompt: bool = False, tokens_len: int = 1, **decode_kwargs):
         self.tokenizer = tokenizer
         self.skip_prompt = skip_prompt
         self.decode_kwargs = decode_kwargs
@@ -1112,22 +1193,20 @@ class OptimumChunkStreamer(BaseStreamer):
         # Add the new token to the cache and decodes the entire thing.
         self.token_cache.extend(value.tolist())
         if len(self.token_cache) % self.tokens_len == 0:
-            text = self.tokenizer.decode(
-                self.token_cache, **self.decode_kwargs
-            )
+            text = self.tokenizer.decode(self.token_cache, **self.decode_kwargs)
             # After the symbol for a new line, we flush the cache.
             if text.endswith("\n"):
-                printable_text = text[self.print_len:]
+                printable_text = text[self.print_len :]
                 self.token_cache = []
                 self.print_len = 0
             # If the last token is a CJK character, we print the characters.
             elif len(text) > 0 and self._is_chinese_char(ord(text[-1])):
-                printable_text = text[self.print_len:]
+                printable_text = text[self.print_len :]
                 self.print_len += len(printable_text)
             # Otherwise, prints until the last space char (simple heuristic to avoid printing incomplete words,
             # which may change with the subsequent token -- there are probably smarter ways to do this!)
             else:
-                printable_text = text[self.print_len: text.rfind(" ") + 1]
+                printable_text = text[self.print_len : text.rfind(" ") + 1]
                 self.print_len += len(printable_text)
             self.on_finalized_text(printable_text)
 
@@ -1135,10 +1214,8 @@ class OptimumChunkStreamer(BaseStreamer):
         """Flushes any remaining cache and prints a newline to stdout."""
         # Flush the cache, if it exists
         if len(self.token_cache) > 0:
-            text = self.tokenizer.decode(
-                self.token_cache, **self.decode_kwargs
-            )
-            printable_text = text[self.print_len:]
+            text = self.tokenizer.decode(self.token_cache, **self.decode_kwargs)
+            printable_text = text[self.print_len :]
             self.token_cache = []
             self.print_len = 0
         else:
@@ -1174,7 +1251,9 @@ class OptimumChunkStreamer(BaseStreamer):
         return False
 
 
-def create_genai_text_reranker_model(model_path: Path, device: str, memory_monitor: MemMonitorWrapper, tokenizer: AutoTokenizer, **kwargs):
+def create_genai_text_reranker_model(
+    model_path: Path, device: str, memory_monitor: MemMonitorWrapper, tokenizer: AutoTokenizer, **kwargs
+):
     import openvino_genai
 
     config = openvino_genai.TextRerankPipeline.Config()
@@ -1183,7 +1262,7 @@ def create_genai_text_reranker_model(model_path: Path, device: str, memory_monit
     if kwargs.get("rerank_max_length") is not None:
         config.max_length = kwargs.get("rerank_max_length")
 
-    ov_config = kwargs['config']
+    ov_config = kwargs["config"]
 
     if kwargs.get("mem_consumption"):
         memory_monitor.start()
@@ -1195,20 +1274,20 @@ def create_genai_text_reranker_model(model_path: Path, device: str, memory_monit
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data("compilation")
         memory_monitor.log_data(compilation_phase=True)
-    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    log.info(f"Pipeline initialization time: {end - start:.2f}s")
     return pipe, tokenizer, end - start, None, True
 
 
 def create_text_reranker_model(model_path: Path, device: str, memory_monitor: MemMonitorWrapper, **kwargs):
-    if model_path.name.endswith('xml'):
+    if model_path.name.endswith("xml"):
         model_path = model_path.parents[2]
 
-    ov_config = kwargs['config']
+    ov_config = kwargs["config"]
 
     model_path_existed = Path(model_path).exists()
     # load model
     if not model_path_existed:
-        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+        raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
 
     trust_remote_code = False
     try:
@@ -1226,24 +1305,20 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor: Me
                 "Benchmark will be switched to Optimum Intel pipeline realization"
             )
     model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
-    kwargs['use_case'].adjust_model_class_by_config(model_config)
+    kwargs["use_case"].adjust_model_class_by_config(model_config)
     log.info("Selected Optimum Intel for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_monitor.start()
     try:
         start = time.perf_counter()
-        ov_model = kwargs['use_case'].ov_cls.from_pretrained(
+        ov_model = kwargs["use_case"].ov_cls.from_pretrained(
             model_path, device=device, ov_config=ov_config, trust_remote_code=trust_remote_code
         )
         end = time.perf_counter()
     except ValueError:
         start = time.perf_counter()
-        ov_model = kwargs['use_case'].ov_cls.from_pretrained(
-            model_path,
-            trust_remote_code=trust_remote_code,
-            use_cache=False,
-            device=device,
-            ov_config=ov_config
+        ov_model = kwargs["use_case"].ov_cls.from_pretrained(
+            model_path, trust_remote_code=trust_remote_code, use_cache=False, device=device, ov_config=ov_config
         )
         end = time.perf_counter()
 
@@ -1252,7 +1327,7 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor: Me
         memory_monitor.log_data(compilation_phase=True)
     bench_hook = get_bench_hook(1, ov_model, rag=True)
     from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f"From pretrained time: {from_pretrained_time:.2f}s")
     return ov_model, tokenizer, from_pretrained_time, bench_hook, False
 
 

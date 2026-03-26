@@ -16,7 +16,7 @@ output_file = "your_audio.wav"
 print(f"Recording for {duration} seconds...")
 
 # Record audio
-recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='int16')
+recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype="int16")
 sd.wait()
 
 # Save to WAV file

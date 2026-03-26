@@ -34,13 +34,12 @@ class OVMPTModel(OVModelForCausalLM):
             if shapes[inputs].rank.get_length() in [2, 3]:
                 shapes[inputs][1] = -1
             else:
-                if '.key' in inputs.get_any_name():
+                if ".key" in inputs.get_any_name():
                     shapes[inputs][3] = -1
                 elif inputs.get_any_name() != "beam_idx":
                     shapes[inputs][2] = -1
         model.reshape(shapes)
         return model
-
 
     def forward(
         self,
@@ -74,7 +73,6 @@ class OVMPTModel(OVModelForCausalLM):
                     past_key_values = tuple(
                         past_key_value for pkv_per_layer in past_key_values for past_key_value in pkv_per_layer
                     )
-                
 
                 # Add the past_key_values to the decoder inputs
                 inputs = dict(zip(self.key_value_input_names, past_key_values))
@@ -84,7 +82,7 @@ class OVMPTModel(OVModelForCausalLM):
                 for input_name in self.key_value_input_names:
                     model_inputs = self.model.input(input_name)
                     shape = model_inputs.get_partial_shape()
-                    if self.config.model_type == 'chatglm':
+                    if self.config.model_type == "chatglm":
                         shape[0] = 0
                         shape[1] = batch_size
                     else:
@@ -134,8 +132,8 @@ class OVMPTModel(OVModelForCausalLM):
 
             inputs["position_ids"] = position_ids
 
-        if hasattr(self, 'next_beam_idx') and "beam_idx" in self.input_names:
-            inputs['beam_idx'] = self.next_beam_idx
+        if hasattr(self, "next_beam_idx") and "beam_idx" in self.input_names:
+            inputs["beam_idx"] = self.next_beam_idx
 
         # Run inference
         self.request.start_async(inputs, share_inputs=True)
@@ -159,9 +157,9 @@ class OVMPTModel(OVModelForCausalLM):
 class OVLDMSuperResolutionPipeline(DiffusionPipeline):
     def __init__(self, model_path: Path, core: Core, device: str):
         super().__init__()
-        self.vqvae = core.compile_model(model_path / 'vqvae.xml', device)
-        self.unet = core.compile_model(model_path / 'unet.xml', device)
-        self.scheduler = LMSDiscreteScheduler.from_config(model_path / 'scheduler_config.json')
+        self.vqvae = core.compile_model(model_path / "vqvae.xml", device)
+        self.unet = core.compile_model(model_path / "unet.xml", device)
+        self.scheduler = LMSDiscreteScheduler.from_config(model_path / "scheduler_config.json")
         self._unet_output = self.unet.output(0)
         self._vqvae_output = self.vqvae.output(0)
 
@@ -173,12 +171,12 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
         num_inference_steps: Optional[int] = 100,
         eta: Optional[float] = 0.0,
         generator: Optional[Union[torch.Generator, list[torch.Generator]]] = None,
-        output_type: Optional[str] = 'pil',
+        output_type: Optional[str] = "pil",
         return_dict: bool = True,
         tm_list: Optional[list] = None,
         **kwargs,
     ) -> Union[tuple, ImagePipelineOutput]:
-        r'''
+        r"""
         Args:
             image (`torch.Tensor` or `PIL.Image.Image`):
                 `Image`, or tensor representing an image batch, that will be used as the starting point for the
@@ -203,7 +201,7 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
         Returns:
             [`~pipelines.ImagePipelineOutput`] or `tuple`: [`~pipelines.utils.ImagePipelineOutput`] if `return_dict` is
             True, otherwise a `tuple. When returning a tuple, the first element is a list with the generated images.
-        '''
+        """
         image = image
 
         if isinstance(image, PIL.Image.Image):
@@ -211,7 +209,7 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
         elif isinstance(image, torch.Tensor):
             batch_size = image.shape[0]
         else:
-            raise ValueError(f'`image` has to be of type `PIL.Image.Image` or `torch.Tensor` but is {type(image)}')
+            raise ValueError(f"`image` has to be of type `PIL.Image.Image` or `torch.Tensor` but is {type(image)}")
 
         if isinstance(image, PIL.Image.Image):
             image = self.preprocess(image)
@@ -228,8 +226,8 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
         latents = latents * self.scheduler.init_noise_sigma
         latents = latents.numpy()
         extra_kwargs = {}
-        if 'eta' in set(inspect.signature(self.scheduler.step).parameters.keys()):
-            extra_kwargs['eta'] = eta
+        if "eta" in set(inspect.signature(self.scheduler.step).parameters.keys()):
+            extra_kwargs["eta"] = eta
 
         for t in timesteps_tensor:
             # concat latents and low resolution image in the channel dimension.
@@ -240,7 +238,9 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
             noise_pred = self.unet([latents_input, t])[self._unet_output]
             tm_list.append(time.perf_counter() - tic)
             # compute the previous noisy sample x_t -> x_t-1
-            latents = self.scheduler.step(torch.from_numpy(noise_pred), t, torch.from_numpy(latents))['prev_sample'].numpy()
+            latents = self.scheduler.step(torch.from_numpy(noise_pred), t, torch.from_numpy(latents))[
+                "prev_sample"
+            ].numpy()
 
         # decode the image latents with the VQVAE
         tic = time.perf_counter()
@@ -249,7 +249,7 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
         image = image / 2 + 0.5
         image = image.transpose(0, 2, 3, 1)
 
-        if output_type == 'pil':
+        if output_type == "pil":
             image = self.numpy_to_pil(image)
         return image
 
@@ -257,7 +257,7 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
     def preprocess(image):
         w, h = image.size
         w, h = map(lambda x: x - x % 32, (w, h))  # resize to integer multiple of 32
-        image = image.resize((w, h), resample=PIL_INTERPOLATION['lanczos'])
+        image = image.resize((w, h), resample=PIL_INTERPOLATION["lanczos"])
         image = np.array(image).astype(np.float32) / 255.0
         image = image[None].transpose(0, 3, 1, 2)
         image = torch.from_numpy(image)
@@ -277,7 +277,7 @@ class OVChatGLMModel(OVModelForCausalLM):
         self,
         model: Model,
         config: PretrainedConfig = None,
-        device: str = 'CPU',
+        device: str = "CPU",
         dynamic_shapes: bool = True,
         ov_config: Optional[dict[str, str]] = None,
         model_save_dir: Optional[Union[str, Path, TemporaryDirectory]] = None,
@@ -287,7 +287,7 @@ class OVChatGLMModel(OVModelForCausalLM):
         self.is_v1 = False
         if not self.stateful and not self.key_value_input_names:
             self.is_v1 = True
-            self.key_value_input_names = ['past_key_values']
+            self.key_value_input_names = ["past_key_values"]
             self.key_value_output_names = [o.any_name for o in self.model.outputs[1:]]
 
     def prepare_inputs_for_generation(
@@ -301,10 +301,12 @@ class OVChatGLMModel(OVModelForCausalLM):
     ) -> dict:
         if not self.is_v1:
             return super().prepare_inputs_for_generation(
-                input_ids=input_ids, past_key_values=past_key_values, attention_mask=attention_mask,
+                input_ids=input_ids,
+                past_key_values=past_key_values,
+                attention_mask=attention_mask,
                 position_ids=position_ids,
                 past=past,
-                **kwargs
+                **kwargs,
             )
         batch_size, seq_length = input_ids.shape
         mask = self.mask_token_id
@@ -332,22 +334,27 @@ class OVChatGLMModel(OVModelForCausalLM):
                 context_lengths = [seq.index(self.bos_token_id) for seq in seqs]
                 if self.position_encoding_2d:  # position_encoding_2d = True
                     position_ids = torch.tensor(
-                        [[mask_position, seq_length - context_length] for mask_position, context_length in zip(mask_positions, context_lengths)],
+                        [
+                            [mask_position, seq_length - context_length]
+                            for mask_position, context_length in zip(mask_positions, context_lengths)
+                        ],
                         dtype=torch.long,
                         device=input_ids.device,
                     ).unsqueeze(-1)
                 else:
-                    position_ids = torch.tensor([mask_position for mask_position in mask_positions], dtype=torch.long, device=input_ids.device).unsqueeze(-1)
+                    position_ids = torch.tensor(
+                        [mask_position for mask_position in mask_positions], dtype=torch.long, device=input_ids.device
+                    ).unsqueeze(-1)
 
             if past is None:
                 past = self.get_past_key_values(past_key_values)
             return {
-                'input_ids': last_token,
-                'past_key_values': past,
-                'position_ids': position_ids,
-                'attention_mask': attention_mask,
-                'use_cache': self.use_cache,
-                'token_type_ids': None,
+                "input_ids": last_token,
+                "past_key_values": past,
+                "position_ids": position_ids,
+                "attention_mask": attention_mask,
+                "use_cache": self.use_cache,
+                "token_type_ids": None,
             }
         else:
             # First Step Inference
@@ -372,12 +379,12 @@ class OVChatGLMModel(OVModelForCausalLM):
                 if self._pkv_precision == Type.bf16:
                     past_key_values = Tensor(past_key_values, past_key_values.shape, Type.bf16)
             return {
-                'input_ids': input_ids,
-                'position_ids': position_ids,
-                'attention_mask': attention_mask,
-                'past_key_values': past_key_values,
-                'use_cache': self.use_cache,
-                'token_type_ids': None,
+                "input_ids": input_ids,
+                "position_ids": position_ids,
+                "attention_mask": attention_mask,
+                "past_key_values": past_key_values,
+                "use_cache": self.use_cache,
+                "token_type_ids": None,
             }
 
     def get_masks(self, input_ids, device):
@@ -436,34 +443,38 @@ class OVChatGLMModel(OVModelForCausalLM):
         past_key_values: Optional[tuple[tuple[torch.FloatTensor]]] = None,
         **kwargs,
     ) -> CausalLMOutputWithPast:
-        
+
         if not self.is_v1:
-            return super().forward(input_ids=input_ids, attention_mask=attention_mask, past_key_values=past_key_values, **kwargs)
+            return super().forward(
+                input_ids=input_ids, attention_mask=attention_mask, past_key_values=past_key_values, **kwargs
+            )
         self.compile()
 
         inputs = {}
         if past_key_values is not None:
-            inputs['past_key_values'] = past_key_values
-        inputs['input_ids'] = np.array(input_ids)
+            inputs["past_key_values"] = past_key_values
+        inputs["input_ids"] = np.array(input_ids)
 
         # Add the attention_mask inputs when needed
-        if 'attention_mask' in self.input_names and attention_mask is not None:
-            inputs['attention_mask'] = np.array(attention_mask)
+        if "attention_mask" in self.input_names and attention_mask is not None:
+            inputs["attention_mask"] = np.array(attention_mask)
 
-        if 'position_ids' in kwargs and kwargs['position_ids'] is not None:
-            inputs['position_ids'] = np.array(kwargs['position_ids'])
+        if "position_ids" in kwargs and kwargs["position_ids"] is not None:
+            inputs["position_ids"] = np.array(kwargs["position_ids"])
 
         # Run inference
         self.request.start_async(inputs, share_inputs=True)
         self.request.wait()
 
-        logits = torch.from_numpy(self.request.get_tensor('logits').data).to(self.device)
+        logits = torch.from_numpy(self.request.get_tensor("logits").data).to(self.device)
 
         if self.use_cache:
             # Tuple of length equal to : number of layer * number of past_key_value per decoder layer (2 corresponds to the self-attention layer)
             past_key_values = tuple(self.request.get_tensor(key).data for key in self.key_value_output_names)
             # Tuple of tuple of length `n_layers`, with each tuple of length equal to 2 (k/v of self-attention)
-            past_key_values = tuple(past_key_values[i : i + self.num_pkv] for i in range(0, len(past_key_values), self.num_pkv))
+            past_key_values = tuple(
+                past_key_values[i : i + self.num_pkv] for i in range(0, len(past_key_values), self.num_pkv)
+            )
         else:
             past_key_values = None
 

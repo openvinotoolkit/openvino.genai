@@ -20,6 +20,7 @@ def get_default_llm_properties():
 
 def extra_generate_kwargs():
     from optimum.intel.utils.import_utils import is_transformers_version
+
     additional_args = {}
     if is_transformers_version(">=", "4.51"):
         additional_args["use_model_defaults"] = False
@@ -44,7 +45,9 @@ def get_ov_cache_dir(temp_dir=TemporaryDirectory()):
         try:
             optimum_intel_version = metadata.version("optimum-intel")
             transformers_version = metadata.version("transformers")
-            ov_cache = os.path.join(ov_cache, f"optimum-intel-{optimum_intel_version}_transformers-{transformers_version}")
+            ov_cache = os.path.join(
+                ov_cache, f"optimum-intel-{optimum_intel_version}_transformers-{transformers_version}"
+            )
         except metadata.PackageNotFoundError:
             pass
         ov_cache_path = Path(ov_cache)

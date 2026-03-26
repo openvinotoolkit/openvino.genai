@@ -51,9 +51,9 @@ def hf_ov_genai_models(request, tmp_path_factory):
 
 
 @pytest.mark.parametrize(
-    "hf_ov_genai_models", 
+    "hf_ov_genai_models",
     ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
-    indirect=True
+    indirect=True,
 )
 def test_several_incremental_parsers(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
@@ -181,9 +181,9 @@ def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
 
 
 @pytest.mark.parametrize(
-    "hf_ov_genai_models", 
+    "hf_ov_genai_models",
     ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
-    indirect=True
+    indirect=True,
 )
 def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
@@ -213,9 +213,9 @@ def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
 
 
 @pytest.mark.parametrize(
-    "hf_ov_genai_models", 
+    "hf_ov_genai_models",
     ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
-    indirect=True
+    indirect=True,
 )
 def test_incremental_integer_token_ids(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
@@ -479,9 +479,9 @@ def test_incremental_phi4_reason_parser_nostreamer(answer):
 @pytest.mark.parametrize("keep_original_content", [True, False])
 @pytest.mark.parametrize("do_reset", [False])
 @pytest.mark.parametrize(
-    "hf_ov_genai_models", 
+    "hf_ov_genai_models",
     ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
-    indirect=True
+    indirect=True,
 )
 @pytest.mark.parametrize(
     "answer",
@@ -527,14 +527,106 @@ def test_reasoning_parser_cut_content(hf_ov_genai_models, answer, keep_original_
 
 def test_incremental_deepseek_parser():
     stream_string = [
-        "<｜begin▁of▁sentence｜>", "First", ",", " I", " recognize", " that", " the", " question", " is", " asking", 
-        " for", " the", " sum", " of", " ", "2", " and", " ", "1", ".\n\n", "I", " know", " that", " addition", 
-        " involves", " combining", " two", " numbers", " to", " find", " their", " total", ".\n\n", "Starting", 
-        " with", " ", "2", ",", " I", " add", " ", "1", " to", " it", ".\n\n", "2", " plus", " ", "1", " equals", 
-        " ", "3", ".\n", "</think>", "\n\n", "**", "Solution", ":", "**\n\n", "To", " find", " the", " sum", 
-        " of", " ", "2", " and", " ", "1", " follow", " these", " simple", " steps", ":\n\n", "1", ".", " **", 
-        "Start", " with", " the", " number", " ", "2", ".", "**\n", "2", ".", " **", "Add", " ", "1", " to", 
-        " it", ".", "**\n", "   \n", "  ", " \\", "[\n", "  "
+        "<｜begin▁of▁sentence｜>",
+        "First",
+        ",",
+        " I",
+        " recognize",
+        " that",
+        " the",
+        " question",
+        " is",
+        " asking",
+        " for",
+        " the",
+        " sum",
+        " of",
+        " ",
+        "2",
+        " and",
+        " ",
+        "1",
+        ".\n\n",
+        "I",
+        " know",
+        " that",
+        " addition",
+        " involves",
+        " combining",
+        " two",
+        " numbers",
+        " to",
+        " find",
+        " their",
+        " total",
+        ".\n\n",
+        "Starting",
+        " with",
+        " ",
+        "2",
+        ",",
+        " I",
+        " add",
+        " ",
+        "1",
+        " to",
+        " it",
+        ".\n\n",
+        "2",
+        " plus",
+        " ",
+        "1",
+        " equals",
+        " ",
+        "3",
+        ".\n",
+        "</think>",
+        "\n\n",
+        "**",
+        "Solution",
+        ":",
+        "**\n\n",
+        "To",
+        " find",
+        " the",
+        " sum",
+        " of",
+        " ",
+        "2",
+        " and",
+        " ",
+        "1",
+        " follow",
+        " these",
+        " simple",
+        " steps",
+        ":\n\n",
+        "1",
+        ".",
+        " **",
+        "Start",
+        " with",
+        " the",
+        " number",
+        " ",
+        "2",
+        ".",
+        "**\n",
+        "2",
+        ".",
+        " **",
+        "Add",
+        " ",
+        "1",
+        " to",
+        " it",
+        ".",
+        "**\n",
+        "   \n",
+        "  ",
+        " \\",
+        "[\n",
+        "  ",
     ]
 
     full_str = "".join(stream_string)

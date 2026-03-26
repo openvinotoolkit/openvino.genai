@@ -14,8 +14,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("text", help="Input text for which to generate speech")
-    parser.add_argument("--speaker_embedding_file_path", default=None,
-                        help="Path to the binary file with a speaker embedding")
+    parser.add_argument(
+        "--speaker_embedding_file_path", default=None, help="Path to the binary file with a speaker embedding"
+    )
     parser.add_argument("--device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
     args = parser.parse_args()
 
@@ -36,9 +37,9 @@ def main():
     output_file_name = "output_audio.wav"
     sf.write(output_file_name, speech.data[0], samplerate=16000)
 
-    print("[Info] Text successfully converted to audio file \"", output_file_name, "\".")
+    print('[Info] Text successfully converted to audio file "', output_file_name, '".')
 
-    perf_metrics = result.perf_metrics;
+    perf_metrics = result.perf_metrics
     if perf_metrics.m_evaluated:
         print("\n\n=== Performance Summary ===")
         print("Throughput              : ", perf_metrics.throughput.mean, " samples/sec.")

@@ -4,12 +4,13 @@
 import time
 import logging
 from huggingface_hub.utils import HfHubHTTPError
-from subprocess import CalledProcessError # nosec B404
+from subprocess import CalledProcessError  # nosec B404
 from requests.exceptions import RequestException
 
 # Configure the logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def retry_request(func, retries=7):
     """
@@ -43,7 +44,7 @@ def retry_request(func, retries=7):
                 else:
                     raise
             if attempt < retries - 1:
-                timeout = 2 ** attempt
+                timeout = 2**attempt
                 logger.info(f"Attempt {attempt + 1} failed. Retrying in {timeout} seconds.")
                 time.sleep(timeout)
             else:

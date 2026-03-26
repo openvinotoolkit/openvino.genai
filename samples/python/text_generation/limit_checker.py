@@ -8,11 +8,17 @@ import csv
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-from tqdm import tqdm
 
 from optimum.intel.openvino import OVModelForCausalLM
-from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationResult, GenerationConfig, CacheEvictionConfig, AggregationMode
+from openvino_genai import (
+    ContinuousBatchingPipeline,
+    SchedulerConfig,
+    GenerationResult,
+    GenerationConfig,
+)
 from openvino_tokenizers import convert_tokenizer
+import openvino as ov
+import openvino.properties.hint as hints
 from openvino import serialize
 from transformers import AutoTokenizer
 import argparse
@@ -20,12 +26,13 @@ import argparse
 import time
 import logging
 from huggingface_hub.utils import HfHubHTTPError
-from subprocess import CalledProcessError # nosec B404
+from subprocess import CalledProcessError  # nosec B404
 from requests.exceptions import RequestException
 
 # Configure the logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def retry_request(func, retries=5):
     """
@@ -58,27 +65,31 @@ def retry_request(func, retries=5):
                 else:
                     raise
             if attempt < retries - 1:
-                timeout = 2 ** attempt
+                timeout = 2**attempt
                 logger.info(f"Attempt {attempt + 1} failed. Retrying in {timeout} seconds.")
                 time.sleep(timeout)
             else:
                 raise
 
-def load_prompts_dataset(file_name : str) -> dict[str, list[str]]:
-    TESTS_ROOT = Path('tests/python_tests')
-    file_path = TESTS_ROOT / 'data' / file_name
-    with open(file_path, 'r') as f:
+
+def load_prompts_dataset(file_name: str) -> dict[str, list[str]]:
+    TESTS_ROOT = Path("tests/python_tests")
+    file_path = TESTS_ROOT / "data" / file_name
+    with open(file_path, "r") as f:
         return {"prompts": [s for s in f]}
 
-def load_samsum_dataset(file_name : str) -> dict[str, list[str]]:
+
+def load_samsum_dataset(file_name: str) -> dict[str, list[str]]:
     import json
+
     retval = {"prompts": []}
-    with open(file_name, 'r') as json_file:
+    with open(file_name, "r") as json_file:
         json_list = list(json_file)
         for json_str in json_list:
             result = json.loads(json_str)
             retval["prompts"].append(result["prompt"])
     return retval
+
 
 def get_scheduler_config(num_kv_blocks: Optional[int]) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
@@ -90,6 +101,7 @@ def get_scheduler_config(num_kv_blocks: Optional[int]) -> SchedulerConfig:
     scheduler_config.use_cache_eviction = False
     return scheduler_config
 
+
 @dataclass
 class ConvertedModel:
     model: OVModelForCausalLM
@@ -98,7 +110,11 @@ class ConvertedModel:
 
 
 def get_converted_model(base_model_path: Path, model_id: str):
-    model = retry_request(lambda: OVModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, load_in_8bit=False, compile=False, ov_config=get_default_llm_properties()))
+    model = retry_request(
+        lambda: OVModelForCausalLM.from_pretrained(
+            model_id, trust_remote_code=True, load_in_8bit=False, compile=False, ov_config=get_default_llm_properties()
+        )
+    )
     tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id))
     models_path = base_model_path / model_id
     models_path.mkdir(parents=True, exist_ok=True)
@@ -110,43 +126,59 @@ def get_converted_model(base_model_path: Path, model_id: str):
     return converted_model
 
 
-import openvino.properties.hint as hints
-import openvino.properties as props
-import openvino as ov
-
 def get_default_llm_properties():
     return {
-        hints.inference_precision : ov.Type.f32,
-        hints.kv_cache_precision : ov.Type.f16,
+        hints.inference_precision: ov.Type.f32,
+        hints.kv_cache_precision: ov.Type.f16,
     }
+
 
 def run_and_write_metrics(model, prompt, generation_config, report_file):
     result: GenerationResult = model_cb_opt.generate([prompt], generation_config=[generation_config])
 
     pipeline_opt_metrics = model_cb_opt.get_metrics()
-    rss_usage_gb = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 3
+    rss_usage_gb = psutil.Process(os.getpid()).memory_info().rss / 1024**3
     result_length = len(result[0].m_generation_ids[0])
-    print(f"avg_cache_usage:{pipeline_opt_metrics.avg_cache_usage:.2f}% max_cache_usage:{pipeline_opt_metrics.max_cache_usage:.2f}% rss_usage:{rss_usage_gb:.3f} GB")
+    print(
+        f"avg_cache_usage:{pipeline_opt_metrics.avg_cache_usage:.2f}% max_cache_usage:{pipeline_opt_metrics.max_cache_usage:.2f}% rss_usage:{rss_usage_gb:.3f} GB"
+    )
     print(f"result length: {result_length}")
     print()
 
     if report_file is not None:
-        with open(report_file, 'a') as f:
+        with open(report_file, "a") as f:
             csv_writer = csv.writer(f)
-            csv_writer.writerow([generation_config.max_new_tokens - 1, result_length, pipeline_opt_metrics.avg_cache_usage, pipeline_opt_metrics.max_cache_usage, rss_usage_gb])
+            csv_writer.writerow(
+                [
+                    generation_config.max_new_tokens - 1,
+                    result_length,
+                    pipeline_opt_metrics.avg_cache_usage,
+                    pipeline_opt_metrics.max_cache_usage,
+                    rss_usage_gb,
+                ]
+            )
     return pipeline_opt_metrics.max_cache_usage
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--eviction_on", action='store_true', help="Whether to apply cache eviction")
+    parser.add_argument("--eviction_on", action="store_true", help="Whether to apply cache eviction")
     parser.add_argument("--model", type=str, help="Model ID")
-    parser.add_argument("--num_kv_blocks", type=int, help='Number of blocks to statically pre-allocate in cache.'
-                                                          'If left unspecified, will allocate dynamically to accommodate the generation length.')
+    parser.add_argument(
+        "--num_kv_blocks",
+        type=int,
+        help="Number of blocks to statically pre-allocate in cache."
+        "If left unspecified, will allocate dynamically to accommodate the generation length.",
+    )
     parser.add_argument("--report", type=str, help="File name for CSV-formatted export of limit search data")
-    parser.add_argument("--mode", type=str, nargs='?', choices=['gen_length', 'gen_throughput'], required=True)
+    parser.add_argument("--mode", type=str, nargs="?", choices=["gen_length", "gen_throughput"], required=True)
     parser.add_argument("--data", type=str, help="Dataset jsonl file")
-    parser.add_argument("--timeout", type=int, help="Maximum time allowed for a single round of generation in the `gen_length` mode", default=120)
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        help="Maximum time allowed for a single round of generation in the `gen_length` mode",
+        default=120,
+    )
     parser.add_argument("--device", type=str, help="Device for model inference", default="CPU")
 
     args = parser.parse_args()
@@ -163,20 +195,23 @@ if __name__ == '__main__':
     base_model_path = Path("limit_checker_models")
     converted_model = get_converted_model(base_model_path, args.model)
     models_path = converted_model.models_path
-    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, args.device, {}, get_default_llm_properties())
+    model_cb_opt = ContinuousBatchingPipeline(
+        models_path, scheduler_config_opt, args.device, {}, get_default_llm_properties()
+    )
 
     tokenizer = converted_model.tokenizer
     if args.mode == "gen_length":
-        data_dict = load_prompts_dataset('long_prompts.txt')
+        data_dict = load_prompts_dataset("long_prompts.txt")
         prompt = data_dict["prompts"][0]
 
         generation_length = 1
 
         if args.report is not None:
-            with open(args.report, 'w') as f:
+            with open(args.report, "w") as f:
                 csv_writer = csv.writer(f)
-                csv_writer.writerow(['generation_length', 'result_length', 'avg_cache_usage_%', 'max_cache_usage_%', 'rss_usage_gb'])
-
+                csv_writer.writerow(
+                    ["generation_length", "result_length", "avg_cache_usage_%", "max_cache_usage_%", "rss_usage_gb"]
+                )
 
         while True:
             gc.collect()
@@ -185,7 +220,7 @@ if __name__ == '__main__':
             generation_config.max_new_tokens = generation_length + 1
             generation_config.apply_chat_template = False
             generation_config.ignore_eos = True
-            print(f"generation_length:{generation_length} ", sep='')
+            print(f"generation_length:{generation_length} ", sep="")
 
             start = time.time()
             max_cache_usage = run_and_write_metrics(model_cb_opt, prompt, generation_config, args.report)
@@ -214,11 +249,15 @@ if __name__ == '__main__':
             generation_config.apply_chat_template = False
             prompt_subset = dataset["prompts"][:prompt_throughput]
             print(f"prompt_throughput {prompt_throughput}")
-            result: GenerationResult = model_cb_opt.generate(prompt_subset, generation_config=[generation_config] * len(prompt_subset))
+            result: GenerationResult = model_cb_opt.generate(
+                prompt_subset, generation_config=[generation_config] * len(prompt_subset)
+            )
 
             pipeline_opt_metrics = model_cb_opt.get_metrics()
-            rss_usage_gb = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 3
-            print(f"avg_cache_usage:{pipeline_opt_metrics.avg_cache_usage:.2f}% max_cache_usage:{pipeline_opt_metrics.max_cache_usage:.2f}% rss_usage:{rss_usage_gb:.3f} GB")
+            rss_usage_gb = psutil.Process(os.getpid()).memory_info().rss / 1024**3
+            print(
+                f"avg_cache_usage:{pipeline_opt_metrics.avg_cache_usage:.2f}% max_cache_usage:{pipeline_opt_metrics.max_cache_usage:.2f}% rss_usage:{rss_usage_gb:.3f} GB"
+            )
             print()
 
             max_cache_usage = pipeline_opt_metrics.max_cache_usage
@@ -237,8 +276,7 @@ if __name__ == '__main__':
                     prompt_left_bound = prompt_throughput
                 prompt_throughput = (prompt_left_bound + prompt_right_bound) // 2
 
-                if (prompt_right_bound - prompt_left_bound <= 1):
+                if prompt_right_bound - prompt_left_bound <= 1:
                     break
-
 
         print(f"Approximate highest throughput: {prompt_throughput} prompts")

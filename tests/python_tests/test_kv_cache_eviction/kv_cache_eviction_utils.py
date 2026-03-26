@@ -3,6 +3,7 @@
 
 from openvino_genai import SchedulerConfig
 
+
 def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
     scheduler_config.num_kv_blocks = num_kv_blocks

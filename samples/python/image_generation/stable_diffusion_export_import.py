@@ -27,7 +27,7 @@ def pipeline_export_import(root_dir: Path):
     #     └── openvino_model.blob
 
     # during import, specify blob_path property to point to the exported model location
-    imported_pipe = openvino_genai.Text2ImagePipeline(root_dir, "CPU", blob_path=root_dir / "exported")
+    openvino_genai.Text2ImagePipeline(root_dir, "CPU", blob_path=root_dir / "exported")
 
 
 def dedicated_models_export_import(root_dir: Path):
@@ -53,10 +53,14 @@ def dedicated_models_export_import(root_dir: Path):
     # └── vae_encoder/
     #     └── openvino_model.blob
 
-    pipe = openvino_genai.Text2ImagePipeline.stable_diffusion_xl(
+    openvino_genai.Text2ImagePipeline.stable_diffusion_xl(
         scheduler=openvino_genai.Scheduler.from_config(root_dir / "scheduler" / "scheduler_config.json"),
-        clip_text_model=openvino_genai.CLIPTextModel(root_dir / "text_encoder", device, blob_path=blob_path / "text_encoder"),
-        clip_text_model_with_projection=openvino_genai.CLIPTextModelWithProjection(root_dir / "text_encoder_2", device, blob_path=blob_path / "text_encoder_2"),
+        clip_text_model=openvino_genai.CLIPTextModel(
+            root_dir / "text_encoder", device, blob_path=blob_path / "text_encoder"
+        ),
+        clip_text_model_with_projection=openvino_genai.CLIPTextModelWithProjection(
+            root_dir / "text_encoder_2", device, blob_path=blob_path / "text_encoder_2"
+        ),
         unet=openvino_genai.UNet2DConditionModel(root_dir / "unet", device, blob_path=blob_path / "unet"),
         vae=openvino_genai.AutoencoderKL(root_dir / "vae_decoder", device, blob_path=blob_path),
     )

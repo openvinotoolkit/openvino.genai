@@ -2,7 +2,8 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-def create_base_prompt(json_data, key='prompt'):
+
+def create_base_prompt(json_data, key="prompt"):
     prompt_data = {}
     if key not in json_data:
         raise RuntimeError(f"== key word '{key}' does not exist ==")
@@ -44,8 +45,8 @@ def parse_image_json_data(json_data_list):
             if param in json_data:
                 image_param[param] = json_data[param]
 
-        if 'guidance_scale' in json_data:
-            image_param['guidance_scale'] = float(json_data['guidance_scale'])
+        if "guidance_scale" in json_data:
+            image_param["guidance_scale"] = float(json_data["guidance_scale"])
 
         image_param_list.append(image_param)
     return image_param_list

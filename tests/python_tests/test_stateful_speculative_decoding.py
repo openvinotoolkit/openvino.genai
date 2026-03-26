@@ -4,7 +4,6 @@
 import pytest
 import numpy as np
 
-import openvino as ov
 import openvino_genai as ov_genai
 
 from utils.constants import get_default_llm_properties
@@ -12,20 +11,23 @@ from utils.hugging_face import download_and_convert_model, run_hugging_face
 from utils.comparation import compare_generation_results
 from utils.ov_genai_pipelines import convert_decoded_results_to_generation_result
 
+
 def get_npu_llm_properties_for_test():
     config = get_default_llm_properties()
     config["NPUW_DEVICES"] = "CPU"
     config["GENERATE_HINT"] = "BEST_PERF"
     return config
 
-models_and_input = [
-    ("HuggingFaceTB/SmolLM2-360M-Instruct", "HuggingFaceTB/SmolLM2-135M-Instruct", "Alan Turing was a")]
+
+models_and_input = [("HuggingFaceTB/SmolLM2-360M-Instruct", "HuggingFaceTB/SmolLM2-135M-Instruct", "Alan Turing was a")]
 devices = [
     # FIXME: add 'CPU' and 'GPU' cases in future
-    ('CPU', 'NPU'),
-    ('NPU', 'CPU'),
-    ('NPU', 'NPU')
+    ("CPU", "NPU"),
+    ("NPU", "CPU"),
+    ("NPU", "NPU"),
 ]
+
+
 @pytest.mark.parametrize("main_model,draft_model,prompt", models_and_input)
 @pytest.mark.parametrize("main_device,draft_device", devices)
 def test_string_inputs(main_model, main_device, draft_model, draft_device, prompt):
@@ -37,29 +39,27 @@ def test_string_inputs(main_model, main_device, draft_model, draft_device, promp
     draft_model_path = download_and_convert_model(draft_model).models_path
 
     # Create OpenVINO GenAI pipeline:
-    draft_config = get_npu_llm_properties_for_test() \
-                       if (draft_device == "NPU") else \
-                   get_default_llm_properties()
+    draft_config = get_npu_llm_properties_for_test() if (draft_device == "NPU") else get_default_llm_properties()
     ov_draft_model = ov_genai.draft_model(draft_model_path, draft_device, **draft_config)
 
-    main_config = get_npu_llm_properties_for_test() \
-                      if (main_device == "NPU") else \
-                  get_default_llm_properties()
+    main_config = get_npu_llm_properties_for_test() if (main_device == "NPU") else get_default_llm_properties()
     ov_pipe = ov_genai.LLMPipeline(main_model_path, main_device, main_config, draft_model=ov_draft_model)
 
     # Run reference HF model:
     ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=20)
-    main_hf_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-    ref_gen_results = run_hugging_face(main_opt_model, main_hf_tokenizer, [prompt], ov_generation_config)  
+    main_hf_tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+    ref_gen_results = run_hugging_face(main_opt_model, main_hf_tokenizer, [prompt], ov_generation_config)
 
     # Run OpenVINO GenAI pipeline:
     ov_decoded_results = ov_pipe.generate([prompt], ov_generation_config)
     ov_gen_results = convert_decoded_results_to_generation_result(ov_decoded_results, 1, 1, False)
 
     # Run OpenVINO GenAI pipeline with ChatHistory:
-    chat_history = ov_genai.ChatHistory([{ "role": "user", "content": prompt }])
+    chat_history = ov_genai.ChatHistory([{"role": "user", "content": prompt}])
     ov_chat_history_decoded_results = ov_pipe.generate(chat_history, ov_generation_config)
-    ov_chat_history_gen_results = convert_decoded_results_to_generation_result(ov_chat_history_decoded_results, 1, 1, False)
+    ov_chat_history_gen_results = convert_decoded_results_to_generation_result(
+        ov_chat_history_decoded_results, 1, 1, False
+    )
 
     # Compare results:
     compare_generation_results([prompt], ref_gen_results, ov_gen_results, ov_generation_config)
@@ -68,6 +68,7 @@ def test_string_inputs(main_model, main_device, draft_model, draft_device, promp
 
 def test_perf_metrics():
     import time
+
     start_time = time.perf_counter()
     model_id = "optimum-intel-internal-testing/tiny-random-gemma2"
     model_path = download_and_convert_model(model_id).models_path
@@ -76,8 +77,10 @@ def test_perf_metrics():
     ov_draft_model = ov_genai.draft_model(model_path, "NPU", **get_npu_llm_properties_for_test())
     ov_pipe = ov_genai.LLMPipeline(model_path, "NPU", get_npu_llm_properties_for_test(), draft_model=ov_draft_model)
 
-    prompt = 'table is made of'
-    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5)
+    prompt = "table is made of"
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5
+    )
     perf_metrics = ov_pipe.generate([prompt], generation_config).perf_metrics
     total_time = (time.perf_counter() - start_time) * 1000
 
@@ -111,17 +114,26 @@ def test_perf_metrics():
     assert mean_throughput > 0 and mean_throughput < 20000.0
 
     mean_gen_duration, std_gen_duration = perf_metrics.get_generate_duration()
-    assert (mean_gen_duration, std_gen_duration) == (perf_metrics.get_generate_duration().mean, perf_metrics.get_generate_duration().std)
+    assert (mean_gen_duration, std_gen_duration) == (
+        perf_metrics.get_generate_duration().mean,
+        perf_metrics.get_generate_duration().std,
+    )
     assert mean_gen_duration > 0 and load_time + mean_gen_duration < total_time
     assert std_gen_duration == 0
 
     mean_tok_duration, std_tok_duration = perf_metrics.get_tokenization_duration()
-    assert (mean_tok_duration, std_tok_duration) == (perf_metrics.get_tokenization_duration().mean, perf_metrics.get_tokenization_duration().std)
+    assert (mean_tok_duration, std_tok_duration) == (
+        perf_metrics.get_tokenization_duration().mean,
+        perf_metrics.get_tokenization_duration().std,
+    )
     assert mean_tok_duration > 0 and mean_tok_duration < mean_gen_duration
     assert std_tok_duration == 0
 
     mean_detok_duration, std_detok_duration = perf_metrics.get_detokenization_duration()
-    assert (mean_detok_duration, std_detok_duration) == (perf_metrics.get_detokenization_duration().mean, perf_metrics.get_detokenization_duration().std)
+    assert (mean_detok_duration, std_detok_duration) == (
+        perf_metrics.get_detokenization_duration().mean,
+        perf_metrics.get_detokenization_duration().std,
+    )
     assert mean_detok_duration > 0 and mean_detok_duration < mean_gen_duration
     assert std_detok_duration == 0
 
@@ -145,22 +157,26 @@ def test_perf_metrics():
     assert len(raw_metrics.m_batch_sizes) > 0
     assert len(raw_metrics.m_durations) > 0
 
+
 def test_extended_perf_metrics():
     import time
+
     start_time = time.perf_counter()
-    model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    model_id: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     model_path = download_and_convert_model(model_id).models_path
 
     ov_draft_model = ov_genai.draft_model(model_path, "NPU", **get_npu_llm_properties_for_test())
     ov_pipe = ov_genai.LLMPipeline(model_path, "NPU", get_npu_llm_properties_for_test(), draft_model=ov_draft_model)
 
-    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5)
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5
+    )
     extended_perf_metrics = ov_pipe.generate(["Why is the Sun yellow?"], generation_config).extended_perf_metrics
     total_time = (time.perf_counter() - start_time) * 1000
 
-    assert not extended_perf_metrics is None
-    assert not extended_perf_metrics.main_model_metrics is None
-    assert not extended_perf_metrics.draft_model_metrics is None
+    assert extended_perf_metrics is not None
+    assert extended_perf_metrics.main_model_metrics is not None
+    assert extended_perf_metrics.draft_model_metrics is not None
 
     assert extended_perf_metrics.get_num_accepted_tokens() > 0
 
@@ -171,17 +187,17 @@ def test_extended_perf_metrics():
     # As Stateful Speculative Decoding pipeline is dynamically adjusting its number of candidates at
     # each step, here we check that generated tokens is less than upper candidates limit multiplied by
     # maximum number of generated tokens.
-    assert num_generated_tokens_draft > 0 and \
-        num_generated_tokens_draft < ((generation_config.max_new_tokens - 1) * \
-                                      generation_config.num_assistant_tokens * 2 + 1)
+    assert num_generated_tokens_draft > 0 and num_generated_tokens_draft < (
+        (generation_config.max_new_tokens - 1) * generation_config.num_assistant_tokens * 2 + 1
+    )
 
     total_iteration_number_main = len(extended_perf_metrics.main_model_metrics.raw_metrics.m_durations)
     assert total_iteration_number_main > 0 and total_iteration_number_main <= generation_config.max_new_tokens
 
     total_iteration_number_draft = len(extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations)
-    assert total_iteration_number_draft > 0 and \
-        total_iteration_number_draft < ((generation_config.max_new_tokens - 1) * \
-                                       generation_config.num_assistant_tokens * 2 + 1)
+    assert total_iteration_number_draft > 0 and total_iteration_number_draft < (
+        (generation_config.max_new_tokens - 1) * generation_config.num_assistant_tokens * 2 + 1
+    )
 
     for model_metrics in [extended_perf_metrics.main_model_metrics, extended_perf_metrics.draft_model_metrics]:
         mean_ttst, std_ttst = model_metrics.get_ttst()
@@ -194,7 +210,10 @@ def test_extended_perf_metrics():
         assert mean_latency > 0 and mean_latency < 1000.0
 
         mean_gen_duration, std_gen_duration = model_metrics.get_generate_duration()
-        assert (mean_gen_duration, std_gen_duration) == (model_metrics.get_generate_duration().mean, model_metrics.get_generate_duration().std)
+        assert (mean_gen_duration, std_gen_duration) == (
+            model_metrics.get_generate_duration().mean,
+            model_metrics.get_generate_duration().std,
+        )
         assert mean_gen_duration > 0 and mean_gen_duration < total_time
         assert std_gen_duration == 0
 
@@ -215,7 +234,7 @@ A:""",
         "Qwen/Qwen3-1.7B",
         "AngelSlim/Qwen3-1.7B_eagle3",
         "What is the capital of Ireland?/no_think",
-    )
+    ),
 ]
 
 eagle3_devices = [("NPU", "NPU")]
@@ -280,7 +299,6 @@ def test_eagle3_perf_metrics(target_model, target_device, draft_model, draft_dev
 
     # Generate and collect both basic and extended performance metrics
     results = ov_pipe.generate([prompt], generation_config)
-    perf_metrics = results.perf_metrics
     extended_perf_metrics = results.extended_perf_metrics
 
     # Verify extended metrics exist (proves Eagle3 speculative decoding is enabled)

@@ -194,7 +194,9 @@ class CommonPipeline(ABC):
         return {}, []
 
     @abstractmethod
-    def run(self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
+    def run(
+        self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None
+    ) -> tuple[dict, list]:
         """Run pipeline.
 
         Args:

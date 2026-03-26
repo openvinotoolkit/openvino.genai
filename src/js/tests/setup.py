@@ -22,7 +22,7 @@ from optimum.intel import (
 tests_utils_path = Path(__file__).parent.parent.parent.parent / "tests" / "python_tests"
 sys.path.insert(0, str(tests_utils_path))
 
-from utils import hugging_face
+from utils import hugging_face  # noqa: E402
 
 TEST_MODELS = {
     "LLM": {
@@ -69,7 +69,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error processing model '{model_name}': {e}")
             raise
-    print(f"All models downloaded and converted successfully!")
+    print("All models downloaded and converted successfully!")
 
     # Write environment variables to .env file
     result = [f"{var_name}={var_value}\n" for var_name, var_value in env_vars.items()]

@@ -8,6 +8,7 @@ import sys
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
 
+
 class TestSchedulerConfig:
     @pytest.mark.vlm
     @pytest.mark.samples
@@ -24,15 +25,24 @@ class TestSchedulerConfig:
 
         num_iter = "1"
         # Run C++ benchmark sample
-        benchmark_sample = os.path.join(SAMPLES_CPP_DIR, 'benchmark_vlm')
-        benchmark_cpp_command = [benchmark_sample, "-m" , convert_model, "-i", download_test_content, "-n", num_iter]
+        benchmark_sample = os.path.join(SAMPLES_CPP_DIR, "benchmark_vlm")
+        benchmark_cpp_command = [benchmark_sample, "-m", convert_model, "-i", download_test_content, "-n", num_iter]
         cpp_result = run_sample(benchmark_cpp_command, env=env)
 
-        assert cpp_result.stdout.find("SchedulerConfig {") != -1, f"Should print SchedulerConfig info in CPP"
+        assert cpp_result.stdout.find("SchedulerConfig {") != -1, "Should print SchedulerConfig info in CPP"
 
         # Run Python benchmark sample
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'visual_language_chat/benchmark_vlm.py')
-        benchmark_py_command = [sys.executable, benchmark_script, "-m" , convert_model, "-i", download_test_content, "-n", num_iter]
+        benchmark_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/benchmark_vlm.py")
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-i",
+            download_test_content,
+            "-n",
+            num_iter,
+        ]
         py_result = run_sample(benchmark_py_command, env=env)
 
-        assert py_result.stdout.find("SchedulerConfig {") != -1, f"Should print SchedulerConfig info in PYTHON"
+        assert py_result.stdout.find("SchedulerConfig {") != -1, "Should print SchedulerConfig info in PYTHON"

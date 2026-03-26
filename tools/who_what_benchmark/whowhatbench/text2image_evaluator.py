@@ -50,9 +50,9 @@ class Text2ImageEvaluator(BaseEvaluator):
         is_genai=False,
         empty_adapters=False,
     ) -> None:
-        assert (
-            base_model is not None or gt_data is not None
-        ), "Text generation pipeline for evaluation or ground trush data must be defined"
+        assert base_model is not None or gt_data is not None, (
+            "Text generation pipeline for evaluation or ground trush data must be defined"
+        )
 
         self.test_data = test_data
         self.metrics = metrics
@@ -71,9 +71,7 @@ class Text2ImageEvaluator(BaseEvaluator):
 
         if base_model:
             base_model.resolution = self.resolution
-            self.gt_data = self._generate_data(
-                base_model, gen_image_fn, os.path.join(self.gt_dir, "reference")
-            )
+            self.gt_data = self._generate_data(base_model, gen_image_fn, os.path.join(self.gt_dir, "reference"))
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
@@ -90,18 +88,14 @@ class Text2ImageEvaluator(BaseEvaluator):
             predictions = pd.read_csv(model_or_data, keep_default_na=False)
         else:
             model_or_data.resolution = self.resolution
-            predictions = self._generate_data(
-                model_or_data, gen_image_fn, image_folder
-            )
+            predictions = self._generate_data(model_or_data, gen_image_fn, image_folder)
         self.predictions = predictions
 
         all_metrics_per_prompt = {}
         all_metrics = {}
 
         if self.similarity:
-            metric_dict, metric_per_question = self.similarity.evaluate(
-                self.gt_data, predictions
-            )
+            metric_dict, metric_per_question = self.similarity.evaluate(self.gt_data, predictions)
             all_metrics.update(metric_dict)
             all_metrics_per_prompt.update(metric_per_question)
 
@@ -150,11 +144,7 @@ class Text2ImageEvaluator(BaseEvaluator):
             data = pd.DataFrame.from_dict(default_data)
 
         prompts = data["prompts"]
-        prompts = (
-            prompts.values
-            if self.num_samples is None
-            else prompts.values[: self.num_samples]
-        )
+        prompts = prompts.values if self.num_samples is None else prompts.values[: self.num_samples]
         images = []
         rng = torch.Generator(device="cpu")
 

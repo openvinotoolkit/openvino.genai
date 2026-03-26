@@ -9,14 +9,12 @@ def get_models_list() -> tuple[str, ...]:
         "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
     ]
     if pytest.selected_model_ids:
-        model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
+        model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(" ")]
 
     return tuple(model_ids)
 
 
-CHAT_MODELS_LIST = (
-    "Qwen/Qwen2-0.5B-Instruct",
-)
+CHAT_MODELS_LIST = ("Qwen/Qwen2-0.5B-Instruct",)
 
 
 GGUF_MODEL_LIST = (

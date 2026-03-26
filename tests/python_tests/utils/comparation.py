@@ -3,9 +3,10 @@
 
 from openvino_genai import GenerationResult, GenerationConfig
 
-def compare_generation_result(hf_result: GenerationResult,
-                              ov_result: GenerationResult,
-                              generation_config: GenerationConfig):
+
+def compare_generation_result(
+    hf_result: GenerationResult, ov_result: GenerationResult, generation_config: GenerationConfig
+):
     if generation_config.is_beam_search():
         assert len(hf_result.m_scores) == len(ov_result.m_scores)
         for hf_score, ov_score in zip(hf_result.m_scores, ov_result.m_scores):
@@ -20,12 +21,14 @@ def compare_generation_result(hf_result: GenerationResult,
         assert len(hf_result.m_generation_ids) == len(ov_result.m_generation_ids)
         for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
             assert hf_text == ov_text
-            
 
-def compare_generation_results(prompts: list[str],
-                               hf_results: list[GenerationResult],
-                               ov_results: list[GenerationResult],
-                               generation_configs: list[GenerationConfig] | GenerationConfig):
+
+def compare_generation_results(
+    prompts: list[str],
+    hf_results: list[GenerationResult],
+    ov_results: list[GenerationResult],
+    generation_configs: list[GenerationConfig] | GenerationConfig,
+):
     if type(generation_configs) is not list:
         generation_configs = [generation_configs]
 
@@ -38,9 +41,7 @@ def compare_generation_results(prompts: list[str],
 
 
 # TODO: remove this function after Generator property is supported by LLMPipeline / VLMPipeline
-def compare_generation_results_vs_ref(prompts: list[str],
-                                      ref: list[list[str]],
-                                      ov_results: list[GenerationResult]):
+def compare_generation_results_vs_ref(prompts: list[str], ref: list[list[str]], ov_results: list[GenerationResult]):
     assert len(prompts) == len(ref)
     assert len(prompts) == len(ov_results)
 

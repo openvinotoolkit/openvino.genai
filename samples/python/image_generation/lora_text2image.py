@@ -7,16 +7,18 @@ import argparse
 import openvino as ov
 import openvino_genai
 
+
 def image_write(path: str, image_tensor: ov.Tensor):
     from PIL import Image
+
     image = Image.fromarray(image_tensor.data[0])
     image.save(path)
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('models_path')
-    parser.add_argument('prompt')
+    parser.add_argument("models_path")
+    parser.add_argument("prompt")
     args, adapters = parser.parse_known_args()
 
     prompt = args.prompt
@@ -34,23 +36,21 @@ def main():
     pipe = openvino_genai.Text2ImagePipeline(args.models_path, device, adapters=adapter_config)
 
     print("Generating image with LoRA adapters applied, resulting image will be in lora.bmp")
-    image = pipe.generate(prompt,
-                          width=512,
-                          height=896,
-                          num_inference_steps=20,
-                          rng_seed=42)
+    image = pipe.generate(prompt, width=512, height=896, num_inference_steps=20, rng_seed=42)
 
     image_write("lora.bmp", image)
     print("Generating image without LoRA adapters applied, resulting image will be in baseline.bmp")
-    image = pipe.generate(prompt,
-                          # passing adapters in generate overrides adapters set in the constructor; openvino_genai.AdapterConfig() means no adapters
-                          adapters=openvino_genai.AdapterConfig(),
-                          width=512,
-                          height=896,
-                          num_inference_steps=20,
-                          rng_seed=42)
+    image = pipe.generate(
+        prompt,
+        # passing adapters in generate overrides adapters set in the constructor; openvino_genai.AdapterConfig() means no adapters
+        adapters=openvino_genai.AdapterConfig(),
+        width=512,
+        height=896,
+        num_inference_steps=20,
+        rng_seed=42,
+    )
     image_write("baseline.bmp", image)
 
 
-if '__main__' == __name__:
+if "__main__" == __name__:
     main()

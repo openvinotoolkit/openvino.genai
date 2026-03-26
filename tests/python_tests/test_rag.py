@@ -12,7 +12,6 @@ from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
 from typing import Literal
 import sys
-import platform
 from optimum.intel import OVModelForFeatureExtraction, OVModelForSequenceClassification
 from torch import Tensor
 import torch
@@ -33,7 +32,7 @@ RERANK_TEST_MODELS = [
 QWEN3_RERANK_SEQ_CLS = "tomaarsen/Qwen3-Reranker-0.6B-seq-cls"
 QWEN3_RERANK = "Qwen/Qwen3-Reranker-0.6B"
 
-TEXT_DATASET = f"The commercial PC market is propelled by premium\
+TEXT_DATASET = "The commercial PC market is propelled by premium\
 computing solutions that drive user productivity and help\
 service organizations protect and maintain devices.\
 Corporations must empower mobile and hybrid workers\
@@ -81,9 +80,7 @@ def emb_model(request) -> OVConvertedModelSchema:
 
 @pytest.fixture(scope="module")
 def llm_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
-    tokenizer_kwargs = {
-        "padding_side": "left"
-    }
+    tokenizer_kwargs = {"padding_side": "left"}
     return download_and_convert_model(request.param, **tokenizer_kwargs)
 
 
@@ -228,7 +225,9 @@ def assert_rerank_results(result_1: list[tuple[int, float]], result_2: list[tupl
     assert len(result_1) == len(result_2), f"Results length mismatch: {len(result_1)} != {len(result_2)}"
     for pair_1, pair_2 in zip(result_1, result_2):
         assert pair_1[0] == pair_2[0], f"Document IDs do not match: {pair_1[0]} != {pair_2[0]}"
-        assert abs(pair_1[1] - pair_2[1]) < score_diff_max, f"Scores do not match for document ID {pair_1[0]}: " f"{pair_1[1]} != {pair_2[1]}"
+        assert abs(pair_1[1] - pair_2[1]) < score_diff_max, (
+            f"Scores do not match for document ID {pair_1[0]}: {pair_1[1]} != {pair_2[1]}"
+        )
 
 
 def run_text_rerank_langchain(
@@ -323,36 +322,31 @@ def run_text_rerank_pipeline_with_ref(
 
 
 @pytest.mark.parametrize(
-    "emb_model", 
-    ["Qwen/Qwen3-Embedding-0.6B"], 
+    "emb_model",
+    ["Qwen/Qwen3-Embedding-0.6B"],
     indirect=True,
 )
 @pytest.mark.parametrize(
     "config",
     [
         TextEmbeddingPipeline.Config(
-            normalize=False, 
-            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, 
-            padding_side="left"
+            normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, padding_side="left"
         ),
-        TextEmbeddingPipeline.Config(
-            normalize=False, 
-            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN
-        ),
+        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN),
     ],
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_embedding(emb_model, dataset_documents, config):
     embeddings_opt = run_qwen3_embedding_optimum(
-        emb_model.opt_model, 
-        emb_model.hf_tokenizer, 
-        dataset_documents, 
+        emb_model.opt_model,
+        emb_model.hf_tokenizer,
+        dataset_documents,
         config.padding_side,
     )
     embeddings_genai = run_text_embedding_genai(
-        emb_model.models_path, 
-        dataset_documents, 
-        config, 
+        emb_model.models_path,
+        dataset_documents,
+        config,
         "embed_documents",
     )
     validate_embedding_results(embeddings_genai, embeddings_opt.tolist())
@@ -693,7 +687,11 @@ def test_fixed_shapes_configs(emb_model, dataset_documents, config, dataset_embe
     docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
     result = run_text_embedding_genai(models_path, docs_to_embed, config, "embed_documents")
 
-    refs_to_validate = dataset_embeddings_genai_default_config_refs[: config.batch_size] if config.batch_size else dataset_embeddings_genai_default_config_refs
+    refs_to_validate = (
+        dataset_embeddings_genai_default_config_refs[: config.batch_size]
+        if config.batch_size
+        else dataset_embeddings_genai_default_config_refs
+    )
     validate_embedding_results(refs_to_validate, result)
 
 
@@ -716,7 +714,11 @@ def test_fixed_shapes_configs_xfail(emb_model, dataset_documents, config, datase
     docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
     result = run_text_embedding_genai(models_path, docs_to_embed, config, "embed_documents")
 
-    refs_to_validate = dataset_embeddings_genai_default_config_refs[: config.batch_size] if config.batch_size else dataset_embeddings_genai_default_config_refs
+    refs_to_validate = (
+        dataset_embeddings_genai_default_config_refs[: config.batch_size]
+        if config.batch_size
+        else dataset_embeddings_genai_default_config_refs
+    )
     validate_embedding_results(refs_to_validate, result)
 
 
@@ -736,7 +738,11 @@ def test_npu_fallback(emb_model, dataset_documents, config, dataset_embeddings_g
     docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
     result = pipeline.embed_documents(docs_to_embed)
 
-    refs_to_validate = dataset_embeddings_genai_default_config_refs[: config.batch_size] if config.batch_size else dataset_embeddings_genai_default_config_refs
+    refs_to_validate = (
+        dataset_embeddings_genai_default_config_refs[: config.batch_size]
+        if config.batch_size
+        else dataset_embeddings_genai_default_config_refs
+    )
     validate_embedding_results(refs_to_validate, result)
 
 

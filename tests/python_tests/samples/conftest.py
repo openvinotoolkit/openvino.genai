@@ -1,7 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import subprocess # nosec B404
+import subprocess  # nosec B404
 import os
 import json
 import pytest
@@ -9,7 +9,7 @@ import shutil
 import logging
 import requests
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from utils.network import retry_request
 from utils.constants import (
@@ -31,130 +31,91 @@ logger = logging.getLogger(__name__)
 MODELS: Dict[str, Dict[str, Any]] = {
     "TinyLlama-1.1B-Chat-v1.0": {
         "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        "convert_args": ['--weight-format', 'fp16']
+        "convert_args": ["--weight-format", "fp16"],
     },
-    "SmolLM-135M": {
-        "name": "HuggingFaceTB/SmolLM-135M",
-        "convert_args": ['--trust-remote-code']
-    },
-    "SmolLM2-135M": {
-        "name": "HuggingFaceTB/SmolLM2-135M",
-        "convert_args": ['--trust-remote-code']
-    },
+    "SmolLM-135M": {"name": "HuggingFaceTB/SmolLM-135M", "convert_args": ["--trust-remote-code"]},
+    "SmolLM2-135M": {"name": "HuggingFaceTB/SmolLM2-135M", "convert_args": ["--trust-remote-code"]},
     "SmolLM2-135M-GGUF": {
         "name": "prithivMLmods/SmolLM2-135M-GGUF",
         "gguf_filename": "SmolLM2-135M.F16.gguf",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ["--trust-remote-code"],
     },
-    "SmolLM2-360M": {
-        "name": "HuggingFaceTB/SmolLM2-360M",
-        "convert_args": ['--trust-remote-code']
-    },
-    "WhisperTiny": {
-        "name": "openai/whisper-tiny",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
-    },
-    "Qwen2.5-0.5B-Instruct": {
-        "name": "Qwen/Qwen2.5-0.5B-Instruct",
-        "convert_args": ['--trust-remote-code']
-    },
+    "SmolLM2-360M": {"name": "HuggingFaceTB/SmolLM2-360M", "convert_args": ["--trust-remote-code"]},
+    "WhisperTiny": {"name": "openai/whisper-tiny", "convert_args": ["--trust-remote-code", "--weight-format", "fp16"]},
+    "Qwen2.5-0.5B-Instruct": {"name": "Qwen/Qwen2.5-0.5B-Instruct", "convert_args": ["--trust-remote-code"]},
     "Qwen2.5-0.5B-Instruct-GGUF": {
         "name": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
         "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ["--trust-remote-code"],
     },
-    "Qwen2-0.5B-Instruct": {
-        "name": "Qwen/Qwen2-0.5B-Instruct",
-        "convert_args": ['--trust-remote-code']
-    },
+    "Qwen2-0.5B-Instruct": {"name": "Qwen/Qwen2-0.5B-Instruct", "convert_args": ["--trust-remote-code"]},
     "Qwen2-0.5B-Instruct-GGUF": {
         "name": "Qwen/Qwen2-0.5B-Instruct-GGUF",
         "gguf_filename": "qwen2-0_5b-instruct-q4_0.gguf",
-        "convert_args": ['--trust-remote-code']
+        "convert_args": ["--trust-remote-code"],
     },
-    "phi-1_5": {
-        "name": "microsoft/phi-1_5",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
-    },
-    "TinyStories-1M": {
-        "name": "roneneldan/TinyStories-1M",
-        "convert_args": ['--trust-remote-code']
-    },
+    "phi-1_5": {"name": "microsoft/phi-1_5", "convert_args": ["--trust-remote-code", "--weight-format", "fp16"]},
+    "TinyStories-1M": {"name": "roneneldan/TinyStories-1M", "convert_args": ["--trust-remote-code"]},
     "dreamlike-anime-1.0": {
         "name": "dreamlike-art/dreamlike-anime-1.0",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16', "--task", "stable-diffusion"]
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp16", "--task", "stable-diffusion"],
     },
-    "LCM_Dreamshaper_v7-int8-ov": {
-        "name": "OpenVINO/LCM_Dreamshaper_v7-int8-ov",
-        "convert_args": []
-    },
+    "LCM_Dreamshaper_v7-int8-ov": {"name": "OpenVINO/LCM_Dreamshaper_v7-int8-ov", "convert_args": []},
     "llava-1.5-7b-hf": {
         "name": "llava-hf/llava-1.5-7b-hf",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
     },
     "llava-v1.6-mistral-7b-hf": {
         "name": "llava-hf/llava-v1.6-mistral-7b-hf",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
     },
     "tiny-random-minicpmv-2_6": {
         "name": "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
-        "convert_args": ['--trust-remote-code', "--task", "image-text-to-text"]
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
     "InternVL2-1B": {
         "name": "OpenGVLab/InternVL2-1B",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
     },
     "Qwen2-VL-2B-Instruct": {
         "name": "Qwen/Qwen2-VL-2B-Instruct",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
     },
-    "tiny-dummy-qwen2": {
-        "name": "fxmarty/tiny-dummy-qwen2",
-        "convert_args": ['--trust-remote-code']
-    },
+    "tiny-dummy-qwen2": {"name": "fxmarty/tiny-dummy-qwen2", "convert_args": ["--trust-remote-code"]},
     "tiny-random-qwen2": {
         "name": "fxmarty/tiny-dummy-qwen2",
-        "convert_args": ["--task", "text-generation-with-past", "--weight-format", "fp16"]
+        "convert_args": ["--task", "text-generation-with-past", "--weight-format", "fp16"],
     },
     "tiny-random-qwen2-int8": {
         "name": "fxmarty/tiny-dummy-qwen2",
-        "convert_args": ["--task", "text-generation-with-past", "--weight-format", "int8"]
+        "convert_args": ["--task", "text-generation-with-past", "--weight-format", "int8"],
     },
     "tiny-random-latent-consistency": {
         "name": "optimum-intel-internal-testing/tiny-random-latent-consistency",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
     },
     "tiny-random-latent-consistency-lora": {
         "name": "katuni4ka/tiny-random-latent-consistency-lora",
-        "convert_args": []
+        "convert_args": [],
     },
     "tiny-random-llava": {
         "name": "optimum-intel-internal-testing/tiny-random-llava",
-        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
     "tiny-random-qwen2vl": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen2vl",
-        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
-    "bge-small-en-v1.5": {
-        "name": "BAAI/bge-small-en-v1.5",
-        "convert_args": ["--trust-remote-code"]
-    },
+    "bge-small-en-v1.5": {"name": "BAAI/bge-small-en-v1.5", "convert_args": ["--trust-remote-code"]},
     "ms-marco-TinyBERT-L2-v2": {
         "name": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "convert_args": ["--trust-remote-code", "--task", "text-classification"],
     },
-    "Qwen3-Embedding-0.6B": {
-        "name": "Qwen/Qwen3-Embedding-0.6B",
-        "convert_args": ["--trust-remote-code"]
-    },
-    "Qwen3-Reranker-0.6B": {
-        "name": "Qwen/Qwen3-Reranker-0.6B",
-        "convert_args": ["--trust-remote-code"]
-    },
+    "Qwen3-Embedding-0.6B": {"name": "Qwen/Qwen3-Embedding-0.6B", "convert_args": ["--trust-remote-code"]},
+    "Qwen3-Reranker-0.6B": {"name": "Qwen/Qwen3-Reranker-0.6B", "convert_args": ["--trust-remote-code"]},
     "tiny-random-SpeechT5ForTextToSpeech": {
         "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
-        "convert_args": ["--model-kwargs",  json.dumps({"vocoder": "fxmarty/speecht5-hifigan-tiny"})]
+        "convert_args": ["--model-kwargs", json.dumps({"vocoder": "fxmarty/speecht5-hifigan-tiny"})],
     },
     "Qwen3-1.7B": {
         "name": "Qwen/Qwen3-1.7B",
@@ -166,7 +127,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "tiny-random-llava-next-video": {
         "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
-        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
     "tiny-random-ltx-video": {
         "name": "optimum-intel-internal-testing/tiny-random-ltx-video",
@@ -265,7 +226,7 @@ def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
             )
         )
         logger.info(f"Downloaded GGUF model: {result.stdout}")
-    
+
     try:
         manager.execute(download_to_temp)
     except subprocess.CalledProcessError as error:
@@ -279,25 +240,26 @@ def optimum_cli_convert(model, model_path):
     model_name = model["name"]
     model_args = model["convert_args"]
     dest_path = Path(model_path)
-    
+
     manager = AtomicDownloadManager(dest_path)
-    
+
     def convert_to_temp(temp_path: Path) -> None:
-        command = [
-            "optimum-cli", "export", "openvino",
-            "--model", model_name, 
-            str(temp_path)
-        ]
+        command = ["optimum-cli", "export", "openvino", "--model", model_name, str(temp_path)]
         if model_args:
             command.extend(model_args)
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
-    
+        retry_request(
+            lambda: subprocess.run(
+                command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE
+            )
+        )
+
     try:
         manager.execute(convert_to_temp)
     except subprocess.CalledProcessError as error:
         logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
         raise
+
 
 @pytest.fixture(scope="session")
 def convert_model(request):
@@ -305,7 +267,7 @@ def convert_model(request):
     model_id = request.param
     model = MODELS[model_id]
     model_name = model["name"]
-    
+
     if "gguf_filename" in model:
         downloaded_models_dir = get_ov_cache_downloaded_models_dir()
         model_cache = downloaded_models_dir / model_id
@@ -320,13 +282,13 @@ def convert_model(request):
         model_path = model_cache / model_name
         logger.info(f"Downloading pre-converted model: {model_name}")
         manager = AtomicDownloadManager(model_path)
-        
+
         def download_to_temp(temp_path: Path) -> None:
             sub_env = os.environ.copy()
             command = ["huggingface-cli", "download", model_name, "--local-dir", str(temp_path)]
             logger.info(f"Downloading command: {' '.join(command)}")
             retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
-        
+
         manager.execute(download_to_temp)
         yield str(model_path)
     else:
@@ -342,6 +304,7 @@ def convert_model(request):
             logger.info(f"Removing cached model: {model_cache}")
             shutil.rmtree(model_cache)
 
+
 @pytest.fixture(scope="session")
 def download_model(request):
     """Fixture to download the model once for the session."""
@@ -350,11 +313,11 @@ def download_model(request):
     model_name = MODELS[model_id]["name"]
     model_cache = downloaded_models_dir / model_id
     model_path = model_cache / model_name
-    
+
     logger.info(f"Preparing model: {model_name}")
-    
+
     manager = AtomicDownloadManager(model_path)
-    
+
     def download_to_temp(temp_path: Path) -> None:
         sub_env = os.environ.copy()
         command = ["huggingface-cli", "download", model_name, "--local-dir", str(temp_path)]
@@ -442,6 +405,7 @@ def generate_test_content(request):
 
         from PIL import Image
         import numpy as np
+
         res = 28, 28
         lines = np.arange(res[0] * res[1] * 3, dtype=np.uint8) % 255
         lines = lines.reshape([*res, 3])

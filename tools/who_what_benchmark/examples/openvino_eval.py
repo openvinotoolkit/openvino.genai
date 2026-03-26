@@ -13,9 +13,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_id)
 
 evaluator = whowhatbench.Evaluator(base_model=model, tokenizer=tokenizer)
 
-model_int8 = OVModelForCausalLM.from_pretrained(
-    model_id, load_in_8bit=True, export=True
-)
+model_int8 = OVModelForCausalLM.from_pretrained(model_id, load_in_8bit=True, export=True)
 all_metrics_per_question, all_metrics = evaluator.score(model_int8)
 
 print(all_metrics_per_question)

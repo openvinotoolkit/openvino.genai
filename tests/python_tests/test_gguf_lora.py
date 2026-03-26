@@ -266,7 +266,6 @@ class TestGGUFLoRAErrorHandling:
     def test_nonexistent_file(self):
         """Test that loading a non-existent GGUF file raises an error."""
         import tempfile
-        from pathlib import Path
 
         # Create a unique path to a non-existent file
         with tempfile.NamedTemporaryFile(suffix=".gguf", delete=True) as f:

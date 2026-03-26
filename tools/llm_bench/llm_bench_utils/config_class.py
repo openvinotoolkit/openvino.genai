@@ -10,7 +10,7 @@ from transformers import (
     SpeechT5ForTextToSpeech,
     SpeechT5Processor,
     SpeechT5HifiGan,
-    AutoModelForSequenceClassification
+    AutoModelForSequenceClassification,
 )
 from diffusers.pipelines import DiffusionPipeline, LDMSuperResolutionPipeline, LTXPipeline
 from optimum.intel.openvino import (

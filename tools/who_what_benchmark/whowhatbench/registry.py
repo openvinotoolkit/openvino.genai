@@ -11,9 +11,9 @@ EVALUATOR_REGISTRY = {}
 def register_evaluator(*names):
     def decorate(cls):
         for name in names:
-            assert (
-                name not in EVALUATOR_REGISTRY
-            ), f"Evaluator named '{name}' conflicts with existing evaluators! Please register with a non-conflicting alias instead."
+            assert name not in EVALUATOR_REGISTRY, (
+                f"Evaluator named '{name}' conflicts with existing evaluators! Please register with a non-conflicting alias instead."
+            )
 
             EVALUATOR_REGISTRY[name] = cls
         return cls

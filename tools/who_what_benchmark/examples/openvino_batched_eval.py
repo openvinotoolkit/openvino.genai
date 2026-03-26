@@ -31,9 +31,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_id)
 model_path = PosixPath(tempfile.gettempdir()) / model_id
 model.save_pretrained(model_path)
 
-ov_tokenizer, ov_detokenizer = convert_tokenizer(
-    tokenizer, with_detokenizer=True, skip_special_tokens=True
-)
+ov_tokenizer, ov_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
 serialize(ov_tokenizer, model_path / "openvino_tokenizer.xml")
 serialize(ov_detokenizer, model_path / "openvino_detokenizer.xml")
 
@@ -61,12 +59,8 @@ generation_config.max_new_tokens = MAX_NEW_TOKENS
 data = load_dataset(path="squad", name=None, split="validation")["context"]
 data_dict = {"prompts": list(dict({k: None for k in data}).keys())[:MAX_SEQUENCES]}
 
-model_cb_noopt = ContinuousBatchingPipeline(
-    model_path.absolute().as_posix(), scheduler_config_noopt, "CPU", {}
-)
-model_cb_opt = ContinuousBatchingPipeline(
-    model_path.absolute().as_posix(), scheduler_config_opt, "CPU", {}
-)
+model_cb_noopt = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config_noopt, "CPU", {})
+model_cb_opt = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config_opt, "CPU", {})
 
 
 GT_DATA_FILE = "gt_data.csv"
@@ -120,12 +114,6 @@ print(
 print(
     f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}"
 )
-max_optimization_ratio = (
-    pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage
-)
-avg_optimization_ratio = (
-    pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage
-)
-print(
-    f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x"
-)
+max_optimization_ratio = pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage
+avg_optimization_ratio = pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage
+print(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")

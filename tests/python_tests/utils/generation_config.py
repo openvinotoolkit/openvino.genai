@@ -5,11 +5,13 @@
 
 from openvino_genai import GenerationConfig
 
+
 def get_greedy() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = 30
     return generation_config
+
 
 def get_greedy_with_penalties() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -18,6 +20,7 @@ def get_greedy_with_penalties() -> GenerationConfig:
     generation_config.frequency_penalty = 0.2
     generation_config.max_new_tokens = 30
     return generation_config
+
 
 def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -29,6 +32,7 @@ def get_beam_search() -> GenerationConfig:
     generation_config.num_return_sequences = generation_config.num_beams
     return generation_config
 
+
 def get_multinomial_temperature() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True
@@ -37,6 +41,7 @@ def get_multinomial_temperature() -> GenerationConfig:
     generation_config.max_new_tokens = 30
     return generation_config
 
+
 def get_multinomial_temperature_and_num_return_sequence() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True
@@ -44,6 +49,7 @@ def get_multinomial_temperature_and_num_return_sequence() -> GenerationConfig:
     generation_config.num_return_sequences = 3
     generation_config.max_new_tokens = 30
     return generation_config
+
 
 def get_multinomial_temperature_and_top_p() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -54,6 +60,7 @@ def get_multinomial_temperature_and_top_p() -> GenerationConfig:
     generation_config.max_new_tokens = 30
     return generation_config
 
+
 def get_multinomial_temperature_and_top_k() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True
@@ -62,6 +69,7 @@ def get_multinomial_temperature_and_top_k() -> GenerationConfig:
     generation_config.top_k = 2
     generation_config.max_new_tokens = 30
     return generation_config
+
 
 def get_multinomial_temperature_top_p_and_top_k() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -73,6 +81,7 @@ def get_multinomial_temperature_top_p_and_top_k() -> GenerationConfig:
     generation_config.max_new_tokens = 30
     return generation_config
 
+
 def get_multinomial_temperature_and_repetition_penalty() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True
@@ -81,6 +90,7 @@ def get_multinomial_temperature_and_repetition_penalty() -> GenerationConfig:
     generation_config.repetition_penalty = 2.0
     generation_config.max_new_tokens = 30
     return generation_config
+
 
 def get_multinomial_all_parameters() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -93,6 +103,7 @@ def get_multinomial_all_parameters() -> GenerationConfig:
     generation_config.max_new_tokens = 30
     return generation_config
 
+
 def get_multinomial_temperature_and_frequence_penalty() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True
@@ -102,6 +113,7 @@ def get_multinomial_temperature_and_frequence_penalty() -> GenerationConfig:
     generation_config.max_new_tokens = 30
     return generation_config
 
+
 def get_multinomial_temperature_and_presence_penalty() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True
@@ -110,6 +122,7 @@ def get_multinomial_temperature_and_presence_penalty() -> GenerationConfig:
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = 30
     return generation_config
+
 
 def get_multinomial_max_and_min_token() -> GenerationConfig:
     multinomial = GenerationConfig()

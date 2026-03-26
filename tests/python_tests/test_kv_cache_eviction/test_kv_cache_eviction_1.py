@@ -18,10 +18,10 @@ from kv_cache_eviction_utils import get_scheduler_config
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 
 
-def load_prompts_dataset(file_name : str) -> dict[str, list[str]]:
+def load_prompts_dataset(file_name: str) -> dict[str, list[str]]:
     TESTS_ROOT = Path(__file__).parent.parent
-    file_path = TESTS_ROOT / 'data' / file_name
-    with open(file_path, 'r', encoding="utf-8") as f:
+    file_path = TESTS_ROOT / "data" / file_name
+    with open(file_path, "r", encoding="utf-8") as f:
         return {"prompts": [s for s in f]}
 
 
@@ -34,48 +34,70 @@ class CacheOptTestStruct:
     use_cache_eviction: bool
     cache_eviction_config: CacheEvictionConfig | None
     similarity_threshold: float
-    avg_cache_usage_optimization_ratio: float # expecting no less than these optimization ratios
+    avg_cache_usage_optimization_ratio: float  # expecting no less than these optimization ratios
     max_cache_usage_optimization_ratio: float
 
 
-SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM)
-LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=672, aggregation_mode=AggregationMode.NORM_SUM)
+SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(
+    start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM
+)
+LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(
+    start_size=32, recent_size=128, max_cache_size=672, aggregation_mode=AggregationMode.NORM_SUM
+)
+
 
 @pytest.mark.skipif(
     sys.platform in ("win32", "darwin"),
-    reason=(
-        "doesn't work on win due to optimum-intel export bug, "
-        "segfault on mac"
-    ),
+    reason=("doesn't work on win due to optimum-intel export bug, segfault on mac"),
 )
-@pytest.mark.parametrize("test_struct", [
-    # prompts + generation length are longer than the eviction arena, eviction expected w/ impact to similarity
-    CacheOptTestStruct(test_id="prompts_longer_than_eviction_arena",
-                       prompt_file="long_prompts.txt", max_new_tokens=128, num_kv_blocks=500, use_cache_eviction=True,
-                       cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
-                       similarity_threshold=0.8,
-                       max_cache_usage_optimization_ratio=2.0,
-                       avg_cache_usage_optimization_ratio=1.7),
-
-    # prompts + generation length are shorter than the eviction arena, no eviction expected
-    CacheOptTestStruct(test_id="prompts_and_gen_shorter_than_eviction_arena",
-                       prompt_file="short_prompts.txt", max_new_tokens=32, num_kv_blocks=500, use_cache_eviction=True,
-                       cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
-                       similarity_threshold=0.98,
-                       max_cache_usage_optimization_ratio=0.95,  # no improvement expected
-                       avg_cache_usage_optimization_ratio=0.95),
-
-    # short prompts, long generation - eviction expected
-    CacheOptTestStruct(test_id="gen_longer_than_eviction_arena",
-                       prompt_file="short_prompts.txt", max_new_tokens=160, num_kv_blocks=500, use_cache_eviction=True,
-                       cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
-                       similarity_threshold=0.94,
-                       max_cache_usage_optimization_ratio=1.4,
-                       avg_cache_usage_optimization_ratio=1.1),
-
-    ], ids=lambda x: x.test_id)
-@pytest.mark.parametrize("apply_rotation", [True, False], ids=["with_rotation", "no_rotation"])         # rotation should improve similarity
-@pytest.mark.parametrize("use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]) # sparse attn should not degrade similarity too much
+@pytest.mark.parametrize(
+    "test_struct",
+    [
+        # prompts + generation length are longer than the eviction arena, eviction expected w/ impact to similarity
+        CacheOptTestStruct(
+            test_id="prompts_longer_than_eviction_arena",
+            prompt_file="long_prompts.txt",
+            max_new_tokens=128,
+            num_kv_blocks=500,
+            use_cache_eviction=True,
+            cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
+            similarity_threshold=0.8,
+            max_cache_usage_optimization_ratio=2.0,
+            avg_cache_usage_optimization_ratio=1.7,
+        ),
+        # prompts + generation length are shorter than the eviction arena, no eviction expected
+        CacheOptTestStruct(
+            test_id="prompts_and_gen_shorter_than_eviction_arena",
+            prompt_file="short_prompts.txt",
+            max_new_tokens=32,
+            num_kv_blocks=500,
+            use_cache_eviction=True,
+            cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
+            similarity_threshold=0.98,
+            max_cache_usage_optimization_ratio=0.95,  # no improvement expected
+            avg_cache_usage_optimization_ratio=0.95,
+        ),
+        # short prompts, long generation - eviction expected
+        CacheOptTestStruct(
+            test_id="gen_longer_than_eviction_arena",
+            prompt_file="short_prompts.txt",
+            max_new_tokens=160,
+            num_kv_blocks=500,
+            use_cache_eviction=True,
+            cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
+            similarity_threshold=0.94,
+            max_cache_usage_optimization_ratio=1.4,
+            avg_cache_usage_optimization_ratio=1.1,
+        ),
+    ],
+    ids=lambda x: x.test_id,
+)
+@pytest.mark.parametrize(
+    "apply_rotation", [True, False], ids=["with_rotation", "no_rotation"]
+)  # rotation should improve similarity
+@pytest.mark.parametrize(
+    "use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]
+)  # sparse attn should not degrade similarity too much
 def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply_rotation, use_sparse_attention):
     import whowhatbench
 
@@ -101,26 +123,37 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply
     tokenizer = model_schema.hf_tokenizer
     models_path = model_schema.models_path
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", {}, get_default_llm_properties())
-    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, "CPU", {}, get_default_llm_properties())
+    model_cb_opt = ContinuousBatchingPipeline(
+        models_path, scheduler_config_opt, "CPU", {}, get_default_llm_properties()
+    )
 
     data_dict = load_prompts_dataset(test_struct.prompt_file)
 
-    evaluator = whowhatbench.Evaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
-                                       generation_config=generation_config,
-                                       generation_config_base=generation_config,
-                                       max_new_tokens=test_struct.max_new_tokens, seqs_per_request=seqs_per_request)
+    evaluator = whowhatbench.Evaluator(
+        base_model=model_cb_noopt,
+        tokenizer=tokenizer,
+        test_data=data_dict,
+        generation_config=generation_config,
+        generation_config_base=generation_config,
+        max_new_tokens=test_struct.max_new_tokens,
+        seqs_per_request=seqs_per_request,
+    )
 
     _, all_metrics = evaluator.score(model_cb_opt)
 
-    similarity_metric = float(all_metrics['similarity'][0])
+    similarity_metric = float(all_metrics["similarity"][0])
     pipeline_opt_metrics = model_cb_opt.get_metrics()
     pipeline_noopt_metrics = model_cb_noopt.get_metrics()
 
     print(f"Similarity: {similarity_metric}")
-    print(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
-    print(f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}")
-    max_optimization_ratio = (pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage)
-    avg_optimization_ratio = (pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage)
+    print(
+        f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}"
+    )
+    print(
+        f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}"
+    )
+    max_optimization_ratio = pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage
+    avg_optimization_ratio = pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage
     print(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
 
     del model_cb_opt
@@ -128,6 +161,7 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply
     del evaluator
     del data_dict
     import gc
+
     gc.collect()  # without gc.collect() each case leaks 300 MB of RAM
 
     is_similar = similarity_metric > test_struct.similarity_threshold
@@ -159,12 +193,48 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
 
 
 scheduler_params_list = [
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": True}, get_greedy_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": True}, get_beam_search_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": False}, get_greedy_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": False}, get_beam_search_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "use_cache_eviction": True, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_greedy_seq_len_300()),
+    (
+        {"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": True},
+        get_greedy_seq_len_300(),
+    ),
+    (
+        {
+            "num_kv_blocks": 0,
+            "cache_size": 0,
+            "dynamic_split_fuse": False,
+            "max_num_batched_tokens": 600,
+            "enable_prefix_caching": True,
+        },
+        get_beam_search_seq_len_300(),
+    ),
+    (
+        {"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": False},
+        get_greedy_seq_len_300(),
+    ),
+    (
+        {
+            "num_kv_blocks": 0,
+            "cache_size": 0,
+            "dynamic_split_fuse": False,
+            "max_num_batched_tokens": 600,
+            "enable_prefix_caching": False,
+        },
+        get_beam_search_seq_len_300(),
+    ),
+    (
+        {
+            "num_kv_blocks": 0,
+            "cache_size": 0,
+            "dynamic_split_fuse": False,
+            "max_num_batched_tokens": 600,
+            "use_cache_eviction": True,
+            "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG,
+        },
+        get_greedy_seq_len_300(),
+    ),
 ]
+
+
 @pytest.mark.parametrize("params", scheduler_params_list)
 def test_dynamic_memory_allocation(params):
     prompts, _ = get_test_dataset()
@@ -173,7 +243,7 @@ def test_dynamic_memory_allocation(params):
         prompts=prompts,
         scheduler_config=params[0],
         generation_config=params[1],
-        pipeline_type=PipelineType.CONTINUOUS_BATCHING
+        pipeline_type=PipelineType.CONTINUOUS_BATCHING,
     )
 
 
@@ -183,6 +253,7 @@ class LongBenchTestData:
     threshold: float
     max_cache_usage_optimization_ratio: float
     avg_cache_usage_optimization_ratio: float
+
 
 @pytest.mark.parametrize(
     "test_struct",
@@ -207,7 +278,9 @@ def test_optimized_generation_longbench(test_struct):
     scheduler_config_opt.use_sparse_attention = True
 
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
-    model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
+    model_cb_opt = ContinuousBatchingPipeline(
+        models_path, scheduler_config_opt, device, {}, get_default_llm_properties()
+    )
 
     model_name = "/".join(models_path.parts[-2:])
     subset = test_struct.subset
@@ -230,13 +303,11 @@ def test_optimized_generation_longbench(test_struct):
             ref_answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
 
             if len(batch) == seqs_per_request or p_idx == len(data) - 1:
-                ans_batch = model_cb_opt.generate(
-                    batch, [generation_config] * len(batch)
-                )
-                ref_ans_batch = model_cb_noopt.generate(
-                    batch, [generation_config] * len(batch)
-                )
-                for i, (opt_output, ref_output) in enumerate(zip(ans_batch, ref_ans_batch), start=p_idx-len(batch)+1):
+                ans_batch = model_cb_opt.generate(batch, [generation_config] * len(batch))
+                ref_ans_batch = model_cb_noopt.generate(batch, [generation_config] * len(batch))
+                for i, (opt_output, ref_output) in enumerate(
+                    zip(ans_batch, ref_ans_batch), start=p_idx - len(batch) + 1
+                ):
                     answers[i]["pred"] = post_process_pred(opt_output.m_generation_ids[0], subset, model_name)
                     ref_answers[i]["pred"] = post_process_pred(ref_output.m_generation_ids[0], subset, model_name)
                 batch.clear()
@@ -249,15 +320,20 @@ def test_optimized_generation_longbench(test_struct):
     pipeline_opt_metrics = model_cb_opt.get_metrics()
     pipeline_noopt_metrics = model_cb_noopt.get_metrics()
 
-    print(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
-    print(f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}")
-    max_optimization_ratio = (pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage)
-    avg_optimization_ratio = (pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage)
+    print(
+        f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}"
+    )
+    print(
+        f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}"
+    )
+    max_optimization_ratio = pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage
+    avg_optimization_ratio = pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage
     print(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
 
     del model_cb_opt
     del model_cb_noopt
     import gc
+
     gc.collect()
 
     assert ref_score - score <= test_struct.threshold

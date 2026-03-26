@@ -18,26 +18,32 @@ if version.parse(transformers.__version__) >= version.parse("4.57.0"):
     new_beam_search = hook_beam_search_v57.new_beam_search_v57
 elif version.parse(transformers.__version__) >= version.parse("4.55.0"):
     import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v55 as hook_beam_search_v55
+
     new_beam_search = hook_beam_search_v55.new_beam_search_v55
 elif version.parse(transformers.__version__) >= version.parse("4.52.0"):
     import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v52 as hook_beam_search_v52
+
     new_beam_search = hook_beam_search_v52.new_beam_search_v52
 elif version.parse(transformers.__version__) >= version.parse("4.51.0"):
     import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v51 as hook_beam_search_v51
+
     new_beam_search = hook_beam_search_v51.new_beam_search_v51
 else:
     import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v40 as hook_beam_search_v40
+
     new_beam_search = hook_beam_search_v40.new_beam_search_v40
 
-def new_get_multimodal_embeddings(
-        self, input_ids, pixel_values=None, attention_mask=None, position_ids=None, **kwargs
-    ):
+
+def new_get_multimodal_embeddings(self, input_ids, pixel_values=None, attention_mask=None, position_ids=None, **kwargs):
 
     start = time.perf_counter()
-    result = self._orig_get_multimodal_embeddings(input_ids, pixel_values=pixel_values, attention_mask=attention_mask, position_ids=position_ids, **kwargs)
+    result = self._orig_get_multimodal_embeddings(
+        input_ids, pixel_values=pixel_values, attention_mask=attention_mask, position_ids=position_ids, **kwargs
+    )
     end = time.perf_counter()
     tm_mm_embeddings.append(end - start)
     return result
+
 
 class BeamSearchHook:
     def __init__(self):

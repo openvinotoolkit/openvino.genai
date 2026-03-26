@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 from conftest import logger
 import os
-import subprocess # nosec B404
+import subprocess  # nosec B404
+
 
 def run_sample(
     command: list[str],

@@ -231,20 +231,20 @@ def parse_args():
     parser.add_argument(
         "--adapters",
         type=str,
-        nargs='*',
+        nargs="*",
         default=None,
         help="LoRA adapters. Supported for Text Generation and Image Generation pipelines.",
     )
     parser.add_argument(
         "--alphas",
         type=float,
-        nargs='*',
+        nargs="*",
         default=None,
         help="Weights for LoRA adapters.",
     )
     parser.add_argument(
         "--long-prompt",
-        action='store_true',
+        action="store_true",
         help="LLMPipeline specific parameter that defines the use of a long context prompt.",
     )
     parser.add_argument(
@@ -257,26 +257,23 @@ def parse_args():
         choices=["cls", "mean", "last_token"],
         default=None,
         help="Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. "
-             "Different post-processing is applied depending on the padding side. Applicable only for text embeddings")
+        "Different post-processing is applied depending on the padding side. Applicable only for text embeddings",
+    )
     parser.add_argument(
-        "--embeds_normalize",
-        action="store_true",
-        help="Normalize embeddings. Applicable only for text embeddings")
+        "--embeds_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings"
+    )
     parser.add_argument(
         "--embeds_padding_side",
         choices=["left", "right"],
         default=None,
-        help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings")
+        help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings",
+    )
     parser.add_argument(
-        "--embeds_batch_size",
-        type=int,
-        default=None,
-        help="Batch size value. Applicable only for text embeddings")
+        "--embeds_batch_size", type=int, default=None, help="Batch size value. Applicable only for text embeddings"
+    )
     parser.add_argument(
-        "--rag-config",
-        type=str,
-        default=None,
-        help="Path to the JSON file with config for Embedding/Reranker Pipeline")
+        "--rag-config", type=str, default=None, help="Path to the JSON file with config for Embedding/Reranker Pipeline"
+    )
     parser.add_argument(
         "--gguf-file",
         type=str,
@@ -353,12 +350,9 @@ def check_args(args):
     if args.base_model is None and args.gt_data is None:
         raise ValueError("Whether --base-model or --gt-data should be provided")
     if args.target_model is None and args.gt_data is None and args.target_data:
-        raise ValueError(
-            "Whether --target-model, --target-data or --gt-data should be provided")
+        raise ValueError("Whether --target-model, --target-data or --gt-data should be provided")
     if args.adapters is not None and args.alphas is not None and len(args.adapters) != len(args.alphas):
-        raise ValueError(
-            "If --adapters is provided and --alphas is provided, they should have the same length."
-        )
+        raise ValueError("If --adapters is provided and --alphas is provided, they should have the same length.")
     if args.hf and args.empty_adapters:
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
 
@@ -387,43 +381,32 @@ def load_tokenizer(args):
     # Define kwargs based on args attributes
     kwargs = {}
     if args.gguf_file:
-        kwargs['gguf_file'] = args.gguf_file
+        kwargs["gguf_file"] = args.gguf_file
 
     tokenizer = None
     if args.tokenizer is not None:
         if args.llamacpp:
             from llama_cpp.llama_tokenizer import LlamaHFTokenizer
+
             tokenizer = LlamaHFTokenizer.from_pretrained(args.tokenizer, **kwargs)
         else:
             try:
-                tokenizer = AutoTokenizer.from_pretrained(
-                    args.tokenizer, trust_remote_code=False, **kwargs
-                )
+                tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, trust_remote_code=False, **kwargs)
             except Exception:
-                tokenizer = AutoTokenizer.from_pretrained(
-                    args.tokenizer, trust_remote_code=True, **kwargs
-                )
+                tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, trust_remote_code=True, **kwargs)
     elif args.base_model is not None:
         try:
-            tokenizer = AutoTokenizer.from_pretrained(
-                args.base_model, trust_remote_code=False, **kwargs
-            )
+            tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=False, **kwargs)
         except Exception:
-            tokenizer = AutoTokenizer.from_pretrained(
-                args.base_model, trust_remote_code=True, **kwargs
-            )
+            tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True, **kwargs)
     elif args.target_model is not None:
         try:
-            tokenizer = AutoTokenizer.from_pretrained(
-                args.target_model, trust_remote_code=False, **kwargs
-            )
+            tokenizer = AutoTokenizer.from_pretrained(args.target_model, trust_remote_code=False, **kwargs)
         except Exception:
             try:
-                tokenizer = AutoTokenizer.from_pretrained(
-                    args.target_model, trust_remote_code=True, **kwargs
-                )
+                tokenizer = AutoTokenizer.from_pretrained(args.target_model, trust_remote_code=True, **kwargs)
             except Exception:
-                logger.error(f"Cannot load the tokenizer for model type \"{args.model_type}\" from {args.target_model}")
+                logger.error(f'Cannot load the tokenizer for model type "{args.model_type}" from {args.target_model}')
                 raise
 
     return tokenizer
@@ -444,7 +427,8 @@ def load_processor(args):
         preprocessor_id = model_id
 
     try:
-        if config.model_type == 'llava-qwen2':
+        if config.model_type == "llava-qwen2":
+
             class NanollavaProcessorWrapper:
                 def __init__(self, processor, config, model_dtype, tokenizer):
                     self.processor = processor
@@ -457,13 +441,9 @@ def load_processor(args):
 
             model_id = "qnguyen3/nanoLLaVA"
             from transformers import AutoModelForCausalLM
-            model = AutoModelForCausalLM.from_pretrained(
-                model_id,
-                device_map='auto',
-                trust_remote_code=True)
-            tokenizer = AutoTokenizer.from_pretrained(
-                model_id,
-                trust_remote_code=True)
+
+            model = AutoModelForCausalLM.from_pretrained(model_id, device_map="auto", trust_remote_code=True)
+            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
             preprocessor = NanollavaProcessorWrapper(model.process_images, model.config, model.dtype, tokenizer)
             config = model.config
         else:
@@ -500,11 +480,21 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, empty_adapters=False,
-                   num_assistant_tokens=0, assistant_confidence_threshold=0.0):
+def genai_gen_text(
+    model,
+    tokenizer,
+    question,
+    max_new_tokens,
+    skip_question,
+    use_chat_template=False,
+    empty_adapters=False,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+):
     kwargs = {}
     if empty_adapters:
         import openvino_genai
+
         kwargs["adapters"] = openvino_genai.AdapterConfig()
 
     return model.generate(
@@ -551,19 +541,29 @@ def genai_gen_chat_text(
     return answers
 
 
-def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,
-                      assistant_confidence_threshold=0.0):
+def llamacpp_gen_text(
+    model,
+    tokenizer,
+    question,
+    max_new_tokens,
+    skip_question,
+    use_chat_template=False,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+):
     if use_chat_template:
-        output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
+        output = model.create_chat_completion(
+            messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0
+        )
         text = output["choices"][0]["message"]["content"]
         if skip_question:
-            text = text[len(question):]
+            text = text[len(question) :]
         return text
     else:
         output = model(question, max_tokens=max_new_tokens, echo=True, temperature=0.0)
         text = output["choices"][0]["text"]
         if skip_question:
-            text = text[len(question):]
+            text = text[len(question) :]
         return text
 
 
@@ -571,6 +571,7 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_ad
     kwargs = {}
     if empty_adapters:
         import openvino_genai
+
         kwargs["adapters"] = openvino_genai.AdapterConfig()
 
     if model.resolution is not None and model.resolution[0] is not None:
@@ -651,19 +652,15 @@ def genai_gen_visual_text(
 ):
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if image is not None:
-        kwargs['image'] = ov.Tensor(np.array(image)[None])
+        kwargs["image"] = ov.Tensor(np.array(image)[None])
     if video is not None:
-        kwargs['videos'] = [ov.Tensor(np.array(video))]
+        kwargs["videos"] = [ov.Tensor(np.array(video))]
     if pruning_ratio is not None:
         kwargs["pruning_ratio"] = pruning_ratio
     if relevance_weight is not None:
         kwargs["relevance_weight"] = relevance_weight
 
-    out = model.generate(
-        prompt,
-        **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
-        **kwargs
-    )
+    out = model.generate(prompt, **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer), **kwargs)
 
     return out.texts[0]
 
@@ -716,13 +713,11 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
                 long_prompt=args.long_prompt,
-                num_assistant_tokens=(
-                    int(args.num_assistant_tokens)
-                    if args.num_assistant_tokens is not None else 0
-                ),
+                num_assistant_tokens=(int(args.num_assistant_tokens) if args.num_assistant_tokens is not None else 0),
                 assistant_confidence_threshold=(
                     float(args.assistant_confidence_threshold)
-                    if args.assistant_confidence_threshold is not None else 0.0
+                    if args.assistant_confidence_threshold is not None
+                    else 0.0
                 ),
             )
         elif task == "text-to-image":
@@ -815,7 +810,7 @@ def create_evaluator(base_model, args):
                 gt_data=args.gt_data,
                 test_data=prompts,
                 num_samples=args.num_samples,
-                gen_rerank_fn=genai_gen_reranking if args.genai else None
+                gen_rerank_fn=genai_gen_reranking if args.genai else None,
             )
         elif task == "text-chat":
             tokenizer = load_tokenizer(args)
@@ -855,21 +850,18 @@ def create_evaluator(base_model, args):
         raise ValueError(
             f"Attempted to load evaluator for '{task}', but no evaluator for this model type found! "
             f"Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}. Details:\n",
-            e
+            e,
         )
 
 
 def print_text_results(evaluator):
     metric_of_interest = "similarity"
-    worst_examples = evaluator.worst_examples(
-        top_k=5, metric=metric_of_interest)
+    worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
     for i, e in enumerate(worst_examples):
         ref_text = ""
         actual_text = ""
         diff = ""
-        for l1, l2 in zip(
-            e["source_model"].splitlines(), e["optimized_model"].splitlines()
-        ):
+        for l1, l2 in zip(e["source_model"].splitlines(), e["optimized_model"].splitlines()):
             if l1 == "" and l2 == "":
                 continue
             ref_text += l1 + "\n"
@@ -888,42 +880,39 @@ def print_text_results(evaluator):
 
 def print_image_results(evaluator):
     metric_of_interest = "similarity"
-    pd.set_option('display.max_colwidth', None)
-    worst_examples = evaluator.worst_examples(
-        top_k=5, metric=metric_of_interest)
+    pd.set_option("display.max_colwidth", None)
+    worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
     logger.info("TOP WORST RESULTS")
     for i, e in enumerate(worst_examples):
         logger.info(
             "======================================================================================================="
         )
-        logger.info(f"Top-{i+1} example:")
+        logger.info(f"Top-{i + 1} example:")
         logger.info(f"\n{e}")
 
 
 def print_embeds_results(evaluator):
     metric_of_interest = "similarity"
-    worst_examples = evaluator.worst_examples(
-        top_k=5, metric=metric_of_interest)
+    worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
     logger.info("TOP WORST RESULTS")
     for i, e in enumerate(worst_examples):
         logger.info(
             "======================================================================================================="
         )
-        logger.info(f"Top-{i+1} example:")
+        logger.info(f"Top-{i + 1} example:")
         logger.info("## Passages num:\n%s\n", len(e["passages"]))
         logger.info(f"## Similarity:\n{e['similarity']:.5}\n")
 
 
 def print_rag_results(evaluator):
     metric_of_interest = "similarity"
-    worst_examples = evaluator.worst_examples(
-        top_k=5, metric=metric_of_interest)
+    worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
     logger.info("TOP WORST RESULTS")
     for i, e in enumerate(worst_examples):
         logger.info(
             "======================================================================================================="
         )
-        logger.info(f"Top-{i+1} example:")
+        logger.info(f"Top-{i + 1} example:")
         logger.info("## Query:\n%s\n", e["query"])
         logger.info("## Passages num:\n%s\n", len(e["passages"]))
         logger.info(f"## Similarity:\n{e['similarity']:.5}\n")
@@ -934,15 +923,14 @@ def main():
     args = parse_args()
     check_args(args)
 
-    version_str = f'openvino runtime version: {ov.get_version()}'
+    version_str = f"openvino runtime version: {ov.get_version()}"
     if args.genai:
         try:
             import openvino_genai
         except ImportError:
-            logger.error(
-                "Failed to import openvino_genai package. Please install it.")
+            logger.error("Failed to import openvino_genai package. Please install it.")
             exit(-1)
-        version_str += f', genai version: {openvino_genai.__version__}'
+        version_str += f", genai version: {openvino_genai.__version__}"
     logger.info(version_str)
 
     kwargs = {}
@@ -1019,11 +1007,7 @@ def main():
 
     if args.target_data or args.target_model:
         if args.target_data and os.path.exists(args.target_data):
-            all_metrics_per_question, all_metrics = evaluator.score(
-                args.target_data,
-                None,
-                output_dir=args.output
-            )
+            all_metrics_per_question, all_metrics = evaluator.score(args.target_data, None, output_dir=args.output)
         else:
             target_model = load_model(
                 args.model_type,
@@ -1033,7 +1017,7 @@ def main():
                 args.hf,
                 args.genai,
                 args.llamacpp,
-                **kwargs
+                **kwargs,
             )
 
             # Set TaylorSeer config via generation config if applicable
@@ -1045,7 +1029,7 @@ def main():
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,
                 evaluator.get_generation_fn() if args.genai or args.llamacpp else None,
-                output_dir=args.output
+                output_dir=args.output,
             )
         logger.info("Metrics for model: %s", args.target_model)
         logger.info(all_metrics)
@@ -1068,9 +1052,9 @@ def main():
             or "text-to-video" in args.model_type
         ):
             print_image_results(evaluator)
-        elif args.model_type in ['text-embedding']:
+        elif args.model_type in ["text-embedding"]:
             print_embeds_results(evaluator)
-        elif args.model_type in ['text-reranking']:
+        elif args.model_type in ["text-reranking"]:
             print_rag_results(evaluator)
 
 

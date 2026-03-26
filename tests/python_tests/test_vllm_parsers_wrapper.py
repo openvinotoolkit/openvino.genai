@@ -6,9 +6,7 @@ from transformers import AutoTokenizer
 from huggingface_hub import snapshot_download
 import pytest
 from openvino_genai import (
-    Tokenizer,
     VLLMParserWrapper,
-    TextParserStreamer,
 )
 import json
 

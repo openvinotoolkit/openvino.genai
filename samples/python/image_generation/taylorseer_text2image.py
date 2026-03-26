@@ -38,7 +38,7 @@ def main():
     }
 
     # Generate baseline for comparison
-    print(f"\nGenerating baseline image without caching...")
+    print("\nGenerating baseline image without caching...")
     start_time = time.time()
     baseline_tensor = pipe.generate(args.prompt, **generate_kwargs)
     baseline_time = time.time() - start_time
@@ -51,7 +51,7 @@ def main():
     print(f"Baseline image saved to {baseline_filename}")
 
     # Configure TaylorSeer caching
-    print(f"\nGenerating image with TaylorSeer caching...")
+    print("\nGenerating image with TaylorSeer caching...")
 
     taylorseer_config = openvino_genai.TaylorSeerCacheConfig()
     taylorseer_config.cache_interval = cache_interval
@@ -77,7 +77,7 @@ def main():
     time_saved = baseline_time - taylorseer_time if baseline_time > 0 else 0.0
     percentage = (baseline_time - taylorseer_time) / baseline_time * 100 if baseline_time > 0 else 0.0
 
-    print(f"\nPerformance Comparison:")
+    print("\nPerformance Comparison:")
     print(f"  Baseline time: {baseline_time:.2f}s")
     print(f"  TaylorSeer time: {taylorseer_time:.2f}s")
     print(f"  Speedup: {speedup:.2f}x")

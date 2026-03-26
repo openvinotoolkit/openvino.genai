@@ -7,14 +7,11 @@ import logging as log
 from pathlib import Path
 from typing import Optional, Tuple
 import llm_bench_utils.model_utils as model_utils
-from llm_bench_utils.config_class import (
-    USE_CASES,
-    UseCaseImageGen
-)
+from llm_bench_utils.config_class import USE_CASES, UseCaseImageGen
 
-KNOWN_FRAMEWORKS = ['pytorch', 'ov', 'dldt']
+KNOWN_FRAMEWORKS = ["pytorch", "ov", "dldt"]
 
-OTHER_IGNORE_MODEL_PATH_PARTS = ['compressed_weights']
+OTHER_IGNORE_MODEL_PATH_PARTS = ["compressed_weights"]
 
 IGNORE_MODEL_PATH_PARTS_SET = {
     x.lower() for x in (KNOWN_FRAMEWORKS + model_utils.KNOWN_PRECISIONS + OTHER_IGNORE_MODEL_PATH_PARTS)
@@ -36,7 +33,7 @@ DIFFUSERS_PIPELINE_TYPES = {
 # --- 2. Helper function to reduce repetition (DRY Principle) ---
 def log_and_return(case, model_type: str, model_name: str):
     """A helper to standardize success logging and returning."""
-    log.info(f'==SUCCESS FOUND==: use_case: {case.task}, model_type: {model_type}, model_Name: {model_name}')
+    log.info(f"==SUCCESS FOUND==: use_case: {case.task}, model_type: {model_type}, model_Name: {model_name}")
     return case, model_type, model_name
 
 
@@ -51,7 +48,7 @@ def safe_json_load(file_path: Path) -> Optional[dict]:
 
 
 def resolve_complex_model_types(config):
-    model_type = config.get("model_type").lower().replace('_', '-')
+    model_type = config.get("model_type").lower().replace("_", "-")
     if model_type == "gemma3":
         return USE_CASES["visual_text_gen"][0], model_type
     if model_type == "gemma3-text":
@@ -63,7 +60,9 @@ def resolve_complex_model_types(config):
     return None, None
 
 
-def get_model_name(model_path: Path, task: Optional[str] = None) -> Tuple[Optional[object], Optional[str], Optional[str]]:
+def get_model_name(
+    model_path: Path, task: Optional[str] = None
+) -> Tuple[Optional[object], Optional[str], Optional[str]]:
     """
     Attempts to extract the model name and its use case/type from the given path.
     Falls back to extracting a name from the path if no match is found.
@@ -103,7 +102,7 @@ def get_model_name_with_path_part(model_name_or_path: Path) -> Optional[str]:
 
 
 def normalize_model_ids(model_ids_list):
-    return [m_id[:-1] if m_id.endswith('_') else m_id for m_id in model_ids_list]
+    return [m_id[:-1] if m_id.endswith("_") else m_id for m_id in model_ids_list]
 
 
 def get_use_case_by_model_id(model_id, task=None):
@@ -137,7 +136,7 @@ def get_use_case(model_path: Path, task: Optional[str] = None):
     cur_case, cur_model_type, cur_model_name = get_model_name(model_path)
 
     # Strategy 1: Check for a Diffusers model via 'model_index.json'
-    if (diffusers_config := safe_json_load(model_path / "model_index.json")):
+    if diffusers_config := safe_json_load(model_path / "model_index.json"):
         if (pipe_type := diffusers_config.get("_class_name")) in DIFFUSERS_PIPELINE_TYPES:
             model_type = pipe_type.replace("Pipeline", "")
             return log_and_return(USE_CASES["image_gen"][0], model_type, cur_model_name)
@@ -147,22 +146,23 @@ def get_use_case(model_path: Path, task: Optional[str] = None):
 
     # Strategy 2 & 3: Determine a 'model_id' from config or GGUF metadata
     model_id = None
-    if (config := safe_json_load(model_path / "config.json")):
+    if config := safe_json_load(model_path / "config.json"):
         # First, attempt resolution with more complex logic
         case, model_type = resolve_complex_model_types(config)
         if case and model_type:
             return log_and_return(case, model_type, cur_model_name)
         # Fallback to simple 'model_type' key
         if model_type_val := config.get("model_type"):
-            model_id = str(model_type_val).lower().replace('_', '-')
+            model_id = str(model_type_val).lower().replace("_", "-")
 
-    elif model_path.suffix == '.gguf' and model_path.is_file():
+    elif model_path.suffix == ".gguf" and model_path.is_file():
         # --- 4. Robustness: Handle missing dependency and parsing errors ---
         try:
             import gguf_parser
+
             parser = gguf_parser.GGUFParser(str(model_path))
             parser.parse()
-            if arch := parser.metadata.get('general.architecture'):
+            if arch := parser.metadata.get("general.architecture"):
                 model_id = arch.lower()
         except ImportError:
             log.warning("Module 'gguf_parser' not found. Cannot inspect .gguf file.")
@@ -181,4 +181,4 @@ def get_use_case(model_path: Path, task: Optional[str] = None):
         return log_and_return(cur_case, cur_model_type, cur_model_name)
 
     # --- 5. Simplified final error ---
-    raise RuntimeError('==Failure FOUND==: no use_case found after checking all strategies.')
+    raise RuntimeError("==Failure FOUND==: no use_case found after checking all strategies.")

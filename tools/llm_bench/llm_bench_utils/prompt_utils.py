@@ -18,7 +18,7 @@ import cv2
 
 def get_text_prompt(args):
     text_list = []
-    output_data_list, is_json_data = get_param_from_file(args, 'prompt')
+    output_data_list, is_json_data = get_param_from_file(args, "prompt")
     if is_json_data is True:
         text_param_list = parse_text_json_data(output_data_list)
         if len(text_param_list) > 0:
@@ -41,6 +41,7 @@ def print_video_frames_number_and_convert_to_tensor(func):
         if genai_flag:
             return ov.Tensor(out_frames)
         return np.array(out_frames)
+
     return inner
 
 
@@ -132,10 +133,10 @@ def get_vlm_prompt(args):
         vlm_param_list = parse_vlm_json_data(output_data_list)
         if len(vlm_param_list) > 0:
             for vlm_file in vlm_param_list:
-                if args['prompt_file'] is not None and len(args['prompt_file']) > 0 and 'media' in vlm_file:
-                    vlm_file['media'] = resolve_media_file_path(vlm_file.get('media'), args['prompt_file'][0])
-                if args['prompt_file'] is not None and len(args['prompt_file']) > 0 and 'video' in vlm_file:
-                    vlm_file['video'] = resolve_media_file_path(vlm_file.get('video'), args['prompt_file'][0])
+                if args["prompt_file"] is not None and len(args["prompt_file"]) > 0 and "media" in vlm_file:
+                    vlm_file["media"] = resolve_media_file_path(vlm_file.get("media"), args["prompt_file"][0])
+                if args["prompt_file"] is not None and len(args["prompt_file"]) > 0 and "video" in vlm_file:
+                    vlm_file["video"] = resolve_media_file_path(vlm_file.get("video"), args["prompt_file"][0])
                 vlm_file_list.append(vlm_file)
     else:
         vlm_file_list.append(output_data_list)

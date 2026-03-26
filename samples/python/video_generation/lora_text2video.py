@@ -8,7 +8,7 @@ from video_utils import save_video
 
 
 def print_perf_metrics(perf_metrics):
-    print(f"\nPerformance metrics:")
+    print("\nPerformance metrics:")
     print(f"  Load time: {perf_metrics.get_load_time():.2f} ms")
     print(f"  Generate duration: {perf_metrics.get_generate_duration():.2f} ms")
     print(f"  Transformer duration: {perf_metrics.get_transformer_infer_duration().mean:.2f} ms")

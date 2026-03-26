@@ -25,7 +25,7 @@ OV_IMAGE_MODELS = [
 
 def get_similarity(output: str) -> float:
     METRIC_PATTERN = "INFO:whowhatbench.wwb:   similarity"
-    substr = output[output.find(METRIC_PATTERN) + len(METRIC_PATTERN) + 1:]
+    substr = output[output.find(METRIC_PATTERN) + len(METRIC_PATTERN) + 1 :]
     float_pattern = r"[-+]?\d*\.\d+"
     matches = re.findall(float_pattern, substr)
     return float(matches[-1])
@@ -44,7 +44,7 @@ def get_similarity(output: str) -> float:
     ],
 )
 def test_image_model_types(model_id, model_type, backend, tmp_path):
-    if 'tiny-stable-diffusion-torch' in model_id and sys.platform == 'darwin':
+    if "tiny-stable-diffusion-torch" in model_id and sys.platform == "darwin":
         pytest.xfail("Ticket 173169")
     if (model_type == "image-to-image" or model_type == "image-inpainting") and sys.platform == "win32":
         pytest.xfail("Ticket 178790")
@@ -79,11 +79,7 @@ def test_image_model_types(model_id, model_type, backend, tmp_path):
 
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
-    list(itertools.product(OV_IMAGE_MODELS,
-                           ["image-to-image",
-                            "text-to-image",
-                            "image-inpainting"
-                            ])),
+    list(itertools.product(OV_IMAGE_MODELS, ["image-to-image", "text-to-image", "image-inpainting"])),
 )
 def test_image_model_genai(model_id, model_type, tmp_path):
     if ("flux-fill" in model_id) and (model_type != "image-inpainting"):
@@ -93,90 +89,103 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     if (model_type == "image-to-image" or model_type == "image-inpainting") and sys.platform == "win32":
         pytest.xfail("Ticket 178790")
 
-    mac_arm64_skip = any(substring in model_id for substring in ('stable-diffusion-xl',
-                                                                 'tiny-random-stable-diffusion',
-                                                                 'stable-diffusion-3',
-                                                                 'tiny-random-flux'))
+    mac_arm64_skip = any(
+        substring in model_id
+        for substring in (
+            "stable-diffusion-xl",
+            "tiny-random-stable-diffusion",
+            "stable-diffusion-3",
+            "tiny-random-flux",
+        )
+    )
 
-    if mac_arm64_skip and sys.platform == 'darwin':
+    if mac_arm64_skip and sys.platform == "darwin":
         pytest.xfail("Ticket 173169")
 
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = convert_model(model_id)
 
-    run_wwb([
-        "--base-model",
-        model_id,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--num-inference-steps",
-        "2",
-    ])
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--num-inference-steps",
+            "2",
+        ]
+    )
     assert GT_FILE.exists()
     assert (tmp_path / "reference").exists()
 
-    output = run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--genai",
-        "--num-inference-steps",
-        "2",
-    ])
+    output = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--genai",
+            "--num-inference-steps",
+            "2",
+        ]
+    )
 
     assert "Metrics for model" in output
     similarity = get_similarity(output)
     assert similarity >= 0.97751  # Ticket 166496
     assert (tmp_path / "target").exists()
 
-    run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--output",
-        tmp_path,
-        "--genai",
-        "--num-inference-steps",
-        "2",
-    ])
+    run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--output",
+            tmp_path,
+            "--genai",
+            "--num-inference-steps",
+            "2",
+        ]
+    )
     assert (tmp_path / "target").exists()
     assert (tmp_path / "target.csv").exists()
 
     # test w/o models
-    run_wwb([
-        "--target-data",
-        tmp_path / "target.csv",
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--num-inference-steps",
-        "2",
-    ])
+    run_wwb(
+        [
+            "--target-data",
+            tmp_path / "target.csv",
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--num-inference-steps",
+            "2",
+        ]
+    )
 
 
 def test_image_model_genai_with_taylorseer(tmp_path):

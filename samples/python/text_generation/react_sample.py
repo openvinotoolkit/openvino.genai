@@ -60,6 +60,7 @@ tools = [
     },
 ]
 
+
 def build_input_text(tokenizer, chat_history, list_of_tool_info) -> str:
     tools_text = []
     for tool_info in list_of_tool_info:
@@ -83,7 +84,7 @@ def build_input_text(tokenizer, chat_history, list_of_tool_info) -> str:
     messages = [{"role": "system", "content": "You are a helpful assistant."}]
     for i, (query, response) in enumerate(chat_history):
         if list_of_tool_info:
-            if (len(chat_history) == 1):
+            if len(chat_history) == 1:
                 query = PROMPT_REACT.format(
                     tools_text=tools_text,
                     tools_name_text=tools_name_text,
@@ -97,6 +98,7 @@ def build_input_text(tokenizer, chat_history, list_of_tool_info) -> str:
     prompt = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
 
     return prompt
+
 
 def parse_first_tool_call(text):
     tool_name, tool_args = "", ""
@@ -113,6 +115,7 @@ def parse_first_tool_call(text):
         tool_args = text[j + len("\nAction Input:") : k].strip()
         text = text[:k]
     return tool_name, tool_args, text
+
 
 def call_tool(tool_name: str, tool_args: str) -> str:
     if tool_name == "get_weather":
@@ -142,6 +145,7 @@ def call_tool(tool_name: str, tool_args: str) -> str:
     else:
         raise NotImplementedError
 
+
 def llm_with_tool(llm_pipe, prompt, history, list_of_tool_info):
     chat_history = [(x["user"], x["bot"]) for x in history] + [(prompt, "")]
     planning_prompt = build_input_text(llm_pipe.get_tokenizer(), chat_history, list_of_tool_info)
@@ -166,17 +170,19 @@ def llm_with_tool(llm_pipe, prompt, history, list_of_tool_info):
     history.append({"user": prompt, "bot": text})
     return text, history
 
+
 def streamer(subword):
-    print(subword, end='', flush=True)
+    print(subword, end="", flush=True)
     # Return flag corresponds whether generation should be stopped.
     return openvino_genai.StreamingStatus.RUNNING
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
+    parser.add_argument("model_dir")
     args = parser.parse_args()
 
-    device = 'CPU'  # GPU can be used as well
+    device = "CPU"  # GPU can be used as well
     llm_model_path = args.model_dir
 
     llm_pipe = openvino_genai.LLMPipeline(llm_model_path, device)
@@ -188,5 +194,6 @@ def main():
     query = "get the weather in London, and create a picture of Big Ben based on the weather information"
     response, history = llm_with_tool(llm_pipe, prompt=query, history=history, list_of_tool_info=tools)
 
-if '__main__' == __name__:
+
+if "__main__" == __name__:
     main()
