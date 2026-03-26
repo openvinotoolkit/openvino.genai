@@ -764,7 +764,7 @@ def load_speech_generation_genai_pipeline(model_dir, device="CPU", ov_config=Non
     import openvino_genai
 
     return GenAIModelWrapper(
-        openvino_genai.Text2SpeechPipeline(model_dir, device=device, **ov_config),
+        openvino_genai.Text2SpeechPipeline(model_dir, device=device, **(ov_config or {})),
         model_dir,
         "speech-generation",
     )
