@@ -11,12 +11,14 @@ from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
 
 import pandas as pd
-from datasets import load_dataset
 from PIL import Image
+from datasets import load_dataset
+from typing import Any, Optional
 
 from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
+from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config
 
 # Configure logging
@@ -669,7 +671,15 @@ def genai_gen_visual_text(
     return out.texts[0]
 
 
-def genai_gen_visual_text_chat(model, inputs, processor, tokenizer, max_new_tokens, pruning_ratio, relevance_weight):
+def genai_gen_visual_text_chat(
+    model: Any,
+    inputs: list[VisualTextChatInput],
+    processor: Optional[Any],
+    tokenizer: Optional[Any],
+    max_new_tokens: int,
+    pruning_ratio: Optional[float],
+    relevance_weight: Optional[float],
+):
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if pruning_ratio is not None:
         kwargs["pruning_ratio"] = pruning_ratio
@@ -678,8 +688,9 @@ def genai_gen_visual_text_chat(model, inputs, processor, tokenizer, max_new_toke
 
     import openvino_genai
 
-    answers = []
     chat_history = openvino_genai.ChatHistory()
+    answers: list[str] = []
+    chat_input: VisualTextChatInput
     for chat_input in inputs:
         chat_history.append({"role": "user", "content": chat_input["prompt"]})
         media_kwargs = {}
@@ -881,9 +892,9 @@ def create_evaluator(base_model, args):
         elif task == "visual-text-chat":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
-            if tokenizer is not None and tokenizer.chat_template is None:
+            if processor is not None and processor.chat_template is None:
                 raise ValueError(
-                    "Tokenizer for model type 'visual-text-chat' has no 'chat_template' defined. "
+                    "Model has no 'chat_template' defined, but was run with model-type 'visual-text-chat'. "
                     "WWB can't start an evaluation in visual-text-chat mode, "
                     "please, specify chat_template or use --model-type visual-text. "
                 )

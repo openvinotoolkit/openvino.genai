@@ -7,7 +7,7 @@ from transformers import (
 )
 from abc import ABC, abstractmethod
 from packaging.version import Version
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 
 
 if TYPE_CHECKING:
@@ -42,11 +42,11 @@ class VLMInputsPreprocessor(ABC):
     def preprocess_inputs(
         self,
         text: str,
-        image: Optional["Image"] = None,
+        image: Optional[Union["Image", list["Image"]]] = None,
         processor: Optional[AutoImageProcessor] = None,
         tokenizer: Optional[PreTrainedTokenizer] = None,
         config: Optional[PretrainedConfig] = None,
-        video: Optional["VideoInput"] = None,
+        video: Optional[Union["VideoInput", list["VideoInput"]]] = None,
         audio: Optional[np.ndarray] = None,
     ):
         return None
@@ -66,11 +66,11 @@ class Qwen3VLInputsPreprocessor(VLMInputsPreprocessor):
     def preprocess_inputs(
         self,
         text: str,
-        image: Optional["Image"] = None,
+        image: Optional[Union["Image", list["Image"]]] = None,
         processor: Optional[AutoImageProcessor] = None,
         tokenizer: Optional[PreTrainedTokenizer] = None,
         config: Optional[PretrainedConfig] = None,
-        video: Optional["VideoInput"] = None,
+        video: Optional[Union["VideoInput", list["VideoInput"]]] = None,
         audio: Optional[np.ndarray] = None,
     ):
         if processor is None:
@@ -121,11 +121,11 @@ class LLAVAInputsPreprocessor(VLMInputsPreprocessor):
     def preprocess_inputs(
         self,
         text: str,
-        image: Optional["Image"] = None,
+        image: Optional[Union["Image", list["Image"]]] = None,
         processor: Optional[AutoImageProcessor] = None,
         tokenizer: Optional[PreTrainedTokenizer] = None,
         config: Optional[PretrainedConfig] = None,
-        video: Optional["VideoInput"] = None,
+        video: Optional[Union["VideoInput", list["VideoInput"]]] = None,
         audio: Optional[np.ndarray] = None,
     ):
         if processor is None:

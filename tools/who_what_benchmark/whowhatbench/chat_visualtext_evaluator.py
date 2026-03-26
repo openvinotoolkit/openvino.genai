@@ -1,17 +1,25 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import Any, Union
-
-import os
 import json
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from PIL import Image
+from pathlib import Path
+from typing import Any, Union, List, TypedDict, Optional
+
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
 from .whowhat_metrics import TextSimilarity
 from .utils import get_ignore_parameters_flag, load_image
 from .visual_utils import MODEL_TYPE_TO_CLS_MAPPING, fix_phi3_v_eos_token_id
+
+
+class VisualTextChatInput(TypedDict):
+    prompt: str
+    images: Optional[List[np.ndarray | Image.Image]]
+    videos: Optional[List[np.ndarray | Image.Image]]
 
 
 @register_evaluator("visual-text-chat")
@@ -44,9 +52,9 @@ class ChatVisualTextEvaluator(TextEvaluator):
         self.relevance_weight = relevance_weight
         self.processor = processor
 
-        self.gt_dir = os.path.dirname(gt_data or "")
+        self.gt_dir = Path(gt_data or "").parent
         if base_model:
-            self.gt_data = self._generate_data(base_model, gen_answer_fn, os.path.join(self.gt_dir, "reference"))
+            self.gt_data = self._generate_data(base_model, gen_answer_fn, self.gt_dir / "reference")
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
@@ -73,12 +81,8 @@ class ChatVisualTextEvaluator(TextEvaluator):
         return df
 
     def score(self, model_or_data, gen_answer_fn=None, output_dir=None, **kwargs):
-        if output_dir is None:
-            result_folder = os.path.join(self.gt_dir, "target")
-        else:
-            result_folder = os.path.join(output_dir, "target")
-
-        if isinstance(model_or_data, str) and os.path.exists(model_or_data):
+        result_folder = Path(output_dir or self.gt_dir) / "target"
+        if isinstance(model_or_data, str) and Path(model_or_data).exists():
             predictions = pd.read_csv(model_or_data, keep_default_na=False)
         else:
             predictions = self._generate_data(model_or_data, gen_answer_fn, result_folder)
@@ -122,7 +126,7 @@ class ChatVisualTextEvaluator(TextEvaluator):
 
         return res
 
-    def prepare_default_data(self, custom_path: str = None):
+    def prepare_default_data(self, custom_path: str = None) -> List[List[VisualTextChatInput]]:
         from importlib.resources import files
 
         data_path = custom_path or files("whowhatbench.prompts").joinpath(self.CHAT_PROMPTS_FILE)
@@ -205,13 +209,12 @@ class ChatVisualTextEvaluator(TextEvaluator):
         prompts_paths = []
         input_data = input_data if self.num_samples is None else input_data[: self.num_samples]
 
-        if not os.path.exists(result_dir):
-            os.makedirs(result_dir)
+        Path(result_dir).mkdir(parents=True, exist_ok=True)
 
-        prompts_dir = os.path.join(result_dir, "prompts")
-        if not os.path.exists(prompts_dir):
-            os.makedirs(prompts_dir)
+        prompts_dir = Path(result_dir) / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
 
+        inputs: List[VisualTextChatInput]
         for i, inputs in tqdm(
             enumerate(input_data),
             desc="Evaluate pipeline",
@@ -226,12 +229,12 @@ class ChatVisualTextEvaluator(TextEvaluator):
                 self.relevance_weight,
             )
 
-            result_path = os.path.join(result_dir, f"chat_vlm_output_{i}.json")
+            result_path = Path(result_dir) / f"chat_vlm_output_{i}.json"
             with open(result_path, "w", encoding="utf-8") as f:
                 json.dump(answer, f, ensure_ascii=False, indent=4)
             answers.append(result_path)
 
-            prompt_path = os.path.join(prompts_dir, f"chat_vlm_prompts_{i}.json")
+            prompt_path = Path(prompts_dir) / f"chat_vlm_prompts_{i}.json"
             with open(prompt_path, "w", encoding="utf-8") as f:
                 prompts = [input["prompt"] for input in inputs]
                 json.dump(prompts, f, ensure_ascii=False, indent=4)
