@@ -978,3 +978,4 @@ ov::genai::GenerationConfig get_multinomial_config() {
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
+
