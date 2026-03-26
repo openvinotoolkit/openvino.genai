@@ -823,34 +823,17 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
     m_kv_cache_state.add_inputs(new_tokens);
 
     std::vector<std::variant<ov::Tensor, size_t>> tokens = vlm_utils::drop_image_placeholders(new_tokens);
-    ov::Tensor inputs_embeds{ov::element::f32, {1, new_tokens.get_shape().at(1), m_vlm_config.hidden_size}};
-    size_t offset = 0;
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    for (const std::variant<ov::Tensor, size_t>& chunk : tokens) {
-        offset += std::visit(utils::overloaded{
-            [&](const ov::Tensor& chunk) {
-                const ov::Tensor& text_embeds = m_embedding->infer(req, chunk);
-                size_t text_length = text_embeds.get_shape().at(1);
-                std::copy_n(
-                    text_embeds.data<float>(),
-                    text_embeds.get_size(),
-                    inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
-                );
-                return text_length;
-            },
-            [&](size_t image_id) {
-                const ov::Tensor& image_embeds = images_features_proj.at(image_id - base_id);
-                size_t im_length = image_embeds.get_shape().at(1);
-                std::copy_n(
-                    image_embeds.data<float>(),
-                    image_embeds.get_size(),
-                    inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
-                );
-                return im_length;
-            }
-        }, chunk);
-    }
+    ov::Tensor inputs_embeds = vlm_utils::build_inputs_embeds_from_text_and_visual_chunks(
+        tokens,
+        [&](const ov::Tensor& text_chunk) {
+            return m_embedding->infer(req, text_chunk);
+        },
+        images_features_proj,
+        base_id,
+        m_vlm_config.hidden_size
+    );
 
     if (!m_is_chat_conversation) {
         m_tokens_per_images.clear();
