@@ -8,7 +8,7 @@ def install_av_stub_module_for_windows():
     Transformers pipeline may import VideoClassificationPipeline, which depends on PyAV.
     Workaround for ticket CVS-179943.
     This workaround is also needed for videochat-flash-qwen model tests due to the same
-     PyAV dependency, see CVS-183222.
+    PyAV dependency, see CVS-183222.
     """
     if sys.platform != "win32":
         return

@@ -26,6 +26,9 @@ handwritten_tensor
 ov_pipe_model
 ov_continuous_batching_pipe
 """
+import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
+
+patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import collections
 from enum import Enum
@@ -260,35 +263,12 @@ def _setup_generation_config(
 
 def is_optimum_intel_version_for_videochat_flash_qwen():
     """
-    Return True if the installed ``optimum-intel`` local version metadata
-    contains the expected commit prefix required for tiny-videochat-flash-qwen
-    tests.
-
-    Example accepted version: ``1.27.0.dev0+70056d0``.
+    Return True when optimum-intel version exposes ``_OVVideoChatFlashQwenForCausalLM``,
+    otherwise return False.
     """
-    import importlib.metadata as metadata
-    from importlib.metadata import PackageNotFoundError
+    import optimum.intel.openvino.modeling_visual_language as mod
 
-    expected_commit_prefix = "70056d0"
-
-    try:
-        _optimum_intel_version = metadata.version("optimum-intel")
-    except PackageNotFoundError:
-        return False
-
-    local_version = _optimum_intel_version.split("+", 1)[1] if "+" in _optimum_intel_version else ""
-    return expected_commit_prefix in local_version
-
-
-def _patch_pyav_for_videochat_flash_qwen() -> None:
-    """
-    Patch PyAV with a stub module on Windows to avoid DLL loading errors in tests that require PyAV.
-    Currently, only videochat-flash-qwen model tests require PyAV, and they fail on Windows.
-    See CVS-183222 for details.
-    """
-    import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
-
-    patch_pyav_for_servercore.install_av_stub_module_for_windows()
+    return hasattr(mod, "_OVVideoChatFlashQwenForCausalLM")
 
 
 def _get_ov_model(model_id: str) -> str:
@@ -310,8 +290,6 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported version is 1.27.0.dev0+70056d0."
         )
-
-    _patch_pyav_for_videochat_flash_qwen()
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
@@ -540,7 +518,7 @@ def ov_continuous_batching_pipe() -> ContinuousBatchingPipeline:
 
 
 @pytest.fixture(scope="module")
-def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
+def ov_continuous_batching_pipe_gemma() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[8])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
@@ -771,11 +749,11 @@ def test_vlm_continuous_batching_generate_vs_add_request(
     ]
 )
 def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
-    ov_continious_batching_pipe_gemma: ContinuousBatchingPipeline,
+    ov_continuous_batching_pipe_gemma: ContinuousBatchingPipeline,
     config: GenerationConfig,
     cat_tensor: openvino.Tensor,
 ):
-    ov_cb_pipe = ov_continious_batching_pipe_gemma
+    ov_cb_pipe = ov_continuous_batching_pipe_gemma
     image_links_list = [[], [cat_tensor]]
     tokenizer = ov_cb_pipe.get_tokenizer()
 
