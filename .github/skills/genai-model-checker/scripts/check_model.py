@@ -176,6 +176,17 @@ class LlmBenchTool(ToolWrapper):
         return ToolResult(name=self.name, success=True)
 
 
+def _log_csv_listing(logger_prefix: str, directory: Path) -> None:
+    """Log CSV files in directory so the agent can inspect them."""
+    csv_files = sorted(directory.glob("*.csv")) if directory.is_dir() else []
+    if csv_files:
+        logger.info("%s: CSV files in %s:", logger_prefix, directory)
+        for f in csv_files:
+            logger.info("%s:   %s (%d bytes)", logger_prefix, f.name, f.stat().st_size)
+    else:
+        logger.info("%s: No CSV files found in %s", logger_prefix, directory)
+
+
 class HFWWBGroundTruthTool(ToolWrapper):
     def __init__(self, model_id: str, task: str, work_dir: Path, num_samples: int, device: str):
         cmd = [
@@ -193,6 +204,11 @@ class HFWWBGroundTruthTool(ToolWrapper):
             "--hf",  # Use HuggingFace backend for ground truth generation
         ]
         super().__init__(name="wwb_hf_ground_truth", commands_list=cmd, work_dir=work_dir)
+
+    def _post_run_hook(self, result: subprocess.CompletedProcess) -> ToolResult:
+        tool_result = super()._post_run_hook(result)
+        _log_csv_listing(self.logger_prefix, self.work_dir)
+        return tool_result
 
 
 def parse_wwb_metrics_value(stdout: list[str]) -> float | None:
@@ -227,6 +243,7 @@ class OptimumWWBTargetEvaluationTool(ToolWrapper):
         super().__init__(name="wwb_optimum_target_eval", commands_list=cmd, work_dir=work_dir)
 
     def _post_run_hook(self, result: subprocess.CompletedProcess) -> ToolResult:
+        _log_csv_listing(self.logger_prefix, self.work_dir / "optimum")
         if result.returncode != 0:
             return super()._post_run_hook(result)
 
@@ -237,6 +254,7 @@ class OptimumWWBTargetEvaluationTool(ToolWrapper):
                 success=False,
                 err_msg=f"{self.logger_prefix}: Failed to parse WWB metrics value from output.",
             )
+
         if metrics_value < WWB_SIMILARITY_THRESHOLD:
             return ToolResult(
                 name=self.name,
@@ -273,6 +291,7 @@ class GenAIWWBTargetEvaluationTool(ToolWrapper):
         super().__init__(name="wwb_genai_target_eval", commands_list=cmd, work_dir=work_dir)
 
     def _post_run_hook(self, result: subprocess.CompletedProcess) -> ToolResult:
+        _log_csv_listing(self.logger_prefix, self.work_dir / "genai")
         if result.returncode != 0:
             return super()._post_run_hook(result)
 
@@ -283,6 +302,7 @@ class GenAIWWBTargetEvaluationTool(ToolWrapper):
                 success=False,
                 err_msg=f"{self.logger_prefix}: Failed to parse WWB metrics value from output.",
             )
+
         if metrics_value < WWB_SIMILARITY_THRESHOLD:
             return ToolResult(
                 name=self.name,
