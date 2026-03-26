@@ -254,7 +254,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         return ov.Tensor(speaker_embedding.reshape(1, 512))
 
     def _generate_data(self, model, gen_speech_fn=None, audio_dir="reference"):
-        print("Generating audio data for evaluation...")
 
         def default_gen_speech_fn(model, prompt, speaker_embedding=None, voice="", language=""):
             generation_properties = {}
