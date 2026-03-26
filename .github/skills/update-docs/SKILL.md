@@ -26,9 +26,9 @@ If the description is not provided, derive it from the git diff against `master`
 
 ### Step 1: Identify Changed Files
 
-Use the `get_changed_files` tool to list files changed relative to `master`. Focus on paths under `src/cpp/include/`, `src/python/`, `site/docs/`, and `samples/`.
+Use the `get_changed_files` tool to list files changed relative to `master`. Focus on paths under `src/cpp/include/`, `src/python/`, `src/js/lib/`.
 
-To understand what changed in each relevant files prefer using appropriate tools calls over custom bash commands.
+To understand what changed in each relevant file, prefer using appropriate tool calls over custom bash commands.
 
 ### Step 2: Update Site Documentation
 
@@ -40,18 +40,20 @@ Decide which site sections need updating based on what changed:
 | New model type supported        | `site/docs/supported-models/_components/`  |
 | New public API or config option | Relevant guide in `site/docs/guides/`      |
 | New concept or algorithm        | `site/docs/concepts/`                      |
-| New sample                      | `site/docs/samples/`                       |
 
 **Rules:**
 
 - MDX format; match surrounding file structure.
 - Code snippets must have both C++ and Python tabs (see existing `index.mdx` in use-cases for the tab component pattern).
+- Code snippets must have JavaScript tab if NodeJS API changed.
 - Do not invent model names, benchmark numbers, or unverified capabilities.
 - Cross-link to related pages using relative links (e.g., `[Supported Models](/docs/supported-models/)`).
 
-**Model name convention for `models.ts` entries:**
+**Rules for `models.ts` entries:**
 
-If the model ID contains a version, that version must be reflected in the `name` field (e.g. `Qwen2`, `Phi3.5`, `HY-MT1.5`). Strip the organisation prefix and per-size suffixes (e.g. `-7B`, `-Instruct`). When a new version differs from an existing entry, add a new entry instead of appending to the existing one.
+- **Architecture** (optional): verify the `architecture` value against the model's `config.json` (`"architectures"` field) or HuggingFace model card. Do not guess from the model name.
+- **Name**: use the existing `models.ts` as the source of truth for naming style. The `name` is usually the marketing / family name grouping related versions under one entry (e.g. `name: 'Phi3'` covers Phi-3, Phi-3.5, Phi-4). Strip organisation prefixes and per-size suffixes (`-7B`, `-Instruct`), but preserve hyphens and version numbers when the existing table uses them (e.g. `Qwen2.5`, `Phi-3.5-MoE`).
+- **Order**: insert new entries in alphabetical order by `architecture`.
 
 ### Step 3: Lint and Build
 
