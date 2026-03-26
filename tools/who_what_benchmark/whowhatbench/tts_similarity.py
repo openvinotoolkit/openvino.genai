@@ -232,6 +232,11 @@ class TTSSimilarityEvaluator:
         from jiwer import cer as jiwer_cer
         from jiwer import wer as jiwer_wer
 
+        if not verbose:
+            import logging
+
+            logging.getLogger("faster_whisper").setLevel(logging.ERROR)
+
         target_audio, sr_t = load_audio_mono(target_path, self.sample_rate)
         reference_audio, sr_r = load_audio_mono(reference_path, self.sample_rate)
         if not (sr_t == sr_r == self.sample_rate):
