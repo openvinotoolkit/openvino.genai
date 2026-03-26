@@ -10,6 +10,7 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
+#include "continuous_batching/generate_properties.hpp"
 #include "prompt_lookup/prompt_lookup_impl.hpp"
 #include "continuous_batching/timer.hpp"
 #include "speculative_decoding/continuous_batching/eagle3_strategy.hpp"
@@ -37,7 +38,8 @@ float get_load_time(std::chrono::steady_clock::time_point start_time) {
     auto stop_time = std::chrono::steady_clock::now();
     return std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
-}
+
+} // namespace
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
                                                         const SchedulerConfig& scheduler_config,
@@ -340,12 +342,18 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
-    const std::vector<std::vector<ov::Tensor>>& images,
-    const std::vector<std::vector<ov::Tensor>>& videos,
-    const std::vector<std::vector<VideoMetadata>>& videos_metadata,
-    const std::vector<GenerationConfig>& sampling_params,
-    const StreamerVariant& streamer) {
-    return m_impl->generate(prompts, images, videos, videos_metadata, sampling_params, streamer);
+    const ov::AnyMap& properties_map
+) {
+    const auto properties = extract_cb_generate_properties(properties_map, prompts.size());
+
+    return m_impl->generate(
+        prompts,
+        properties.images_batches,
+        properties.videos_batches,
+        properties.videos_metadata_batches,
+        properties.generation_config_batches,
+        properties.streamer
+    );
 }
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
@@ -369,13 +377,18 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<ChatHistory>& histories,
-    const std::vector<std::vector<ov::Tensor>>& images,
-    const std::vector<std::vector<ov::Tensor>>& videos,
-    const std::vector<std::vector<VideoMetadata>>& videos_metadata,
-    const std::vector<GenerationConfig>& sampling_params,
-    const StreamerVariant& streamer
+    const ov::AnyMap& properties_map
 ) {
-    return m_impl->generate(histories, images, videos, videos_metadata, sampling_params, streamer);
+    const auto properties = extract_cb_generate_properties(properties_map, histories.size());
+
+    return m_impl->generate(
+        histories,
+        properties.images_batches,
+        properties.videos_batches,
+        properties.videos_metadata_batches,
+        properties.generation_config_batches,
+        properties.streamer
+    );
 }
 
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {

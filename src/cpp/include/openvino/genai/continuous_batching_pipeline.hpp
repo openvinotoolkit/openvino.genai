@@ -217,11 +217,16 @@ public:
 
     std::vector<VLMDecodedResults> generate(
         const std::vector<std::string>& prompts,
-        const std::vector<std::vector<ov::Tensor>>& images,
-        const std::vector<std::vector<ov::Tensor>>& videos,
-        const std::vector<std::vector<ov::genai::VideoMetadata>>& videos_metadata,
-        const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer=std::monostate{});
+        const ov::AnyMap& properties_map
+    );
+
+    template <typename... Properties>
+    util::EnableIfAllStringAny<std::vector<VLMDecodedResults>, Properties...> generate(
+        const std::vector<std::string>& prompts,
+        Properties&&... properties
+    ) {
+        return generate(prompts, AnyMap{std::forward<Properties>(properties)...});
+    }
     
     std::vector<VLMDecodedResults> generate(
         const std::vector<ChatHistory>& histories,
@@ -238,11 +243,16 @@ public:
 
     std::vector<VLMDecodedResults> generate(
         const std::vector<ChatHistory>& histories,
-        const std::vector<std::vector<ov::Tensor>>& images,
-        const std::vector<std::vector<ov::Tensor>>& videos,
-        const std::vector<std::vector<ov::genai::VideoMetadata>>& videos_metadata,
-        const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer=std::monostate{});
+        const ov::AnyMap& properties_map
+    );
+
+    template <typename... Properties>
+    util::EnableIfAllStringAny<std::vector<VLMDecodedResults>, Properties...> generate(
+        const std::vector<ChatHistory>& histories,
+        Properties&&... properties
+    ) {
+        return generate(histories, AnyMap{std::forward<Properties>(properties)...});
+    }
 
     /**
     * @brief start chat with keeping history in kv cache.
@@ -255,4 +265,19 @@ public:
     */
     void finish_chat();
 };
+
+static constexpr ov::Property<std::vector<GenerationConfig>> generation_config_batches{"generation_config_batches"};
+
+OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> images_batches(
+    const std::vector<std::vector<ov::Tensor>>& images_batches
+);
+
+OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_batches(
+    const std::vector<std::vector<ov::Tensor>>& videos_batches
+);
+
+OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_metadata_batches(
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_batches
+);
+
 }
