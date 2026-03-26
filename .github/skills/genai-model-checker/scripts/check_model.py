@@ -75,9 +75,7 @@ class ToolWrapper:
         self.name = name
         self.commands_list = commands_list
         self.work_dir = work_dir
-
-        if self.work_dir:
-            self.work_dir.mkdir(parents=True, exist_ok=True)
+        self.work_dir.mkdir(parents=True, exist_ok=True)
 
         self.logger_prefix = f"[{self.name}]"
         self.log_path = self.work_dir / f"{self.name}.log"
@@ -355,7 +353,7 @@ def _get_arguments() -> argparse.Namespace:
             "End-to-end validation of a HuggingFace model with OpenVINO GenAI.\n\n"
             "Steps:\n"
             "  1. Export model to OpenVINO IR via optimum-cli.\n"
-            "  2. Smoke test via llm_bench (1 iteration).\n"
+            "  2. Inference test via llm_bench (1 iteration).\n"
             f"  3. Accuracy check via who-what-benchmark (similarity threshold: {WWB_SIMILARITY_THRESHOLD}):\n"
             "       a. Generate ground truth with HuggingFace backend.\n"
             "       b. Evaluate with Optimum backend.\n"
@@ -393,7 +391,7 @@ def _get_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--skip-export", action="store_true", help="Skip model export (reuse existing IR in work-dir/model_ir)"
     )
-    parser.add_argument("--skip-llm-bench", action="store_true", help="Skip llm_bench smoke test")
+    parser.add_argument("--skip-llm-bench", action="store_true", help="Skip llm_bench inference test")
     parser.add_argument("--skip-wwb", action="store_true", help="Skip who-what-benchmark accuracy check")
     parser.add_argument("--num-samples", type=int, default=4, help="Number of WWB samples")
     return parser.parse_args()
@@ -421,7 +419,7 @@ def main():
         result = OptimumExportTool(args.model_id, args.task, model_dir, optimum_export_work_dir).run()
         result.raise_if_failed()
 
-    # Step 2: Smoke test
+    # Step 2: Inference test
     if args.skip_llm_bench:
         logger.info("Skipping llm_bench test")
     else:
