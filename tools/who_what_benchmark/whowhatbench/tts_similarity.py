@@ -50,13 +50,13 @@ class ScoringConfig:
     content_reference_weight: float = 0.75
 
     # Duration = relative difference in overall clip length.
-    # ~1% is close; ~15% is a clearly noticeable drift.
+    # ~1% is very close; ~20% is a clearly noticeable drift.
     duration_diff_good: float = 0.01
-    duration_diff_bad: float = 0.15
+    duration_diff_bad: float = 0.20
 
     # Overall weighting: content matters most, then speaker, then duration.
-    overall_content_weight: float = 0.50
-    overall_speaker_weight: float = 0.40
+    overall_content_weight: float = 0.45
+    overall_speaker_weight: float = 0.45
     overall_duration_weight: float = 0.10
 
 
