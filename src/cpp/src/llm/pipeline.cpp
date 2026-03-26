@@ -18,7 +18,7 @@
 #include "utils.hpp"
 
 namespace {
-
+// Add one comment to trigger a PR to verify the GHA health of the releases/2026/0 branch.
 // This is a decorator function that wraps a generation callable to apply parsers and reset them before generation if needed.
 ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGenerationConfig& generation_config,
                  const ov::genai::StreamerVariant& streamer,
