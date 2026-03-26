@@ -267,7 +267,10 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
     Return True when optimum-intel version exposes ``_OVVideoChatFlashQwenForCausalLM``,
     otherwise return False.
     """
-    import optimum.intel.openvino.modeling_visual_language as mod
+    try:
+        import optimum.intel.openvino.modeling_visual_language as mod
+    except ImportError:
+        return False
 
     return hasattr(mod, "_OVVideoChatFlashQwenForCausalLM")
 
