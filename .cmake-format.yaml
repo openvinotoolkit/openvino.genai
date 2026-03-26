@@ -1,0 +1,6 @@
+format:
+  line_width: 120
+  tab_size: 2
+
+markup:
+  first_comment_is_literal: true
