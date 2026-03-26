@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "utils.hpp"
-int x = 1;
 
 #include <variant>
 #include <fstream>
@@ -979,4 +978,3 @@ ov::genai::GenerationConfig get_multinomial_config() {
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
-
