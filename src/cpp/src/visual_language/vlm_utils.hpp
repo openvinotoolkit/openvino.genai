@@ -27,6 +27,12 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
 
 // Build final inputs_embeds by interleaving inferred text embeddings and precomputed visual embeddings.
 // chunks contains either text token tensors or visual ids that index visual_embeds with base_id offset.
+//
+// Assumptions:
+// - Both text and visual embedding tensors must have:
+//     - element type: f32
+//     - shape: [1, length, hidden_size] (rank 3, batch size 1, last dim == hidden_size)
+// These are checked explicitly before copying data.
 template <typename InferTextEmbeddings>
 ov::Tensor build_inputs_embeds_from_text_and_visual_chunks(
     const std::vector<std::variant<ov::Tensor, size_t>>& chunks,
@@ -60,7 +66,12 @@ ov::Tensor build_inputs_embeds_from_text_and_visual_chunks(
         if (std::holds_alternative<ov::Tensor>(chunk)) {
             const ov::Tensor& token_chunk = std::get<ov::Tensor>(chunk);
             const ov::Tensor text_embeds = infer_text_embeddings(token_chunk);
-            const size_t text_length = text_embeds.get_shape().at(1);
+            const auto& text_shape = text_embeds.get_shape();
+            OPENVINO_ASSERT(text_shape.size() == 3, "text_embeds must have rank 3, got ", text_shape.size(), ".");
+            OPENVINO_ASSERT(text_shape[0] == 1, "text_embeds batch size must be 1, got ", text_shape[0], ".");
+            OPENVINO_ASSERT(text_shape[2] == hidden_size, "text_embeds last dim must match hidden_size (", hidden_size, "), got ", text_shape[2], ".");
+            OPENVINO_ASSERT(text_embeds.get_element_type() == ov::element::f32, "text_embeds must be f32.");
+            const size_t text_length = text_shape[1];
             std::copy_n(text_embeds.data<float>(),
                         text_embeds.get_size(),
                         inputs_embeds_ptr + offset * hidden_size);
@@ -76,7 +87,12 @@ ov::Tensor build_inputs_embeds_from_text_and_visual_chunks(
                         base_id,
                         ".");
         const ov::Tensor& visual_embed = visual_embeds.at(visual_id - base_id);
-        const size_t visual_length = visual_embed.get_shape().at(1);
+        const auto& visual_shape = visual_embed.get_shape();
+        OPENVINO_ASSERT(visual_shape.size() == 3, "visual_embed must have rank 3, got ", visual_shape.size(), ".");
+        OPENVINO_ASSERT(visual_shape[0] == 1, "visual_embed batch size must be 1, got ", visual_shape[0], ".");
+        OPENVINO_ASSERT(visual_shape[2] == hidden_size, "visual_embed last dim must match hidden_size (", hidden_size, "), got ", visual_shape[2], ".");
+        OPENVINO_ASSERT(visual_embed.get_element_type() == ov::element::f32, "visual_embed must be f32.");
+        const size_t visual_length = visual_shape[1];
         std::copy_n(visual_embed.data<float>(),
                     visual_embed.get_size(),
                     inputs_embeds_ptr + offset * hidden_size);
