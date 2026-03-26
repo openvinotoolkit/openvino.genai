@@ -266,7 +266,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
     std::optional<ov::Tensor> token_type_ids,
-    std::optional<ov::Tensor> prompt_ids) {
+    std::optional<ov::Tensor> prompt_ids,
+    std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs
+) {
     auto sampling_params_copy = sampling_params;
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (sampling_params_copy.stop_token_ids.empty())
@@ -289,14 +291,19 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
         sequence_group = std::make_shared<SequenceGroup>(request_id, 
                                                          input_ids, 
                                                          sampling_params_copy, 
-                                                         m_block_size, 
-                                                         token_type_ids, 
+                                                         m_block_size,
+                                                         token_type_ids,
+                                                         lm_extra_inputs,
                                                          position_ids, 
                                                          rope_delta,
                                                          prompt_ids);
     }
     else {
-        sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params_copy, m_block_size, token_type_ids);
+        sequence_group = std::make_shared<SequenceGroup>(request_id,
+                                                         input_ids,
+                                                         sampling_params_copy,
+                                                         m_block_size,
+                                                         token_type_ids);
     }
 
     if (m_scheduler->get_config().enable_prefix_caching) {
@@ -496,7 +503,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                                                              const StreamerVariant& streamer,
                                                              const std::optional<std::vector<ov::Tensor>>& token_type_ids,
                                                              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list,
-                                                             const std::optional<std::vector<ov::Tensor>>& prompt_ids) {
+                                                             const std::optional<std::vector<ov::Tensor>>& prompt_ids,
+                                                             const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
 
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
@@ -507,6 +515,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
     if (position_ids_list.has_value()) {
         OPENVINO_ASSERT((*position_ids_list).size() == input_ids.size());
+    }
+    if (lm_extra_inputs_list.has_value()) {
+        OPENVINO_ASSERT((*lm_extra_inputs_list).size() == input_ids.size());
     }
 
     auto start_time =  std::chrono::steady_clock::now();
@@ -537,9 +548,19 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 m_inputs_embedder->set_rope_delta(*rope_delta);
             }
         }
-        bool has_valid_token = token_type_ids.has_value() && request_id < token_type_ids->size();
+        const bool has_valid_token_type_ids = token_type_ids.has_value() && request_id < token_type_ids->size();
+        const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
+        const bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
+
         generations.push_back(
-            add_request(request_id, input_ids[request_id], sampling_params[request_id], has_valid_token ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt)
+            add_request(
+                request_id,
+                input_ids[request_id],
+                sampling_params[request_id],
+                has_valid_token_type_ids ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
+                has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+                has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt
+            )
         );
     }
 

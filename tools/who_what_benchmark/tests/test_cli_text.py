@@ -1,6 +1,6 @@
-import os
-import shutil
-import tempfile
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import pandas as pd
 import pytest
 import logging
@@ -10,7 +10,7 @@ import sys
 from transformers import AutoTokenizer
 from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfig
 
-from conftest import run_wwb
+from conftest import convert_text_model, run_wwb
 
 
 logging.basicConfig(level=logging.INFO)
@@ -18,9 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 model_id = "facebook/opt-125m"
-tmp_dir = tempfile.mkdtemp()
-base_model_path = os.path.join(tmp_dir, "opt125m")
-target_model_path = os.path.join(tmp_dir, "opt125m_int8")
 
 # awq/gptq models are skipped for now: 180586
 awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
@@ -28,27 +25,34 @@ awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
 gptq_model_id = "ybelkada/opt-125m-gptq-4bit"
 
 
-def setup_module():
+def _convert_base(model_id, temp_path):
     from optimum.exporters.openvino.convert import export_tokenizer
+    from huggingface_hub import snapshot_download
 
-    logger.info("Create models")
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    base_model = OVModelForCausalLM.from_pretrained(model_id)
-    base_model.save_pretrained(base_model_path)
-    tokenizer.save_pretrained(base_model_path)
-    export_tokenizer(tokenizer, base_model_path)
+    model_local = snapshot_download(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_local)
+    base_model = OVModelForCausalLM.from_pretrained(model_local)
+    base_model.save_pretrained(temp_path)
+    tokenizer.save_pretrained(temp_path)
+    export_tokenizer(tokenizer, temp_path)
 
+
+def _convert_int8(model_id, temp_path):
+    from optimum.exporters.openvino.convert import export_tokenizer
+    from huggingface_hub import snapshot_download
+
+    model_local = snapshot_download(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_local)
     target_model = OVModelForCausalLM.from_pretrained(
-        model_id, quantization_config=OVWeightQuantizationConfig(bits=8)
+        model_local, quantization_config=OVWeightQuantizationConfig(bits=8)
     )
-    target_model.save_pretrained(target_model_path)
-    tokenizer.save_pretrained(target_model_path)
-    export_tokenizer(tokenizer, target_model_path)
+    target_model.save_pretrained(temp_path)
+    tokenizer.save_pretrained(temp_path)
+    export_tokenizer(tokenizer, temp_path)
 
 
-def teardown_module():
-    logger.info("Remove models")
-    shutil.rmtree(tmp_dir)
+base_model_path = convert_text_model(model_id, "opt125m", _convert_base)
+target_model_path = convert_text_model(model_id, "opt125m_int8", _convert_int8)
 
 
 @pytest.mark.skipif((sys.platform == "darwin"), reason='173169')
