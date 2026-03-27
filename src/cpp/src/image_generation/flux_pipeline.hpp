@@ -386,6 +386,7 @@ public:
                 adapters = updated_adapters;
             }
             m_clip_text_encoder->set_adapters(adapters);
+            m_t5_text_encoder->set_adapters(adapters);
             m_transformer->set_adapters(adapters);
         }
     }
