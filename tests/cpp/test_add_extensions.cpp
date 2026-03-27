@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+
 #include <openvino/core/op_extension.hpp>
 #include <openvino/openvino.hpp>
 
