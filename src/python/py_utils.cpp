@@ -21,6 +21,7 @@
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
+#include "utils.hpp"
 
 namespace py = pybind11;
 
@@ -198,11 +199,9 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             auto property_list = py_obj.cast<py::list>();
             std::vector<ov::genai::VideoMetadata> videos_metadata;
             for (const auto& item : property_list) {
-                if (py::isinstance<ov::genai::VideoMetadata>(item)) {
-                    videos_metadata.push_back(item.cast<ov::genai::VideoMetadata>());
-                } else {
-                    OPENVINO_THROW("Incorrect value in \"", property_name, "\". Expected VideoMetadata.");
-                }
+                OPENVINO_ASSERT(py::isinstance<ov::genai::VideoMetadata>(item),
+                    "Incorrect value in \"" + property_name + "\". Expected VideoMetadata.");
+                videos_metadata.push_back(item.cast<ov::genai::VideoMetadata>());
             }
             return videos_metadata;
         } else {
@@ -571,13 +570,31 @@ StructuredOutputConfig::StructuralTag py_obj_to_structural_tag(const py::object&
 }
 
 std::vector<ov::genai::VideoMetadata> get_videos_metadata_from_kwargs(const py::kwargs& kwargs) {
-    std::vector<ov::genai::VideoMetadata> videos_metadata = {};
-    const auto kwargs_anymap = kwargs_to_any_map(kwargs);
-    const auto videos_metadata_it = kwargs_anymap.find(ov::genai::videos_metadata.name());
-    if (videos_metadata_it != kwargs_anymap.end() && videos_metadata_it->second.is<std::vector<ov::genai::VideoMetadata>>()) {
-        videos_metadata = videos_metadata_it->second.as<std::vector<ov::genai::VideoMetadata>>();
+    std::vector<ov::genai::VideoMetadata> videos_metadata;
+    if (kwargs.contains(ov::genai::videos_metadata.name())) {
+        const auto py_videos_metadata = kwargs[ov::genai::videos_metadata.name()];
+        OPENVINO_ASSERT(py::isinstance<py::list>(py_videos_metadata),
+            "\"videos_metadata\" should be a list of VideoMetadata.");
+        videos_metadata = py_videos_metadata.cast<std::vector<ov::genai::VideoMetadata>>();
     }
     return videos_metadata;
+}
+
+std::vector<std::vector<ov::genai::VideoMetadata>> get_videos_metadata_batches_from_kwargs(const py::kwargs& kwargs) {
+    std::vector<std::vector<ov::genai::VideoMetadata>> videos_metadata_batches;
+    if (kwargs.contains(ov::genai::utils::VIDEOS_METADATA_BATCHES_ARG_NAME)) {
+        const auto py_videos_metadata_batches = kwargs[ov::genai::utils::VIDEOS_METADATA_BATCHES_ARG_NAME.c_str()];
+        OPENVINO_ASSERT(py::isinstance<py::list>(py_videos_metadata_batches),
+            "\"videos_metadata_batches\" should be a list of lists of VideoMetadata.");
+        for (const auto& py_videos_metadata : py_videos_metadata_batches) {
+            OPENVINO_ASSERT(py::isinstance<py::list>(py_videos_metadata),
+                "Each item in \"videos_metadata_batches\" should be a list of VideoMetadata.");
+            videos_metadata_batches.push_back(
+                py_videos_metadata.cast<std::vector<ov::genai::VideoMetadata>>()
+            );
+        }
+    }
+    return videos_metadata_batches;
 }
 
 ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfig config, const py::kwargs& kwargs) {
