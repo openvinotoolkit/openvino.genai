@@ -4,6 +4,7 @@
 #pragma once
 
 #include "openvino/genai/visual_language/pipeline.hpp"
+#include "visual_language/vision_properties.hpp"
 #include "utils.hpp"
 
 using namespace ov::genai;
@@ -13,63 +14,11 @@ class ov::genai::VLMPipeline::VLMPipelineBase {
     // Load pipeline time
     float m_load_time_ms = 0;
 
-    struct VisionProperties {
-        std::vector<ov::Tensor> images;
-        std::vector<ov::Tensor> videos;
-        std::vector<VideoMetadata> videos_metadata;
-    };
-
     GenerationConfig resolve_generation_config(const ov::AnyMap& config_map) {
         ov::genai::OptionalGenerationConfig optional_config = utils::get_config_from_map(config_map);
         GenerationConfig config = optional_config.value_or(get_generation_config());
         config.update_generation_config(config_map);
         return config;
-    }
-
-    static VisionProperties extract_vision_properties(const ov::AnyMap& config_map) {
-        VisionProperties vision_properties;
-
-        auto image = config_map.find(ov::genai::image.name());
-        auto images = config_map.find(ov::genai::images.name());
-        auto videos = config_map.find(ov::genai::videos.name());
-        auto videos_metadata = config_map.find(ov::genai::videos_metadata.name());
-
-        if (config_map.end() != image) {
-            vision_properties.images = {image->second.as<ov::Tensor>()};
-        }
-
-        if (config_map.end() != images) {
-            if (images->second.is<std::vector<ov::Tensor>>()) {
-                auto imgs = images->second.as<std::vector<ov::Tensor>>();
-                vision_properties.images.insert(vision_properties.images.end(), imgs.begin(), imgs.end());
-            } else if (images->second.is<ov::Tensor>()) {
-                vision_properties.images.push_back(std::move(images->second.as<ov::Tensor>()));
-            } else if (!images->second.empty()) {
-                OPENVINO_THROW("Unknown images type.");
-            }
-        }
-
-        if (config_map.end() != videos) {
-            if (videos->second.is<std::vector<ov::Tensor>>()) {
-                vision_properties.videos = videos->second.as<std::vector<ov::Tensor>>();
-            } else if (videos->second.is<ov::Tensor>()) {
-                vision_properties.videos = {videos->second.as<ov::Tensor>()};
-            } else if (!videos->second.empty()) {
-                OPENVINO_THROW("Unknown videos type.");
-            }
-        }
-
-        if (config_map.end() != videos_metadata) {
-            if (videos_metadata->second.is<std::vector<VideoMetadata>>()) {
-                vision_properties.videos_metadata = videos_metadata->second.as<std::vector<VideoMetadata>>();
-            } else if (videos_metadata->second.is<VideoMetadata>()) {
-                vision_properties.videos_metadata = {videos_metadata->second.as<VideoMetadata>()};
-            } else if (!videos_metadata->second.empty()) {
-                OPENVINO_THROW("Unknown videos metadata type.");
-            }
-        }
-
-        return vision_properties;
     }
 
 public:
