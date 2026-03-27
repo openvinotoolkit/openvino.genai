@@ -68,8 +68,9 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     auto [filtered_properties_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties);
     auto filtered_properties = extract_adapters_from_properties(filtered_properties_without_gguf, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
-        m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
-        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
+        m_generation_config.adapters->set_tensor_name_prefix(
+            m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model."));
+        m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);
     }
     ov::CompiledModel compiled_model;
     if (m_is_npu) {
