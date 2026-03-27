@@ -21,7 +21,7 @@ enum class SequenceStatus {
     FINISHED = 1,
     OUT_OF_MEMORY = 2,
     WAITING = 3,
-    // The sequence is temporarily parked during EAGLE tree drafting: kept alive in the
+    // The sequence is temporarily parked during tree drafting: kept alive in the
     // sequence group so finalize_tree() can locate and restore it, but excluded from
     // get_running_sequences() to prevent it from being scheduled for inference.
     SUSPENDED = 4
@@ -35,7 +35,7 @@ enum class SequenceGroupType {
 using TokenIds = std::vector<int64_t>;
 using LogProbs = std::vector<float>;
 
-struct EagleMetaData {
+struct TreeMetaData {
     std::vector<std::vector<uint8_t>> tree_mask;
     std::vector<std::vector<int64_t>> retrieve_indices;
     std::vector<int64_t> tree_position_ids;
@@ -68,7 +68,7 @@ class Sequence {
     size_t m_hidden_size;
     std::vector<ov::Tensor> m_position_ids_list;
     int64_t m_rope_delta;
-    EagleMetaData m_eagle_metadata;
+    TreeMetaData m_tree_metadata;
 
     // Embeddings hash calculation params
     static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
@@ -169,12 +169,12 @@ public:
         return m_hidden_state;
     }
 
-    void set_eagle_metadata(const EagleMetaData& metadata) {
-        m_eagle_metadata = metadata;
+    void set_tree_metadata(const TreeMetaData& metadata) {
+        m_tree_metadata = metadata;
     }
 
-    const EagleMetaData& get_eagle_metadata() const {
-        return m_eagle_metadata;
+    const TreeMetaData& get_tree_metadata() const {
+        return m_tree_metadata;
     }
 
     // removes n last tokens and updates cumulative log prob

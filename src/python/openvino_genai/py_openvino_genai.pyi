@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EagleParams', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'TreeParams', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -690,9 +690,9 @@ class DeepSeekR1ReasoningIncrementalParser(IncrementalParser):
 class DeepSeekR1ReasoningParser(ReasoningParser):
     def __init__(self) -> None:
         ...
-class EagleParams:
+class TreeParams:
     """
-    EAGLE speculative decoding parameters
+    Speculative decoding tree search parameters
     """
     def __init__(self) -> None:
         ...
@@ -701,7 +701,7 @@ class EagleParams:
     @property
     def branching_factor(self) -> int:
         """
-        Number of branches (top-k) at each level of the EAGLE tree
+        Number of branches (top-k) at each level of the candidate tree
         """
     @branching_factor.setter
     def branching_factor(self, arg0: typing.SupportsInt) -> None:
@@ -709,7 +709,7 @@ class EagleParams:
     @property
     def num_speculative_tokens(self) -> int:
         """
-        Number of draft (non-root) tokens from the EAGLE tree submitted to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root)
+        Number of candidate (non-root) tokens from the candidate tree submitted to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root)
         """
     @num_speculative_tokens.setter
     def num_speculative_tokens(self, arg0: typing.SupportsInt) -> None:
@@ -717,7 +717,7 @@ class EagleParams:
     @property
     def tree_depth(self) -> int:
         """
-        How deep to look ahead in the EAGLE tree
+        Lookahead depth of the candidate tree
         """
     @tree_depth.setter
     def tree_depth(self, arg0: typing.SupportsInt) -> None:
@@ -996,10 +996,10 @@ class GenerationConfig:
         do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
         num_return_sequences: the number of sequences to generate from a single prompt.
     
-        EAGLE tree search parameters:
-        eagle_tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
-        eagle_tree_params.tree_depth:       lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations.
-        eagle_tree_params.num_speculative_tokens: number of draft (non-root) tokens from the EAGLE tree submitted
+        Tree search parameters:
+        tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
+        tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+        tree_params.num_speculative_tokens: number of candidate (non-root) tokens from the candidate tree submitted
                                                   to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
     """
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
@@ -1049,12 +1049,12 @@ class GenerationConfig:
     def diversity_penalty(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
-    def eagle_tree_params(self) -> EagleParams:
+    def tree_params(self) -> TreeParams:
         """
-        EAGLE tree parameters for speculative decoding
+        Tree search parameters for speculative decoding
         """
-    @eagle_tree_params.setter
-    def eagle_tree_params(self, arg0: EagleParams) -> None:
+    @tree_params.setter
+    def tree_params(self, arg0: TreeParams) -> None:
         ...
     @property
     def eos_token_id(self) -> int:
@@ -1890,10 +1890,10 @@ class LLMPipeline:
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
         
-            EAGLE tree search parameters:
-            eagle_tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
-            eagle_tree_params.tree_depth:       lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations.
-            eagle_tree_params.num_speculative_tokens: number of draft (non-root) tokens from the EAGLE tree submitted
+            Tree search parameters:
+            tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
+            tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+            tree_params.num_speculative_tokens: number of candidate (non-root) tokens from the candidate tree submitted
                                                       to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
         """
     @typing.overload
@@ -1993,10 +1993,10 @@ class LLMPipeline:
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
         
-            EAGLE tree search parameters:
-            eagle_tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
-            eagle_tree_params.tree_depth:       lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations.
-            eagle_tree_params.num_speculative_tokens: number of draft (non-root) tokens from the EAGLE tree submitted
+            Tree search parameters:
+            tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
+            tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+            tree_params.num_speculative_tokens: number of candidate (non-root) tokens from the candidate tree submitted
                                                       to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
         """
     def get_generation_config(self) -> GenerationConfig:
