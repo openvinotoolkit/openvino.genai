@@ -199,13 +199,9 @@ class TestImageGenerationOnNpuByNpuwCpu:
             num_images_per_prompt=1, height=64, width=64, guidance_scale=pipe.get_generation_config().guidance_scale
         )
         return pipe
-    
 
     def _get_generation_args(self):
-        return {
-            "prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69
-        }
-
+        return {"prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69}
 
     @pytest.mark.skipif(**should_skip_npuw_tests())
     def test_image_generation_cpu_vs_npuw_cpu(self, image_generation_model):
@@ -223,7 +219,6 @@ class TestImageGenerationOnNpuByNpuwCpu:
         assert cpu_image.data.shape == npuw_image.data.shape
         assert (cpu_image.data == npuw_image.data).all()
 
-
     @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
     @pytest.mark.skipif(**should_skip_npuw_tests())
     def test_image_generation_cpu_vs_npuw_cpu_with_blob_model(self, image_generation_model):
@@ -236,7 +231,9 @@ class TestImageGenerationOnNpuByNpuwCpu:
         npuw_pipe = self._construct_reshaped(image_generation_model)
         npuw_pipe.compile("NPU", **NPUW_CPU_PROPERTIES)
         npuw_pipe.export_model("tmp_blob_model")
-        imported_npuw_pipe = ov_genai.Text2ImagePipeline(image_generation_model, "NPU", blob_path="tmp_blob_model", **NPUW_CPU_PROPERTIES)
+        imported_npuw_pipe = ov_genai.Text2ImagePipeline(
+            image_generation_model, "NPU", blob_path="tmp_blob_model", **NPUW_CPU_PROPERTIES
+        )
         imported_npuw_image = imported_npuw_pipe.generate(**generation_args)
 
         assert cpu_image.data.shape == imported_npuw_image.data.shape
