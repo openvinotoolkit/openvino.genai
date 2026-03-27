@@ -1490,7 +1490,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         // create beam search info if we are on the first generate
         GroupBeamSearcher* beam_searcher;
         {
-            std::lock_guard<std::mutex> lock(m_beam_search_info_mutex);
+            std::lock_guard<std::mutex> lock(m_search_info_mutex);
             if (m_beam_search_info.find(request_id) == m_beam_search_info.end()) {
                 m_beam_search_info.emplace(request_id, GroupBeamSearcher(sequence_group, m_tokenizer));
             }
@@ -1535,7 +1535,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             // Create tree searcher on the draft step for this request
             std::shared_ptr<TreeSearcher> tree_searcher;
             {
-                std::lock_guard<std::mutex> lock(m_tree_search_info_mutex);
+                std::lock_guard<std::mutex> lock(m_search_info_mutex);
                 if (m_tree_search_info.find(request_id) == m_tree_search_info.end()) {
                     m_tree_search_info.emplace(request_id,
                                                std::make_shared<TreeSearcher>(
@@ -1673,15 +1673,12 @@ void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig
 
 void Sampler::clear_request_info(uint64_t request_id) {
     {
-        std::lock_guard<std::mutex> lock(m_beam_search_info_mutex);
+        std::lock_guard<std::mutex> lock(m_search_info_mutex);
         m_beam_search_info.erase(request_id);
+        m_tree_search_info.erase(request_id);
     }
     m_logit_processors.erase(request_id);
     m_stop_strings.erase(request_id);
-    {
-        std::lock_guard<std::mutex> lock(m_tree_search_info_mutex);
-        m_tree_search_info.erase(request_id);
-    }
 }
 
 int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {

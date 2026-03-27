@@ -148,11 +148,12 @@ class Sampler {
 
     // request ID => beam search tracking information
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
-    std::mutex m_beam_search_info_mutex;
 
     // request ID => tree search tracking information
     std::map<uint64_t, std::shared_ptr<TreeSearcher>> m_tree_search_info;
-    std::mutex m_tree_search_info_mutex;
+
+    // protects m_beam_search_info and m_tree_search_info
+    std::mutex m_search_info_mutex;
     std::mt19937 rng_engine;
     size_t seed = rng_engine.default_seed;
     // { request_id, logit_processor }
