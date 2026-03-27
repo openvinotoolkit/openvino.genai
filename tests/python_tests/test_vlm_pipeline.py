@@ -1908,7 +1908,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
             model_cached, device_map="auto", trust_remote_code=True
         )
         processor = hf_model.get_vision_tower().image_processor.preprocess
-        return VideochatflashqwenProcessorWrapper(processor,  hf_model.dtype)
+        return VideochatflashqwenProcessorWrapper(processor, hf_model.dtype)
 
     ov_pipe = ov_pipe_model.pipeline
 
