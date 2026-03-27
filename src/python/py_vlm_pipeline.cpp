@@ -135,54 +135,30 @@ auto video_metadata_docstring = R"(
 
 py::object call_vlm_generate(
     ov::genai::VLMPipeline& pipe,
-    const std::string& prompt,
+    const std::variant<std::string, ov::genai::ChatHistory>& prompt_or_history,
     const std::vector<ov::Tensor>& images,
     const std::vector<ov::Tensor>& videos,
     const ov::genai::GenerationConfig& generation_config,
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
-    const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
     auto updated_config = pyutils::update_config_from_kwargs(generation_config, kwargs);
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
-    ov::genai::VLMDecodedResults res;
-    {
-        py::gil_scoped_release rel;
-        res= pipe.generate(
-            prompt,
-            ov::genai::images(images),
-            ov::genai::videos(videos),
-            ov::genai::videos_metadata(videos_metadata),
-            ov::genai::generation_config(updated_config),
-            ov::genai::streamer(streamer)
-        );
-    }
-    return py::cast(res);
-}
+    const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
 
-py::object call_vlm_generate_with_chat_history(
-    ov::genai::VLMPipeline& pipe,
-    const ov::genai::ChatHistory& history,
-    const std::vector<ov::Tensor>& images,
-    const std::vector<ov::Tensor>& videos,
-    const ov::genai::GenerationConfig& generation_config,
-    const pyutils::PyBindStreamerVariant& py_streamer,
-    const py::kwargs& kwargs
-) {
-    const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
-    auto updated_config = pyutils::update_config_from_kwargs(generation_config, kwargs);
-    ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     ov::genai::VLMDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res= pipe.generate(
-            history,
-            ov::genai::images(images),
-            ov::genai::videos(videos),
-            ov::genai::videos_metadata(videos_metadata),
-            ov::genai::generation_config(updated_config),
-            ov::genai::streamer(streamer)
-        );
+        std::visit([&](auto&& input) {
+            res = pipe.generate(
+                input,
+                ov::genai::images(images),
+                ov::genai::videos(videos),
+                ov::genai::videos_metadata(videos_metadata),
+                ov::genai::generation_config(updated_config),
+                ov::genai::streamer(streamer)
+            );
+        }, prompt_or_history);
     }
     return py::cast(res);
 }
@@ -371,7 +347,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate_with_chat_history(pipe, history, images, videos, generation_config, streamer, kwargs);
+                return call_vlm_generate(pipe, history, images, videos, generation_config, streamer, kwargs);
             },
             py::arg("history"), "Chat history",
             py::arg("images"), "Input images",
@@ -389,7 +365,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate_with_chat_history(pipe, history, images, {}, generation_config, streamer, kwargs);
+                return call_vlm_generate(pipe, history, images, {}, generation_config, streamer, kwargs);
             },
             py::arg("history"), "Chat history",
             py::arg("images"), "Input images",
@@ -406,7 +382,7 @@ void init_vlm_pipeline(py::module_& m) {
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
-                return call_vlm_generate_with_chat_history(pipe, history, {}, videos, generation_config, streamer, kwargs);
+                return call_vlm_generate(pipe, history, {}, videos, generation_config, streamer, kwargs);
             },
             py::arg("history"), "Chat history",
             py::arg("videos"), "Input videos",
