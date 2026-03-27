@@ -194,10 +194,10 @@ char generation_config_docstring[] = R"(
     do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
     num_return_sequences: the number of sequences to generate from a single prompt.
 
-    EAGLE tree search parameters:
-    eagle_tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
-    eagle_tree_params.tree_depth:       lookahead depth of the EAGLE tree; the draft model runs `tree_depth` iterations.
-    eagle_tree_params.num_speculative_tokens: number of draft (non-root) tokens from the EAGLE tree submitted
+    Tree search parameters:
+    tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
+    tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+    tree_params.num_speculative_tokens: number of candidate (non-root) tokens from the candidate tree submitted
                                               to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
 )";
 
@@ -417,21 +417,21 @@ void init_generation_config(py::module_& m) {
             }
         );
 
-    // Binding for EagleParams
-    py::class_<GenerationConfig::EagleParams>(m, "EagleParams", "EAGLE speculative decoding parameters")
+    // Binding for TreeParams
+    py::class_<GenerationConfig::TreeParams>(m, "TreeParams", "Speculative decoding tree search parameters")
         .def(py::init<>())
         .def_readwrite("branching_factor",
-                       &GenerationConfig::EagleParams::branching_factor,
-                       "Number of branches (top-k) at each level of the EAGLE tree")
+                       &GenerationConfig::TreeParams::branching_factor,
+                       "Number of branches (top-k) at each level of the candidate tree")
         .def_readwrite("tree_depth",
-                       &GenerationConfig::EagleParams::tree_depth,
-                       "How deep to look ahead in the EAGLE tree")
+                       &GenerationConfig::TreeParams::tree_depth,
+                       "Lookahead depth of the candidate tree")
         .def_readwrite("num_speculative_tokens",
-                       &GenerationConfig::EagleParams::num_speculative_tokens,
-                       "Number of draft (non-root) tokens from the EAGLE tree submitted to the target model for verification. "
+                       &GenerationConfig::TreeParams::num_speculative_tokens,
+                       "Number of candidate (non-root) tokens from the candidate tree submitted to the target model for verification. "
                        "Total tree nodes = num_speculative_tokens + 1 (including root)")
-        .def("__repr__", [](const GenerationConfig::EagleParams& self) {
-            return "EagleParams(branching_factor=" + std::to_string(self.branching_factor) +
+        .def("__repr__", [](const GenerationConfig::TreeParams& self) {
+            return "TreeParams(branching_factor=" + std::to_string(self.branching_factor) +
                    ", tree_depth=" + std::to_string(self.tree_depth) +
                    ", num_speculative_tokens=" + std::to_string(self.num_speculative_tokens) + ")";
         });
@@ -468,7 +468,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("assistant_confidence_threshold", &GenerationConfig::assistant_confidence_threshold)
         .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
         .def_readwrite("max_ngram_size", &GenerationConfig::max_ngram_size)
-        .def_readwrite("eagle_tree_params", &GenerationConfig::eagle_tree_params, "EAGLE tree parameters for speculative decoding")
+        .def_readwrite("tree_params", &GenerationConfig::tree_params, "Tree search parameters for speculative decoding")
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def_readwrite("structured_output_config", &GenerationConfig::structured_output_config)
