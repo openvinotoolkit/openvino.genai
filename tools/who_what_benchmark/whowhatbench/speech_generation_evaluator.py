@@ -115,9 +115,10 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         speaker_embedding_file_path: str = None,
         whisper_model: str = "small",
     ) -> None:
-        assert base_model is not None or gt_data is not None, (
-            "Speech generation pipeline for evaluation or ground truth data must be defined"
-        )
+        if base_model is None and gt_data is None:
+            raise ValueError(
+                "Speech generation pipeline for evaluation or ground truth data must be defined"
+            )
 
         self.test_data = test_data
         self.num_samples = num_samples
