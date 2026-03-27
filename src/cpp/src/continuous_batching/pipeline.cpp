@@ -18,6 +18,7 @@
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "utils.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include "visual_language/vision_properties.hpp"
 #include "json_utils.hpp"
 
 using namespace ov::genai;
@@ -273,12 +274,21 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
 GenerationHandle ContinuousBatchingPipeline::add_request(
     uint64_t request_id,
     const std::string& prompt,
-    const std::vector<ov::Tensor>& images,
-    const std::vector<ov::Tensor>& videos,
-    const std::vector<VideoMetadata>& videos_metadata,
-    const ov::genai::GenerationConfig& sampling_params
+    const ov::AnyMap& properties_map
 ) {
-    return m_impl->add_request(request_id, prompt, images, videos, videos_metadata, sampling_params);
+    ov::genai::OptionalGenerationConfig generation_config = utils::get_config_from_map(properties_map);
+    OPENVINO_ASSERT(generation_config.has_value(), "Generation config is required in add_request with properties map");
+    
+    const auto vision_properties = extract_vision_properties(properties_map);
+    
+    return m_impl->add_request(
+        request_id,
+        prompt,
+        vision_properties.images,
+        vision_properties.videos,
+        vision_properties.videos_metadata,
+        generation_config.value()
+    );
 }
 
 void ContinuousBatchingPipeline::step() {

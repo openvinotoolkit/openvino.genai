@@ -180,14 +180,18 @@ public:
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& videos, const ov::genai::GenerationConfig& sampling_params);
-    GenerationHandle add_request(
+
+    GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::AnyMap& properties_map);
+
+    template <typename... Properties>
+    util::EnableIfAllStringAny<GenerationHandle, Properties...> add_request(
         uint64_t request_id,
         const std::string& prompt,
-        const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& videos,
-        const std::vector<ov::genai::VideoMetadata>& videos_metadata,
-        const ov::genai::GenerationConfig& sampling_params
-    );
+        Properties&&... properties
+    ) {
+        return add_request(request_id, prompt, AnyMap{std::forward<Properties>(properties)...});
+    }
+
 
     void step();
 
