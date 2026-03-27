@@ -10,7 +10,6 @@ from pathlib import Path
 from shutil import rmtree
 
 import openvino as ov
-from openvino.frontend import OpExtension
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason, ChatHistory
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
