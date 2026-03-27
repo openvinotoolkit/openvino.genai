@@ -57,6 +57,7 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 ```
 
 > **NOTE**: use --verbose option for debug to see the outputs with the largest difference.
+> **NOTE**: use --model-type text-chat option to run evaluation in chat mode
 
 ### Compare Visual Language Models with image inputs (VLMs)
 ```sh
@@ -153,12 +154,13 @@ wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type 
 The API provides a way to access to investigate the worst generated text examples.
 
 ```python
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import whowhatbench
 
 model_id = "facebook/opt-1.3b"
 base_small = AutoModelForCausalLM.from_pretrained(model_id)
-optimized_model = AutoModelForCausalLM.from_pretrained(model_id, load_in_4bit=True, device_map="auto")
+quant_config = BitsAndBytesConfig(load_in_4bit=True)
+optimized_model = AutoModelForCausalLM.from_pretrained(model_id, quantization_config=quant_config, device_map="auto")
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 
 evaluator = whowhatbench.TextEvaluator(base_model=base_small, tokenizer=tokenizer)
@@ -235,3 +237,7 @@ wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv -
 
 * The generation of ground truth on uncompressed model must be run before comparison with compressed model.
 * WWB uses [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2) for similarity measurement but you can use other similar network.
+* This project uses a subset of the ChatAlpaca-10k dataset (https://huggingface.co/datasets/flpelerin/ChatAlpaca-10k). \
+The dataset is licensed under Creative Commons Attribution 4.0 (CC BY 4.0).
+* This project uses data from the Puffin dataset (https://huggingface.co/datasets/LDJnr/Puffin). \
+The dataset is licensed under the Apache License 2.0.
