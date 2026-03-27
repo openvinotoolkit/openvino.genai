@@ -498,96 +498,90 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
 CandidateGraph::CandidateGraph(int64_t root_token_id, float root_score, int max_tokens, int max_depth)
     : m_max_candidate_nodes(max_tokens),
       m_max_depth(max_depth) {
-    InternalNode root;
-    root.data = {0u, root_token_id, root_score, 0};
-    root.parent_id = 0u;
-    root.ancestor_ids = {0u};  // root is its own ancestor (self-inclusive convention)
-    m_nodes[0u] = std::move(root);
+    m_root = std::make_shared<Node>();
+    m_root->token_id = root_token_id;
+    m_root->score = root_score;
+    m_root->tree_layer = 0;
 }
 
-uint64_t CandidateGraph::add_node(int64_t token_id, float score, uint64_t parent_node_id) {
-    const auto parent_it = m_nodes.find(parent_node_id);
-    OPENVINO_ASSERT(parent_it != m_nodes.end(), "CandidateGraph: parent node not found");
-    const InternalNode& parent = parent_it->second;
-    OPENVINO_ASSERT(parent.data.tree_layer < m_max_depth,
+CandidateGraph::NodePtr CandidateGraph::add_node(int64_t token_id, float score, const NodePtr& parent) {
+    OPENVINO_ASSERT(parent != nullptr, "CandidateGraph::add_node: parent is null");
+    OPENVINO_ASSERT(parent->tree_layer < m_max_depth,
                     "CandidateGraph::add_node: parent node is at max_depth (",
                     m_max_depth,
                     "), cannot add child");
-
-    // Snapshot parent fields before inserting into m_nodes: operator[] may rehash and invalidate refs.
-    const int parent_layer = parent.data.tree_layer;
-    std::unordered_set<uint64_t> inherited_ancestors = parent.ancestor_ids;
-
-    const uint64_t new_id = m_next_node_id++;
-    InternalNode new_node;
-    new_node.data = {new_id, token_id, score, parent_layer + 1};
-    new_node.parent_id = parent_node_id;
-    new_node.ancestor_ids = std::move(inherited_ancestors);
-    new_node.ancestor_ids.insert(new_id);  // add self
-    m_nodes[new_id] = std::move(new_node);
-    m_nodes[parent_node_id].child_ids.push_back(new_id);
-    return new_id;
+    auto node = std::make_shared<Node>();
+    node->token_id = token_id;
+    node->score = score;
+    node->tree_layer = parent->tree_layer + 1;
+    node->parent = parent;
+    parent->children.push_back(node);
+    return node;
 }
 
-std::vector<CandidateGraph::Node> CandidateGraph::select_candidate_nodes() const {
+std::vector<CandidateGraph::NodePtr> CandidateGraph::select_candidate_nodes() const {
     if (m_max_candidate_nodes <= 0)
-        return {m_nodes.at(0u).data};
+        return {m_root};
 
-    // Strict total order for deterministic top-k selection.
-    // Better node: higher score, then lower tree layer, then lower id.
-    const auto is_better = [](const Node& a, const Node& b) {
-        if (a.score != b.score)
-            return a.score > b.score;
-        if (a.tree_layer != b.tree_layer)
-            return a.tree_layer < b.tree_layer;
-        return a.id < b.id;
+    // Strict total order: better node has higher score, then shallower layer, then earlier allocation address.
+    const auto is_better = [](const NodePtr& a, const NodePtr& b) {
+        if (a->score != b->score)
+            return a->score > b->score;
+        if (a->tree_layer != b->tree_layer)
+            return a->tree_layer < b->tree_layer;
+        return a.get() < b.get();
     };
 
     // Min-heap over kept nodes where top() is the current worst node by is_better.
-    std::priority_queue<Node, std::vector<Node>, decltype(is_better)> min_heap(is_better);
+    std::priority_queue<NodePtr, std::vector<NodePtr>, decltype(is_better)> min_heap(is_better);
 
-    for (const auto& [id, node] : m_nodes) {
-        if (id == 0u)
-            continue;
+    // BFS traversal to visit all non-root nodes.
+    std::queue<NodePtr> bfs;
+    for (const NodePtr& child : m_root->children)
+        bfs.push(child);
+    while (!bfs.empty()) {
+        NodePtr node = bfs.front();
+        bfs.pop();
         if (min_heap.size() < static_cast<size_t>(m_max_candidate_nodes)) {
-            min_heap.push(node.data);
-        } else if (is_better(node.data, min_heap.top())) {
+            min_heap.push(node);
+        } else if (is_better(node, min_heap.top())) {
             min_heap.pop();
-            min_heap.push(node.data);
+            min_heap.push(node);
         }
+        for (const NodePtr& child : node->children)
+            bfs.push(child);
     }
 
-    std::vector<Node> result;
+    std::vector<NodePtr> result;
     result.reserve(min_heap.size() + 1);
-    result.push_back(m_nodes.at(0u).data);  // root is always included
+    result.push_back(m_root);  // root is always included
     while (!min_heap.empty()) {
         result.push_back(min_heap.top());
         min_heap.pop();
     }
 
-    // Sort by tree layer; break ties by score (descending) then id for full determinism.
-    std::sort(result.begin(), result.end(), [](const Node& a, const Node& b) {
-        if (a.tree_layer != b.tree_layer)
-            return a.tree_layer < b.tree_layer;
-        if (a.score != b.score)
-            return a.score > b.score;
-        return a.id < b.id;
+    // Sort by tree layer; break ties by score (descending) then pointer for full determinism.
+    std::sort(result.begin(), result.end(), [](const NodePtr& a, const NodePtr& b) {
+        if (a->tree_layer != b->tree_layer)
+            return a->tree_layer < b->tree_layer;
+        if (a->score != b->score)
+            return a->score > b->score;
+        return a.get() < b.get();
     });
     return result;
 }
 
-std::vector<CandidateGraph::Node> CandidateGraph::get_leaf_nodes(const std::vector<Node>& selected) const {
-    std::unordered_set<uint64_t> selected_ids;
-    selected_ids.reserve(selected.size());
-    for (const Node& n : selected)
-        selected_ids.insert(n.id);
+std::vector<CandidateGraph::NodePtr> CandidateGraph::get_leaf_nodes(const std::vector<NodePtr>& selected) const {
+    std::unordered_set<const Node*> selected_set;
+    selected_set.reserve(selected.size());
+    for (const NodePtr& n : selected)
+        selected_set.insert(n.get());
 
-    std::vector<Node> leaves;
-    for (const Node& n : selected) {
-        const InternalNode& internal = m_nodes.at(n.id);
+    std::vector<NodePtr> leaves;
+    for (const NodePtr& n : selected) {
         const bool has_selected_child =
-            std::any_of(internal.child_ids.begin(), internal.child_ids.end(), [&selected_ids](uint64_t child_id) {
-                return selected_ids.count(child_id) > 0;
+            std::any_of(n->children.begin(), n->children.end(), [&selected_set](const NodePtr& child) {
+                return selected_set.count(child.get()) > 0;
             });
         if (!has_selected_child)
             leaves.push_back(n);
@@ -595,31 +589,34 @@ std::vector<CandidateGraph::Node> CandidateGraph::get_leaf_nodes(const std::vect
     return leaves;
 }
 
-std::vector<uint64_t> CandidateGraph::get_path_to_node(uint64_t node_id) const {
-    OPENVINO_ASSERT(m_nodes.count(node_id) > 0, "CandidateGraph::get_path_to_node: node_id not found in graph");
-    std::vector<uint64_t> path;
-    auto it = m_nodes.find(node_id);
-    while (it != m_nodes.end()) {
-        path.push_back(it->second.data.id);
-        if (it->second.data.id == 0u)
-            break;  // reached root
-        it = m_nodes.find(it->second.parent_id);
+std::vector<CandidateGraph::NodePtr> CandidateGraph::get_path_to_node(const NodePtr& node) const {
+    OPENVINO_ASSERT(node != nullptr, "CandidateGraph::get_path_to_node: node is null");
+    std::vector<NodePtr> path;
+    NodePtr current = node;
+    while (current) {
+        path.push_back(current);
+        current = current->parent.lock();
     }
     std::reverse(path.begin(), path.end());
     return path;
 }
 
-bool CandidateGraph::can_expand(uint64_t node_id) const {
-    const auto it = m_nodes.find(node_id);
-    OPENVINO_ASSERT(it != m_nodes.end(), "CandidateGraph::can_expand: node_id not found");
-    return it->second.data.tree_layer < m_max_depth;
+bool CandidateGraph::can_expand(const NodePtr& node) const {
+    OPENVINO_ASSERT(node != nullptr, "CandidateGraph::can_expand: node is null");
+    return node->tree_layer < m_max_depth;
 }
 
-bool CandidateGraph::is_ancestor(uint64_t ancestor_id, uint64_t node_id) const {
-    const auto it = m_nodes.find(node_id);
-    if (it == m_nodes.end())
+bool CandidateGraph::is_ancestor(const NodePtr& ancestor, const NodePtr& node) const {
+    if (!ancestor || !node)
         return false;
-    return it->second.ancestor_ids.count(ancestor_id) > 0;
+    const Node* ancestor_raw = ancestor.get();
+    NodePtr current = node;
+    while (current) {
+        if (current.get() == ancestor_raw)
+            return true;
+        current = current->parent.lock();
+    }
+    return false;
 }
 
 // ------------------------------------------------------------------
@@ -644,7 +641,7 @@ void Sampler::TreeSearcher::tree_reset() {
     OPENVINO_ASSERT(!running.empty(), "tree_reset: sequence group has no running sequences");
     Sequence::Ptr root_seq = running[0];
     m_original_grouped_id = root_seq->get_grouped_id();
-    m_frontier = {{0u, std::move(root_seq), 0.0f}};  // root: node_id=0, cumulative score=0
+    m_frontier = {{m_candidate_graph->get_root(), std::move(root_seq), 0.0f}};
 }
 
 auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> std::vector<CandidateBeam> {
@@ -686,7 +683,7 @@ auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> st
     top_k.reserve(branching_factor);
 
     for (const DraftBeam& draft : m_frontier) {
-        if (!m_candidate_graph->can_expand(draft.node_id))
+        if (!m_candidate_graph->can_expand(draft.node))
             continue;  // parent is at max_depth, skip expansion
 
         const auto idx_it = seq_id_to_batch_idx.find(draft.m_sequence->get_id());
@@ -730,8 +727,8 @@ auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> st
             const float log_prob = it->first - max_logit - log_sum;
             const float cum_score = draft.score + log_prob;
             const int64_t token_id = static_cast<int64_t>(it->second) + (d2t ? d2t[it->second] : 0);
-            const uint64_t new_node_id = m_candidate_graph->add_node(token_id, cum_score, draft.node_id);
-            candidates.push_back({new_node_id, draft.m_sequence, token_id, log_prob, cum_score});
+            const CandidateGraph::NodePtr new_node = m_candidate_graph->add_node(token_id, cum_score, draft.node);
+            candidates.push_back({new_node, draft.m_sequence, token_id, log_prob, cum_score});
         }
     }
 
@@ -744,7 +741,7 @@ auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> st
                       [](const CandidateBeam& a, const CandidateBeam& b) {
                           if (a.score != b.score)
                               return a.score > b.score;
-                          return a.node_id < b.node_id;
+                          return a.node.get() < b.node.get();
                       });
     candidates.resize(kept);
 
@@ -784,7 +781,7 @@ void Sampler::TreeSearcher::advance_draft_layer(const std::vector<CandidateBeam>
             seq = cand.parent_sequence;  // last (or only) child: reuse in-place
         }
         seq->append_token(cand.token_id, cand.log_prob);
-        next_frontier.push_back({cand.node_id, std::move(seq), cand.score});
+        next_frontier.push_back({cand.node, std::move(seq), cand.score});
     }
 
     // Retire frontier sequences with no selected children (remaining == 0).
@@ -806,34 +803,34 @@ void Sampler::TreeSearcher::advance_draft_layer(const std::vector<CandidateBeam>
 void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output) {
     OPENVINO_ASSERT(m_candidate_graph.has_value(), "finalize_tree called before tree_reset()");
 
-    const std::vector<CandidateGraph::Node> final_nodes = m_candidate_graph->select_candidate_nodes();
+    const std::vector<CandidateGraph::NodePtr> final_nodes = m_candidate_graph->select_candidate_nodes();
 
     // Position (depth) of each node in final_nodes, forwarded to the verifier.
     std::vector<int64_t> position_ids;
     position_ids.reserve(final_nodes.size());
-    for (const CandidateGraph::Node& n : final_nodes)
-        position_ids.push_back(static_cast<int64_t>(n.tree_layer));
+    for (const CandidateGraph::NodePtr& n : final_nodes)
+        position_ids.push_back(static_cast<int64_t>(n->tree_layer));
 
-    // Map node IDs to their indices in final_nodes for path index remapping below.
-    std::unordered_map<uint64_t, size_t> node_to_idx;
+    // Map raw node pointers to their indices in final_nodes for path index remapping below.
+    std::unordered_map<const CandidateGraph::Node*, size_t> node_to_idx;
     node_to_idx.reserve(final_nodes.size());
     for (size_t i = 0; i < final_nodes.size(); ++i)
-        node_to_idx[final_nodes[i].id] = i;
+        node_to_idx[final_nodes[i].get()] = i;
 
     // retrieve_indices: one root-to-leaf path (as final_nodes indices) per leaf.
     // The verifier uses this to extract each candidate token sequence.
-    const std::vector<CandidateGraph::Node> leaf_nodes = m_candidate_graph->get_leaf_nodes(final_nodes);
+    const std::vector<CandidateGraph::NodePtr> leaf_nodes = m_candidate_graph->get_leaf_nodes(final_nodes);
     OPENVINO_ASSERT(!leaf_nodes.empty(),
                     "finalize_tree: no leaf nodes among selected candidates; "
                     "check that tree parameters produce a valid tree structure");
     std::vector<std::vector<int64_t>> retrieve_indices;
     retrieve_indices.reserve(leaf_nodes.size());
-    for (const CandidateGraph::Node& leaf : leaf_nodes) {
-        const std::vector<uint64_t> raw_path = m_candidate_graph->get_path_to_node(leaf.id);
+    for (const CandidateGraph::NodePtr& leaf : leaf_nodes) {
+        const std::vector<CandidateGraph::NodePtr> raw_path = m_candidate_graph->get_path_to_node(leaf);
         std::vector<int64_t> path;
         path.reserve(raw_path.size());
-        for (uint64_t nid : raw_path)
-            path.push_back(static_cast<int64_t>(node_to_idx.at(nid)));
+        for (const CandidateGraph::NodePtr& n : raw_path)
+            path.push_back(static_cast<int64_t>(node_to_idx.at(n.get())));
         retrieve_indices.push_back(std::move(path));
     }
 
@@ -841,11 +838,11 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output) {
     // Enables parallel verification via masked attention over the candidate tree.
     std::vector<std::vector<uint8_t>> tree_mask;
     tree_mask.reserve(final_nodes.size());
-    for (const CandidateGraph::Node& node : final_nodes) {
+    for (const CandidateGraph::NodePtr& node : final_nodes) {
         std::vector<uint8_t> row;
         row.reserve(final_nodes.size());
-        for (const CandidateGraph::Node& other : final_nodes)
-            row.push_back(m_candidate_graph->is_ancestor(other.id, node.id) ? 1u : 0u);
+        for (const CandidateGraph::NodePtr& other : final_nodes)
+            row.push_back(m_candidate_graph->is_ancestor(other, node) ? 1u : 0u);
         tree_mask.push_back(std::move(row));
     }
 
@@ -869,7 +866,7 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output) {
                     "); sequence state is inconsistent");
     sequence->remove_last_tokens(sequence->get_generated_len() - m_pre_draft_generated_len);
     for (size_t t = 1; t < final_nodes.size(); ++t)
-        sequence->append_token(final_nodes[t].token_id, 0.0f);
+        sequence->append_token(final_nodes[t]->token_id, 0.0f);
 
     // extra_processed_tokens: tree nodes beyond the deepest path (= total - depth - 1 for root).
     // These are processed simultaneously by the verifier and must be counted now.
@@ -1531,6 +1528,8 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             sg_sampling_info.sampler_output.num_generated_tokens += valid_tokens;
             assisting_pipeline_info.min_generated_len =
                 std::min(assisting_pipeline_info.min_generated_len, running_sequences[0]->get_generated_len());
+
+            logit_processor.update_generated_len(running_sequences[0]->get_generated_len());
         } else {
             // Create tree searcher on the draft step for this request
             std::shared_ptr<TreeSearcher> tree_searcher;
