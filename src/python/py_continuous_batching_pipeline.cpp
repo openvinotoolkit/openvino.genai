@@ -456,11 +456,75 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
         .def("get_metrics", &ContinuousBatchingPipeline::get_metrics)
-        .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("input_ids"), py::arg("generation_config"))
-        .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("generation_config"))
-        .def("add_request", py::overload_cast<uint64_t, const std::string&, const std::vector<ov::Tensor>&, const std::vector<ov::Tensor>&, const std::vector<ov::genai::VideoMetadata>&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("images"), py::arg("videos"), py::arg("videos_metadata"), py::arg("generation_config"))
-        .def("add_request", py::overload_cast<uint64_t, const std::string&, const std::vector<ov::Tensor>&, const std::vector<ov::Tensor>&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("images"), py::arg("videos"), py::arg("generation_config"))
-        .def("add_request", py::overload_cast<uint64_t, const std::string&, const std::vector<ov::Tensor>&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("images"), py::arg("generation_config"))
+
+        .def(
+            "add_request",
+            [](ContinuousBatchingPipeline& pipe,
+               uint64_t request_id,
+               const ov::Tensor& input_ids,
+               const ov::genai::GenerationConfig& generation_config
+            ) -> std::shared_ptr<GenerationHandleImpl> {
+                return pipe.add_request(request_id, input_ids, generation_config);
+            },
+            py::arg("request_id"),
+            py::arg("input_ids"),
+            py::arg("generation_config")
+        )
+        .def(
+            "add_request",
+            [](ContinuousBatchingPipeline& pipe,
+               uint64_t request_id,
+               const std::string& prompt,
+               const ov::genai::GenerationConfig& generation_config
+            ) -> std::shared_ptr<GenerationHandleImpl> {
+                return pipe.add_request(request_id, prompt, generation_config);
+            },
+            py::arg("request_id"),
+            py::arg("prompt"),
+            py::arg("generation_config")
+        )
+        .def(
+            "add_request",
+            [](ContinuousBatchingPipeline& pipe,
+               uint64_t request_id,
+               const std::string& prompt,
+               const std::vector<ov::Tensor>& images,
+               const std::vector<ov::Tensor>& videos,
+               const ov::genai::GenerationConfig& generation_config,
+               const py::kwargs& kwargs
+            ) -> std::shared_ptr<GenerationHandleImpl> {
+                const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
+                return pipe.add_request(
+                    request_id,
+                    prompt,
+                    ov::genai::images(images),
+                    ov::genai::videos(videos),
+                    ov::genai::videos_metadata(videos_metadata),
+                    ov::genai::generation_config(generation_config)
+                );
+            },
+            py::arg("request_id"),
+            py::arg("prompt"),
+            py::arg("images"),
+            py::arg("videos"),
+            py::arg("generation_config")
+        )
+        .def(
+            "add_request",
+            [](ContinuousBatchingPipeline& pipe,
+               uint64_t request_id,
+               const std::string& prompt,
+               const std::vector<ov::Tensor>& images,
+               const ov::genai::GenerationConfig& generation_config
+            ) -> std::shared_ptr<GenerationHandleImpl> {
+                return pipe.add_request(request_id, prompt, images, generation_config);
+            },
+            py::arg("request_id"),
+            py::arg("prompt"),
+            py::arg("images"),
+            py::arg("generation_config")
+        )
+        
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
 
