@@ -34,21 +34,24 @@ CBGenerateProperties extract_cb_generate_properties(const ov::AnyMap& properties
         OPENVINO_ASSERT(generation_config_batches_iter->second.is<std::vector<GenerationConfig>>(),
             "generation_config_batches property has to be of type std::vector<GenerationConfig>");
         properties.generation_config_batches = generation_config_batches_iter->second.as<std::vector<GenerationConfig>>();
-    } else {
+    }
+    if (properties.generation_config_batches.empty()) {
         properties.generation_config_batches = std::vector<GenerationConfig>(batch_size);
     }
 
     auto images_batches_iter = properties_map.find(utils::IMAGES_BATCHES_ARG_NAME);
     if (images_batches_iter != properties_map.end()) {
         properties.images_batches = unwrap_vectors_from_any<ov::Tensor>(images_batches_iter->second.as<ov::AnyVector>());
-    } else {
+    }
+    if (properties.images_batches.empty()) {
         properties.images_batches = std::vector<std::vector<ov::Tensor>>(batch_size);
     }
 
     auto videos_batches_iter = properties_map.find(utils::VIDEOS_BATCHES_ARG_NAME);
     if (videos_batches_iter != properties_map.end()) {
         properties.videos_batches = unwrap_vectors_from_any<ov::Tensor>(videos_batches_iter->second.as<ov::AnyVector>());
-    } else {
+    }
+    if (properties.videos_batches.empty()) {
         properties.videos_batches = std::vector<std::vector<ov::Tensor>>(batch_size);
     }
 
@@ -57,7 +60,8 @@ CBGenerateProperties extract_cb_generate_properties(const ov::AnyMap& properties
         properties.videos_metadata_batches = unwrap_vectors_from_any<VideoMetadata>(
             videos_metadata_batches_iter->second.as<ov::AnyVector>()
         );
-    } else {
+    }
+    if (properties.videos_metadata_batches.empty()) {
         properties.videos_metadata_batches = std::vector<std::vector<VideoMetadata>>(batch_size);
     }
 
