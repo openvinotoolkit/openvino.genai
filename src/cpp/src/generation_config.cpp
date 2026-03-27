@@ -92,12 +92,12 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "num_assistant_tokens", num_assistant_tokens);
     read_json_param(data, "max_ngram_size", max_ngram_size);
 
-    // EAGLE tree search
-    if (data.contains("eagle_tree_params")) {
-        const auto& eagle = data["eagle_tree_params"];
-        read_json_param(eagle, "branching_factor", eagle_tree_params.branching_factor);
-        read_json_param(eagle, "tree_depth", eagle_tree_params.tree_depth);
-        read_json_param(eagle, "num_speculative_tokens", eagle_tree_params.num_speculative_tokens);
+    // tree search
+    if (data.contains("tree_params")) {
+        const auto& eagle = data["tree_params"];
+        read_json_param(eagle, "branching_factor", tree_params.branching_factor);
+        read_json_param(eagle, "tree_depth", tree_params.tree_depth);
+        read_json_param(eagle, "num_speculative_tokens", tree_params.num_speculative_tokens);
     }
 
     // append EOS to stop_token_ids
@@ -167,8 +167,8 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "pruning_ratio", pruning_ratio);
     read_anymap_param(properties, "relevance_weight", relevance_weight);
 
-    // EAGLE tree search
-    read_anymap_param(properties, "eagle_tree_params", eagle_tree_params);
+    // tree search
+    read_anymap_param(properties, "tree_params", tree_params);
 }
 
 
@@ -270,7 +270,7 @@ bool GenerationConfig::is_beam_search() const {
 }
 
 bool GenerationConfig::is_tree_search() const {
-    return eagle_tree_params.tree_depth > 0;
+    return tree_params.tree_depth > 0;
 }
 
 bool GenerationConfig::is_multinomial() const {
@@ -364,22 +364,22 @@ void GenerationConfig::validate() const {
     if (is_tree_search()) {
         OPENVINO_ASSERT(!do_sample,
                         "Tree search (EAGLE) is incompatible with do_sample=true; "
-                        "set eagle_tree_params.tree_depth=0 or do_sample=false");
+                        "set tree_params.tree_depth=0 or do_sample=false");
         OPENVINO_ASSERT(num_beams == 1,
                         "Tree search (EAGLE) is incompatible with beam search; "
-                        "set eagle_tree_params.tree_depth=0 or num_beams=1");
-        OPENVINO_ASSERT(eagle_tree_params.branching_factor > 0,
+                        "set tree_params.tree_depth=0 or num_beams=1");
+        OPENVINO_ASSERT(tree_params.branching_factor > 0,
                         "'branching_factor' must be > 0 when tree search is enabled, but got ",
-                        eagle_tree_params.branching_factor);
+                        tree_params.branching_factor);
         OPENVINO_ASSERT(
-            eagle_tree_params.num_speculative_tokens > 0,
+            tree_params.num_speculative_tokens > 0,
             "'num_speculative_tokens' must be > 0 when tree search is enabled, but got ",
-            eagle_tree_params.num_speculative_tokens);
-        OPENVINO_ASSERT(eagle_tree_params.num_speculative_tokens >= eagle_tree_params.tree_depth,
+            tree_params.num_speculative_tokens);
+        OPENVINO_ASSERT(tree_params.num_speculative_tokens >= tree_params.tree_depth,
                         "'num_speculative_tokens' (",
-                        eagle_tree_params.num_speculative_tokens,
+                        tree_params.num_speculative_tokens,
                         ") must be >= 'tree_depth' (",
-                        eagle_tree_params.tree_depth,
+                        tree_params.tree_depth,
                         ") to allow at least one node per draft layer");
     }
 

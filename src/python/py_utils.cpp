@@ -491,8 +491,8 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
             params[key] = py::cast<ov::genai::StructuredOutputConfig>(value);
         } else if (value.is_none() && key == "taylorseer_config") {
             params[key] = ov::Any{};
-        } else if (py::isinstance<ov::genai::GenerationConfig::EagleParams>(value)) {
-            params[key] = py::cast<ov::genai::GenerationConfig::EagleParams>(value);
+        } else if (py::isinstance<ov::genai::GenerationConfig::TreeParams>(value)) {
+            params[key] = py::cast<ov::genai::GenerationConfig::TreeParams>(value);
         } else {
             OPENVINO_ASSERT(!value.is_none(), "Property \"", key, "\" can't be None.");
             params[key] = utils::py_object_to_any(value, key);

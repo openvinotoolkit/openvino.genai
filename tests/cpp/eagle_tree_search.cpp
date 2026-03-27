@@ -1,21 +1,21 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-// Unit tests for EagleCandidateGraph.
+// Unit tests for CandidateGraph.
 // These tests exercise the standalone tree data structure used by TreeSearcher
 // without requiring a live model or KV-cache, making them fast and hermetic.
 
 #include <gtest/gtest.h>
 #include "sampling/sampler.hpp"
 
-using ov::genai::EagleCandidateGraph;
+using ov::genai::CandidateGraph;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 // Collect ids from a vector of Nodes.
-static std::vector<uint64_t> node_ids(const std::vector<EagleCandidateGraph::Node>& nodes) {
+static std::vector<uint64_t> node_ids(const std::vector<CandidateGraph::Node>& nodes) {
     std::vector<uint64_t> ids;
     ids.reserve(nodes.size());
     for (const auto& n : nodes)
@@ -27,8 +27,8 @@ static std::vector<uint64_t> node_ids(const std::vector<EagleCandidateGraph::Nod
 // Constructor / root
 // ---------------------------------------------------------------------------
 
-TEST(EagleCandidateGraphTest, RootIsAlwaysPresent) {
-    EagleCandidateGraph g(42, 0.5f, 4, 3);
+TEST(CandidateGraphTest, RootIsAlwaysPresent) {
+    CandidateGraph g(42, 0.5f, 4, 3);
     const auto top = g.select_candidate_nodes();
     ASSERT_FALSE(top.empty());
     EXPECT_EQ(top[0].id, 0u);
@@ -37,9 +37,9 @@ TEST(EagleCandidateGraphTest, RootIsAlwaysPresent) {
     EXPECT_EQ(top[0].tree_layer, 0);
 }
 
-TEST(EagleCandidateGraphTest, EmptyBudgetStillReturnsRoot) {
+TEST(CandidateGraphTest, EmptyBudgetStillReturnsRoot) {
     // max_tokens = 0: budget for non-root nodes is 0, but root must still be returned.
-    EagleCandidateGraph g(0, 0.0f, /*max_tokens=*/0, /*max_depth=*/2);
+    CandidateGraph g(0, 0.0f, /*max_tokens=*/0, /*max_depth=*/2);
     const auto top = g.select_candidate_nodes();
     ASSERT_EQ(top.size(), 1u);
     EXPECT_EQ(top[0].id, 0u);
@@ -49,23 +49,23 @@ TEST(EagleCandidateGraphTest, EmptyBudgetStillReturnsRoot) {
 // add_node
 // ---------------------------------------------------------------------------
 
-TEST(EagleCandidateGraphTest, AddNodeReturnsSequentialIds) {
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+TEST(CandidateGraphTest, AddNodeReturnsSequentialIds) {
+    CandidateGraph g(0, 0.0f, 10, 3);
     const uint64_t id1 = g.add_node(10, -1.0f, /*parent=*/0u);
     const uint64_t id2 = g.add_node(20, -2.0f, /*parent=*/0u);
     EXPECT_EQ(id1, 1u);
     EXPECT_EQ(id2, 2u);
 }
 
-TEST(EagleCandidateGraphTest, AddNodeStoresCorrectMetadata) {
-    EagleCandidateGraph g(0, 0.0f, 10, 5);
+TEST(CandidateGraphTest, AddNodeStoresCorrectMetadata) {
+    CandidateGraph g(0, 0.0f, 10, 5);
     const uint64_t child_id = g.add_node(99, -0.5f, 0u);
     ASSERT_NE(child_id, 0u);
 
     // The node should appear in select_candidate_nodes with the expected fields.
     const auto top = g.select_candidate_nodes();
     const auto it = std::find_if(top.begin(), top.end(),
-        [child_id](const EagleCandidateGraph::Node& n) { return n.id == child_id; });
+        [child_id](const CandidateGraph::Node& n) { return n.id == child_id; });
     ASSERT_NE(it, top.end()) << "Child node not found in top-k result";
     EXPECT_EQ(it->token_id, 99);
     EXPECT_FLOAT_EQ(it->score, -0.5f);
@@ -76,9 +76,9 @@ TEST(EagleCandidateGraphTest, AddNodeStoresCorrectMetadata) {
 // select_candidate_nodes
 // ---------------------------------------------------------------------------
 
-TEST(EagleCandidateGraphTest, TopKRespectsBudget) {
+TEST(CandidateGraphTest, TopKRespectsBudget) {
     // Build a tree with 5 children under root; budget = 3.
-    EagleCandidateGraph g(0, 0.0f, /*max_tokens=*/3, /*max_depth=*/2);
+    CandidateGraph g(0, 0.0f, /*max_tokens=*/3, /*max_depth=*/2);
     for (int i = 0; i < 5; ++i)
         g.add_node(i, static_cast<float>(-i), 0u);  // scores: 0, -1, -2, -3, -4
 
@@ -93,8 +93,8 @@ TEST(EagleCandidateGraphTest, TopKRespectsBudget) {
     }
 }
 
-TEST(EagleCandidateGraphTest, TopKSortedByLayer) {
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+TEST(CandidateGraphTest, TopKSortedByLayer) {
+    CandidateGraph g(0, 0.0f, 10, 3);
     const uint64_t c1 = g.add_node(1, -0.5f, 0u);   // layer 1
     const uint64_t c2 = g.add_node(2, -1.0f, 0u);   // layer 1
     g.add_node(3, -0.3f, c1);                         // layer 2
@@ -106,9 +106,9 @@ TEST(EagleCandidateGraphTest, TopKSortedByLayer) {
             << "Nodes must be sorted by tree_layer";
 }
 
-TEST(EagleCandidateGraphTest, TopKExactBudget) {
+TEST(CandidateGraphTest, TopKExactBudget) {
     // Exactly max_tokens non-root nodes; all should be selected.
-    EagleCandidateGraph g(0, 0.0f, /*max_tokens=*/3, /*max_depth=*/2);
+    CandidateGraph g(0, 0.0f, /*max_tokens=*/3, /*max_depth=*/2);
     g.add_node(1, -1.0f, 0u);
     g.add_node(2, -2.0f, 0u);
     g.add_node(3, -3.0f, 0u);
@@ -120,9 +120,9 @@ TEST(EagleCandidateGraphTest, TopKExactBudget) {
 // get_leaf_nodes
 // ---------------------------------------------------------------------------
 
-TEST(EagleCandidateGraphTest, LeafNodesOfFlatTree) {
+TEST(CandidateGraphTest, LeafNodesOfFlatTree) {
     // Each child of root is a leaf when no grandchildren exist.
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+    CandidateGraph g(0, 0.0f, 10, 3);
     g.add_node(1, -1.0f, 0u);
     g.add_node(2, -2.0f, 0u);
     g.add_node(3, -3.0f, 0u);
@@ -136,8 +136,8 @@ TEST(EagleCandidateGraphTest, LeafNodesOfFlatTree) {
     EXPECT_EQ(leaves.size(), 3u);
 }
 
-TEST(EagleCandidateGraphTest, LeafNodesWithGrandchildren) {
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+TEST(CandidateGraphTest, LeafNodesWithGrandchildren) {
+    CandidateGraph g(0, 0.0f, 10, 3);
     const uint64_t c1 = g.add_node(1, -1.0f, 0u);
     const uint64_t c2 = g.add_node(2, -2.0f, 0u);
     const uint64_t g1 = g.add_node(3, -0.5f, c1);  // grandchild: score -0.5 (high)
@@ -158,11 +158,11 @@ TEST(EagleCandidateGraphTest, LeafNodesWithGrandchildren) {
     EXPECT_TRUE(g1_is_leaf) << "Grandchild g1 should be a leaf node";
 }
 
-TEST(EagleCandidateGraphTest, LeafNodesWhenBudgetExcludesGrandchildren) {
+TEST(CandidateGraphTest, LeafNodesWhenBudgetExcludesGrandchildren) {
     // Budget = 2: root + c1 + c2 fit; the grandchild (score -3.0) is outscored
     // by c1 (-1.0) and c2 (-2.0) and is excluded.  With no grandchild in the
     // selected set, c1 and c2 are both leaves.
-    EagleCandidateGraph g(0, 0.0f, /*max_tokens=*/2, /*max_depth=*/3);
+    CandidateGraph g(0, 0.0f, /*max_tokens=*/2, /*max_depth=*/3);
     const uint64_t c1 = g.add_node(1, -1.0f, 0u);
     const uint64_t c2 = g.add_node(2, -2.0f, 0u);
     g.add_node(3, -3.0f, c1);  // grandchild scores lower than c2; excluded by budget
@@ -181,15 +181,15 @@ TEST(EagleCandidateGraphTest, LeafNodesWhenBudgetExcludesGrandchildren) {
 // get_path_to_node
 // ---------------------------------------------------------------------------
 
-TEST(EagleCandidateGraphTest, PathToRootIsSingleElement) {
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+TEST(CandidateGraphTest, PathToRootIsSingleElement) {
+    CandidateGraph g(0, 0.0f, 10, 3);
     const auto path = g.get_path_to_node(0u);
     ASSERT_EQ(path.size(), 1u);
     EXPECT_EQ(path[0], 0u);
 }
 
-TEST(EagleCandidateGraphTest, PathToChildIsCorrect) {
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+TEST(CandidateGraphTest, PathToChildIsCorrect) {
+    CandidateGraph g(0, 0.0f, 10, 3);
     const uint64_t c = g.add_node(1, -1.0f, 0u);
     const auto path = g.get_path_to_node(c);
     ASSERT_EQ(path.size(), 2u);
@@ -197,8 +197,8 @@ TEST(EagleCandidateGraphTest, PathToChildIsCorrect) {
     EXPECT_EQ(path[1], c);
 }
 
-TEST(EagleCandidateGraphTest, PathToGrandchildIsCorrect) {
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+TEST(CandidateGraphTest, PathToGrandchildIsCorrect) {
+    CandidateGraph g(0, 0.0f, 10, 3);
     const uint64_t c  = g.add_node(1, -1.0f, 0u);
     const uint64_t gc = g.add_node(2, -2.0f, c);
     const auto path = g.get_path_to_node(gc);
@@ -208,9 +208,9 @@ TEST(EagleCandidateGraphTest, PathToGrandchildIsCorrect) {
     EXPECT_EQ(path[2], gc);
 }
 
-TEST(EagleCandidateGraphTest, PathRootFirstLeafLast) {
+TEST(CandidateGraphTest, PathRootFirstLeafLast) {
     // Build a chain: root -> a -> b -> c
-    EagleCandidateGraph g(0, 0.0f, 10, 4);
+    CandidateGraph g(0, 0.0f, 10, 4);
     const uint64_t a = g.add_node(1, -0.1f, 0u);
     const uint64_t b = g.add_node(2, -0.2f, a);
     const uint64_t c = g.add_node(3, -0.3f, b);
@@ -226,35 +226,35 @@ TEST(EagleCandidateGraphTest, PathRootFirstLeafLast) {
 // is_ancestor
 // ---------------------------------------------------------------------------
 
-TEST(EagleCandidateGraphTest, RootIsAncestorOfItself) {
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+TEST(CandidateGraphTest, RootIsAncestorOfItself) {
+    CandidateGraph g(0, 0.0f, 10, 3);
     EXPECT_TRUE(g.is_ancestor(0u, 0u));
 }
 
-TEST(EagleCandidateGraphTest, RootIsAncestorOfChild) {
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+TEST(CandidateGraphTest, RootIsAncestorOfChild) {
+    CandidateGraph g(0, 0.0f, 10, 3);
     const uint64_t c = g.add_node(1, -1.0f, 0u);
     EXPECT_TRUE(g.is_ancestor(0u, c));
     EXPECT_TRUE(g.is_ancestor(c, c));   // node is its own ancestor (self-inclusive)
 }
 
-TEST(EagleCandidateGraphTest, ChildIsNotAncestorOfRoot) {
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+TEST(CandidateGraphTest, ChildIsNotAncestorOfRoot) {
+    CandidateGraph g(0, 0.0f, 10, 3);
     const uint64_t c = g.add_node(1, -1.0f, 0u);
     EXPECT_FALSE(g.is_ancestor(c, 0u));
 }
 
-TEST(EagleCandidateGraphTest, SiblingIsNotAncestor) {
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+TEST(CandidateGraphTest, SiblingIsNotAncestor) {
+    CandidateGraph g(0, 0.0f, 10, 3);
     const uint64_t c1 = g.add_node(1, -1.0f, 0u);
     const uint64_t c2 = g.add_node(2, -2.0f, 0u);
     EXPECT_FALSE(g.is_ancestor(c1, c2));
     EXPECT_FALSE(g.is_ancestor(c2, c1));
 }
 
-TEST(EagleCandidateGraphTest, AncestorChainCorrect) {
+TEST(CandidateGraphTest, AncestorChainCorrect) {
     // root -> a -> b -> c
-    EagleCandidateGraph g(0, 0.0f, 10, 4);
+    CandidateGraph g(0, 0.0f, 10, 4);
     const uint64_t a = g.add_node(1, -0.1f, 0u);
     const uint64_t b = g.add_node(2, -0.2f, a);
     const uint64_t c = g.add_node(3, -0.3f, b);
@@ -273,8 +273,8 @@ TEST(EagleCandidateGraphTest, AncestorChainCorrect) {
     EXPECT_FALSE(g.is_ancestor(c, b));
 }
 
-TEST(EagleCandidateGraphTest, AncestorQueryForNonExistentNodeReturnsFalse) {
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+TEST(CandidateGraphTest, AncestorQueryForNonExistentNodeReturnsFalse) {
+    CandidateGraph g(0, 0.0f, 10, 3);
     // node_id 99 was never added
     EXPECT_FALSE(g.is_ancestor(0u, 99u));
 }
@@ -285,9 +285,9 @@ TEST(EagleCandidateGraphTest, AncestorQueryForNonExistentNodeReturnsFalse) {
 // This reproduces exactly the tree-mask construction in finalize_tree(),
 // so a bug there will show up here.
 
-TEST(EagleCandidateGraphTest, TreeMaskDiagonalIsAllOnes) {
+TEST(CandidateGraphTest, TreeMaskDiagonalIsAllOnes) {
     // Every node is an ancestor of itself → all diagonal entries must be 1.
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+    CandidateGraph g(0, 0.0f, 10, 3);
     const uint64_t c1 = g.add_node(1, -1.0f, 0u);
     const uint64_t c2 = g.add_node(2, -2.0f, 0u);
     g.add_node(3, -0.5f, c1);
@@ -299,14 +299,14 @@ TEST(EagleCandidateGraphTest, TreeMaskDiagonalIsAllOnes) {
     }
 }
 
-TEST(EagleCandidateGraphTest, TreeMaskLinearChain) {
+TEST(CandidateGraphTest, TreeMaskLinearChain) {
     // root -> a -> b
     // Expected mask (row i = node i, col j = node j, 1 iff j is ancestor of i):
     //      root  a   b
     // root [ 1,  0,  0 ]
     //    a [ 1,  1,  0 ]
     //    b [ 1,  1,  1 ]
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+    CandidateGraph g(0, 0.0f, 10, 3);
     const uint64_t a = g.add_node(10, -0.5f, 0u);
     const uint64_t b = g.add_node(20, -0.3f, a);
 
@@ -344,11 +344,11 @@ TEST(EagleCandidateGraphTest, TreeMaskLinearChain) {
     EXPECT_EQ(mask[2][2], 1u);
 }
 
-TEST(EagleCandidateGraphTest, TreeMaskTwoSiblings) {
+TEST(CandidateGraphTest, TreeMaskTwoSiblings) {
     // root -> c1
     //      -> c2
     // c1 and c2 are siblings, not ancestors of each other.
-    EagleCandidateGraph g(0, 0.0f, 10, 2);
+    CandidateGraph g(0, 0.0f, 10, 2);
     const uint64_t c1 = g.add_node(1, -1.0f, 0u);
     const uint64_t c2 = g.add_node(2, -2.0f, 0u);
 
@@ -371,9 +371,9 @@ TEST(EagleCandidateGraphTest, TreeMaskTwoSiblings) {
 // ---------------------------------------------------------------------------
 // Reproduces the retrieve_indices construction in finalize_tree().
 
-TEST(EagleCandidateGraphTest, RetrieveIndicesLinearChain) {
+TEST(CandidateGraphTest, RetrieveIndicesLinearChain) {
     // root -> a -> b: single leaf b, path should map to indices [0, 1, 2]
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+    CandidateGraph g(0, 0.0f, 10, 3);
     const uint64_t a = g.add_node(10, -0.5f, 0u);
     const uint64_t b = g.add_node(20, -0.3f, a);
 
@@ -398,11 +398,11 @@ TEST(EagleCandidateGraphTest, RetrieveIndicesLinearChain) {
     EXPECT_EQ(path[2], 2);  // b at index 2
 }
 
-TEST(EagleCandidateGraphTest, RetrieveIndicesTwoLeaves) {
+TEST(CandidateGraphTest, RetrieveIndicesTwoLeaves) {
     // root -> c1 -> gc1
     //      -> c2
     // Two leaves: gc1 and c2
-    EagleCandidateGraph g(0, 0.0f, 10, 3);
+    CandidateGraph g(0, 0.0f, 10, 3);
     const uint64_t c1  = g.add_node(1, -0.5f, 0u);
     const uint64_t c2  = g.add_node(2, -1.5f, 0u);
     const uint64_t gc1 = g.add_node(3, -0.3f, c1);
@@ -434,12 +434,12 @@ TEST(EagleCandidateGraphTest, RetrieveIndicesTwoLeaves) {
 // A deeper node with a higher score must evict a shallower node with a lower
 // score when the budget is tight.
 
-TEST(EagleCandidateGraphTest, CrossLayerEvictionByScore) {
+TEST(CandidateGraphTest, CrossLayerEvictionByScore) {
     // Budget = 2, tree:
     //   root -> lo (score -10)  <- should be evicted
     //        -> hi (score -1)   <- should survive
     //              -> gc (score -0.5, layer 2) <- should survive over lo
-    EagleCandidateGraph g(0, 0.0f, /*max_tokens=*/2, /*max_depth=*/3);
+    CandidateGraph g(0, 0.0f, /*max_tokens=*/2, /*max_depth=*/3);
     const uint64_t lo = g.add_node(1, -10.0f, 0u);
     const uint64_t hi = g.add_node(2, -1.0f,  0u);
     const uint64_t gc = g.add_node(3, -0.5f,  hi);
@@ -462,8 +462,8 @@ TEST(EagleCandidateGraphTest, CrossLayerEvictionByScore) {
 //
 // Verifies off-diagonal mask entries for a tree with both depth and branches.
 
-TEST(EagleCandidateGraphTest, TreeMaskBranchingWithDepth) {
-    EagleCandidateGraph g(0, 0.0f, /*max_tokens=*/10, /*max_depth=*/3);
+TEST(CandidateGraphTest, TreeMaskBranchingWithDepth) {
+    CandidateGraph g(0, 0.0f, /*max_tokens=*/10, /*max_depth=*/3);
     const uint64_t c1  = g.add_node(1, -0.5f, 0u);
     const uint64_t c2  = g.add_node(2, -0.6f, 0u);
     const uint64_t gc1 = g.add_node(3, -0.3f, c1);
@@ -493,8 +493,8 @@ TEST(EagleCandidateGraphTest, TreeMaskBranchingWithDepth) {
 // select_candidate_nodes: fewer nodes than budget
 // ---------------------------------------------------------------------------
 
-TEST(EagleCandidateGraphTest, AllNodesReturnedWhenBelowBudget) {
-    EagleCandidateGraph g(0, 0.0f, /*max_tokens=*/10, /*max_depth=*/3);
+TEST(CandidateGraphTest, AllNodesReturnedWhenBelowBudget) {
+    CandidateGraph g(0, 0.0f, /*max_tokens=*/10, /*max_depth=*/3);
     const uint64_t c1 = g.add_node(1, -1.0f, 0u);
     const uint64_t c2 = g.add_node(2, -2.0f, 0u);
 
@@ -513,8 +513,8 @@ TEST(EagleCandidateGraphTest, AllNodesReturnedWhenBelowBudget) {
 //                 -> c
 // Both leaves share the prefix [root, a]; verifies path remapping correctness.
 
-TEST(EagleCandidateGraphTest, RetrieveIndicesSharedPrefix) {
-    EagleCandidateGraph g(0, 0.0f, /*max_tokens=*/10, /*max_depth=*/3);
+TEST(CandidateGraphTest, RetrieveIndicesSharedPrefix) {
+    CandidateGraph g(0, 0.0f, /*max_tokens=*/10, /*max_depth=*/3);
     const uint64_t a = g.add_node(10, -0.5f, 0u);
     const uint64_t b = g.add_node(20, -0.3f, a);
     const uint64_t c = g.add_node(30, -0.4f, a);

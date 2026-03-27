@@ -75,9 +75,9 @@ struct SequenceGroupSamplingInfo {
     }
 };
 
-// Tree of draft token candidates for EAGLE speculative decoding.
+// Tree of draft token candidates for speculative decoding.
 // Stores token IDs and cumulative scores without Sequence references.
-class EagleCandidateGraph {
+class CandidateGraph {
 public:
     struct Node {
         uint64_t id = 0;
@@ -86,7 +86,7 @@ public:
         int tree_layer = 0;
     };
 
-    EagleCandidateGraph(int64_t root_token_id, float root_score, int max_tokens, int max_depth);
+    CandidateGraph(int64_t root_token_id, float root_score, int max_tokens, int max_depth);
 
     // Adds a child of parent_node_id. Returns the new node's ID.
     // Precondition: the parent node must not be at max_depth (check with can_expand first).
@@ -148,7 +148,7 @@ class Sampler {
                             bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probabilities,
                             std::mt19937& rng_engine);
 
-    // Verify the draft tree against target-model logits: greedily accept the longest
+    // Verify the candidate tree against target-model logits: greedily accept the longest
     // matching prefix across all tree paths, then append a bonus token.
     // Returns accepted_steps = number of accepted draft tokens + 1 (for the bonus token).
     size_t verify_draft_tree(Sequence::Ptr& sequence,
@@ -264,7 +264,7 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
     enum class Phase { IDLE, DRAFTING };
 
     Phase m_phase = Phase::IDLE;
-    std::optional<EagleCandidateGraph> m_candidate_graph;
+    std::optional<CandidateGraph> m_candidate_graph;
     std::vector<DraftBeam> m_frontier;
     size_t m_current_draft_layer = 0;
     size_t m_pre_draft_generated_len = 0;

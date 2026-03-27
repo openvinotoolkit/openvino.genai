@@ -492,10 +492,10 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
 /* tree generator logic */
 
 // ------------------------------------------------------------------
-// EagleCandidateGraph
+// CandidateGraph
 // ------------------------------------------------------------------
 
-EagleCandidateGraph::EagleCandidateGraph(int64_t root_token_id, float root_score, int max_tokens, int max_depth)
+CandidateGraph::CandidateGraph(int64_t root_token_id, float root_score, int max_tokens, int max_depth)
     : m_max_candidate_nodes(max_tokens),
       m_max_depth(max_depth) {
     InternalNode root;
@@ -505,12 +505,12 @@ EagleCandidateGraph::EagleCandidateGraph(int64_t root_token_id, float root_score
     m_nodes[0u] = std::move(root);
 }
 
-uint64_t EagleCandidateGraph::add_node(int64_t token_id, float score, uint64_t parent_node_id) {
+uint64_t CandidateGraph::add_node(int64_t token_id, float score, uint64_t parent_node_id) {
     const auto parent_it = m_nodes.find(parent_node_id);
-    OPENVINO_ASSERT(parent_it != m_nodes.end(), "EagleCandidateGraph: parent node not found");
+    OPENVINO_ASSERT(parent_it != m_nodes.end(), "CandidateGraph: parent node not found");
     const InternalNode& parent = parent_it->second;
     OPENVINO_ASSERT(parent.data.tree_layer < m_max_depth,
-                    "EagleCandidateGraph::add_node: parent node is at max_depth (",
+                    "CandidateGraph::add_node: parent node is at max_depth (",
                     m_max_depth,
                     "), cannot add child");
 
@@ -529,7 +529,7 @@ uint64_t EagleCandidateGraph::add_node(int64_t token_id, float score, uint64_t p
     return new_id;
 }
 
-std::vector<EagleCandidateGraph::Node> EagleCandidateGraph::select_candidate_nodes() const {
+std::vector<CandidateGraph::Node> CandidateGraph::select_candidate_nodes() const {
     if (m_max_candidate_nodes <= 0)
         return {m_nodes.at(0u).data};
 
@@ -576,7 +576,7 @@ std::vector<EagleCandidateGraph::Node> EagleCandidateGraph::select_candidate_nod
     return result;
 }
 
-std::vector<EagleCandidateGraph::Node> EagleCandidateGraph::get_leaf_nodes(const std::vector<Node>& selected) const {
+std::vector<CandidateGraph::Node> CandidateGraph::get_leaf_nodes(const std::vector<Node>& selected) const {
     std::unordered_set<uint64_t> selected_ids;
     selected_ids.reserve(selected.size());
     for (const Node& n : selected)
@@ -595,8 +595,8 @@ std::vector<EagleCandidateGraph::Node> EagleCandidateGraph::get_leaf_nodes(const
     return leaves;
 }
 
-std::vector<uint64_t> EagleCandidateGraph::get_path_to_node(uint64_t node_id) const {
-    OPENVINO_ASSERT(m_nodes.count(node_id) > 0, "EagleCandidateGraph::get_path_to_node: node_id not found in graph");
+std::vector<uint64_t> CandidateGraph::get_path_to_node(uint64_t node_id) const {
+    OPENVINO_ASSERT(m_nodes.count(node_id) > 0, "CandidateGraph::get_path_to_node: node_id not found in graph");
     std::vector<uint64_t> path;
     auto it = m_nodes.find(node_id);
     while (it != m_nodes.end()) {
@@ -609,13 +609,13 @@ std::vector<uint64_t> EagleCandidateGraph::get_path_to_node(uint64_t node_id) co
     return path;
 }
 
-bool EagleCandidateGraph::can_expand(uint64_t node_id) const {
+bool CandidateGraph::can_expand(uint64_t node_id) const {
     const auto it = m_nodes.find(node_id);
-    OPENVINO_ASSERT(it != m_nodes.end(), "EagleCandidateGraph::can_expand: node_id not found");
+    OPENVINO_ASSERT(it != m_nodes.end(), "CandidateGraph::can_expand: node_id not found");
     return it->second.data.tree_layer < m_max_depth;
 }
 
-bool EagleCandidateGraph::is_ancestor(uint64_t ancestor_id, uint64_t node_id) const {
+bool CandidateGraph::is_ancestor(uint64_t ancestor_id, uint64_t node_id) const {
     const auto it = m_nodes.find(node_id);
     if (it == m_nodes.end())
         return false;
@@ -635,10 +635,10 @@ Sampler::TreeSearcher::TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tenso
 }
 
 void Sampler::TreeSearcher::tree_reset() {
-    const size_t num_speculative_tokens = m_parameters.eagle_tree_params.num_speculative_tokens;
+    const size_t num_speculative_tokens = m_parameters.tree_params.num_speculative_tokens;
     OPENVINO_ASSERT(num_speculative_tokens > 0,
-                    "eagle_tree_params.num_speculative_tokens must be greater than 0, got ", num_speculative_tokens);
-    m_candidate_graph.emplace(-1, 0.0f, static_cast<int>(num_speculative_tokens), static_cast<int>(m_parameters.eagle_tree_params.tree_depth));
+                    "tree_params.num_speculative_tokens must be greater than 0, got ", num_speculative_tokens);
+    m_candidate_graph.emplace(-1, 0.0f, static_cast<int>(num_speculative_tokens), static_cast<int>(m_parameters.tree_params.tree_depth));
 
     const std::vector<Sequence::Ptr> running = m_sequence_group->get_running_sequences();
     OPENVINO_ASSERT(!running.empty(), "tree_reset: sequence group has no running sequences");
@@ -659,8 +659,8 @@ auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> st
     OPENVINO_ASSERT(seq_len > 0, "Logits tensor has zero sequence length");
     OPENVINO_ASSERT(vocab_size > 0, "Logits tensor has zero vocabulary size");
 
-    const size_t branching_factor = m_parameters.eagle_tree_params.branching_factor;
-    OPENVINO_ASSERT(branching_factor > 0, "eagle_tree_params.branching_factor must be positive");
+    const size_t branching_factor = m_parameters.tree_params.branching_factor;
+    OPENVINO_ASSERT(branching_factor > 0, "tree_params.branching_factor must be positive");
 
     // Build seq_id -> batch-index lookup for the current frontier.
     const std::vector<Sequence::Ptr> running_seqs = m_sequence_group->get_running_sequences();
@@ -806,12 +806,12 @@ void Sampler::TreeSearcher::advance_draft_layer(const std::vector<CandidateBeam>
 void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output) {
     OPENVINO_ASSERT(m_candidate_graph.has_value(), "finalize_tree called before tree_reset()");
 
-    const std::vector<EagleCandidateGraph::Node> final_nodes = m_candidate_graph->select_candidate_nodes();
+    const std::vector<CandidateGraph::Node> final_nodes = m_candidate_graph->select_candidate_nodes();
 
     // Position (depth) of each node in final_nodes, forwarded to the verifier.
     std::vector<int64_t> position_ids;
     position_ids.reserve(final_nodes.size());
-    for (const EagleCandidateGraph::Node& n : final_nodes)
+    for (const CandidateGraph::Node& n : final_nodes)
         position_ids.push_back(static_cast<int64_t>(n.tree_layer));
 
     // Map node IDs to their indices in final_nodes for path index remapping below.
@@ -822,13 +822,13 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output) {
 
     // retrieve_indices: one root-to-leaf path (as final_nodes indices) per leaf.
     // The verifier uses this to extract each candidate token sequence.
-    const std::vector<EagleCandidateGraph::Node> leaf_nodes = m_candidate_graph->get_leaf_nodes(final_nodes);
+    const std::vector<CandidateGraph::Node> leaf_nodes = m_candidate_graph->get_leaf_nodes(final_nodes);
     OPENVINO_ASSERT(!leaf_nodes.empty(),
                     "finalize_tree: no leaf nodes among selected candidates; "
                     "check that tree parameters produce a valid tree structure");
     std::vector<std::vector<int64_t>> retrieve_indices;
     retrieve_indices.reserve(leaf_nodes.size());
-    for (const EagleCandidateGraph::Node& leaf : leaf_nodes) {
+    for (const CandidateGraph::Node& leaf : leaf_nodes) {
         const std::vector<uint64_t> raw_path = m_candidate_graph->get_path_to_node(leaf.id);
         std::vector<int64_t> path;
         path.reserve(raw_path.size());
@@ -838,13 +838,13 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output) {
     }
 
     // tree_mask[i][j] = 1 iff node j is an ancestor of node i (self-inclusive).
-    // Enables parallel verification via masked attention over the draft tree.
+    // Enables parallel verification via masked attention over the candidate tree.
     std::vector<std::vector<uint8_t>> tree_mask;
     tree_mask.reserve(final_nodes.size());
-    for (const EagleCandidateGraph::Node& node : final_nodes) {
+    for (const CandidateGraph::Node& node : final_nodes) {
         std::vector<uint8_t> row;
         row.reserve(final_nodes.size());
-        for (const EagleCandidateGraph::Node& other : final_nodes)
+        for (const CandidateGraph::Node& other : final_nodes)
             row.push_back(m_candidate_graph->is_ancestor(other.id, node.id) ? 1u : 0u);
         tree_mask.push_back(std::move(row));
     }
@@ -873,20 +873,20 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output) {
 
     // extra_processed_tokens: tree nodes beyond the deepest path (= total - depth - 1 for root).
     // These are processed simultaneously by the verifier and must be counted now.
-    OPENVINO_ASSERT(final_nodes.size() > static_cast<size_t>(m_parameters.eagle_tree_params.tree_depth),
+    OPENVINO_ASSERT(final_nodes.size() > static_cast<size_t>(m_parameters.tree_params.tree_depth),
                     "finalize_tree: final_nodes.size() (",
                     final_nodes.size(),
                     ") must exceed tree_depth (",
-                    m_parameters.eagle_tree_params.tree_depth,
+                    m_parameters.tree_params.tree_depth,
                     ")");
     const size_t extra_processed_tokens =
-        final_nodes.size() - static_cast<size_t>(m_parameters.eagle_tree_params.tree_depth) - 1;
+        final_nodes.size() - static_cast<size_t>(m_parameters.tree_params.tree_depth) - 1;
     m_sequence_group->update_processed_tokens_num(m_sequence_group->get_num_processed_tokens() +
                                                   extra_processed_tokens);
 
     m_sequence_group->set_num_validated_tokens(final_nodes.size() - 1);
 
-    sequence->set_eagle_metadata({tree_mask, retrieve_indices, position_ids});
+    sequence->set_tree_metadata({tree_mask, retrieve_indices, position_ids});
     sequence->set_status(SequenceStatus::RUNNING);
 
     // Drop all forked draft sequences; only the main sequence proceeds to verification.
@@ -910,7 +910,7 @@ void Sampler::TreeSearcher::advance_draft_step(const ov::Tensor& logits, Sampler
     m_current_draft_layer++;
     const std::vector<CandidateBeam> candidates = build_top_k_frontier(logits);
 
-    if (m_current_draft_layer < m_parameters.eagle_tree_params.tree_depth) {
+    if (m_current_draft_layer < m_parameters.tree_params.tree_depth) {
         advance_draft_layer(candidates, sampler_output);
     } else {
         finalize_tree(sampler_output);
@@ -1203,7 +1203,7 @@ align_all_sequence_len(SequenceGroup::Ptr& sequence_group,
     logit_processor.update_generated_len(min_generated_tokens);
 }
 
-// Verify the draft tree against target-model logits: greedily accept the longest
+// Verify the candidate tree against target-model logits: greedily accept the longest
 // matching prefix across all tree paths, then append a bonus token.
 // Returns accepted_steps = number of accepted draft tokens + 1 (for the bonus token).
 size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
@@ -1214,8 +1214,8 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
                     "verify_draft_tree: num_tokens_to_validate must be > 0, got ",
                     num_tokens_to_validate);
 
-    auto& eagle_metadata = sequence->get_eagle_metadata();
-    auto retrieve_indices = eagle_metadata.retrieve_indices;
+    auto& tree_metadata = sequence->get_tree_metadata();
+    auto retrieve_indices = tree_metadata.retrieve_indices;
 
     OPENVINO_ASSERT(!retrieve_indices.empty(),
                     "verify_draft_tree: retrieve_indices is empty; "
@@ -1362,7 +1362,7 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
     logit_processor.register_new_generated_token(bonus_token->m_index);
 
     // Update EAGLE metadata with the accepted path for the next draft round.
-    sequence->set_eagle_metadata({{}, {}, eagle_metadata.tree_position_ids, accepted_path});
+    sequence->set_tree_metadata({{}, {}, tree_metadata.tree_position_ids, accepted_path});
     return accepted_steps;
 }
 
@@ -1628,7 +1628,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         uint64_t request_id = sequence_group->get_request_id();
 
         if (is_validation_mode_enabled && num_generated_tokens_to_validate > 0) {
-            // Target-model validation pass: validate the draft tree candidates.
+            // Target-model validation pass: validate the candidate tree candidates.
             std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
             OPENVINO_ASSERT(running_sequences.size() == 1);
             size_t valid_tokens = verify_draft_tree(running_sequences[0],
@@ -1663,7 +1663,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             }
 
             tree_searcher->advance_draft_step(sequence_group_logits, sg_sampling_info.sampler_output);
-        }  // end else (draft tree search)
+        }  // end else (candidate tree search)
     } else {
         OPENVINO_THROW("Unsupported sampling method");
     }
