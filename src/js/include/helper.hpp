@@ -4,6 +4,7 @@
 #pragma once
 #include <napi.h>
 
+#include <filesystem>
 #include <set>
 
 #include "openvino/core/type/element_type.hpp"
@@ -54,6 +55,9 @@ std::map<std::string, int64_t> js_to_cpp<std::map<std::string, int64_t>>(const N
                                                                          const Napi::Value& value);
 template <>
 std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType std::filesystem::path */
+template <>
+std::filesystem::path js_to_cpp<std::filesystem::path>(const Napi::Env& env, const Napi::Value& value);
 template <>
 int64_t js_to_cpp<int64_t>(const Napi::Env& env, const Napi::Value& value);
 template <>
