@@ -71,7 +71,7 @@ public:
     ) override {
         auto start_time = std::chrono::steady_clock::now();
         std::vector<ov::genai::GenerationConfig> generation_configs = {std::move(generation_config)};
-        auto result = m_impl.generate(
+        const auto decoded_results = m_impl.generate(
             {prompt},
             ov::genai::images_batches({images}),
             ov::genai::videos_batches({videos}),
@@ -80,21 +80,7 @@ public:
             ov::genai::streamer(streamer)
         )[0];
         auto stop_time = std::chrono::steady_clock::now();
-
-        VLMDecodedResults decoded;
-        decoded.perf_metrics = result.perf_metrics;
-        decoded.perf_metrics.load_time = get_load_time();
-
-        decoded.perf_metrics.raw_metrics.generate_durations.clear();
-        decoded.perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-        decoded.perf_metrics.m_evaluated = false;
-        decoded.perf_metrics.evaluate_statistics(start_time);
-        
-        for (size_t idx = 0; idx < result.texts.size(); ++idx) {
-            decoded.texts.push_back(result.texts.at(idx));
-            decoded.scores.push_back(result.scores.at(idx));
-        }
-        return decoded;
+        return finalize_decoded_results(decoded_results, start_time, stop_time);
     }
 
     VLMDecodedResults generate(
@@ -128,7 +114,7 @@ public:
         // Ensure chat history internal state is initialized for original history
         ChatHistoryInternalState::get_or_create(history);
         std::vector<ov::genai::GenerationConfig> generation_configs = {std::move(generation_config)};
-        auto result = m_impl.generate(
+        const auto decoded_results = m_impl.generate(
             {history},
             ov::genai::images_batches({images}),
             ov::genai::videos_batches({videos}),
@@ -137,21 +123,7 @@ public:
             ov::genai::streamer(streamer)
         )[0];
         auto stop_time = std::chrono::steady_clock::now();
-
-        VLMDecodedResults decoded;
-        decoded.perf_metrics = result.perf_metrics;
-        decoded.perf_metrics.load_time = get_load_time();
-
-        decoded.perf_metrics.raw_metrics.generate_durations.clear();
-        decoded.perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-        decoded.perf_metrics.m_evaluated = false;
-        decoded.perf_metrics.evaluate_statistics(start_time);
-        
-        for (size_t idx = 0; idx < result.texts.size(); ++idx) {
-            decoded.texts.push_back(result.texts.at(idx));
-            decoded.scores.push_back(result.scores.at(idx));
-        }
-        return decoded;
+        return finalize_decoded_results(decoded_results, start_time, stop_time);
     }
 
     virtual void start_chat(const std::string& system_message) override { m_impl.start_chat(system_message); };
@@ -165,4 +137,24 @@ public:
     virtual GenerationConfig get_generation_config() const override { return m_impl.get_config(); };
 
     virtual void set_generation_config(const GenerationConfig& new_config)  override { m_impl.set_config(new_config); };
+
+private:
+    VLMDecodedResults finalize_decoded_results(
+        const VLMDecodedResults& decoded_results,
+        std::chrono::steady_clock::time_point start_time,
+        std::chrono::steady_clock::time_point stop_time
+    ) {
+        VLMDecodedResults final_decoded_results;
+        final_decoded_results.perf_metrics = decoded_results.perf_metrics;
+        final_decoded_results.perf_metrics.load_time = get_load_time();
+        final_decoded_results.perf_metrics.raw_metrics.generate_durations.clear();
+        final_decoded_results.perf_metrics.raw_metrics.generate_durations.emplace_back(
+            PerfMetrics::get_microsec(stop_time - start_time)
+        );
+        final_decoded_results.perf_metrics.m_evaluated = false;
+        final_decoded_results.perf_metrics.evaluate_statistics(start_time);
+        final_decoded_results.texts = decoded_results.texts;
+        final_decoded_results.scores = decoded_results.scores;
+        return final_decoded_results;
+    }
 };
