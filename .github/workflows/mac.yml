@@ -533,6 +533,8 @@ jobs:
           - name: 'LLM'
             marker: 'llm'
             cmd: 'tests/python_tests/samples'
+            # Only supported on X64 or ARM with SVE support
+            extra_args: '--deselect tests/python_tests/samples/test_encrypted_model_vlm.py::TestEncryptedVLM::test_sample_encrypted_lm'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
           - name: 'Whisper'
             marker: 'whisper'
@@ -629,7 +631,7 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+          python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}" ${{ matrix.test.extra_args || '' }}
         env:
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_JS_DIR: "${{ env.SRC_DIR }}/samples/js"
