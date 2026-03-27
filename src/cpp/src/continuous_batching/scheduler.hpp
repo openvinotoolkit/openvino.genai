@@ -162,8 +162,8 @@ public:
         return m_config;
     }
 
-    void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free) {
-        m_cache_orchestrator->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free);
+    void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free, CacheType cache_type) {
+        m_cache_orchestrator->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free, cache_type);
     }
 
     void clear_kv_cache() {

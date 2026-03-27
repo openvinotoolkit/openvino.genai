@@ -217,10 +217,11 @@ public:
     }
 
     void free_blocks_from_sequence(size_t seq_id,
-                                   const std::vector<std::set<size_t>>& per_layer_logical_block_indices) {
-        for (auto& [type, block_mgr] : m_block_managers) {
-            block_mgr->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices);
-        }
+                                   const std::vector<std::set<size_t>>& per_layer_logical_block_indices,
+                                   CacheType cache_type) {
+        auto it = m_block_managers.find(cache_type);
+        OPENVINO_ASSERT(it != m_block_managers.end(), "Cache type not registered");
+        it->second->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices);
     }
 
     void free_empty_physical_blocks(SequenceGroup::Ptr seq_group) {

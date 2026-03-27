@@ -815,7 +815,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
         auto logical_blocks_to_evict = cache_eviction_algo.evict_logical_blocks();
         m_previous_evicted_block_logical_indices_per_sequence[seq_id] = logical_blocks_to_evict;
 
-        m_scheduler->free_blocks_from_sequence(seq_id, logical_blocks_to_evict);
+        m_scheduler->free_blocks_from_sequence(seq_id, logical_blocks_to_evict, CacheType::KV_CACHE);
 
         size_t num_blocks_evicted = logical_blocks_to_evict[0].size();
 

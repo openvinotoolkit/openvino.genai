@@ -975,7 +975,7 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
 
     // evict 2 blocks from seq 2 immediately to formally satisfy eviction arena size
     std::vector<std::set<size_t>> blocks_to_evict(1, {0, 1});
-    scheduler.free_blocks_from_sequence(idx2, blocks_to_evict);
+    scheduler.free_blocks_from_sequence(idx2, blocks_to_evict, CacheType::KV_CACHE);
     sequence_group2->register_token_eviction(2 * 2);
 
     // 4 blocks are taken up at this stage
