@@ -80,43 +80,39 @@ struct SequenceGroupSamplingInfo {
 class CandidateGraph {
 public:
     struct Node {
-        uint64_t id = 0;
         int64_t token_id = -1;
         float score = -std::numeric_limits<float>::infinity();
         int tree_layer = 0;
+        std::vector<std::shared_ptr<Node>> children;
+        std::weak_ptr<Node> parent;
     };
+    using NodePtr = std::shared_ptr<Node>;
 
     CandidateGraph(int64_t root_token_id, float root_score, int max_tokens, int max_depth);
 
-    // Adds a child of parent_node_id. Returns the new node's ID.
-    // Precondition: the parent node must not be at max_depth (check with can_expand first).
-    uint64_t add_node(int64_t token_id, float score, uint64_t parent_node_id);
+    // Adds a child of parent. Returns the new node.
+    // Precondition: the parent must not be at max_depth (check with can_expand first).
+    NodePtr add_node(int64_t token_id, float score, const NodePtr& parent);
 
-    // Returns true if node_id can accept children (its tree_layer < max_depth).
-    bool can_expand(uint64_t node_id) const;
+    // Returns true if node can accept children (its tree_layer < max_depth).
+    bool can_expand(const NodePtr& node) const;
 
     // Returns at most (max_candidate_nodes + 1) top-scoring nodes (root always included), sorted by tree layer.
-    std::vector<Node> select_candidate_nodes() const;
+    std::vector<NodePtr> select_candidate_nodes() const;
 
     // From a set of nodes, returns those with no children present in the set (leaf nodes).
-    std::vector<Node> get_leaf_nodes(const std::vector<Node>& selected) const;
+    std::vector<NodePtr> get_leaf_nodes(const std::vector<NodePtr>& selected) const;
 
-    // Returns the path from root to node_id as a sequence of node_ids (root first).
-    std::vector<uint64_t> get_path_to_node(uint64_t node_id) const;
+    // Returns the path from root to node as a sequence of NodePtrs (root first).
+    std::vector<NodePtr> get_path_to_node(const NodePtr& node) const;
 
-    // Returns true if ancestor_id is an ancestor of node_id (self-inclusive).
-    bool is_ancestor(uint64_t ancestor_id, uint64_t node_id) const;
+    // Returns true if ancestor is an ancestor of node (self-inclusive).
+    bool is_ancestor(const NodePtr& ancestor, const NodePtr& node) const;
+
+    NodePtr get_root() const { return m_root; }
 
 private:
-    struct InternalNode {
-        Node data;
-        uint64_t parent_id = 0;
-        std::vector<uint64_t> child_ids;
-        std::unordered_set<uint64_t> ancestor_ids;  // self-inclusive; enables O(1) is_ancestor
-    };
-
-    std::unordered_map<uint64_t, InternalNode> m_nodes;
-    uint64_t m_next_node_id = 1;
+    NodePtr m_root;
     int m_max_candidate_nodes = 0;
     int m_max_depth = 0;
 };
@@ -248,14 +244,14 @@ protected:
 class Sampler::TreeSearcher : public Sampler::Searcher {
     // A branch in the current draft frontier: tracks which sequence is executing which graph node.
     struct DraftBeam {
-        uint64_t node_id;
+        CandidateGraph::NodePtr node;
         Sequence::Ptr m_sequence;
         float score = 0.0f;  // cumulative log-probability
     };
 
     // A newly sampled child candidate, carrying all information needed for forking.
     struct CandidateBeam {
-        uint64_t node_id;
+        CandidateGraph::NodePtr node;
         Sequence::Ptr parent_sequence;
         int64_t token_id;
         float log_prob;
