@@ -144,13 +144,15 @@ public:
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModelWithProjection") {
             m_clip_text_encoder_1 =
-                std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder", device, properties);
+                std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder", device,
+                    *properties_for_text_encoder(properties, "lora_te1"));
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
-            m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2", device, properties);
+            m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2", device,
+                *properties_for_text_encoder(properties, "lora_te2"));
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
         }
@@ -158,7 +160,8 @@ public:
         if (!text_encoder_3_json.is_null()) {
             const std::string text_encoder_3 = text_encoder_3_json.get<std::string>();
             if (text_encoder_3 == "T5EncoderModel") {
-                m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device, properties);
+                m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device,
+                    *properties_for_text_encoder(properties, "lora_te3"));
             } else {
                 OPENVINO_THROW("Unsupported '", text_encoder_3, "' text encoder type");
             }
@@ -271,10 +274,10 @@ public:
                  const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
 
-        m_clip_text_encoder_1->compile(text_encode_device, properties);
-        m_clip_text_encoder_2->compile(text_encode_device, properties);
+        m_clip_text_encoder_1->compile(text_encode_device, *properties_for_text_encoder(properties, "lora_te1"));
+        m_clip_text_encoder_2->compile(text_encode_device, *properties_for_text_encoder(properties, "lora_te2"));
         if (m_t5_text_encoder) {
-            m_t5_text_encoder->compile(text_encode_device, properties);
+            m_t5_text_encoder->compile(text_encode_device, *properties_for_text_encoder(properties, "lora_te3"));
         }
         m_transformer->compile(denoise_device, properties);
         m_vae->compile(vae_device, properties);
@@ -504,7 +507,11 @@ public:
             if(auto updated_adapters = derived_adapters(*adapters)) {
                 adapters = updated_adapters;
             }
-            // TODO: Add LoRA Adapter support for text encoders
+            m_clip_text_encoder_1->set_adapters(adapters);
+            m_clip_text_encoder_2->set_adapters(adapters);
+            if (m_t5_text_encoder) {
+                m_t5_text_encoder->set_adapters(adapters);
+            }
             m_transformer->set_adapters(adapters);
         }
     }
@@ -781,6 +788,19 @@ private:
             OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
             OPENVINO_ASSERT(!initial_image, "Internal error: initial_image must be empty for Text 2 image pipeline");
         }
+    }
+
+    utils::SharedOptional<const ov::AnyMap> properties_for_text_encoder(
+            const ov::AnyMap& properties, const std::string& tensor_name_prefix) {
+        return update_adapters_in_properties(properties,
+            [&tensor_name_prefix](const AdapterConfig& adapters) -> std::optional<AdapterConfig> {
+                if (!adapters.get_tensor_name_prefix()) {
+                    std::optional<AdapterConfig> updated_adapters = adapters;
+                    updated_adapters->set_tensor_name_prefix(tensor_name_prefix);
+                    return updated_adapters;
+                }
+                return std::nullopt;
+        });
     }
 
     friend class Text2ImagePipeline;

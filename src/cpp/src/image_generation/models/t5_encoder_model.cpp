@@ -72,13 +72,24 @@ T5EncoderModel& T5EncoderModel::reshape(int batch_size, int max_sequence_length)
 
 T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
-    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *extract_adapters_from_properties(properties));
+    std::optional<AdapterConfig> adapters;
+    auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
+    if (adapters) {
+        m_adapter_controller = AdapterController(m_model, *adapters, device);
+    }
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "T5 encoder model");
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
 
     return *this;
+}
+
+void T5EncoderModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    if (adapters) {
+        m_adapter_controller.apply(m_request, *adapters);
+    }
 }
 
 ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, int max_sequence_length, const ov::AnyMap& tokenization_params) {

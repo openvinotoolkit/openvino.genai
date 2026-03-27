@@ -221,7 +221,8 @@ void init_t5_encoder_model(py::module_& m) {
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
                 kwargs: Device properties.
-            )");
+            )")
+        .def("set_adapters", &ov::genai::T5EncoderModel::set_adapters, py::arg("adapters"));
 }
 
 void init_unet2d_condition_model(py::module_& m) {

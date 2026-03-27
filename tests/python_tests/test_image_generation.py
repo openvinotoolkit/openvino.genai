@@ -3,6 +3,7 @@
 
 import pytest
 import numpy as np
+from pathlib import Path
 import openvino as ov
 import openvino_genai as ov_genai
 
@@ -11,6 +12,7 @@ from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 FLUX_MODEL_ID = "tiny-random-flux"
 SDXL_MODEL_ID = "tiny-random-sdxl"
+SD3_MODEL_ID = "stable-diffusion-3-tiny-random"
 
 
 def get_random_image(height: int = 64, width: int = 64) -> ov.Tensor:
@@ -192,6 +194,82 @@ class TestTaylorSeerImageGeneration:
         assert len(callback_calls) > 0
 
 
+class TestLoRAFluxImageGeneration:
+    @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
+    def test_lora_adapters_constructor(self, image_generation_model):
+        """Test that LoRA adapters can be passed to the Flux pipeline constructor without error"""
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
+        assert pipe is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
+    def test_lora_adapters_generate(self, image_generation_model):
+        """Test that LoRA adapters can be passed to Flux generate() without error"""
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
+        image = pipe.generate(
+            "test prompt", width=64, height=64, num_inference_steps=1, adapters=adapter_config
+        )
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
+    def test_lora_adapters_default_from_constructor(self, image_generation_model):
+        """Test that LoRA adapters passed to the Flux constructor are used by default in generate()"""
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
+        image = pipe.generate("test prompt", width=64, height=64, num_inference_steps=1)
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
+    def test_t5_encoder_has_set_adapters_method(self, image_generation_model):
+        """Test that T5EncoderModel has set_adapters (used by Flux for text encoder LoRA)"""
+        model_path = Path(image_generation_model) / "text_encoder_2"
+        if not model_path.exists():
+            pytest.skip("T5 text encoder (text_encoder_2) not present in this model")
+        model = ov_genai.T5EncoderModel(str(model_path))
+        model.compile("CPU")
+        assert hasattr(model, "set_adapters")
+        model.set_adapters(None)
+
+
+class TestLoRASD3ImageGeneration:
+    @pytest.mark.parametrize("image_generation_model", [SD3_MODEL_ID], indirect=True)
+    def test_lora_adapters_constructor(self, image_generation_model):
+        """Test that LoRA adapters can be passed to the SD3 pipeline constructor without error"""
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
+        assert pipe is not None
+
+    @pytest.mark.parametrize("image_generation_model", [SD3_MODEL_ID], indirect=True)
+    def test_lora_adapters_generate(self, image_generation_model):
+        """Test that LoRA adapters can be passed to SD3 generate() without error"""
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
+        image = pipe.generate(
+            "test prompt", width=64, height=64, num_inference_steps=1, adapters=adapter_config
+        )
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [SD3_MODEL_ID], indirect=True)
+    def test_lora_adapters_default_from_constructor(self, image_generation_model):
+        """Test that LoRA adapters passed to the SD3 constructor are used by default in generate()"""
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
+        image = pipe.generate("test prompt", width=64, height=64, num_inference_steps=1)
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [SD3_MODEL_ID], indirect=True)
+    def test_t5_encoder_has_set_adapters_method(self, image_generation_model):
+        """Test that T5EncoderModel has the set_adapters method added for SD3 LoRA support"""
+        model_path = Path(image_generation_model) / "text_encoder_3"
+        if not model_path.exists():
+            pytest.skip("T5 text encoder (text_encoder_3) not present in this model")
+        model = ov_genai.T5EncoderModel(str(model_path))
+        model.compile("CPU")
+        assert hasattr(model, "set_adapters")
+        model.set_adapters(None)
+
+
 class TestImageGenerationOnNpuByNpuwCpu:
     def _construct_reshaped(self, model_dir):
         pipe = ov_genai.Text2ImagePipeline(model_dir)
@@ -210,7 +288,6 @@ class TestImageGenerationOnNpuByNpuwCpu:
         cpu_pipe = self._construct_reshaped(image_generation_model)
         cpu_pipe.compile("CPU")
         cpu_image = cpu_pipe.generate(**generation_args)
-
 
         npuw_pipe = self._construct_reshaped(image_generation_model)
         npuw_pipe.compile("NPU", **NPUW_CPU_PROPERTIES)

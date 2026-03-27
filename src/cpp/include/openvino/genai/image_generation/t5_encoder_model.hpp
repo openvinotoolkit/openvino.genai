@@ -78,6 +78,8 @@ public:
 
     ov::Tensor get_prompt_attention_mask() const;
 
+    void set_adapters(const std::optional<AdapterConfig>& adapters);
+
 private:
     AdapterController m_adapter_controller;
     ov::InferRequest m_request;
