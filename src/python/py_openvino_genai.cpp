@@ -134,11 +134,11 @@ PYBIND11_MODULE(py_openvino_genai, m) {
     init_video_metadata(m);
 
     init_llm_pipeline(m);
+    init_vlm_pipeline(m);
     init_continuous_batching_pipeline(m);
     init_image_generation_pipelines(m);
     init_video_generation_models(m);
     init_video_generation_pipelines(m);
-    init_vlm_pipeline(m);
     init_whisper_pipeline(m);
     init_rag_pipelines(m);
     init_speech_generation_pipeline(m);
