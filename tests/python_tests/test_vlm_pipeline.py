@@ -1948,7 +1948,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
 
         preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[optimum_model.config.model_type].preprocess_inputs
-        print(f"video shape: {video.shape if video is not None else None}")
+        logger.debug("video shape: %s", video.shape if video is not None else None)
         inputs = preprocess_inputs(prompt, None, processor, tokenizer, config=optimum_model.config, video=video)
     else:
         processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
