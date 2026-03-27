@@ -70,7 +70,15 @@ public:
         const StreamerVariant& streamer
     ) override {
         auto start_time = std::chrono::steady_clock::now();
-        auto result = m_impl.generate({prompt}, {images}, {videos}, {videos_metadata}, {std::move(generation_config)}, streamer)[0];
+        std::vector<ov::genai::GenerationConfig> generation_configs = {std::move(generation_config)};
+        auto result = m_impl.generate(
+            {prompt},
+            ov::genai::images_batches({images}),
+            ov::genai::videos_batches({videos}),
+            ov::genai::videos_metadata_batches({videos_metadata}),
+            ov::genai::generation_config_batches(generation_configs),
+            ov::genai::streamer(streamer)
+        )[0];
         auto stop_time = std::chrono::steady_clock::now();
 
         VLMDecodedResults decoded;
@@ -119,7 +127,15 @@ public:
         auto start_time = std::chrono::steady_clock::now();
         // Ensure chat history internal state is initialized for original history
         ChatHistoryInternalState::get_or_create(history);
-        auto result = m_impl.generate({history}, {images}, {videos}, {videos_metadata}, {std::move(generation_config)}, streamer)[0];
+        std::vector<ov::genai::GenerationConfig> generation_configs = {std::move(generation_config)};
+        auto result = m_impl.generate(
+            {history},
+            ov::genai::images_batches({images}),
+            ov::genai::videos_batches({videos}),
+            ov::genai::videos_metadata_batches({videos_metadata}),
+            ov::genai::generation_config_batches(generation_configs),
+            ov::genai::streamer(streamer)
+        )[0];
         auto stop_time = std::chrono::steady_clock::now();
 
         VLMDecodedResults decoded;
