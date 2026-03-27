@@ -105,6 +105,7 @@ void update_npu_config_whisper(ov::AnyMap& config,
     update_config(config, {"NPUW_FOLD", "NO"});
     update_config(config, {"NPUW_LLM", "YES"});
     update_config(config, {"NPUW_WHISPER", "YES"});
+    rename_key(config, "WHISPER_EOS_TOKEN", "NPUW_WHISPER_EOS_TOKEN");
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
     update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
