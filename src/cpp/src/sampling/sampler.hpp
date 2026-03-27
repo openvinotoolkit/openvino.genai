@@ -162,13 +162,14 @@ class Sampler {
 
     // request ID => beam search tracking information (kept separate — has its own mutex)
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
-    std::mutex m_beam_search_info_mutex;
 
     std::map<uint64_t, RequestSamplerContext> m_request_contexts;
     size_t m_default_seed = std::mt19937::default_seed;  // kept for set_seed/get_seed API compat
     // request ID => tree search tracking information
     std::map<uint64_t, std::shared_ptr<TreeSearcher>> m_tree_search_info;
-    std::mutex m_tree_search_info_mutex;
+
+    // protects m_beam_search_info and m_tree_search_info
+    std::mutex m_search_info_mutex;
 
     Tokenizer m_tokenizer;
 
