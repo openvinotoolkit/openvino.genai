@@ -5,12 +5,12 @@
 #include <gtest/gtest.h>
 #include "openvino/runtime/core.hpp"
 #include "continuous_batching/scheduler.hpp"
-#include "continuous_batching/cache_manager.hpp"
+#include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "helper.hpp"
 
 using namespace ov::genai;
 
-size_t get_total_allocated_bytes(std::shared_ptr<CacheManager> cache_manager) {
+size_t get_total_allocated_bytes(std::shared_ptr<KVCacheManager> cache_manager) {
     size_t allocated_bytes = 0;
     for (size_t i = 0; i < cache_manager->get_num_decoder_layers(); i++) {
         auto key_cache = cache_manager->get_key_cache(i);
@@ -37,7 +37,7 @@ TEST(TestCacheManager, test_cache_size_param) {
     const size_t num_decoder_layers = 12;
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
 
-    auto cache_manager = std::make_shared<CacheManager>(request);
+    auto cache_manager = std::make_shared<KVCacheManager>(request);
     ASSERT_EQ(num_decoder_layers, cache_manager->get_num_decoder_layers());
     const size_t num_kv_blocks = get_num_kv_blocks(scheduler_config.cache_size, cache_manager->get_block_size_in_bytes());
 
@@ -79,7 +79,7 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     const size_t num_decoder_layers = 12;
 
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
-    auto cache_manager = std::make_shared<CacheManager>(request);
+    auto cache_manager = std::make_shared<KVCacheManager>(request);
     size_t block_size_in_bytes = cache_manager->get_block_size_in_bytes();
     const size_t num_kv_blocks = get_num_kv_blocks(scheduler_config.cache_size, block_size_in_bytes);
 

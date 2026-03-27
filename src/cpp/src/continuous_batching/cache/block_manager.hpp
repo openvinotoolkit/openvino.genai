@@ -14,16 +14,16 @@
 
 namespace ov::genai {
 
-class KVCacheBlock {
+class CacheBlock {
     int m_ref_count;
     int m_index;
     size_t m_hash;
     std::chrono::time_point<std::chrono::steady_clock> m_timestamp;
 public:
-    using Ptr = std::shared_ptr<KVCacheBlock>;
-    using CPtr = std::shared_ptr<const KVCacheBlock>;
+    using Ptr = std::shared_ptr<CacheBlock>;
+    using CPtr = std::shared_ptr<const CacheBlock>;
 
-    explicit KVCacheBlock(int index)
+    explicit CacheBlock(int index)
         : m_ref_count(0),
           m_index(index),
           m_hash(0),
@@ -71,7 +71,7 @@ public:
     }
 };
 
-using BlocksPerLayer = std::vector<KVCacheBlock::Ptr>;
+using BlocksPerLayer = std::vector<CacheBlock::Ptr>;
 
 /**
  * @brief Allows to store and retrieve KV-cache blocks based on their content- and position-based hash.
@@ -96,7 +96,7 @@ class OverwritableBlocksHashStore {
      */
     void add(const BlocksPerLayer& blocks_for_all_layers) {
         OPENVINO_ASSERT(blocks_for_all_layers.size() == m_num_layers);
-        bool is_all_free = std::all_of(blocks_for_all_layers.begin(), blocks_for_all_layers.end(), [](const KVCacheBlock::Ptr& block_ptr) { return block_ptr->is_free(); });
+        bool is_all_free = std::all_of(blocks_for_all_layers.begin(), blocks_for_all_layers.end(), [](const CacheBlock::Ptr& block_ptr) { return block_ptr->is_free(); });
         OPENVINO_ASSERT(is_all_free);
         size_t hash = blocks_for_all_layers[0]->get_hash();
         for (const auto& block : blocks_for_all_layers) {
@@ -191,7 +191,7 @@ class CacheStateDumper;
  * them as requested.
  */
 class BlockAllocator {
-    std::vector<std::list<KVCacheBlock::Ptr>> m_free_blocks;
+    std::vector<std::list<CacheBlock::Ptr>> m_free_blocks;
     // We keep m_free_blocks_num instead of m_free_blocks[X].size() to WA old CXX library implementation issue for std::list::size()
     // see https://stackoverflow.com/questions/13157164/why-isnt-stdlist-size-constant-time
     std::vector<size_t> m_free_blocks_num;
@@ -218,7 +218,7 @@ public:
             m_free_blocks_num = std::vector<size_t>(num_layers, num_blocks);
             for (auto& per_layer_block_list : m_free_blocks) {
                 for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
-                    per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+                    per_layer_block_list.push_back(std::make_shared<CacheBlock>(block_id));
                 }
             }
         } else {
@@ -242,7 +242,7 @@ public:
         }
         for (auto& per_layer_block_list : m_free_blocks) {
             for (int block_id = m_total_num_blocks; block_id < new_kv_blocks_count; ++block_id) {
-                per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+                per_layer_block_list.push_back(std::make_shared<CacheBlock>(block_id));
             }
         }
         m_total_num_blocks = new_kv_blocks_count;
@@ -295,7 +295,7 @@ public:
      * @param block_ptr The block to be freed.
      * @param layer_idx The index of the layer with which the block is associated.
      */
-    void free(KVCacheBlock::Ptr& block_ptr, size_t layer_idx) {
+    void free(CacheBlock::Ptr& block_ptr, size_t layer_idx) {
         OPENVINO_ASSERT(!m_enable_prefix_caching);
         OPENVINO_ASSERT(layer_idx < m_num_layers);
         block_ptr->release();
@@ -319,7 +319,7 @@ public:
             block_ptr->release();
         }
 
-        auto free_predicate = [](const KVCacheBlock::Ptr& block_ptr) { return block_ptr->is_free(); };
+        auto free_predicate = [](const CacheBlock::Ptr& block_ptr) { return block_ptr->is_free(); };
         bool is_any_free = std::any_of(blocks_for_all_layers.begin(), blocks_for_all_layers.end(), free_predicate);
         bool is_all_free = false;
         if (is_any_free && m_num_layers > 1) {
@@ -410,11 +410,11 @@ public:
      * Allocates and returns one block for a given layer. Can only be used if prefix caching is disabled.
      * @return The block allocated for this layer.
      */
-    KVCacheBlock::Ptr allocate_block(size_t layer_idx) {
+    CacheBlock::Ptr allocate_block(size_t layer_idx) {
         OPENVINO_ASSERT(layer_idx < m_free_blocks.size());
         OPENVINO_ASSERT(!m_enable_prefix_caching);
         OPENVINO_ASSERT(can_allocate_blocks(1, layer_idx));
-        KVCacheBlock::Ptr allocated_block = m_free_blocks[layer_idx].front();
+        CacheBlock::Ptr allocated_block = m_free_blocks[layer_idx].front();
         allocated_block->increment();
         m_free_blocks[layer_idx].pop_front();
         --m_free_blocks_num[layer_idx];
@@ -441,7 +441,7 @@ public:
             BlocksPerLayer allocated_blocks;
             allocated_blocks.reserve(m_num_layers);
             for (size_t i = 0; i < m_num_layers; i++) {
-                KVCacheBlock::Ptr allocated_block = m_free_blocks[i].front();
+                CacheBlock::Ptr allocated_block = m_free_blocks[i].front();
                 allocated_block->increment();
                 allocated_block->set_hash(hash);
                 allocated_blocks.push_back(allocated_block);
@@ -577,7 +577,7 @@ public:
      * @param layer_idx The index of a layer.
      * @return A vector of blocks (one for each layer) occupied by this sequence for this layer.
      */
-    const std::vector<KVCacheBlock::Ptr>& get_block_table(uint64_t seq_id, size_t layer_idx) {
+    const std::vector<CacheBlock::Ptr>& get_block_table(uint64_t seq_id, size_t layer_idx) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         OPENVINO_ASSERT(m_block_table.count(seq_id) == 1);
         return m_block_table[seq_id][layer_idx];
@@ -730,7 +730,7 @@ public:
             for (size_t layer_idx = 0; layer_idx < m_block_table[sequence_id].size(); layer_idx++) {
                 auto& block_table = m_block_table[sequence_id][layer_idx];
                 for (size_t i = 0; i < num_blocks; ++i) {
-                    ov::genai::KVCacheBlock::Ptr block = m_allocator.allocate_block(layer_idx);
+                    ov::genai::CacheBlock::Ptr block = m_allocator.allocate_block(layer_idx);
                     OPENVINO_ASSERT(block != nullptr);
                     m_block_table[sequence_id][layer_idx].push_back(block);
                 }
@@ -740,7 +740,7 @@ public:
             // its hash would correspond to partially filled block.
             // In this case hash needs to be updated to the hash of fully filled block.
             if (block_table.size() > 0) {
-                KVCacheBlock::Ptr last_block = block_table.back();
+                CacheBlock::Ptr last_block = block_table.back();
                 auto hash = sequence->get_hash(block_table.size() * m_block_size);
                 auto prev_hash = last_block->get_hash();
                 if (prev_hash != hash) {
@@ -804,7 +804,7 @@ public:
         m_block_table[child_id].resize(m_num_layers);
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
             m_block_table[child_id][layer_idx].reserve(m_block_table[parent_id][layer_idx].size());
-            for (KVCacheBlock::Ptr &block: m_block_table[parent_id][layer_idx]) {
+            for (CacheBlock::Ptr &block: m_block_table[parent_id][layer_idx]) {
                 block->increment();
                 m_block_table[child_id][layer_idx].push_back(block);
             }
@@ -984,7 +984,7 @@ public:
 
             size_t needed_blocks_per_sequence = seq_group->get_num_logical_blocks() - num_physical_blocks;
 
-            KVCacheBlock::Ptr last_block = block_table.back();
+            CacheBlock::Ptr last_block = block_table.back();
             if (last_block->copy_on_write()) {
                 // block is used only by multiple sequences
                 auto references_count = last_block->get_references_count();
@@ -1104,7 +1104,7 @@ public:
             }
         }
 
-        // it returns information which blocks should be forked by CacheManager
+        // it returns information which blocks should be forked by ICacheManager
         return copy_blocks_map;
     }
 

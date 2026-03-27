@@ -4,6 +4,7 @@
 #include <atomic>
 #include <thread>
 #include <optional>
+#include <numeric>
 #include "openvino/genai/cache_eviction.hpp"
 
 #ifdef __APPLE__
@@ -19,7 +20,8 @@
 #include "utils.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "lora/helper.hpp"
-#include "continuous_batching/cache_state_dumper.hpp"
+#include "continuous_batching/cache/cache_state_dumper.hpp"
+#include "continuous_batching/cache/cache_factory.hpp"
 
 namespace {
 
@@ -155,29 +157,17 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LLM with Paged Attention");
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
-    // Cache manager
-    std::shared_ptr<CacheManager> cache_manager = std::make_shared<CacheManager>(infer_request);
-    m_num_decoder_layers = cache_manager->get_num_decoder_layers();
-    m_block_size = cache_manager->get_block_size();
-
-
-    // Scheduler configuration
+    // Detect cache types, create managers and block managers, normalize config
     SchedulerConfig normalized_config = scheduler_config;
-    size_t total_mem_size;
-    if (execution_device.find("GPU") != std::string::npos) {
-        total_mem_size = utils::get_available_gpu_memory(execution_device, m_num_decoder_layers);
-    } else {
-        total_mem_size = get_available_cpu_memory();
-    }
-    if (normalized_config.num_kv_blocks == 0 && normalized_config.cache_size > 0) {
-        size_t size_in_bytes = normalized_config.cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
-        OPENVINO_ASSERT(size_in_bytes <= total_mem_size, "Requested KV-cache size is larger than available memory size on the system.");
-        normalized_config.num_kv_blocks = size_in_bytes / cache_manager->get_block_size_in_bytes();
-    }
-    if (normalized_config.num_kv_blocks > 0) {
-        size_t size_in_bytes = cache_manager->get_block_size_in_bytes() * normalized_config.num_kv_blocks;
-        OPENVINO_ASSERT(size_in_bytes <= total_mem_size, "Requested number of KV-blocks require more memory than available on the system.");
-    }
+    auto get_available_memory = [&execution_device](const std::string& /*device*/, size_t num_layers) -> size_t {
+        if (execution_device.find("GPU") != std::string::npos) {
+            return utils::get_available_gpu_memory(execution_device, num_layers);
+        }
+        return get_available_cpu_memory();
+    };
+    auto cache_orchestrator = setup_cache(infer_request, normalized_config, get_available_memory);
+    m_num_decoder_layers = cache_orchestrator->get_num_layers();
+    m_block_size = cache_orchestrator->get_block_size();
 
     bool can_use_partial_preemption = true;
     if (execution_device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
@@ -191,7 +181,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     bool is_use_cache_eviction = scheduler_config.use_cache_eviction;
     if (is_use_cache_eviction) {
         const auto& eviction_config = scheduler_config.cache_eviction_config;
-        m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption, eviction_config.snapkv_window_size);
+        m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption, eviction_config.snapkv_window_size);
 
         bool is_apply_rotation = eviction_config.apply_rotation;
         bool is_use_adaptive_rkv = (eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV);
@@ -205,10 +195,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                                                        is_use_xattention,
                                                        is_use_adaptive_rkv);
         if (eviction_config.apply_rotation) {
-            _prepare_rotation_data_storage(normalized_config, cache_manager->get_v_head_size(0));
+            auto kv_mgr = std::static_pointer_cast<KVCacheManager>(cache_orchestrator->get_cache_manager(CacheType::KV_CACHE));
+            _prepare_rotation_data_storage(normalized_config, kv_mgr->get_v_head_size(0));
         }
     } else {
-        m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption);
+        m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption);
         m_model_runner =
             std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers,
                                                        /* collect_attention_scores = */ false,

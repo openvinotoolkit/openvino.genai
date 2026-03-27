@@ -6,7 +6,7 @@
 #include "continuous_batching/pipeline_base.hpp"
 
 #include "openvino/genai/lora_adapter.hpp"
-#include "continuous_batching/cache_eviction.hpp"
+#include "continuous_batching/cache/cache_eviction.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {

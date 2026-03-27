@@ -7,10 +7,11 @@
 #include <list>
 
 #include "openvino/runtime/tensor.hpp"
+#include "continuous_batching/cache/i_cache_manager.hpp"
 #include "utils.hpp"
 namespace ov::genai {
 
-class CacheManager {
+class KVCacheManager : public ICacheManager {
     size_t m_num_decoder_layers = 0;
     std::string m_device;
     size_t m_block_size = 0; // block size is per inference device 
@@ -32,7 +33,27 @@ class CacheManager {
     }
 
 public:
-    explicit CacheManager(ov::InferRequest request) :
+    /**
+     * @brief Check whether the compiled model has KV cache inputs (key_cache.* / value_cache.*).
+     * @param compiled_model The compiled model to inspect.
+     * @return true if at least one key_cache and one value_cache input are found.
+     */
+    static bool has_cache_inputs(const ov::CompiledModel& compiled_model) {
+        bool has_key = false, has_value = false;
+        for (const auto& input : compiled_model.inputs()) {
+            for (const auto& name : input.get_names()) {
+                if (name.find("key_cache.") == 0)
+                    has_key = true;
+                else if (name.find("value_cache.") == 0)
+                    has_value = true;
+                if (has_key && has_value)
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    explicit KVCacheManager(ov::InferRequest request) :
         m_request(request) {
         // extract information about inference device
         ov::CompiledModel compiled_model = request.get_compiled_model();
@@ -95,12 +116,26 @@ public:
         return m_num_decoder_layers;
     }
 
-    std::string get_device() const {
+    // --- ICacheManager interface ---
+
+    size_t get_num_layers() const override {
+        return m_num_decoder_layers;
+    }
+
+    std::string get_device() const override {
         return m_device;
     }
 
-    size_t get_block_size() const {
+    size_t get_block_size() const override {
         return m_block_size;
+    }
+
+    size_t get_block_size_in_bytes() const override {
+        return m_block_size_in_bytes;
+    }
+
+    size_t get_num_allocated_blocks() const override {
+        return m_num_allocated_kv_blocks;
     }
 
     ov::element::Type get_key_cache_precision(size_t decoder_layer_id) const {
@@ -113,9 +148,7 @@ public:
         return m_value_precisions[decoder_layer_id];
     }
 
-    size_t get_block_size_in_bytes() const {
-        return m_block_size_in_bytes;
-    }
+    // --- KV-cache-specific accessors ---
 
     size_t sub_byte_data_type_multiplier(const ov::element::Type data_type) const {
         if (data_type == ov::element::i4 || data_type == ov::element::u4)
@@ -123,7 +156,7 @@ public:
         return 1;
     }
 
-    void allocate_cache_if_needed(size_t num_kv_blocks) {
+    void allocate_cache_if_needed(size_t num_kv_blocks) override {
         if (m_num_allocated_kv_blocks >= num_kv_blocks) {
             return;
         }
@@ -242,7 +275,7 @@ public:
         return m_value_shapes[layer_id][3].get_length();
     }
 
-    void copy_blocks(const std::map<size_t, std::list<size_t>>& block_copy_map) {
+    void copy_blocks(const std::map<size_t, std::list<size_t>>& block_copy_map) override {
         for (const auto & blocks_pair : block_copy_map) {
             size_t src_block_id = blocks_pair.first;
             const std::list<size_t>& dst_block_ids = blocks_pair.second;
@@ -301,7 +334,7 @@ public:
         }
     }
 
-    void clear() {
+    void clear() override {
         for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
             m_key_cache[decoder_layer_id] = ov::Tensor();
             m_value_cache[decoder_layer_id] = ov::Tensor();

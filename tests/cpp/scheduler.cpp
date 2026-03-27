@@ -3,12 +3,15 @@
 //
 
 #include <gtest/gtest.h>
+#include <numeric>
 #include "openvino/runtime/core.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "sequence_group.hpp"
 #include "continuous_batching/scheduler.hpp"
+#include "continuous_batching/cache/cache_orchestrator.hpp"
+#include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "helper.hpp"
 #include "utils.hpp"
 
@@ -21,11 +24,19 @@ void clear_finished_sequences(std::vector<SequenceGroup::Ptr>& requests) {
     requests.erase(new_end, requests.end());
 }
 
-std::shared_ptr<CacheManager> init_cache_manager(SchedulerConfig scheduler_config) {
+static constexpr size_t TEST_BLOCK_SIZE = 4;
+static constexpr size_t TEST_NUM_DECODER_LAYERS = 12;
+
+std::shared_ptr<CacheOrchestrator> init_cache_orchestrator(SchedulerConfig scheduler_config, size_t block_size = TEST_BLOCK_SIZE, size_t num_layers = 1) {
     ov::Core core = ov::Core();
-    size_t num_decoder_layers = 12;
-    ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
-    return std::make_shared<CacheManager>(request);
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, TEST_NUM_DECODER_LAYERS)).create_infer_request();
+    auto cache_manager = std::make_shared<KVCacheManager>(request);
+    auto block_manager = std::make_shared<BlockManager>(scheduler_config.num_kv_blocks, scheduler_config.enable_prefix_caching, block_size, num_layers);
+    auto orchestrator = std::make_shared<CacheOrchestrator>();
+    std::vector<size_t> all_layers(num_layers);
+    std::iota(all_layers.begin(), all_layers.end(), 0);
+    orchestrator->register_cache_type(CacheType::KV_CACHE, cache_manager, block_manager, all_layers);
+    return orchestrator;
 }
 
 ov::Tensor embeds_matrix_to_tensor(std::vector<std::vector<float>> vec) {
@@ -65,7 +76,7 @@ TEST(TestScheduler, general_test) {
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2, sequence_group3};
 
         // schedule 3 sequence groups that use 6 kv blocks
-        Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
+        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
         auto out1 = scheduler.schedule(requests);
 
         std::vector<uint64_t> ref_ids = {0, 1, 2};
@@ -172,7 +183,7 @@ TEST_P(AppendSlotsSchedulerTest, test_append_slots_considers_all_sequences) {
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
-    Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
     auto out1 = scheduler.schedule(requests);
 
     std::vector<uint64_t> ref_ids = {0, 1};
@@ -246,7 +257,7 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
 
 
     // schedule 2 sequence groups that use 5 kv blocks
-    Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
     auto out0 = scheduler.schedule(requests);
 
     for (auto seq: requests) {
@@ -337,7 +348,7 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
         std::vector<SequenceGroup::Ptr> requests = {sequence_group};
         EXPECT_NO_THROW(requests[0]->get_running_sequences()[0]->get_sequence_group_ptr());
 
-        Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
+        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
         auto out = scheduler.schedule(requests);
         for (auto sequence: sequence_group->get_not_finished_sequences()) {
             sequence->append_token(token, 0.7);
@@ -453,7 +464,7 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
         // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
-        Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
+        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
         auto out1 = scheduler.schedule(requests);
 
         for (auto seq: requests) {
@@ -553,7 +564,7 @@ TEST(TestScheduler, prefix_caching_test) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         std::vector<uint64_t> histrory_tokens = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
+        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
         size_t chat_iterations = 10;
 
@@ -621,7 +632,7 @@ TEST(TestScheduler, prefix_caching_test_two_identical_sequences) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         std::vector<uint64_t> histrory_tokens = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
+        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
         size_t chat_iterations = 10;
 
@@ -691,7 +702,7 @@ TEST(TestScheduler, prefix_caching_with_max_new_tokens_equal_1) {
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
         // schedule prompt
-        Scheduler scheduler = Scheduler(32, init_cache_manager(scheduler_config), scheduler_config);
+        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config, 32), scheduler_config);
 
         size_t chat_iterations = 2;
 
@@ -749,7 +760,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
 
     // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
     const bool can_use_partial_preemption = false;
-    Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config, 1, can_use_partial_preemption);
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config, can_use_partial_preemption);
     auto out1 = scheduler.schedule(requests);
 
     for (auto req : requests)
@@ -832,7 +843,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
 
     // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
     const bool can_use_partial_preemption = false;
-    Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config, 1, can_use_partial_preemption);
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config, can_use_partial_preemption);
     scheduler.schedule(requests);
     for (auto req: requests)
         req->finish_iteration();
@@ -909,7 +920,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
 }
 
 
-std::vector<size_t> _get_indices(const std::vector<KVCacheBlock::Ptr>& block_table_for_layer) {
+std::vector<size_t> _get_indices(const std::vector<CacheBlock::Ptr>& block_table_for_layer) {
     std::vector<size_t> retval(block_table_for_layer.size());
     for (size_t i = 0; i < block_table_for_layer.size(); i++) {
         retval[i] = block_table_for_layer[i]->get_index();
@@ -953,7 +964,7 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     auto idx2 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
-    Scheduler scheduler = Scheduler(2, init_cache_manager(scheduler_config), scheduler_config);
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config, 2), scheduler_config);
     // prompt phase - schedules 1 block for seq 1, 5 blocks for seq 2
     auto out = scheduler.schedule(requests);
 
@@ -1045,7 +1056,7 @@ TEST(TestScheduler, prefix_caching_embeddings_test) {
         }
         std::vector<std::vector<float>> histrory_embeddings = {};
         // schedule prompt
-        Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
+        Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
         size_t chat_iterations = 10;
 

@@ -10,13 +10,13 @@
 
 TEST(TestBlockHashStore, general_test) {
     ov::genai::OverwritableBlocksHashStore block_hash_store(1);
-    auto block0 = std::make_shared<ov::genai::KVCacheBlock>(0);
+    auto block0 = std::make_shared<ov::genai::CacheBlock>(0);
     block0->set_hash(77);
     std::this_thread::sleep_until(std::chrono::steady_clock::now() + std::chrono::seconds(1));
-    auto block1 = std::make_shared<ov::genai::KVCacheBlock>(1);
+    auto block1 = std::make_shared<ov::genai::CacheBlock>(1);
     block1->set_hash(56);
     std::this_thread::sleep_until(std::chrono::steady_clock::now() + std::chrono::seconds(1));
-    auto block2 = std::make_shared<ov::genai::KVCacheBlock>(2);
+    auto block2 = std::make_shared<ov::genai::CacheBlock>(2);
     block2->set_hash(23);
     std::this_thread::sleep_until(std::chrono::steady_clock::now() + std::chrono::seconds(1));
     block_hash_store.add(ov::genai::BlocksPerLayer{block0});
@@ -36,10 +36,10 @@ TEST(TestBlockHashStore, general_test) {
     EXPECT_EQ(block_hash_store.get_lru_block_to_overwrite()[0]->get_index(), 0);
     EXPECT_EQ(block_hash_store.num_blocks(), 1);
 
-    auto block3 = std::make_shared<ov::genai::KVCacheBlock>(7);
+    auto block3 = std::make_shared<ov::genai::CacheBlock>(7);
     block3->set_hash(12);
     std::this_thread::sleep_until(std::chrono::steady_clock::now() + std::chrono::seconds(1));
-    auto block4 = std::make_shared<ov::genai::KVCacheBlock>(10);
+    auto block4 = std::make_shared<ov::genai::CacheBlock>(10);
     block4->set_hash(99);
     std::this_thread::sleep_until(std::chrono::steady_clock::now() + std::chrono::seconds(1));
     block_hash_store.add(ov::genai::BlocksPerLayer{block3});
