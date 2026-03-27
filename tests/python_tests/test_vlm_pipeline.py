@@ -2532,12 +2532,11 @@ def test_video_metadata_sampling_continuous_batching(
     outputs_generate_api = []
 
     for video, video_metadata in video_sampling_inputs:
-        videos_metadata_batches_kwargs = {"videos_metadata_batches": [[video_metadata]]} if video_metadata else {}
         results = ov_pipe.generate(
             [prompt],
             videos=[[video]],
+            videos_metadata_batches=[[video_metadata]] if video_metadata else [],
             generation_config=[generation_config],
-            **videos_metadata_batches_kwargs,
         )
         outputs_generate_api.append(results[0].texts[0])
 
@@ -2547,14 +2546,13 @@ def test_video_metadata_sampling_continuous_batching(
     handles = []
 
     for request_id, (video, video_metadata) in enumerate(video_sampling_inputs):
-        videos_metadata_kwargs = {"videos_metadata": [video_metadata]} if video_metadata else {}
         handle = ov_pipe.add_request(
             request_id,
             prompt,
             images=[],
             videos=[video],
+            videos_metadata=[video_metadata] if video_metadata else [],
             generation_config=generation_config,
-            **videos_metadata_kwargs,
         )
         handles.append(handle)
 
