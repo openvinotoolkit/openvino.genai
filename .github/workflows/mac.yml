@@ -445,11 +445,18 @@ jobs:
           #   cmd: 'python -m pytest -v tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py'
           #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
           #   timeout: 240
-          # Only supported on X64 or ARM with SVE support
-          # - name: 'LLM & VLM'
-          #   cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py'
-          #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
-          #   timeout: 180
+          - name: 'LLM'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
+            timeout: 90
+          - name: 'VLM (match_optimum_with_resolutions)'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "test_vlm_pipeline_match_optimum_with_resolutions"'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 90
+          - name: 'VLM'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions"'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 90
           - name: 'GGUF Reader tests'
             cmd: 'python -m pytest -v ./tests/python_tests/test_gguf_reader.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
