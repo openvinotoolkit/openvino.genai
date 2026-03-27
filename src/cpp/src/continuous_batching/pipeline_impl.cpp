@@ -21,7 +21,7 @@
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "lora/helper.hpp"
 #include "continuous_batching/cache/cache_state_dumper.hpp"
-#include "continuous_batching/cache/cache_factory.hpp"
+#include "continuous_batching/cache/cache_orchestrator.hpp"
 
 namespace {
 
@@ -165,7 +165,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         }
         return get_available_cpu_memory();
     };
-    auto cache_orchestrator = setup_cache(infer_request, normalized_config, get_available_memory);
+    auto cache_orchestrator = CacheOrchestrator::create(infer_request, normalized_config, get_available_memory);
     m_num_decoder_layers = cache_orchestrator->get_num_layers();
     m_block_size = cache_orchestrator->get_block_size();
 
