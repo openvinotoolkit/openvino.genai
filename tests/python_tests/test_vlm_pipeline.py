@@ -267,6 +267,7 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
     Return True when optimum-intel version exposes ``_OVVideoChatFlashQwenForCausalLM``,
     otherwise return False.
     """
+
     try:
         import optimum.intel.openvino.modeling_visual_language as mod
     except ImportError:
@@ -292,7 +293,7 @@ def _get_ov_model(model_id: str) -> str:
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip(
-            "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported version is 1.27.0.dev0+70056d0."
+            "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported version is 1.27.0.dev0+60c9a4b."
         )
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
@@ -1894,6 +1895,21 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         )
         return NanollavaProcessorWrapper(hf_model.process_images, hf_model.config, hf_model.dtype)
 
+    class VideochatflashqwenProcessorWrapper:
+        def __init__(self, processor, model_dtype):
+            self.processor = processor
+            self.model_dtype = model_dtype
+
+        def __call__(self, images, return_tensors):
+            return self.processor(images, return_tensors="pt")["pixel_values"].to(dtype=self.model_dtype)
+
+    def get_videochatflashqwen_processor():
+        hf_model = transformers.AutoModelForCausalLM.from_pretrained(
+            model_cached, device_map="auto", trust_remote_code=True
+        )
+        processor = hf_model.get_vision_tower().image_processor.preprocess
+        return VideochatflashqwenProcessorWrapper(processor,  hf_model.dtype)
+
     ov_pipe = ov_pipe_model.pipeline
 
     model_id = ov_pipe_model.model_id
@@ -1925,6 +1941,15 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
 
         preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[optimum_model.config.model_type].preprocess_inputs
         inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=optimum_model.config)
+    elif optimum_model.config.model_type == "videochat_flash_qwen":
+        processor = get_videochatflashqwen_processor()
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
+
+        from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
+
+        preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[optimum_model.config.model_type].preprocess_inputs
+        print(f"video shape: {video.shape if video is not None else None}")
+        inputs = preprocess_inputs(prompt, None, processor, tokenizer, config=optimum_model.config, video=video)
     else:
         processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
         # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
@@ -1953,6 +1978,9 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     if optimum_model.config.model_type == "llava-qwen2":
         assert tokenizer is not None, "Tokenizer should be set for llava-qwen2 models."
         optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
+    elif optimum_model.config.model_type == "videochat_flash_qwen":
+        assert tokenizer is not None, "Tokenizer should be set for videochat_flash_qwen models."
+        optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
     else:
         optimum_output = processor.batch_decode(
             generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
@@ -2023,6 +2051,8 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-MiniCPM-o-2_6/*/text-only": "CVS-180070",
     # minicpmv-2_6 cases with images
     "*tiny-random-minicpmv-2_6/*/image*": "CVS-180070",
+    # videochat_flash_qwen text-only cases
+    "*tiny-videochat-flash-qwen/PA/CPP/text-only": "CVS-183813",
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.
@@ -2182,14 +2212,11 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
     image_input_resolution: tuple[int, int],
     video_input_resolution: tuple[int, int],
 ):
-    # VideoChat-Flash-Qwen: Optimum preprocess_inputs currently fails on video chat_template rendering
-    if _is_videochat_flash_qwen_model(ov_pipe_model.model_id):
-        pytest.skip(
-            "VideoChat-Flash-Qwen video cases are expected to fail in optimum-vs-genai resolution test due to lack of Optimum-intel support. See CVS-173635."
-        )
     resized_image = None
     resized_video = None
     if has_image:
+        if _is_videochat_flash_qwen_model(ov_pipe_model.model_id):
+            pytest.skip("videochat_flash_qwen does not support image input")
         resized_image = request.getfixturevalue("cat_image")
         resized_image = resized_image.resize(image_input_resolution)
 
