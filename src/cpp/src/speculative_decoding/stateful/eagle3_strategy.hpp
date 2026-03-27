@@ -64,7 +64,7 @@ struct ValidationResult {
 
 /// @brief Constructs model input tensors for each Eagle3 inference phase.
 ///
-/// Each method reads sequence state (prompt ids, generated ids, EagleMetaData)
+/// Each method reads sequence state (prompt ids, generated ids, TreeMetaData)
 /// and produces a complete InputTensors bundle.
 class Eagle3InputBuilder {
 public:
@@ -129,7 +129,7 @@ public:
     /// that NPUW can prune the correct (non-contiguous) tree positions.
     ///
     /// @param num_candidates   Total number of candidate tokens fed to the model (N+1).
-    /// @param accepted_indices Candidate indices that were accepted (from EagleMetaData::validated_indices).
+    /// @param accepted_indices Candidate indices that were accepted (from TreeMetaData::validated_indices).
     ///                         Index 0 is always the root; subsequent entries are accepted draft nodes.
     void set_npu_sampling_result(size_t num_candidates, const std::vector<int64_t>& accepted_indices);
 
@@ -411,8 +411,8 @@ private:
     /// @brief Step 5: Gathers accepted hidden states for the next iteration.
     void gather_accepted_hidden_states(const ValidationResult& validation);
 
-    /// @brief Applies default eagle_tree_params if the user did not set them.
-    static void ensure_eagle_tree_params_is_set(GenerationConfig& config);
+    /// @brief Applies default tree_params if the user did not set them.
+    static void ensure_tree_params_is_set(GenerationConfig& config);
 
     std::unique_ptr<Eagle3DraftWrapper> m_draft;
     std::unique_ptr<Eagle3TargetWrapper> m_target;

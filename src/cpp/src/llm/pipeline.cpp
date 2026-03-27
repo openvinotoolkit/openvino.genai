@@ -102,11 +102,11 @@ std::pair<std::string, Any> draft_model(
     auto generation_config = utils::from_config_json_if_exists(models_path);
     // If the user supplied a GenerationConfig, overlay the speculative-decoding parameters
     // so the pipeline constructor can read them from draft_model_desc.generation_config:
-    //   - eagle_tree_params: used by Eagle3 pipeline
+    //   - tree_params: used by Eagle3 pipeline
     //   - num_assistant_tokens: used by FastDraft pipeline
     const auto config_it = properties.find(utils::CONFIG_ARG_NAME);
     if (config_it != properties.end()) {
-        generation_config.eagle_tree_params = config_it->second.as<GenerationConfig>().eagle_tree_params;
+        generation_config.tree_params = config_it->second.as<GenerationConfig>().tree_params;
         generation_config.num_assistant_tokens = config_it->second.as<GenerationConfig>().num_assistant_tokens;
     }
 

@@ -218,7 +218,7 @@ InputTensors Eagle3InputBuilder::build_target_validation_inputs() const {
     // The root is the last token the target produced; its KV was not written back yet,
     // so it must be re-submitted together with the draft tree nodes for validation.
     //
-    // tree_mask[i][j] (from EagleMetaData, set by select_top_k):
+    // tree_mask[i][j] (from TreeMetaData, set by select_top_k):
     //   1 → candidate j is an ancestor of i (attend allowed → 0.0)
     //   0 → not an ancestor (blocked → -INF)
     // tree_position_ids[i]: tree depth of candidate i (root = 0).
@@ -239,7 +239,7 @@ InputTensors Eagle3InputBuilder::build_target_validation_inputs() const {
 
     const size_t prompt_len = m_sequence_group->get_prompt_ids().size();
     const auto& generated_ids = current_sequence->get_generated_ids();
-    const auto& metadata = current_sequence->get_eagle_metadata();
+    const auto& metadata = current_sequence->get_tree_metadata();
     const auto& tree_mask_bin = metadata.tree_mask;
     const auto& tree_pos_ids = metadata.tree_position_ids;
 
@@ -658,7 +658,7 @@ InferResult Eagle3TargetWrapper::forward(const InferContext& ctx) {
     if (!is_validation) {
         const auto saved_config = get_sequence_group()->get_sampling_parameters();
         auto prefill_config = saved_config;
-        prefill_config.eagle_tree_params.tree_depth = 0;
+        prefill_config.tree_params.tree_depth = 0;
         get_sequence_group()->set_sampling_parameters(prefill_config);
 
         sampled = sample_next_tokens(output.logits, ctx.input_token_count);
@@ -933,15 +933,15 @@ InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
 StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc& target_model_desc,
                                                      const ov::genai::ModelDesc& draft_model_desc)
     : StatefulSpeculativePipelineBase(target_model_desc.tokenizer, target_model_desc.generation_config) {
-    // eagle_tree_params are read from draft_model_desc.generation_config.
+    // tree_params are read from draft_model_desc.generation_config.
     // m_generation_config is initialised from target_model_desc (eos_token_id, etc.).
-    m_generation_config.eagle_tree_params = draft_model_desc.generation_config.eagle_tree_params;
+    m_generation_config.tree_params = draft_model_desc.generation_config.tree_params;
 
-    // Apply compile-time defaults when no eagle_tree_params were provided by the user or
+    // Apply compile-time defaults when no tree_params were provided by the user or
     // the draft model JSON (tree_depth == 0 is the zero-initialised struct default).
-    ensure_eagle_tree_params_is_set(m_generation_config);
+    ensure_tree_params_is_set(m_generation_config);
 
-    OPENVINO_ASSERT(m_generation_config.is_tree_search(), "Eagle3 pipeline requires eagle_tree_params.tree_depth > 0.");
+    OPENVINO_ASSERT(m_generation_config.is_tree_search(), "Eagle3 pipeline requires tree_params.tree_depth > 0.");
 
     // Extract hidden_layers_list from draft model properties — used only during model
     // construction to wire the target model's hidden-state extraction.
@@ -977,13 +977,13 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     // --- Compute validation windows ---
     // target_validation_window: number of candidate tokens the target model validates in one
     // step — all N tree nodes (num_speculative_tokens + 1), including the root token.
-    const size_t target_validation_window = m_generation_config.eagle_tree_params.num_speculative_tokens + 1;
+    const size_t target_validation_window = m_generation_config.tree_params.num_speculative_tokens + 1;
 
     // draft_validation_window: maximum number of tokens the draft model processes in a single
     // DRAFT_ITERATION pass.  At each iteration all running sequences each contribute one token
     // so the worst case is at the last pass: tree_depth * branching_factor.
-    m_draft_iterations = m_generation_config.eagle_tree_params.tree_depth;
-    const size_t draft_validation_window = m_draft_iterations * m_generation_config.eagle_tree_params.branching_factor;
+    m_draft_iterations = m_generation_config.tree_params.tree_depth;
+    const size_t draft_validation_window = m_draft_iterations * m_generation_config.tree_params.branching_factor;
 
     // --- Configure and create draft model ---
     auto draft_desc = draft_model_desc;
@@ -1010,17 +1010,17 @@ StatefulEagle3LLMPipeline::~StatefulEagle3LLMPipeline() {
     m_draft->release_memory();
 }
 
-void StatefulEagle3LLMPipeline::ensure_eagle_tree_params_is_set(GenerationConfig& config) {
+void StatefulEagle3LLMPipeline::ensure_tree_params_is_set(GenerationConfig& config) {
     if (!config.is_tree_search()) {
-        config.eagle_tree_params.branching_factor = DEFAULT_EAGLE_BRANCHING_FACTOR;
-        config.eagle_tree_params.tree_depth = DEFAULT_EAGLE_TREE_DEPTH;
-        config.eagle_tree_params.num_speculative_tokens = DEFAULT_EAGLE_NUM_SPECULATIVE_TOKENS;
+        config.tree_params.branching_factor = DEFAULT_EAGLE_BRANCHING_FACTOR;
+        config.tree_params.tree_depth = DEFAULT_EAGLE_TREE_DEPTH;
+        config.tree_params.num_speculative_tokens = DEFAULT_EAGLE_NUM_SPECULATIVE_TOKENS;
     }
 }
 
 GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
     GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(generation_config);
-    ensure_eagle_tree_params_is_set(config);
+    ensure_tree_params_is_set(config);
     return config;
 }
 
@@ -1077,7 +1077,7 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
         OPENVINO_ASSERT(l_shape.size() == 3, "logits must be rank-3, got rank ", l_shape.size());
         const size_t vocab_size = l_shape[2];
 
-        m_draft->allocate_buffers(m_generation_config.eagle_tree_params.branching_factor,
+        m_draft->allocate_buffers(m_generation_config.tree_params.branching_factor,
                                   m_draft_iterations,
                                   hidden_size,
                                   vocab_size);
@@ -1188,20 +1188,20 @@ void StatefulEagle3LLMPipeline::expand_draft_tree(size_t past_accepted_token_cou
 ValidationResult StatefulEagle3LLMPipeline::validate_draft_with_target() {
     // In tree-search mode the draft model generates a tree of N+1 candidates:
     //   draft generated_ids tail = [root, node_1, ..., node_N]
-    //   EagleMetaData.tree_mask  = (N+1) x (N+1), index 0 = root.
+    //   TreeMetaData.tree_mask  = (N+1) x (N+1), index 0 = root.
     // The root token is the LAST token sampled by the target in the previous iteration.
     // It has NOT been fed back to the target KV cache yet, so the target must process
     // all N+1 candidates (root + N tree nodes) during validation.
     const auto& draft_gen_ids = m_draft->get_current_sequence()->get_generated_ids();
-    const auto& draft_metadata = m_draft->get_current_sequence()->get_eagle_metadata();
+    const auto& draft_metadata = m_draft->get_current_sequence()->get_tree_metadata();
     const size_t num_candidates = draft_metadata.tree_mask.size();
     OPENVINO_ASSERT(num_candidates >= 2,
                     "Expected at least 2 candidates (root + at least 1 tree node), got: ",
                     num_candidates);
     const size_t num_tree_nodes = num_candidates - 1;
 
-    // Sync EagleMetaData and candidate tokens from DRAFT -> TARGET.
-    m_target->get_current_sequence()->set_eagle_metadata(draft_metadata);
+    // Sync TreeMetaData and candidate tokens from DRAFT -> TARGET.
+    m_target->get_current_sequence()->set_tree_metadata(draft_metadata);
 
     OPENVINO_ASSERT(draft_gen_ids.size() >= num_candidates,
                     "draft generated_ids too short: ",
@@ -1257,7 +1257,7 @@ void StatefulEagle3LLMPipeline::synchronize_after_validation(const ValidationRes
     //
     // NON-NPU: Trim the tail to remove rejected positions.
     if (m_target->device() == "NPU") {
-        const auto& validated_indices = m_target->get_current_sequence()->get_eagle_metadata().validated_indices;
+        const auto& validated_indices = m_target->get_current_sequence()->get_tree_metadata().validated_indices;
         m_target->set_npu_sampling_result(validation.num_candidates, validated_indices);
     } else if (tokens_to_remove > 0) {
         m_target->trim_kv_cache(tokens_to_remove);
@@ -1280,7 +1280,7 @@ void StatefulEagle3LLMPipeline::gather_accepted_hidden_states(const ValidationRe
     const auto& h_shape = current_hidden.get_shape();
     OPENVINO_ASSERT(h_shape.size() == 3 && h_shape[0] == 1, "Invalid hidden state shape: ", h_shape);
 
-    const auto& validated_indices = m_target->get_current_sequence()->get_eagle_metadata().validated_indices;
+    const auto& validated_indices = m_target->get_current_sequence()->get_tree_metadata().validated_indices;
     const size_t total_accepted_tokens = validation.validated_tokens.size();
     OPENVINO_ASSERT(validated_indices.size() == total_accepted_tokens,
                     "validated_indices size (",
@@ -1322,8 +1322,8 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     const size_t pre_draft_token_len = m_draft->get_sequence_length();
     const size_t past_accepted_token_count = m_target->get_current_sequence()->get_generated_ids().size();
 
-    // Clear stale EagleMetaData from the previous iteration.
-    m_draft->get_current_sequence()->set_eagle_metadata({});
+    // Clear stale TreeMetaData from the previous iteration.
+    m_draft->get_current_sequence()->set_tree_metadata({});
 
     // Step 1: Generate first draft token using target hidden states (DRAFT_INITIAL).
     generate_initial_draft(input_token_count, past_accepted_token_count);

@@ -39,14 +39,14 @@ def main():
     # config.assistant_confidence_threshold = 0.4
 
     # Add parameters to enable Eagle tree-search speculative decoding.
-    # NOTE: eagle_tree_params must be set before pipeline construction because the NPU model
+    # NOTE: tree_params must be set before pipeline construction because the NPU model
     # is compiled with a fixed validation-window size.
     # - branching_factor: number of top-k candidates expanded at each tree node.
-    # - tree_depth: lookahead depth of the tree; the draft model runs tree_depth + 1 passes per speculative step
-    # - num_speculative_tokens: number of draft (non-root) tokens submitted to the target model for verification.
-    config.eagle_tree_params.branching_factor = 2
-    config.eagle_tree_params.tree_depth = 4
-    config.eagle_tree_params.num_speculative_tokens = 7
+    # - tree_depth: lookahead depth of the tree; the draft model runs tree_depth passes per speculative step
+    # - num_speculative_tokens: number of candidate (non-root) tokens submitted to the target model for verification.
+    config.tree_params.branching_factor = 2
+    config.tree_params.tree_depth = 4
+    config.tree_params.num_speculative_tokens = 7
 
     draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device, generation_config=config)
 
