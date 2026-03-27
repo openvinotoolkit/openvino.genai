@@ -156,9 +156,6 @@ wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type 
 
 ### Compare Speech-generation models
 ```sh
-# Install the extra evaluator dependencies once.
-pip install -r requirements-speech-generation.txt
-
 # Export SpeechT5 to OpenVINO.
 optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts_ov
 
