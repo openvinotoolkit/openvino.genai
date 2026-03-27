@@ -20,7 +20,7 @@ scikit-image<=0.26.0
 # - openbmb/MiniCPM-o-2_6
 soundfile==0.13.1
 librosa==0.11.0
-torchcodec<=0.10.0; sys_platform == "linux"
+torchcodec<=0.11.0; sys_platform == "linux"
 vocos==0.1.0
 vector-quantize-pytorch==1.27.20
 torchaudio>=2.1.0,<=2.11.0
