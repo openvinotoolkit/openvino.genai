@@ -29,8 +29,10 @@ public:
         clone->m_native_batch_size = m_native_batch_size;
         clone->m_requests.reserve(m_requests.size());
         clone->m_is_blob = m_is_blob;
-        clone->m_adapter_controller = m_adapter_controller;
-        clone->m_last_adapter_config = m_last_adapter_config;
+        // Do not copy adapter controller pointer from the original instance.
+        // The cloned inference object must be explicitly re-bound via set_adapters().
+        clone->m_adapter_controller = nullptr;
+        clone->m_last_adapter_config.reset();
         for (auto& request : m_requests) {
             clone->m_requests.push_back(request.get_compiled_model().create_infer_request());
         }
