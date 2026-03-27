@@ -163,10 +163,7 @@ pip install -r requirements-speech-generation.txt
 optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts_ov
 
 # Download speaker embeddings (Replace with your own embeddings if needed)
-# Linux
-wget https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_slt_arctic-wav-arctic_a0508.bin
-# Windows:
-curl.exe -L "https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_slt_arctic-wav-arctic_a0508.bin" -o "cmu_us_slt_arctic-wav-arctic_a0508.bin"
+hf download Xenova/cmu-arctic-xvectors-extracted cmu_us_slt_arctic-wav-arctic_a0508.bin --repo-type dataset --local-dir .
 
 # Collect reference audio with the Hugging Face baseline.
 # Reference wav files will be stored under "reference" subfolder under the same path with .csv.
