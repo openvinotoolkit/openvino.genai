@@ -870,8 +870,8 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitPr
         logit_processor.register_new_generated_token(final_nodes[t]->token_id);
     }
 
-    // extra_processed_tokens: tree nodes beyond the deepest path (= total - depth - 1 for root).
-    // These are processed simultaneously by the verifier and must be counted now.
+    // extra_processed_tokens: candidate tree nodes submitted to the verifier beyond the tree_depth
+    // sequential draft steps already counted by finish_iteration().
     OPENVINO_ASSERT(final_nodes.size() > static_cast<size_t>(m_parameters.tree_params.tree_depth),
                     "finalize_tree: final_nodes.size() (",
                     final_nodes.size(),
@@ -879,7 +879,7 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitPr
                     m_parameters.tree_params.tree_depth,
                     ")");
     const size_t extra_processed_tokens =
-        final_nodes.size() - static_cast<size_t>(m_parameters.tree_params.tree_depth) - 1;
+        final_nodes.size() - static_cast<size_t>(m_parameters.tree_params.tree_depth);
     m_sequence_group->update_processed_tokens_num(m_sequence_group->get_num_processed_tokens() +
                                                   extra_processed_tokens);
 
