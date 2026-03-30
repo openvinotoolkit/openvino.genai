@@ -211,10 +211,6 @@ def write_summary(run: WorkflowRun, logs_dir: Path, hints_dir: Path) -> None:
         f"Event: {run.event}",
         f"Run URL: {run.html_url}",
     ]
-    if run.pull_requests:
-        lines.append("Associated Pull Requests:")
-        for pr in run.pull_requests:
-            lines.append(f"  PR #{pr.number}: {pr.url}")
     lines.append("")
 
     failed_jobs = [job for job in run.jobs() if job.conclusion in ("failure", "cancelled")]
