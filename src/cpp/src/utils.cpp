@@ -150,7 +150,7 @@ enum class ModelType { Default, Whisper, TextEmbedding };
 
 Tensor init_attention_mask(const Tensor& input_ids) {
     auto shape = input_ids.get_shape();
-    auto attention_mask = ov::Tensor{input_ids.get_element_type(), shape};
+    auto attention_mask = ov::Tensor{ov::element::i64, shape};
     std::fill_n(attention_mask.data<int64_t>(), shape[0] * shape[1], 1);
     return attention_mask;
 }
