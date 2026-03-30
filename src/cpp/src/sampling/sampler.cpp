@@ -694,15 +694,21 @@ auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> st
 
         const float* logit_row = logits_data + (batch_idx * seq_len + (seq_len - 1)) * vocab_size;
 
-        // Pass 1: fused max-logit tracking and per-node top-branching_factor selection.
-        // A single vocabulary scan both records the running max and maintains the min-heap,
-        // avoiding a separate max-finding pass.
+        // Fused online-softmax (Flash Attention) + top-k heap.
+        // When max_logit increases, the already-accumulated sum_exp is rescaled by
+        // exp(old_max - new_max), then the new term exp(0) = 1 is added.
+        // This avoids a second full-vocabulary pass for log-sum-exp.
         float max_logit = -std::numeric_limits<float>::infinity();
+        float sum_exp = 0.0f;
         std::priority_queue<IndexScore, std::vector<IndexScore>, decltype(min_cmp)> min_heap(min_cmp);
         for (size_t i = 0; i < vocab_size; ++i) {
             const float logit = logit_row[i];
-            if (logit > max_logit)
+            if (logit > max_logit) {
+                sum_exp = sum_exp * std::exp(max_logit - logit) + 1.0f;
                 max_logit = logit;
+            } else {
+                sum_exp += std::exp(logit - max_logit);
+            }
             if (min_heap.size() < branching_factor)
                 min_heap.emplace(logit, i);
             else if (logit > min_heap.top().first) {
@@ -710,11 +716,6 @@ auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> st
                 min_heap.emplace(logit, i);
             }
         }
-
-        // Pass 2: compute log-sum-exp for softmax normalization.
-        float sum_exp = 0.0f;
-        for (size_t i = 0; i < vocab_size; ++i)
-            sum_exp += std::exp(logit_row[i] - max_logit);
         const float log_sum = std::log(sum_exp);
 
         // Drain heap into scratch buffer (ascending logit order), emit candidates in descending order.
@@ -788,12 +789,12 @@ void Sampler::TreeSearcher::advance_draft_layer(const std::vector<CandidateBeam>
     for (const DraftBeam& beam : m_frontier) {
         if (children_per_parent[beam.m_sequence->get_id()] != 0)
             continue;
-        if (beam.m_sequence->get_grouped_id() == m_original_grouped_id) {
-            // Keep as a suspended anchor for the verification phase.
-            beam.m_sequence->set_status(SequenceStatus::SUSPENDED);
-        } else {
+        if (beam.m_sequence->get_grouped_id() != m_original_grouped_id) {
             sampler_output.m_dropped_sequences.push_back(beam.m_sequence->get_id());
             m_sequence_group->remove_sequence(beam.m_sequence->get_id());
+        } else {
+            // Anchor sequence got no children at this layer
+            beam.m_sequence->set_status(SequenceStatus::WAITING);
         }
     }
 
@@ -846,7 +847,8 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitPr
         tree_mask.push_back(std::move(row));
     }
 
-    // Locate the main sequence that carries the verification metadata.
+    // The anchor sequence may be WAITING if its branch was pruned during tree expansion;
+    // search all sequences (not just running) to locate it by grouped_id.
     Sequence::Ptr sequence = nullptr;
     for (const Sequence::Ptr& seq : m_sequence_group->get_sequences()) {
         if (seq->get_grouped_id() == m_original_grouped_id) {
@@ -1514,7 +1516,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         uint64_t request_id = sequence_group->get_request_id();
 
         if (is_validation_mode_enabled && num_generated_tokens_to_validate > 0) {
-            // Target-model validation pass: validate the candidate tree candidates.
+            // Target-model validation pass: validate the candidate tree against target logits.
             std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
             OPENVINO_ASSERT(running_sequences.size() == 1);
             size_t valid_tokens = verify_draft_tree(running_sequences[0],
@@ -1530,10 +1532,26 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             sg_sampling_info.sampler_output.num_generated_tokens += valid_tokens;
             assisting_pipeline_info.min_generated_len =
                 std::min(assisting_pipeline_info.min_generated_len, running_sequences[0]->get_generated_len());
-
             logit_processor.update_generated_len(running_sequences[0]->get_generated_len());
+        } else if (is_validation_mode_enabled) {
+            // Target-model prefill pass (num_tokens_to_validate == 0): greedily sample the first token.
+            std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+            OPENVINO_ASSERT(running_sequences.size() == 1);
+            Sequence::Ptr& sequence = running_sequences[0];
+            auto logit_vector = _get_logit_vector(sequence_group_logits, 0, 0);
+            logit_processor.apply(logit_vector);
+            const Token sampled_token = _greedy_sample(logit_vector, sampling_params.logprobs);
+            sequence->append_token(sampled_token.m_index, sampled_token.m_log_prob);
+            logit_processor.register_new_generated_token(sampled_token.m_index);
+            sg_sampling_info.sampler_output.num_generated_tokens++;
+            assisting_pipeline_info.min_generated_len =
+                std::min(assisting_pipeline_info.min_generated_len, sequence->get_generated_len());
+            logit_processor.update_generated_len(sequence->get_generated_len());
+            for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
+                sg_sampling_info.sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
+            }
         } else {
-            // Create tree searcher on the draft step for this request
+            // Draft-model pass: expand the candidate tree one layer at a time.
             std::shared_ptr<TreeSearcher> tree_searcher;
             {
                 std::lock_guard<std::mutex> lock(m_search_info_mutex);
@@ -1551,7 +1569,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             }
 
             tree_searcher->advance_draft_step(sequence_group_logits, sg_sampling_info.sampler_output, logit_processor);
-        }  // end else (candidate tree search)
+        }
     } else {
         OPENVINO_THROW("Unsupported sampling method");
     }

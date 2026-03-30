@@ -20,11 +20,7 @@ enum class SequenceStatus {
     RUNNING = 0,
     FINISHED = 1,
     OUT_OF_MEMORY = 2,
-    WAITING = 3,
-    // The sequence is temporarily parked during tree drafting: kept alive in the
-    // sequence group so finalize_tree() can locate and restore it, but excluded from
-    // get_running_sequences() to prevent it from being scheduled for inference.
-    SUSPENDED = 4
+    WAITING = 3
 };
 
 enum class SequenceGroupType {
@@ -136,10 +132,6 @@ public:
 
     bool is_waiting() const {
         return m_status == SequenceStatus::WAITING;
-    }
-
-    bool is_suspended() const {
-        return m_status == SequenceStatus::SUSPENDED;
     }
 
     void set_status(SequenceStatus status) {
