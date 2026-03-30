@@ -495,24 +495,24 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_and_validate(const ov::Tenso
     const ov::Shape shape = logits.get_shape();
     OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1, "Invalid logits shape: ", shape);
     OPENVINO_ASSERT(input_token_count > 0, "Invalid input_token_count");
-    OPENVINO_ASSERT(num_tokens_to_validate > 0, "num_tokens_to_validate must be > 0 in validation mode");
 
     const auto sequence_group = get_sequence_group();
     OPENVINO_ASSERT(sequence_group, "SequenceGroup not initialized");
 
     const auto running_sequences = sequence_group->get_running_sequences();
-    OPENVINO_ASSERT(running_sequences.size() == 1, "Validation mode expects exactly one running sequence");
+    OPENVINO_ASSERT(running_sequences.size() == 1, "Target-model pass expects exactly one running sequence");
 
-    // Record the root position before the sampler rewrites generated_ids.
-    // generated_ids = [...history..., root, n_1, ..., n_N]  (N = num_tokens_to_validate)
-    // After validate_tree_candidates: [...history..., root, acc_1, ..., acc_k, bonus]
+    // Record how many tokens are generated before the sampler runs so the
+    // newly accepted tokens can be sliced out afterwards.
+    // Prefill (N=0):  generated_ids = []                           → result_start = 0
+    // Validation (N>0): generated_ids = [...history, root, n_1..n_N] → result_start = history_len + 1
     const auto& gen_before = running_sequences[0]->get_generated_ids();
-    OPENVINO_ASSERT(gen_before.size() > num_tokens_to_validate,
-                    "generated_ids too short before validation: ",
+    OPENVINO_ASSERT(gen_before.size() >= num_tokens_to_validate,
+                    "generated_ids too short before sampling: ",
                     gen_before.size(),
-                    " <= num_tokens_to_validate: ",
+                    " < num_tokens_to_validate: ",
                     num_tokens_to_validate);
-    const size_t root_index = gen_before.size() - num_tokens_to_validate - 1;
+    const size_t result_start = gen_before.size() - num_tokens_to_validate;
 
     // Logits are expected to be pre-trimmed by the caller (forward()) so that
     // shape[1] == num_candidates.
@@ -530,11 +530,10 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_and_validate(const ov::Tenso
     m_sampler.sample({sequence_group}, logits, /*is_validation=*/true);
     sequence_group->finish_iteration();
 
-    // Extract [acc_1, ..., acc_k, bonus_token] = everything after the root.
+    // Extract all tokens appended by the sampler (new_token for prefill; acc_1..acc_k + bonus for validation).
     const auto& gen_after = running_sequences[0]->get_generated_ids();
-    const size_t result_start = root_index + 1;
     OPENVINO_ASSERT(gen_after.size() > result_start,
-                    "Validation result sequence too short: size=", gen_after.size(), ", expected > root_index+1=", result_start);
+                    "Sampler produced no new tokens: gen_after.size()=", gen_after.size(), ", result_start=", result_start);
 
     std::vector<int64_t> result_tokens(gen_after.begin() + static_cast<ptrdiff_t>(result_start), gen_after.end());
     record_generated_tokens(result_tokens.size());
@@ -644,30 +643,15 @@ InferResult Eagle3TargetWrapper::forward(const InferContext& ctx) {
     auto output = infer(inputs);
 
     // Normalize output: strip NPU padding from logits.
-    // Prefill: only the last position is sampled → trim to 1.
-    // Validation: all num_candidates positions are needed → trim to num_candidates.
-    const size_t useful_logits_len = is_validation ? inputs.input_ids.get_shape()[1] : 1;
-    output.logits = trim_tensor_tail(output.logits, useful_logits_len);
+    // Prefill: only the last position is sampled → num_candidates = 1.
+    // Validation: all tree candidates are needed → num_candidates = tree size.
+    const size_t num_candidates = is_validation ? inputs.input_ids.get_shape()[1] : 1;
+    output.logits = trim_tensor_tail(output.logits, num_candidates);
 
-    // Sample.
-    // During TARGET_PREFILL the sampler must produce exactly one greedy token.
-    // The sequence group's config still has tree_depth > 0 (needed for the subsequent
-    // speculative loop), which would make the sampler fork sequences via TreeSearcher.
-    // Temporarily zero tree_depth so the sampler takes the greedy path; restore afterwards.
-    std::vector<int64_t> sampled;
-    if (!is_validation) {
-        const auto saved_config = get_sequence_group()->get_sampling_parameters();
-        auto prefill_config = saved_config;
-        prefill_config.tree_params.tree_depth = 0;
-        get_sequence_group()->set_sampling_parameters(prefill_config);
-
-        sampled = sample_next_tokens(output.logits, ctx.input_token_count);
-
-        get_sequence_group()->set_sampling_parameters(saved_config);
-    } else {
-        const size_t num_candidates = inputs.input_ids.get_shape()[1];
-        sampled = sample_and_validate(output.logits, ctx.input_token_count, num_candidates, ctx.num_tokens_to_validate);
-    }
+    // Both prefill (num_tokens_to_validate == 0) and validation (num_tokens_to_validate > 0)
+    // go through the same helper; the sampler dispatches on num_validated_tokens internally.
+    const std::vector<int64_t> sampled =
+        sample_and_validate(output.logits, ctx.input_token_count, num_candidates, ctx.num_tokens_to_validate);
 
     // Store hidden states to sequence for the draft model.
     get_current_sequence()->update_hidden_state(output.hidden_features);

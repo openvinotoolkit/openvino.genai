@@ -233,9 +233,11 @@ protected:
     /// @return One token per running sequence.
     std::vector<int64_t> sample_next_tokens(const ov::Tensor& logits, size_t input_token_count);
 
-    /// @brief Samples tokens in validation mode. The sampler's validate_tree_candidates
-    ///        rewrites generated_ids; this method extracts the accepted + bonus tokens.
-    /// @return [acc_1, ..., acc_k, bonus_token]
+    /// @brief Invokes the sampler for a target-model pass and extracts newly accepted tokens.
+    ///        When num_tokens_to_validate == 0 (target prefill): greedy-samples one token.
+    ///        When num_tokens_to_validate > 0 (tree validation): validates draft candidates
+    ///        and returns the accepted tokens plus the bonus token.
+    /// @return target-prefill: [new_token];  validation: [acc_1, ..., acc_k, bonus_token]
     std::vector<int64_t> sample_and_validate(const ov::Tensor& logits,
                                              size_t input_token_count,
                                              size_t num_candidates,
