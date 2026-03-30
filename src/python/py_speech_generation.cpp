@@ -429,6 +429,6 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def("get_generation_config", &Text2SpeechPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &Text2SpeechPipeline::set_generation_config, py::arg("config"))
         .def("get_speaker_embedding_shape", &Text2SpeechPipeline::get_speaker_embedding_shape,
-             "Get the expected speaker embedding shape for the loaded model."
+             "Get the expected speaker embedding shape for the loaded model. "
              "SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}");
 }

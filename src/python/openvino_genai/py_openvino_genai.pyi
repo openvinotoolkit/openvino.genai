@@ -3845,7 +3845,7 @@ class Text2SpeechPipeline:
         ...
     def get_speaker_embedding_shape(self) -> openvino._pyopenvino.Shape:
         """
-        Get the expected speaker embedding shape for the loaded model.SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}
+        Get the expected speaker embedding shape for the loaded model. SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}
         """
     @typing.overload
     def phonemize(self, text: str, **kwargs) -> list[str]:
