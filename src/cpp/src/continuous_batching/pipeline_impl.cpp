@@ -4,7 +4,6 @@
 #include <atomic>
 #include <thread>
 #include <optional>
-#include <cstdlib>
 #include "openvino/genai/cache_eviction.hpp"
 
 #ifdef __APPLE__
@@ -148,17 +147,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     auto cache_dir_it = filtered_properties->find(ov::cache_dir.name());
     if (cache_dir_it == filtered_properties->end()) {
         filtered_properties.fork().insert({ov::cache_dir.name(), cache_dir});
-        if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] Using model cache directory: " << cache_dir << std::endl;
-    } else {
-        if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] Using user-provided cache directory: " << cache_dir_it->second.as<std::string>() << std::endl;
-    }
-
-    // Debug: Check if kv_cache_precision is in properties
-    auto kv_prec_it = filtered_properties->find(ov::hint::kv_cache_precision.name());
-    if (kv_prec_it != filtered_properties->end()) {
-        std::cout << "[Pipeline] KV cache precision property found: " << kv_prec_it->second.as<ov::element::Type>() << std::endl;
-    } else {
-        std::cout << "[Pipeline] KV cache precision property NOT found in properties" << std::endl;
     }
 
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
@@ -201,16 +189,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     // Store scheduler config for later use in KV cache dump/load operations
     m_scheduler_config = scheduler_config;
 
-    // Determine KV cache load directory: config property takes precedence over environment variable
-    std::string kv_load_dir;
-    if (!scheduler_config.kv_cache_load_dir.empty()) {
-        kv_load_dir = scheduler_config.kv_cache_load_dir;
-    } else {
-        const char* load_dir_env = std::getenv("OV_GENAI_LOAD_KV_DIR");
-        if (load_dir_env) {
-            kv_load_dir = std::string(load_dir_env);
-        }
-    }
+    // Determine KV cache load directory from config
+    std::string kv_load_dir = scheduler_config.kv_cache_load_dir;
 
     // Optional: KV cache load from disk (useful to restore a pre-infer snapshot)
     if (!kv_load_dir.empty()) {
@@ -424,24 +404,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
                                                          token_type_ids);
     }
 
-    // DEBUG: Log expected cached sequence hashes
-    if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] Debug: Expected cached sequence hashes for " << prompt_len << " tokens: ?" << std::endl;
-
     // Handle KV cache restoration:
-    // When prefix_caching is enabled (--pc true): use restore_cached_blocks with hash lookups
-    //   - This integrates properly with the prefix caching system and works with disk-loaded KV cache
-    // When prefix_caching is disabled (--pc false): use restore_from_disk_cache for direct block assignment
-    //   - This is a fallback for when prefix caching is not available
+    // When prefix_caching is enabled: use restore_cached_blocks with hash lookups
+    // When prefix_caching is disabled but disk cache is available: use restore_from_disk_cache
     
     if (m_scheduler->get_config().enable_prefix_caching) {
-        // Prefix caching enabled - use hash-based restoration which works with both 
-        // runtime caching and disk-loaded KV cache (blocks have been registered with hashes)
-        if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] enable_prefix_caching=true, calling restore_cached_blocks()" << std::endl;
         m_scheduler->restore_cached_blocks(sequence_group);
-        if (OV_GENAI_VERBOSE_ENABLED) {
-            std::cout << "[Pipeline] restore_cached_blocks() completed, processed_tokens=" 
-                      << sequence_group->get_num_processed_tokens() << std::endl;
-        }
     } else if (m_has_cached_sequence_state && !m_cached_sequence_state.cached_tokens.empty()) {
         // Prefix caching disabled but we have disk-loaded KV cache - use direct restoration
         const TokenIds& current_prompt_tokens = sequence_group->get_prompt_ids();
@@ -465,111 +433,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
         }
         
         if (match_len > 0 && match_len >= cached_tokens.size() * 0.9) {
-            if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] Restoring from disk KV cache (match " << match_len << " tokens)" << std::endl;
-            if (m_scheduler->restore_from_disk_cache(sequence_group, match_len)) {
-                if (OV_GENAI_VERBOSE_ENABLED) {
-                    std::cout << "[Pipeline] Disk KV cache restored successfully, processed_tokens=" 
-                              << sequence_group->get_num_processed_tokens() << std::endl;
-                }
-            } else {
-                if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] Disk KV cache restoration failed" << std::endl;
-            }
-        } else {
-            if (OV_GENAI_VERBOSE_ENABLED) {
-                std::cout << "[Pipeline] Prompt mismatch with disk cache (only " << match_len << "/" 
-                          << cached_tokens.size() << " tokens match), will process full prompt" << std::endl;
-            }
+            m_scheduler->restore_from_disk_cache(sequence_group, match_len);
         }
-    } else {
-        if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] No prefix caching and no disk cache, will process full prompt" << std::endl;
     }
 
-    // MONITORING ONLY: Log detailed token comparison for debugging
-    if (m_has_cached_sequence_state && !m_cached_sequence_state.cached_tokens.empty()) {
-        // Get current prompt tokens for analysis (monitoring only)
-        const TokenIds& current_prompt_tokens = sequence_group->get_prompt_ids();
-        const auto& cached_tokens = m_cached_sequence_state.cached_tokens;
-        
-        if (OV_GENAI_VERBOSE_ENABLED) {
-            // Enhanced token comparison debugging
-            std::cout << "[Pipeline] === DETAILED TOKEN COMPARISON DEBUG ===" << std::endl;
-            std::cout << "[Pipeline] Current prompt tokens: " << current_prompt_tokens.size() 
-                      << ", Cached tokens: " << cached_tokens.size() << std::endl;
-            
-            // Show first 10 tokens of each
-            std::cout << "[Pipeline] BEGINNING tokens comparison:" << std::endl;
-            std::cout << "[Pipeline] Current (first 10): ";
-            for (size_t i = 0; i < std::min(size_t(10), current_prompt_tokens.size()); ++i) {
-                std::cout << current_prompt_tokens[i] << " ";
-            }
-            std::cout << std::endl;
-            std::cout << "[Pipeline] Cached  (first 10): ";
-            for (size_t i = 0; i < std::min(size_t(10), cached_tokens.size()); ++i) {
-                std::cout << cached_tokens[i] << " ";
-            }
-            std::cout << std::endl;
-            
-            // Show middle tokens if sequences are long enough
-            if (current_prompt_tokens.size() > 20 && cached_tokens.size() > 20) {
-                size_t current_mid = current_prompt_tokens.size() / 2;
-                size_t cached_mid = cached_tokens.size() / 2;
-                std::cout << "[Pipeline] MIDDLE tokens comparison:" << std::endl;
-                std::cout << "[Pipeline] Current (mid 10, around pos " << current_mid << "): ";
-                for (size_t i = std::max(int(current_mid) - 5, 0); i < std::min(current_mid + 5, current_prompt_tokens.size()); ++i) {
-                    std::cout << current_prompt_tokens[i] << " ";
-                }
-                std::cout << std::endl;
-                std::cout << "[Pipeline] Cached  (mid 10, around pos " << cached_mid << "): ";
-                for (size_t i = std::max(int(cached_mid) - 5, 0); i < std::min(cached_mid + 5, cached_tokens.size()); ++i) {
-                    std::cout << cached_tokens[i] << " ";
-                }
-                std::cout << std::endl;
-            }
-            
-            // Show last 10 tokens of each
-            std::cout << "[Pipeline] END tokens comparison:" << std::endl;
-            std::cout << "[Pipeline] Current (last 10): ";
-            for (size_t i = std::max(int(current_prompt_tokens.size()) - 10, 0); i < current_prompt_tokens.size(); ++i) {
-                std::cout << current_prompt_tokens[i] << " ";
-            }
-            std::cout << std::endl;
-            std::cout << "[Pipeline] Cached  (last 10): ";
-            for (size_t i = std::max(int(cached_tokens.size()) - 10, 0); i < cached_tokens.size(); ++i) {
-                std::cout << cached_tokens[i] << " ";
-            }
-            std::cout << std::endl;
-            
-            // Find the common prefix length for monitoring/logging purposes only
-            size_t common_prefix_length = 0;
-            size_t max_compare_length = std::min(current_prompt_tokens.size(), cached_tokens.size());
-            
-            for (size_t i = 0; i < max_compare_length; ++i) {
-                if (current_prompt_tokens[i] == cached_tokens[i]) {
-                    common_prefix_length = i + 1;
-                } else {
-                    std::cout << "[Pipeline] FIRST MISMATCH at position " << i 
-                              << ": current=" << current_prompt_tokens[i] 
-                              << ", cached=" << cached_tokens[i] << std::endl;
-                    break;
-                }
-            }
-            
-            // Just log the analysis - do not modify any state
-            if (common_prefix_length > 0) {
-                size_t actual_processed = sequence_group->get_num_processed_tokens();
-                std::cout << "[Pipeline] Sequence analysis - prefix match: " << common_prefix_length 
-                          << "/" << current_prompt_tokens.size() << " tokens"
-                          << ", framework processed: " << actual_processed << " tokens"
-                          << " (BlockManager efficiency: " << (100.0 * actual_processed / current_prompt_tokens.size()) << "%)" << std::endl;
-            } else {
-                std::cout << "[Pipeline] Sequence analysis - NO PREFIX MATCH found between current prompt ("
-                          << current_prompt_tokens.size() << " tokens) and cached tokens (" 
-                          << cached_tokens.size() << " tokens)" << std::endl;
-            }
-            std::cout << "[Pipeline] === END TOKEN COMPARISON DEBUG ===" << std::endl;
-        }
-        
-        // Reset the cached sequence state after analysis
+    // Reset the cached sequence state after first use
+    if (m_has_cached_sequence_state) {
         m_has_cached_sequence_state = false;
     }
 
@@ -620,24 +489,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         scheduling_timer.start();
         scheduler_output = m_scheduler->schedule(m_requests);
         scheduling_timer.end();
-        
-        // Debug: Log what was scheduled (controlled by OV_GENAI_VERBOSE env var)
-        if (OV_GENAI_VERBOSE_ENABLED) {
-            std::cout << "[Pipeline] Scheduler output: total_scheduled_tokens=" << scheduler_output.m_total_num_scheduled_tokens
-                      << ", num_scheduled_groups=" << scheduler_output.m_scheduled_sequence_groups_ids.size()
-                      << ", is_prompt=" << scheduler_output.is_prompt << std::endl;
-            for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
-                size_t group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-                if (group_id < m_requests.size()) {
-                    auto& sg = m_requests[group_id];
-                    std::cout << "[Pipeline] Scheduled group " << group_id 
-                              << ": num_scheduled_tokens=" << sg->get_num_scheduled_tokens()
-                              << ", num_processed_tokens=" << sg->get_num_processed_tokens()
-                              << ", prompt_len=" << sg->get_prompt_len()
-                              << ", context_len=" << sg->get_context_len() << std::endl;
-                }
-            }
-        }
 
         m_pipeline_metrics.kv_cache_size_in_bytes = scheduler_output.m_cache_size_in_bytes;
         m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
@@ -676,16 +527,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         const auto infer_start = std::chrono::steady_clock::now();
         timer.start();
 
-        // Determine KV cache dump directory: config property takes precedence over environment variable
-        std::string kv_dump_dir;
-        if (!m_scheduler_config.kv_cache_dump_dir.empty()) {
-            kv_dump_dir = m_scheduler_config.kv_cache_dump_dir;
-        } else {
-            const char* dump_dir_env = std::getenv("OV_GENAI_DUMP_KV_DIR");
-            if (dump_dir_env) {
-                kv_dump_dir = std::string(dump_dir_env);
-            }
-        }
+        // Determine KV cache dump directory from config
+        std::string kv_dump_dir = m_scheduler_config.kv_cache_dump_dir;
 
         if (!kv_dump_dir.empty() && m_scheduler && kv_snapshot_counter == 0) {
             try {
@@ -742,11 +585,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
                         size_t processed_tokens = first_request->get_num_processed_tokens();
                         size_t context_len = first_request->get_context_len();
                         
-                        // For post-inference dump, if processed_tokens is 0 but we've processed the prompt,
-                        // use the full prompt length as the processed count
+                        // Use context_len as fallback when processed_tokens has not been
+                        // updated yet (common on the first prefill step).
                         size_t actual_processed = processed_tokens;
-                        if (processed_tokens == 0 && context_len >= prompt_tokens.size()) {
-                            actual_processed = prompt_tokens.size();
+                        if (actual_processed == 0 && context_len > 0) {
+                            actual_processed = std::min(context_len, prompt_tokens.size());
                         }
                         
                         // Create cached tokens array - include all processed prompt tokens
@@ -816,7 +659,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
                                                       cached_tokens,
                                                       actual_processed,
                                                       context_len,
-                                                      "qwen2.5-7b-instruct-int4");
+                                                      "unknown");
                     } else {
                         // No request context - still try optimized dump
                         size_t used_blocks = 0;

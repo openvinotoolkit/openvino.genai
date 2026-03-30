@@ -27,37 +27,15 @@
 
 namespace ov::genai {
 
-/**
- * Check if verbose logging is enabled via OV_GENAI_VERBOSE environment variable.
- * Set OV_GENAI_VERBOSE=1 (or higher) to enable debug logging.
- * Set OV_GENAI_VERBOSE=2 for more detailed timing information.
- * Set OV_GENAI_VERBOSE=3 for full trace-level logging.
- */
-inline int get_verbose_level() {
-    static int level = -1;
-    if (level < 0) {
-        const char* env = std::getenv("OV_GENAI_VERBOSE");
-        level = (env != nullptr) ? std::atoi(env) : 0;
-    }
-    return level;
-}
+// Compile-time debug logging for KV cache persistence (disabled by default).
+// Enable by building with -DGENAI_KV_CACHE_DEBUG=1 for development/debugging.
+#ifndef GENAI_KV_CACHE_DEBUG
+#define GENAI_KV_CACHE_DEBUG 0
+#endif
 
-// Convenience macros for verbose logging
-#define OV_GENAI_VERBOSE_ENABLED (ov::genai::get_verbose_level() >= 1)
-#define OV_GENAI_VERBOSE_TIMING  (ov::genai::get_verbose_level() >= 2)
-#define OV_GENAI_VERBOSE_TRACE   (ov::genai::get_verbose_level() >= 3)
-
-// Logging macros that respect OV_GENAI_VERBOSE level
-// Usage: OV_GENAI_LOG(1, "[Pipeline] some message");
-//        OV_GENAI_LOG_TIMING("[CacheManager] Load took " << ms << "ms");
-#define OV_GENAI_LOG(level, msg) \
-    do { if (ov::genai::get_verbose_level() >= level) { std::cout << msg << std::endl; } } while(0)
-
-#define OV_GENAI_LOG_INFO(msg)   OV_GENAI_LOG(1, msg)
-#define OV_GENAI_LOG_TIMING(msg) OV_GENAI_LOG(2, msg)
-#define OV_GENAI_LOG_TRACE(msg)  OV_GENAI_LOG(3, msg)
-
-// Legacy constant for backward compatibility (now controlled by environment variable)
+#define OV_GENAI_VERBOSE_ENABLED (GENAI_KV_CACHE_DEBUG >= 1)
+#define OV_GENAI_VERBOSE_TIMING  (GENAI_KV_CACHE_DEBUG >= 2)
+#define OV_GENAI_VERBOSE_TRACE   (GENAI_KV_CACHE_DEBUG >= 3)
 #define LOG_CACHE_MANAGER_VERBOSE OV_GENAI_VERBOSE_ENABLED
 
 // Set to true to enable USM (Unified Shared Memory) buffer optimization for GPU tensors
@@ -90,6 +68,9 @@ class CacheManager {
     mutable ov::Tensor m_contiguous_value_buffer;
     mutable bool m_contiguous_buffers_allocated = false;
 
+    // Track last loaded KV cache directory to prevent duplicate loads
+    std::string m_last_loaded_kv_dir;
+
     // Helper method to check if USM is supported and create USM buffers
     // Returns the USM type that succeeded, or empty string if none worked
     std::string try_create_usm_tensor(const ov::element::Type& precision, const ov::Shape& shape, ov::Tensor& out_tensor) {
@@ -99,7 +80,7 @@ class CacheManager {
         
         if (LOG_CACHE_MANAGER_VERBOSE) {
             size_t total_elements = ov::shape_size(shape);
-            std::cout << "[CacheManager] 🔍 USM DEBUG: Attempting USM optimization with precision=" << precision << ", total_elements=" << total_elements << std::endl;
+            std::cout << "[CacheManager] USM DEBUG: Attempting USM optimization with precision=" << precision << ", total_elements=" << total_elements << std::endl;
         }
 
         // APPROACH 2: Try USM_DEVICE_BUFFER
@@ -109,7 +90,7 @@ class CacheManager {
             };
             out_tensor = m_context.create_tensor(precision, shape, usm_params);
             if (LOG_CACHE_MANAGER_VERBOSE) {
-                std::cout << "[CacheManager] ✅ USM DEBUG: USM DEVICE BUFFER tensor created successfully!" << std::endl;
+                std::cout << "[CacheManager] USM DEBUG: USM DEVICE BUFFER tensor created successfully!" << std::endl;
             }
             return "USM_DEVICE_BUFFER";
         } catch (const std::exception& ) {} 
@@ -121,7 +102,7 @@ class CacheManager {
             };
             out_tensor = m_context.create_tensor(precision, shape, usm_params);
             if (LOG_CACHE_MANAGER_VERBOSE) {
-                std::cout << "[CacheManager] ✅ USM DEBUG: USM HOST BUFFER tensor created successfully!" << std::endl;
+                std::cout << "[CacheManager] USM DEBUG: USM HOST BUFFER tensor created successfully!" << std::endl;
             }
             return "USM_HOST_BUFFER";
         } catch (const std::exception& ) {} 
@@ -239,7 +220,6 @@ public:
         }
         // extract information about KV cache precisions and shapes
         size_t kv_input_index = 0;
-        bool first_key_logged = false;
         for (const auto& input : compiled_model.inputs()) {
             for (auto & name : input.get_names()) {
                 auto cache_precision = input.get_element_type();
@@ -250,10 +230,6 @@ public:
                     m_block_size_in_bytes += pshape[1].get_length() * pshape[2].get_length() * pshape[3].get_length() * cache_precision.size();
                     m_key_shapes.push_back(pshape);
                     m_key_precisions.push_back(cache_precision);
-                    if (!first_key_logged) {
-                        std::cout << "[CacheManager] Detected KV cache precision from compiled model: " << cache_precision << std::endl;
-                        first_key_logged = true;
-                    }
                     break;
                 } else if (name.find("value_cache.") == 0) {
                     pshape = input.get_partial_shape();
@@ -551,8 +527,7 @@ public:
     bool load_kv_cache_with_sequence_state(const std::string& dir, size_t expected_num_kv_blocks = 0, 
                                           SequenceState* out_sequence_state = nullptr) {
         // Check if cache is already loaded for this directory to prevent duplicate loading
-        static std::string last_loaded_dir = "";
-        if (last_loaded_dir == dir && m_num_allocated_kv_blocks > 0) {
+        if (m_last_loaded_kv_dir == dir && m_num_allocated_kv_blocks > 0) {
             if (OV_GENAI_VERBOSE_ENABLED) {
                 std::cout << "[CacheManager] load_kv_cache_with_sequence_state: KV cache already loaded from " << dir 
                           << ", skipping tensor loading and proceeding to sequence state" << std::endl;
@@ -562,7 +537,7 @@ public:
             if (!load_kv_cache_from_dir(dir, expected_num_kv_blocks)) {
                 return false;
             }
-            last_loaded_dir = dir; // Remember this directory to prevent duplicate loads
+            m_last_loaded_kv_dir = dir; // Remember this directory to prevent duplicate loads
         }
         
         // Then load sequence state metadata if available
@@ -647,9 +622,8 @@ public:
     bool load_kv_cache_from_dir(const std::string& dir, size_t expected_num_kv_blocks = 0) {
         auto start_time = std::chrono::high_resolution_clock::now();
         if (OV_GENAI_VERBOSE_ENABLED) {
-            std::cout << "[CacheManager] ⏱️ TIMING: load_kv_cache_from_dir STARTING for dir=" << dir << std::endl;
+            std::cout << "[CacheManager] TIMING: load_kv_cache_from_dir STARTING for dir=" << dir << std::endl;
             std::cout << "[CacheManager] load_kv_cache_from_dir: m_num_decoder_layers=" << m_num_decoder_layers << std::endl;
-            std::cout.flush();
         }
         
         std::lock_guard<std::mutex> lock(m_cache_mutex);
@@ -661,7 +635,6 @@ public:
             }
             if (OV_GENAI_VERBOSE_ENABLED) {
                 std::cout << "[CacheManager] load_kv_cache_from_dir: directory exists" << std::endl;
-                std::cout.flush();
             }
 
             size_t num_kv_blocks = expected_num_kv_blocks;
@@ -682,7 +655,6 @@ public:
             }
             if (OV_GENAI_VERBOSE_ENABLED) {
                 std::cout << "[CacheManager] load_kv_cache_from_dir: num_kv_blocks=" << num_kv_blocks << std::endl;
-                std::cout.flush();
             }
 
             if (num_kv_blocks == 0) {
@@ -692,7 +664,7 @@ public:
 
             if constexpr (USE_CONTIGUOUS_GPU_BUFFER) {
                 if (m_context && !m_contiguous_buffers_allocated) {
-                    if (LOG_CACHE_MANAGER_VERBOSE) std::cout << "[CacheManager] 🚀 Pre-allocating contiguous GPU buffers..." << std::endl;
+                    if (LOG_CACHE_MANAGER_VERBOSE) std::cout << "[CacheManager] Pre-allocating contiguous GPU buffers..." << std::endl;
                     size_t total_key_bytes = 0, total_value_bytes = 0;
                     for (size_t layer = 0; layer < m_num_decoder_layers; ++layer) {
                         ov::Shape key_shape = set_kv_blocks(m_key_shapes[layer], num_kv_blocks);
@@ -707,7 +679,7 @@ public:
                         m_contiguous_value_buffer = m_context.create_tensor(ov::element::f32, val_buffer_shape);
                         m_contiguous_buffers_allocated = true;
                     } catch (const std::exception& e) {
-                        if (LOG_CACHE_MANAGER_VERBOSE) std::cout << "[CacheManager] 🚀 Contiguous buffer allocation failed: " << e.what() << std::endl;
+                        if (LOG_CACHE_MANAGER_VERBOSE) std::cout << "[CacheManager] Contiguous buffer allocation failed: " << e.what() << std::endl;
                         m_contiguous_buffers_allocated = false;
                     }
                 }
@@ -716,13 +688,11 @@ public:
             allocate_cache_if_needed(num_kv_blocks);
             if (OV_GENAI_VERBOSE_ENABLED) {
                 std::cout << "[CacheManager] load_kv_cache_from_dir: allocate_cache_if_needed completed, starting layer loop for " << m_num_decoder_layers << " layers" << std::endl;
-                std::cout.flush();
             }
 
             for (size_t layer = 0; layer < m_num_decoder_layers; ++layer) {
                 if (OV_GENAI_VERBOSE_ENABLED) {
                     std::cout << "[CacheManager] load_kv_cache_from_dir: Starting layer " << layer << std::endl;
-                    std::cout.flush();
                 }
                 auto layer_start_time = std::chrono::high_resolution_clock::now();
                 std::string key_meta = dir + "/layer_" + std::to_string(layer) + "_key.meta";
@@ -782,13 +752,11 @@ public:
                         }
                     }
                     if (shape_mismatch) {
-                        std::cout << "[CacheManager] ⚠️ KV cache format mismatch detected!" << std::endl;
-                        std::cout << "[CacheManager]   Saved shape: [" << key_shape[0] << "," << key_shape[1] << "," << key_shape[2] << "," << key_shape[3] << "]" << std::endl;
-                        std::cout << "[CacheManager]   Expected shape: [" << expected_key_shape[0] << "," << expected_key_shape[1] << "," << expected_key_shape[2] << "," << expected_key_shape[3] << "]" << std::endl;
-                        std::cout << "[CacheManager]   This usually means the KV cache was dumped on a different device (CPU vs GPU)." << std::endl;
-                        std::cout << "[CacheManager]   KV cache dump/load must use the same device type." << std::endl;
-                        std::cout << "[CacheManager]   Skipping KV cache restoration - will compute from scratch." << std::endl;
-                        return false;
+                        OPENVINO_THROW("KV cache format mismatch: saved shape [",
+                                       key_shape[0], ",", key_shape[1], ",", key_shape[2], ",", key_shape[3],
+                                       "] does not match expected shape [",
+                                       expected_key_shape[0], ",", expected_key_shape[1], ",", expected_key_shape[2], ",", expected_key_shape[3],
+                                       "]. KV cache dump/load must use the same device type (CPU vs GPU).");
                     }
                 }
 
@@ -828,22 +796,21 @@ public:
                     if (LOG_CACHE_MANAGER_VERBOSE) {
                         size_t key_b = host_key_tensor.get_byte_size();
                         size_t val_b = host_val_tensor.get_byte_size();
-                        std::cout << "[CacheManager] 🔍 Layer " << layer << " GPU allocation: key_bytes=" << key_b << ", val_bytes=" << val_b << ", total=" << (key_b + val_b) << std::endl;
-                        std::cout << "[CacheManager] ⚡ Layer " << layer << " attempting USM optimization..." << std::endl;
+                        std::cout << "[CacheManager] Layer " << layer << " GPU allocation: key_bytes=" << key_b << ", val_bytes=" << val_b << ", total=" << (key_b + val_b) << std::endl;
+                        std::cout << "[CacheManager] Layer " << layer << " attempting USM optimization..." << std::endl;
                     }
                     ov::Shape device_key_shape = set_kv_blocks(m_key_shapes[layer], num_kv_blocks);
                     ov::Shape device_val_shape = set_kv_blocks(m_value_shapes[layer], num_kv_blocks);
                     
                     // Debug: print shape comparison
                     if (OV_GENAI_VERBOSE_ENABLED) {
-                        std::cout << "[CacheManager] 📊 Layer " << layer << " shape comparison:" << std::endl;
+                        std::cout << "[CacheManager] Layer " << layer << " shape comparison:" << std::endl;
                         std::cout << "[CacheManager]   host_key_shape: [";
                         for (size_t i = 0; i < key_shape.size(); ++i) { std::cout << key_shape[i] << (i+1 < key_shape.size() ? "," : ""); }
                         std::cout << "], bytes=" << host_key_tensor.get_byte_size() << std::endl;
                         std::cout << "[CacheManager]   device_key_shape: [";
                         for (size_t i = 0; i < device_key_shape.size(); ++i) { std::cout << device_key_shape[i] << (i+1 < device_key_shape.size() ? "," : ""); }
                         std::cout << "], expected_bytes=" << (device_key_shape[0] * device_key_shape[1] * device_key_shape[2] * device_key_shape[3]) << std::endl;
-                        std::cout.flush();
                     }
                     
                     ov::Tensor device_key, device_val;
@@ -856,7 +823,7 @@ public:
                         if (!usm_key_type.empty() && !usm_val_type.empty()) {
                             key_created = val_created = true;
                             if (LOG_CACHE_MANAGER_VERBOSE) {
-                                std::cout << "[CacheManager] ⚡ Layer " << layer << " SUCCESS: " << usm_key_type << " tensors created (GPU-optimized)" << std::endl;
+                                std::cout << "[CacheManager] Layer " << layer << " SUCCESS: " << usm_key_type << " tensors created (GPU-optimized)" << std::endl;
                             }
                         }
                     }
@@ -882,9 +849,8 @@ public:
                                                        const ov::Shape& device_shape, const ov::element::Type& precision,
                                                        const char* name) {
                         if (OV_GENAI_VERBOSE_ENABLED) {
-                            std::cout << "[CacheManager] 📋 copy_host_to_device_gpu(" << name << "): host_bytes=" << host_tensor.get_byte_size() 
+                            std::cout << "[CacheManager] copy_host_to_device_gpu(" << name << "): host_bytes=" << host_tensor.get_byte_size() 
                                       << ", device_bytes=" << device_tensor.get_byte_size() << std::endl;
-                            std::cout.flush();
                         }
                         
                         try {
@@ -892,26 +858,22 @@ public:
                             ov::Coordinate start{0,0,0,0};
                             ov::Coordinate end = host_tensor.get_shape();
                             if (OV_GENAI_VERBOSE_ENABLED) {
-                                std::cout << "[CacheManager] 📋 Creating RemoteTensor ROI with start={0,0,0,0}, end=host_shape..." << std::endl;
-                                std::cout.flush();
+                                std::cout << "[CacheManager] Creating RemoteTensor ROI with start={0,0,0,0}, end=host_shape..." << std::endl;
                             }
                             
                             ov::RemoteTensor dst_roi(device_tensor, start, end);
                             if (OV_GENAI_VERBOSE_ENABLED) {
-                                std::cout << "[CacheManager] 📋 RemoteTensor ROI created, calling copy_from..." << std::endl;
-                                std::cout.flush();
+                                std::cout << "[CacheManager] RemoteTensor ROI created, calling copy_from..." << std::endl;
                             }
                             
                             dst_roi.copy_from(host_tensor);
                             if (OV_GENAI_VERBOSE_ENABLED) {
-                                std::cout << "[CacheManager] 📋 copy_from completed successfully!" << std::endl;
-                                std::cout.flush();
+                                std::cout << "[CacheManager] copy_from completed successfully!" << std::endl;
                             }
                         } catch (const std::exception& e) {
                             if (OV_GENAI_VERBOSE_ENABLED) {
-                                std::cout << "[CacheManager] ⚠️ ROI copy failed: " << e.what() << std::endl;
-                                std::cout << "[CacheManager] 📋 Falling back to padded copy..." << std::endl;
-                                std::cout.flush();
+                                std::cout << "[CacheManager] ROI copy failed: " << e.what() << std::endl;
+                                std::cout << "[CacheManager] Falling back to padded copy..." << std::endl;
                             }
                             
                             // Fallback: create padded host tensor with device shape
@@ -922,8 +884,7 @@ public:
                             // Copy full padded tensor to GPU
                             const_cast<ov::RemoteTensor&>(device_tensor.as<ov::RemoteTensor>()).copy_from(padded_host);
                             if (OV_GENAI_VERBOSE_ENABLED) {
-                                std::cout << "[CacheManager] 📋 Padded copy completed!" << std::endl;
-                                std::cout.flush();
+                                std::cout << "[CacheManager] Padded copy completed!" << std::endl;
                             }
                         }
                     };
@@ -944,7 +905,7 @@ public:
                     if (LOG_CACHE_MANAGER_VERBOSE) {
                         auto layer_end_time = std::chrono::high_resolution_clock::now();
                         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(layer_end_time - layer_start_time).count();
-                        std::cout << "[CacheManager] ⏱️ Layer " << layer << " timing: TOTAL=" << duration << "ms" << std::endl;
+                        std::cout << "[CacheManager] Layer " << layer << " timing: TOTAL=" << duration << "ms" << std::endl;
                     }
                 } else {
                     // CPU path

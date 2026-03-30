@@ -211,6 +211,10 @@ TEST_F(KVCachePersistenceTest, test_optimized_dump_with_used_blocks) {
     
     cache_manager->allocate_cache_if_needed(total_blocks);
     
+    // Dump all blocks (non-optimized)
+    std::string full_dump_dir = (test_dir / "full_dump").string();
+    cache_manager->dump_kv_cache_to_dir(full_dump_dir, total_blocks);
+    
     // Dump only used blocks (optimized)
     std::string dump_dir = (test_dir / "optimized_dump").string();
     cache_manager->dump_kv_cache_to_dir_optimized(dump_dir, total_blocks, used_blocks);
@@ -227,6 +231,12 @@ TEST_F(KVCachePersistenceTest, test_optimized_dump_with_used_blocks) {
     EXPECT_TRUE(content.find("optimized=true") != std::string::npos) << "Missing optimized flag";
     EXPECT_TRUE(content.find("used_blocks=" + std::to_string(used_blocks)) != std::string::npos) 
         << "Missing or incorrect used_blocks in metadata";
+    
+    // Verify optimized dump is smaller than full dump
+    size_t full_key_size = std::filesystem::file_size(full_dump_dir + "/layer_0_key.bin");
+    size_t opt_key_size = std::filesystem::file_size(dump_dir + "/layer_0_key.bin");
+    EXPECT_LT(opt_key_size, full_key_size)
+        << "Optimized dump (" << opt_key_size << " bytes) should be smaller than full dump (" << full_key_size << " bytes)";
 }
 
 

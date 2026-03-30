@@ -9,30 +9,20 @@
 #include <algorithm>
 #include <fstream>
 #include <chrono>
-#include <cstdlib>
 
 #include "sequence_group.hpp"
 
 namespace ov::genai {
 
-/**
- * Check if verbose logging is enabled via OV_GENAI_VERBOSE environment variable.
- * Set OV_GENAI_VERBOSE=1 (or higher) to enable debug logging.
- * Set OV_GENAI_VERBOSE=2 for more detailed timing information.
- * Set OV_GENAI_VERBOSE=3 for full trace-level logging.
- */
-inline int get_block_manager_verbose_level() {
-    static int level = -1;
-    if (level < 0) {
-        const char* env = std::getenv("OV_GENAI_VERBOSE");
-        level = (env != nullptr) ? std::atoi(env) : 0;
-    }
-    return level;
-}
+// Compile-time debug logging for BlockManager (disabled by default).
+// Enable by building with -DGENAI_KV_CACHE_DEBUG=1 for development/debugging.
+#ifndef GENAI_KV_CACHE_DEBUG
+#define GENAI_KV_CACHE_DEBUG 0
+#endif
 
-#define OV_BM_VERBOSE_ENABLED (ov::genai::get_block_manager_verbose_level() >= 1)
-#define OV_BM_VERBOSE_TIMING  (ov::genai::get_block_manager_verbose_level() >= 2)
-#define OV_BM_VERBOSE_TRACE   (ov::genai::get_block_manager_verbose_level() >= 3)
+#define OV_BM_VERBOSE_ENABLED (GENAI_KV_CACHE_DEBUG >= 1)
+#define OV_BM_VERBOSE_TIMING  (GENAI_KV_CACHE_DEBUG >= 2)
+#define OV_BM_VERBOSE_TRACE   (GENAI_KV_CACHE_DEBUG >= 3)
 
 class KVCacheBlock {
     int m_ref_count;
@@ -271,8 +261,13 @@ public:
         // sanity check to validate that all blocks are freed
         for (auto& free_block : m_free_blocks_num) {
             size_t free_and_overwritable_block_cnt = free_block + num_overwriteable_blocks();
-            // relaxed check for now as persistent terminal sessions might leave state
-            // OPENVINO_ASSERT(m_total_num_blocks == free_and_overwritable_block_cnt, "Expected num free blocks: ", m_total_num_blocks, ", actual: ", free_and_overwritable_block_cnt);
+            if (m_total_num_blocks != free_and_overwritable_block_cnt) {
+                if (OV_BM_VERBOSE_ENABLED) {
+                    std::cout << "[BlockAllocator] WARNING: Expected num free blocks: " << m_total_num_blocks
+                              << ", actual: " << free_and_overwritable_block_cnt
+                              << " (blocks may still be held by restored KV cache)" << std::endl;
+                }
+            }
         }
     }
 
@@ -792,7 +787,7 @@ public:
                 std::cout << "[BlockManager] load_from_manifest: Manifest file EXISTS, opening..." << std::endl;
             }
             
-            // ⏱️ TIMING POINT 1: File I/O and Basic Setup
+            // TIMING POINT 1: File I/O and Basic Setup
             auto file_io_start = std::chrono::high_resolution_clock::now();
             std::ifstream in(manifest);
             std::string line;
@@ -926,14 +921,14 @@ public:
                 }
             }
 
-            // ⏱️ TIMING POINT 1 END: File I/O and Parsing Complete
+            // TIMING POINT 1 END: File I/O and Parsing Complete
             auto parsing_end = std::chrono::high_resolution_clock::now();
             auto parsing_duration = std::chrono::duration_cast<std::chrono::milliseconds>(parsing_end - file_io_start);
             if (OV_BM_VERBOSE_TIMING) {
-                std::cout << "[BlockManager] ⏱️ TIMING: File I/O + Parsing completed in " << parsing_duration.count() << "ms" << std::endl;
+                std::cout << "[BlockManager] TIMING: File I/O + Parsing completed in " << parsing_duration.count() << "ms" << std::endl;
             }
 
-            // ⏱️ TIMING POINT 2: Data Structure Reconstruction Start
+            // TIMING POINT 2: Data Structure Reconstruction Start
             auto rebuild_start = std::chrono::high_resolution_clock::now();
             if (OV_BM_VERBOSE_ENABLED) {
                 std::cout << "[BlockManager] load_from_manifest: Starting data structure reconstruction..." << std::endl;
@@ -975,7 +970,7 @@ public:
             m_allocator.clear_free_lists();
             m_allocator.rebuild_free_lists_from_used_sets(used_per_layer);
 
-            // ⏱️ TIMING POINT 2A: Hash Map Reconstruction Start
+            // TIMING POINT 2A: Hash Map Reconstruction Start
             auto hash_rebuild_start = std::chrono::high_resolution_clock::now();
             
             // rebuild m_prefix_hash_to_occupied_block_map
@@ -1001,14 +996,14 @@ public:
                 m_prefix_hash_to_occupied_block_map[hash] = blocks_for_all_layers;
             }
 
-            // ⏱️ TIMING POINT 2A END: Hash Map Reconstruction Complete
+            // TIMING POINT 2A END: Hash Map Reconstruction Complete
             auto hash_rebuild_end = std::chrono::high_resolution_clock::now();
             auto hash_duration = std::chrono::duration_cast<std::chrono::milliseconds>(hash_rebuild_end - hash_rebuild_start);
             if (OV_BM_VERBOSE_TIMING) {
-                std::cout << "[BlockManager] ⏱️ TIMING: Hash map reconstruction completed in " << hash_duration.count() << "ms" << std::endl;
+                std::cout << "[BlockManager] TIMING: Hash map reconstruction completed in " << hash_duration.count() << "ms" << std::endl;
             }
 
-            // ⏱️ TIMING POINT 2B: Block Table Reconstruction Start
+            // TIMING POINT 2B: Block Table Reconstruction Start
             auto block_table_start = std::chrono::high_resolution_clock::now();
 
             // rebuild m_block_table
@@ -1017,24 +1012,28 @@ public:
                 const auto &layers = entry.second;
                 m_block_table[seq].resize(m_num_layers);
                 for (size_t li = 0; li < layers.size() && li < m_num_layers; ++li) {
+                    auto &blocks_for_layer = m_block_table[seq][li];
                     for (auto idx : layers[li]) {
                         auto blk = m_allocator.get_block_by_index(li, idx);
                         if (blk) {
-                            blk->increment(); // CRITICAL: Increment ref count for restored blocks
-                            m_block_table[seq][li].push_back(blk);
+                            // Avoid double-incrementing ref counts if the same manifest is loaded multiple times
+                            if (std::find(blocks_for_layer.begin(), blocks_for_layer.end(), blk) == blocks_for_layer.end()) {
+                                blk->increment();
+                                blocks_for_layer.push_back(blk);
+                            }
                         }
                     }
                 }
             }
 
-            // ⏱️ TIMING POINT 2B END: Block Table Reconstruction Complete
+            // TIMING POINT 2B END: Block Table Reconstruction Complete
             auto block_table_end = std::chrono::high_resolution_clock::now();
             auto block_table_duration = std::chrono::duration_cast<std::chrono::milliseconds>(block_table_end - block_table_start);
             if (OV_BM_VERBOSE_TIMING) {
-                std::cout << "[BlockManager] ⏱️ TIMING: Block table reconstruction completed in " << block_table_duration.count() << "ms" << std::endl;
+                std::cout << "[BlockManager] TIMING: Block table reconstruction completed in " << block_table_duration.count() << "ms" << std::endl;
             }
 
-            // ⏱️ TIMING POINT 3: Free List Cleanup Start
+            // TIMING POINT 3: Free List Cleanup Start
             auto cleanup_start = std::chrono::high_resolution_clock::now();
 
             // CRITICAL FIX: Remove restored blocks from free lists
@@ -1062,19 +1061,19 @@ public:
                 );
             }
 
-            // ⏱️ TIMING POINT 3 END: Free List Cleanup Complete
+            // TIMING POINT 3 END: Free List Cleanup Complete
             auto cleanup_end = std::chrono::high_resolution_clock::now();
             auto cleanup_duration = std::chrono::duration_cast<std::chrono::milliseconds>(cleanup_end - cleanup_start);
             if (OV_BM_VERBOSE_TIMING) {
-                std::cout << "[BlockManager] ⏱️ TIMING: Free list cleanup completed in " << cleanup_duration.count() << "ms" << std::endl;
+                std::cout << "[BlockManager] TIMING: Free list cleanup completed in " << cleanup_duration.count() << "ms" << std::endl;
             }
 
-            // ⏱️ OVERALL TIMING: Total load_from_manifest time
+            // OVERALL TIMING: Total load_from_manifest time
             auto total_end = std::chrono::high_resolution_clock::now();
             auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(total_end - start_time);
             if (OV_BM_VERBOSE_TIMING) {
-                std::cout << "[BlockManager] ⏱️ TIMING SUMMARY: load_from_manifest TOTAL time: " << total_duration.count() << "ms" << std::endl;
-                std::cout << "[BlockManager] ⏱️ BREAKDOWN: Parsing=" << parsing_duration.count() << "ms, HashRebuild=" << hash_duration.count() << "ms, BlockTable=" << block_table_duration.count() << "ms, Cleanup=" << cleanup_duration.count() << "ms" << std::endl;
+                std::cout << "[BlockManager] TIMING SUMMARY: load_from_manifest TOTAL time: " << total_duration.count() << "ms" << std::endl;
+                std::cout << "[BlockManager] BREAKDOWN: Parsing=" << parsing_duration.count() << "ms, HashRebuild=" << hash_duration.count() << "ms, BlockTable=" << block_table_duration.count() << "ms, Cleanup=" << cleanup_duration.count() << "ms" << std::endl;
             }
 
             return true;
@@ -1082,7 +1081,7 @@ public:
             auto error_end = std::chrono::high_resolution_clock::now();
             auto error_duration = std::chrono::duration_cast<std::chrono::milliseconds>(error_end - start_time);
             if (OV_BM_VERBOSE_ENABLED) {
-                std::cout << "[BlockManager] ⏱️ TIMING: load_from_manifest FAILED after " << error_duration.count() << "ms" << std::endl;
+                std::cout << "[BlockManager] TIMING: load_from_manifest FAILED after " << error_duration.count() << "ms" << std::endl;
             }
             return false;
         }
@@ -1659,11 +1658,13 @@ public:
         }
 
         // DEBUG: Print last 10 tokens
-        std::cout << "[BlockManager] Prompt tokens (last 10): ";
-        for (size_t i = (prompt_ids.size() > 10 ? prompt_ids.size() - 10 : 0); i < prompt_ids.size(); ++i) {
-            std::cout << prompt_ids[i] << " ";
+        if (OV_BM_VERBOSE_TRACE) {
+            std::cout << "[BlockManager] Prompt tokens (last 10): ";
+            for (size_t i = (prompt_ids.size() > 10 ? prompt_ids.size() - 10 : 0); i < prompt_ids.size(); ++i) {
+                std::cout << prompt_ids[i] << " ";
+            }
+            std::cout << std::endl;
         }
-        std::cout << std::endl;
 
         if (m_block_table.find(seq_id) == m_block_table.end()) {
             m_block_table[seq_id].resize(m_num_layers);
@@ -1769,32 +1770,22 @@ public:
         auto seq_id = sequence->get_id();
         auto prompt_len = group->get_prompt_len();
         
-        std::cout << "[BlockManager] restore_from_disk_cache: seq_id=" << seq_id 
-                  << ", prompt_len=" << prompt_len 
-                  << ", num_cached_tokens=" << num_cached_tokens << std::endl;
-        
-        // The loaded manifest has blocks for seq_id 0 (the original dump sequence)
-        // We need to transfer those blocks to this new sequence
+        // The loaded manifest has blocks for seq_id 0 (the original dump sequence).
+        // Transfer those blocks to the new sequence.
         const uint64_t source_seq_id = 0;
         
         if (m_block_table.find(source_seq_id) == m_block_table.end()) {
-            std::cout << "[BlockManager] restore_from_disk_cache: No blocks found for source seq_id 0" << std::endl;
             return false;
         }
         
         auto& source_blocks = m_block_table[source_seq_id];
         if (source_blocks.empty() || source_blocks[0].empty()) {
-            std::cout << "[BlockManager] restore_from_disk_cache: Source block table is empty" << std::endl;
             return false;
         }
         
         size_t num_source_blocks = source_blocks[0].size();
         size_t cached_block_count = (num_cached_tokens + m_block_size - 1) / m_block_size;
         size_t blocks_to_restore = std::min(num_source_blocks, cached_block_count);
-        
-        std::cout << "[BlockManager] restore_from_disk_cache: source has " << num_source_blocks 
-                  << " blocks, need " << cached_block_count << " blocks for " << num_cached_tokens 
-                  << " tokens, will restore " << blocks_to_restore << " blocks" << std::endl;
         
         // Initialize block table for new sequence
         if (m_block_table.find(seq_id) == m_block_table.end()) {
@@ -1808,7 +1799,7 @@ public:
             for (size_t block_idx = 0; block_idx < blocks_to_restore && block_idx < source_blocks[layer_idx].size(); ++block_idx) {
                 auto& block = source_blocks[layer_idx][block_idx];
                 if (block) {
-                    block->increment();  // Increment ref count since we're sharing
+                    block->increment();
                     block->set_timestamp(timestamp);
                     target_blocks[layer_idx].push_back(block);
                 }
@@ -1820,16 +1811,10 @@ public:
         if (tokens_restored > num_cached_tokens) {
             tokens_restored = num_cached_tokens;
         }
-        // We mark (tokens_restored - 1) as processed because the last token position
+        // Mark (tokens_restored - 1) as processed because the last token position
         // will be the starting point for generation
         size_t processed_tokens = tokens_restored > 0 ? tokens_restored - 1 : 0;
-        
-        // Update sequence's processed tokens count
-        // This tells the scheduler that these tokens don't need to be re-computed
         group->update_processed_tokens_num(processed_tokens);
-        
-        std::cout << "[BlockManager] restore_from_disk_cache completed: restored " << blocks_to_restore 
-                  << " blocks across " << m_num_layers << " layers, processed_tokens=" << processed_tokens << std::endl;
         
         return true;
     }

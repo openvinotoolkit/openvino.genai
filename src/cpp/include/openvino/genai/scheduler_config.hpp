@@ -73,15 +73,14 @@ struct SchedulerConfig {
      * Directory path to load pre-computed KV cache from disk.
      * When set, the pipeline will attempt to restore KV cache state from this directory
      * during initialization, enabling fast context restoration without re-computation.
-     * Takes precedence over the OV_GENAI_LOAD_KV_DIR environment variable.
      */
     std::string kv_cache_load_dir;
 
     /**
      * Directory path to dump KV cache to disk.
-     * When set, the pipeline will save KV cache state to this directory after prefill,
-     * enabling future runs to restore the cached state for faster startup.
-     * Takes precedence over the OV_GENAI_DUMP_KV_DIR environment variable.
+     * When set, the pipeline will save KV cache state to this directory after the first
+     * prefill step only (controlled internally by a snapshot counter). Subsequent prefill
+     * requests do not trigger additional dumps.
      */
     std::string kv_cache_dump_dir;
 
