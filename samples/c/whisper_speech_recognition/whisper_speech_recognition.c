@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
 
     const char* model_path = argv[1];
     const char* wav_file_path = argv[2];
-    const char* device = (argc == 4) ? argv[3] : "CPU";
+    const char* device = (argc == 4) ? argv[3] : "CPU";  // Default to CPU if no device is provided
 
     int exit_code = EXIT_SUCCESS;
 
