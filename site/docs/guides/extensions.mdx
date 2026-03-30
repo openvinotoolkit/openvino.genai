@@ -17,26 +17,14 @@ You can pass extensions to pipeline constructors in both Python and C++.
 
 ## Using the `extensions` Property
 
-### Python
-
-Accepted item types in the Python `extensions` list:
-
-- `str`, `bytes`, or `pathlib.Path` pointing to a compiled extension library
-- `openvino.Extension` objects such as `ov.OpExtension(...)`
-- Python custom operation classes, which are automatically wrapped as `openvino.OpExtension(...)`
-
-### C++
-
-Include `openvino/genai/extensions.hpp` and use the `ov::genai::extensions(...)` helper to build the `extensions` property.
-
-Accepted C++ forms:
-
-- `ov::genai::ExtensionList`
-- `std::vector<std::filesystem::path>`
-- `std::vector<std::shared_ptr<ov::Extension>>`
-
 <LanguageTabs>
     <TabItemPython>
+        Accepted item types in the Python `extensions` list:
+
+        - `str`, `bytes`, or `pathlib.Path` pointing to a compiled extension library
+        - `openvino.Extension` objects such as `ov.OpExtension(...)`
+        - Python custom operation classes, which are automatically wrapped as `openvino.OpExtension(...)`
+
         ```python
         from pathlib import Path
 
@@ -72,6 +60,14 @@ Accepted C++ forms:
         ```
     </TabItemPython>
     <TabItemCpp>
+        Include `openvino/genai/extensions.hpp` and use the `ov::genai::extensions(...)` helper to build the `extensions` property.
+
+        Accepted C++ forms:
+
+        - `ov::genai::ExtensionList`
+        - `std::vector<std::filesystem::path>`
+        - `std::vector<std::shared_ptr<ov::Extension>>`
+
         ```cpp
         #include <filesystem>
         #include <memory>
