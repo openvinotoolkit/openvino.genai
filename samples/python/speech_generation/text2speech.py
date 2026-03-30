@@ -9,11 +9,12 @@ import openvino as ov
 import openvino_genai
 import soundfile as sf
 
+
 def _load_speaker_embedding(file_path: str, shape):
     """Load a float32 binary and reshape it according to the given ov.Shape."""
     data = np.fromfile(file_path, dtype=np.float32)
     if data.size == 0:
-        raise RuntimeError(f'Speaker embedding file is empty: {file_path}')
+        raise RuntimeError(f"Speaker embedding file is empty: {file_path}")
 
     return ov.Tensor(data.reshape(shape))
 
@@ -22,8 +23,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("text", help="Input text for speech generation")
-    parser.add_argument("--speaker_embedding_file_path", default=None,
-                        help="Path to the binary file with a speaker embedding. Required for Kokoro.")
+    parser.add_argument(
+        "--speaker_embedding_file_path",
+        default=None,
+        help="Path to the binary file with a speaker embedding. Required for Kokoro.",
+    )
     parser.add_argument("--language", default="", help="Optional language, e.g. en-us, en-gb, es, fr-fr, hi, it, pt-br")
     parser.add_argument("--device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
     args = parser.parse_args()
@@ -33,8 +37,9 @@ def main():
     # Read speaker embedding using the model's expected shape.
     speaker_embedding = None
     if args.speaker_embedding_file_path:
-        speaker_embedding = _load_speaker_embedding(args.speaker_embedding_file_path,
-                                                    pipe.get_speaker_embedding_shape())
+        speaker_embedding = _load_speaker_embedding(
+            args.speaker_embedding_file_path, pipe.get_speaker_embedding_shape()
+        )
 
     generation_properties = {}
     language = args.language.strip().lower()

@@ -13,8 +13,7 @@ try:
     from kokoro import KPipeline
 except ImportError as import_error:
     raise RuntimeError(
-        "This sample requires Python Kokoro (which uses Misaki for G2P). "
-        "Install it with `pip install kokoro`"
+        "This sample requires Python Kokoro (which uses Misaki for G2P). Install it with `pip install kokoro`"
     ) from import_error
 
 
@@ -29,6 +28,7 @@ SAMPLE_TEXTS = {
     "ja": "明るい朝、やさしい風が吹き、新しい一日への期待が静かに広がっていった。",
     "zh": "在一个阳光明媚的早晨，轻柔的微风带来了宁静与新的希望。",
 }
+
 
 def _speech_token_type():
     token_type = getattr(openvino_genai, "SpeechToken", None)
@@ -65,7 +65,7 @@ def load_kokoro_embedding(file_path: str, shape):
     """Load a float32 binary and reshape it according to the given ov.Shape."""
     data = np.fromfile(file_path, dtype=np.float32)
     if data.size == 0:
-        raise RuntimeError(f'Speaker embedding file is empty: {file_path}')
+        raise RuntimeError(f"Speaker embedding file is empty: {file_path}")
     return ov.Tensor(data.reshape(shape))
 
 

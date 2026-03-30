@@ -14,7 +14,7 @@ def _load_kokoro_embedding(file_path: str, shape):
     """Load a float32 binary and reshape it according to the given ov.Shape."""
     data = np.fromfile(file_path, dtype=np.float32)
     if data.size == 0:
-        raise RuntimeError(f'Speaker embedding file is empty: {file_path}')
+        raise RuntimeError(f"Speaker embedding file is empty: {file_path}")
     return ov.Tensor(data.reshape(shape))
 
 
@@ -22,8 +22,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir", help="Path to Kokoro model directory")
     parser.add_argument("text", help="Input text for speech generation")
-    parser.add_argument("--speaker_embedding_file_path", required=True,
-                        help="Path to a prepared Kokoro speaker embedding binary")
+    parser.add_argument(
+        "--speaker_embedding_file_path", required=True, help="Path to a prepared Kokoro speaker embedding binary"
+    )
     parser.add_argument(
         "--language",
         default="en-us",
@@ -44,8 +45,7 @@ def main():
     args = parser.parse_args()
 
     pipe = openvino_genai.Text2SpeechPipeline(args.model_dir, args.device)
-    speaker_embedding = _load_kokoro_embedding(args.speaker_embedding_file_path,
-                                               pipe.get_speaker_embedding_shape())
+    speaker_embedding = _load_kokoro_embedding(args.speaker_embedding_file_path, pipe.get_speaker_embedding_shape())
 
     config = pipe.get_generation_config()
     config.language = args.language
