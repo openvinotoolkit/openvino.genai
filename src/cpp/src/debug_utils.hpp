@@ -14,6 +14,8 @@
 #include <openvino/runtime/tensor.hpp>
 #include <string>
 
+#include "openvino/genai/tokenizer.hpp"
+
 template <typename T>
 void print_array(T* array, size_t size) {
     std::cout << " => [ ";
@@ -204,6 +206,19 @@ inline ov::Tensor from_npy(const std::filesystem::path& npy) {
     fstream.read((char*)tensor.data(), _size);
     OPENVINO_ASSERT(fstream.gcount() == _size);
     return tensor;
+}
+
+inline std::string print_token_id(const std::vector<int64_t>& print_ids,
+                                  const std::string& prefix,
+                                  const size_t& last_num,
+                                  ov::genai::Tokenizer& tokenizer) {
+    std::stringstream ss;
+    ss << prefix << " = ";
+    size_t start_id = (print_ids.size() > last_num) ? (print_ids.size() - last_num) : 0;
+    for (size_t id = start_id; id < print_ids.size(); id++) {
+        ss << print_ids[id] << "[" << tokenizer.decode(std::vector<int64_t>{print_ids[id]}) << "],";
+    }
+    return ss.str();
 }
 
 inline float max_diff(const ov::Tensor& lhs, const ov::Tensor& rhs) {

@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 
 #include <future>
@@ -11,7 +14,7 @@
 #include "include/tokenizer.hpp"
 
 struct TsfnContext {
-    TsfnContext(GenerateInputs inputs, std::shared_ptr<bool> is_generating)
+    TsfnContext(GenerateInputs inputs, std::shared_ptr<std::atomic<bool>> is_generating)
         : inputs(inputs),
           is_generating(is_generating) {};
     ~TsfnContext() {};
@@ -21,7 +24,7 @@ struct TsfnContext {
     std::optional<Napi::ThreadSafeFunction> streamer_tsfn;
 
     GenerateInputs inputs;
-    std::shared_ptr<bool> is_generating;
+    std::shared_ptr<std::atomic<bool>> is_generating;
     std::shared_ptr<ov::genai::LLMPipeline> pipe = nullptr;
     std::shared_ptr<ov::AnyMap> generation_config = nullptr;
     std::shared_ptr<ov::AnyMap> options = nullptr;
@@ -33,7 +36,7 @@ void performInferenceThread(TsfnContext* context) {
             try {
                 jsCallback.Call(
                     {Napi::Error::New(env, "performInferenceThread error. " + message).Value(), env.Null()});
-            } catch (std::exception& err) {
+            } catch (const std::exception& err) {
                 std::cerr << "The callback failed when attempting to return an error from performInferenceThread. "
                              "Details:\n"
                           << err.what() << std::endl;
@@ -73,7 +76,7 @@ void performInferenceThread(TsfnContext* context) {
                             } else {
                                 resultPromise.set_value(ov::genai::StreamingStatus::RUNNING);
                             }
-                        } catch (std::exception& err) {
+                        } catch (const std::exception& err) {
                             streamer_exceptions.push_back(err.what());
                             resultPromise.set_value(ov::genai::StreamingStatus::CANCEL);
                         }
@@ -100,8 +103,11 @@ void performInferenceThread(TsfnContext* context) {
                               }},
                    context->inputs);
 
-    } catch (std::exception& e) {
+    } catch (const std::exception& e) {
+        *context->is_generating = false;
         report_error(e.what());
+        finalize();
+        return;
     }
     // should be called right after inference to release the flag asap
     *context->is_generating = false;
@@ -124,7 +130,7 @@ void performInferenceThread(TsfnContext* context) {
                             env.Null(),                     // Error should be null in normal case
                             to_decoded_result(env, result)  // Return DecodedResults as the final result
                         });
-                    } catch (std::exception& err) {
+                    } catch (const std::exception& err) {
                         report_error("The final callback failed. Details:\n" + std::string(err.what()));
                     }
                 });
@@ -133,7 +139,7 @@ void performInferenceThread(TsfnContext* context) {
                 report_error("The final BlockingCall failed with status " + status);
             }
         }
-    } catch (std::exception& e) {
+    } catch (const std::exception& e) {
         report_error(e.what());
     }
     finalize();
@@ -147,6 +153,8 @@ Napi::Function LLMPipelineWrapper::get_class(Napi::Env env) {
                        {InstanceMethod("init", &LLMPipelineWrapper::init),
                         InstanceMethod("generate", &LLMPipelineWrapper::generate),
                         InstanceMethod("getTokenizer", &LLMPipelineWrapper::get_tokenizer),
+                        InstanceMethod("getGenerationConfig", &LLMPipelineWrapper::get_generation_config),
+                        InstanceMethod("setGenerationConfig", &LLMPipelineWrapper::set_generation_config),
                         InstanceMethod("startChat", &LLMPipelineWrapper::start_chat),
                         InstanceMethod("finishChat", &LLMPipelineWrapper::finish_chat)});
 }
@@ -256,6 +264,29 @@ Napi::Value LLMPipelineWrapper::get_tokenizer(const Napi::CallbackInfo& info) {
         OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
         auto tokenizer = this->pipe->get_tokenizer();
         return TokenizerWrapper::wrap(env, tokenizer);
+    } catch (const std::exception& ex) {
+        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
+    }
+    return env.Undefined();
+}
+
+Napi::Value LLMPipelineWrapper::get_generation_config(const Napi::CallbackInfo& info) {
+    auto env = info.Env();
+    try {
+        OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
+        return cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(env, this->pipe->get_generation_config());
+    } catch (const std::exception& ex) {
+        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
+    }
+    return env.Undefined();
+}
+
+Napi::Value LLMPipelineWrapper::set_generation_config(const Napi::CallbackInfo& info) {
+    auto env = info.Env();
+    try {
+        OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
+        VALIDATE_ARGS_COUNT(info, 1, "setGenerationConfig()");
+        this->pipe->set_generation_config(js_to_cpp<ov::genai::GenerationConfig>(env, info[0]));
     } catch (const std::exception& ex) {
         Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
     }

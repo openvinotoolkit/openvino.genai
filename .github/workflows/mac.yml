@@ -85,8 +85,7 @@ jobs:
         platform: macos_14_7
         arch: 'arm64'
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        # latest_available_commit fails with libopenvino_intel_npu_compiler.so: cannot open shared object file on Manylinux 2_28. Ticket: 181511
-        revision: 8f1e6829dc8eecdb9fca2a95d9271f35b780ddaa
+        revision: latest_available_commit
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -448,7 +447,7 @@ jobs:
           #   timeout: 240
           # Only supported on X64 or ARM with SVE support
           # - name: 'LLM & VLM'
-          #   cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py'
+          #   cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py'
           #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
           #   timeout: 180
           - name: 'GGUF Reader tests'
@@ -474,7 +473,7 @@ jobs:
             timeout: 120
           - name: 'WWB tests (nanollava)'
             cmd: |
-              python -m pip install transformers==4.48.0
+              python -m pip install transformers==4.48.0 diffusers==0.35.2
               python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90

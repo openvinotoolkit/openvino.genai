@@ -10,6 +10,7 @@
 
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen2_5_vl/classes.hpp"
+#include "visual_language/qwen3_vl/classes.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -148,6 +149,11 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_encoded_input_ids(const std::str
     return new_input_ids;
 }
 
+// For prompt lookup, encode original prompt as lookup table.
+ov::Tensor InputsEmbedder::IInputsEmbedder::encode_prompt(const std::string& original_prompt) {
+    return m_tokenizer.encode(original_prompt).input_ids;
+}
+
 std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors(const std::vector<ov::Tensor>& images) {
     std::vector<ov::Tensor> single_image_tensors;
     for (const auto& image : images) {
@@ -242,6 +248,11 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_em
 
 bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false; }
 
+const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::IInputsEmbedder::get_lm_extra_inputs() const {
+    static const std::unordered_map<std::string, ov::Tensor> empty_map;
+    return empty_map;
+}
+
 /// Public InputsEmbedder class
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
@@ -269,6 +280,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen2VL>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN2_5_VL) {
         m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_VL) {
+        m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, device, device_config);
     } else {
@@ -303,6 +316,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderQwen2VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN2_5_VL) {
         m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_VL) {
+        m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else {
@@ -365,6 +380,10 @@ bool InputsEmbedder::has_token_type_ids() const {
     return m_impl->has_token_type_ids();
 }
 
+const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_inputs() const {
+    return m_impl->get_lm_extra_inputs();
+}
+
 std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
     return m_impl->encode_images(images);
 }
@@ -375,6 +394,10 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(const std::ve
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
+}
+
+ov::Tensor InputsEmbedder::encode_prompt(const std::string& original_prompt) {
+    return m_impl->encode_prompt(original_prompt);
 }
 
 void InputsEmbedder::set_position_ids(const ov::Tensor& position_ids) {
@@ -419,6 +442,10 @@ void InputsEmbedder::finish_chat() {
 
 void InputsEmbedder::set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
     return m_impl->set_vision_token_pruning_config(pruning_ratio, relevance_weight);
+}
+
+std::string InputsEmbedder::get_last_pruned_prompt(const std::string& original_prompt) const {
+    return m_impl->get_last_pruned_prompt(original_prompt);
 }
 
 NormalizedPrompt InputsEmbedder::normalize_prompt(

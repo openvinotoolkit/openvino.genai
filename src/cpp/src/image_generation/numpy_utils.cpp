@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "image_generation/numpy_utils.hpp"
 #include "openvino/core/except.hpp"
 
