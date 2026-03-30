@@ -638,18 +638,20 @@ std::vector<std::string> phonemize_single_text(misaki::G2P& g2p,
         return truncate_utf8_codepoints(value, utf8_codepoint_length(value));
     };
 
-    auto in_set = [](const std::string& value, const std::string& set_chars) {
-        return value.size() == 1 && set_chars.find(value[0]) != std::string::npos;
+    auto matches_any = [](const std::string& value, const std::vector<std::string>& candidates) {
+        return std::find(candidates.begin(), candidates.end(), value) != candidates.end();
     };
 
     auto waterfall_last = [&](const std::vector<misaki::MToken>& tokens, std::size_t next_count) {
-        static const std::vector<std::string> waterfall = {"!.?…", ":;", ",—"};
+        static const std::vector<std::vector<std::string>> waterfall = {{"!", ".", "?", "…"},
+                                                                         {":", ";"},
+                                                                         {",", "—"}};
         static const std::vector<std::string> bumps = {")", "”"};
 
         for (const auto& marks : waterfall) {
             std::optional<std::size_t> split_index;
             for (std::size_t i = tokens.size(); i-- > 0;) {
-                if (in_set(tokens[i].phonemes.value_or(""), marks)) {
+                if (matches_any(tokens[i].phonemes.value_or(""), marks)) {
                     split_index = i;
                     break;
                 }
@@ -812,18 +814,20 @@ std::vector<std::string> chunk_phonemes_from_tokens(const std::vector<ov::genai:
         return truncate_utf8_codepoints(value, utf8_codepoint_length(value));
     };
 
-    auto in_set = [](const std::string& value, const std::string& set_chars) {
-        return value.size() == 1 && set_chars.find(value[0]) != std::string::npos;
+    auto matches_any = [](const std::string& value, const std::vector<std::string>& candidates) {
+        return std::find(candidates.begin(), candidates.end(), value) != candidates.end();
     };
 
     auto waterfall_last = [&](const std::vector<ov::genai::SpeechToken>& token_seq, std::size_t next_count) {
-        static const std::vector<std::string> waterfall = {"!.?…", ":;", ",—"};
+        static const std::vector<std::vector<std::string>> waterfall = {{"!", ".", "?", "…"},
+                                                                         {":", ";"},
+                                                                         {",", "—"}};
         static const std::vector<std::string> bumps = {")", "”"};
 
         for (const auto& marks : waterfall) {
             std::optional<std::size_t> split_index;
             for (std::size_t i = token_seq.size(); i-- > 0;) {
-                if (in_set(token_seq[i].phonemes, marks)) {
+                if (matches_any(token_seq[i].phonemes, marks)) {
                     split_index = i;
                     break;
                 }
