@@ -26,3 +26,5 @@ jobs:
           days-before-issue-close: -1
 
           ascending: true
+
+          operations-per-run: 300
