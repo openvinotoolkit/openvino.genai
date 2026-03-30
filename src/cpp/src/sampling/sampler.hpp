@@ -271,12 +271,12 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
     void tree_reset();
     auto build_top_k_frontier(const ov::Tensor& logits) -> std::vector<CandidateBeam>;
     void advance_draft_layer(const std::vector<CandidateBeam>& candidates, SamplerOutput& sampler_output);
-    void finalize_tree(SamplerOutput& sampler_output);
+    void finalize_tree(SamplerOutput& sampler_output, LogitProcessor& logit_processor);
 
 public:
     explicit TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tensor d2t);
 
-    void advance_draft_step(const ov::Tensor& logits, SamplerOutput& sampler_output);
+    void advance_draft_step(const ov::Tensor& logits, SamplerOutput& sampler_output, LogitProcessor& logit_processor);
 };
 
 class Sampler::GroupBeamSearcher : public Sampler::Searcher {

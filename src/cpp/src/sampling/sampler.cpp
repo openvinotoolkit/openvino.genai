@@ -800,7 +800,7 @@ void Sampler::TreeSearcher::advance_draft_layer(const std::vector<CandidateBeam>
     m_frontier = std::move(next_frontier);
 }
 
-void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output) {
+void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitProcessor& logit_processor) {
     OPENVINO_ASSERT(m_candidate_graph.has_value(), "finalize_tree called before tree_reset()");
 
     const std::vector<CandidateGraph::NodePtr> final_nodes = m_candidate_graph->select_candidate_nodes();
@@ -865,8 +865,10 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output) {
                     ") is less than pre-draft length (", m_pre_draft_generated_len,
                     "); sequence state is inconsistent");
     sequence->remove_last_tokens(sequence->get_generated_len() - m_pre_draft_generated_len);
-    for (size_t t = 1; t < final_nodes.size(); ++t)
+    for (size_t t = 1; t < final_nodes.size(); ++t) {
         sequence->append_token(final_nodes[t]->token_id, 0.0f);
+        logit_processor.register_new_generated_token(final_nodes[t]->token_id);
+    }
 
     // extra_processed_tokens: tree nodes beyond the deepest path (= total - depth - 1 for root).
     // These are processed simultaneously by the verifier and must be counted now.
@@ -895,7 +897,7 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output) {
     }
 }
 
-void Sampler::TreeSearcher::advance_draft_step(const ov::Tensor& logits, SamplerOutput& sampler_output) {
+void Sampler::TreeSearcher::advance_draft_step(const ov::Tensor& logits, SamplerOutput& sampler_output, LogitProcessor& logit_processor) {
     if (m_phase == Phase::IDLE) {
         OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1,
                         "TreeSearcher: unexpected number of running sequences at draft start");
@@ -910,7 +912,7 @@ void Sampler::TreeSearcher::advance_draft_step(const ov::Tensor& logits, Sampler
     if (m_current_draft_layer < m_parameters.tree_params.tree_depth) {
         advance_draft_layer(candidates, sampler_output);
     } else {
-        finalize_tree(sampler_output);
+        finalize_tree(sampler_output, logit_processor);
         m_phase = Phase::IDLE;
         m_current_draft_layer = 0;
     }
@@ -1661,7 +1663,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 sg_sampling_info.sampler_output.num_generated_tokens++;
             }
 
-            tree_searcher->advance_draft_step(sequence_group_logits, sg_sampling_info.sampler_output);
+            tree_searcher->advance_draft_step(sequence_group_logits, sg_sampling_info.sampler_output, logit_processor);
         }  // end else (candidate tree search)
     } else {
         OPENVINO_THROW("Unsupported sampling method");
