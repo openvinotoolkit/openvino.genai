@@ -58,6 +58,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
     # Override it to preserve max_new_tokens.
     max_length = 2**64 - 1
+    log.info("[%s] Running text generation: %s", num, datetime.datetime.now().isoformat())
     start = time.perf_counter()
     if streaming:
         if args['infer_count'] is not None and args['end_token_stopping'] is False:
@@ -192,7 +193,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         bench_hook.clear_time_infer_list()
 
 
-def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_data, batch_size):
+def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_data, batch_size, num):
     import openvino_genai
     import openvino as ov
     cb_pipeline = isinstance(model, openvino_genai.ContinuousBatchingPipeline)
@@ -200,6 +201,7 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         input_data = [ov.Tensor([input]) for input in input_data.input_ids.data]
         gen_config = [gen_config] * batch_size
 
+    log.info("[%s] Running text generation: %s", num, datetime.datetime.now().isoformat())
     start = time.perf_counter()
     if streaming:
         text_print_streamer = get_genai_chunk_streamer()(model.get_tokenizer(), tokens_len)
@@ -328,7 +330,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         config_info += f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
         log.info(config_info)
     generated_tokens, perf_metrics, generation_time = genai_generate(streaming, model, tokens_len, gen_config,
-                                                                     args["empty_lora"], input_data, args['batch_size'])
+                                                                     args["empty_lora"], input_data, args['batch_size'], num)
     if streaming:
         tokenization_time.append(np.mean(perf_metrics.raw_metrics.detokenization_durations) / 1000)
         generated_text = tokenizer.decode(generated_tokens)
@@ -479,6 +481,8 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
         config_info += f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
         log.info(config_info)
+
+    log.info("[%s] Running text generation: %s", num, datetime.datetime.now().isoformat())
     start = time.perf_counter()
     generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens
     end = time.perf_counter()
