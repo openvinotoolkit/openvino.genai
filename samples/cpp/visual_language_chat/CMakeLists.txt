@@ -34,6 +34,21 @@ install(TARGETS visual_language_chat
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
+# create lora sample executable
+
+add_executable(visual_language_lora visual_language_lora.cpp load_image.cpp)
+target_include_directories(visual_language_lora PRIVATE "${CMAKE_BINARY_DIR}")
+target_link_libraries(visual_language_lora PRIVATE openvino::genai)
+
+set_target_properties(visual_language_lora PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS visual_language_lora
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
 # create encrypted model sample executable
 
 add_executable(encrypted_model_vlm encrypted_model_vlm.cpp load_image.cpp)

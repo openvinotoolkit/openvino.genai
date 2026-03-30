@@ -70,6 +70,22 @@ install(TARGETS lora_text2image
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
+# create TaylorSeer text2image sample executable
+
+add_executable(taylorseer_text2image taylorseer_text2image.cpp imwrite.cpp)
+
+target_include_directories(taylorseer_text2image PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(taylorseer_text2image PRIVATE openvino::genai indicators::indicators)
+
+set_target_properties(taylorseer_text2image PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS taylorseer_text2image
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
 # create heterogeneous_stable_diffusion sample executable
 
 add_executable(heterogeneous_stable_diffusion

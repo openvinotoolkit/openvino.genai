@@ -323,6 +323,10 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     TokenIds m_prompt_ids;
     std::vector<std::vector<float>> m_input_embeds;
     std::optional<std::vector<int64_t>> m_token_type_ids;
+
+    ov::Tensor m_deepstack_visual_embeds;
+    std::optional<std::vector<bool>> m_visual_pos_masks;
+
     std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
     size_t m_num_evicted_tokens = 0;
@@ -372,6 +376,7 @@ public:
                   const ov::genai::GenerationConfig& sampling_params,
                   std::size_t block_size,
                   const std::optional<ov::Tensor>& token_type_ids = std::nullopt,
+                  const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs = std::nullopt,
                   const std::optional<ov::Tensor>& position_ids = std::nullopt,
                   const std::optional<int64_t>& rope_delta = std::nullopt,
                   const std::optional<ov::Tensor>& prompt_ids = std::nullopt)
@@ -407,6 +412,18 @@ public:
                 m_prompt_ids.resize(tokens.get_size());
                 std::copy_n(tokens.data<const int64_t>(), tokens.get_size(), m_prompt_ids.begin());
             }
+
+            if (lm_extra_inputs.has_value()) {
+                for (const auto& [input_name, tensor] : lm_extra_inputs.value()) {
+                    if (input_name == "deepstack_visual_embeds") {
+                        m_deepstack_visual_embeds = ov::Tensor(tensor.get_element_type(), tensor.get_shape());
+                        tensor.copy_to(m_deepstack_visual_embeds);
+                    } else if (input_name == "visual_pos_masks") {
+                        m_visual_pos_masks = std::vector<bool>(tensor.data<const bool>(), tensor.data<const bool>() + tensor.get_size());
+                    }
+                }
+            }
+            
             m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
         }
         else {
@@ -705,6 +722,16 @@ public:
 
     std::optional<std::vector<int64_t>> get_token_type_ids() const {
         return m_token_type_ids;
+    }
+
+    const ov::Tensor& get_deepstack_visual_embeds() const {
+        OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_deepstack_visual_embeds;
+    }
+
+    const std::optional<std::vector<bool>>& get_visual_pos_masks() const {
+        OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_visual_pos_masks;
     }
 
     size_t get_hidden_size() const {
