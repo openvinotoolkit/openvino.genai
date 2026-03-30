@@ -34,10 +34,18 @@
 // Runtime AVX support detection
 inline bool cpu_supports_avx() {
 #    ifdef _MSC_VER
-    int cpu_info[4] = {0};
-    __cpuid(cpu_info, 1);
-    // Check OSXSAVE (bit 27) and AVX (bit 28) in ECX
-    static const bool supported = (cpu_info[2] & (1 << 27)) && (cpu_info[2] & (1 << 28));
+    static const bool supported = []() {
+        int cpu_info[4] = {0};
+        __cpuid(cpu_info, 1);
+        bool os_xsave = (cpu_info[2] & (1 << 27)) != 0;
+        bool cpu_avx = (cpu_info[2] & (1 << 28)) != 0;
+        if (os_xsave && cpu_avx) {
+            // Verify OS enabled YMM state saving via XCR0 bits 1 (SSE) and 2 (AVX)
+            unsigned long long xcr0 = _xgetbv(0);
+            return (xcr0 & 0x6) == 0x6;
+        }
+        return false;
+    }();
 #    else
     static const bool supported = __builtin_cpu_supports("avx");
 #    endif
@@ -160,9 +168,9 @@ FastGreedyDPP::FastGreedyDPP(const Config& config) : m_config(config) {
 
 #if defined(OPENVINO_ARCH_X86_64)
     if (cpu_supports_avx()) {
-        GENAI_INFO("[CDPruner] CPU supports AVX — DPP CPU fallback will use AVX SIMD (8 floats/cycle)");
+        GENAI_INFO("[CDPruner] CPU supports AVX — DPP CPU fallback will use AVX SIMD (8 floats/vector)");
     } else {
-        GENAI_INFO("[CDPruner] CPU does not support AVX — DPP CPU fallback will use SSE2 SIMD (4 floats/cycle)");
+        GENAI_INFO("[CDPruner] CPU does not support AVX — DPP CPU fallback will use SSE2 SIMD (4 floats/vector)");
     }
 #else
     GENAI_INFO("[CDPruner] Non-x86_64 architecture — DPP CPU fallback will use scalar operations");
