@@ -58,7 +58,7 @@ public:
     // before acoustic inference.
     // - set: use this OpenVINO fallback network for G2P fallback.
     // - unset: default to espeak-ng G2P fallback.
-    std::optional<std::string> phonemize_fallback_model_dir;
+    std::optional<std::filesystem::path> phonemize_fallback_model_dir;
 
     void update_generation_config(const ov::AnyMap& config_map = {});
 
@@ -80,7 +80,7 @@ static constexpr ov::Property<float> speed{"speed"};
 
 static constexpr ov::Property<std::string> language{"language"};
 static constexpr ov::Property<uint32_t> max_phoneme_length{"max_phoneme_length"};
-static constexpr ov::Property<std::string> phonemize_fallback_model_dir{"phonemize_fallback_model_dir"};
+static constexpr ov::Property<std::filesystem::path> phonemize_fallback_model_dir{"phonemize_fallback_model_dir"};
 
 }  // namespace genai
 }  // namespace ov

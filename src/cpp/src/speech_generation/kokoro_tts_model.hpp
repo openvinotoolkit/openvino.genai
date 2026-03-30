@@ -64,7 +64,7 @@ private:
 #if OPENVINO_GENAI_HAS_MISAKI_CPP
     std::unique_ptr<misaki::G2P> m_g2p;
     bool m_fallback_initialized = false;
-    std::optional<std::string> m_phonemize_fallback_model_dir;
+    std::optional<std::filesystem::path> m_phonemize_fallback_model_dir;
 #endif
 };
 
