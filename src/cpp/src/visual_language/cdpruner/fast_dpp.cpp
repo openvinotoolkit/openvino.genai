@@ -23,14 +23,40 @@
 #    include "fast_dpp_cl.hpp"
 #endif
 
-// SIMD headers
+// SIMD headers and runtime CPU feature detection.
+// AVX functions use per-function target attributes (GCC/Clang) so no global
+// -mavx/-mavx2 CMake flag is needed. The correct SIMD path is chosen at runtime
+// via CPUID, ensuring safe execution on all x86_64 CPUs.
 #if defined(OPENVINO_ARCH_X86_64)
 #    ifdef _MSC_VER
 #        include <intrin.h>
 #    else
 #        include <x86intrin.h>
 #    endif
-#endif
+
+// Runtime AVX support detection (checked once, cached in static local)
+inline bool cpu_supports_avx() {
+#    ifdef _MSC_VER
+    int cpu_info[4] = {0};
+    __cpuid(cpu_info, 1);
+    // Check OSXSAVE (bit 27) and AVX (bit 28) in ECX
+    static const bool supported = (cpu_info[2] & (1 << 27)) && (cpu_info[2] & (1 << 28));
+#    else
+    static const bool supported = __builtin_cpu_supports("avx");
+#    endif
+    return supported;
+}
+
+// On GCC/Clang, __attribute__((target("avx"))) enables AVX codegen for a single
+// function without requiring a global -mavx compiler flag.
+// On MSVC, AVX intrinsics are always available regardless of /arch: setting.
+#    if defined(__GNUC__) || defined(__clang__)
+#        define OV_TARGET_AVX __attribute__((target("avx")))
+#    else
+#        define OV_TARGET_AVX
+#    endif
+
+#endif  // OPENVINO_ARCH_X86_64
 
 namespace ov::genai::cdpruner {
 
@@ -44,68 +70,112 @@ namespace ov::genai::cdpruner {
  *   - scalar: Scalar multiplier applied to each element of 'in'.
  *   - size: Number of elements to process.
  */
-inline void simd_vector_sub_scalar_mul(float* out, const float* in, float scalar, size_t size) {
-    size_t i = 0;
 
-#ifdef __AVX__
-    // AVX: Process 8 floats at a time
+#if defined(OPENVINO_ARCH_X86_64)
+// AVX path: compiled with AVX target attribute, callable only after runtime check
+OV_TARGET_AVX
+static void vector_sub_scalar_mul_avx(float* out, const float* in, float scalar, size_t size) {
+    size_t i = 0;
     const __m256 scalar_vec = _mm256_set1_ps(scalar);
     for (; i + 8 <= size; i += 8) {
         __m256 out_vec = _mm256_loadu_ps(&out[i]);
         __m256 in_vec = _mm256_loadu_ps(&in[i]);
-        __m256 mul_result = _mm256_mul_ps(scalar_vec, in_vec);
-        __m256 result = _mm256_sub_ps(out_vec, mul_result);
-        _mm256_storeu_ps(&out[i], result);
+        _mm256_storeu_ps(&out[i], _mm256_sub_ps(out_vec, _mm256_mul_ps(scalar_vec, in_vec)));
     }
-#elif defined(__SSE2__)
-    // SSE2: Process 4 floats at a time
-    const __m128 scalar_vec = _mm_set1_ps(scalar);
-    for (; i + 4 <= size; i += 4) {
-        __m128 out_vec = _mm_loadu_ps(&out[i]);
-        __m128 in_vec = _mm_loadu_ps(&in[i]);
-        __m128 mul_result = _mm_mul_ps(scalar_vec, in_vec);
-        __m128 result = _mm_sub_ps(out_vec, mul_result);
-        _mm_storeu_ps(&out[i], result);
-    }
-#endif
-
-    // Process remaining elements with scalar code
     for (; i < size; ++i) {
         out[i] -= scalar * in[i];
     }
 }
 
-// SIMD optimized vector multiplication by scalar: out[i] *= scalar
-inline void simd_vector_mul_scalar(float* out, float scalar, size_t size) {
+// SSE2 path: always safe on x86_64
+static void vector_sub_scalar_mul_sse2(float* out, const float* in, float scalar, size_t size) {
     size_t i = 0;
-
-#ifdef __AVX__
-    // AVX: Process 8 floats at a time
-    const __m256 scalar_vec = _mm256_set1_ps(scalar);
-    for (; i + 8 <= size; i += 8) {
-        __m256 out_vec = _mm256_loadu_ps(&out[i]);
-        __m256 result = _mm256_mul_ps(out_vec, scalar_vec);
-        _mm256_storeu_ps(&out[i], result);
-    }
-#elif defined(__SSE2__)
-    // SSE2: Process 4 floats at a time
     const __m128 scalar_vec = _mm_set1_ps(scalar);
     for (; i + 4 <= size; i += 4) {
         __m128 out_vec = _mm_loadu_ps(&out[i]);
-        __m128 result = _mm_mul_ps(out_vec, scalar_vec);
-        _mm_storeu_ps(&out[i], result);
+        __m128 in_vec = _mm_loadu_ps(&in[i]);
+        _mm_storeu_ps(&out[i], _mm_sub_ps(out_vec, _mm_mul_ps(scalar_vec, in_vec)));
+    }
+    for (; i < size; ++i) {
+        out[i] -= scalar * in[i];
+    }
+}
+#endif  // OPENVINO_ARCH_X86_64
+
+inline void simd_vector_sub_scalar_mul(float* out, const float* in, float scalar, size_t size) {
+#if defined(OPENVINO_ARCH_X86_64)
+    if (cpu_supports_avx()) {
+        vector_sub_scalar_mul_avx(out, in, scalar, size);
+        return;
+    }
+    vector_sub_scalar_mul_sse2(out, in, scalar, size);
+#else
+    for (size_t i = 0; i < size; ++i) {
+        out[i] -= scalar * in[i];
     }
 #endif
+}
 
-    // Process remaining elements with scalar code
+#if defined(OPENVINO_ARCH_X86_64)
+// AVX path
+OV_TARGET_AVX
+static void vector_mul_scalar_avx(float* out, float scalar, size_t size) {
+    size_t i = 0;
+    const __m256 scalar_vec = _mm256_set1_ps(scalar);
+    for (; i + 8 <= size; i += 8) {
+        __m256 out_vec = _mm256_loadu_ps(&out[i]);
+        _mm256_storeu_ps(&out[i], _mm256_mul_ps(out_vec, scalar_vec));
+    }
     for (; i < size; ++i) {
         out[i] *= scalar;
     }
 }
 
+// SSE2 path
+static void vector_mul_scalar_sse2(float* out, float scalar, size_t size) {
+    size_t i = 0;
+    const __m128 scalar_vec = _mm_set1_ps(scalar);
+    for (; i + 4 <= size; i += 4) {
+        __m128 out_vec = _mm_loadu_ps(&out[i]);
+        _mm_storeu_ps(&out[i], _mm_mul_ps(out_vec, scalar_vec));
+    }
+    for (; i < size; ++i) {
+        out[i] *= scalar;
+    }
+}
+#endif  // OPENVINO_ARCH_X86_64
+
+// SIMD optimized vector multiplication by scalar: out[i] *= scalar
+inline void simd_vector_mul_scalar(float* out, float scalar, size_t size) {
+#if defined(OPENVINO_ARCH_X86_64)
+    if (cpu_supports_avx()) {
+        vector_mul_scalar_avx(out, scalar, size);
+        return;
+    }
+    vector_mul_scalar_sse2(out, scalar, size);
+#else
+    for (size_t i = 0; i < size; ++i) {
+        out[i] *= scalar;
+    }
+#endif
+}
+
 FastGreedyDPP::FastGreedyDPP(const Config& config) : m_config(config) {
     // Load config from env
     m_config.update_from_env();
+
+    // Log CPU SIMD capability at construction time (once per process).
+    // Printed regardless of whether OpenCL or CPU path is ultimately used,
+    // since OpenCL may fail at runtime and fall back to CPU.
+#if defined(OPENVINO_ARCH_X86_64)
+    if (cpu_supports_avx()) {
+        GENAI_INFO("[CDPruner] CPU supports AVX — DPP CPU fallback will use AVX SIMD (8 floats/cycle)");
+    } else {
+        GENAI_INFO("[CDPruner] CPU does not support AVX — DPP CPU fallback will use SSE2 SIMD (4 floats/cycle)");
+    }
+#else
+    GENAI_INFO("[CDPruner] Non-x86_64 architecture — DPP CPU fallback will use scalar operations");
+#endif
 }
 
 std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel, size_t num_tokens) {
@@ -455,21 +525,6 @@ std::vector<size_t> FastGreedyDPP::select_single_batch(const ov::Tensor& kernel,
 std::vector<std::vector<size_t>> FastGreedyDPP::select_cpu_internal(const ov::Tensor& kernel, size_t num_tokens) {
     auto shape = kernel.get_shape();
     size_t batch_size = shape[0];
-
-    // Debug output: report which SIMD instruction set is being used
-    {
-        static bool simd_logged = false;
-        if (!simd_logged) {
-#ifdef __AVX__
-            GENAI_INFO("[CDPruner] Using AVX SIMD instructions for vector operations (8 floats/operation)");
-#elif defined(__SSE2__)
-            GENAI_INFO("[CDPruner] Using SSE2 SIMD instructions for vector operations (4 floats/operation)");
-#else
-            GENAI_INFO("[CDPruner] Using scalar operations (no SIMD acceleration)");
-#endif
-            simd_logged = true;
-        }
-    }
 
     std::vector<std::vector<size_t>> batch_results(batch_size);
 
