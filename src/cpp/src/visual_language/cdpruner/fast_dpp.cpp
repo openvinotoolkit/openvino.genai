@@ -31,8 +31,8 @@
 #        include <x86intrin.h>
 #    endif
 
-// Runtime AVX support detection
-inline bool cpu_supports_avx() {
+// Runtime AVX support detection (result cached via static local)
+static bool cpu_supports_avx() {
 #    ifdef _MSC_VER
     static const bool supported = []() {
         int cpu_info[4] = {0};
@@ -167,13 +167,21 @@ FastGreedyDPP::FastGreedyDPP(const Config& config) : m_config(config) {
     m_config.update_from_env();
 
 #if defined(OPENVINO_ARCH_X86_64)
-    if (cpu_supports_avx()) {
-        GENAI_INFO("[CDPruner] CPU supports AVX — DPP CPU fallback will use AVX SIMD (8 floats/vector)");
-    } else {
-        GENAI_INFO("[CDPruner] CPU does not support AVX — DPP CPU fallback will use SSE2 SIMD (4 floats/vector)");
-    }
+    static const bool log_once = []{
+        if (cpu_supports_avx()) {
+            GENAI_INFO("[CDPruner] CPU supports AVX — DPP CPU fallback will use AVX SIMD (8 floats/vector)");
+        } else {
+            GENAI_INFO("[CDPruner] CPU does not support AVX — DPP CPU fallback will use SSE2 SIMD (4 floats/vector)");
+        }
+        return true;
+    }();
+    (void)log_once;
 #else
-    GENAI_INFO("[CDPruner] Non-x86_64 architecture — DPP CPU fallback will use scalar operations");
+    static const bool log_once = []{
+        GENAI_INFO("[CDPruner] Non-x86_64 architecture — DPP CPU fallback will use scalar operations");
+        return true;
+    }();
+    (void)log_once;
 #endif
 }
 
