@@ -24,9 +24,6 @@
 #endif
 
 // SIMD headers and runtime CPU feature detection.
-// AVX functions use per-function target attributes (GCC/Clang) so no global
-// -mavx/-mavx2 CMake flag is needed. The correct SIMD path is chosen at runtime
-// via CPUID, ensuring safe execution on all x86_64 CPUs.
 #if defined(OPENVINO_ARCH_X86_64)
 #    ifdef _MSC_VER
 #        include <intrin.h>
@@ -34,7 +31,7 @@
 #        include <x86intrin.h>
 #    endif
 
-// Runtime AVX support detection (checked once, cached in static local)
+// Runtime AVX support detection
 inline bool cpu_supports_avx() {
 #    ifdef _MSC_VER
     int cpu_info[4] = {0};
@@ -47,9 +44,6 @@ inline bool cpu_supports_avx() {
     return supported;
 }
 
-// On GCC/Clang, __attribute__((target("avx"))) enables AVX codegen for a single
-// function without requiring a global -mavx compiler flag.
-// On MSVC, AVX intrinsics are always available regardless of /arch: setting.
 #    if defined(__GNUC__) || defined(__clang__)
 #        define OV_TARGET_AVX __attribute__((target("avx")))
 #    else
@@ -164,9 +158,6 @@ FastGreedyDPP::FastGreedyDPP(const Config& config) : m_config(config) {
     // Load config from env
     m_config.update_from_env();
 
-    // Log CPU SIMD capability at construction time (once per process).
-    // Printed regardless of whether OpenCL or CPU path is ultimately used,
-    // since OpenCL may fail at runtime and fall back to CPU.
 #if defined(OPENVINO_ARCH_X86_64)
     if (cpu_supports_avx()) {
         GENAI_INFO("[CDPruner] CPU supports AVX — DPP CPU fallback will use AVX SIMD (8 floats/cycle)");
