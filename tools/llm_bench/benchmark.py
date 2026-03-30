@@ -20,7 +20,8 @@ import task.text_embeddings as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
 from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
-from llm_bench_utils.memory_monitor import MemoryDataSummarizer
+from llm_bench_utils.memory_monitor import MemoryMonitorHandler
+
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 
@@ -95,55 +96,79 @@ def get_argparser():
         help="set the output token size, the value must be greater than 0.",
     )
     parser.add_argument(
-        '-n',
-        '--num_iters',
+        "-n",
+        "--num_iters",
         default=0,
         type=num_iters_type,
-        help='number of benchmarking iterations, '
-        'if the value is greater than 0, the average numbers exclude the first(0th) iteration,\n'
-        'if the value equals 0 (default), execute the warm-up iteration(0th iteration).',
+        help="number of benchmarking iterations, "
+        "if the value is greater than 0, the average numbers exclude the first(0th) iteration,\n"
+        "if the value equals 0 (default), execute the warm-up iteration(0th iteration).",
     )
-    parser.add_argument('-i', '--images', default=None, help='test images for vision tasks. Can be directory or path to single image')
-    parser.add_argument('-v', '--video', default=None, help='test video for vision tasks. Can be directory or path to single video')
-    parser.add_argument('-s', '--seed', type=int, default=42, required=False, help='specific random seed to generate fix result. Default 42.')
     parser.add_argument(
-        '-lc',
-        '--load_config',
+        "-i", "--images", default=None, help="test images for vision tasks. Can be directory or path to single image"
+    )
+    parser.add_argument(
+        "-v", "--video", default=None, help="test video for vision tasks. Can be directory or path to single video"
+    )
+    parser.add_argument(
+        "-s",
+        "--seed",
+        type=int,
+        default=42,
+        required=False,
+        help="specific random seed to generate fix result. Default 42.",
+    )
+    parser.add_argument(
+        "-lc",
+        "--load_config",
         default=None,
         required=False,
-        help='path to JSON file to load customized configurations.\n'
-        'Example for OpenVINO: {\"INFERENCE_NUM_THREADS\":32,\"PERFORMANCE_HINT\":\"LATENCY\"}.\n'
-        'Example for Pytorch: {\"PREC_BF16\":true}. Pytorch currently only supports bf16 settings.\n',
+        help="path to JSON file to load customized configurations.\n"
+        'Example for OpenVINO: {"INFERENCE_NUM_THREADS":32,"PERFORMANCE_HINT":"LATENCY"}.\n'
+        'Example for Pytorch: {"PREC_BF16":true}. Pytorch currently only supports bf16 settings.\n',
     )
     parser.add_argument(
-        '-mc',
-        '--memory_consumption',
+        "-mc",
+        "--memory_consumption",
         default=0,
         required=False,
         type=int,
-        help='Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations.'
-        ' If the value is 2, output the maximum memory consumption in all iterations.\nIt is not recommended to run memory consumption and'
-        ' performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_delay,'
-        ' but the impact is still expected. '
+        help="Enables memory usage monitoring mode. For 0 monitoring is off. Use 1 to track memory consumption"
+        " during model compilation and warm-up iteration, 2 to track across all iterations, or 3 to track in"
+        " separate process over model compilation and warm-up, and respectively 4 for the whole benchmarking."
+        " Warning: Concurrent memory consumption and performance benchmarking is not recommended. Performance"
+        " impact can be reduced by using longer --memory_consumption_cooldown and --memory_consumption_interval"
+        " values, though a degradation is unavoidable.",
     )
     parser.add_argument(
-        "--memory_consumption_delay",
+        "--memory_consumption_cooldown",
         default=None,
+        type=int,
+        help="Sleep interval in seconds before start of execution of each prompt (cooldown).",
+    )
+    parser.add_argument(
+        "--memory_consumption_interval",
+        default=0.01,
         required=False,
         type=float,
-        help="delay for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance."
-        "It is not recommended to run memory consumption and performance benchmarking in the same time",
+        help="Sampling interval (in s.) for monitoring memory consumption. Lower values increase measurement precision"
+        "but may degrade performance/latency. Avoid running memory consumption and performance benchmarks concurrently.",
     )
     parser.add_argument(
-        '-mc_dir',
-        '--memory_consumption_dir',
+        "-mc_dir",
+        "--memory_consumption_dir",
         default=None,
         required=False,
         type=str,
-        help='Path to store memory consamption logs and chart.',
+        help="Path to store memory consumption logs and chart.",
     )
-    parser.add_argument('-bs', '--batch_size', type=int, default=1, required=False, help='Batch size value')
-    parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
+    parser.add_argument("-bs", "--batch_size", type=int, default=1, required=False, help="Batch size value")
+    parser.add_argument(
+        "--num_beams",
+        type=int,
+        default=1,
+        help="Number of beams in the decoding strategy, activates beam_search if greater than 1",
+    )
     parser.add_argument(
         "--pruning_ratio",
         type=pruning_ratio_type,
@@ -160,27 +185,27 @@ def get_argparser():
         "making pruning more conservative on borderline tokens.",
     )
     parser.add_argument(
-        '--torch_compile_backend',
+        "--torch_compile_backend",
         default=None,
         required=False,
-        help='Enables running the torch.compile() with specified backend: pytorch or openvino (default)',
+        help="Enables running the torch.compile() with specified backend: pytorch or openvino (default)",
     )
     parser.add_argument(
-        '--torch_compile_dynamic',
-        action='store_true',
-        help='Enables dynamic shape tracking for torch.compile()',
+        "--torch_compile_dynamic",
+        action="store_true",
+        help="Enables dynamic shape tracking for torch.compile()",
     )
     parser.add_argument(
-        '--torch_compile_options',
+        "--torch_compile_options",
         default=None,
         required=False,
-        help='Options for torch.compile() in JSON format',
+        help="Options for torch.compile() in JSON format",
     )
     parser.add_argument(
-        '--torch_compile_input_module',
+        "--torch_compile_input_module",
         default=None,
         required=False,
-        help='Specifies the module to decorate with torch.compile(). By default, parent module will be decorated.',
+        help="Specifies the module to decorate with torch.compile(). By default, parent module will be decorated.",
     )
     parser.add_argument("--convert_tokenizer", action="store_true", help="Convert tokenizer to OpenVINO format")
     parser.add_argument(
@@ -440,6 +465,7 @@ def main():
         **logging_kwargs,
     )
     args = get_argparser()
+    memory_data_collector = MemoryMonitorHandler(args)
 
     if args.tokens_len is not None and not args.streaming:
         log.error("--tokens_len requires --streaming to be set.")
@@ -481,34 +507,45 @@ def main():
                     if half_nums_of_torch_threads > DEFAULT_TORCH_THREAD_NUMS:
                         torch.set_num_threads(DEFAULT_TORCH_THREAD_NUMS)
                     else:
-                        half_nums_of_torch_threads = int(half_nums_of_torch_threads) if int(half_nums_of_torch_threads) else 1
+                        half_nums_of_torch_threads = (
+                            int(half_nums_of_torch_threads) if int(half_nums_of_torch_threads) else 1
+                        )
                         torch.set_num_threads(int(half_nums_of_torch_threads))
-            log.info(f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
-                     f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
+            log.info(
+                f"The num_beams is {model_args['num_beams']}, update Torch thread num from {original_torch_thread_nums}"
+                f" to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference."
+            )
     log.info(out_str)
-    memory_data_collector = None
-    if args.memory_consumption:
-        memory_data_collector = MemoryDataSummarizer(args)
+
     try:
-        if model_args['use_case'].task in ['text_gen', 'code_gen']:
-            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
-                model_path, framework, args.device, args.tokens_len, args.streaming, model_args,
-                args.num_iters, memory_data_collector)
+        if model_args["use_case"].task in ["text_gen", "code_gen"]:
+            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args["use_case"].task](
+                model_path,
+                framework,
+                args.device,
+                args.tokens_len,
+                args.streaming,
+                model_args,
+                args.num_iters,
+                memory_data_collector,
+            )
         else:
-            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
-                model_path, framework, args.device, model_args, args.num_iters, memory_data_collector)
+            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args["use_case"].task](
+                model_path, framework, args.device, model_args, args.num_iters, memory_data_collector
+            )
+        memory_data_collector.update_marker("stop")
 
         if args.report is not None or args.report_json is not None:
-            model_precision = ''
-            if framework == 'ov':
-                ir_conversion_frontend = get_ir_conversion_frontend(model_args['model_name'], model_path.parts)
-                if ir_conversion_frontend != '':
-                    framework = framework + '(' + ir_conversion_frontend + ')'
+            model_precision = ""
+            if framework == "ov":
+                ir_conversion_frontend = get_ir_conversion_frontend(model_args["model_name"], model_path.parts)
+                if ir_conversion_frontend != "":
+                    framework = framework + "(" + ir_conversion_frontend + ")"
                 model_precision = get_model_precision(model_path.parts)
             if args.report is not None:
                 llm_bench_utils.output_csv.write_result(
                     args.report,
-                    model_args['model_name'],
+                    model_args["model_name"],
                     framework,
                     args.device,
                     model_args,
@@ -516,12 +553,12 @@ def main():
                     pretrain_time,
                     model_precision,
                     iter_timestamp,
-                    memory_data_collector
+                    memory_data_collector,
                 )
             if args.report_json is not None:
                 llm_bench_utils.output_json.write_result(
                     args.report_json,
-                    model_args['model_name'],
+                    model_args["model_name"],
                     framework,
                     args.device,
                     model_args,
@@ -529,16 +566,15 @@ def main():
                     pretrain_time,
                     model_precision,
                     iter_timestamp,
-                    memory_data_collector
+                    memory_data_collector,
                 )
     except Exception:
-        log.error('An exception occurred')
+        log.error("An exception occurred")
         log.info(traceback.format_exc())
         exit(1)
     finally:
-        if memory_data_collector:
-            memory_data_collector.stop()
+        memory_data_collector.stop()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

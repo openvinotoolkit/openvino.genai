@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import util from "node:util";
 import { ChatHistory, LLMPipeline as LLMPipelineWrapper } from "../addon.js";
 import { GenerationConfig, StreamingStatus, LLMPipelineProperties } from "../utils.js";
@@ -76,6 +79,24 @@ export class LLMPipeline {
     const result = await finishChatPromise();
 
     return result;
+  }
+
+  /**
+   * Get the current generation config (model defaults).
+   * @returns The current GenerationConfig object.
+   */
+  getGenerationConfig(): GenerationConfig {
+    if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
+    return this.pipeline.getGenerationConfig();
+  }
+
+  /**
+   * Set generation configuration parameters.
+   * @param config - Generation configuration parameters.
+   */
+  setGenerationConfig(config: GenerationConfig): void {
+    if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
+    this.pipeline.setGenerationConfig(config);
   }
 
   /**
