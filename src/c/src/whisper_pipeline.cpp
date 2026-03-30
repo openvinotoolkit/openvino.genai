@@ -432,15 +432,25 @@ ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
         ov::AnyMap property = {};
         va_list args_ptr;
         va_start(args_ptr, pipeline);
-        size_t property_size = property_args_size / 2;
-        for (size_t i = 0; i < property_size; i++) {
-            GET_PROPERTY_FROM_ARGS_LIST;
+        
+        for (size_t i = 0; i < property_args_size / 2; i++) {
+            char* key = va_arg(args_ptr, char*);
+            char* val = va_arg(args_ptr, char*);
+            
+            if (std::string(key) == "word_timestamps") {
+                property[key] = (std::string(val) == "true");
+            } else {
+                property[key] = std::string(val);
+            }
         }
         va_end(args_ptr);
+
         std::unique_ptr<ov_genai_whisper_pipeline> _pipeline = std::make_unique<ov_genai_whisper_pipeline>();
-        _pipeline->object = std::make_shared<ov::genai::WhisperPipeline>(std::filesystem::path(models_path),
-                                                                         std::string(device),
-                                                                         property);
+        _pipeline->object = std::make_shared<ov::genai::WhisperPipeline>(
+            std::filesystem::path(models_path),
+            std::string(device),
+            property
+        );
         *pipeline = _pipeline.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
