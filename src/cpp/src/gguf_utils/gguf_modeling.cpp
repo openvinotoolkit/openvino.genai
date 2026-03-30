@@ -7,6 +7,9 @@
 #include <iostream>
 #include <chrono>
 #include <stdexcept>
+#include <fstream>
+#include <filesystem>
+
 
 #include <openvino/openvino.hpp>
 #include "openvino/runtime/core.hpp"
@@ -26,6 +29,49 @@ auto set_name = [](auto node, const std::string& name) {
     node->output(0).set_names({name});
     node->set_friendly_name(name);
 };
+
+std::string read_file_to_string(const std::filesystem::path& file_path) {
+    std::ifstream stream(file_path, std::ios::binary);
+    OPENVINO_ASSERT(stream.is_open(), "Failed to open file '", file_path.string(), "'");
+    return std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+}
+
+ov::Tensor read_file_to_tensor(const std::filesystem::path& file_path) {
+    std::ifstream stream(file_path, std::ios::binary | std::ios::ate);
+    OPENVINO_ASSERT(stream.is_open(), "Failed to open file '", file_path.string(), "'");
+
+    const auto file_size = static_cast<size_t>(stream.tellg());
+    stream.seekg(0, std::ios::beg);
+
+    ov::Tensor tensor(ov::element::u8, ov::Shape{file_size});
+    if (file_size > 0) {
+        stream.read(reinterpret_cast<char*>(tensor.data<uint8_t>()), file_size);
+    }
+    return tensor;
+}
+
+ov::genai::ModelsMap::mapped_type serialize_model(const std::shared_ptr<ov::Model>& model) {
+    const auto unique_name = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    const auto temp_dir = std::filesystem::temp_directory_path() / ("ov_genai_gguf_" + unique_name);
+    std::filesystem::create_directories(temp_dir);
+
+    const auto xml_path = temp_dir / "openvino_model.xml";
+    ov::save_model(model, xml_path.string(), false);
+
+    ov::genai::ModelsMap::mapped_type model_pair = {
+        read_file_to_string(xml_path),
+        read_file_to_tensor(temp_dir / "openvino_model.bin")
+    };
+
+    std::filesystem::remove_all(temp_dir);
+    return model_pair;
+}
+
+void add_model_to_map(ov::genai::ModelsMap& models_map, const std::string& key, const std::shared_ptr<ov::Model>& model) {
+    OPENVINO_ASSERT(model, "Model with key '", key, "' is empty");
+    OPENVINO_ASSERT(models_map.count(key) == 0, "Model with key '", key, "' already exists in models map");
+    models_map.emplace(key, serialize_model(model));
+}
 
 std::vector<int64_t> get_mrope_section_from_config(const std::map<std::string, GGUFMetaData>& configs) {
     std::vector<int64_t> mrope_section;
@@ -711,4 +757,75 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
     ov::genai::utils::print_gguf_debug_info(ss.str());
 
     return model;
+}
+
+ov::genai::ModelsMap create_models_map_from_gguf(const std::filesystem::path& gguf_path, const bool enable_save_ov_model) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    std::stringstream ss;
+    ss << "Loading and unpacking model from: " << gguf_path.string();
+    ov::genai::utils::print_gguf_debug_info(ss.str());
+    auto [config, consts, qtypes] = load_gguf(gguf_path.string());
+    auto load_finish_time = std::chrono::high_resolution_clock::now();
+
+    ss.str("");
+    ss << "Loading and unpacking model done. Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(load_finish_time - start_time).count() << "ms";
+    ov::genai::utils::print_gguf_debug_info(ss.str());
+
+    ov::genai::ModelsMap models_map;
+    const std::string model_arch = std::get<std::string>(config.at("architecture"));
+    ss.str("");
+    ss << "Start generating OpenVINO model.";
+    ov::genai::utils::print_gguf_debug_info(ss.str());
+
+    if (!model_arch.compare("llama") || !model_arch.compare("qwen2") || !model_arch.compare("qwen3")) {
+        auto model = create_language_model(config, consts, qtypes);
+        add_model_to_map(models_map, "language", model);
+        if (enable_save_ov_model) {
+            std::filesystem::path save_path = gguf_path.parent_path() / "openvino_model.xml";
+            ov::genai::utils::save_openvino_model(model, save_path.string(), true);
+        }
+    } else if (!model_arch.compare("qwen3vl")) {
+        auto vlm_llm_model = create_vlm_language_model(config, consts, qtypes);
+        auto text_embeddings_model = create_text_embeddings_model(config, consts, qtypes);
+
+        add_model_to_map(models_map, "language", vlm_llm_model);
+        add_model_to_map(models_map, "text_embeddings", text_embeddings_model);
+
+        if (enable_save_ov_model) {
+            std::filesystem::path lm_save_path = gguf_path.parent_path() / "openvino_language_model.xml";
+            ov::genai::utils::save_openvino_model(vlm_llm_model, lm_save_path.string(), true);
+
+            std::filesystem::path text_emb_save_path = gguf_path.parent_path() / "openvino_text_embeddings_model.xml";
+            ov::genai::utils::save_openvino_model(text_embeddings_model, text_emb_save_path.string(), true);
+        }
+    } else if (!model_arch.compare("clip")) {
+        auto vision_embeddings_model = create_vision_embeddings_model(config, consts, qtypes);
+        auto vision_embeddings_pos_model = create_vision_embeddings_pos_model(config, consts, qtypes);
+        auto vision_embeddings_merger_model = create_vision_embeddings_merger_model(config, consts, qtypes);
+
+        add_model_to_map(models_map, "vision_embeddings", vision_embeddings_model);
+        add_model_to_map(models_map, "vision_embeddings_pos", vision_embeddings_pos_model);
+        add_model_to_map(models_map, "vision_embeddings_merger", vision_embeddings_merger_model);
+
+        if (enable_save_ov_model) {
+            std::filesystem::path vision_emb_save_path = gguf_path.parent_path() / "openvino_vision_embeddings_model.xml";
+            ov::genai::utils::save_openvino_model(vision_embeddings_model, vision_emb_save_path.string(), true);
+
+            std::filesystem::path vision_pos_save_path = gguf_path.parent_path() / "openvino_vision_embeddings_pos_model.xml";
+            ov::genai::utils::save_openvino_model(vision_embeddings_pos_model, vision_pos_save_path.string(), true);
+
+            std::filesystem::path vision_merger_save_path = gguf_path.parent_path() / "openvino_vision_embeddings_merger_model.xml";
+            ov::genai::utils::save_openvino_model(vision_embeddings_merger_model, vision_merger_save_path.string(), true);
+        }
+    } else {
+        OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
+    }
+
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - load_finish_time).count();
+    ss.str("");
+    ss << "Model generation done. Time: " << duration << "ms";
+    ov::genai::utils::print_gguf_debug_info(ss.str());
+
+    return models_map;
 }

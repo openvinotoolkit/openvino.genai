@@ -140,6 +140,8 @@ std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& externa
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config);
 
+OPENVINO_GENAI_EXPORTS ModelsMap read_models(const std::filesystem::path& models_dir, const ov::AnyMap& config);
+
 void release_core_plugin(const std::string& device);
 
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
