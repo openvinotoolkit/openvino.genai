@@ -2705,7 +2705,6 @@ class SpeechGenerationConfig(GenerationConfig):
         :type phonemize_fallback_model_dir: str | None
     """
     language: str
-    phonemize_fallback_model_dir: str | None
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """
@@ -2733,6 +2732,12 @@ class SpeechGenerationConfig(GenerationConfig):
         ...
     @minlenratio.setter
     def minlenratio(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def phonemize_fallback_model_dir(self) -> pathlib.Path | None:
+        ...
+    @phonemize_fallback_model_dir.setter
+    def phonemize_fallback_model_dir(self, arg0: os.PathLike | str | bytes | None) -> None:
         ...
     @property
     def speed(self) -> float:
@@ -3838,6 +3843,10 @@ class Text2SpeechPipeline:
         """
     def get_generation_config(self) -> SpeechGenerationConfig:
         ...
+    def get_speaker_embedding_shape(self) -> openvino._pyopenvino.Shape:
+        """
+        Get the expected speaker embedding shape for the loaded model.SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}
+        """
     @typing.overload
     def phonemize(self, text: str, **kwargs) -> list[str]:
         """
@@ -3937,13 +3946,6 @@ class Text2SpeechPipeline:
             :type phonemize_fallback_model_dir: str | None
         """
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:
-        ...
-    def get_speaker_embedding_shape(self) -> openvino._pyopenvino.Shape:
-        """Get the expected speaker embedding shape for the loaded model.
-
-        :return: SpeechT5 returns Shape{1, 512}. Kokoro returns Shape{510, 1, 256}.
-        :rtype: openvino.Shape
-        """
         ...
 class Text2VideoPipeline:
     @typing.overload
