@@ -1,0 +1,223 @@
+[
+    [
+        {
+            "text": "What animal is this?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000329219.jpg"
+            ]
+        },
+        {
+            "text": "What color are the cabinets?",
+            "images": []
+        },
+        {
+            "text": "What do the pictures have in common?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000338624.jpg"
+            ]
+        },
+        {
+            "text": "What is the name of the antique store?",
+            "images": []
+        },
+        {
+            "text": "How many dogs?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000236166.jpg"
+            ]
+        }
+    ],
+    [
+        {
+            "text": "What vehicle is shown in the foreground?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000086220.jpg"
+            ]
+        },
+        {
+            "text": "Is this car classic?",
+            "images": []
+        },
+        {
+            "text": "How many windows are on the bus?",
+            "images": []
+        },
+        {
+            "text": "How many metal fences are in front of the minivan?",
+            "images": []
+        }
+    ],
+    [
+        {
+            "text": "Why the Sun is yellow?",
+            "images": []
+        },
+        {
+            "text": "What kind of cuisine is this?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000104612.jpg"
+            ]
+        },
+        {
+            "text": "Is the food on a bowl or a plate?",
+            "images": []
+        },
+        {
+            "text": "Is this a vegetarian dish?",
+            "images": []
+        }
+    ],
+    [
+        {
+            "text": "Tell me the plot of 'Anastasia'",
+            "images": []
+        },
+        {
+            "text": "How many women are sitting on the bench?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000227478.jpg"
+            ]
+        },
+        {
+            "text": "What is the difference between the pictures?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000571718.jpg"
+            ]
+        },
+        {
+            "text": "Is it winter?",
+            "images": []
+        },
+        {
+            "text": "What kind of fruit is the man looking at?",
+            "images": []
+        }
+    ],
+    [
+        {
+            "text": "Does this room look like a hotel?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000039956.jpg",
+                "http://images.cocodataset.org/val2017/000000186980.jpg"
+            ]
+        },
+        {
+            "text": "What color are the candles?",
+            "images": []
+        },
+        {
+            "text": "How many beds are here?",
+            "images": []
+        },
+        {
+            "text": "What type of material is on the wall behind the bed?",
+            "images": []
+        },
+        {
+            "text": "Is there a mirror in the room?",
+            "images": []
+        }
+    ],
+    [
+        {
+            "text": "What's in the picture?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000290843.jpg"
+            ]
+        },
+        {
+            "text": "What animals are shown in the pictures?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000281447.jpg",
+                "http://images.cocodataset.org/val2017/000000152740.jpg"
+            ]
+        },
+        {
+            "text": "What color is the cat?",
+            "images": []
+        },
+        {
+            "text": "What color is the horse's hair?",
+            "images": []
+        },
+        {
+            "text": "One of these cows is not like the others:  which one?",
+            "images": []
+        }
+    ],
+    [
+        {
+            "text": "Tell me the rules of scoring in tennis",
+            "images": []
+        },
+        {
+            "text": "What sports do the people in the pictures do?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000217285.jpg",
+                "http://images.cocodataset.org/val2017/000000403565.jpg"
+            ]
+        },
+        {
+            "text": "Do these people do the same sport?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000247917.jpg"
+            ]
+        },
+        {
+            "text": "What number of men are playing baseball?",
+            "images": []
+        }
+    ],
+    [
+        {
+            "text": "What kind of food is this kid eating?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000099810.jpg"
+            ]
+        },
+        {
+            "text": "How old is the child?",
+            "images": []
+        },
+        {
+            "text": "What color are the boy's eyes?",
+            "images": []
+        },
+        {
+            "text": "What does the boy have on his hands?",
+            "images": []
+        }
+    ],
+    [
+        {
+            "text": "What is on the table?",
+            "images": [
+                "http://images.cocodataset.org/val2017/000000136355.jpg"
+            ]
+        },
+        {
+            "text": "What kind of flowers are in the vase?",
+            "images": []
+        },
+        {
+            "text": "What is made of wood?",
+            "images": []
+        }
+    ],
+    [
+        {
+            "text": "Describe the image",
+            "images": [
+                "http://images.cocodataset.org/train2017/000000159537.jpg"
+            ]
+        },
+        {
+            "text": "What structure is on top of the clock?",
+            "images": []
+        },
+        {
+            "text": "Are there any clouds in the sky?",
+            "images": []
+        }
+    ]
+]
