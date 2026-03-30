@@ -334,6 +334,11 @@ bool has_input(const std::shared_ptr<Model>& model, const std::string& name);
  */
 std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape, const size_t dim, const size_t range_start, const size_t range_end);
 
+/**
+ * Create a sub-tensor (ROI view) by slicing along a single dimension.
+ */
+ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos);
+
 ov::genai::GenerationConfig get_beam_search_config();
 ov::genai::GenerationConfig get_greedy_config();
 ov::genai::GenerationConfig get_multinomial_config();
