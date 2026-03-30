@@ -85,10 +85,31 @@ protected:
     friend class SpeculativeDecodingImpl;
     friend class Eagle3DecodingImpl;
     friend class PromptLookupImpl;
+    friend class VLMPipeline;
 
     std::shared_ptr<IContinuousBatchingPipeline> m_impl;
 
     ContinuousBatchingPipeline() = default;
+
+private:
+    // Uses preloaded language model to avoid redundant read_model() during pipeline initialization.
+    ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
+                               const ModelsMap& models_map,
+                               const ov::genai::Tokenizer& tokenizer,
+                               const SchedulerConfig& scheduler_config,
+                               const std::string& device,
+                               std::optional<std::filesystem::path> embedder_config_dir_path = std::nullopt,
+                               const ov::AnyMap& properties = {},
+                               const ov::genai::GenerationConfig& generation_config = {}
+    );
+
+    ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
+                               const std::filesystem::path& models_path,
+                               const SchedulerConfig& scheduler_config,
+                               const std::string& device,
+                               const ov::AnyMap& properties = {},
+                               const ov::AnyMap& tokenizer_properties = {},
+                               const ov::AnyMap& vision_encoder_properties = {});
 
 public:
     ContinuousBatchingPipeline(const std::filesystem::path& models_path,
