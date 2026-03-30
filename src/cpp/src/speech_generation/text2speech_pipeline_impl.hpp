@@ -40,6 +40,9 @@ public:
 
     virtual SpeechGenerationPerfMetrics get_performance_metrics();
 
+    /// @brief Get the expected speaker embedding shape for this backend.
+    virtual ov::Shape get_speaker_embedding_shape() const = 0;
+
     virtual ~Text2SpeechPipelineImpl() = default;
 
 protected:

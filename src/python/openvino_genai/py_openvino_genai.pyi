@@ -2690,9 +2690,6 @@ class SpeechGenerationConfig(GenerationConfig):
         :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
         :type language: str
     
-        :param voice: voice identifier used by Kokoro backend.
-        :type voice: str
-    
         :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
         :type max_phoneme_length: int
     
@@ -2709,7 +2706,6 @@ class SpeechGenerationConfig(GenerationConfig):
     """
     language: str
     phonemize_fallback_model_dir: str | None
-    voice: str
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """
@@ -3522,7 +3518,8 @@ class Text2SpeechPipeline:
         
             :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                                      voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
+                                     to prepare this tensor externally and pass it explicitly.
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
@@ -3552,9 +3549,6 @@ class Text2SpeechPipeline:
             Kokoro-specific parameters:
             :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
             :type language: str
-        
-            :param voice: voice identifier used by Kokoro backend.
-            :type voice: str
         
             :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
             :type max_phoneme_length: int
@@ -3580,7 +3574,8 @@ class Text2SpeechPipeline:
         
             :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                                      voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
+                                     to prepare this tensor externally and pass it explicitly.
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
@@ -3611,9 +3606,6 @@ class Text2SpeechPipeline:
             :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
             :type language: str
         
-            :param voice: voice identifier used by Kokoro backend.
-            :type voice: str
-        
             :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
             :type max_phoneme_length: int
         
@@ -3638,7 +3630,7 @@ class Text2SpeechPipeline:
             :param phoneme_chunks: phoneme chunks for one output speech, or nested chunk lists for multiple speeches
             :type phoneme_chunks: list[str] or list[list[str]]
         
-            :param speaker_embedding: optional speaker embedding tensor (ignored by Kokoro backend)
+            :param speaker_embedding: speaker embedding tensor
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
@@ -3667,9 +3659,6 @@ class Text2SpeechPipeline:
             Kokoro-specific parameters:
             :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
             :type language: str
-        
-            :param voice: voice identifier used by Kokoro backend.
-            :type voice: str
         
             :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
             :type max_phoneme_length: int
@@ -3695,7 +3684,7 @@ class Text2SpeechPipeline:
             :param phoneme_chunks: phoneme chunks for one output speech, or nested chunk lists for multiple speeches
             :type phoneme_chunks: list[str] or list[list[str]]
         
-            :param speaker_embedding: optional speaker embedding tensor (ignored by Kokoro backend)
+            :param speaker_embedding: speaker embedding tensor
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
@@ -3724,9 +3713,6 @@ class Text2SpeechPipeline:
             Kokoro-specific parameters:
             :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
             :type language: str
-        
-            :param voice: voice identifier used by Kokoro backend.
-            :type voice: str
         
             :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
             :type max_phoneme_length: int
@@ -3752,7 +3738,7 @@ class Text2SpeechPipeline:
             :param token_batches: one token sequence (`list[SpeechToken]`) or a list of token sequences
             :type token_batches: list[SpeechToken] or list[list[SpeechToken]]
         
-            :param speaker_embedding: optional speaker embedding tensor (ignored by Kokoro backend)
+            :param speaker_embedding: speaker embedding tensor
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
@@ -3781,9 +3767,6 @@ class Text2SpeechPipeline:
             Kokoro-specific parameters:
             :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
             :type language: str
-        
-            :param voice: voice identifier used by Kokoro backend.
-            :type voice: str
         
             :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
             :type max_phoneme_length: int
@@ -3809,7 +3792,7 @@ class Text2SpeechPipeline:
             :param token_batches: one token sequence (`list[SpeechToken]`) or a list of token sequences
             :type token_batches: list[SpeechToken] or list[list[SpeechToken]]
         
-            :param speaker_embedding: optional speaker embedding tensor (ignored by Kokoro backend)
+            :param speaker_embedding: speaker embedding tensor
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
@@ -3838,9 +3821,6 @@ class Text2SpeechPipeline:
             Kokoro-specific parameters:
             :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
             :type language: str
-        
-            :param voice: voice identifier used by Kokoro backend.
-            :type voice: str
         
             :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
             :type max_phoneme_length: int
@@ -3893,9 +3873,6 @@ class Text2SpeechPipeline:
             :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
             :type language: str
         
-            :param voice: voice identifier used by Kokoro backend.
-            :type voice: str
-        
             :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
             :type max_phoneme_length: int
         
@@ -3945,9 +3922,6 @@ class Text2SpeechPipeline:
             :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
             :type language: str
         
-            :param voice: voice identifier used by Kokoro backend.
-            :type voice: str
-        
             :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
             :type max_phoneme_length: int
         
@@ -3963,6 +3937,13 @@ class Text2SpeechPipeline:
             :type phonemize_fallback_model_dir: str | None
         """
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:
+        ...
+    def get_speaker_embedding_shape(self) -> openvino._pyopenvino.Shape:
+        """Get the expected speaker embedding shape for the loaded model.
+
+        :return: SpeechT5 returns Shape{1, 512}. Kokoro returns Shape{510, 1, 256}.
+        :rtype: openvino.Shape
+        """
         ...
 class Text2VideoPipeline:
     @typing.overload

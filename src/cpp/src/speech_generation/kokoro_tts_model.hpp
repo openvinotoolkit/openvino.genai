@@ -41,6 +41,8 @@ public:
     std::vector<std::vector<std::string>> phonemize(const std::vector<std::string>& texts,
                                                     const SpeechGenerationConfig& generation_config) override;
 
+    ov::Shape get_speaker_embedding_shape() const override;
+
 private:
     Text2SpeechDecodedResults synthesize_from_phoneme_chunks(const std::vector<std::vector<std::string>>& all_phoneme_chunks,
                                                              const ov::Tensor& speaker_embedding,
@@ -59,7 +61,6 @@ private:
     size_t m_static_input_ids_length = 0;
     bool m_has_pred_dur_output = false;
     std::shared_ptr<KokoroRuntime> m_runtime;
-    std::unordered_map<std::string, std::vector<float>> m_voice_cache;
 #if OPENVINO_GENAI_HAS_MISAKI_CPP
     std::unique_ptr<misaki::G2P> m_g2p;
     bool m_fallback_initialized = false;

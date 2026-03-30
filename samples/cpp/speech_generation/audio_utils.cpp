@@ -39,23 +39,29 @@ void save_to_wav(const float* waveform_ptr,
     drwav_uninit(&wav);
 }
 
-ov::Tensor read_speaker_embedding(const std::filesystem::path& file_path) {
+ov::Tensor read_speaker_embedding(const std::filesystem::path& file_path, const ov::Shape& shape) {
     std::ifstream input(file_path, std::ios::binary);
-    OPENVINO_ASSERT(input, "Failed to open file: " + file_path.string());
+    OPENVINO_ASSERT(input, "Failed to open speaker embedding file: " + file_path.string());
 
-    // Get file size
     input.seekg(0, std::ios::end);
-    size_t buffer_size = static_cast<size_t>(input.tellg());
+    const size_t buffer_size = static_cast<size_t>(input.tellg());
     input.seekg(0, std::ios::beg);
 
-    // Check size is multiple of float
-    OPENVINO_ASSERT(buffer_size % sizeof(float) == 0, "File size is not a multiple of float size.");
-    size_t num_floats = buffer_size / sizeof(float);
-    ov::Tensor floats_tensor(ov::element::f32, ov::Shape{1, num_floats});
-    input.read(reinterpret_cast<char*>(floats_tensor.data()), buffer_size);
-    OPENVINO_ASSERT(input, "Failed to read all data from file.");
+    OPENVINO_ASSERT(buffer_size % sizeof(float) == 0,
+                    "Speaker embedding file size is not a multiple of sizeof(float).");
+    const size_t num_floats = buffer_size / sizeof(float);
 
-    return floats_tensor;
+    // Validate that file size matches expected shape.
+    size_t expected_floats = 1;
+    for (size_t d : shape) expected_floats *= d;
+    OPENVINO_ASSERT(num_floats == expected_floats,
+                    "Speaker embedding file contains ", num_floats, " float32 values "
+                    "but expected shape ", shape, " (total ", expected_floats, " floats).");
+
+    ov::Tensor tensor(ov::element::f32, shape);
+    input.read(reinterpret_cast<char*>(tensor.data()), buffer_size);
+    OPENVINO_ASSERT(input, "Failed to read all data from speaker embedding file.");
+    return tensor;
 }
 
 }  // namespace audio

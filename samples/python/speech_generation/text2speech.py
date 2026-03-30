@@ -9,15 +9,13 @@ import openvino as ov
 import openvino_genai
 import soundfile as sf
 
-DEFAULT_KOKORO_VOICES = {
-    "en-us": "af_heart",
-    "en-gb": "bf_emma",
-    "es": "ef_dora",
-    "fr-fr": "ff_siwis",
-    "hi": "hf_alpha",
-    "it": "if_sara",
-    "pt-br": "pf_dora",
-}
+def _load_speaker_embedding(file_path: str, shape):
+    """Load a float32 binary and reshape it according to the given ov.Shape."""
+    data = np.fromfile(file_path, dtype=np.float32)
+    if data.size == 0:
+        raise RuntimeError(f'Speaker embedding file is empty: {file_path}')
+
+    return ov.Tensor(data.reshape(shape))
 
 
 def main():
@@ -25,34 +23,24 @@ def main():
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("text", help="Input text for speech generation")
     parser.add_argument("--speaker_embedding_file_path", default=None,
-                        help="Path to the binary file with a speaker embedding")
-    parser.add_argument("--voice", default="", help="Optional voice id (required by Kokoro when no speaker embedding)")
+                        help="Path to the binary file with a speaker embedding. Required for Kokoro.")
     parser.add_argument("--language", default="", help="Optional language, e.g. en-us, en-gb, es, fr-fr, hi, it, pt-br")
     parser.add_argument("--device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
     args = parser.parse_args()
 
-    # read speaker embedding from binary file
+    pipe = openvino_genai.Text2SpeechPipeline(args.model_dir, args.device)
+
+    # Read speaker embedding using the model's expected shape.
     speaker_embedding = None
     if args.speaker_embedding_file_path:
-        speaker_embedding = np.fromfile(args.speaker_embedding_file_path, dtype=np.float32).reshape(1, 512)
-        speaker_embedding = ov.Tensor(speaker_embedding)
-
-    pipe = openvino_genai.Text2SpeechPipeline(args.model_dir, args.device)
+        speaker_embedding = _load_speaker_embedding(args.speaker_embedding_file_path,
+                                                    pipe.get_speaker_embedding_shape())
 
     generation_properties = {}
     language = args.language.strip().lower()
-    voice = args.voice.strip()
 
     if language:
         generation_properties["language"] = language
-
-    if voice:
-        generation_properties["voice"] = voice
-    elif speaker_embedding is None and language in DEFAULT_KOKORO_VOICES:
-        generation_properties["voice"] = DEFAULT_KOKORO_VOICES[language]
-        print(
-            f"[Info] No --voice provided. Using default Kokoro voice '{generation_properties['voice']}' for language '{language}'."
-        )
 
     result = pipe.generate(args.text, speaker_embedding, **generation_properties)
 

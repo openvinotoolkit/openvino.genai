@@ -50,9 +50,6 @@ public:
     // Language code used by Kokoro G2P (for example: en-us, en-gb).
     std::string language = "en-us";
 
-    // Voice name/identifier used by Kokoro backend (for example: af_heart).
-    std::string voice;
-
     // Maximum phoneme sequence length per Kokoro preprocessing chunk.
     uint32_t max_phoneme_length = 510;
 
@@ -61,7 +58,7 @@ public:
     // before acoustic inference.
     // - set: use this OpenVINO fallback network for G2P fallback.
     // - unset: default to espeak-ng G2P fallback.
-    std::optional<std::filesystem::path> phonemize_fallback_model_dir;
+    std::optional<std::string> phonemize_fallback_model_dir;
 
     void update_generation_config(const ov::AnyMap& config_map = {});
 
@@ -82,7 +79,6 @@ static constexpr ov::Property<float> threshold{"threshold"};
 static constexpr ov::Property<float> speed{"speed"};
 
 static constexpr ov::Property<std::string> language{"language"};
-static constexpr ov::Property<std::string> voice{"voice"};
 static constexpr ov::Property<uint32_t> max_phoneme_length{"max_phoneme_length"};
 static constexpr ov::Property<std::string> phonemize_fallback_model_dir{"phonemize_fallback_model_dir"};
 

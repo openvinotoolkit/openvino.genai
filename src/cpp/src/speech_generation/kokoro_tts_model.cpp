@@ -13,7 +13,6 @@
 #include <map>
 #include <numeric>
 #include <optional>
-#include <sstream>
 #include <unordered_map>
 
 #include <nlohmann/json.hpp>
@@ -554,46 +553,6 @@ std::vector<std::string> split_non_english_chunks(const std::string& graphemes, 
         chunks.push_back(graphemes.substr(i, chunk_size));
     }
     return chunks;
-}
-
-std::vector<std::string> split_voice_list(const std::string& voice) {
-    // Python parity: mirrors `KPipeline.load_voice(..., delimiter=",")` behavior,
-    // where multiple voices can be requested and blended.
-    std::vector<std::string> voices;
-    std::string item;
-    std::stringstream stream(voice);
-    while (std::getline(stream, item, ',')) {
-        auto begin = item.find_first_not_of(" \t");
-        if (begin == std::string::npos) {
-            continue;
-        }
-        auto end = item.find_last_not_of(" \t");
-        voices.push_back(item.substr(begin, end - begin + 1));
-    }
-    return voices;
-}
-
-std::vector<float> load_voice_binary(const std::filesystem::path& models_path, const std::string& voice_id) {
-    const auto voice_path = models_path / "voices" / (voice_id + ".bin");
-    OPENVINO_ASSERT(std::filesystem::exists(voice_path),
-                    "Unable to find Kokoro voice '",
-                    voice_id,
-                    "' at expected path: ",
-                    voice_path);
-
-    std::ifstream file(voice_path, std::ios::binary | std::ios::ate);
-    OPENVINO_ASSERT(file.is_open(), "Failed to open Kokoro voice file: ", voice_path);
-
-    const std::streamsize size = file.tellg();
-    OPENVINO_ASSERT(size > 0, "Kokoro voice file is empty: ", voice_path);
-    OPENVINO_ASSERT((size % static_cast<std::streamsize>(sizeof(float))) == 0,
-                    "Kokoro voice file has invalid byte size: ", voice_path);
-
-    file.seekg(0, std::ios::beg);
-    std::vector<float> data(static_cast<size_t>(size) / sizeof(float));
-    file.read(reinterpret_cast<char*>(data.data()), size);
-    OPENVINO_ASSERT(file.good(), "Failed to read Kokoro voice file: ", voice_path);
-    return data;
 }
 
 #if OPENVINO_GENAI_HAS_MISAKI_CPP
@@ -1172,52 +1131,24 @@ Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
     (void)generation_config;
     OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
 #else
-    const bool has_external_speaker_embedding = static_cast<bool>(speaker_embedding);
-    if (has_external_speaker_embedding) {
-        OPENVINO_ASSERT(speaker_embedding.get_element_type() == ov::element::f32,
-                        "Kokoro backend expects speaker_embedding element type f32");
-    }
+    OPENVINO_ASSERT(static_cast<bool>(speaker_embedding),
+                    "Kokoro backend requires speaker_embedding tensor. Prepare the embedding in the application "
+                    "and pass the final ov::Tensor to generate().");
+    OPENVINO_ASSERT(speaker_embedding.get_element_type() == ov::element::f32,
+                    "Kokoro backend expects speaker_embedding element type f32");
 
     Text2SpeechDecodedResults result;
     result.output_sample_rate = 24000;
     const auto generation_start = std::chrono::steady_clock::now();
 
-    ov::Shape speaker_shape;
-    const float* external_speaker_ptr = nullptr;
-    if (has_external_speaker_embedding) {
-        speaker_shape = speaker_embedding.get_shape();
-        OPENVINO_ASSERT(speaker_shape.size() == 2,
-                        "Kokoro backend expects speaker_embedding shape [num_lengths, style_dim]");
-        OPENVINO_ASSERT(speaker_shape[1] > 0, "Kokoro speaker_embedding second dimension must be > 0");
-        external_speaker_ptr = speaker_embedding.data<const float>();
-    }
-
-    std::vector<const std::vector<float>*> loaded_voices;
-    if (!has_external_speaker_embedding) {
-        OPENVINO_ASSERT(!generation_config.voice.empty(),
-                        "Kokoro backend requires either speaker_embedding tensor or non-empty voice config");
-        const auto requested_voices = split_voice_list(generation_config.voice);
-        OPENVINO_ASSERT(!requested_voices.empty(), "No valid Kokoro voice ids were parsed from voice config");
-
-        for (const auto& voice_id : requested_voices) {
-            auto it = m_voice_cache.find(voice_id);
-            if (it == m_voice_cache.end()) {
-                it = m_voice_cache.emplace(voice_id, load_voice_binary(m_models_path, voice_id)).first;
-            }
-            OPENVINO_ASSERT((it->second.size() % 256) == 0,
-                            "Kokoro voice binary must have float32 length divisible by 256 for voice: ",
-                            voice_id);
-            loaded_voices.push_back(&it->second);
-        }
-
-        const size_t rows = loaded_voices[0]->size() / 256;
-        OPENVINO_ASSERT(rows > 0, "Kokoro voice binary has no rows for the requested voice(s)");
-        for (size_t idx = 1; idx < loaded_voices.size(); ++idx) {
-            OPENVINO_ASSERT((loaded_voices[idx]->size() / 256) == rows,
-                            "All Kokoro voices in a mixed request must have matching row count");
-        }
-        speaker_shape = ov::Shape{rows, 256};
-    }
+    const ov::Shape speaker_shape = speaker_embedding.get_shape();
+    OPENVINO_ASSERT(speaker_shape.size() == 3 &&
+                    speaker_shape[1] == 1 &&
+                    speaker_shape[2] == 256,
+                    "Kokoro backend expects speaker_embedding shape [num_lengths, 1, 256]. "
+                    "Typical voice packs have num_lengths=510 (one style row per phoneme sequence length 1-510).");
+    OPENVINO_ASSERT(speaker_shape[0] > 0, "Kokoro speaker_embedding: num_lengths must be > 0");
+    const float* external_speaker_ptr = speaker_embedding.data<const float>();
 
     const auto& vocab = m_runtime->vocab();
     const uint32_t context_length = m_runtime->context_length();
@@ -1249,26 +1180,13 @@ Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
             const size_t length_index = std::min<size_t>(num_tokens > 0 ? num_tokens - 1 : 0,
                                                          speaker_shape[0] > 0 ? speaker_shape[0] - 1 : 0);
 
-            std::vector<float> style_slice(speaker_shape[1]);
-            const size_t offset = length_index * speaker_shape[1];
-            if (has_external_speaker_embedding) {
-                std::copy(external_speaker_ptr + offset,
-                          external_speaker_ptr + offset + speaker_shape[1],
-                          style_slice.data());
-            } else {
-                std::fill(style_slice.begin(), style_slice.end(), 0.0f);
-                for (const auto* voice_data : loaded_voices) {
-                    std::transform(style_slice.begin(),
-                                   style_slice.end(),
-                                   voice_data->begin() + offset,
-                                   style_slice.begin(),
-                                   std::plus<float>());
-                }
-                const float norm = 1.0f / static_cast<float>(loaded_voices.size());
-                for (auto& value : style_slice) {
-                    value *= norm;
-                }
-            }
+            // Each row in the [num_lengths, 1, 256] pack is 1*256 = 256 floats.
+            constexpr size_t style_dim = 256;
+            std::vector<float> style_slice(style_dim);
+            const size_t offset = length_index * style_dim;
+            std::copy(external_speaker_ptr + offset,
+                      external_speaker_ptr + offset + style_dim,
+                      style_slice.data());
 
             std::vector<int64_t> static_token_ids;
             ov::Tensor input_ids_tensor;
@@ -1287,7 +1205,7 @@ Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
                                               token_ids.data());
             }
             ov::Tensor ref_s_tensor(ov::element::f32,
-                                    ov::Shape{1, speaker_shape[1]},
+                                    ov::Shape{1, style_dim},
                                     style_slice.data());
             ov::Tensor speed_tensor(ov::element::f32, ov::Shape{1}, &generation_config.speed);
 
@@ -1349,6 +1267,12 @@ std::vector<std::vector<std::string>> KokoroTTSImpl::phonemize(const std::vector
     }
     return all_chunks;
 #endif
+}
+
+ov::Shape KokoroTTSImpl::get_speaker_embedding_shape() const {
+    // Matches the native Kokoro voice pack shape: 510 length-indexed rows,
+    // one per possible phoneme sequence length (1-510), each a [1, 256] style vector.
+    return ov::Shape{510, 1, 256};
 }
 
 }  // namespace genai

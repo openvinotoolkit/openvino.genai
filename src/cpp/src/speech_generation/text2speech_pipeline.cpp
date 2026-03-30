@@ -152,5 +152,9 @@ void Text2SpeechPipeline::set_generation_config(const SpeechGenerationConfig& ne
     m_speech_gen_config = new_config;
 }
 
+ov::Shape Text2SpeechPipeline::get_speaker_embedding_shape() const {
+    return m_impl->get_speaker_embedding_shape();
+}
+
 }  // namespace genai
 }  // namespace ov

@@ -86,11 +86,11 @@ public:
 
     /**
      * Generates speech from precomputed Kokoro phoneme chunks for a single input.
-      *
-      * NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+     *
+     * NOTE: This API is supported only for Kokoro backend.
      *
      * @param phoneme_chunks phoneme chunks to synthesize and concatenate into one output speech
-      * @param speaker_embedding Optional speaker embedding tensor. It is ignored for Kokoro backend.
+     * @param speaker_embedding Speaker embedding tensor.
      * @param properties Speech generation parameters specified as properties
      * @returns raw audio for a single synthesized speech; sample rate is provided in
      * `Text2SpeechDecodedResults::output_sample_rate`
@@ -101,11 +101,11 @@ public:
 
     /**
      * Generates speech from precomputed Kokoro phoneme chunks for multiple inputs.
-      *
-      * NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+     *
+     * NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
      *
      * @param phoneme_chunks nested list where each item is a list of phoneme chunks for one output speech
-      * @param speaker_embedding Optional speaker embedding tensor. It is ignored for Kokoro backend.
+     * @param speaker_embedding Speaker embedding tensor.
      * @param properties Speech generation parameters specified as properties
      * @returns raw audios for synthesized speeches; sample rate is provided in
      * `Text2SpeechDecodedResults::output_sample_rate`
@@ -116,11 +116,11 @@ public:
 
     /**
      * Generates speech from precomputed token stream for a single input.
-      *
-      * NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+     *
+     * NOTE: This API is supported only for Kokoro backend.
      *
      * @param tokens token sequence used to build Kokoro phoneme chunks
-      * @param speaker_embedding Optional speaker embedding tensor. It is ignored for Kokoro backend.
+     * @param speaker_embedding Speaker embedding tensor.
      * @param properties Speech generation parameters specified as properties
      */
     Text2SpeechDecodedResults generate_from_tokens(const std::vector<SpeechToken>& tokens,
@@ -129,11 +129,11 @@ public:
 
     /**
      * Generates speech from precomputed token streams for multiple inputs.
-      *
-      * NOTE: This API is supported only for Kokoro backend. SpeechT5 backend throws an exception.
+     *
+     * NOTE: This API is supported only for Kokoro backend.
      *
      * @param token_batches nested list where each item is a token sequence for one output speech
-      * @param speaker_embedding Optional speaker embedding tensor. It is ignored for Kokoro backend.
+     * @param speaker_embedding Speaker embedding tensor.
      * @param properties Speech generation parameters specified as properties
      */
     Text2SpeechDecodedResults generate_from_tokens(const std::vector<std::vector<SpeechToken>>& token_batches,
@@ -208,6 +208,11 @@ public:
     /// @brief Override default values for GenerationConfig
     /// @param new_config A config to override default values with.
     void set_generation_config(const SpeechGenerationConfig& new_config);
+
+    /// @brief Get the expected speaker embedding shape for the loaded model.
+    /// @return Shape describing the required tensor layout.
+    ///         SpeechT5: {1, 512}.  Kokoro: {510, 1, 256}
+    ov::Shape get_speaker_embedding_shape() const;
 
 private:
     std::shared_ptr<Text2SpeechPipelineImpl> m_impl;

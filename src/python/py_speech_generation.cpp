@@ -48,9 +48,6 @@ auto speech_generation_config_docstring = R"(
     :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
     :type language: str
 
-    :param voice: voice identifier used by Kokoro backend.
-    :type voice: str
-
     :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
     :type max_phoneme_length: int
 
@@ -95,7 +92,8 @@ auto text_to_speech_generate_docstring = R"(
 
     :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                              voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                             `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+                             `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
+                             to prepare this tensor externally and pass it explicitly.
     :type speaker_embedding: openvino.Tensor or None
 
     :param properties: speech generation parameters specified as properties
@@ -127,7 +125,7 @@ auto text_to_speech_generate_from_phonemes_docstring = R"(
     :param phoneme_chunks: phoneme chunks for one output speech, or nested chunk lists for multiple speeches
     :type phoneme_chunks: list[str] or list[list[str]]
 
-    :param speaker_embedding: optional speaker embedding tensor (ignored by Kokoro backend)
+    :param speaker_embedding: speaker embedding tensor
     :type speaker_embedding: openvino.Tensor or None
 
     :param properties: speech generation parameters specified as properties
@@ -158,7 +156,7 @@ auto text_to_speech_generate_from_tokens_docstring = R"(
     :param token_batches: one token sequence (`list[SpeechToken]`) or a list of token sequences
     :type token_batches: list[SpeechToken] or list[list[SpeechToken]]
 
-    :param speaker_embedding: optional speaker embedding tensor (ignored by Kokoro backend)
+    :param speaker_embedding: speaker embedding tensor
     :type speaker_embedding: openvino.Tensor or None
 
     :param properties: speech generation parameters specified as properties
@@ -196,7 +194,6 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def_readwrite("maxlenratio", &SpeechGenerationConfig::maxlenratio)
         .def_readwrite("threshold", &SpeechGenerationConfig::threshold)
         .def_readwrite("language", &SpeechGenerationConfig::language)
-        .def_readwrite("voice", &SpeechGenerationConfig::voice)
         .def_readwrite("max_phoneme_length", &SpeechGenerationConfig::max_phoneme_length)
         .def_readwrite("phonemize_fallback_model_dir", &SpeechGenerationConfig::phonemize_fallback_model_dir)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {
@@ -351,7 +348,7 @@ void init_speech_generation_pipeline(py::module_& m) {
             py::arg("phoneme_chunks"),
             "phoneme chunks for one output speech.",
             py::arg("speaker_embedding") = py::none(),
-            "optional speaker embedding tensor; ignored by Kokoro backend.",
+            "speaker embedding tensor.",
             (text_to_speech_generate_from_phonemes_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def(
@@ -376,7 +373,7 @@ void init_speech_generation_pipeline(py::module_& m) {
             py::arg("phoneme_chunks"),
             "nested phoneme chunk lists for multiple output speeches.",
             py::arg("speaker_embedding") = py::none(),
-            "optional speaker embedding tensor; ignored by Kokoro backend.",
+            "speaker embedding tensor.",
             (text_to_speech_generate_from_phonemes_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def(
@@ -401,7 +398,7 @@ void init_speech_generation_pipeline(py::module_& m) {
             py::arg("tokens"),
             "token sequence for one output speech.",
             py::arg("speaker_embedding") = py::none(),
-            "optional speaker embedding tensor; ignored by Kokoro backend.",
+            "speaker embedding tensor.",
             (text_to_speech_generate_from_tokens_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def(
@@ -426,9 +423,12 @@ void init_speech_generation_pipeline(py::module_& m) {
             py::arg("token_batches"),
             "nested token sequences for multiple output speeches.",
             py::arg("speaker_embedding") = py::none(),
-            "optional speaker embedding tensor; ignored by Kokoro backend.",
+            "speaker embedding tensor.",
             (text_to_speech_generate_from_tokens_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def("get_generation_config", &Text2SpeechPipeline::get_generation_config, py::return_value_policy::copy)
-        .def("set_generation_config", &Text2SpeechPipeline::set_generation_config, py::arg("config"));
+        .def("set_generation_config", &Text2SpeechPipeline::set_generation_config, py::arg("config"))
+        .def("get_speaker_embedding_shape", &Text2SpeechPipeline::get_speaker_embedding_shape,
+             "Get the expected speaker embedding shape for the loaded model."
+             "SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}");
 }

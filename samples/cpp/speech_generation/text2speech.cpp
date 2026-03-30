@@ -73,13 +73,12 @@ int main(int argc, char* argv[]) try {
         args.size() >= 3,
         "Usage: ",
         args[0],
-        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>] [--voice <VOICE_ID>] [--language <en-us|en-gb|es|fr-fr|hi|it|pt-br>] [--speed <FLOAT>] [--sample_rate <INT>]");
+        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>] [--language <en-us|en-gb|es|fr-fr|hi|it|pt-br>] [--speed <FLOAT>] [--sample_rate <INT>]");
 
     const std::string models_path = args[1], prompt = args[2];
     const std::string device = "CPU";
 
     std::optional<std::string> speaker_embedding_path;
-    std::string voice;
     std::string language;
     float speed = 1.0f;
     uint32_t sample_rate = 0;
@@ -94,9 +93,7 @@ int main(int argc, char* argv[]) try {
         OPENVINO_ASSERT(arg_idx < static_cast<int>(args.size()), "Missing value for option ", option);
         const std::string value = args[arg_idx++];
 
-        if (option == "--voice") {
-            voice = value;
-        } else if (option == "--language") {
+        if (option == "--language") {
             language = value;
         } else if (option == "--speed") {
             speed = std::stof(value);
@@ -108,10 +105,8 @@ int main(int argc, char* argv[]) try {
     }
 
     ov::genai::Text2SpeechPipeline pipe(models_path, device);
+
     ov::AnyMap properties;
-    if (!voice.empty()) {
-        properties["voice"] = voice;
-    }
     if (!language.empty()) {
         properties["language"] = language;
     }
@@ -121,7 +116,8 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::Text2SpeechDecodedResults gen_speech;
     if (speaker_embedding_path.has_value()) {
-        auto speaker_embedding = utils::audio::read_speaker_embedding(*speaker_embedding_path);
+        auto speaker_embedding = utils::audio::read_speaker_embedding(*speaker_embedding_path,
+                                                                      pipe.get_speaker_embedding_shape());
         gen_speech = pipe.generate(prompt, speaker_embedding, properties);
     } else {
         gen_speech = pipe.generate(prompt, ov::Tensor(), properties);

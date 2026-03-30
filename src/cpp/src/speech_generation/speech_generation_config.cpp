@@ -28,7 +28,6 @@ SpeechGenerationConfig::SpeechGenerationConfig(const std::filesystem::path& json
         read_json_param(data, "maxlenratio", maxlenratio);
         read_json_param(data, "threshold", threshold);
         read_json_param(data, "language", language);
-        read_json_param(data, "voice", voice);
         read_json_param(data, "max_phoneme_length", max_phoneme_length);
         read_json_param(data, "phonemize_fallback_model_dir", phonemize_fallback_model_dir);
     }
@@ -43,7 +42,6 @@ void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_m
     read_anymap_param(config_map, "maxlenratio", maxlenratio);
     read_anymap_param(config_map, "threshold", threshold);
     read_anymap_param(config_map, "language", language);
-    read_anymap_param(config_map, "voice", voice);
     read_anymap_param(config_map, "max_phoneme_length", max_phoneme_length);
     read_anymap_param(config_map, "phonemize_fallback_model_dir", phonemize_fallback_model_dir);
 

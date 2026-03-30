@@ -237,5 +237,9 @@ SpeechGenerationPerfMetrics SpeechT5TTSImpl::get_performance_metrics() {
     return m_perf_metrics;
 }
 
+ov::Shape SpeechT5TTSImpl::get_speaker_embedding_shape() const {
+    return ov::Shape{1, 512};
+}
+
 }  // namespace genai
 }  // namespace ov

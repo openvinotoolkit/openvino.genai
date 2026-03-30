@@ -9,7 +9,7 @@ This folder contains C++ examples for `ov::genai::Text2SpeechPipeline`.
 	- Usually uses a speaker embedding file.
 - **Kokoro**
 	- Uses a Kokoro model directory.
-	- Uses `--voice` and `--language` options.
+	- Uses `--speaker_embedding_file_path` and `--language` options.
 	- End-to-end Kokoro language support includes:
 		- `en-us` (English, United States)
 		- `en-gb` (English, United Kingdom)
@@ -36,7 +36,7 @@ Create a speaker embedding file (SpeechT5-specific):
 
 ## Kokoro setup
 
-**TODO! Add optimum-intel cmd here when available!**
+optimum-cli export openvino -m hexgrad/Kokoro-82M ov_Kokoro-82M --trust-remote-code
 
 Kokoro can use `espeak-ng` in a couple of different ways:
 
@@ -52,15 +52,15 @@ to run the sample.
 
 Text-to-speech sample (SpeechT5):
 
-`text-to-speech speecht5_tts "Hello OpenVINO GenAI" speaker_embedding.bin`
+`text2speech speecht5_tts "Hello OpenVINO GenAI" speaker_embedding.bin`
 
 Text-to-speech sample (Kokoro):
 
-`text-to-speech standalone_python_ov/Kokoro-82M "Hello from Kokoro in OpenVINO GenAI" --voice af_heart --language en-us`
+`text2speech ov_Kokoro-82M "Hello, and welcome to speech generation using OpenVINO GenAI." ov_Kokoro-82M/voices/af_heart.bin --language en-us`
 
 Text-to-speech sample (Kokoro, non-English):
 
-`text-to-speech standalone_python_ov/Kokoro-82M "Los partidos políticos tradicionales compiten con los populismos." --voice ef_dora --language es`
+`text2speech ov_Kokoro-82M "Hola y bienvenidos a la generación de voz utilizando OpenVINO GenAI." ov_Kokoro-82M/voices/ef_dora.bin --language es`
 
 Kokoro fallback sample with OV fallback model:
 
@@ -76,15 +76,15 @@ GB:
 
 US model + `en-us`:
 
-`kokoro_phonemize_fallback standalone_python_ov/Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --voice af_heart --language en-us --phonemize_fallback_model_dir graphemes_to_phonemes_en_us-ov`
+`kokoro_phonemize_fallback ov_Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --speaker_embedding_file_path ov_Kokoro-82M/voices/af_heart.bin --language en-us --phonemize_fallback_model_dir graphemes_to_phonemes_en_us-ov`
 
 GB model + `en-gb`:
 
-`kokoro_phonemize_fallback standalone_python_ov/Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --voice af_heart --language en-gb --phonemize_fallback_model_dir graphemes_to_phonemes_en_gb-ov`
+`kokoro_phonemize_fallback ov_Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --speaker_embedding_file_path ov_Kokoro-82M/voices/bf_emma.bin --language en-gb --phonemize_fallback_model_dir graphemes_to_phonemes_en_gb-ov`
 
 Kokoro fallback sample with default `espeak-ng` fallback:
 
-`kokoro_phonemize_fallback standalone_python_ov/Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --voice af_heart --language en-us`
+`kokoro_phonemize_fallback ov_Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --speaker_embedding_file_path ov_Kokoro-82M/voices/af_heart.bin --language en-us`
 
 Set `--language` to match the fallback model variant (`en-us` with `..._en_us-ov`, `en-gb` with `..._en_gb-ov`).
 OpenVINO fallback models above are an English-only feature (`en-us` / `en-gb`). For non-English Kokoro languages, phonemization is handled directly by `espeak-ng` as the primary G2P path (this fallback-model feature is not used).
@@ -97,13 +97,13 @@ Refer to [Supported Models](https://openvinotoolkit.github.io/openvino.genai/doc
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 
 ov::genai::Text2SpeechPipeline pipe(models_path, device);
+
 gen_speech = pipe.generate(prompt, speaker_embedding);
 
-// Kokoro voice-based generation (speaker embedding not required)
+// Kokoro generation with an application-prepared embedding tensor
 gen_speech = pipe.generate(prompt,
-													 ov::Tensor(),
-													 ov::AnyMap{{"voice", "af_heart"},
-																			{"language", "en-us"}});
+                           speaker_embedding,
+                           ov::AnyMap{{"language", "en-us"}});
 
 auto speech = gen_speech.speeches[0];
 // speech tensor contains the waveform of the spoken phrase

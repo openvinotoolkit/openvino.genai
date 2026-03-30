@@ -26,12 +26,14 @@ void save_to_wav(const float* waveform_ptr,
                  uint32_t sample_rate = 16000);
 
 /**
- * This function reads a binary file containing speaker embedding or 32-bit floating-point values and returns
- * ov::Tensor
+ * Reads a binary file of float32 values and returns an ov::Tensor with the given shape.
  *
- * @param file_path The path to the binary file to be read
- * @returns a std::vector<float> containing all float values read from the binary file
+ * @param file_path  Path to the binary file.
+ * @param shape      Expected tensor shape, as returned by
+ *                   Text2SpeechPipeline::get_speaker_embedding_shape().
+ * @returns ov::Tensor{f32, shape} with data loaded from the file.
  */
-ov::Tensor read_speaker_embedding(const std::filesystem::path& file_path);
+ov::Tensor read_speaker_embedding(const std::filesystem::path& file_path,
+                                  const ov::Shape& shape);
 }  // namespace audio
 }  // namespace utils
