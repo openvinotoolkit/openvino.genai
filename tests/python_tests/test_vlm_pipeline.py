@@ -2294,21 +2294,29 @@ def test_cdpruner_continuous_batching(
     car_tensor: openvino.Tensor,
 ):
     """Test CDPruner with continuous batching pipeline.
-    Verifies that pruning produces non-empty output and is deterministic across runs."""
-    generation_config = GenerationConfig()
-    generation_config.max_new_tokens = 10
-    generation_config.do_sample = False
-    generation_config.pruning_ratio = 50
+    Verifies that a small non-zero pruning ratio (pruning_ratio=1, i.e. ~1% pruning)
+    produces the same output as the unpruned baseline with pruning_ratio=0."""
+    # Baseline run with pruning_ratio=0
+    generation_config_baseline = GenerationConfig()
+    generation_config_baseline.max_new_tokens = 10
+    generation_config_baseline.do_sample = False
+    generation_config_baseline.pruning_ratio = 0
 
-    r1 = ov_continuous_batching_pipe_qwen2vl.generate(
-        [PROMPTS[0]], images=[[car_tensor]], generation_config=[generation_config]
+    baseline = ov_continuous_batching_pipe_qwen2vl.generate(
+        [PROMPTS[0]], images=[[car_tensor]], generation_config=[generation_config_baseline]
     )[0].texts[0]
-    assert len(r1) > 0, "Pruned output is empty"
 
-    r2 = ov_continuous_batching_pipe_qwen2vl.generate(
-        [PROMPTS[0]], images=[[car_tensor]], generation_config=[generation_config]
+    # Pruned run with pruning_ratio=1
+    generation_config_pruned = GenerationConfig()
+    generation_config_pruned.max_new_tokens = 10
+    generation_config_pruned.do_sample = False
+    generation_config_pruned.pruning_ratio = 1
+
+    pruned = ov_continuous_batching_pipe_qwen2vl.generate(
+        [PROMPTS[0]], images=[[car_tensor]], generation_config=[generation_config_pruned]
     )[0].texts[0]
-    assert r1 == r2, f"Not deterministic: run1='{r1}', run2='{r2}'"
+
+    assert baseline == pruned, f"Output mismatch: baseline='{baseline}', pruned='{pruned}'"
 
 
 def test_cdpruner_continuous_batching_chat_mode(
@@ -2317,33 +2325,50 @@ def test_cdpruner_continuous_batching_chat_mode(
     car_tensor: openvino.Tensor,
 ):
     """Test CDPruner with continuous batching pipeline using String API in chat mode.
-    Verifies that pruning produces non-empty output and is deterministic across runs."""
-    generation_config = GenerationConfig()
-    generation_config.max_new_tokens = 10
-    generation_config.do_sample = False
-    generation_config.pruning_ratio = 50
+    Verifies that pruning_ratio=1 produces the same output as pruning_ratio=0 (no pruning)."""
+    # Baseline run with pruning_ratio=0
+    generation_config_baseline = GenerationConfig()
+    generation_config_baseline.max_new_tokens = 10
+    generation_config_baseline.do_sample = False
+    generation_config_baseline.pruning_ratio = 0
 
-    def run_chat():
-        ov_continuous_batching_pipe_qwen2vl.start_chat("You are a helpful assistant.")
-        t1 = ov_continuous_batching_pipe_qwen2vl.generate(
-            ["What is in this image?"], images=[[cat_tensor]], generation_config=[generation_config]
-        )[0].texts[0]
-        t2 = ov_continuous_batching_pipe_qwen2vl.generate(
-            ["Now describe this one."], images=[[car_tensor]], generation_config=[generation_config]
-        )[0].texts[0]
-        t3 = ov_continuous_batching_pipe_qwen2vl.generate(
-            ["What did you see in total?"], images=[[]], generation_config=[generation_config]
-        )[0].texts[0]
-        ov_continuous_batching_pipe_qwen2vl.finish_chat()
-        return t1, t2, t3
+    ov_continuous_batching_pipe_qwen2vl.start_chat("You are a helpful assistant.")
 
-    r1 = run_chat()
-    for i, text in enumerate(r1, 1):
-        assert len(text) > 0, f"Turn {i} produced empty output"
+    baseline1 = ov_continuous_batching_pipe_qwen2vl.generate(
+        ["What is in this image?"], images=[[cat_tensor]], generation_config=[generation_config_baseline]
+    )[0].texts[0]
+    baseline2 = ov_continuous_batching_pipe_qwen2vl.generate(
+        ["Now describe this one."], images=[[car_tensor]], generation_config=[generation_config_baseline]
+    )[0].texts[0]
+    baseline3 = ov_continuous_batching_pipe_qwen2vl.generate(
+        ["What did you see in total?"], generation_config=[generation_config_baseline]
+    )[0].m_generation_ids[0]
 
-    r2 = run_chat()
-    for i, (a, b) in enumerate(zip(r1, r2), 1):
-        assert a == b, f"Turn {i} not deterministic: run1='{a}', run2='{b}'"
+    ov_continuous_batching_pipe_qwen2vl.finish_chat()
+
+    # Pruned run with pruning_ratio=1
+    generation_config_pruned = GenerationConfig()
+    generation_config_pruned.max_new_tokens = 10
+    generation_config_pruned.do_sample = False
+    generation_config_pruned.pruning_ratio = 1
+
+    ov_continuous_batching_pipe_qwen2vl.start_chat("You are a helpful assistant.")
+
+    pruned1 = ov_continuous_batching_pipe_qwen2vl.generate(
+        ["What is in this image?"], images=[[cat_tensor]], generation_config=[generation_config_pruned]
+    )[0].texts[0]
+    pruned2 = ov_continuous_batching_pipe_qwen2vl.generate(
+        ["Now describe this one."], images=[[car_tensor]], generation_config=[generation_config_pruned]
+    )[0].texts[0]
+    pruned3 = ov_continuous_batching_pipe_qwen2vl.generate(
+        ["What did you see in total?"], generation_config=[generation_config_pruned]
+    )[0].m_generation_ids[0]
+
+    ov_continuous_batching_pipe_qwen2vl.finish_chat()
+
+    assert baseline1 == pruned1, f"Turn 1 mismatch: baseline='{baseline1}', pruned='{pruned1}'"
+    assert baseline2 == pruned2, f"Turn 2 mismatch: baseline='{baseline2}', pruned='{pruned2}'"
+    assert baseline3 == pruned3, f"Turn 3 mismatch: baseline='{baseline3}', pruned='{pruned3}'"
 
 
 def test_cdpruner_continuous_batching_chat_history(
@@ -2352,43 +2377,66 @@ def test_cdpruner_continuous_batching_chat_history(
     car_tensor: openvino.Tensor,
 ):
     """Test CDPruner with continuous batching pipeline using ChatHistory API in chat mode.
-    Verifies that pruning produces non-empty output and is deterministic across runs."""
-    generation_config = GenerationConfig()
-    generation_config.max_new_tokens = 10
-    generation_config.do_sample = False
-    generation_config.pruning_ratio = 50
+    Verifies that pruning_ratio=1 produces the same output as pruning_ratio=0 (no pruning)."""
+    # Baseline run with pruning_ratio=0
+    generation_config_baseline = GenerationConfig()
+    generation_config_baseline.max_new_tokens = 10
+    generation_config_baseline.do_sample = False
+    generation_config_baseline.pruning_ratio = 0
 
-    def run_chat():
-        history = ChatHistory()
+    history_baseline = ChatHistory()
 
-        history.append({"role": "user", "content": "What is in this image?"})
-        t1 = ov_continuous_batching_pipe_qwen2vl.generate(
-            [history], images=[[cat_tensor]], generation_config=[generation_config]
-        )[0].texts[0]
-        history.append({"role": "assistant", "content": t1})
+    history_baseline.append({"role": "user", "content": "What is in this image?"})
+    baseline1 = ov_continuous_batching_pipe_qwen2vl.generate(
+        [history_baseline], images=[[cat_tensor]], generation_config=[generation_config_baseline]
+    )[0].texts[0]
+    history_baseline.append({"role": "assistant", "content": baseline1})
 
-        history.append({"role": "user", "content": "Now describe this one."})
-        t2 = ov_continuous_batching_pipe_qwen2vl.generate(
-            [history], images=[[car_tensor]], generation_config=[generation_config]
-        )[0].texts[0]
-        history.append({"role": "assistant", "content": t2})
+    history_baseline.append({"role": "user", "content": "Now describe this one."})
+    baseline2 = ov_continuous_batching_pipe_qwen2vl.generate(
+        [history_baseline], images=[[car_tensor]], generation_config=[generation_config_baseline]
+    )[0].texts[0]
+    history_baseline.append({"role": "assistant", "content": baseline2})
 
-        history.append({"role": "user", "content": "What did you see in total?"})
-        t3 = ov_continuous_batching_pipe_qwen2vl.generate(
-            [history], images=[[cat_tensor]], generation_config=[generation_config]
-        )[0].texts[0]
-        history.append({"role": "assistant", "content": t3})
+    history_baseline.append({"role": "user", "content": "What did you see in total?"})
+    baseline3 = ov_continuous_batching_pipe_qwen2vl.generate(
+        [history_baseline], images=[[cat_tensor]], generation_config=[generation_config_baseline]
+    )[0].texts[0]
+    history_baseline.append({"role": "assistant", "content": baseline3})
 
-        ov_continuous_batching_pipe_qwen2vl.finish_chat()
-        return t1, t2, t3
+    ov_continuous_batching_pipe_qwen2vl.finish_chat()
 
-    r1 = run_chat()
-    for i, text in enumerate(r1, 1):
-        assert len(text) > 0, f"Turn {i} produced empty output"
+    # Pruned run with pruning_ratio=1
+    generation_config_pruned = GenerationConfig()
+    generation_config_pruned.max_new_tokens = 10
+    generation_config_pruned.do_sample = False
+    generation_config_pruned.pruning_ratio = 1
 
-    r2 = run_chat()
-    for i, (a, b) in enumerate(zip(r1, r2), 1):
-        assert a == b, f"Turn {i} not deterministic: run1='{a}', run2='{b}'"
+    history_pruned = ChatHistory()
+
+    history_pruned.append({"role": "user", "content": "What is in this image?"})
+    pruned1 = ov_continuous_batching_pipe_qwen2vl.generate(
+        [history_pruned], images=[[cat_tensor]], generation_config=[generation_config_pruned]
+    )[0].texts[0]
+    history_pruned.append({"role": "assistant", "content": pruned1})
+
+    history_pruned.append({"role": "user", "content": "Now describe this one."})
+    pruned2 = ov_continuous_batching_pipe_qwen2vl.generate(
+        [history_pruned], images=[[car_tensor]], generation_config=[generation_config_pruned]
+    )[0].texts[0]
+    history_pruned.append({"role": "assistant", "content": pruned2})
+
+    history_pruned.append({"role": "user", "content": "What did you see in total?"})
+    pruned3 = ov_continuous_batching_pipe_qwen2vl.generate(
+        [history_pruned], images=[[cat_tensor]], generation_config=[generation_config_pruned]
+    )[0].texts[0]
+    history_pruned.append({"role": "assistant", "content": pruned3})
+
+    ov_continuous_batching_pipe_qwen2vl.finish_chat()
+
+    assert baseline1 == pruned1, f"Turn 1 mismatch: baseline='{baseline1}', pruned='{pruned1}'"
+    assert baseline2 == pruned2, f"Turn 2 mismatch: baseline='{baseline2}', pruned='{pruned2}'"
+    assert baseline3 == pruned3, f"Turn 3 mismatch: baseline='{baseline3}', pruned='{pruned3}'"
 
 
 def test_vlm_prompt_lookup_functionality(cat_tensor):
