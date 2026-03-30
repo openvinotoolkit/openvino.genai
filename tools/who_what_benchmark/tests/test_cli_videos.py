@@ -248,7 +248,7 @@ def run_test_with_lora(model_id, model_type, tmp_path, *, genai_threshold):
             str(lora_file),
             "--alphas",
             "0.9",
-            "--empty-adapters",
+            "--empty_adapters",
             "--output",
             outputs_empty,
         ]
