@@ -146,8 +146,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             self.gt_data = self._generate_data(base_model, gen_speech_fn, os.path.join(self.gt_dir, "reference"))
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
-            if "expected_text" not in self.gt_data.columns:
-                self.gt_data["expected_text"] = self.gt_data["prompts"]
 
         self._validate_required_columns(self.gt_data, ["audio", "prompts"], "ground truth data")
 
@@ -159,8 +157,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
 
         if isinstance(model_or_data, str) and os.path.exists(model_or_data):
             predictions = pd.read_csv(model_or_data, keep_default_na=False)
-            if "expected_text" not in predictions.columns:
-                predictions["expected_text"] = predictions["prompts"]
         else:
             predictions = self._generate_data(model_or_data, gen_speech_fn, audio_folder)
 
@@ -178,11 +174,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             gt_row = self.gt_data.iloc[idx]
             prediction_row = predictions.iloc[idx]
 
-            prompt = prediction_row.get("prompts", gt_row.get("prompts", ""))
-            expected_text = prediction_row.get("expected_text", gt_row.get("expected_text", prompt))
-            if pd.isna(expected_text):
-                expected_text = prompt
-            expected_text = str(expected_text)
             language = prediction_row.get("language", gt_row.get("language", None))
             if pd.isna(language):
                 language = None
@@ -194,7 +185,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             scores = self._evaluator.evaluate(
                 target_path=str(prediction_row["audio"]),
                 reference_path=str(gt_row["audio"]),
-                expected_text=expected_text,
                 language=language,
                 verbose=verbose,
             )
@@ -290,8 +280,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             data = pd.DataFrame.from_dict(prompt_data["en"])
 
         self._validate_required_columns(data, ["prompts"], "input prompt data")
-        if "expected_text" not in data.columns:
-            data["expected_text"] = data["prompts"]
         if self.num_samples is not None:
             data = data.iloc[: self.num_samples]
 
@@ -300,7 +288,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
 
         audios = []
         prompt_values = data["prompts"].values
-        expected_text_values = data["expected_text"].values
         language_values = data["language"].values if "language" in data.columns else [None] * len(data)
         voice_values = data["voice"].values if "voice" in data.columns else [""] * len(data)
 
@@ -336,7 +323,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         return pd.DataFrame(
             {
                 "prompts": list(prompt_values),
-                "expected_text": list(expected_text_values),
                 "language": [str(item) if pd.notna(item) else "" for item in language_values],
                 "voice": [str(item) if pd.notna(item) else "" for item in voice_values],
                 "audio": audios,

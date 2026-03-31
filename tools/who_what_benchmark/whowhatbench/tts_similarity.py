@@ -44,15 +44,11 @@ class ScoringConfig:
 
     # Content score uses normalized WER/CER and is intentionally somewhat forgiving,
     # since ASR can disagree on punctuation, hyphens, split words, etc.
+    # Content score compares target vs reference (base model) output only.
     content_wer_bad: float = 0.35
     content_cer_bad: float = 0.15
     content_wer_weight: float = 0.60
     content_cer_weight: float = 0.40
-
-    # Combine target-vs-expected correctness with target-vs-reference parity.
-    # Reference parity gets more weight so expected-text formatting quirks do not dominate.
-    content_expected_weight: float = 0.25
-    content_reference_weight: float = 0.75
 
     # Duration = relative difference in overall clip length.
     # ~1% is very close; ~20% is a clearly noticeable drift.
@@ -267,48 +263,20 @@ class TTSSimilarityEvaluator:
         reference_tx = self.transcribe(reference_path, language)
         norm_tgt = normalize_text(target_tx)
         norm_ref = normalize_text(reference_tx)
-        norm_exp = normalize_text(expected_text) if expected_text is not None else None
 
         wer_ref_norm = safe_float(jiwer_wer(norm_ref, norm_tgt))
         cer_ref_norm = safe_float(jiwer_cer(norm_ref, norm_tgt))
-        ref_content = weighted_mean(
+        content_score = weighted_mean(
             [
                 (linear_distance_score(wer_ref_norm, 0.0, self.cfg.content_wer_bad), self.cfg.content_wer_weight),
                 (linear_distance_score(cer_ref_norm, 0.0, self.cfg.content_cer_bad), self.cfg.content_cer_weight),
             ]
         )
 
-        exp_content = None
-        wer_exp_norm = cer_exp_norm = None
-        if norm_exp is not None:
-            wer_exp_norm = safe_float(jiwer_wer(norm_exp, norm_tgt))
-            cer_exp_norm = safe_float(jiwer_cer(norm_exp, norm_tgt))
-            exp_content = weighted_mean(
-                [
-                    (linear_distance_score(wer_exp_norm, 0.0, self.cfg.content_wer_bad), self.cfg.content_wer_weight),
-                    (linear_distance_score(cer_exp_norm, 0.0, self.cfg.content_cer_bad), self.cfg.content_cer_weight),
-                ]
-            )
-
-        content_score = (
-            weighted_mean(
-                [
-                    (exp_content, self.cfg.content_expected_weight),
-                    (ref_content, self.cfg.content_reference_weight),
-                ]
-            )
-            if exp_content is not None
-            else ref_content
-        )
-
         _log(verbose, "--- Content ---")
         _log(verbose, f"Reference transcript: {reference_tx}")
         _log(verbose, f"Target transcript:    {target_tx}")
-        if expected_text is not None:
-            _log(verbose, f"Expected text:        {expected_text}")
         _log(verbose, f"Normalized WER/CER (target vs reference): {wer_ref_norm}, {cer_ref_norm}")
-        if exp_content is not None:
-            _log(verbose, f"Normalized WER/CER (target vs expected):  {wer_exp_norm}, {cer_exp_norm}")
         _log(verbose, f"Normalized transcripts match: {norm_tgt == norm_ref}")
         _log(verbose)
 

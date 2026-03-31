@@ -177,23 +177,28 @@ wwb --target-model speecht5_tts_ov --gt-data speech_gen_test/gt.csv --model-type
 wwb --target-model speecht5_tts_ov --gt-data speech_gen_test/gt.csv --model-type speech-generation --output genai_output --speaker_embeddings cmu_us_slt_arctic-wav-arctic_a0508.bin --genai
 ```
 
-Speech-generation evaluation uses the prompt text itself as the default expected transcript and writes audio at 16 kHz for both reference and target files before scoring.
+Speech-generation evaluation writes audio at 16 kHz for both reference and target files before scoring.
 
 The speech-generation evaluator reports these metrics:
 
 * `speaker score` - speaker similarity based on SpeechBrain speaker verification.
-* `content score` - transcript similarity based on faster-whisper transcription and normalized text comparison.
+* `content score` - transcript similarity between base model and target model output, based on faster-whisper transcription and normalized text comparison.
 * `acoustic score` - overall sound-character similarity based on spectral features.
 * `duration score` - relative utterance length similarity between target and reference.
 * `overall score` - aggregate score used for sorting worst examples.
 
-The optional input CSV for speech-generation may contain these columns:
+The required input CSV for speech-generation must contain these columns:
 
-* `prompts` or `prompt` - input text to synthesize.
-* `expected_text` - expected transcript used for content scoring. If omitted, `prompts` is used.
+* `prompts` - input text to synthesize.
+* `audio` - path to reference audio file.
+
+The optional input CSV may also contain:
+
 * `speaker_embeddings` - optional path to a binary float32 xvector file.
 * `language` - reserved field for future multi-language TTS backends. It is currently unused for SpeechT5 evaluation/generation.
 * `voice` - reserved field for future multi-voice TTS backends. It is currently unused for SpeechT5.
+* `expected_text` - this column is no longer used by the evaluator (for backward compatibility only).
+
 
 
 ### API
