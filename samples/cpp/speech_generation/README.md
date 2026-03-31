@@ -38,33 +38,52 @@ Create a speaker embedding file (SpeechT5-specific):
 
 optimum-cli export openvino -m hexgrad/Kokoro-82M ov_Kokoro-82M --trust-remote-code
 
-Kokoro can use `espeak-ng` in a couple of different ways:
+> **Note:**  
+> After export is complete. you will find the available speaker embedding `.bin` files in `ov_Kokoro-82M/voices`.
 
-- English (`en-us`, `en-gb`): `espeak-ng` is used as fallback for unknown/out-of-dictionary words. See `kokoro_phonemize_fallback` sample to understand how to use an OpenVINO fallback model to avoid use of `espeak-ng` for English.
-- Non-English (`es`, `fr-fr`, `hi`, `it`, `pt-br`): `espeak-ng` is the primary engine used for G2P (phonemization) step. So, it is required to be installed for E2E text-to-speech generation cases for non-english languages. Note that application can replace default G2P step with another phonemizer and call `generate_from_phonemes` API directly.
+## Use of `espeak-ng` within the Kokoro Pipeline
 
-You can install `espeak-ng` by following the official guide [here](https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md).
+Within the Kokoro Text-to-Speech pipeline, `espeak-ng` is an external dependency used for the grapheme-to-phoneme (G2P) stage. Its role varies depending on the selected language:
+
+- **English (`en-us`, `en-gb`)**:  
+	`espeak-ng` is used as a fallback for words that are not found in the built-in dictionary.  
+	See the `kokoro_phonemize_fallback` sample for an example of using an OpenVINO-based fallback model to avoid relying on `espeak-ng` for English.
+
+- **Non-English (`es`, `fr-fr`, `hi`, `it`, `pt-br`)**:  
+	`espeak-ng` serves as the primary G2P (phonemization) engine. As such, it must be installed to enable end-to-end text-to-speech generation for these languages.  
+	Applications may optionally replace the default G2P step with an alternative phonemizer and call `generate_from_phonemes` directly.
+
+> **Note:**  
+> `espeak-ng` is licensed under GPLv3 and must be installed separately. OpenVINO GenAI detects its presence automatically at runtime.
+
+To install `espeak-ng`, follow the official guide:  
+https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md
 
 ## Run samples
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html)
-to run the sample.
+### 1) `text2speech`
 
-Text-to-speech sample (SpeechT5):
+SpeechT5:
 
-`text2speech speecht5_tts "Hello OpenVINO GenAI" speaker_embedding.bin`
+`text2speech speecht5_tts "Hello from OpenVINO GenAI" speaker_embedding.bin`
 
-Text-to-speech sample (Kokoro):
+Kokoro:
 
 `text2speech ov_Kokoro-82M "Hello, and welcome to speech generation using OpenVINO GenAI." ov_Kokoro-82M/voices/af_heart.bin --language en-us`
 
-Text-to-speech sample (Kokoro, non-English):
+Kokoro (non-English):
 
 `text2speech ov_Kokoro-82M "Hola y bienvenidos a la generación de voz utilizando OpenVINO GenAI." ov_Kokoro-82M/voices/ef_dora.bin --language es`
 
-Kokoro fallback sample with OV fallback model:
+### 2) `kokoro_phonemize_fallback` (Kokoro only)
 
-Prepare OV fallback models:
+This sample demonstrates how to use an OpenVINO-based fallback model for phonemization, allowing you to avoid relying on `espeak-ng` when working with English languages.
+
+**Why use a fallback model instead of `espeak-ng`?**
+
+While `espeak-ng` provides robust phonemization, it is licensed under GPLv3, which can introduce complications for redistribution in certain applications. Using an OpenVINO-based fallback model avoids this dependency entirely, enabling a more self-contained and permissively licensed deployment.
+
+#### Export OV fallback models:
 
 US:
 
@@ -74,6 +93,8 @@ GB:
 
 `optimum-cli export openvino --model PeterReid/graphemes_to_phonemes_en_gb --task text2text-generation graphemes_to_phonemes_en_gb-ov`
 
+#### Run using fallback models:
+
 US model + `en-us`:
 
 `kokoro_phonemize_fallback ov_Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --speaker_embedding_file_path ov_Kokoro-82M/voices/af_heart.bin --language en-us --phonemize_fallback_model_dir graphemes_to_phonemes_en_us-ov`
@@ -82,12 +103,14 @@ GB model + `en-gb`:
 
 `kokoro_phonemize_fallback ov_Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --speaker_embedding_file_path ov_Kokoro-82M/voices/bf_emma.bin --language en-gb --phonemize_fallback_model_dir graphemes_to_phonemes_en_gb-ov`
 
-Kokoro fallback sample with default `espeak-ng` fallback:
+To run with default `espeak-ng` fallback:
 
 `kokoro_phonemize_fallback ov_Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --speaker_embedding_file_path ov_Kokoro-82M/voices/af_heart.bin --language en-us`
 
 Set `--language` to match the fallback model variant (`en-us` with `..._en_us-ov`, `en-gb` with `..._en_gb-ov`).
 OpenVINO fallback models above are an English-only feature (`en-us` / `en-gb`). For non-English Kokoro languages, phonemization is handled directly by `espeak-ng` as the primary G2P path (this fallback-model feature is not used).
+
+All samples produce WAV output.
 
 Refer to [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-generation-models) for model details.
 
