@@ -195,7 +195,7 @@ char generation_config_docstring[] = R"(
     num_return_sequences: the number of sequences to generate from a single prompt.
 
     Tree search parameters:
-    tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
+    tree_params.branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
     tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
     tree_params.num_speculative_tokens: number of candidate (non-root) tokens from the candidate tree submitted
                                               to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
