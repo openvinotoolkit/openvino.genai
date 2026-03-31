@@ -3,7 +3,6 @@
 
 import pytest
 import logging
-import sys
 import re
 from pathlib import Path
 
