@@ -58,7 +58,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
     # Override it to preserve max_new_tokens.
     max_length = 2**64 - 1
-    log.info("[%s] Running text generation: %s", num, datetime.datetime.now().isoformat())
+    log.info("[%s] Text generation start: %s", num, datetime.datetime.now().isoformat())
     start = time.perf_counter()
     if streaming:
         if args['infer_count'] is not None and args['end_token_stopping'] is False:
@@ -111,6 +111,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
                 **additional_args
             )
     end = time.perf_counter()
+    log.info("[%s] Text generation end: %s", num, datetime.datetime.now().isoformat())
     generation_time = end - start
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
@@ -201,7 +202,7 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         input_data = [ov.Tensor([input]) for input in input_data.input_ids.data]
         gen_config = [gen_config] * batch_size
 
-    log.info("[%s] Running text generation: %s", num, datetime.datetime.now().isoformat())
+    log.info("[%s] Text generation start: %s", num, datetime.datetime.now().isoformat())
     start = time.perf_counter()
     if streaming:
         text_print_streamer = get_genai_chunk_streamer()(model.get_tokenizer(), tokens_len)
@@ -232,6 +233,7 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         else:
             generation_result = model.generate(input_data, gen_config)
     end = time.perf_counter()
+    log.info("[%s] Text generation end: %s", num, datetime.datetime.now().isoformat())
     generated_tokens = []
     if cb_pipeline:
         for res in generation_result:
@@ -482,10 +484,11 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         config_info += f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
         log.info(config_info)
 
-    log.info("[%s] Running text generation: %s", num, datetime.datetime.now().isoformat())
+    log.info("[%s] Text generation start: %s", num, datetime.datetime.now().isoformat())
     start = time.perf_counter()
     generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens
     end = time.perf_counter()
+    log.info("[%s] Text generation end: %s", num, datetime.datetime.now().isoformat())
     generation_time = end - start
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
