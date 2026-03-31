@@ -194,7 +194,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         bench_hook.clear_time_infer_list()
 
 
-def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_data, batch_size, num):
+def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_data, batch_size):
     import openvino_genai
     import openvino as ov
     cb_pipeline = isinstance(model, openvino_genai.ContinuousBatchingPipeline)
