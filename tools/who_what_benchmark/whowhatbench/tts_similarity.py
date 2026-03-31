@@ -203,15 +203,17 @@ class TTSSimilarityEvaluator:
         return " ".join(seg.text.strip() for seg in segments).strip()
 
     def compute_speaker_similarity(
-        self, target_path: str, reference_path: str
+        self, target_audio: np.ndarray, reference_audio: np.ndarray, sr: int
     ) -> tuple[Optional[float], Optional[str]]:
         try:
             import torch
 
-            ref_tensor, _ = load_audio_mono(reference_path, 16000)
-            tgt_tensor, _ = load_audio_mono(target_path, 16000)
-            ref_tensor = torch.tensor(ref_tensor, dtype=torch.float32).unsqueeze(0)
-            tgt_tensor = torch.tensor(tgt_tensor, dtype=torch.float32).unsqueeze(0)
+            ref_audio = (
+                librosa.resample(reference_audio, orig_sr=sr, target_sr=16000) if sr != 16000 else reference_audio
+            )
+            tgt_audio = librosa.resample(target_audio, orig_sr=sr, target_sr=16000) if sr != 16000 else target_audio
+            ref_tensor = torch.tensor(ref_audio, dtype=torch.float32).unsqueeze(0)
+            tgt_tensor = torch.tensor(tgt_audio, dtype=torch.float32).unsqueeze(0)
             with torch.no_grad():
                 emb_ref = self.speaker_model.encode_batch(ref_tensor).reshape(1, -1)
                 emb_tgt = self.speaker_model.encode_batch(tgt_tensor).reshape(1, -1)
@@ -257,7 +259,7 @@ class TTSSimilarityEvaluator:
         _log(verbose)
 
         # Speaker
-        speaker_raw, speaker_error = self.compute_speaker_similarity(target_path, reference_path)
+        speaker_raw, speaker_error = self.compute_speaker_similarity(target_audio, reference_audio, self.sample_rate)
         speaker_score = linear_similarity_score(speaker_raw, self.cfg.speaker_bad, self.cfg.speaker_good)
         _log(verbose, "--- Speaker ---")
         _log(verbose, f"Verification score: {speaker_raw}")
