@@ -47,6 +47,14 @@ tools:
 timeout-minutes: 10
 
 steps:
+  - name: Checkout repository
+    uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    with:
+      persist-credentials: false
+  - name: Setup Python
+    uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+    with:
+      python-version: "3.12"
   - name: Install Python requirements for CI Doctor
     run: pip install -r .github/scripts/ci-doctor/requirements.txt
 
