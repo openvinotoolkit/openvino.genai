@@ -181,73 +181,11 @@ std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights
 }
 
 /**
- * @brief Reorders position embeddings according to spatial merge pattern in vision encoder.
- * 
- * @param pos_embeds Interpolated position embeddings [num_positions, embed_dim]
- * @param grids_thw Grid dimensions for permutation
- * @param spatial_merge_size Spatial merge size from processor config
- * @return Permuted position embeddings [num_merged_positions, embed_dim]
- */
-ov::Tensor permute_with_spatial_merge(
-    const ov::Tensor& pos_embeds,
-    const std::vector<std::array<size_t, 3>>& grids_thw,
-    size_t spatial_merge_size
-) {
-    const size_t num_positions = pos_embeds.get_shape()[0];
-    const size_t embed_dim = pos_embeds.get_shape()[1];
-    const float* pos_embeds_data = pos_embeds.data<const float>();
-    const size_t embed_bytes = embed_dim * sizeof(float);
-
-    ov::Tensor result{ov::element::f32, {num_positions, embed_dim}};
-    float* dst_data = result.data<float>();
-    size_t dst_offset = 0;
-    size_t src_offset = 0;
-
-    for (const auto& grid_thw : grids_thw) {
-        const auto [t, h, w] = grid_thw;
-        const size_t hw = h * w;
-        const size_t merge_h = h / spatial_merge_size;
-        const size_t merge_w = w / spatial_merge_size;
-        OPENVINO_ASSERT(
-            h % spatial_merge_size == 0 && w % spatial_merge_size == 0,
-            "permute_with_spatial_merge expects h and w divisible by spatial_merge_size. "
-            "Got h=", h, ", w=", w, ", spatial_merge_size=", spatial_merge_size);
-
-        for (size_t ti = 0; ti < t; ++ti) {
-            for (size_t mhi = 0; mhi < merge_h; ++mhi) {
-                for (size_t mwi = 0; mwi < merge_w; ++mwi) {
-                    for (size_t shi = 0; shi < spatial_merge_size; ++shi) {
-                        for (size_t swi = 0; swi < spatial_merge_size; ++swi) {
-                            const size_t src_h = mhi * spatial_merge_size + shi;
-                            const size_t src_w = mwi * spatial_merge_size + swi;
-                            const size_t src_idx = src_offset + ti * hw + src_h * w + src_w;
-
-                            std::memcpy(dst_data + dst_offset * embed_dim,
-                                        pos_embeds_data + src_idx * embed_dim,
-                                        embed_bytes);
-                            ++dst_offset;
-                        }
-                    }
-                }
-            }
-        }
-        src_offset += t * hw;
-    }
-    OPENVINO_ASSERT(
-        dst_offset == num_positions,
-        "permute_with_spatial_merge wrote ", dst_offset,
-        " positions, but num_positions is ", num_positions);
-    return result;
-}
-
-/**
  * @brief Fused permute + in-place addition: permutes position embeddings according to
  *        spatial merge pattern and adds them directly into the destination tensor.
  *
- * Equivalent to:
- *   auto permuted = permute_with_spatial_merge(pos_embeds, grids_thw, spatial_merge_size);
- *   for (i) dst[i] += permuted[i];
- * but avoids allocating the intermediate tensor and makes a single pass.
+ * Reorders [num_positions, embed_dim] position embeddings by the spatial merge pattern
+ * and adds each row into the corresponding dst row, avoiding an intermediate tensor.
  */
 void permute_with_spatial_merge_and_add(
     const ov::Tensor& pos_embeds,
@@ -258,6 +196,8 @@ void permute_with_spatial_merge_and_add(
     const size_t num_positions = pos_embeds.get_shape()[0];
     const size_t embed_dim = pos_embeds.get_shape()[1];
     const float* pos_embeds_data = pos_embeds.data<const float>();
+
+    OPENVINO_ASSERT(spatial_merge_size > 0, "spatial_merge_size must be positive, got 0");
 
     size_t dst_offset = 0;
     size_t src_offset = 0;
@@ -337,6 +277,12 @@ std::shared_ptr<ov::Model> patch_weighted_sum_into_pos_model(
     auto results = model_org->get_results();
     OPENVINO_ASSERT(results.size() == 1u, "Expected single output from vision_embeddings_pos model");
     auto orig_output = results[0]->input_value(0); // [4, N, D]
+
+    const ov::PartialShape& out_pshape = orig_output.get_partial_shape();
+    OPENVINO_ASSERT(out_pshape.rank().is_static() && out_pshape.rank().get_length() == 3,
+        "vision_embeddings_pos output must be rank-3 [4, N, D], got rank ", out_pshape.rank());
+    OPENVINO_ASSERT(!out_pshape[0].is_static() || out_pshape[0].get_length() == 4,
+        "vision_embeddings_pos output dim 0 must be 4, got ", out_pshape[0]);
 
     auto weights_param = std::make_shared<ov::op::v0::Parameter>(
         ov::element::f32, ov::PartialShape{4, -1});
@@ -542,6 +488,13 @@ void InputsEmbedderQwen3VL::add_interpolated_pos_embeds(
     }
 
     size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
+
+    OPENVINO_ASSERT(concatenated_embeds.get_element_type() == ov::element::f32,
+        "concatenated_embeds must be f32, got ", concatenated_embeds.get_element_type());
+    OPENVINO_ASSERT(concatenated_embeds.get_shape() == weighted_sum.get_shape(),
+        "concatenated_embeds shape ", concatenated_embeds.get_shape(),
+        " does not match weighted_sum shape ", weighted_sum.get_shape());
+
     permute_with_spatial_merge_and_add(weighted_sum, concatenated_embeds.data<float>(), grids_thw, spatial_merge_size);
 }
 
