@@ -698,7 +698,37 @@ VLMPipeline::VLMPipeline(
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     utils::clear_false_prompt_lookup_from_config(properties);
-    if (device == "NPU") {
+
+    if (utils::is_gguf_bundle_dir(models_dir)) {
+        OPENVINO_ASSERT(device != "NPU", "VLMPipeline initialization from GGUF directory isn't supported for NPU device");
+
+        auto models_map = utils::read_models(models_dir, properties);
+        auto tokenizer_path = utils::find_llm_gguf_in_dir(models_dir);
+        auto tokenizer = Tokenizer(tokenizer_path, {});
+        auto generation_config = utils::from_config_json_if_exists<GenerationConfig>(models_dir, "generation_config.json");
+
+        // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
+        if (utils::explicitly_requires_paged_attention(user_properties)) {
+            auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+            m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, models_dir, scheduler_config, device, plugin_properties, generation_config);
+        } else if (attention_backend == PA_BACKEND && !requires_sdpa(models_dir)) {
+            // try to call CB adapter one more time, but with safe guard to silent exception
+            try {
+                auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
+                // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
+                // but cannot perform its inference later
+    #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+                m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(models_map, tokenizer, models_dir, scheduler_config, device, plugin_properties, generation_config);
+    #endif
+            } catch (ov::Exception&) {
+                // ignore exceptions from PA
+            }
+        }
+
+        if (m_pimpl == nullptr) {
+            m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, models_dir, device, properties, generation_config);
+        }
+    } else if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);

@@ -142,6 +142,10 @@ std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  c
 
 OPENVINO_GENAI_EXPORTS ModelsMap read_models(const std::filesystem::path& models_dir, const ov::AnyMap& config);
 
+bool is_gguf_bundle_dir(const std::filesystem::path& models_dir);
+
+std::filesystem::path find_llm_gguf_in_dir(const std::filesystem::path& models_dir);
+
 void release_core_plugin(const std::string& device);
 
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
