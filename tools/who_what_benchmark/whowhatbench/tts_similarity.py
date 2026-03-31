@@ -203,25 +203,18 @@ class TTSSimilarityEvaluator:
         segments, _info = self.whisper.transcribe(path, language=language, vad_filter=False)
         return " ".join(seg.text.strip() for seg in segments).strip()
 
-    def compute_speaker_similarity(
-        self, target_audio: np.ndarray, reference_audio: np.ndarray, sr: int
-    ) -> tuple[Optional[float], Optional[str]]:
-        try:
-            import torch
+    def compute_speaker_similarity(self, target_audio: np.ndarray, reference_audio: np.ndarray, sr: int) -> float:
+        import torch
 
-            ref_audio = (
-                librosa.resample(reference_audio, orig_sr=sr, target_sr=16000) if sr != 16000 else reference_audio
-            )
-            tgt_audio = librosa.resample(target_audio, orig_sr=sr, target_sr=16000) if sr != 16000 else target_audio
-            ref_tensor = torch.tensor(ref_audio, dtype=torch.float32).unsqueeze(0)
-            tgt_tensor = torch.tensor(tgt_audio, dtype=torch.float32).unsqueeze(0)
-            with torch.no_grad():
-                emb_ref = self.speaker_model.encode_batch(ref_tensor).reshape(1, -1)
-                emb_tgt = self.speaker_model.encode_batch(tgt_tensor).reshape(1, -1)
-                score = float(cosine_similarity(emb_ref.detach().cpu().numpy(), emb_tgt.detach().cpu().numpy())[0][0])
-            return score, None
-        except Exception as e:
-            return None, f"compute_speaker_similarity: {e}"
+        ref_audio = librosa.resample(reference_audio, orig_sr=sr, target_sr=16000) if sr != 16000 else reference_audio
+        tgt_audio = librosa.resample(target_audio, orig_sr=sr, target_sr=16000) if sr != 16000 else target_audio
+        ref_tensor = torch.tensor(ref_audio, dtype=torch.float32).unsqueeze(0)
+        tgt_tensor = torch.tensor(tgt_audio, dtype=torch.float32).unsqueeze(0)
+        with torch.no_grad():
+            emb_ref = self.speaker_model.encode_batch(ref_tensor).reshape(1, -1)
+            emb_tgt = self.speaker_model.encode_batch(tgt_tensor).reshape(1, -1)
+            score = float(cosine_similarity(emb_ref.detach().cpu().numpy(), emb_tgt.detach().cpu().numpy())[0][0])
+        return score
 
     def evaluate(
         self,
@@ -260,12 +253,10 @@ class TTSSimilarityEvaluator:
         _log(verbose)
 
         # Speaker
-        speaker_raw, speaker_error = self.compute_speaker_similarity(target_audio, reference_audio, self.sample_rate)
+        speaker_raw = self.compute_speaker_similarity(target_audio, reference_audio, self.sample_rate)
         speaker_score = linear_similarity_score(speaker_raw, self.cfg.speaker_bad, self.cfg.speaker_good)
         _log(verbose, "--- Speaker ---")
         _log(verbose, f"Verification score: {speaker_raw}")
-        if speaker_error:
-            _log(verbose, f"Note: {speaker_error}")
         _log(verbose)
 
         # Content
