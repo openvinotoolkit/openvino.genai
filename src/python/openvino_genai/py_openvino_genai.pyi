@@ -1075,8 +1075,8 @@ class GenerationConfig:
         Tree search parameters:
         tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
         tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
-        tree_params.num_speculative_tokens: number of candidate (non-root) tokens from the candidate tree submitted
-                                                  to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
+        num_assistant_tokens (tree search): number of candidate (non-root) tokens submitted to the target model for
+                                            verification. Total tree nodes = num_assistant_tokens + 1 (including root).
     """
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
     apply_chat_template: bool
@@ -1980,8 +1980,8 @@ class LLMPipeline:
             Tree search parameters:
             tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
             tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
-            tree_params.num_speculative_tokens: number of candidate (non-root) tokens from the candidate tree submitted
-                                                      to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
+            num_assistant_tokens (tree search): number of candidate (non-root) tokens submitted to the target model for
+                                                verification. Total tree nodes = num_assistant_tokens + 1 (including root).
         """
     @typing.overload
     def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, device: str, config: collections.abc.Mapping[str, typing.Any] = {}, **kwargs) -> None:
@@ -2083,8 +2083,8 @@ class LLMPipeline:
             Tree search parameters:
             tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
             tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
-            tree_params.num_speculative_tokens: number of candidate (non-root) tokens from the candidate tree submitted
-                                                      to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
+            num_assistant_tokens (tree search): number of candidate (non-root) tokens submitted to the target model for
+                                                verification. Total tree nodes = num_assistant_tokens + 1 (including root).
         """
     def get_generation_config(self) -> GenerationConfig:
         ...
@@ -4102,14 +4102,6 @@ class TreeParams:
         """
     @branching_factor.setter
     def branching_factor(self, arg0: typing.SupportsInt) -> None:
-        ...
-    @property
-    def num_speculative_tokens(self) -> int:
-        """
-        Number of candidate (non-root) tokens from the candidate tree submitted to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root)
-        """
-    @num_speculative_tokens.setter
-    def num_speculative_tokens(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def tree_depth(self) -> int:
