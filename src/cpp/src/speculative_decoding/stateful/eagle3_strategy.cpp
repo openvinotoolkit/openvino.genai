@@ -960,8 +960,8 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
 
     // --- Compute validation windows ---
     // target_validation_window: number of candidate tokens the target model validates in one
-    // step — all N tree nodes (num_speculative_tokens + 1), including the root token.
-    const size_t target_validation_window = m_generation_config.tree_params.num_speculative_tokens + 1;
+    // step — all N tree nodes (num_assistant_tokens + 1), including the root token.
+    const size_t target_validation_window = m_generation_config.num_assistant_tokens + 1;
 
     // draft_validation_window: maximum number of tokens the draft model processes in a single
     // DRAFT_ITERATION pass.  At each iteration all running sequences each contribute one token
@@ -998,7 +998,9 @@ void StatefulEagle3LLMPipeline::ensure_tree_params_is_set(GenerationConfig& conf
     if (!config.is_tree_search()) {
         config.tree_params.branching_factor = DEFAULT_EAGLE_BRANCHING_FACTOR;
         config.tree_params.tree_depth = DEFAULT_EAGLE_TREE_DEPTH;
-        config.tree_params.num_speculative_tokens = DEFAULT_EAGLE_NUM_SPECULATIVE_TOKENS;
+    }
+    if (config.num_assistant_tokens == 0) {
+        config.num_assistant_tokens = DEFAULT_EAGLE_NUM_ASSISTANT_TOKENS;
     }
 }
 

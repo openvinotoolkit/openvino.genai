@@ -367,8 +367,8 @@ public:
     static constexpr size_t DEFAULT_EAGLE_BRANCHING_FACTOR = 2;
     /** @brief Default tree depth (number of DRAFT_ITERATION passes) when not user-specified. */
     static constexpr size_t DEFAULT_EAGLE_TREE_DEPTH = 4;
-    /** @brief Default number of speculative tokens in the tree when not user-specified. */
-    static constexpr size_t DEFAULT_EAGLE_NUM_SPECULATIVE_TOKENS = 7;
+    /** @brief Default number of assistant (speculative) tokens in the tree when not user-specified. */
+    static constexpr size_t DEFAULT_EAGLE_NUM_ASSISTANT_TOKENS = 7;
 
     StatefulEagle3LLMPipeline(const ov::genai::ModelDesc& target_model_desc,
                               const ov::genai::ModelDesc& draft_model_desc);

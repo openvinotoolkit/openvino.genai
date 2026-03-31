@@ -32,7 +32,8 @@ def main():
     # NOTE: ContinuousBatching backend uses `num_assistant_tokens` as is. Stateful backend uses `num_assistant_tokens`'s copy as initial
     # value and adjusts it based on recent number of accepted tokens. If `num_assistant_tokens` is not set, it defaults to `5` for both
     # backends.
-    config.num_assistant_tokens = 4
+    config.num_assistant_tokens = 7
+
     # Add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than
     # `assistant_confidence_threshold`.
     # NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend.
@@ -43,10 +44,9 @@ def main():
     # is compiled with a fixed validation-window size.
     # - branching_factor: number of top-k candidates expanded at each tree node.
     # - tree_depth: lookahead depth of the tree; the draft model runs tree_depth passes per speculative step
-    # - num_speculative_tokens: number of candidate (non-root) tokens submitted to the target model for verification.
+    # - num_assistant_tokens: number of candidate (non-root) tokens submitted to the target model for verification.
     config.tree_params.branching_factor = 2
     config.tree_params.tree_depth = 4
-    config.tree_params.num_speculative_tokens = 7
 
     draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device, generation_config=config)
 
