@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 #include <string>
@@ -41,6 +44,8 @@ utils::LoRATensors flux_xlabs_lora_preprocessing(const utils::LoRATensors& tenso
 Adapter flux_adapter_normalization(const Adapter& adapter);
 
 Adapter diffusers_adapter_normalization(const Adapter& adapter);
+
+std::string detect_lora_prefix(const AdapterConfig& adapters);
 
 }
 }
