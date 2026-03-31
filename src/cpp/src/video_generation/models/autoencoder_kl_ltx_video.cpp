@@ -178,8 +178,11 @@ const AutoencoderKLLTXVideo::Config& AutoencoderKLLTXVideo::get_config() const {
     return m_config;
 }
 
-size_t AutoencoderKLLTXVideo::get_vae_scale_factor() const {  // TODO: compare with reference. Drop?
-    return std::pow(2, m_config.block_out_channels.size() - 1);
+size_t AutoencoderKLLTXVideo::get_vae_scale_factor() const {
+    return m_config.patch_size *
+           static_cast<size_t>(std::pow(2, std::accumulate(m_config.spatio_temporal_scaling.begin(),
+                                                           m_config.spatio_temporal_scaling.end(),
+                                                           0)));
 }
 
 void AutoencoderKLLTXVideo::merge_vae_video_post_processing() const {
