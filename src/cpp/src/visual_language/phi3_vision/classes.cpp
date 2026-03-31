@@ -1045,8 +1045,8 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_promp
     }
     ov::Tensor new_merged_tokens = phi_utils::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
     ov::Tensor new_tokens = update_history(new_merged_tokens);
-    m_prev_hist_length = m_kv_cache_state.get_state().size();
-    m_kv_cache_state.add_inputs(new_tokens);
+    m_prev_hist_length = m_cache_state.get_state().size();
+    m_cache_state.add_inputs(new_tokens);
 
     std::vector<std::variant<ov::Tensor, size_t>> tokens = phi_utils::drop_image_placeholders(new_tokens);
     ov::Tensor inputs_embeds{ov::element::f32, {1, new_tokens.get_shape().at(1), m_vlm_config.hidden_size}};

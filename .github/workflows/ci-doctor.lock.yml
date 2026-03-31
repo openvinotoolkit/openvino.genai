@@ -342,6 +342,10 @@ jobs:
           persist-credentials: false
           ref: ${{ steps.get-head-sha.outputs.head_sha }}
 
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
       # Cache memory file share configuration from frontmatter processed below
       - name: Create cache-memory directory
         run: bash /opt/gh-aw/actions/create_cache_memory_dir.sh
