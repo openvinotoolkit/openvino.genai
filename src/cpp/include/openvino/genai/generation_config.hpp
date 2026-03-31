@@ -622,7 +622,7 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param max_ngram_size is maximum ngram to use when looking for matches in the prompt.
  *
  * Tree search parameters:
- * @param tree_params.branching_factor number of top-k candidates expanded at each tree node (branching factor).
+ * @param tree_params.branching_factor number of top-k candidates selected per tree node and kept globally per tree layer.
  * @param tree_params.tree_depth lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
  * @param tree_params.num_speculative_tokens number of candidate (non-root) tokens from the candidate tree submitted
  *        to the target model for verification. Total tree nodes for validation = `num_speculative_tokens + 1` (including root).
