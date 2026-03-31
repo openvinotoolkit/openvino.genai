@@ -195,7 +195,7 @@ py::object _call_cb_generate(
     py::object results;
 
     std::visit(pyutils::overloaded {
-    [&](const std::vector<ov::Tensor> input_ids) {
+    [&](const std::vector<ov::Tensor>& input_ids) {
         std::vector<ov::genai::EncodedGenerationResult> encoded_results;
         {
             py::gil_scoped_release rel;
