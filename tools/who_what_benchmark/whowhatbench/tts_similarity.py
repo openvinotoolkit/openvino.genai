@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import re
 import string
@@ -18,6 +19,7 @@ import soundfile as sf
 
 DEFAULT_SR = 16000
 DEFAULT_WHISPER_MODEL = "base.en"
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -125,7 +127,7 @@ def format_float(x: Optional[float], digits: int = 3) -> str:
 
 def _log(verbose: bool, msg: str = "") -> None:
     if verbose:
-        print(msg)
+        LOGGER.debug(msg)
 
 
 def load_audio_mono(path: str, sr: int) -> tuple[np.ndarray, int]:
@@ -227,9 +229,10 @@ class TTSSimilarityEvaluator:
         from jiwer import cer as jiwer_cer
         from jiwer import wer as jiwer_wer
 
-        if not verbose:
-            import logging
-
+        if verbose:
+            LOGGER.setLevel(logging.DEBUG)
+        else:
+            # By default, faster_whisper will log "Processing audio with duration=XXs", so disable it.
             logging.getLogger("faster_whisper").setLevel(logging.ERROR)
 
         target_audio, sr_t = load_audio_mono(target_path, self.sample_rate)
@@ -423,6 +426,9 @@ def main() -> int:
     p.add_argument("--json-out", default=None)
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     scores = evaluate_tts_similarity(
         target_path=args.target,
