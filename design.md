@@ -734,3 +734,32 @@ The design describes three ways to define property (priority order from lowest t
 ### ContinuousBatchingPipeline
 
 `ContinuousBatchingPipeline` serves both text-only and VLM workloads. For text-only overloads, no changes are needed - internal InputsEmbedder will be created automatically. To work with VLM inputs, construction should provide a `VLMProcessor` instance, and users should call the new `add_request(request_id, VLMInputs, GenerationConfig)` overload that accepts pre-processed inputs. Existing `add_request()` overloads remain unchanged and non-deprecated for backward compatibility.
+
+## Implementation Steps
+
+### Phase 1: Add VLMProcessor and VLMInputs (new public classes, possible duplicated code)
+
+Classes `VLMProcessor`, `VLMInputs`, `DeviceMapping` as new public API. No changes to existing classes.
+
+- Add `VLMInputs` struct (new headers under `visual_language/`).
+- Add `DeviceMapping` typedef in `common_types.hpp`.
+- Implement `VLMProcessor` — internally takes ownership of `VisionEncoder`, `EmbeddingsModel`, `VisionRegistry`, and `IInputsEmbedder` (moved from `VLMPipelineImpl`; source files stay in place).
+- Implement `PER_MODEL_PROPERTIES` resolution (global → `DEVICE_PROPERTIES` → `PER_MODEL_PROPERTIES`).
+- Add Python bindings, unit tests, docs.
+
+**Deliverable:** `VLMProcessor` works standalone. `VLMPipeline` unchanged.
+
+### Phase 2: Use VLMProcessor/VLMInputs in VLMPipeline and ContinuousBatchingPipeline (breaking change with deprecation)
+
+`VLMPipeline` and `ContinuousBatchingPipeline` consumes `VLMInputs` as primary input; old API deprecated.
+
+- Add `VLMPipeline(path, processor, device)` constructors — pipeline loads only the LLM, shares `VisionRegistry` with the processor.
+- Add `generate(VLMInputs, ...)` overloads.
+- Deprecate `generate(prompt, images, ...)`, `start_chat()`, `finish_chat()` with `[[deprecated]]`.
+- Legacy constructors (`VLMPipeline(path, device)`) create a `VLMProcessor` internally — not deprecated.
+- Add `ContinuousBatchingPipeline` constructor accepting `VLMProcessor`.
+- Add `add_request(request_id, VLMInputs, config)` and batch `generate(vector<VLMInputs>, ...)` overloads.
+- Existing `add_request(prompt, images, ...)` overloads unchanged.
+- Update Python bindings, samples, tests.
+
+**Deliverable:** Recommended flow is `processor.embed()` → `pipeline.generate(VLMInputs)`.
