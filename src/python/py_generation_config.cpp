@@ -197,8 +197,8 @@ char generation_config_docstring[] = R"(
     Tree search parameters:
     tree_params.branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
     tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
-    tree_params.num_speculative_tokens: number of candidate (non-root) tokens from the candidate tree submitted
-                                              to the target model for verification. Total tree nodes = num_speculative_tokens + 1 (including root).
+    num_assistant_tokens (tree search): number of candidate (non-root) tokens submitted to the target model for
+                                        verification. Total tree nodes = num_assistant_tokens + 1 (including root).
 )";
 
 template <typename PyClass>
@@ -426,14 +426,9 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("tree_depth",
                        &GenerationConfig::TreeParams::tree_depth,
                        "Lookahead depth of the candidate tree")
-        .def_readwrite("num_speculative_tokens",
-                       &GenerationConfig::TreeParams::num_speculative_tokens,
-                       "Number of candidate (non-root) tokens from the candidate tree submitted to the target model for verification. "
-                       "Total tree nodes = num_speculative_tokens + 1 (including root)")
         .def("__repr__", [](const GenerationConfig::TreeParams& self) {
             return "TreeParams(branching_factor=" + std::to_string(self.branching_factor) +
-                   ", tree_depth=" + std::to_string(self.tree_depth) +
-                   ", num_speculative_tokens=" + std::to_string(self.num_speculative_tokens) + ")";
+                   ", tree_depth=" + std::to_string(self.tree_depth) + ")";
         });
 
     // Binding for GenerationConfig
