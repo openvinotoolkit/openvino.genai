@@ -4,7 +4,7 @@ sentence-transformers>=2.2.2,<=5.3.0
 openvino-genai
 optimum-intel[nncf]>=1.19.0,<=1.27.0
 pandas>=2.0.3,<=2.3.1
-numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
+numpy==2.4.4; platform_system == "Darwin" and platform_machine == "x86_64"
 numpy>=1.16.6,<=2.4.2; platform_system != "Darwin" or platform_machine != "x86_64"
 tqdm>=4.66.1,<=4.67.3
 diffusers>=0.22.0,<=0.37.1
