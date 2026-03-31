@@ -369,7 +369,7 @@ void Eagle3InferWrapperBase::trim_kv_cache(size_t tokens_to_remove) {
 }
 
 void Eagle3InferWrapperBase::set_npu_sampling_result(size_t num_candidates,
-                                                     const std::vector<int64_t>& accepted_indices) {
+                                                     const std::vector<size_t>& accepted_indices) {
     const size_t num_accepted = accepted_indices.size();
 
     constexpr const char* STATE_NAME = "npuw_eagle3_sampling_result";
@@ -389,8 +389,8 @@ void Eagle3InferWrapperBase::set_npu_sampling_result(size_t num_candidates,
         data[0] = static_cast<int64_t>(num_candidates);
         data[1] = static_cast<int64_t>(num_accepted);
         std::fill_n(data + 2, num_candidates, int64_t{0});
-        for (const int64_t idx : accepted_indices) {
-            OPENVINO_ASSERT(idx >= 0 && static_cast<size_t>(idx) < num_candidates,
+        for (const size_t idx : accepted_indices) {
+            OPENVINO_ASSERT(idx < num_candidates,
                             "accepted_index ", idx, " is out of range [0, ", num_candidates, ")");
             data[2 + idx] = 1;
         }
@@ -1279,7 +1279,7 @@ void StatefulEagle3LLMPipeline::gather_accepted_hidden_states(const ValidationRe
     float* dst = next_hidden.data<float>();
 
     for (size_t i = 0; i < total_accepted_tokens; ++i) {
-        const size_t row = static_cast<size_t>(validated_indices[i]);
+        const size_t row = validated_indices[i];
         OPENVINO_ASSERT(row < h_shape[1],
                         "validated_indices[",
                         i,

@@ -131,7 +131,7 @@ public:
     /// @param num_candidates   Total number of candidate tokens fed to the model (N+1).
     /// @param accepted_indices Candidate indices that were accepted (from TreeMetaData::validated_indices).
     ///                         Index 0 is always the root; subsequent entries are accepted draft nodes.
-    void set_npu_sampling_result(size_t num_candidates, const std::vector<int64_t>& accepted_indices);
+    void set_npu_sampling_result(size_t num_candidates, const std::vector<size_t>& accepted_indices);
 
     void reset_state();
     void release_memory();
