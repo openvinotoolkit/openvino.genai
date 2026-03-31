@@ -58,7 +58,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
     # Override it to preserve max_new_tokens.
     max_length = 2**64 - 1
-    log.info("[%s] Text generation start: %s", num, datetime.datetime.now().isoformat())
+    log.info("Text generation start: %s", datetime.datetime.now().isoformat())
     start = time.perf_counter()
     if streaming:
         if args['infer_count'] is not None and args['end_token_stopping'] is False:
@@ -111,7 +111,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
                 **additional_args
             )
     end = time.perf_counter()
-    log.info("[%s] Text generation end: %s", num, datetime.datetime.now().isoformat())
+    log.info("Text generation end: %s", datetime.datetime.now().isoformat())
     generation_time = end - start
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
@@ -202,7 +202,7 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         input_data = [ov.Tensor([input]) for input in input_data.input_ids.data]
         gen_config = [gen_config] * batch_size
 
-    log.info("[%s] Text generation start: %s", num, datetime.datetime.now().isoformat())
+    log.info("Text generation start: %s", datetime.datetime.now().isoformat())
     start = time.perf_counter()
     if streaming:
         text_print_streamer = get_genai_chunk_streamer()(model.get_tokenizer(), tokens_len)
@@ -233,7 +233,7 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         else:
             generation_result = model.generate(input_data, gen_config)
     end = time.perf_counter()
-    log.info("[%s] Text generation end: %s", num, datetime.datetime.now().isoformat())
+    log.info("Text generation end: %s", datetime.datetime.now().isoformat())
     generated_tokens = []
     if cb_pipeline:
         for res in generation_result:
@@ -484,11 +484,11 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         config_info += f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
         log.info(config_info)
 
-    log.info("[%s] Text generation start: %s", num, datetime.datetime.now().isoformat())
+    log.info("Text generation start: %s", datetime.datetime.now().isoformat())
     start = time.perf_counter()
     generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens
     end = time.perf_counter()
-    log.info("[%s] Text generation end: %s", num, datetime.datetime.now().isoformat())
+    log.info("Text generation end: %s", datetime.datetime.now().isoformat())
     generation_time = end - start
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
@@ -591,30 +591,35 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
                 p_idx = prompt_idx_list[idx]
+                # Set the logger prefix for current iteration and prompt index
+                prefix = f'[warm-up][P{p_idx}]' if num == 0 else f'[{num}][P{p_idx}]'
+                log.handlers[0].setFormatter(log.Formatter(f'{prefix} %(message)s'))
                 mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 if num == 0:
-                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
+                    metrics_print.print_unicode(f'{prefix} Input text: {input_text}', f'{prefix} Unable print input text',
                                                 max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                             p_idx, bench_hook, tokens_len, streaming, model_precision, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
+                
+                log.info(f"start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
     else:
         for idx, input_text in enumerate(text_list):
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
                 mem_consumption.update_marker(f"step-{num}-{p_idx}")
+                # Set the logger prefix for current iteration and prompt index
+                prefix = f'[warm-up][P{p_idx}]' if num == 0 else f'[{num}][P{p_idx}]'
+                log.handlers[0].setFormatter(log.Formatter(f'{prefix} %(message)s'))
                 if num == 0:
-                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
+                    metrics_print.print_unicode(f'{prefix} Input text: {input_text}', f'{prefix} Unable print input text',
                                                 max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                             prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
+                log.info(f"start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time, iter_timestamp
