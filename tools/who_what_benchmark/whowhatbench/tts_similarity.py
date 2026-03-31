@@ -204,7 +204,7 @@ class TTSSimilarityEvaluator:
 
     def compute_speaker_similarity(
         self, target_path: str, reference_path: str
-    ) -> tuple[Optional[float], Optional[int], Optional[str]]:
+    ) -> tuple[Optional[float], Optional[str]]:
         try:
             import torch
 
@@ -216,10 +216,9 @@ class TTSSimilarityEvaluator:
                 emb_ref = self.speaker_model.encode_batch(ref_tensor).reshape(1, -1)
                 emb_tgt = self.speaker_model.encode_batch(tgt_tensor).reshape(1, -1)
                 score = float(torch.nn.functional.cosine_similarity(emb_ref, emb_tgt, dim=1).item())
-            pred = int(score >= 0.25)
-            return score, pred, None
+            return score, None
         except Exception as e:
-            return None, None, f"compute_speaker_similarity: {e}"
+            return None, f"compute_speaker_similarity: {e}"
 
     def evaluate(
         self,
@@ -258,11 +257,10 @@ class TTSSimilarityEvaluator:
         _log(verbose)
 
         # Speaker
-        speaker_raw, speaker_pred, speaker_error = self.compute_speaker_similarity(target_path, reference_path)
+        speaker_raw, speaker_error = self.compute_speaker_similarity(target_path, reference_path)
         speaker_score = linear_similarity_score(speaker_raw, self.cfg.speaker_bad, self.cfg.speaker_good)
         _log(verbose, "--- Speaker ---")
         _log(verbose, f"Verification score: {speaker_raw}")
-        _log(verbose, f"Same-speaker prediction: {speaker_pred}")
         if speaker_error:
             _log(verbose, f"Note: {speaker_error}")
         _log(verbose)
