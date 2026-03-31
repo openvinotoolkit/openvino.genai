@@ -16,11 +16,11 @@ constexpr float DEFAULT_METADATA_FPS = 24.0f;
  * @return Vector of float timestamps corresponding to each video frame.
  */
 std::vector<float> calculate_timestamps(const VideoMetadata& video_metadata, size_t merge_size) {
-    OPENVINO_ASSERT(video_metadata.fps >= 0.0f, "Video metadata fps must be positive for timestamp calculation.");
+    OPENVINO_ASSERT(video_metadata.fps >= 0.0f, "Video metadata fps must be non-negative for timestamp calculation.");
 
     float metadata_fps = video_metadata.fps;
     if (metadata_fps == 0.0f) {
-        GENAI_INFO("Qwen3-VL requires frame timestamps to construct prompts, but VideoMetadata is missing or fps is not set. "
+        GENAI_WARN("Qwen3-VL requires frame timestamps to construct prompts, but VideoMetadata is missing or fps is not set. "
             "Defaulting to 24 fps. Please provide VideoMetadata with fps for more accurate results.");
         metadata_fps = DEFAULT_METADATA_FPS;
     }
@@ -49,7 +49,7 @@ std::vector<float> calculate_timestamps(const VideoMetadata& video_metadata, siz
  */
 void fill_video_metadata(VideoMetadata& video_metadata, size_t total_num_frames, const VideoProcessorConfig& video_config) {
     if (!video_metadata.frames_indices.empty()) {
-        GENAI_INFO("Frames indices already provided in video metadata, skipping Qwen3-VL model-specific sampling.");
+        GENAI_WARN("Frames indices already provided in video metadata, skipping Qwen3-VL model-specific sampling.");
         return;
     }
 
@@ -68,7 +68,7 @@ void fill_video_metadata(VideoMetadata& video_metadata, size_t total_num_frames,
     
     if (num_frames == 0 && video_config.fps != 0.0f) {
         if (video_metadata.fps == 0.0f) {
-            GENAI_INFO("Requested to sample frames by fps, but video metadata fps is not set. "
+            GENAI_WARN("Requested to sample frames by fps, but video metadata fps is not set. "
                 "Defaulting to 24 fps for frame sampling. "
                 "Please provide VideoMetadata with fps for more accurate results.");
             video_metadata.fps = DEFAULT_METADATA_FPS;

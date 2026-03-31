@@ -545,8 +545,10 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
     std::vector<ov::genai::EncodedVideo> encoded_videos;
     encoded_videos.reserve(videos.size());
 
+    VideoMetadata default_metadata{};
+
     for (size_t i = 0; i < videos.size(); ++i) {
-        const VideoMetadata& video_metadata = i < videos_metadata.size() ? videos_metadata[i] : VideoMetadata{};
+        const VideoMetadata& video_metadata = i < videos_metadata.size() ? videos_metadata[i] : default_metadata;
         const auto sampled_video = sample_video_if_needed(videos[i], video_metadata);
         std::vector<ov::Tensor> frames = to_single_image_tensors({sampled_video});
 
