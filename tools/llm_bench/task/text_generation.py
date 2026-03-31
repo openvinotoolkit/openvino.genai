@@ -587,13 +587,14 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
     proc_id = os.getpid()
     mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
+    original_formatter = log.root.handlers[0].formatter
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
                 p_idx = prompt_idx_list[idx]
                 # Set the logger prefix for current iteration and prompt index
                 prefix = f'[warm-up][P{p_idx}]' if num == 0 else f'[{num}][P{p_idx}]'
-                log.handlers[0].setFormatter(log.Formatter(f'{prefix} %(message)s'))
+                log.root.handlers[0].setFormatter(log.Formatter(f'[ %(levelname)s ] {prefix} %(message)s'))
                 mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 if num == 0:
                     metrics_print.print_unicode(f'{prefix} Input text: {input_text}', f'{prefix} Unable print input text',
@@ -611,7 +612,7 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
                 mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 # Set the logger prefix for current iteration and prompt index
                 prefix = f'[warm-up][P{p_idx}]' if num == 0 else f'[{num}][P{p_idx}]'
-                log.handlers[0].setFormatter(log.Formatter(f'{prefix} %(message)s'))
+                log.root.handlers[0].setFormatter(log.Formatter(f'[ %(levelname)s ] {prefix} %(message)s'))
                 if num == 0:
                     metrics_print.print_unicode(f'{prefix} Input text: {input_text}', f'{prefix} Unable print input text',
                                                 max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
@@ -621,5 +622,6 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
                 log.info(f"start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
+    log.root.handlers[0].setFormatter(original_formatter)
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time, iter_timestamp
