@@ -598,6 +598,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
         video_features.set_shape(new_shape);
         encoded_video.video_features = std::move(video_features);
         encoded_video.num_video_tokens = num_video_tokens;
+        encoded_video.metadata = video_metadata;
         encoded_videos.push_back(encoded_video);
     }
     return encoded_videos;

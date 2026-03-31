@@ -1215,6 +1215,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderQwen2VL::encode_videos(
         const auto sampled_video = sample_video_if_needed(video, video_metadata);
         std::vector<ov::Tensor> frames = to_single_image_tensors({sampled_video});
         auto encoded_video = m_vision_encoder->encode_frames(frames);
+        encoded_video.metadata = video_metadata;
         encoded_videos.emplace_back(encoded_video);
     }
     return encoded_videos;
