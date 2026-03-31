@@ -1,5 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
+numpy==2.4.4; platform_system == "Darwin" and platform_machine == "x86_64"
 numpy>=1.16.6,<=2.4.2; platform_system != "Darwin" or platform_machine != "x86_64"
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino
