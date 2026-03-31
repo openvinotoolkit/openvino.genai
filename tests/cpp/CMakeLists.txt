@@ -48,3 +48,8 @@ install(TARGETS ${TEST_TARGET_NAME}
         RUNTIME DESTINATION tests/
         COMPONENT tests
         EXCLUDE_FROM_ALL)
+
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/"
+        DESTINATION tests/data/
+        COMPONENT tests
+        EXCLUDE_FROM_ALL)
