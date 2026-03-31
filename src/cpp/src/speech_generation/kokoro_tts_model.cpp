@@ -268,7 +268,7 @@ bool has_required_misaki_lexicon_files(const std::filesystem::path& root) {
 }
 
 void configure_misaki_lexicon_data_root_from_model_dir(const std::filesystem::path& models_path) {
-    const auto model_lexicon_root = models_path / "misaki_data";
+    const auto model_lexicon_root = models_path / "data";
     if (!has_required_misaki_lexicon_files(model_lexicon_root)) {
         return;
     }
