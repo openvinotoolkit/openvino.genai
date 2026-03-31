@@ -6,14 +6,12 @@ The current VLMPipeline is monolithic — it owns the vision encoder, text embed
 
 * No embedding reuse — you can't get vision embeddings without running the LLM.
 * No cache reuse between text generation pipeline and embeddings-only workflows (retrieval, similarity search, etc.). Moving VisionRegistry from Pipeline to Processor allows sharing cached embeddings across multiple pipelines and use cases.
-* Tight coupling — `ContinuousBatchingPipeline` duplicates VLM logic via `VLMContinuousBatchingAdapter` instead of sharing a common Processor.
 * It is not possible to define target device and plugin config separately for the processor models and the LLM model. (**CVS-162621**)
-* Not aligned with other libraries, for example `transformers` — HuggingFace's pattern is Processor + Model, which allows users to inspect/modify embeddings between the two steps.
+* It is not possible to infer embeddings on NPU due to static shape limitations.
 * Multiple methods to work with history — `start_chat()`/`finish_chat()` coexists with `ChatHistory`, causing confusion about which approach to use. (Note: `LLMPipeline` has already deprecated these methods; `VLMPipeline` has not yet.)
-* No statefulness separation — the pipeline mixes preprocessing state with generation state, making it hard to share a processor across pipelines or use it standalone.
+* Not aligned with other libraries, for example `transformers` — HuggingFace's pattern is Processor + Model, which allows users to inspect/modify embeddings between the two steps.
 
-HuggingFace alignment
-HF's canonical VLM flow:
+`transformers` canonical VLM flow:
 ```
 processor = AutoProcessor.from_pretrained("model_id")
 model = AutoModelForVision2Seq.from_pretrained("model_id")
@@ -92,6 +90,7 @@ struct VLMInputs {
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/vlm_inputs.hpp"
+#include "openvino/genai/visual_language/video_metadata.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/common_types.hpp"
 
@@ -108,13 +107,13 @@ using DeviceMapping = std::map<std::string, std::string>;
 /// vision encoding, text tokenization, embedding merging, and
 /// chat template application (via internal Tokenizer).
 ///
-/// Analogous to HuggingFace's AutoProcessor — combines an image
+/// Analogous to transformers's AutoProcessor — combines an image
 /// processor (VisionEncoder) and a tokenizer/embedder into a
 /// single preprocessing pipeline.
 ///
 /// Usage:
 ///   auto processor = VLMProcessor("path/to/models", "GPU");
-///   auto inputs = processor.embed("Describe this image", {image_tensor});
+///   auto inputs = processor.embed("Describe this image <ov_image_0>", {image_tensor});
 ///   auto result = llm.generate(inputs, generation_config);
 class OPENVINO_GENAI_EXPORTS VLMProcessor {
 public:
@@ -191,11 +190,11 @@ public:
     ///
     /// Performs the preprocessing pipeline:
     /// 1. DOES NOT apply chat template — prompt is treated as a
-    ///    pre-formatted string. Use the ChatHistory overload for
+    ///    pre-formatted string. Use the overload with ChatHistory for
     ///    automatic template application.
     /// 2. Normalizes image/video tags (universal <-> model-native).
     /// 3. Encodes images/videos through the vision encoder.
-    ///    NOTE: this overload does muse use VisionRegistry caching —
+    ///    NOTE: this overload uses VisionRegistry caching —
     ///    therefore VisionRegistry ownership must be moved from
     ///    VLMPipeline/ChatHistory to VLMProcessor.
     /// 4. Tokenizes the text and computes text embeddings.
@@ -210,12 +209,15 @@ public:
     /// @param prompt Text prompt, prepared manually by the caller.
     /// @param images RGB image tensors with [NHWC] or [HWC] layout.
     /// @param videos Video frame tensors with [NHWC] layout.
+    /// @param videos_metadata Optional per-video metadata controlling
+    ///        frame sampling.
     /// @return VLMInputs ready to pass to VLMPipeline::generate()
     ///         or ContinuousBatchingPipeline::add_request().
     VLMInputs embed(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images = {},
-        const std::vector<ov::Tensor>& videos = {}
+        const std::vector<ov::Tensor>& videos = {},
+        const std::vector<VideoMetadata>& videos_metadata = {}
     );
 
     /// @brief Overload that accepts a ChatHistory.
@@ -227,12 +229,14 @@ public:
     /// @param history ChatHistory containing system, user, and assistant turns.
     /// @param images Optional image tensors.
     /// @param videos Optional video tensors.
+    /// @param videos_metadata Optional per-video metadata.
     /// @return VLMInputs with the chat template applied to the history
     ///         and vision features merged in.
     VLMInputs embed(
         const ChatHistory& history,
         const std::vector<ov::Tensor>& images = {},
-        const std::vector<ov::Tensor>& videos = {}
+        const std::vector<ov::Tensor>& videos = {},
+        const std::vector<VideoMetadata>& videos_metadata = {}
     );
 
     /// @brief Extract image embeddings without merging with text.
@@ -252,22 +256,17 @@ public:
     ///
     /// @param video Video frames as a 4D tensor with [NHWC] layout,
     ///        where N is the number of frames. Shape: [N, H, W, C].
+    /// @param video_metadata Optional metadata for frame sampling.
     /// @return Embedding tensor. Shape: [num_tokens, hidden_size].
-    ov::Tensor get_video_embeddings(const ov::Tensor& video);
+    ov::Tensor get_video_embeddings(
+        const ov::Tensor& video,
+        const VideoMetadata& video_metadata = {}
+    );
 
     /// @brief Get the underlying tokenizer.
     /// Also provides access to set_chat_template() for overriding
     /// the chat template used by embed(ChatHistory, ...).
     Tokenizer get_tokenizer() const;
-
-    class Impl;
-
-private:
-    std::unique_ptr<Impl> m_impl;
-
-    // Required so VLMPipeline can access m_impl to reuse
-    // InputsEmbedder, EmbeddingsModel, and VisionRegistry.
-    friend class VLMPipeline;
 };
 
 } // namespace ov::genai
@@ -298,7 +297,8 @@ namespace ov::genai {
 /// Usage:
 ///   auto processor = VLMProcessor("path/to/models", "GPU");
 ///   auto llm = VLMPipeline("path/to/models", processor, "GPU");
-///   auto inputs = processor.embed("Describe this image", {image_tensor});
+///   auto inputs = processor.embed(
+///        "Describe this image <ov_image_0>", {image_tensor});
 ///   auto result = llm.generate(inputs, generation_config);
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
@@ -356,15 +356,6 @@ public:
         const ov::AnyMap& config_map
     );
 
-    /// @brief Variadic property overload.
-    template <typename... Properties>
-    util::EnableIfAllStringAny<VLMDecodedResults, Properties...> generate(
-        const VLMInputs& inputs,
-        Properties&&... properties
-    ) {
-        return generate(inputs, AnyMap{std::forward<Properties>(properties)...});
-    }
-
     /// ---- Legacy convenience overloads (delegate to internal processor) ----
     /// These use VLMProcessor passed in constructor for backward compatibility.
     /// New code should prefer the VLMProcessor + generate(VLMInputs) pattern.
@@ -413,10 +404,6 @@ public:
         const ov::AnyMap& properties = {},
         const GenerationConfig& generation_config = {}
     );
-
-private:
-    class Impl;
-    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace ov::genai
@@ -448,6 +435,7 @@ std::vector<VLMDecodedResults> generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer = std::monostate{}
 );
+
 ```
 
 ## Complete usage examples
@@ -550,6 +538,13 @@ auto img_emb2 = processor.get_image_embeddings(image2);
 // Extract video embeddings — video is a 4D tensor [N_frames, H, W, C]
 auto vid_emb = processor.get_video_embeddings(video1);    // [num_tokens, hidden_size]
 
+// Extract video embeddings with metadata-driven sampling
+ov::genai::VideoMetadata meta;
+meta.total_num_frames = 120;
+meta.fps = 24.0f;
+meta.frames_indices = {0, 15, 30, 45, 60, 75, 90, 105};
+auto vid_emb_sampled = processor.get_video_embeddings(video1, meta);
+
 // Use for retrieval, similarity, caching, etc.
 ```
 
@@ -561,8 +556,12 @@ auto llm = ov::genai::ContinuousBatchingPipeline("path/to/models", scheduler_con
 // Embed multiple requests
 auto inputs1 = processor.embed(
     "<|im_start|><ov_image_0> What is in this photo?<|im_end|><|im_start|>", {photo1});
+
 auto inputs2 = processor.embed(
-    "<|im_start|><ov_image_0> Describe this diagram<|im_end|><|im_start|>", {diagram});
+    "<|im_start|><ov_video_0> Describe this video<|im_end|><|im_start|>",
+    {},          // no images
+    {video}
+);
 
 // Submit to continuous batching
 auto handle1 = llm.add_request(1, inputs1, config);
@@ -577,7 +576,32 @@ auto results1 = handle1->read_all();
 auto results2 = handle2->read_all();
 ```
 
-### Example 6: Inspecting / modifying embeddings between processor and LLM
+### Example 6: Video with metadata — VLMPipeline
+```cpp
+auto processor = ov::genai::VLMProcessor("path/to/models", "GPU");
+auto llm = ov::genai::VLMPipeline("path/to/models", processor, "GPU");
+
+// Prepare per-video metadata
+ov::genai::VideoMetadata meta;
+meta.total_num_frames = 120;
+meta.fps = 24.0f;
+// Explicitly select 8 frames: pipeline skips model-specific sampling
+meta.frames_indices = {0, 15, 30, 45, 60, 75, 90, 105};
+
+auto inputs = processor.embed(
+    "<|im_start|><ov_video_0> Describe this video<|im_end|><|im_start|>",
+    {},             // no images
+    {video_tensor}, // video with all 120 frames
+    {meta}          // per-video metadata
+);
+
+ov::genai::GenerationConfig config;
+config.max_new_tokens = 256;
+auto result = llm.generate(inputs, config);
+std::cout << result.texts.at(0) << std::endl;
+```
+
+### Example 8: Inspecting / modifying embeddings between processor and LLM
 ```cpp
 auto processor = ov::genai::VLMProcessor("path/to/models", "GPU");
 auto llm = ov::genai::VLMPipeline("path/to/models", processor, "GPU");
@@ -627,16 +651,11 @@ Drop `start_chat()` / `finish_chat()` from `VLMPipeline`. `LLMPipeline` has alre
 
 To override the chat template, call `processor.get_tokenizer().set_chat_template(...)` — no dedicated method on `VLMProcessor` is needed.
 
-### Processor with Embeddings Cache, Pipeline Manages KV Cache and State
+### Processor manages Embeddings cache via Vision Registry
 
 The processor is able to **cache** embeddings — `VLMProcessor::embed()` always produces embeddings for the full prompt or full `ChatHistory`. It does not track what the pipeline has already processed, other than full image/video deduplication via the shared `VisionRegistry`. This means that if the same image appears in multiple calls to `embed()`, it will be encoded once and cached in the `VisionRegistry` for subsequent reuse, regardless of how many pipelines or requests are using it.
 
-The pipeline is **stateful** — `VLMPipeline::generate()` owns the KV cache and is responsible for:
-1. Comparing the incoming `VLMInputs.inputs_embeds` sequence against its cached state.
-2. Detecting whether a full KV cache reset is needed (e.g., if the conversation diverged) or whether the cached prefix can be reused.
-3. Trimming the prefix of `inputs_embeds` that overlaps with already-cached tokens and feeding only the new suffix to the LLM.
-
-This matches the `transformers` model where the processor always produces full inputs and `model.generate()` handles caching via `past_key_values`. The existing `VLMChatContext` logic for `needs_kv_cache_reset` moves entirely into the pipeline implementation. The `VisionRegistry` (owned by the processor but shared with the pipeline) continues to deduplicate encoded images across turns — the processor checks the registry before re-encoding an image, regardless of KV cache state.
+The existing `VLMChatContext` logic for `needs_kv_cache_reset` moves entirely into the pipeline implementation. The `VisionRegistry` (owned by the processor but shared with the pipeline) continues to deduplicate encoded images across turns — the processor checks the registry before re-encoding an image, regardless of KV cache state.
 
 ### VisionRegistry Ownership and Sharing
 
@@ -704,7 +723,6 @@ The design describes three ways to define property (priority order from lowest t
 - DEVICE_PROPERTIES (**it exists now**) -> applies to all models on that device, overrides global properties for those models
 - PER_MODEL_PROPERTIES (**new**) -> applies to a specific model, overrides both global and device properties
 
-
 ## Backward Compatibility
 
 ### VLMPipeline
@@ -716,4 +734,3 @@ The design describes three ways to define property (priority order from lowest t
 ### ContinuousBatchingPipeline
 
 `ContinuousBatchingPipeline` serves both text-only and VLM workloads. For text-only overloads, no changes are needed - internal InputsEmbedder will be created automatically. To work with VLM inputs, construction should provide a `VLMProcessor` instance, and users should call the new `add_request(request_id, VLMInputs, GenerationConfig)` overload that accepts pre-processed inputs. Existing `add_request()` overloads remain unchanged and non-deprecated for backward compatibility.
-
