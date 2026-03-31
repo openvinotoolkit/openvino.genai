@@ -12,30 +12,70 @@ import torch
 import torch.nn.functional as F
 
 import cv2
+import logging
 import numpy as np
+import pandas as pd
 from sentence_transformers import SentenceTransformer, util
 from transformers import CLIPImageProcessor, CLIPModel
 from tqdm import tqdm
 from skimage.metrics import structural_similarity
 from sklearn.metrics.pairwise import cosine_similarity
 
+# Reduce INFO log messages printed during SentenceTransformer and CLIP initialization
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.ERROR)
 
-def evaluate_similarity(model, data_gold, data_prediction):
+
+def evaluate_similarity(
+    model: SentenceTransformer, data_gold: pd.DataFrame, data_prediction: pd.DataFrame
+) -> tuple[dict, dict]:
     answers_gold = data_gold["answers"].values
     answers_prediction = data_prediction["answers"].values
 
+    metric_per_chat_answer_list = []
     metric_per_question = []
-    for gold, prediction in tqdm(
-        zip(answers_gold, answers_prediction),
+
+    # gold, prediction are output of the model to compare
+    # type: str, in question mode
+    # type: list, in chat mode
+    gold: list[str] | str
+    prediction: list[str] | str
+    for i, (gold, prediction) in tqdm(
+        enumerate(zip(answers_gold, answers_prediction)),
         total=min(len(answers_gold), len(answers_prediction)),
         desc="Similarity evaluation",
     ):
-        embeddings = model.encode([gold, prediction])
-        cos_sim = util.cos_sim(embeddings, embeddings)
-        metric_per_question.append(cos_sim[0, 1].item())
+        if isinstance(gold, list):
+            if not isinstance(prediction, list):
+                raise ValueError(
+                    f"Prompt {i}: GT and prediction data are inconsistent. GT data is a list of answers, but prediction is a string."
+                )
+            if len(gold) != len(prediction):
+                raise ValueError(f"Prompt {i}: GT and prediction data have different amount of answers.")
+            input_list = [*gold, *prediction]
+            n = len(gold)
+        else:
+            if not isinstance(prediction, str):
+                raise ValueError(
+                    f"Prompt {i}: GT and prediction data are inconsistent. Prediction data is a list of answers, but GT is a string."
+                )
+            input_list = [gold, prediction]
+            n = 1
+
+        embeddings = model.encode(input_list, convert_to_tensor=True, show_progress_bar=False)
+        embeddings_gold = embeddings[:n]
+        embeddings_pred = embeddings[n:]
+        cos_sims = util.cos_sim(embeddings_gold, embeddings_pred).diagonal().cpu().numpy()
+        metric_per_question.append(np.mean(cos_sims))
+        if isinstance(gold, list):
+            metric_per_chat_answer_list.append(cos_sims)
 
     metric_dict = {"similarity": np.mean(metric_per_question)}
-    return metric_dict, {"similarity": metric_per_question}
+    additional_info = {"similarity": metric_per_question}
+    if metric_per_chat_answer_list:
+        additional_info["similarity_per_chat_replicas"] = metric_per_chat_answer_list
+
+    return metric_dict, additional_info
 
 
 def evaluate_divergency(tokenizer, data_gold, data_prediction):
@@ -49,6 +89,19 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
     sdtn_list = []  # each value = share of tokens to correct in the prediction
     fdt_max = []  # each value = total number of tokens in the reference
     for a_answer, b_answer in zip(answers_gold, answers_prediction):
+        # in chat mode - gold, prediction are list of answers
+        # let's check only last answer
+        if isinstance(a_answer, list):
+            if not isinstance(b_answer, list):
+                raise ValueError(
+                    "GT and prediction data are inconsistent. GT data is a list, but prediction is a string."
+                )
+            if not a_answer or not b_answer:
+                raise ValueError("List of answers can't be empty.")
+            a_answer = a_answer[-1]
+            b_answer = b_answer[-1]
+        elif not isinstance(b_answer, str):
+            raise ValueError("GT and prediction data are inconsistent. Prediction data is a list, but GT is a string.")
         a_indexes = tokenizer.encode(a_answer, return_tensors="pt").squeeze().tolist()
         b_indexes = tokenizer.encode(b_answer, return_tensors="pt").squeeze().tolist()
         if not a_indexes and not b_indexes:
@@ -129,7 +182,9 @@ class TextSimilarity:
             pad_token = tokenizer.pad_token
         else:
             pad_token = tokenizer.eos_token
-        self.model = SentenceTransformer(model_id, tokenizer_kwargs={"pad_token": pad_token}, trust_remote_code=trust_remote_code)
+        self.model = SentenceTransformer(
+            model_id, tokenizer_kwargs={"pad_token": pad_token}, trust_remote_code=trust_remote_code, device="cpu"
+        )
 
     def evaluate(self, gt, prediction):
         return evaluate_similarity(self.model, gt, prediction)
@@ -166,6 +221,12 @@ def evaluate_image_similarity(processor, model, data_gold, data_prediction):
             gold_outputs = model.get_image_features(gold_inputs)
             prediction_outputs = model.get_image_features(prediction_inputs)
 
+        # if transformers < 5.0 image features are torch.Tensor
+        # if transformers >= 5.0 it is transformers.modeling_outputs.BaseModelOutputWithPooling
+        # which has pooler_output and last_hidden_state attributes
+        if not isinstance(gold_outputs, torch.Tensor) and hasattr(gold_outputs, "pooler_output"):
+            gold_outputs = gold_outputs.pooler_output
+            prediction_outputs = prediction_outputs.pooler_output
         cos_sim = F.cosine_similarity(gold_outputs, prediction_outputs)
         print("cos_sim: ", cos_sim.item())
         metric_per_image.append(cos_sim.item())
