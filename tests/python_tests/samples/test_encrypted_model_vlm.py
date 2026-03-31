@@ -2,15 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import platform
 import pytest
 import sys
 
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
 
+
 class TestEncryptedVLM:
     @pytest.mark.llm
     @pytest.mark.samples
+    @pytest.mark.skipif(
+        sys.platform == "darwin" and platform.machine() == "arm64",
+        reason="Only supported on X64 or ARM with SVE support",
+    )
     @pytest.mark.parametrize("convert_model", ["tiny-random-minicpmv-2_6"], indirect=True)
     @pytest.mark.parametrize("sample_args", ["Describe the images."])
     @pytest.mark.parametrize("download_test_content", ["images/image.png"], indirect=True)
@@ -19,8 +25,8 @@ class TestEncryptedVLM:
         env = os.environ.copy()
         env["OPENVINO_LOG_LEVEL"] = "0"
         # Test CPP sample
-        cpp_sample = SAMPLES_CPP_DIR / 'encrypted_model_vlm'
-        cpp_command =[cpp_sample, convert_model, os.path.dirname(generate_test_content), sample_args]
+        cpp_sample = SAMPLES_CPP_DIR / "encrypted_model_vlm"
+        cpp_command = [cpp_sample, convert_model, os.path.dirname(generate_test_content), sample_args]
         cpp_result = run_sample(cpp_command, env=env)
 
         # Test Python sample
@@ -34,7 +40,7 @@ class TestEncryptedVLM:
         py_common_result = run_sample(py_common_command, sample_args, env)
 
         # Compare results
-        assert py_result.stdout == cpp_result.stdout, f"Results should match"
+        assert py_result.stdout == cpp_result.stdout, "Results should match"
         # results from visual_language_chat sample also contain additional outputs like "question:".
         # So just check if results of encrypted_model_vlm sample is a substring of it.
-        assert py_result.stdout in py_common_result.stdout, f"Results should match"
+        assert py_result.stdout in py_common_result.stdout, "Results should match"
