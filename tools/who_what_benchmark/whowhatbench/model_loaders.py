@@ -780,12 +780,16 @@ def _resolve_remote_code_and_config(model_id):
     return remote_code, model_config
 
 
-def _load_speecht5_processor_and_vocoder(model_id, remote_code):
-    from transformers import SpeechT5Processor, SpeechT5HifiGan
+def _load_speecht5_processor(model_id, remote_code):
+    from transformers import SpeechT5Processor
 
-    processor = SpeechT5Processor.from_pretrained(model_id, trust_remote_code=remote_code)
-    vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
-    return processor, vocoder
+    return SpeechT5Processor.from_pretrained(model_id, trust_remote_code=remote_code)
+
+
+def _load_speecht5_hifigan_vocoder():
+    from transformers import SpeechT5HifiGan
+
+    return SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
 
 
 def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
@@ -801,7 +805,11 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
             trust_remote_code=remote_code,
             **PYTORCH_MODEL_DTYPE_KWARG,
         )
-        processor, vocoder = _load_speecht5_processor_and_vocoder(model_id, remote_code)
+        processor = _load_speecht5_processor(model_id, remote_code)
+
+        # for HF, we need explicitly load the vocoder.
+        # Assume it's microsoft/speecht5_hifigan for now.
+        vocoder = _load_speecht5_hifigan_vocoder()
         return TextToSpeechModelWrapper(model, processor, vocoder)
 
     if use_genai:
@@ -820,8 +828,11 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         config=model_config,
         trust_remote_code=remote_code,
     )
-    processor, vocoder = _load_speecht5_processor_and_vocoder(model_id, remote_code)
-    return TextToSpeechModelWrapper(model, processor, vocoder)
+    processor = _load_speecht5_processor(model_id, remote_code)
+
+    # For Optimum, we don't need to load vocoder as it should pick up openvino_vocoder IR by default.
+    # And this currently matches GenAI behavior, which will also pick up the same openvino_vocoder IR.
+    return TextToSpeechModelWrapper(model, processor, None)
 
 
 def load_model(
