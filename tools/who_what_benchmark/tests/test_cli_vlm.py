@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import pytest
 import logging
 import sys
@@ -181,6 +184,16 @@ def run_test_with_lora(
     ],
 )
 def test_vlm_basic(model_id, model_type, tmp_path):
+    run_test(model_id, model_type, None, None, tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [
+        ("optimum-intel-internal-testing/tiny-random-llava", "visual-text-chat"),
+    ],
+)
+def test_vlm_chat(model_id, model_type, tmp_path):
     run_test(model_id, model_type, None, None, tmp_path)
 
 

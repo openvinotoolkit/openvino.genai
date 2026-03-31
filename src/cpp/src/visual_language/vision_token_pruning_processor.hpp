@@ -17,7 +17,7 @@ namespace ov::genai {
 // Forward declarations
 class EncodedImage;
 namespace utils {
-class KVCacheState;
+class CacheState;
 }
 
 /**
@@ -220,18 +220,18 @@ public:
      * - Token pruning
      * - Position IDs adjustment
      * - Input IDs and embeddings regeneration
-     * - KV cache update
+     * - Cache state update
      * - Updating prev_hist_length if in chat mode
      *
      * @param context PruningContext containing input data
      * @param position_ids Position IDs tensor (modified in-place)
-     * @param kv_cache_state KV cache state (modified)
+     * @param cache_state Cache state (modified)
      * @param prev_hist_length Previous history length (modified in-place if pruning occurred)
      * @return std::optional<PruningResult> with pruned tensors if pruning occurred, std::nullopt otherwise
      */
     std::optional<PruningResult> execute(const PruningContext& context,
                                          ov::Tensor& position_ids,
-                                         utils::KVCacheState& kv_cache_state,
+                                         utils::CacheState& cache_state,
                                          size_t& prev_hist_length);
 
 private:
