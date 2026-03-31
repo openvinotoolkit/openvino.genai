@@ -28,6 +28,7 @@ set (SAMPLE_LIST
     structured_output_generation
     lora_greedy_causal_lm
     multinomial_causal_lm
+    sampling_causal_lm
     prompt_lookup_decoding_lm
     speculative_decoding_lm)
 

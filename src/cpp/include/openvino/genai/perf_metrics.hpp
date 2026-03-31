@@ -28,7 +28,11 @@ using MicroSeconds = std::chrono::duration<float, std::ratio<1, 1000000>>;
  * @param m_token_infer_durations Inference time for each token in microseconds.
  * @param m_batch_sizes Batch sizes for each generate call.
  * @param m_durations Total durations for each generate call in microseconds.
- * @param m_inference_durations Total inference duration for each generate call in microseconds.
+ * @param m_inference_durations Total ModelRunner::forward() duration per generate call in microseconds.
+ * @param m_pure_infer_durations Total ov::InferRequest::infer() duration per generate call in microseconds
+ *        (CB pipeline only; excludes input tensor packing and KV-cache management).
+ * @param m_sampling_durations Total sampler.sample() duration for each generate call in microseconds
+ *        (logit processing: temperature scaling, top-k/top-p filtering, and multinomial token draw).
  * @param m_grammar_compile_times Time to compile the grammar in microseconds.
  */
 struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
@@ -42,6 +46,18 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<size_t> m_batch_sizes;
     std::vector<MicroSeconds> m_durations;
     std::vector<MicroSeconds> m_inference_durations;
+    std::vector<MicroSeconds> m_pure_infer_durations;  // CB pipeline only: m_request.infer() alone
+    std::vector<MicroSeconds> m_sampling_durations;
+    // Sampling sub-breakdown (µs per generate call)
+    std::vector<MicroSeconds> m_logit_transform_durations;  // logit_processor.apply(): temperature+penalties+top-p/top-k
+    std::vector<MicroSeconds> m_dist_construct_durations;   // std::discrete_distribution construction
+    std::vector<MicroSeconds> m_draw_durations;             // actual token draws
+    // logit_transform sub-breakdown (µs per generate call)
+    std::vector<MicroSeconds> m_misc_transform_durations;   // EOS penalty + structured output
+    std::vector<MicroSeconds> m_penalties_durations;        // rep/freq/presence penalties
+    std::vector<MicroSeconds> m_temperature_durations;      // TemperatureLogitTransform
+    std::vector<MicroSeconds> m_top_p_durations;            // TopPFilter
+    std::vector<MicroSeconds> m_top_k_durations;            // TopKFilter
 
     std::vector<MicroSeconds> m_grammar_compile_times;
 };
@@ -111,6 +127,8 @@ struct OPENVINO_GENAI_EXPORTS SummaryStats {
  * @param ipot Mean and standard deviation of Inference Time per Output Token (IPOT) in milliseconds per token.
  * @param throughput Mean and standard deviation of tokens per second.
  * @param inference_duration Mean and standard deviation of the time spent on model inference during generate call in milliseconds.
+ * @param sampling_duration Mean and standard deviation of the time spent in sampler.sample() across all decode steps
+ *        (logit processing: temperature scaling + top-k/top-p filtering + multinomial token draw) in milliseconds.
  * @param generate_duration Mean and standard deviation of the total duration of generate calls in milliseconds.
  * @param tokenization_duration Mean and standard deviation of the tokenization duration in milliseconds.
  * @param detokenization_duration Mean and standard deviation of the detokenization duration in milliseconds.
@@ -129,7 +147,19 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     SummaryStats grammar_compile_time;    // Time to compile grammar in ms.
 
     MeanStdPair generate_duration = {0, 0};
-    MeanStdPair inference_duration = {0, 0};
+    MeanStdPair inference_duration = {0, 0};           // ModelRunner::forward() total, in ms.
+    MeanStdPair pure_infer_duration = {-1.0f, -1.0f}; // m_request.infer() only (CB pipeline), in ms.
+    MeanStdPair sampling_duration = {-1.0f, -1.0f};   // sampler.sample() total per generate call, in ms.
+    // Sampling sub-breakdown (-1 when not instrumented)
+    MeanStdPair logit_transform_duration = {-1.0f, -1.0f}; // logit_processor.apply() total, in ms.
+    MeanStdPair dist_construct_duration = {-1.0f, -1.0f};  // discrete_distribution construction, in ms.
+    MeanStdPair draw_duration = {-1.0f, -1.0f};            // token draw, in ms.
+    // logit_transform sub-breakdown (-1 when not used)
+    MeanStdPair misc_transform_duration = {-1.0f, -1.0f};  // EOS / structured-output, in ms.
+    MeanStdPair penalties_duration      = {-1.0f, -1.0f};  // rep/freq/presence penalties, in ms.
+    MeanStdPair temperature_duration    = {-1.0f, -1.0f};  // TemperatureLogitTransform, in ms.
+    MeanStdPair top_p_duration          = {-1.0f, -1.0f};  // TopPFilter, in ms.
+    MeanStdPair top_k_duration          = {-1.0f, -1.0f};  // TopKFilter, in ms.
     MeanStdPair tokenization_duration = {-1.0f, -1.0f};
     MeanStdPair detokenization_duration = {-1.0f, -1.0f};
 
@@ -147,7 +177,17 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     std::map<std::string, float> get_grammar_compiler_init_times();
     SummaryStats get_grammar_compile_time();    // in ms
 
-    MeanStdPair get_inference_duration();       // in ms
+    MeanStdPair get_inference_duration();       // in ms – ModelRunner::forward()
+    MeanStdPair get_pure_infer_duration();      // in ms – m_request.infer() only (CB pipeline; -1 otherwise)
+    MeanStdPair get_sampling_duration();        // in ms – sampler.sample() only (logit proc + token draw)
+    MeanStdPair get_logit_transform_duration(); // in ms – logit_processor.apply() only
+    MeanStdPair get_dist_construct_duration();  // in ms – discrete_distribution construction
+    MeanStdPair get_draw_duration();            // in ms – token draws
+    MeanStdPair get_misc_transform_duration();  // in ms – EOS / structured-output
+    MeanStdPair get_penalties_duration();       // in ms – rep/freq/presence penalties
+    MeanStdPair get_temperature_duration();     // in ms – TemperatureLogitTransform
+    MeanStdPair get_top_p_duration();           // in ms – TopPFilter
+    MeanStdPair get_top_k_duration();           // in ms – TopKFilter
     MeanStdPair get_generate_duration();        // in ms
     MeanStdPair get_tokenization_duration();    // in ms
     MeanStdPair get_detokenization_duration();  // in ms

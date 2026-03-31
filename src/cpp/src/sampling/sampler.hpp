@@ -53,6 +53,19 @@ struct SamplerOutput {
     std::unordered_map<uint64_t, std::list<uint64_t>> m_forked_sequences;
     // store number of generated_tokens
     size_t num_generated_tokens = 0;
+    // wall-clock time spent inside Sampler::sample() in microseconds
+    // (covers logit processing + token selection for all sequence groups in this call)
+    float sample_duration_us = 0.f;
+    // sub-breakdown of sampling time (µs)
+    float logit_transform_duration_us = 0.f;  // logit_processor.apply(): temperature + penalties + top-p/top-k
+    float dist_construct_duration_us = 0.f;   // std::discrete_distribution construction
+    float draw_duration_us = 0.f;             // actual token draws from the distribution
+    // logit_transform sub-breakdown (µs)
+    float misc_transform_us = 0.f;       // EOS penalty + structured-output transforms
+    float penalties_us = 0.f;            // repetition / presence / frequency penalties
+    float temperature_us = 0.f;          // TemperatureLogitTransform (expf loop)
+    float top_p_us = 0.f;               // TopPFilter (sort + prefix scan)
+    float top_k_us = 0.f;               // TopKFilter (partial sort)
 };
 
 struct AssistingPipelineInfo {
@@ -75,7 +88,8 @@ class Sampler {
 
     Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t token_idx);
     Token _greedy_sample(const Logits& logits, size_t top_logprobs) const;
-    std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence);
+    std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence,
+                                            float& out_dist_construct_us, float& out_draw_us);
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
 
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
