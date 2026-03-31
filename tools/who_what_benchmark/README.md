@@ -195,9 +195,6 @@ The required input CSV for speech-generation must contain these columns:
 The optional input CSV may also contain:
 
 * `speaker_embeddings` - optional path to a binary float32 xvector file.
-* `language` - reserved field for future multi-language TTS backends. It is currently unused for SpeechT5 evaluation/generation.
-* `voice` - reserved field for future multi-voice TTS backends. It is currently unused for SpeechT5.
-* `expected_text` - this column is no longer used by the evaluator (for backward compatibility only).
 
 
 

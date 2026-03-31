@@ -197,8 +197,8 @@ class TTSSimilarityEvaluator:
             self._speaker_model.eval()
         return self._speaker_model
 
-    def transcribe(self, path: str, language: Optional[str]) -> str:
-        segments, _info = self.whisper.transcribe(path, language=language, vad_filter=False)
+    def transcribe(self, path: str) -> str:
+        segments, _info = self.whisper.transcribe(path, vad_filter=False)
         return " ".join(seg.text.strip() for seg in segments).strip()
 
     def compute_speaker_similarity(self, target_audio: np.ndarray, reference_audio: np.ndarray, sr: int) -> float:
@@ -218,8 +218,6 @@ class TTSSimilarityEvaluator:
         self,
         target_path: str,
         reference_path: str,
-        expected_text: Optional[str] = None,
-        language: Optional[str] = None,
         verbose: bool = False,
     ) -> Scores:
         from jiwer import cer as jiwer_cer
@@ -259,8 +257,8 @@ class TTSSimilarityEvaluator:
         _log(verbose)
 
         # Content
-        target_tx = self.transcribe(target_path, language)
-        reference_tx = self.transcribe(reference_path, language)
+        target_tx = self.transcribe(target_path)
+        reference_tx = self.transcribe(reference_path)
         norm_tgt = normalize_text(target_tx)
         norm_ref = normalize_text(reference_tx)
 
@@ -358,8 +356,6 @@ class TTSSimilarityEvaluator:
 def evaluate_tts_similarity(
     target_path: str,
     reference_path: str,
-    expected_text: Optional[str] = None,
-    language: Optional[str] = None,
     sample_rate: int = DEFAULT_SR,
     whisper_model: str = DEFAULT_WHISPER_MODEL,
     whisper_device: str = "auto",
@@ -374,7 +370,7 @@ def evaluate_tts_similarity(
         whisper_compute_type=whisper_compute_type,
         scoring_config=scoring_config,
     )
-    return evaluator.evaluate(target_path, reference_path, expected_text, language, verbose=verbose)
+    return evaluator.evaluate(target_path, reference_path, verbose=verbose)
 
 
 def evaluate_tts_similarity_dict(**kwargs) -> dict[str, Any]:
@@ -385,8 +381,6 @@ def main() -> int:
     p = argparse.ArgumentParser(description="Evaluate similarity between a TTS target wav and a reference wav.")
     p.add_argument("--target", required=True)
     p.add_argument("--reference", required=True)
-    p.add_argument("--expected-text", default=None)
-    p.add_argument("--language", default=None)
     p.add_argument("--sample-rate", type=int, default=DEFAULT_SR)
     p.add_argument("--whisper-model", default=DEFAULT_WHISPER_MODEL)
     p.add_argument("--whisper-device", default="auto")
@@ -401,8 +395,6 @@ def main() -> int:
     scores = evaluate_tts_similarity(
         target_path=args.target,
         reference_path=args.reference,
-        expected_text=args.expected_text,
-        language=args.language,
         sample_rate=args.sample_rate,
         whisper_model=args.whisper_model,
         whisper_device=args.whisper_device,

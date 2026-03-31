@@ -174,18 +174,9 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             gt_row = self.gt_data.iloc[idx]
             prediction_row = predictions.iloc[idx]
 
-            language = prediction_row.get("language", gt_row.get("language", None))
-            if pd.isna(language):
-                language = None
-            elif isinstance(language, str) and language.strip() == "":
-                language = None
-            elif language is not None:
-                language = str(language)
-
             scores = self._evaluator.evaluate(
                 target_path=str(prediction_row["audio"]),
                 reference_path=str(gt_row["audio"]),
-                language=language,
                 verbose=verbose,
             )
 
@@ -250,14 +241,8 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         return ov.Tensor(speaker_embedding.reshape(1, 512))
 
     def _generate_data(self, model, gen_speech_fn=None, audio_dir="reference"):
-        def default_gen_speech_fn(model, prompt, speaker_embedding=None, voice="", language=""):
-            generation_properties = {}
-            if voice:
-                generation_properties["voice"] = voice
-            if language:
-                generation_properties["language"] = language
-
-            result = model.generate(prompt, speaker_embedding, **generation_properties)
+        def default_gen_speech_fn(model, prompt, speaker_embedding=None):
+            result = model.generate(prompt, speaker_embedding)
             audio_data = np.array(result.speeches[0].data).reshape(-1)
             try:
                 sr = int(result.output_sample_rate)
@@ -288,8 +273,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
 
         audios = []
         prompt_values = data["prompts"].values
-        language_values = data["language"].values if "language" in data.columns else [None] * len(data)
-        voice_values = data["voice"].values if "voice" in data.columns else [""] * len(data)
 
         for idx, prompt in tqdm(enumerate(prompt_values), total=len(prompt_values), desc="Evaluate pipeline"):
             speaker_embedding_file_path = self.speaker_embedding_file_path
@@ -307,7 +290,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
                 model,
                 prompt,
                 speaker_embedding=speaker_embedding,
-                voice=str(voice_values[idx]) if pd.notna(voice_values[idx]) else "",
             )
 
             audio_path = os.path.join(audio_dir, f"{idx}.wav")
@@ -323,8 +305,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         return pd.DataFrame(
             {
                 "prompts": list(prompt_values),
-                "language": [str(item) if pd.notna(item) else "" for item in language_values],
-                "voice": [str(item) if pd.notna(item) else "" for item in voice_values],
                 "audio": audios,
             }
         )
