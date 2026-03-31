@@ -1363,7 +1363,10 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
     logit_processor.register_new_generated_token(bonus_token->m_index);
 
     // Update EAGLE metadata with the accepted path for the next draft round.
-    sequence->set_tree_metadata({{}, {}, tree_metadata.tree_position_ids, accepted_path});
+    TreeMetaData updated_metadata;
+    updated_metadata.tree_position_ids = tree_metadata.tree_position_ids;
+    updated_metadata.validated_indices.assign(accepted_path.begin(), accepted_path.end());
+    sequence->set_tree_metadata(updated_metadata);
     return accepted_steps;
 }
 
