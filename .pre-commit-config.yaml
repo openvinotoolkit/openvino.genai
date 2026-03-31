@@ -22,6 +22,7 @@ repos:
         args: ["--fix=lf"]
       - id: check-ast
       - id: check-yaml
+      - id: check-json
       - id: check-toml
       - id: check-added-large-files
         args: ["--maxkb=1000"]
