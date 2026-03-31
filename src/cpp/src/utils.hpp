@@ -140,7 +140,7 @@ std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& externa
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config);
 
-OPENVINO_GENAI_EXPORTS ModelsMap read_models(const std::filesystem::path& models_dir, const ov::AnyMap& config);
+ModelsMap read_models(const std::filesystem::path& models_dir, const ov::AnyMap& config);
 
 bool is_gguf_bundle_dir(const std::filesystem::path& models_dir);
 
