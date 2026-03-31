@@ -35,7 +35,7 @@ struct TreeMetaData {
     std::vector<std::vector<uint8_t>> tree_mask;
     std::vector<std::vector<int64_t>> retrieve_indices;
     std::vector<int64_t> tree_position_ids;
-    std::vector<int64_t> validated_indices;
+    std::vector<size_t> validated_indices;
 };
 
 class SequenceGroup;
