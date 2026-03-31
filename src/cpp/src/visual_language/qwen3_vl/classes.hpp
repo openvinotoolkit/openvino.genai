@@ -86,12 +86,13 @@ protected:
         const std::vector<size_t>& videos_sequence) override;
 
     /**
-     * @brief Computes interpolated position embeddings.
+     * @brief Computes interpolated position embeddings and adds them in-place.
      * 
      * Calculates position interpolation indices and weights, runs vision_embeddings_pos model,
-     * applies bilinear interpolation weights, sums corners, permutes for spatial merge.
+     * applies bilinear interpolation weights, sums corners, permutes for spatial merge,
+     * and adds the result directly into concatenated_embeds (fused permute + addition).
      */
-    ov::Tensor get_interpolated_pos_embeds(const std::vector<std::array<size_t, 3>>& grids_thw);
+    void add_interpolated_pos_embeds(const std::vector<std::array<size_t, 3>>& grids_thw, ov::Tensor& concatenated_embeds);
 
     std::vector<std::array<size_t, 3>> get_vision_grid_thw_for_position_ids(
         const std::vector<std::array<size_t, 3>>& images_grid_thw,

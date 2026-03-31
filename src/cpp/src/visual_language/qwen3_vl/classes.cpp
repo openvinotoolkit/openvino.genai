@@ -241,6 +241,66 @@ ov::Tensor permute_with_spatial_merge(
 }
 
 /**
+ * @brief Fused permute + in-place addition: permutes position embeddings according to
+ *        spatial merge pattern and adds them directly into the destination tensor.
+ *
+ * Equivalent to:
+ *   auto permuted = permute_with_spatial_merge(pos_embeds, grids_thw, spatial_merge_size);
+ *   for (i) dst[i] += permuted[i];
+ * but avoids allocating the intermediate tensor and makes a single pass.
+ */
+void permute_with_spatial_merge_and_add(
+    const ov::Tensor& pos_embeds,
+    float* dst_data,
+    const std::vector<std::array<size_t, 3>>& grids_thw,
+    size_t spatial_merge_size
+) {
+    const size_t num_positions = pos_embeds.get_shape()[0];
+    const size_t embed_dim = pos_embeds.get_shape()[1];
+    const float* pos_embeds_data = pos_embeds.data<const float>();
+
+    size_t dst_offset = 0;
+    size_t src_offset = 0;
+
+    for (const auto& grid_thw : grids_thw) {
+        const auto [t, h, w] = grid_thw;
+        const size_t hw = h * w;
+        const size_t merge_h = h / spatial_merge_size;
+        const size_t merge_w = w / spatial_merge_size;
+        OPENVINO_ASSERT(
+            h % spatial_merge_size == 0 && w % spatial_merge_size == 0,
+            "permute_with_spatial_merge_and_add expects h and w divisible by spatial_merge_size. "
+            "Got h=", h, ", w=", w, ", spatial_merge_size=", spatial_merge_size);
+
+        for (size_t ti = 0; ti < t; ++ti) {
+            for (size_t mhi = 0; mhi < merge_h; ++mhi) {
+                for (size_t mwi = 0; mwi < merge_w; ++mwi) {
+                    for (size_t shi = 0; shi < spatial_merge_size; ++shi) {
+                        for (size_t swi = 0; swi < spatial_merge_size; ++swi) {
+                            const size_t src_h = mhi * spatial_merge_size + shi;
+                            const size_t src_w = mwi * spatial_merge_size + swi;
+                            const size_t src_idx = src_offset + ti * hw + src_h * w + src_w;
+
+                            const float* src = pos_embeds_data + src_idx * embed_dim;
+                            float* dst = dst_data + dst_offset * embed_dim;
+                            for (size_t d = 0; d < embed_dim; ++d) {
+                                dst[d] += src[d];
+                            }
+                            ++dst_offset;
+                        }
+                    }
+                }
+            }
+        }
+        src_offset += t * hw;
+    }
+    OPENVINO_ASSERT(
+        dst_offset == num_positions,
+        "permute_with_spatial_merge_and_add wrote ", dst_offset,
+        " positions, but num_positions is ", num_positions);
+}
+
+/**
  * @brief Create visual position mask from input_ids by finding vision pad tokens.
  * @return Boolean tensor [batch, seq_len] with true at vision token positions
  */
@@ -432,8 +492,9 @@ void InputsEmbedderQwen3VL::expand_video_tags_in_prompt(
     }
 }
 
-ov::Tensor InputsEmbedderQwen3VL::get_interpolated_pos_embeds(
-    const std::vector<std::array<size_t, 3>>& grids_thw
+void InputsEmbedderQwen3VL::add_interpolated_pos_embeds(
+    const std::vector<std::array<size_t, 3>>& grids_thw,
+    ov::Tensor& concatenated_embeds
 ) {
     const size_t num_grid_per_side = static_cast<size_t>(
         std::sqrt(static_cast<double>(m_vlm_config.vision_config_num_position_embeddings)));
@@ -481,7 +542,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_interpolated_pos_embeds(
     }
 
     size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
-    return permute_with_spatial_merge(weighted_sum, grids_thw, spatial_merge_size);
+    permute_with_spatial_merge_and_add(weighted_sum, concatenated_embeds.data<float>(), grids_thw, spatial_merge_size);
 }
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3VL::run_video_image_embeddings_merger(
@@ -506,13 +567,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3VL::run_video_image_embeddi
         reordered_images_grid_thw.begin(), reordered_images_grid_thw.end());
     
     if (!combined_grid_thw.empty()) {
-        ov::Tensor pos_embeds = get_interpolated_pos_embeds(combined_grid_thw);
-        
-        float* concatenated_embeds_data = concatenated_embeds.data<float>();
-        const float* pos_embeds_data = pos_embeds.data<const float>();
-        for (size_t i = 0; i < concatenated_embeds.get_size(); ++i) {
-            concatenated_embeds_data[i] += pos_embeds_data[i];
-        }
+        add_interpolated_pos_embeds(combined_grid_thw, concatenated_embeds);
     }
     
     ov::Tensor rotary_pos_emb = get_rotary_pos_emb(combined_grid_thw);
