@@ -13,7 +13,7 @@ Download and extract [OpenVINO GenAI Archive](https://www.intel.com/content/www/
 
 
 ## Build Samples
-Set up the environment and build the samples Linux and macOS
+Set up the environment and build the samples for Linux and macOS
 ```sh
 source <INSTALL_DIR>/setupvars.sh
 ./<INSTALL_DIR>/samples/c/build_samples.sh
@@ -62,7 +62,7 @@ Multi-turn conversations with an interactive chat interface powered by OpenVINO.
 The sample demonstrates how to benchmark LLMs in OpenVINO GenAI by using C language.
 - **Run Command:**
 ```sh
-./benchmark_gena_c  [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
+./benchmark_genai_c  [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
 ```
 - **Options:**
 - `-m, --model`: Path to the model and tokenizers base directory.
