@@ -711,42 +711,6 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
             std::filesystem::path save_path = gguf_model_path.parent_path() / "openvino_model.xml";
             ov::genai::utils::save_openvino_model(model, save_path.string(), true);
         }
-    } else if (!model_arch.compare("qwen3vl")) {
-        std::shared_ptr<ov::Model> vlm_llm_model = create_vlm_language_model(config, consts, qtypes);
-        std::shared_ptr<ov::Model> text_embeddings_model = create_text_embeddings_model(config, consts, qtypes);
-
-        if (enable_save_ov_model) {
-            std::filesystem::path gguf_model_path(model_path);
-
-            std::filesystem::path lm_save_path =
-                gguf_model_path.parent_path() / "openvino_language_model.xml";
-            ov::genai::utils::save_openvino_model(vlm_llm_model, lm_save_path.string(), true);
-            
-            std::filesystem::path text_emb_save_path =
-                gguf_model_path.parent_path() / "openvino_text_embeddings_model.xml";
-            ov::genai::utils::save_openvino_model(text_embeddings_model, text_emb_save_path.string(), true);
-        }
-    } else if (!model_arch.compare("clip")) {
-
-        std::shared_ptr<ov::Model> vision_embeddings_model = create_vision_embeddings_model(config, consts, qtypes);
-        std::shared_ptr<ov::Model> vision_embeddings_pos_model = create_vision_embeddings_pos_model(config, consts, qtypes);
-        std::shared_ptr<ov::Model> vision_embeddings_merger_model = create_vision_embeddings_merger_model(config, consts, qtypes);
-
-        if (enable_save_ov_model) {
-            std::filesystem::path gguf_model_path(model_path);
-
-            std::filesystem::path vision_emb_save_path =
-                gguf_model_path.parent_path() / "openvino_vision_embeddings_model.xml";
-            ov::genai::utils::save_openvino_model(vision_embeddings_model, vision_emb_save_path.string(), true);
-
-            std::filesystem::path vision_pos_save_path =
-                gguf_model_path.parent_path() / "openvino_vision_embeddings_pos_model.xml";
-            ov::genai::utils::save_openvino_model(vision_embeddings_pos_model, vision_pos_save_path.string(), true);
-
-            std::filesystem::path vision_merger_save_path =
-                gguf_model_path.parent_path() / "openvino_vision_embeddings_merger_model.xml";
-            ov::genai::utils::save_openvino_model(vision_embeddings_merger_model, vision_merger_save_path.string(), true);
-        }
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
     }
