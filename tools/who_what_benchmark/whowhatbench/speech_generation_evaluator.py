@@ -145,9 +145,11 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         if base_model:
             self.gt_data = self._generate_data(base_model, gen_speech_fn, os.path.join(self.gt_dir, "reference"))
         else:
-            self.gt_data = self._normalize_input_data(pd.read_csv(gt_data, keep_default_na=False))
+            self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
+            if "expected_text" not in self.gt_data.columns:
+                self.gt_data["expected_text"] = self.gt_data["prompts"]
 
-        self._validate_required_columns(self.gt_data, ["audio"], "ground truth data")
+        self._validate_required_columns(self.gt_data, ["audio", "prompts"], "ground truth data")
 
     def get_generation_fn(self):
         return self.generation_fn
@@ -156,7 +158,9 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         audio_folder = os.path.join(output_dir if output_dir else self.gt_dir, "target")
 
         if isinstance(model_or_data, str) and os.path.exists(model_or_data):
-            predictions = self._normalize_input_data(pd.read_csv(model_or_data, keep_default_na=False))
+            predictions = pd.read_csv(model_or_data, keep_default_na=False)
+            if "expected_text" not in predictions.columns:
+                predictions["expected_text"] = predictions["prompts"]
         else:
             predictions = self._generate_data(model_or_data, gen_speech_fn, audio_folder)
 
@@ -234,18 +238,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         res = self.last_cmp.nsmallest(top_k, metric)
         return [row for _, row in res.iterrows()]
 
-    def _normalize_input_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        if "prompts" not in data.columns and "prompt" in data.columns:
-            data = data.rename(columns={"prompt": "prompts"})
-
-        if "prompts" not in data.columns:
-            raise ValueError("Input prompt data must contain 'prompts' or 'prompt' column")
-
-        if "expected_text" not in data.columns:
-            data["expected_text"] = data["prompts"]
-
-        return data
-
     def _validate_required_columns(self, data: pd.DataFrame, required_columns: list[str], data_name: str) -> None:
         missing_columns = [column for column in required_columns if column not in data.columns]
         if missing_columns:
@@ -297,7 +289,9 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             prompt_data = yaml.safe_load(data_path.read_text(encoding="utf-8"))
             data = pd.DataFrame.from_dict(prompt_data["en"])
 
-        data = self._normalize_input_data(data)
+        self._validate_required_columns(data, ["prompts"], "input prompt data")
+        if "expected_text" not in data.columns:
+            data["expected_text"] = data["prompts"]
         if self.num_samples is not None:
             data = data.iloc[: self.num_samples]
 
