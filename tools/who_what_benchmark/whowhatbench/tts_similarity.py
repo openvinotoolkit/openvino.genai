@@ -9,6 +9,7 @@ import re
 import string
 from dataclasses import asdict, dataclass
 from typing import Any, Optional
+from sklearn.metrics.pairwise import cosine_similarity
 
 import librosa
 import numpy as np
@@ -217,7 +218,7 @@ class TTSSimilarityEvaluator:
             with torch.no_grad():
                 emb_ref = self.speaker_model.encode_batch(ref_tensor).reshape(1, -1)
                 emb_tgt = self.speaker_model.encode_batch(tgt_tensor).reshape(1, -1)
-                score = float(torch.nn.functional.cosine_similarity(emb_ref, emb_tgt, dim=1).item())
+                score = float(cosine_similarity(emb_ref.detach().cpu().numpy(), emb_tgt.detach().cpu().numpy())[0][0])
             return score, None
         except Exception as e:
             return None, f"compute_speaker_similarity: {e}"
