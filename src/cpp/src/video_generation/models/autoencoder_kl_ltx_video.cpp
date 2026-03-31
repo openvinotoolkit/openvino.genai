@@ -179,10 +179,10 @@ const AutoencoderKLLTXVideo::Config& AutoencoderKLLTXVideo::get_config() const {
 }
 
 size_t AutoencoderKLLTXVideo::get_vae_scale_factor() const {
-    return m_config.patch_size *
-           static_cast<size_t>(std::pow(2, std::accumulate(m_config.spatio_temporal_scaling.begin(),
-                                                           m_config.spatio_temporal_scaling.end(),
-                                                           0)));
+    const auto exponent = std::accumulate(m_config.spatio_temporal_scaling.begin(),
+                                          m_config.spatio_temporal_scaling.end(),
+                                          0);
+    return m_config.patch_size * (size_t{1} << exponent);
 }
 
 void AutoencoderKLLTXVideo::merge_vae_video_post_processing() const {
