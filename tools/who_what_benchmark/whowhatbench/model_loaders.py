@@ -71,10 +71,12 @@ class GenAIModelWrapper:
 
         if model_type in (
             "text",
+            "text-chat",
             "visual-text",
             "visual-video-text",
             "text-embedding",
             "text-reranking",
+            "visual-text-chat",
         ):
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
@@ -771,13 +773,13 @@ def load_model(
     else:
         ov_options = {}
 
-    if model_type == "text":
+    if model_type == "text" or model_type == "text-chat":
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(
             model_id, device, ov_options, use_hf, use_genai, **kwargs
         )
-    elif model_type == "visual-text" or model_type == "visual-video-text":
+    elif model_type == "visual-text" or model_type == "visual-video-text" or model_type == "visual-text-chat":
         kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "image-to-image":
