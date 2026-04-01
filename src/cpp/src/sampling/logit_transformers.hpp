@@ -183,13 +183,13 @@ public:
         if (m_defer_expf) {
             // Deferred expf, only apply logits scaling at this moment
             if (m_temperature != 1.0f) {
-                const float inv_T = 1.0f / m_temperature;
+                const float scaling_factor = 1.0f / m_temperature;
                 if (logits.is_vector_initialized()) {
                     for (size_t i = 0; i < logits.m_size; i++)
-                        logits.m_vector[i].m_log_prob *= inv_T;
+                        logits.m_vector[i].m_log_prob *= scaling_factor;
                 } else {
                     for (size_t i = 0; i < logits.m_size; i++)
-                        logits.m_data[i] *= inv_T;
+                        logits.m_data[i] *= scaling_factor;
                 }
             }
             logits.m_defer_expf = true;
