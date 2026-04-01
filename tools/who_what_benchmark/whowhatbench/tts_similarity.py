@@ -170,12 +170,12 @@ class TTSSimilarityEvaluator:
     @property
     def whisper(self):
         if self._whisper is None:
-            from faster_whisper import WhisperModel
+            from pywhispercpp.model import Model
 
-            self._whisper = WhisperModel(
-                self.whisper_model_name,
-                device=self.whisper_device,
-                compute_type=self.whisper_compute_type,
+            self._whisper = Model(
+                self.whisper_model_name,  # e.g. "base.en"
+                print_realtime=False,
+                print_progress=False,
             )
         return self._whisper
 
@@ -198,7 +198,7 @@ class TTSSimilarityEvaluator:
         return self._speaker_model
 
     def transcribe(self, path: str) -> str:
-        segments, _info = self.whisper.transcribe(path, vad_filter=False)
+        segments = self.whisper.transcribe(path)
         return " ".join(seg.text.strip() for seg in segments).strip()
 
     def compute_speaker_similarity(self, target_audio: np.ndarray, reference_audio: np.ndarray, sr: int) -> float:
@@ -226,8 +226,8 @@ class TTSSimilarityEvaluator:
         if verbose:
             LOGGER.setLevel(logging.DEBUG)
         else:
-            # By default, faster_whisper will log "Processing audio with duration=XXs", so disable it.
-            logging.getLogger("faster_whisper").setLevel(logging.ERROR)
+            # By default, pywhispercpp will log "Transcribing ...", etc. so disable it.
+            logging.getLogger("pywhispercpp").setLevel(logging.ERROR)
 
         target_audio, sr_t = load_audio_mono(target_path, self.sample_rate)
         reference_audio, sr_r = load_audio_mono(reference_path, self.sample_rate)

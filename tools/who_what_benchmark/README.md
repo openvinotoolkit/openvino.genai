@@ -28,10 +28,6 @@ To install WWB and its dependencies, follow these steps:
 ```
     pip install .
 ```
-If you want to run speech-generation evaluation, install the extra evaluator dependencies separately:
-```
-pip install -r requirements-speech-generation.txt
-```
 To install WWB with nightly builds of openvino, openvino-tokenizers, and openvino-genai, use the following command:
 ```
 PIP_PRE=1 \
@@ -182,7 +178,7 @@ Speech-generation evaluation writes audio at 16 kHz for both reference and targe
 The speech-generation evaluator reports these metrics:
 
 * `speaker score` - speaker similarity based on SpeechBrain speaker verification.
-* `content score` - transcript similarity between base model and target model output, based on faster-whisper transcription and normalized text comparison.
+* `content score` - transcript similarity between base model and target model output, based on whisper transcription and normalized text comparison.
 * `acoustic score` - overall sound-character similarity based on spectral features.
 * `duration score` - relative utterance length similarity between target and reference.
 * `overall score` - aggregate score used for sorting worst examples.

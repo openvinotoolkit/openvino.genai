@@ -29,5 +29,5 @@ torchvision>=0.16,<=0.26.0
 peft==0.18.1
 # For speech generation evaluation
 jiwer>=3.0.0,<=4.0.0
-faster-whisper>=1.0.0,<=1.2.1
+pywhispercpp>=1.4.1,<1.5.0
 speechbrain>=1.0.0,<=1.0.3
