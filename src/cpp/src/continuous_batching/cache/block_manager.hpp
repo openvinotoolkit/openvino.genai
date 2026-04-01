@@ -596,9 +596,9 @@ public:
      * @param sequence_group The sequence group to free blocks from.
      * @param num_required_blocks The number of blocks to be freed. Will free an equal
      * number of blocks from each sequence in the group so that at least this number of blocks is freed in total.
-     * @return Number of blocks freed in each sequence in the group.
+     * @return Number of tokens freed.
      */
-    const size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
+    size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         size_t blocks_num = std::ceil(num_required_blocks / sequence_group->get_not_finished_sequences().size());
         auto not_finished_sequences = sequence_group->get_not_finished_sequences();
@@ -607,7 +607,7 @@ public:
             OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
             free_sequence_partially(seq_id, blocks_num);
         }
-        return blocks_num;
+        return _blocks_released_to_tokens(sequence_group, blocks_num);
     }
 
     const size_t free_last_block_from_each_sequence(SequenceGroup::Ptr sequence_group) {
@@ -642,7 +642,7 @@ public:
         return blocks_to_free[0]->is_free();
     }
 
-    const size_t free_partially_beam_search_group(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
+    size_t free_partially_beam_search_group(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         size_t physical_blocks_released = 0;
         size_t logical_blocks_released = 0;
@@ -654,7 +654,7 @@ public:
             }
             physical_blocks_released += released_count;
         }
-        return logical_blocks_released;
+        return _blocks_released_to_tokens(sequence_group, logical_blocks_released);
     }
 
     /**
@@ -704,76 +704,53 @@ public:
     }
 
     /**
-     * @param num_blocks A number of KV cache blocks
-     * @return Whether this number of KV cache blocks may be assigned to new sequences.
+     * Returns the number of additional tokens that can be accommodated for a given sequence group,
+     * accounting for unused slots in already-allocated blocks and free blocks.
+     * @param seq_group The sequence group to check available capacity for.
+     * @return The number of additional tokens that can be stored.
      */
-    bool can_allocate_blocks(size_t num_blocks) const {
-        for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
-            if (!m_allocator.can_allocate_blocks(num_blocks, layer_idx)) return false;
-        }
-        return true;
+    size_t available_token_slots(SequenceGroup::CPtr seq_group) const {
+        size_t num_logical = get_num_logical_blocks(seq_group);
+        size_t allocated_capacity = num_logical * m_block_size;
+        size_t occupied = seq_group->get_context_len() - seq_group->get_num_evicted_tokens();
+        size_t unused_in_existing = allocated_capacity >= occupied ? allocated_capacity - occupied : 0;
+        return unused_in_existing + num_free_blocks() * m_block_size;
     }
 
     /**
-     * Allocates a given number of KV cache blocks to a given sequence.
-     * @param sequence The sequence for the blocks to be allocated to.
-     * @param num_blocks The number of KV cache blocks to be allocated.
+     * Checks whether enough KV cache blocks can be allocated to accommodate the given number of tokens,
+     * accounting for unused slots in already-allocated blocks.
+     * @param seq_group The sequence group to check allocation feasibility for.
+     * @param num_tokens The number of additional tokens to accommodate.
+     * @return Whether the allocation is feasible.
+     */
+    bool can_allocate_tokens(SequenceGroup::CPtr seq_group, size_t num_tokens) const {
+        size_t num_logical = get_num_logical_blocks(seq_group);
+        size_t allocated_capacity = num_logical * m_block_size;
+        size_t occupied = seq_group->get_context_len() - seq_group->get_num_evicted_tokens();
+        size_t unused_in_existing = allocated_capacity >= occupied ? allocated_capacity - occupied : 0;
+        size_t tokens_needing_new_blocks = num_tokens > unused_in_existing ? num_tokens - unused_in_existing : 0;
+        size_t blocks_needed = (tokens_needing_new_blocks + m_block_size - 1) / m_block_size;
+        return can_allocate_blocks(blocks_needed);
+    }
+
+    /**
+     * Allocates KV cache blocks to accommodate the given number of additional tokens for a sequence,
+     * accounting for unused slots in already-allocated blocks.
+     * @param sequence The sequence to allocate blocks for.
+     * @param num_tokens The number of additional tokens to accommodate.
      * @param prompt_size Prompt size for this sequence.
      */
-    void allocate(ov::genai::Sequence::Ptr sequence, size_t num_blocks, size_t prompt_size = 0) {
-        OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
-
-        auto sequence_id = sequence->get_id();
-        if (m_block_table.find(sequence_id) == m_block_table.end()) {
-            m_block_table[sequence_id].resize(m_num_layers);
-        }
-
-        auto& block_table = m_block_table[sequence_id][0];
-        auto content_length = sequence->get_generated_len() + prompt_size;
-        size_t allocated_blocks = block_table.size(); // assuming all layers have the same number of allocated blocks
-        size_t num_hashed_tokens = allocated_blocks * m_block_size;
-
-
-        if (!m_enable_prefix_caching) {
-            for (size_t layer_idx = 0; layer_idx < m_block_table[sequence_id].size(); layer_idx++) {
-                auto& block_table = m_block_table[sequence_id][layer_idx];
-                for (size_t i = 0; i < num_blocks; ++i) {
-                    ov::genai::CacheBlock::Ptr block = m_allocator.allocate_block(layer_idx);
-                    OPENVINO_ASSERT(block != nullptr);
-                    m_block_table[sequence_id][layer_idx].push_back(block);
-                }
-            }
-        } else {
-            // If last block was restored from cache by using of a partially filled block,
-            // its hash would correspond to partially filled block.
-            // In this case hash needs to be updated to the hash of fully filled block.
-            if (block_table.size() > 0) {
-                CacheBlock::Ptr last_block = block_table.back();
-                auto hash = sequence->get_hash(block_table.size() * m_block_size, m_block_size);
-                auto prev_hash = last_block->get_hash();
-                if (prev_hash != hash) {
-                    BlocksPerLayer last_blocks_vec;
-                    last_blocks_vec.reserve(m_num_layers);
-                    for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
-                        auto& lst_blk = m_block_table[sequence_id][layer_idx].back();
-                        lst_blk->set_hash(hash);
-                        m_prefix_hash_to_occupied_block_map.erase(prev_hash);
-                        last_blocks_vec.push_back(lst_blk);
-                    }
-                    m_prefix_hash_to_occupied_block_map[hash] = last_blocks_vec;
-                }
-            }
-            for (size_t i = 0; i < num_blocks; ++i) {
-                num_hashed_tokens += m_block_size;
-                if (num_hashed_tokens > content_length) {
-                    num_hashed_tokens = content_length;
-                }
-                auto hash = sequence->get_hash(num_hashed_tokens, m_block_size);
-                auto blocks_for_all_layers = m_allocator.allocate_block(hash, m_prefix_hash_to_occupied_block_map);
-                for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); layer_idx++) {
-                    m_block_table[sequence_id][layer_idx].push_back(blocks_for_all_layers[layer_idx]);
-                }
-            }
+    void allocate_tokens(ov::genai::Sequence::Ptr sequence, size_t num_tokens, size_t prompt_size = 0) {
+        auto seq_group = sequence->get_sequence_group_ptr();
+        size_t num_logical = get_num_logical_blocks(seq_group);
+        size_t allocated_capacity = num_logical * m_block_size;
+        size_t occupied = seq_group->get_context_len() - seq_group->get_num_evicted_tokens();
+        size_t unused_in_existing = allocated_capacity >= occupied ? allocated_capacity - occupied : 0;
+        size_t tokens_needing_new_blocks = num_tokens > unused_in_existing ? num_tokens - unused_in_existing : 0;
+        size_t num_blocks = (tokens_needing_new_blocks + m_block_size - 1) / m_block_size;
+        if (num_blocks > 0) {
+            allocate(sequence, num_blocks, prompt_size);
         }
     }
 
@@ -1184,6 +1161,86 @@ public:
 
         // Block tables should be cleared when generation is finished
         OPENVINO_ASSERT(m_block_table.empty());
+    }
+
+private:
+    /**
+     * Converts a number of blocks released to the corresponding number of tokens freed,
+     * accounting for a potentially partial last block.
+     * @param seq_group The sequence group the blocks were released from.
+     * @param blocks_released The number of logical blocks released.
+     * @return The number of tokens freed.
+     */
+    size_t _blocks_released_to_tokens(SequenceGroup::CPtr seq_group, size_t blocks_released) const {
+        if (blocks_released == 0) {
+            return 0;
+        }
+        size_t processed_tokens = seq_group->get_num_processed_tokens();
+        size_t tokens_in_last_block = processed_tokens % m_block_size;
+        if (tokens_in_last_block == 0) {
+            tokens_in_last_block = m_block_size;
+        }
+        return tokens_in_last_block + (blocks_released - 1) * m_block_size;
+    }
+
+    bool can_allocate_blocks(size_t num_blocks) const {
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
+            if (!m_allocator.can_allocate_blocks(num_blocks, layer_idx)) return false;
+        }
+        return true;
+    }
+
+    void allocate(ov::genai::Sequence::Ptr sequence, size_t num_blocks, size_t prompt_size = 0) {
+        OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
+
+        auto sequence_id = sequence->get_id();
+        if (m_block_table.find(sequence_id) == m_block_table.end()) {
+            m_block_table[sequence_id].resize(m_num_layers);
+        }
+
+        auto& block_table = m_block_table[sequence_id][0];
+        auto content_length = sequence->get_generated_len() + prompt_size;
+        size_t allocated_blocks = block_table.size();
+        size_t num_hashed_tokens = allocated_blocks * m_block_size;
+
+        if (!m_enable_prefix_caching) {
+            for (size_t layer_idx = 0; layer_idx < m_block_table[sequence_id].size(); layer_idx++) {
+                auto& block_table = m_block_table[sequence_id][layer_idx];
+                for (size_t i = 0; i < num_blocks; ++i) {
+                    ov::genai::CacheBlock::Ptr block = m_allocator.allocate_block(layer_idx);
+                    OPENVINO_ASSERT(block != nullptr);
+                    m_block_table[sequence_id][layer_idx].push_back(block);
+                }
+            }
+        } else {
+            if (block_table.size() > 0) {
+                CacheBlock::Ptr last_block = block_table.back();
+                auto hash = sequence->get_hash(block_table.size() * m_block_size, m_block_size);
+                auto prev_hash = last_block->get_hash();
+                if (prev_hash != hash) {
+                    BlocksPerLayer last_blocks_vec;
+                    last_blocks_vec.reserve(m_num_layers);
+                    for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
+                        auto& lst_blk = m_block_table[sequence_id][layer_idx].back();
+                        lst_blk->set_hash(hash);
+                        m_prefix_hash_to_occupied_block_map.erase(prev_hash);
+                        last_blocks_vec.push_back(lst_blk);
+                    }
+                    m_prefix_hash_to_occupied_block_map[hash] = last_blocks_vec;
+                }
+            }
+            for (size_t i = 0; i < num_blocks; ++i) {
+                num_hashed_tokens += m_block_size;
+                if (num_hashed_tokens > content_length) {
+                    num_hashed_tokens = content_length;
+                }
+                auto hash = sequence->get_hash(num_hashed_tokens, m_block_size);
+                auto blocks_for_all_layers = m_allocator.allocate_block(hash, m_prefix_hash_to_occupied_block_map);
+                for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); layer_idx++) {
+                    m_block_table[sequence_id][layer_idx].push_back(blocks_for_all_layers[layer_idx]);
+                }
+            }
+        }
     }
 };
 

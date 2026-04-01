@@ -209,21 +209,12 @@ private:
             return m_cache_orchestrator->num_free_blocks() > prev_blocks_count;
         }
 
-        size_t logical_blocks_released;
         if (sequence_group->get_sampling_parameters().is_beam_search()) {
-            logical_blocks_released = m_cache_orchestrator->free_partially_beam_search_group(sequence_group, blocks_needed);
+            preempted_tokens = m_cache_orchestrator->free_partially_beam_search_group(sequence_group, blocks_needed);
         }
         else {
-            logical_blocks_released = m_cache_orchestrator->free_group_partially(sequence_group, blocks_needed);
+            preempted_tokens = m_cache_orchestrator->free_group_partially(sequence_group, blocks_needed);
         }
-
-        size_t block_size = get_block_size();
-        // calculate the number of preempted tokens
-        auto tokens_in_last_block = processed_tokens % block_size;
-        if (tokens_in_last_block == 0) {
-            tokens_in_last_block = block_size;
-        }
-        preempted_tokens = tokens_in_last_block + (logical_blocks_released == 0 ? 0 : logical_blocks_released - 1) * block_size;
 
         // case when preemption requires preempt prompt tokens
         if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
@@ -299,27 +290,16 @@ private:
                 size_t num_scheduled_tokens = std::min(num_tokens_in_megabatch, num_available_tokens);
 
                 // apply KV cache limitations
-                size_t block_size = get_block_size();
-                size_t currently_allocated_token_slots = get_num_logical_blocks(sequence_group) * block_size;
-                size_t occupied_token_slots = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
-                OPENVINO_ASSERT(currently_allocated_token_slots >= occupied_token_slots, "internal error");
-                size_t available_slots = currently_allocated_token_slots - occupied_token_slots,
-                       required_slots = num_scheduled_tokens > available_slots ? num_scheduled_tokens - available_slots : 0;
-                size_t num_required_blocks = (required_slots + block_size - 1) / block_size;
-                while (num_required_blocks > m_cache_orchestrator->num_free_blocks()) {
+                while (m_cache_orchestrator->available_token_slots(sequence_group) < num_scheduled_tokens) {
                     if (!_try_increase_cache()) {
                         break;
                     }
                 }
-                size_t num_scheduled_blocks = std::min(num_required_blocks, m_cache_orchestrator->num_free_blocks());
-                // some scheduled blocks can be no fully occupied, so we need to take min between num_scheduled_blocks
-                // and total "scheduled capacity"
-                num_scheduled_tokens = std::min(num_scheduled_tokens, available_slots + num_scheduled_blocks * block_size);
+                num_scheduled_tokens = std::min(num_scheduled_tokens, m_cache_orchestrator->available_token_slots(sequence_group));
 
                 if (num_scheduled_tokens > 0) {
                     // allocate KV blocks if required
-                    if (num_scheduled_blocks > 0)
-                        m_cache_orchestrator->allocate(sequence, num_scheduled_blocks, sequence_group->get_prompt_len());
+                    m_cache_orchestrator->allocate_tokens(sequence, num_scheduled_tokens, sequence_group->get_prompt_len());
                     // and schedule tokens
                     sequence_group->schedule_tokens(num_scheduled_tokens);
 
@@ -333,7 +313,7 @@ private:
                         scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
                         scheduler_output.m_apply_sparse_attention_mask = m_config.use_sparse_attention && m_config.sparse_attention_config.mode == SparseAttentionMode::TRISHAPE;
                         if (scheduler_output.m_apply_sparse_attention_mask) {
-                            TriShapeSparseAttentionTokenSkipper skipper(block_size,
+                            TriShapeSparseAttentionTokenSkipper skipper(get_block_size(),
                                     m_config.sparse_attention_config.num_last_dense_tokens_in_prefill,
                                     m_config.sparse_attention_config.num_retained_start_tokens_in_cache,
                                     m_config.sparse_attention_config.num_retained_recent_tokens_in_cache);
@@ -480,14 +460,12 @@ private:
                     break;
 
                 // apply KV cache limitations
-                size_t block_size = get_block_size();
-                const size_t num_required_blocks = (sequence_len + block_size - 1) / block_size;
-                while (!m_cache_orchestrator->can_allocate_blocks(num_required_blocks)){
+                while (!m_cache_orchestrator->can_allocate_tokens(sequence_group, sequence_len)){
                     if (!_try_increase_cache()) {
                         break;
                     }
                 }
-                if (!m_cache_orchestrator->can_allocate_blocks(num_required_blocks))
+                if (!m_cache_orchestrator->can_allocate_tokens(sequence_group, sequence_len))
                     break;
 
                 // add scheduling information

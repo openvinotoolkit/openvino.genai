@@ -153,10 +153,23 @@ public:
             [seq_id](const auto& pair) { return pair.second->has_block_table(seq_id); });
     }
 
-    void allocate(Sequence::Ptr sequence, size_t num_blocks, size_t prompt_size = 0) {
+    void allocate_tokens(Sequence::Ptr sequence, size_t num_tokens, size_t prompt_size = 0) {
         for (auto& [type, block_mgr] : m_block_managers) {
-            block_mgr->allocate(sequence, num_blocks, prompt_size);
+            block_mgr->allocate_tokens(sequence, num_tokens, prompt_size);
         }
+    }
+
+    size_t available_token_slots(SequenceGroup::CPtr seq_group) const {
+        size_t min_slots = std::numeric_limits<size_t>::max();
+        for (const auto& [type, block_mgr] : m_block_managers) {
+            min_slots = std::min(min_slots, block_mgr->available_token_slots(seq_group));
+        }
+        return min_slots;
+    }
+
+    bool can_allocate_tokens(SequenceGroup::CPtr seq_group, size_t num_tokens) const {
+        return std::all_of(m_block_managers.begin(), m_block_managers.end(),
+            [&seq_group, num_tokens](const auto& pair) { return pair.second->can_allocate_tokens(seq_group, num_tokens); });
     }
 
     std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::Ptr seq_group) {
@@ -181,11 +194,6 @@ public:
             max_required = std::max(max_required, block_mgr->required_blocks_count(seq_group));
         }
         return max_required;
-    }
-
-    bool can_allocate_blocks(size_t num_blocks) const {
-        return std::all_of(m_block_managers.begin(), m_block_managers.end(),
-            [num_blocks](const auto& pair) { return pair.second->can_allocate_blocks(num_blocks); });
     }
 
     size_t num_free_blocks() const {
@@ -264,20 +272,26 @@ public:
         return max_occupied;
     }
 
+    /**
+     * @return Number of tokens freed (minimum across all cache managers).
+     */
     size_t free_group_partially(SequenceGroup::Ptr seq_group, size_t num_required_blocks) {
-        size_t min_released = std::numeric_limits<size_t>::max();
+        size_t min_tokens_released = std::numeric_limits<size_t>::max();
         for (auto& [type, block_mgr] : m_block_managers) {
-            min_released = std::min(min_released, block_mgr->free_group_partially(seq_group, num_required_blocks));
+            min_tokens_released = std::min(min_tokens_released, block_mgr->free_group_partially(seq_group, num_required_blocks));
         }
-        return min_released;
+        return min_tokens_released;
     }
 
+    /**
+     * @return Number of tokens freed (minimum across all cache managers).
+     */
     size_t free_partially_beam_search_group(SequenceGroup::Ptr seq_group, size_t num_required_blocks) {
-        size_t min_released = std::numeric_limits<size_t>::max();
+        size_t min_tokens_released = std::numeric_limits<size_t>::max();
         for (auto& [type, block_mgr] : m_block_managers) {
-            min_released = std::min(min_released, block_mgr->free_partially_beam_search_group(seq_group, num_required_blocks));
+            min_tokens_released = std::min(min_tokens_released, block_mgr->free_partially_beam_search_group(seq_group, num_required_blocks));
         }
-        return min_released;
+        return min_tokens_released;
     }
 
     // -----------------------------------------------------------------------
