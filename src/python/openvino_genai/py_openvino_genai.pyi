@@ -965,7 +965,7 @@ class GenerationConfig:
         num_return_sequences: the number of sequences to generate from a single prompt.
     
         Tree search parameters:
-        tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
+        tree_params.branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
         tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
         num_assistant_tokens (tree search): number of candidate (non-root) tokens submitted to the target model for
                                             verification. Total tree nodes = num_assistant_tokens + 1 (including root).
@@ -1859,7 +1859,7 @@ class LLMPipeline:
             num_return_sequences: the number of sequences to generate from a single prompt.
         
             Tree search parameters:
-            tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
+            tree_params.branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
             tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
             num_assistant_tokens (tree search): number of candidate (non-root) tokens submitted to the target model for
                                                 verification. Total tree nodes = num_assistant_tokens + 1 (including root).
@@ -1962,7 +1962,7 @@ class LLMPipeline:
             num_return_sequences: the number of sequences to generate from a single prompt.
         
             Tree search parameters:
-            tree_params.branching_factor: number of top-k candidates expanded at each tree node (branching factor).
+            tree_params.branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
             tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
             num_assistant_tokens (tree search): number of candidate (non-root) tokens submitted to the target model for
                                                 verification. Total tree nodes = num_assistant_tokens + 1 (including root).
