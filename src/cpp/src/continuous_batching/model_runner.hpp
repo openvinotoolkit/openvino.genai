@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <chrono>
 #include <vector>
 #include <cstdlib>
 #include <set>
@@ -225,8 +224,6 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
     uint8_t m_hidden_state_flags = HS_NONE;
-    // Wall-clock duration of the last m_request.infer() call inside forward(), in microseconds.
-    float m_last_pure_infer_duration_us = 0.f;
     // a container which uses sequence group id and request id as key to store hidden states
     std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
     std::unordered_map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
@@ -296,9 +293,6 @@ public:
     void enable_hidden_state_export(bool on)   { on ? m_hidden_state_flags |= HS_EXPORT   : m_hidden_state_flags &= ~HS_EXPORT; }
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
-
-    // Returns wall-clock duration of the m_request.infer() call inside the most recent forward().
-    float get_last_pure_infer_duration_us() const { return m_last_pure_infer_duration_us; }
 
     void set_inputs_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
         m_inputs_embedder = inputs_embedder;
@@ -743,11 +737,7 @@ public:
         {
             static ManualTimer timer("pure generate inference");
             timer.start();
-            const auto pure_infer_start = std::chrono::steady_clock::now();
             m_request.infer();
-            m_last_pure_infer_duration_us = static_cast<float>(
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    std::chrono::steady_clock::now() - pure_infer_start).count());
             timer.end();
         }
 

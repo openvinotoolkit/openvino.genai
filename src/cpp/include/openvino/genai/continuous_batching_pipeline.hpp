@@ -59,28 +59,6 @@ struct PipelineMetrics {
     float inference_duration = 0.0;
 
     /**
-     * Duration of the last Sampler::sample() call in microseconds
-     * (logit processing: temperature scaling + top-k/top-p filtering + token draw).
-     */
-    float sampling_duration = 0.0;
-    // Sampling sub-breakdown in microseconds
-    float logit_transform_duration = 0.0;  // logit_processor.apply()
-    float dist_construct_duration = 0.0;   // std::discrete_distribution construction
-    float draw_duration = 0.0;             // token draws
-    // logit_transform sub-breakdown in microseconds
-    float misc_transform_duration = 0.0;   // EOS / structured-output
-    float penalties_duration = 0.0;        // rep/freq/presence penalties
-    float temperature_duration = 0.0;      // TemperatureLogitTransform
-    float top_p_duration = 0.0;            // TopPFilter
-    float top_k_duration = 0.0;            // TopKFilter
-
-    /**
-     * Duration of the raw ov::InferRequest::infer() call inside the last forward() step,
-     * in microseconds. Excludes input tensor packing and KV-cache management overhead.
-     */
-    float pure_infer_duration = 0.0;
-
-    /**
      * Total allocated KV cache size in bytes, based on the total number of KV blocks.
      * This value represents reserved/allocated memory for the KV cache and does not
      * distinguish between used and unused portions in dynamic KV cache configurations.

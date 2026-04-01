@@ -132,15 +132,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     ov::genai::utils::GenerationFinishInfo finish_info;
     auto& raw_perf_counters = finish_info.results.perf_metrics.raw_metrics;
     raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_sampling_durations  = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_logit_transform_durations = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_dist_construct_durations  = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_draw_durations            = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_misc_transform_durations  = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_penalties_durations       = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_temperature_durations     = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_top_p_durations           = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_top_k_durations           = {{ MicroSeconds(0.0f) }};
 
     // Initialize inputs
 
@@ -187,15 +178,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         beam_offets.insert({sequence_groups.at(i)->get_request_id(), i});
 
     SamplerOutput sampler_output = sampler.sample(sequence_groups, logits);
-    raw_perf_counters.m_sampling_durations[0] += MicroSeconds(sampler_output.sample_duration_us);
-    raw_perf_counters.m_logit_transform_durations[0] += MicroSeconds(sampler_output.logit_transform_duration_us);
-    raw_perf_counters.m_dist_construct_durations[0]  += MicroSeconds(sampler_output.dist_construct_duration_us);
-    raw_perf_counters.m_draw_durations[0]            += MicroSeconds(sampler_output.draw_duration_us);
-    raw_perf_counters.m_misc_transform_durations[0]  += MicroSeconds(sampler_output.misc_transform_us);
-    raw_perf_counters.m_penalties_durations[0]       += MicroSeconds(sampler_output.penalties_us);
-    raw_perf_counters.m_temperature_durations[0]     += MicroSeconds(sampler_output.temperature_us);
-    raw_perf_counters.m_top_p_durations[0]           += MicroSeconds(sampler_output.top_p_us);
-    raw_perf_counters.m_top_k_durations[0]           += MicroSeconds(sampler_output.top_k_us);
     free_non_running_requests(); // handle sampler output
 
     raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
@@ -313,15 +295,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
 
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
-        raw_perf_counters.m_sampling_durations[0] += MicroSeconds(sampler_output.sample_duration_us);
-        raw_perf_counters.m_logit_transform_durations[0] += MicroSeconds(sampler_output.logit_transform_duration_us);
-        raw_perf_counters.m_dist_construct_durations[0]  += MicroSeconds(sampler_output.dist_construct_duration_us);
-        raw_perf_counters.m_draw_durations[0]            += MicroSeconds(sampler_output.draw_duration_us);
-        raw_perf_counters.m_misc_transform_durations[0]  += MicroSeconds(sampler_output.misc_transform_us);
-        raw_perf_counters.m_penalties_durations[0]       += MicroSeconds(sampler_output.penalties_us);
-        raw_perf_counters.m_temperature_durations[0]     += MicroSeconds(sampler_output.temperature_us);
-        raw_perf_counters.m_top_p_durations[0]           += MicroSeconds(sampler_output.top_p_us);
-        raw_perf_counters.m_top_k_durations[0]           += MicroSeconds(sampler_output.top_k_us);
         free_non_running_requests(); // handle sampler output
 
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());

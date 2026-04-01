@@ -28,8 +28,6 @@ struct Logits {
     //   - raw logits unchanged         (T == 1.0 — TemperatureLogitTransform is a no-op)
     //   - logits scaled by 1/T         (T != 1.0 — pure multiply, no max subtraction)
     // _multinomial_sample owns the max scan and fuses expf() with the CDF scan.
-    // NOT set for full-vocab (top_k == 0): CDF scan in vocab-index order has no early-exit
-    // benefit and costs ~1.5N expf vs N expf for the standard normalised path.
     bool m_defer_expf = false;
 
     Logits(float* data, size_t size): m_data(data), m_size(size) {}
@@ -118,11 +116,10 @@ public:
 
     void apply(Logits& logits) override {
         if (!logits.is_vector_initialized()) {
-            // Temperature ran on m_data (full-vocab path): copy normalised probs into m_vector.
+            // Temperature WITH expf ran directly on m_data (full-vocab path, no effective top_k): Initialize m_vector with normalised probs.
             logits.initialize_vector();
         }
-        // m_vector already populated by TopKFilter+Temperature (K-element prob path) or
-        // just initialized above. Either way it holds normalised probabilities.
+        // m_vector already populated  by TopKFilter+Temperature or just initialized above. Either way it holds normalised probabilities.
         if (!partial_sort_and_resize(logits))
             full_sort_and_resize(logits);
     }
@@ -143,36 +140,34 @@ public:
         // Build a K-element min-heap directly on m_data in one sequential O(N log K) pass.
         //
         // Why not initialize_vector() + partial_sort:
-        //   initialize_vector() allocates and writes N × 12 bytes (1.8 MB for vocab=151936)
-        //   every token step, most of which is immediately discarded.  The heap never exceeds
-        //   K × 12 bytes (480 bytes for K=40) — it stays in L1 cache the entire scan.
+        //   initialize_vector() allocates and writes N every token step, most of which is immediately discarded.  
+        // The heap never exceeds  K - data is more likely to stay in L1 cache the entire scan.
         //
         // Algorithm:
         //   1. Seed m_vector with the first K elements; build a min-heap (smallest at root).
         //   2. For each remaining element: if it beats the current min replace the root and
         //      restore heap order (pop_heap + push_heap = two O(log K) sifts).
-        //   3. m_vector ends up with the top-K values in arbitrary heap order.
+        //   3. m_vector ends up with the top_k values in arbitrary heap order.
         //
         // Downstream code (TemperatureLogitTransform, TopPFilter, _multinomial_sample)
         // must NOT assume m_vector[0] is the maximum — they all do their own O(K) max scan.
-        const size_t K = m_top_k;
         static const auto min_cmp = [](const Token& a, const Token& b) {
             return a.m_log_prob > b.m_log_prob;  // inverted: makes std::*_heap a min-heap
         };
 
-        logits.m_vector.resize(K);
-        for (size_t i = 0; i < K; i++)
+        logits.m_vector.resize(m_top_k);
+        for (size_t i = 0; i < m_top_k; i++)
             logits.m_vector[i] = Token(logits.m_data[i], static_cast<int64_t>(i));
         std::make_heap(logits.m_vector.begin(), logits.m_vector.end(), min_cmp);
 
-        for (size_t i = K; i < logits.m_size; i++) {
+        for (size_t i = m_top_k; i < logits.m_size; i++) {
             if (logits.m_data[i] > logits.m_vector[0].m_log_prob) {
                 std::pop_heap(logits.m_vector.begin(), logits.m_vector.end(), min_cmp);
                 logits.m_vector.back() = Token(logits.m_data[i], static_cast<int64_t>(i));
                 std::push_heap(logits.m_vector.begin(), logits.m_vector.end(), min_cmp);
             }
         }
-        logits.m_size = K;  // m_vector is already size K
+        logits.m_size = m_top_k;  // m_vector is already size K
     }
 
 protected:
@@ -181,22 +176,12 @@ protected:
 
 class TemperatureLogitTransform : public ILogitTransformer {
 public:
-    // defer_expf=true: TopPFilter will NOT run — we only scale logits here and let
-    // _multinomial_sample fuse expf() with the CDF scan (llama.cpp-style).
-    // defer_expf=false: TopPFilter follows and needs normalised probabilities, so we
-    // compute expf() + normalise as before.
     TemperatureLogitTransform(double temperature, bool defer_expf = false)
         : m_temperature(temperature), m_defer_expf(defer_expf) {}
 
     void apply(Logits& logits) override {
         if (m_defer_expf) {
-            // Deferred path (mirrors llama.cpp llama_sampler_temp_impl):
-            // For T=1 do nothing — _multinomial_sample receives raw logits.
-            // For T!=1 scale each logit by 1/T (pure multiply, no max subtraction).
-            // The max-stabilisation scan is done inside _multinomial_sample where it is
-            // fused with the expf + CDF scan.  A plain multiply loop is trivially
-            // auto-vectorised with AVX2; the previous subtract+multiply was too, but
-            // this also makes T=1 a genuine zero-work fast path.
+            // Deferred expf, only apply logits scaling at this moment
             if (m_temperature != 1.0f) {
                 const float inv_T = 1.0f / m_temperature;
                 if (logits.is_vector_initialized()) {
@@ -212,8 +197,7 @@ public:
             // Standard path: compute softmax(logits / T) in place.
             // TopPFilter follows and requires normalised probabilities.
             if (logits.is_vector_initialized()) {
-                // TopKFilter ran: m_vector holds K raw logits in arbitrary order
-                // TopKFilter leaves m_vector in arbitrary heap order. Scan K elements for max — O(K), trivial.
+                // If logits vector is initialized at this point, TopKFilter was ran and m_vector holds K raw logits in arbitrary heap order
                 float max_logit = logits.m_vector[0].m_log_prob;
                 for (size_t i = 1; i < logits.m_size; i++)
                     if (logits.m_vector[i].m_log_prob > max_logit)
@@ -225,16 +209,16 @@ public:
                         norm_sum += logits.m_vector[i].m_log_prob;
                     }
                 } else {
-                    const float inv_T = 1.0f / m_temperature;
+                    const float scaling_factor = 1.0f / m_temperature;
                     for (size_t i = 0; i < logits.m_size; i++) {
-                        logits.m_vector[i].m_log_prob = expf((logits.m_vector[i].m_log_prob - max_logit) * inv_T);
+                        logits.m_vector[i].m_log_prob = expf((logits.m_vector[i].m_log_prob - max_logit) * scaling_factor);
                         norm_sum += logits.m_vector[i].m_log_prob;
                     }
                 }
                 for (size_t i = 0; i < logits.m_size; i++)
                     logits.m_vector[i].m_log_prob /= norm_sum;
             } else {
-                // Full-vocab path: expf on all m_data elements.
+                // No effective top_k filtering: expf on all m_data elements directly.
                 float max_logit = *std::max_element(logits.m_data, logits.m_data + logits.m_size);
                 float norm_sum = 0.0f;
                 if (m_temperature == 1.0f) {
@@ -243,9 +227,9 @@ public:
                         norm_sum += logits.m_data[i];
                     }
                 } else {
-                    const float inv_T = 1.0f / m_temperature;
+                    const float scaling_factor = 1.0f / m_temperature;
                     for (size_t i = 0; i < logits.m_size; i++) {
-                        logits.m_data[i] = expf((logits.m_data[i] - max_logit) * inv_T);
+                        logits.m_data[i] = expf((logits.m_data[i] - max_logit) * scaling_factor);
                         norm_sum += logits.m_data[i];
                     }
                 }

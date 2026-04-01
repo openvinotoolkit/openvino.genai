@@ -262,15 +262,6 @@ EncodedResults StatefulLLMPipeline::generate(
 
     ov::genai::EncodedResults results;
     auto& raw_perf_counters = results.perf_metrics.raw_metrics;
-    raw_perf_counters.m_sampling_durations = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_logit_transform_durations = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_dist_construct_durations  = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_draw_durations            = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_misc_transform_durations  = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_penalties_durations       = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_temperature_durations     = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_top_p_durations           = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_top_k_durations           = {{ MicroSeconds(0.0f) }};
     // NB: Only batch=1 is supported now
     results.scores.resize(1u);
     results.scores[0] = 0u;
@@ -320,15 +311,6 @@ EncodedResults StatefulLLMPipeline::generate(
         sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters());
 
     SamplerOutput sampler_output = m_sampler.sample({sequence_group}, logits);
-    raw_perf_counters.m_sampling_durations[0] += MicroSeconds(sampler_output.sample_duration_us);
-    raw_perf_counters.m_logit_transform_durations[0] += MicroSeconds(sampler_output.logit_transform_duration_us);
-    raw_perf_counters.m_dist_construct_durations[0]  += MicroSeconds(sampler_output.dist_construct_duration_us);
-    raw_perf_counters.m_draw_durations[0]            += MicroSeconds(sampler_output.draw_duration_us);
-    raw_perf_counters.m_misc_transform_durations[0]  += MicroSeconds(sampler_output.misc_transform_us);
-    raw_perf_counters.m_penalties_durations[0]       += MicroSeconds(sampler_output.penalties_us);
-    raw_perf_counters.m_temperature_durations[0]     += MicroSeconds(sampler_output.temperature_us);
-    raw_perf_counters.m_top_p_durations[0]           += MicroSeconds(sampler_output.top_p_us);
-    raw_perf_counters.m_top_k_durations[0]           += MicroSeconds(sampler_output.top_k_us);
     stream_generated_tokens(streamer_ptr, handle);
 
     int64_t input_ids_data = -1;
@@ -362,15 +344,6 @@ EncodedResults StatefulLLMPipeline::generate(
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
         SamplerOutput sampler_output = m_sampler.sample({sequence_group}, m_request.get_tensor("logits"));
-        raw_perf_counters.m_sampling_durations[0] += MicroSeconds(sampler_output.sample_duration_us);
-        raw_perf_counters.m_logit_transform_durations[0] += MicroSeconds(sampler_output.logit_transform_duration_us);
-        raw_perf_counters.m_dist_construct_durations[0]  += MicroSeconds(sampler_output.dist_construct_duration_us);
-        raw_perf_counters.m_draw_durations[0]            += MicroSeconds(sampler_output.draw_duration_us);
-        raw_perf_counters.m_misc_transform_durations[0]  += MicroSeconds(sampler_output.misc_transform_us);
-        raw_perf_counters.m_penalties_durations[0]       += MicroSeconds(sampler_output.penalties_us);
-        raw_perf_counters.m_temperature_durations[0]     += MicroSeconds(sampler_output.temperature_us);
-        raw_perf_counters.m_top_p_durations[0]           += MicroSeconds(sampler_output.top_p_us);
-        raw_perf_counters.m_top_k_durations[0]           += MicroSeconds(sampler_output.top_k_us);
         stream_generated_tokens(streamer_ptr, handle);
     }
 

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <future>
-#include <chrono>
 
 #include "sampling/sampler.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
@@ -540,35 +539,15 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     return Token(max_value, max_index);
 }
 
-std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence,
-                                                  float& out_dist_construct_us, float& out_draw_us) {
-    // Two draw modes depending on what TemperatureLogitTransform left in the Logits:
-    //
-    // DEFERRED mode (logits.m_defer_expf == true, top_k > 0 AND top_p == 1.0):
-    //   m_vector contains K elements (heap order): raw logits (T=1) or logits/T (T!=1).
-    //   Max scan is O(K), expf loop is O(K), CDF scan early-exits after O(few) steps
-    //   because K is small (e.g. 40) and all candidates are in a compact array.
-    //   Full-vocab deferred path is intentionally NOT used — see logit_processor.hpp.
-    //
-    // NORMALISED mode (logits.m_defer_expf == false):
-    //   m_data / m_vector already contain normalised probabilities (sum = 1.0).
-    //   Direct linear CDF scan; no expf needed here.
-    //
-    // In both modes: no std::discrete_distribution → no heap alloc, no float→double
-    // conversion, no internal re-normalisation pass.
-    // out_dist_construct_us is always 0 (no separate construction step).
-
+std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence) {
     std::uniform_real_distribution<float> u(0.0f, 1.0f);
     std::vector<Token> out_tokens;
     out_tokens.reserve(num_tokens_per_sequence);
 
-    const auto t_draw_start = std::chrono::steady_clock::now();
-
     if (logits.m_defer_expf) {
         // --- Deferred / fused expf path ---
         if (logits.is_vector_initialized()) {
-            // K-element path: m_vector holds K logits in heap order (min-heap from TopKFilter).
-            // Scan K elements for max — O(K=top_k), trivial.
+            // K-element path (no effective top_p): m_vector holds K logits in heap order (min-heap from TopKFilter).
             float max_val = logits.m_vector[0].m_log_prob;
             for (size_t i = 1; i < logits.m_size; ++i)
                 if (logits.m_vector[i].m_log_prob > max_val)
@@ -582,16 +561,16 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
             for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
                 const float r = sum_cum * u(rng_engine);
                 float sum_run = 0.0f;
-                size_t pick = logits.m_size - 1;
+                size_t sampled_idx = logits.m_size - 1;
                 for (size_t i = 0; i < logits.m_size; ++i) {
                     sum_run += expf(logits.m_vector[i].m_log_prob - max_val);
-                    if (sum_run >= r) { pick = i; break; }
+                    if (sum_run >= r) { sampled_idx = i; break; }
                 }
-                out_tokens.emplace_back(logits.m_vector[pick].m_log_prob - log_sum_cum,
-                                        logits.m_vector[pick].m_index);
+                out_tokens.emplace_back(logits.m_vector[sampled_idx].m_log_prob - log_sum_cum,
+                                        logits.m_vector[sampled_idx].m_index);
             }
         } else {
-            // Full-vocab path: one O(N) max scan for numerical stability.
+            // Full-vocab path
             const float max_val = *std::max_element(logits.m_data, logits.m_data + logits.m_size);
             float sum_cum = 0.0f;
             for (size_t i = 0; i < logits.m_size; ++i)
@@ -601,42 +580,38 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
             for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
                 const float r = sum_cum * u(rng_engine);
                 float sum_run = 0.0f;
-                size_t pick = logits.m_size - 1;
+                size_t sampled_idx = logits.m_size - 1;
                 for (size_t i = 0; i < logits.m_size; ++i) {
                     sum_run += expf(logits.m_data[i] - max_val);
-                    if (sum_run >= r) { pick = i; break; }
+                    if (sum_run >= r) { sampled_idx = i; break; }
                 }
-                out_tokens.emplace_back(logits.m_data[pick] - log_sum_cum, pick);
+                out_tokens.emplace_back(logits.m_data[sampled_idx] - log_sum_cum, sampled_idx);
             }
         }
     } else {
-        // --- Normalised probability path (top_p active or no temperature) ---
+        // --- Normalised probability path (top_p active, deferring not possible) ---
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
             const float r = u(rng_engine);
-            float cumsum = 0.0f;
+            float sum_cum = 0.0f;
             if (logits.is_vector_initialized()) {
-                size_t pick = logits.m_size - 1;  // fallback for floating-point rounding
+                size_t sampled_idx = logits.m_size - 1;  // fallback for floating-point rounding
                 for (size_t i = 0; i < logits.m_size; ++i) {
-                    cumsum += logits.m_vector[i].m_log_prob;
-                    if (cumsum >= r) { pick = i; break; }
+                    sum_cum += logits.m_vector[i].m_log_prob;
+                    if (sum_cum >= r) { sampled_idx = i; break; }
                 }
-                auto logit = logits.m_vector[pick];
+                auto logit = logits.m_vector[sampled_idx];
                 logit.m_log_prob = std::log(logit.m_log_prob);
                 out_tokens.push_back(logit);
             } else {
-                size_t pick = logits.m_size - 1;
+                size_t sampled_idx = logits.m_size - 1;
                 for (size_t i = 0; i < logits.m_size; ++i) {
-                    cumsum += logits.m_data[i];
-                    if (cumsum >= r) { pick = i; break; }
+                    sum_cum += logits.m_data[i];
+                    if (sum_cum >= r) { sampled_idx = i; break; }
                 }
-                out_tokens.emplace_back(std::log(logits.m_data[pick]), pick);
+                out_tokens.emplace_back(std::log(logits.m_data[sampled_idx]), sampled_idx);
             }
         }
     }
-
-    out_draw_us += static_cast<float>(
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - t_draw_start).count());
     return out_tokens;
 }
 
@@ -894,21 +869,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 }
 
                 auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, logit_token_offset);
-                {
-                    const auto t_xform = std::chrono::steady_clock::now();
-                    LogitProcessorTimings lpt;
-                    logit_processor.apply_timed(logit_vector, lpt);
-                    const float elapsed = static_cast<float>(
-                        std::chrono::duration_cast<std::chrono::microseconds>(
-                            std::chrono::steady_clock::now() - t_xform).count());
-                    sg_sampling_info.sampler_output.logit_transform_duration_us += elapsed;
-                    sg_sampling_info.sampler_output.misc_transform_us  += lpt.misc_us;
-                    sg_sampling_info.sampler_output.penalties_us        += lpt.penalties_us;
-                    sg_sampling_info.sampler_output.temperature_us      += lpt.temperature_us;
-                    sg_sampling_info.sampler_output.top_p_us            += lpt.top_p_us;
-                    sg_sampling_info.sampler_output.top_k_us            += lpt.top_k_us;
-                }
-
+                logit_processor.apply(logit_vector);
                 Token sampled_token;
                 bool is_generate_n_tokens = false;
                 if (sampling_params.is_greedy_decoding()) {
@@ -918,9 +879,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                     is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
                     const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
                     is_generate_n_tokens &= (num_tokens_per_sequence > 1);
-                    auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence,
-                        sg_sampling_info.sampler_output.dist_construct_duration_us,
-                        sg_sampling_info.sampler_output.draw_duration_us);
+                    auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence);
                     OPENVINO_ASSERT(sampled_token_ids.size(), num_tokens_per_sequence);
                     // to create n sequence just in case of `sequence_group->num_total_seqs() == 1` and `sampling_params.num_return_sequences > 1`
                     if (is_generate_n_tokens) {
@@ -1025,7 +984,6 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
     OPENVINO_ASSERT(logits_shape.size() == 3);
     size_t vocab_size = logits_shape[2];
 
-    const auto sample_start = std::chrono::steady_clock::now();
     SamplerOutput sampler_output;
     std::unordered_map<uint64_t, std::future<SequenceGroupSamplingInfo>> sg_sampling_future_map;
     for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
@@ -1080,14 +1038,6 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             // If there is a future assigned to a sequence group we read it's result (blocking if results not available yet)
             sg_sampling_info = sg_sampling_future_map[request_id].get();
             sampler_output.num_generated_tokens += sg_sampling_info.sampler_output.num_generated_tokens;
-            sampler_output.logit_transform_duration_us += sg_sampling_info.sampler_output.logit_transform_duration_us;
-            sampler_output.dist_construct_duration_us += sg_sampling_info.sampler_output.dist_construct_duration_us;
-            sampler_output.draw_duration_us += sg_sampling_info.sampler_output.draw_duration_us;
-            sampler_output.misc_transform_us  += sg_sampling_info.sampler_output.misc_transform_us;
-            sampler_output.penalties_us       += sg_sampling_info.sampler_output.penalties_us;
-            sampler_output.temperature_us     += sg_sampling_info.sampler_output.temperature_us;
-            sampler_output.top_p_us           += sg_sampling_info.sampler_output.top_p_us;
-            sampler_output.top_k_us           += sg_sampling_info.sampler_output.top_k_us;
 
             // Merge sampler output from sequence group to the main one
             sampler_output.m_dropped_sequences.insert(
@@ -1119,9 +1069,6 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             sequence_group->set_num_validated_tokens(assisting_pipeline_info.updated_validation_len);
         }
     }
-    sampler_output.sample_duration_us = static_cast<float>(
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - sample_start).count());
     return sampler_output;
 }
 

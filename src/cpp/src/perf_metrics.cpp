@@ -95,56 +95,6 @@ MeanStdPair PerfMetrics::get_inference_duration() {
     return inference_duration;
 }
 
-MeanStdPair PerfMetrics::get_pure_infer_duration() {
-    evaluate_statistics();
-    return pure_infer_duration;
-}
-
-MeanStdPair PerfMetrics::get_sampling_duration() {
-    evaluate_statistics();
-    return sampling_duration;
-}
-
-MeanStdPair PerfMetrics::get_logit_transform_duration() {
-    evaluate_statistics();
-    return logit_transform_duration;
-}
-
-MeanStdPair PerfMetrics::get_dist_construct_duration() {
-    evaluate_statistics();
-    return dist_construct_duration;
-}
-
-MeanStdPair PerfMetrics::get_draw_duration() {
-    evaluate_statistics();
-    return draw_duration;
-}
-
-MeanStdPair PerfMetrics::get_misc_transform_duration() {
-    evaluate_statistics();
-    return misc_transform_duration;
-}
-
-MeanStdPair PerfMetrics::get_penalties_duration() {
-    evaluate_statistics();
-    return penalties_duration;
-}
-
-MeanStdPair PerfMetrics::get_temperature_duration() {
-    evaluate_statistics();
-    return temperature_duration;
-}
-
-MeanStdPair PerfMetrics::get_top_p_duration() {
-    evaluate_statistics();
-    return top_p_duration;
-}
-
-MeanStdPair PerfMetrics::get_top_k_duration() {
-    evaluate_statistics();
-    return top_k_duration;
-}
-
 std::map<std::string, float> PerfMetrics::get_grammar_compiler_init_times() {
     return grammar_compiler_init_times;
 }
@@ -204,16 +154,6 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     tokenization_duration = calc_mean_and_std(raw_metrics.tokenization_durations);
     detokenization_duration = calc_mean_and_std(raw_metrics.detokenization_durations);
     inference_duration = calc_mean_and_std(raw_metrics.m_inference_durations);
-    pure_infer_duration = calc_mean_and_std(raw_metrics.m_pure_infer_durations);
-    sampling_duration = calc_mean_and_std(raw_metrics.m_sampling_durations);
-    logit_transform_duration = calc_mean_and_std(raw_metrics.m_logit_transform_durations);
-    dist_construct_duration  = calc_mean_and_std(raw_metrics.m_dist_construct_durations);
-    draw_duration            = calc_mean_and_std(raw_metrics.m_draw_durations);
-    misc_transform_duration = calc_mean_and_std(raw_metrics.m_misc_transform_durations);
-    penalties_duration      = calc_mean_and_std(raw_metrics.m_penalties_durations);
-    temperature_duration    = calc_mean_and_std(raw_metrics.m_temperature_durations);
-    top_p_duration          = calc_mean_and_std(raw_metrics.m_top_p_durations);
-    top_k_duration          = calc_mean_and_std(raw_metrics.m_top_k_durations);
 
     // tokens per second
     throughput = {1000.0f / tpot.mean, (tpot.std * 1000.0f) / (tpot.mean * tpot.mean)};
@@ -268,40 +208,6 @@ PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
     new_tok_durations.insert(new_tok_durations.end(), right_tok_durations.begin(), right_tok_durations.end());
     new_detok_durations.insert(new_detok_durations.end(), right_detok_durations.begin(), right_detok_durations.end());
     new_gen_durations.insert(new_gen_durations.end(), right_gen_durations.begin(), right_gen_durations.end());
-
-    auto& new_pure_infer_durations = res.raw_metrics.m_pure_infer_durations;
-    new_pure_infer_durations.insert(new_pure_infer_durations.end(),
-                                    right.raw_metrics.m_pure_infer_durations.begin(),
-                                    right.raw_metrics.m_pure_infer_durations.end());
-
-    auto& new_sampling_durations = res.raw_metrics.m_sampling_durations;
-    new_sampling_durations.insert(new_sampling_durations.end(),
-                                  right.raw_metrics.m_sampling_durations.begin(),
-                                  right.raw_metrics.m_sampling_durations.end());
-
-    auto& new_logit_xform = res.raw_metrics.m_logit_transform_durations;
-    new_logit_xform.insert(new_logit_xform.end(),
-                           right.raw_metrics.m_logit_transform_durations.begin(),
-                           right.raw_metrics.m_logit_transform_durations.end());
-
-    auto& new_dist_construct = res.raw_metrics.m_dist_construct_durations;
-    new_dist_construct.insert(new_dist_construct.end(),
-                              right.raw_metrics.m_dist_construct_durations.begin(),
-                              right.raw_metrics.m_dist_construct_durations.end());
-
-    auto& new_draw = res.raw_metrics.m_draw_durations;
-    new_draw.insert(new_draw.end(),
-                    right.raw_metrics.m_draw_durations.begin(),
-                    right.raw_metrics.m_draw_durations.end());
-
-    auto cat = [&](std::vector<MicroSeconds>& dst, const std::vector<MicroSeconds>& src) {
-        dst.insert(dst.end(), src.begin(), src.end());
-    };
-    cat(res.raw_metrics.m_misc_transform_durations, right.raw_metrics.m_misc_transform_durations);
-    cat(res.raw_metrics.m_penalties_durations,      right.raw_metrics.m_penalties_durations);
-    cat(res.raw_metrics.m_temperature_durations,    right.raw_metrics.m_temperature_durations);
-    cat(res.raw_metrics.m_top_p_durations,          right.raw_metrics.m_top_p_durations);
-    cat(res.raw_metrics.m_top_k_durations,          right.raw_metrics.m_top_k_durations);
 
     // Concatenate structured output compilation times.
     auto& new_grammar_compile_times = res.raw_metrics.m_grammar_compile_times;

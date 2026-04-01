@@ -397,7 +397,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         logits = m_model_runner->forward(m_requests, scheduler_output);
         const auto infer_end = std::chrono::steady_clock::now();
         m_pipeline_metrics.inference_duration = PerfMetrics::get_microsec(infer_end - infer_start);
-        m_pipeline_metrics.pure_infer_duration = m_model_runner->get_last_pure_infer_duration_us();
         timer.end();
     }
 
@@ -427,15 +426,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         timer.start();
         sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled);
         m_batch_size = sampler_output.num_generated_tokens;
-        m_pipeline_metrics.sampling_duration        = sampler_output.sample_duration_us;
-        m_pipeline_metrics.logit_transform_duration  = sampler_output.logit_transform_duration_us;
-        m_pipeline_metrics.dist_construct_duration   = sampler_output.dist_construct_duration_us;
-        m_pipeline_metrics.draw_duration             = sampler_output.draw_duration_us;
-        m_pipeline_metrics.misc_transform_duration   = sampler_output.misc_transform_us;
-        m_pipeline_metrics.penalties_duration        = sampler_output.penalties_us;
-        m_pipeline_metrics.temperature_duration      = sampler_output.temperature_us;
-        m_pipeline_metrics.top_p_duration            = sampler_output.top_p_us;
-        m_pipeline_metrics.top_k_duration            = sampler_output.top_k_us;
         timer.end();
     }
 
@@ -520,17 +510,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     auto start_time =  std::chrono::steady_clock::now();
     PerfMetrics perf_metrics;
     auto& raw_perf_counters = perf_metrics.raw_metrics;
-    raw_perf_counters.m_inference_durations  = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_sampling_durations   = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_pure_infer_durations = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_logit_transform_durations = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_dist_construct_durations  = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_draw_durations            = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_misc_transform_durations  = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_penalties_durations       = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_temperature_durations     = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_top_p_durations           = {{ MicroSeconds(0.0f) }};
-    raw_perf_counters.m_top_k_durations           = {{ MicroSeconds(0.0f) }};
+    raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
     // checks that all requests has the same LoRA adapters property value
     for (size_t i = 1; i < sampling_params.size(); ++i) {
@@ -584,17 +564,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             
             // During prefill step (or steps if max_batch_size < prompt_len) we don't generate new tokens,
             // but still inference took place, so we need to add this time to the total inference duration.
-            raw_perf_counters.m_inference_durations[0]  += MicroSeconds(m_pipeline_metrics.inference_duration);
-            raw_perf_counters.m_sampling_durations[0]   += MicroSeconds(m_pipeline_metrics.sampling_duration);
-            raw_perf_counters.m_pure_infer_durations[0] += MicroSeconds(m_pipeline_metrics.pure_infer_duration);
-            raw_perf_counters.m_logit_transform_durations[0] += MicroSeconds(m_pipeline_metrics.logit_transform_duration);
-            raw_perf_counters.m_dist_construct_durations[0]  += MicroSeconds(m_pipeline_metrics.dist_construct_duration);
-            raw_perf_counters.m_draw_durations[0]            += MicroSeconds(m_pipeline_metrics.draw_duration);
-            raw_perf_counters.m_misc_transform_durations[0]  += MicroSeconds(m_pipeline_metrics.misc_transform_duration);
-            raw_perf_counters.m_penalties_durations[0]       += MicroSeconds(m_pipeline_metrics.penalties_duration);
-            raw_perf_counters.m_temperature_durations[0]     += MicroSeconds(m_pipeline_metrics.temperature_duration);
-            raw_perf_counters.m_top_p_durations[0]           += MicroSeconds(m_pipeline_metrics.top_p_duration);
-            raw_perf_counters.m_top_k_durations[0]           += MicroSeconds(m_pipeline_metrics.top_k_duration);
+            raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_pipeline_metrics.inference_duration);
             if (m_batch_size > 0) {
                 const auto infer_end = std::chrono::steady_clock::now();
                 const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
