@@ -186,7 +186,7 @@ int main(int argc, char* argv[]) {
     char assistant_message_json[MAX_ASSISTANT_MESSAGE_JSON_LENGTH];
     char escaped_prompt[MAX_ESCAPED_PROMPT_LENGTH];
     char escaped_output[MAX_ESCAPED_OUTPUT_LENGTH];
-    char output_buffer[MAX_JSON_LENGTH];
+    char* output_dynamic = NULL;
     size_t output_size = 0;
 
     if (argc < 4) {
@@ -199,6 +199,10 @@ int main(int argc, char* argv[]) {
     device = argv[2];
     image_path = argv[3];
     tensors = load_images(image_path, &tensor_count);
+    if (!tensors || tensor_count == 0) {
+        fprintf(stderr, "[ERROR] Failed to load image: %s\n", image_path);
+        goto err;
+    }
 
     CHECK_STATUS(ov_genai_vlm_pipeline_create(models_path, device, 0, &pipeline));
     CHECK_STATUS(ov_genai_generation_config_create(&config));
@@ -260,15 +264,27 @@ int main(int argc, char* argv[]) {
             )
         );
 
-        output_size = sizeof(output_buffer);
-        CHECK_STATUS(ov_genai_vlm_decoded_results_get_string(results, output_buffer, &output_size));
-
-        if (json_escape_string(output_buffer, escaped_output, sizeof(escaped_output)) != 0) {
-            fprintf(stderr, "[ERROR] Failed to escape output: buffer too small\n");
+        output_size = 0;
+        CHECK_STATUS(ov_genai_vlm_decoded_results_get_string(results, NULL, &output_size));
+        output_dynamic = (char*)malloc(output_size);
+        if (!output_dynamic) {
+            fprintf(stderr, "[ERROR] Failed to allocate memory for output buffer (%zu bytes)\n", output_size);
             ov_genai_vlm_decoded_results_free(results);
             results = NULL;
             continue;
         }
+        CHECK_STATUS(ov_genai_vlm_decoded_results_get_string(results, output_dynamic, &output_size));
+
+        if (json_escape_string(output_dynamic, escaped_output, sizeof(escaped_output)) != 0) {
+            fprintf(stderr, "[ERROR] Failed to escape output: buffer too small\n");
+            free(output_dynamic);
+            output_dynamic = NULL;
+            ov_genai_vlm_decoded_results_free(results);
+            results = NULL;
+            continue;
+        }
+        free(output_dynamic);
+        output_dynamic = NULL;
 
         assistant_message_json_len = snprintf(
             assistant_message_json,
@@ -306,6 +322,9 @@ err:
     }
     if (results) {
         ov_genai_vlm_decoded_results_free(results);
+    }
+    if (output_dynamic) {
+        free(output_dynamic);
     }
     if (message_container) {
         ov_genai_json_container_free(message_container);

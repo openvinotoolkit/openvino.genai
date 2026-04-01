@@ -30,7 +30,10 @@ ov_status_e convert_c_tensors_to_cpp(const ov_tensor_t** rgbs,
         auto et = ov::element::Type_t::u8;
 
         ov_shape_t shape_c{};
-        ov_tensor_get_shape(ct, &shape_c);
+        ov_status_e status = ov_tensor_get_shape(ct, &shape_c);
+        if (status != ov_status_e::OK) {
+            return status;
+        }
         std::vector<size_t> dims(shape_c.rank);
         for (size_t d = 0; d < shape_c.rank; ++d) {
             dims[d] = shape_c.dims[d];
@@ -38,7 +41,10 @@ ov_status_e convert_c_tensors_to_cpp(const ov_tensor_t** rgbs,
         ov_shape_free(&shape_c);
 
         void* data_ptr = nullptr;
-        ov_tensor_data(const_cast<ov_tensor*>(ct), &data_ptr);
+        status = ov_tensor_data(const_cast<ov_tensor*>(ct), &data_ptr);
+        if (status != ov_status_e::OK) {
+            return status;
+        }
         if (!data_ptr) {
             return ov_status_e::INVALID_C_PARAM;
         }
