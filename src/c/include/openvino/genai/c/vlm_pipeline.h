@@ -9,6 +9,7 @@
  */
 
 #pragma once
+#include "chat_history.h"
 #include "generation_config.h"
 #include "perf_metrics.h"
 #include "openvino/c/ov_common.h"
@@ -155,6 +156,27 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm
                                                                     const ov_genai_generation_config* config,
                                                                     const streamer_callback* streamer,
                                                                     ov_genai_vlm_decoded_results** results);
+
+/**
+ * @brief Generate results by ov_genai_vlm_pipeline with chat history and optional image inputs.
+ * @param pipe A pointer to the ov_genai_vlm_pipeline instance.
+ * @param history A pointer to the ov_genai_chat_history instance.
+ * @param rgbs A pointer to the array of ov_tensor_t containing image data associated with the last user message.
+ * @param num_images Number of images in the rgbs array.
+ * @param config A pointer to the ov_genai_generation_config, the pointer can be NULL.
+ * @param streamer A pointer to the stream callback. Set to NULL if no callback is needed. Either this or results must
+ * be non-NULL.
+ * @param results A pointer to the ov_genai_vlm_decoded_results, which retrieves the results of the generation. Either this
+ * or streamer must be non-NULL.
+ * @return Status code of the operation: OK(0) for success.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_pipeline_generate_with_history(ov_genai_vlm_pipeline* pipe,
+                                                                                 const ov_genai_chat_history* history,
+                                                                                 const ov_tensor_t** rgbs,
+                                                                                 size_t num_images,
+                                                                                 const ov_genai_generation_config* config,
+                                                                                 const streamer_callback* streamer,
+                                                                                 ov_genai_vlm_decoded_results** results);
 
 /**
  * @brief Start chat with keeping history in kv cache.
