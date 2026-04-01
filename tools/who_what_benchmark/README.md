@@ -198,16 +198,6 @@ The speech-generation evaluator reports these metrics:
 * `duration score` - relative utterance length similarity between target and reference.
 * `overall score` - aggregate score used for sorting worst examples.
 
-The required input CSV for speech-generation must contain these columns:
-
-* `prompts` - input text to synthesize.
-* `audio` - path to reference audio file.
-
-The optional input CSV may also contain:
-
-* `speaker_embeddings` - optional path to a binary float32 xvector file.
-
-
 ### API
 The API provides a way to access to investigate the worst generated text examples.
 
