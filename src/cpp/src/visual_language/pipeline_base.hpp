@@ -53,13 +53,13 @@ public:
         const std::string& prompt,
         const ov::AnyMap& config_map
     ) {
-        auto vision_properties = extract_vision_properties(config_map);
+        const auto vision_properties = extract_vision_properties(config_map);
         GenerationConfig config = resolve_generation_config(config_map);
         return generate(
             prompt,
-            vision_properties.images,
-            vision_properties.videos,
-            vision_properties.videos_metadata,
+            vision_properties.images.value_or(std::vector<ov::Tensor>{}),
+            vision_properties.videos.value_or(std::vector<ov::Tensor>{}),
+            vision_properties.videos_metadata.value_or(std::vector<VideoMetadata>{}),
             config,
             utils::get_streamer_from_map(config_map)
         );
@@ -93,13 +93,13 @@ public:
         const ChatHistory& history,
         const ov::AnyMap& config_map
     ) {
-        auto vision_properties = extract_vision_properties(config_map);
+        const auto vision_properties = extract_vision_properties(config_map);
         GenerationConfig config = resolve_generation_config(config_map);
         return generate(
             history,
-            vision_properties.images,
-            vision_properties.videos,
-            vision_properties.videos_metadata,
+            vision_properties.images.value_or(std::vector<ov::Tensor>{}),
+            vision_properties.videos.value_or(std::vector<ov::Tensor>{}),
+            vision_properties.videos_metadata.value_or(std::vector<VideoMetadata>{}),
             config,
             utils::get_streamer_from_map(config_map)
         );

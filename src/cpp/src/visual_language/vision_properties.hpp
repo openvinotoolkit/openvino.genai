@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include <openvino/runtime/tensor.hpp>
@@ -13,9 +14,13 @@
 namespace ov::genai {
 
 struct VisionProperties {
-    std::vector<ov::Tensor> images;
-    std::vector<ov::Tensor> videos;
-    std::vector<VideoMetadata> videos_metadata;
+    std::optional<std::vector<ov::Tensor>> images;
+    std::optional<std::vector<ov::Tensor>> videos;
+    std::optional<std::vector<VideoMetadata>> videos_metadata;
+
+    bool has_value() const {
+        return images.has_value() || videos.has_value() || videos_metadata.has_value();
+    }
 };
 
 inline VisionProperties extract_vision_properties(const ov::AnyMap& properties_map) {
@@ -30,9 +35,9 @@ inline VisionProperties extract_vision_properties(const ov::AnyMap& properties_m
     if (images_it != properties_map.end()) {
         if (images_it->second.is<std::vector<ov::Tensor>>()) {
             const auto images = images_it->second.as<std::vector<ov::Tensor>>();
-            vision_properties.images.insert(vision_properties.images.end(), images.begin(), images.end());
+            vision_properties.images = images_it->second.as<std::vector<ov::Tensor>>();
         } else if (images_it->second.is<ov::Tensor>()) {
-            vision_properties.images.push_back(images_it->second.as<ov::Tensor>());
+            vision_properties.images = {images_it->second.as<ov::Tensor>()};
         } else if (!images_it->second.empty()) {
             OPENVINO_THROW("Unknown images type.");
         }
