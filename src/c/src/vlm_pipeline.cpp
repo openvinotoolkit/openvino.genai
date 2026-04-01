@@ -194,10 +194,17 @@ ov_status_e ov_genai_vlm_pipeline_generate_with_history(ov_genai_vlm_pipeline* p
         return ov_status_e::INVALID_C_PARAM;
     }
 
+    if (num_images > 0 && !rgbs) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+
     std::vector<ov::Tensor> rgbs_cpp;
     rgbs_cpp.reserve(num_images);
     for (size_t i = 0; i < num_images; ++i) {
         const ov_tensor* ct = rgbs[i];
+        if (!ct) {
+            return ov_status_e::INVALID_C_PARAM;
+        }
 
         auto et = ov::element::Type_t::u8;
 
