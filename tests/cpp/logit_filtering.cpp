@@ -107,7 +107,7 @@ TEST_P(TopKFilteringTest, FilterResultEqualToReference) {
 
 const std::vector<TopKTestStruct> TOP_K_TRANSFORM_TEST_CASES = {
     {1, { 0.090031, 0.244728, 0.665241 }, { {0.665241, 2} } },
-    {2, { 0.090031, 0.244728, 0.665241 }, { {0.665241, 2}, {0.244728, 1} } },
+    {2, { 0.090031, 0.244728, 0.665241 }, { {0.244728, 1}, {0.665241, 2} } },
 };
 
 INSTANTIATE_TEST_SUITE_P(VariousInputs,
