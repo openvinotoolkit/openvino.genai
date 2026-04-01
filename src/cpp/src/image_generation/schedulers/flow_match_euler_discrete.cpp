@@ -4,13 +4,13 @@
 #include "image_generation/schedulers/flow_match_euler_discrete.hpp"
 
 #include <cassert>
+#include <cmath>
 #include <fstream>
 #include <iterator>
 #include <random>
 
 #include "image_generation/numpy_utils.hpp"
 #include "utils.hpp"
-#include "debug_utils.hpp"
 
 namespace {
 
@@ -18,16 +18,31 @@ namespace {
 /// Reference: https://github.com/Lightricks/LTX-Video/blob/a01a171f8fe3d99dce2728d60a73fecf4d4238ae/ltx_video/schedulers/rf.py#L51
 /// @param sigmas
 /// @param shift_terminal
+void stretch_shift_to_terminal(std::vector<double>& sigmas, double shift_terminal) {
+    std::transform(sigmas.begin(), sigmas.end(), sigmas.begin(), [](double val) {
+        return 1.0 - val;
+    });
+
+    OPENVINO_ASSERT(!sigmas.empty());
+    OPENVINO_ASSERT(std::abs(1.0 - shift_terminal) > 1e-6,
+                    "shift_terminal must not be 1.0 to avoid division by zero");
+
+    const double scale_factor = sigmas.back() / (1.0 - shift_terminal);
+    std::transform(sigmas.begin(), sigmas.end(), sigmas.begin(), [scale_factor](double val) {
+        return 1.0 - (val / scale_factor);
+    });
+}
+
 void stretch_shift_to_terminal(std::vector<float>& sigmas, float shift_terminal) {
     std::transform(sigmas.begin(), sigmas.end(), sigmas.begin(), [](float val) {
         return 1.0f - val;
     });
 
     OPENVINO_ASSERT(!sigmas.empty());
-    OPENVINO_ASSERT(std::abs(1.0 - static_cast<double>(shift_terminal)) > 1e-6,
+    OPENVINO_ASSERT(std::abs(1.0f - shift_terminal) > 1e-6f,
                     "shift_terminal must not be 1.0 to avoid division by zero");
 
-    double scale_factor = sigmas.back() / (1.0 - shift_terminal);
+    const float scale_factor = sigmas.back() / (1.0f - shift_terminal);
     std::transform(sigmas.begin(), sigmas.end(), sigmas.begin(), [scale_factor](float val) {
         return 1.0f - (val / scale_factor);
     });
@@ -60,31 +75,47 @@ FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const std::file
 
 FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const Config& scheduler_config)
     : m_config(scheduler_config) {
-    int32_t num_train_timesteps = m_config.num_train_timesteps;
-    float shift = m_config.shift;
+    const int32_t num_train_timesteps = m_config.num_train_timesteps;
+    const double shift = static_cast<double>(m_config.shift);
 
-    m_timesteps = numpy_utils::linspace<float>(1.0f, static_cast<float>(num_train_timesteps), num_train_timesteps, true);
-    std::reverse(m_timesteps.begin(), m_timesteps.end());
+    // Diffusers initializes timesteps as float32:
+    // np.linspace(1, num_train_timesteps, num_train_timesteps, dtype=np.float32)[::-1]
+    std::vector<float> timesteps_f32 =
+        numpy_utils::linspace<float>(1.0f, static_cast<float>(num_train_timesteps), num_train_timesteps, true);
+    std::reverse(timesteps_f32.begin(), timesteps_f32.end());
 
-    std::transform(m_timesteps.begin(),
-                   m_timesteps.end(),
-                   std::back_inserter(m_sigmas),
-                   [num_train_timesteps](float x) {
-                       return x / num_train_timesteps;
-                   });
+    std::vector<double> timesteps;
+    timesteps.reserve(timesteps_f32.size());
+    for (const float t : timesteps_f32) {
+        timesteps.push_back(static_cast<double>(t));
+    }
+
+    std::vector<double> sigmas;
+    sigmas.reserve(timesteps.size());
+    for (const double t : timesteps) {
+        sigmas.push_back(t / static_cast<double>(num_train_timesteps));
+    }
 
     if (!m_config.use_dynamic_shifting) {
-        std::transform(m_sigmas.begin(), m_sigmas.end(), m_sigmas.begin(), [shift](float x) {
-            return shift * x / (1 + (shift - 1) * x);
-        });
+        for (double& s : sigmas) {
+            s = shift * s / (1.0 + (shift - 1.0) * s);
+        }
     }
 
-    for (size_t i = 0; i < m_timesteps.size(); ++i) {
-        m_timesteps[i] = m_sigmas[i] * num_train_timesteps;
+    m_timesteps.resize(sigmas.size());
+    m_sigmas.resize(sigmas.size());
+    for (size_t i = 0; i < sigmas.size(); ++i) {
+        m_sigmas[i] = static_cast<float>(sigmas[i]);
+        m_timesteps[i] = static_cast<float>(m_sigmas[i] * static_cast<float>(num_train_timesteps));
     }
 
-    m_step_index = -1, m_begin_index = -1, m_strength = -1, m_num_inference_steps = -1;
-    m_sigma_max = m_sigmas[0], m_sigma_min = m_sigmas.back();
+    m_step_index = -1;
+    m_begin_index = -1;
+    m_strength = -1.0f;
+    m_num_inference_steps = 0;
+    OPENVINO_ASSERT(!m_sigmas.empty(), "Failed to initialize sigmas schedule");
+    m_sigma_max = m_sigmas.front();
+    m_sigma_min = m_sigmas.back();
 }
 
 double FlowMatchEulerDiscreteScheduler::sigma_to_t(double sigma) {
@@ -98,14 +129,14 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, 
     m_num_inference_steps = num_inference_steps;
     m_strength = strength;
 
-    int32_t num_train_timesteps = m_config.num_train_timesteps;
-    float shift = m_config.shift;
+    const int32_t num_train_timesteps = m_config.num_train_timesteps;
+    const double shift = static_cast<double>(m_config.shift);
 
     std::vector<double> timesteps = numpy_utils::linspace<double>(sigma_to_t(m_sigma_max), sigma_to_t(m_sigma_min), m_num_inference_steps, true);
 
     std::vector<double> sigmas(timesteps.size());
     for (size_t i = 0; i < sigmas.size(); ++i) {
-        sigmas[i] = timesteps[i] / num_train_timesteps;
+        sigmas[i] = timesteps[i] / static_cast<double>(num_train_timesteps);
     }
 
     OPENVINO_ASSERT(!m_config.use_dynamic_shifting,
@@ -115,8 +146,9 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, 
     m_timesteps.resize(sigmas.size());
 
     for (size_t i = 0; i < sigmas.size(); ++i) {
-        m_sigmas[i] = shift * sigmas[i] / (1.0 + (shift - 1.0) * sigmas[i]);
-        m_timesteps[i] = m_sigmas[i] * num_train_timesteps;
+        const double s = shift * sigmas[i] / (1.0 + (shift - 1.0) * sigmas[i]);
+        m_sigmas[i] = static_cast<float>(s);
+        m_timesteps[i] = static_cast<float>(m_sigmas[i] * static_cast<float>(num_train_timesteps));
     }
     m_sigmas.push_back(0.0f);
 
@@ -128,6 +160,13 @@ std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tens
     // latents - sample
     // inference_step
 
+    OPENVINO_ASSERT(noise_pred.get_element_type() == ov::element::f32,
+                    "FlowMatchEulerDiscreteScheduler::step expects f32 noise_pred but got ",
+                    noise_pred.get_element_type());
+    OPENVINO_ASSERT(latents.get_element_type() == ov::element::f32,
+                    "FlowMatchEulerDiscreteScheduler::step expects f32 latents but got ",
+                    latents.get_element_type());
+
     const float* model_output_data = noise_pred.data<const float>();
     const float* sample_data = latents.data<const float>();
 
@@ -137,7 +176,14 @@ std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tens
     ov::Tensor prev_sample(latents.get_element_type(), latents.get_shape());
     float* prev_sample_data = prev_sample.data<float>();
 
-    float sigma_diff = m_sigmas[m_step_index + 1] - m_sigmas[m_step_index];
+    OPENVINO_ASSERT(m_step_index >= 0, "Step index must be initialized before calling step()");
+    OPENVINO_ASSERT(static_cast<size_t>(m_step_index + 1) < m_sigmas.size(),
+                    "Step index out of range for sigmas schedule (step_index=",
+                    m_step_index,
+                    ", sigmas_size=",
+                    m_sigmas.size(),
+                    ")");
+    const float sigma_diff = m_sigmas[static_cast<size_t>(m_step_index + 1)] - m_sigmas[static_cast<size_t>(m_step_index)];
 
     for (size_t i = 0; i < prev_sample.get_size(); ++i) {
         prev_sample_data[i] = sample_data[i] + sigma_diff * model_output_data[i];
@@ -151,8 +197,7 @@ std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tens
 std::vector<float> FlowMatchEulerDiscreteScheduler::get_float_timesteps() {
     OPENVINO_ASSERT(m_strength != -1,
                     "Parameter 'strength' was not yes passed to Scheduler.");
-    OPENVINO_ASSERT(m_num_inference_steps != -1,
-                    "Parameter 'num_inference_steps' was not yes passed to Scheduler.");
+    OPENVINO_ASSERT(m_num_inference_steps > 0, "Parameter 'num_inference_steps' was not passed to Scheduler.");
     OPENVINO_ASSERT(!m_timesteps.empty(), "'timesteps' have not yet been set.");
     // For Text2Image strength is always 1.0 (guaranteed by pipeline)
     float init_timestep = std::min(static_cast<float>(m_num_inference_steps) * m_strength, static_cast<float>(m_num_inference_steps));
@@ -206,13 +251,13 @@ size_t FlowMatchEulerDiscreteScheduler::_index_for_timestep(float timestep) {
 void FlowMatchEulerDiscreteScheduler::scale_noise(ov::Tensor sample, float timestep, ov::Tensor noise) {
     OPENVINO_ASSERT(timestep > 0, "Timestep is not computed yet");
     
-    size_t index_for_timestep;
+    size_t index_for_timestep = 0;
     if (m_begin_index == -1) {
         index_for_timestep = _index_for_timestep(timestep);
     } else if (m_step_index != -1) {
-        index_for_timestep = m_step_index;
+        index_for_timestep = static_cast<size_t>(m_step_index);
     } else {
-        index_for_timestep = m_begin_index;
+        index_for_timestep = static_cast<size_t>(m_begin_index);
     }
 
     const float sigma = m_sigmas[index_for_timestep];
@@ -232,45 +277,53 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t
     m_num_inference_steps = num_inference_steps;
     m_strength = strength;
 
-    float linspace_end = 1.0f / m_num_inference_steps;
-    m_sigmas = numpy_utils::linspace<float>(1.0f, linspace_end, m_num_inference_steps, true);
+    const double linspace_end = 1.0 / static_cast<double>(m_num_inference_steps);
 
-    float shift = m_config.shift;
+    const std::vector<double> sigmas_f64 =
+        numpy_utils::linspace<double>(1.0, linspace_end, m_num_inference_steps, true);
+    std::vector<float> sigmas;
+    sigmas.reserve(sigmas_f64.size());
+    for (const double s : sigmas_f64) {
+        sigmas.push_back(static_cast<float>(s));
+    }
+
+    const float shift = m_config.shift;
 
     // fill sigma
-    float mu = calculate_shift(image_seq_len);
+    const double mu = calculate_shift(image_seq_len);
     if (m_config.use_dynamic_shifting) {
-        float exp_mu = std::exp(mu);
-        for (size_t i = 0; i < m_sigmas.size(); ++i) {
-            m_sigmas[i] = exp_mu / (exp_mu + (1 / m_sigmas[i] - 1));
+        const float exp_mu = static_cast<float>(std::exp(mu));
+        for (float& s : sigmas) {
+            s = exp_mu / (exp_mu + (1.0f / s - 1.0f));
         }
     } else {
-        for (size_t i = 0; i < m_sigmas.size(); ++i) {
-            m_sigmas[i] = shift * m_sigmas[i] / (1 + (shift - 1) * m_sigmas[i]);
+        for (float& s : sigmas) {
+            s = shift * s / (1.0f + (shift - 1.0f) * s);
         }
     }
+
     if (m_config.shift_terminal.has_value()) {
-        stretch_shift_to_terminal(m_sigmas, *m_config.shift_terminal);
+        stretch_shift_to_terminal(sigmas, *m_config.shift_terminal);
     }
 
-    // fill timesteps
-    for (size_t i = 0; i < m_sigmas.size(); ++i) {
-        m_timesteps.push_back(m_sigmas[i] * m_config.num_train_timesteps);
+    m_sigmas = sigmas;
+    m_timesteps.reserve(sigmas.size());
+    for (const float s : sigmas) {
+        m_timesteps.push_back(s * static_cast<float>(m_config.num_train_timesteps));
     }
     m_sigmas.push_back(0);
     m_step_index = -1, m_begin_index = -1;
 }
 
-float FlowMatchEulerDiscreteScheduler::calculate_shift(size_t image_seq_len) {
-    size_t base_seq_len = m_config.base_image_seq_len;
-    size_t max_seq_len = m_config.max_image_seq_len;
-    float base_shift = m_config.base_shift;
-    float max_shift = m_config.max_shift;
+double FlowMatchEulerDiscreteScheduler::calculate_shift(size_t image_seq_len) {
+    const double base_seq_len = static_cast<double>(m_config.base_image_seq_len);
+    const double max_seq_len = static_cast<double>(m_config.max_image_seq_len);
+    const double base_shift = static_cast<double>(m_config.base_shift);
+    const double max_shift = static_cast<double>(m_config.max_shift);
 
-    float m = (max_shift - base_shift) / (max_seq_len - base_seq_len);
-    float b = base_shift - m * base_seq_len;
-    float mu = image_seq_len * m + b;
-    return mu;
+    const double m = (max_shift - base_shift) / (max_seq_len - base_seq_len);
+    const double b = base_shift - m * base_seq_len;
+    return static_cast<double>(image_seq_len) * m + b;
 }
 
 void FlowMatchEulerDiscreteScheduler::set_begin_index(size_t begin_index) {

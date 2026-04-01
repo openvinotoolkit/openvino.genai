@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <list>
 #include <string>
 
@@ -55,13 +56,13 @@ private:
 
     float m_sigma_min, m_sigma_max;
     float m_strength;
-    size_t m_step_index, m_begin_index;
+    int64_t m_step_index, m_begin_index;
     size_t m_num_inference_steps;
 
     void init_step_index();
     double sigma_to_t(double simga);
     size_t _index_for_timestep(float timestep);
-    float calculate_shift(size_t image_seq_len);
+    double calculate_shift(size_t image_seq_len);
 };
 
 } // namespace genai
