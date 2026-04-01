@@ -843,8 +843,8 @@ ov::Tensor InputsEmbedderVideoChatFlashQwen::get_inputs_embeds(const std::string
     }
     ov::Tensor new_merged_tokens = vlm_utils::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
     ov::Tensor new_tokens = update_history(new_merged_tokens);
-    m_prev_hist_length = m_kv_cache_state.get_state().size();
-    m_kv_cache_state.add_inputs(new_tokens);
+    m_prev_hist_length = m_cache_state.get_state().size();
+    m_cache_state.add_inputs(new_tokens);
 
     std::vector<std::variant<ov::Tensor, size_t>> tokens = vlm_utils::drop_image_placeholders(new_tokens);
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
