@@ -81,12 +81,13 @@ public:
                     m_logit_transformers.push_back(transformer);
                 }
                 // Defer expf to the draw step (fused CDF scan) only when BOTH:
-                //   1. top_k > 0: TopKFilter will produce a K-element m_vector sorted
-                //      in heap order — the CDF early-exit scan is effective because
-                //      the K candidates are compact and adjacent in memory.
+                //   1. top_k > 0: TopKFilter will produce a K-element m_vector kept
+                //      in heap order (not fully sorted), so the K candidates are
+                //      compact and adjacent in memory, making the CDF early-exit
+                //      scan effective.
                 //   2. top_p == 1.0: TopPFilter will NOT run (needs normalised probs).
-                // In that case TemperatureLogitTransform is basiacally a simple scaler. 
-                // Otherwise it applies expf as TopPFilter needs probabilites
+                // In that case TemperatureLogitTransform is basically a simple scaler.
+                // Otherwise it applies expf as TopPFilter needs probabilities
                 const bool top_k_active = (sampling_params.top_k > 0 &&
                                            sampling_params.top_k < std::numeric_limits<size_t>::max());
                 const bool defer_expf = top_k_active && (sampling_params.top_p == 1.0f);
