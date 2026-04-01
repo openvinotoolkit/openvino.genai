@@ -48,8 +48,8 @@ std::pair<ASRPipeline::ModelType, std::string> detect_model_type(const std::file
     bool has_whisper = std::filesystem::exists(model_dir / "openvino_encoder_model.xml")
                     && std::filesystem::exists(model_dir / "openvino_decoder_model.xml");
 
-    bool has_paraformer = std::filesystem::exists(model_dir / "openvino_model.xml")
-                       && std::filesystem::exists(model_dir / "tokens.json");
+    // Paraformer only requires openvino_model.xml (tokens.json is optional)
+    bool has_paraformer = std::filesystem::exists(model_dir / "openvino_model.xml");
 
     if (has_whisper) {
         return {ASRPipeline::ModelType::WHISPER, "whisper"};
@@ -87,11 +87,21 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& model_dir,
     }
 
     OPENVINO_ASSERT(m_impl != nullptr, "ASRPipeline: failed to create implementation");
+    
+    // Initialize stored config from impl
+    m_generation_config = m_impl->get_generation_config();
 }
 
 ASRPipeline::~ASRPipeline() = default;
 
 // ── Core inference (Generic API) ────────────────────────────────────────
+
+ASRDecodedResults ASRPipeline::generate(
+    const RawSpeechInput& raw_speech_input,
+    const std::shared_ptr<StreamerBase> streamer) {
+    OPENVINO_ASSERT(m_impl != nullptr, "ASRPipeline: implementation not initialized");
+    return m_impl->generate(raw_speech_input, m_generation_config, streamer);
+}
 
 ASRDecodedResults ASRPipeline::generate(
     const RawSpeechInput& raw_speech_input,
@@ -129,11 +139,13 @@ Tokenizer ASRPipeline::get_tokenizer() {
 
 ASRGenerationConfig ASRPipeline::get_generation_config() const {
     OPENVINO_ASSERT(m_impl != nullptr, "ASRPipeline: implementation not initialized");
-    return m_impl->get_generation_config();
+    // Return stored config (kept in sync with impl)
+    return m_generation_config;
 }
 
 void ASRPipeline::set_generation_config(const ASRGenerationConfig& config) {
     OPENVINO_ASSERT(m_impl != nullptr, "ASRPipeline: implementation not initialized");
+    m_generation_config = config;
     m_impl->set_generation_config(config);
 }
 

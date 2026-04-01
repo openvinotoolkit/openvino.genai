@@ -39,15 +39,35 @@ public:
         // Convert ASRGenerationConfig to WhisperGenerationConfig
         WhisperGenerationConfig whisper_config = m_whisper.get_generation_config();
         whisper_config.max_new_tokens = config.max_new_tokens;
-        if (!config.language.empty()) {
+        
+        // Handle language field: empty string means unset (auto-detect)
+        if (config.language.empty()) {
+            whisper_config.language = std::nullopt;
+        } else {
             whisper_config.language = config.language;
         }
-        if (!config.task.empty()) {
+        
+        // Handle task field: empty string means unset (use default)
+        if (config.task.empty()) {
+            whisper_config.task = std::nullopt;
+        } else {
             whisper_config.task = config.task;
         }
+        
         whisper_config.return_timestamps = config.return_timestamps;
         whisper_config.temperature = config.temperature;
-        // Add other config mappings as needed
+        
+        // Map additional decoding parameters that exist in GenerationConfig base class
+        // Note: WhisperGenerationConfig inherits these from GenerationConfig
+        if (config.top_k > 0) {
+            whisper_config.top_k = config.top_k;
+        }
+        if (config.top_p < 1.0f) {
+            whisper_config.top_p = config.top_p;
+        }
+        if (config.num_beams > 1) {
+            whisper_config.num_beams = config.num_beams;
+        }
         
         // Build StreamerVariant from shared_ptr<StreamerBase>
         StreamerVariant sv = streamer ? StreamerVariant{streamer} : StreamerVariant{std::monostate{}};
@@ -101,23 +121,47 @@ public:
         ASRGenerationConfig config;
         config.max_new_tokens = wc.max_new_tokens;
         config.language = wc.language.value_or("");
-        config.task = wc.task.value_or("transcribe");
+        config.task = wc.task.value_or("");
         config.return_timestamps = wc.return_timestamps;
         config.temperature = wc.temperature;
+        // These come from GenerationConfig base class
+        config.top_k = wc.top_k;
+        config.top_p = wc.top_p;
+        config.num_beams = wc.num_beams;
         return config;
     }
 
     void set_generation_config(const ASRGenerationConfig& config) override {
         WhisperGenerationConfig wc = m_whisper.get_generation_config();
         wc.max_new_tokens = config.max_new_tokens;
-        if (!config.language.empty()) {
+        
+        // Empty string means unset/auto-detect
+        if (config.language.empty()) {
+            wc.language = std::nullopt;
+        } else {
             wc.language = config.language;
         }
-        if (!config.task.empty()) {
+        
+        if (config.task.empty()) {
+            wc.task = std::nullopt;
+        } else {
             wc.task = config.task;
         }
+        
         wc.return_timestamps = config.return_timestamps;
         wc.temperature = config.temperature;
+        
+        // These come from GenerationConfig base class
+        if (config.top_k > 0) {
+            wc.top_k = config.top_k;
+        }
+        if (config.top_p < 1.0f) {
+            wc.top_p = config.top_p;
+        }
+        if (config.num_beams > 1) {
+            wc.num_beams = config.num_beams;
+        }
+        
         m_whisper.set_generation_config(wc);
     }
 

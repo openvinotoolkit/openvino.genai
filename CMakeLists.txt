@@ -53,11 +53,12 @@ endif()
 
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 set(OV_COMPATIBILITY_VERSION ${OpenVINOGenAI_VERSION_MAJOR}.${OpenVINOGenAI_VERSION_MINOR}.${OpenVINOGenAI_VERSION_PATCH})
-find_package(OpenVINODeveloperPackage ${OV_COMPATIBILITY_VERSION} QUIET
+# Temporarily relax version check for Docker environment (2026.0.0 installed)
+find_package(OpenVINODeveloperPackage QUIET
              COMPONENTS Runtime Threading
              PATHS "${OpenVINO_DIR}")
 if(NOT OpenVINODeveloperPackage_FOUND)
-    find_package(OpenVINO ${OV_COMPATIBILITY_VERSION} REQUIRED
+    find_package(OpenVINO REQUIRED
                  COMPONENTS Runtime Threading
                  PATHS "${OpenVINO_DIR_PY}")
 endif()

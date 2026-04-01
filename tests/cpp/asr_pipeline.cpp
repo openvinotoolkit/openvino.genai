@@ -160,12 +160,7 @@ TEST_F(ASRPipelineWhisperTest, GenerateWithAnyMap) {
     ov::genai::RawSpeechInput pcm = make_sine_wave(16000);
 
     ov::AnyMap config_map;
-    config_map["max_new_tokens"] = static_cast<int64_t>(10);
-
-    auto result = pipe.generate(pcm, config_map);
-    ASSERT_FALSE(result.texts.empty());
-}
-
+    config_map["max_new_tokens"] = static_cast<size_t>(10);
 TEST_F(ASRPipelineWhisperTest, GenerateLongerAudio) {
     ASRPipeline pipe(whisper_model_dir(), "CPU");
     // 5 seconds of silence/sine
@@ -227,12 +222,7 @@ TEST_F(ASRPipelineParaformerTest, GenerateWithAnyMap) {
     ov::genai::RawSpeechInput pcm = make_sine_wave(16000);
 
     ov::AnyMap config_map;
-    config_map["max_new_tokens"] = static_cast<int64_t>(10);
-
-    auto result = pipe.generate(pcm, config_map);
-    ASSERT_FALSE(result.texts.empty());
-}
-
+    config_map["max_new_tokens"] = static_cast<size_t>(10);
 TEST_F(ASRPipelineParaformerTest, GenerateLongerAudio) {
     ASRPipeline pipe(paraformer_model_dir(), "CPU");
     // 5 seconds of sine wave

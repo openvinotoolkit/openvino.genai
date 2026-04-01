@@ -49,7 +49,17 @@ public:
     // ── Core inference (Generic API) ────────────────────────────────────
 
     /**
-     * @brief Generate transcription from audio input.
+     * @brief Generate transcription from audio input using stored config.
+     * @param raw_speech_input Audio input (tensor or vector<float>)
+     * @param streamer Optional streamer for incremental output
+     * @return Decoded transcription results
+     */
+    ASRDecodedResults generate(
+        const RawSpeechInput& raw_speech_input,
+        const std::shared_ptr<StreamerBase> streamer = nullptr);
+
+    /**
+     * @brief Generate transcription from audio input with explicit config.
      * @param raw_speech_input Audio input (tensor or vector<float>)
      * @param config Generation configuration
      * @param streamer Optional streamer for incremental output
@@ -57,7 +67,7 @@ public:
      */
     ASRDecodedResults generate(
         const RawSpeechInput& raw_speech_input,
-        const ASRGenerationConfig& config = {},
+        const ASRGenerationConfig& config,
         const std::shared_ptr<StreamerBase> streamer = nullptr);
 
     /**
