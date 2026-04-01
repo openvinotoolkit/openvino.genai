@@ -277,16 +277,21 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
     const ov::AnyMap& properties_map
 ) {
     ov::genai::OptionalGenerationConfig generation_config = utils::get_config_from_map(properties_map);
-    OPENVINO_ASSERT(generation_config.has_value(), "Generation config is required in add_request with properties map");
+    OPENVINO_ASSERT(generation_config.has_value(),
+        "\"generation_config\" property is required in add_request with properties map");
     
     const auto vision_properties = extract_vision_properties(properties_map);
-    
+
+    if (!vision_properties.has_value()) {
+        return m_impl->add_request(request_id, prompt, generation_config.value());
+    }
+
     return m_impl->add_request(
         request_id,
         prompt,
-        vision_properties.images,
-        vision_properties.videos,
-        vision_properties.videos_metadata,
+        vision_properties.images.value_or(std::vector<ov::Tensor>{}),
+        vision_properties.videos.value_or(std::vector<ov::Tensor>{}),
+        vision_properties.videos_metadata.value_or(std::vector<VideoMetadata>{}),
         generation_config.value()
     );
 }
@@ -354,14 +359,22 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
     const ov::AnyMap& properties_map
 ) {
-    const auto properties = extract_cb_generate_properties(properties_map, prompts.size());
+    const size_t batch_size = prompts.size();
+    const auto properties = extract_cb_generate_properties(properties_map);
+
+    OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
+        "\"generation_config_batches\" property is required in generate with properties map");
+
+    OPENVINO_ASSERT(properties.has_vision_properties(),
+        "Vision properties are required for VLM generate with properties map. "
+        "Use the text-only generate overload for LLM requests.");
 
     return m_impl->generate(
         prompts,
-        properties.images_batches,
-        properties.videos_batches,
-        properties.videos_metadata_batches,
-        properties.generation_config_batches,
+        CBGenerateProperties::resolve_property(properties.images_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.videos_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
+        properties.generation_config_batches.value(),
         properties.streamer
     );
 }
@@ -389,14 +402,22 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<ChatHistory>& histories,
     const ov::AnyMap& properties_map
 ) {
-    const auto properties = extract_cb_generate_properties(properties_map, histories.size());
+    const size_t batch_size = histories.size();
+    const auto properties = extract_cb_generate_properties(properties_map);
+
+    OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
+        "\"generation_config_batches\" property is required in generate with properties map");
+
+    OPENVINO_ASSERT(properties.has_vision_properties(),
+        "Vision properties are required for VLM generate with properties map. "
+        "Use the text-only generate overload for LLM requests.");
 
     return m_impl->generate(
         histories,
-        properties.images_batches,
-        properties.videos_batches,
-        properties.videos_metadata_batches,
-        properties.generation_config_batches,
+        CBGenerateProperties::resolve_property(properties.images_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.videos_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
+        properties.generation_config_batches.value(),
         properties.streamer
     );
 }

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include <openvino/runtime/tensor.hpp>
@@ -15,14 +16,28 @@
 namespace ov::genai {
 
 struct CBGenerateProperties {
-    std::vector<std::vector<ov::Tensor>> images_batches;
-    std::vector<std::vector<ov::Tensor>> videos_batches;
-    std::vector<std::vector<VideoMetadata>> videos_metadata_batches;
-    std::vector<GenerationConfig> generation_config_batches;
+    std::optional<std::vector<std::vector<ov::Tensor>>> images_batches;
+    std::optional<std::vector<std::vector<ov::Tensor>>> videos_batches;
+    std::optional<std::vector<std::vector<VideoMetadata>>> videos_metadata_batches;
+    std::optional<std::vector<GenerationConfig>> generation_config_batches;
     StreamerVariant streamer = std::monostate();
+
+    bool has_vision_properties() const {
+        return images_batches.has_value() || videos_batches.has_value() || videos_metadata_batches.has_value();
+    }
+
+    template <typename T>
+    static std::vector<T> resolve_property(const std::optional<std::vector<T>>& property, size_t batch_size) {
+        const auto default_value = std::vector<T>(batch_size);
+        if (!property.has_value() || property->empty()) {
+            return default_value;
+        }
+        return property.value();
+    }
 };
 
-CBGenerateProperties extract_cb_generate_properties(const ov::AnyMap& config_map, size_t batch_size);
+
+CBGenerateProperties extract_cb_generate_properties(const ov::AnyMap& config_map);
 
 
  /**
