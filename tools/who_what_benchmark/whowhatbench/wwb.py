@@ -635,8 +635,13 @@ def genai_gen_text2video(
     guidance_scale=3,
     guidance_rescale=0,
     generator=None,
+    empty_adapters=False,
 ):
     kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
+    if empty_adapters:
+        import openvino_genai
+
+        kwargs["adapters"] = openvino_genai.AdapterConfig()
     result = model.generate(
         prompt,
         num_inference_steps=num_inference_steps,
@@ -822,6 +827,7 @@ def create_evaluator(base_model, args):
                 gen_video_fn=genai_gen_text2video if args.genai else None,
                 is_genai=args.genai,
                 seed=args.seed,
+                empty_adapters=args.empty_adapters,
             )
         elif task == "speech-generation":
             return EvaluatorCLS(
