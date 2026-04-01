@@ -41,7 +41,7 @@ static bool cpu_supports_avx() {
         bool cpu_avx = (cpu_info[2] & (1 << 28)) != 0;
         if (os_xsave && cpu_avx) {
             // Verify OS enabled YMM state saving via XCR0 bits 1 (SSE) and 2 (AVX)
-            unsigned long long xcr0 = _xgetbv(0);
+            unsigned long long xcr0 = _xgetbv(_XCR_XFEATURE_ENABLED_MASK);
             return (xcr0 & 0x6) == 0x6;
         }
         return false;
