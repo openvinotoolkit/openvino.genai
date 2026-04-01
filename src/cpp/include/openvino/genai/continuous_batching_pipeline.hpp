@@ -57,6 +57,13 @@ struct PipelineMetrics {
      * Duration of the last generation step in microseconds.
      */
     float inference_duration = 0.0;
+
+    /**
+     * Total allocated KV cache size in bytes, based on the total number of KV blocks.
+     * This value represents reserved/allocated memory for the KV cache and does not
+     * distinguish between used and unused portions in dynamic KV cache configurations.
+     */
+    size_t kv_cache_size_in_bytes = 0;
 };
 
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
@@ -78,10 +85,31 @@ protected:
     friend class SpeculativeDecodingImpl;
     friend class Eagle3DecodingImpl;
     friend class PromptLookupImpl;
+    friend class VLMPipeline;
 
     std::shared_ptr<IContinuousBatchingPipeline> m_impl;
 
     ContinuousBatchingPipeline() = default;
+
+private:
+    // Uses preloaded language model to avoid redundant read_model() during pipeline initialization.
+    ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
+                               const ModelsMap& models_map,
+                               const ov::genai::Tokenizer& tokenizer,
+                               const SchedulerConfig& scheduler_config,
+                               const std::string& device,
+                               std::optional<std::filesystem::path> embedder_config_dir_path = std::nullopt,
+                               const ov::AnyMap& properties = {},
+                               const ov::genai::GenerationConfig& generation_config = {}
+    );
+
+    ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
+                               const std::filesystem::path& models_path,
+                               const SchedulerConfig& scheduler_config,
+                               const std::string& device,
+                               const ov::AnyMap& properties = {},
+                               const ov::AnyMap& tokenizer_properties = {},
+                               const ov::AnyMap& vision_encoder_properties = {});
 
 public:
     ContinuousBatchingPipeline(const std::filesystem::path& models_path,

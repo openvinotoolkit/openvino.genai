@@ -151,8 +151,9 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
 
     auto main_model_descr =
         ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
+    OPENVINO_ASSERT(main_model_descr.model, "Model descriptor must contain a valid model");
 
-    if (draft_model_descr.model != nullptr) {
+    if (draft_model_descr.model) {
         // FIXME: Add support for StatefulSpeculativeLLMPipeline for non-NPU devices for both models.
         OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",
                         "Stateful FastDraft and Stateful Eagle3 Speculative Decoding require NPU to be "
@@ -205,8 +206,22 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
 
+    const auto model = utils::read_model(models_path, properties);
+
+    // PA backend does not support linear attention states (conv/SSM caches).
+    if (attention_backend == PA_BACKEND && !is_npu_requested
+        && utils::has_linear_attention_states(model)) {
+        if (utils::explicitly_requires_paged_attention(user_properties)
+            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
+            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
+        } else {
+            attention_backend = SDPA_BACKEND;
+        }
+    }
+
+    const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (is_npu_requested) {
-        m_pimpl = StatefulPipeline::create(models_path, tokenizer, device, properties);
+        m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -227,7 +242,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     if (m_pimpl == nullptr) {
         // FIXME: Switch to StatefulPipeline::create after resolving issues
         //        with GPU and CPU for StatefulSpeculativeLLMPipeline
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, properties, generation_config);
     }
 
     m_pimpl->save_load_time(start_time);
@@ -243,8 +258,24 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
 
+    // Read model and create tokenizer once to avoid double I/O during pipeline construction.
+    const auto model = utils::read_model(models_path, properties);
+    const Tokenizer tokenizer(models_path, properties);
+
+    // PA backend does not support linear attention states (conv/SSM caches).
+    if (attention_backend == PA_BACKEND && !is_npu_requested
+        && utils::has_linear_attention_states(model)) {
+        if (utils::explicitly_requires_paged_attention(user_properties)
+            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
+            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
+        } else {
+            attention_backend = SDPA_BACKEND;
+        }
+    }
+
+    const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (is_npu_requested) {
-        m_pimpl = StatefulPipeline::create(models_path, device, properties);
+        m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
@@ -265,7 +296,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     if (m_pimpl == nullptr) {
         // FIXME: Switch to StatefulPipeline::create after resolving issues
         //        with GPU and CPU for StatefulSpeculativeLLMPipeline
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, device, properties);
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, properties, generation_config);
     }
 
     m_pimpl->save_load_time(start_time);
@@ -284,9 +315,21 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
 
+    // PA backend does not support linear attention states (conv/SSM caches).
+    const auto model = utils::singleton_core().read_model(model_str, weights_tensor);
+    if (attention_backend == PA_BACKEND && !is_npu_requested
+        && utils::has_linear_attention_states(model)) {
+        if (utils::explicitly_requires_paged_attention(user_properties)
+            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
+            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
+        } else {
+            attention_backend = SDPA_BACKEND;
+        }
+    }
+
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(
-            utils::singleton_core().read_model(model_str, weights_tensor),
+            model,
             tokenizer,
             device,
             properties,
@@ -314,7 +357,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         // FIXME: Switch to StatefulPipeline::create after resolving issues
         //        with GPU and CPU for StatefulSpeculativeLLMPipeline
         m_pimpl = std::make_unique<StatefulLLMPipeline>(
-            utils::singleton_core().read_model(model_str, weights_tensor),
+            model,
             tokenizer,
             device,
             properties,

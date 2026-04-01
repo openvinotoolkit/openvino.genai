@@ -8,6 +8,7 @@
 #include "openvino/genai/common_types.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/processor_config.hpp"
+#include "visual_language/video_processor_config.hpp"
 #include "circular_buffer_queue.hpp"
 
 
@@ -67,6 +68,12 @@ struct EncodedImage {
     size_t num_image_tokens = 0;
 };
 
+/// @brief A struct describing video metadata of a given video.
+struct VideoMetadata {
+    float fps = 24.0f;
+    std::vector<size_t> frames_indices;
+};
+
 /// @brief Embeddings of a given video. 
 struct EncodedVideo {
     /// @brief Embeddings of a given video obtained by applying preprocessing to frames and feature extracting models (resampler, mm_projector, etc.)
@@ -81,6 +88,9 @@ struct EncodedVideo {
 
     /// @brief A number of encoded frames.
     size_t frame_num;
+
+    /// @brief Video metadata, used for video input processing and prompt normalization.
+    VideoMetadata metadata;
 };
 
 /// @brief A class used to infer embeddings of an image using
@@ -141,6 +151,10 @@ protected:
 
     /// @brief A config to follow.
     ProcessorConfig m_processor_config;
+    
+    /// @brief A config for video input processing.
+    /// Used by models with separate video processor (e.g. Qwen3-VL).
+    VideoProcessorConfig m_video_processor_config;
 
 public:
     VisionEncoder(
