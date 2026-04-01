@@ -680,6 +680,14 @@ public:
     }
 
     /**
+     * @param seq_group Pointer to a sequence group.
+     * @return The number of logical blocks required by the sequence group.
+     */
+    size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
+        return (seq_group->get_context_len() - seq_group->get_num_evicted_tokens() + m_block_size - 1) / m_block_size;
+    }
+
+    /**
      * @param seq_id The identifier of an ov::genai::Sequence
      * @return Whether or not this BlockManager is managing this sequence group.
      */
@@ -741,7 +749,7 @@ public:
             // In this case hash needs to be updated to the hash of fully filled block.
             if (block_table.size() > 0) {
                 CacheBlock::Ptr last_block = block_table.back();
-                auto hash = sequence->get_hash(block_table.size() * m_block_size);
+                auto hash = sequence->get_hash(block_table.size() * m_block_size, m_block_size);
                 auto prev_hash = last_block->get_hash();
                 if (prev_hash != hash) {
                     BlocksPerLayer last_blocks_vec;
@@ -760,7 +768,7 @@ public:
                 if (num_hashed_tokens > content_length) {
                     num_hashed_tokens = content_length;
                 }
-                auto hash = sequence->get_hash(num_hashed_tokens);
+                auto hash = sequence->get_hash(num_hashed_tokens, m_block_size);
                 auto blocks_for_all_layers = m_allocator.allocate_block(hash, m_prefix_hash_to_occupied_block_map);
                 for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); layer_idx++) {
                     m_block_table[sequence_id][layer_idx].push_back(blocks_for_all_layers[layer_idx]);
@@ -961,16 +969,16 @@ public:
             auto seq_id = seq->get_id();
             if (m_block_table.find(seq_id) == m_block_table.end()) {
                 // the block table is empty, so we need to allocate the number of blocks equal to number of logical blocks
-                blocks_count += seq_group->get_num_logical_blocks();
+                blocks_count += get_num_logical_blocks(seq_group);
                 continue;
             }
             auto& block_table = m_block_table[seq_id][0];
             size_t num_physical_blocks = block_table.size();
             OPENVINO_ASSERT(num_physical_blocks > 0);
 
-            if (num_physical_blocks > seq_group->get_num_logical_blocks())
+            if (num_physical_blocks > get_num_logical_blocks(seq_group))
                 // new blocks are not required
-                // Case when num_physical_blocks == seq_group->get_num_logical_blocks() may still need block allocation
+                // Case when num_physical_blocks == get_num_logical_blocks(seq_group) may still need block allocation
                 // (such as when a sequence with an incomplete last block was forked) and is handled further in the
                 // iteration
                 continue;
@@ -982,7 +990,7 @@ public:
                 continue;
             last_block_ids.insert(last_block_id);
 
-            size_t needed_blocks_per_sequence = seq_group->get_num_logical_blocks() - num_physical_blocks;
+            size_t needed_blocks_per_sequence = get_num_logical_blocks(seq_group) - num_physical_blocks;
 
             CacheBlock::Ptr last_block = block_table.back();
             if (last_block->copy_on_write()) {
@@ -1011,7 +1019,7 @@ public:
      */
     void free_empty_physical_blocks(SequenceGroup::Ptr seq_group) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
-        size_t num_logical_blocks = seq_group->get_num_logical_blocks();
+        size_t num_logical_blocks = get_num_logical_blocks(seq_group);
         if (num_logical_blocks == 0) {
             return;
         }
@@ -1038,7 +1046,7 @@ public:
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         // Will always allocate the identical number of new blocks (if any) to each of the "layers" to keep the
         // number of blocks occupied by each "layer" identical at all times.
-        size_t num_logical_blocks = seq_group->get_num_logical_blocks();
+        size_t num_logical_blocks = get_num_logical_blocks(seq_group);
         std::vector<Sequence::Ptr> running_sequences = seq_group->get_running_sequences();
 
         std::map<size_t, std::list<size_t>> copy_blocks_map;
@@ -1071,7 +1079,7 @@ public:
                     BlocksPerLayer new_blocks_for_all_layers;
                     new_blocks_for_all_layers.reserve(effective_num_layers);
                     if (m_enable_prefix_caching) {
-                        auto hash = sequence->get_hash();
+                        auto hash = sequence->get_hash(m_block_size);
                         new_blocks_for_all_layers = m_allocator.allocate_block(hash, m_prefix_hash_to_occupied_block_map);
                     } else {
                         for (size_t i = 0; i < effective_num_layers; i++) {
@@ -1092,7 +1100,7 @@ public:
                     if (m_enable_prefix_caching) {
                         // update hash of block
                         auto prev_hash = last_blocks[0]->get_hash();
-                        auto hash = sequence->get_hash();
+                        auto hash = sequence->get_hash(m_block_size);
                         for (size_t i = 0; i < effective_num_layers; i++) {
                             auto& last_block = last_blocks[i];
                             last_block->set_hash(hash);
@@ -1131,7 +1139,7 @@ public:
                 content_len = prompt_len;
             }
             // restore fully filled blocks
-            auto full_block_hash = sequence->get_hash(content_len);
+            auto full_block_hash = sequence->get_hash(content_len, m_block_size);
             auto blocks = m_allocator.get_cached_block(full_block_hash, m_prefix_hash_to_occupied_block_map);
             auto timestamp = std::chrono::steady_clock::now();
             if (!blocks.empty()) {
@@ -1147,7 +1155,7 @@ public:
                     if (prev_iteration_content_len + i > prompt_len) {
                         break;
                     }
-                    auto hash = sequence->get_hash(prev_iteration_content_len + i);
+                    auto hash = sequence->get_hash(prev_iteration_content_len + i, m_block_size);
                     auto blocks = m_allocator.get_cached_block(hash, m_prefix_hash_to_occupied_block_map);
                     if (!blocks.empty()) {
                         auto timestamp = std::chrono::steady_clock::now();

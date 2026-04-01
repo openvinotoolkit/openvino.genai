@@ -282,7 +282,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
         sequence_group = std::make_shared<SequenceGroup>(request_id, 
                                                          input_ids, 
                                                          sampling_params_copy, 
-                                                         m_block_size,
                                                          token_type_ids,
                                                          lm_extra_inputs,
                                                          position_ids, 
@@ -293,7 +292,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
         sequence_group = std::make_shared<SequenceGroup>(request_id,
                                                          input_ids,
                                                          sampling_params_copy,
-                                                         m_block_size,
                                                          token_type_ids);
     }
 
@@ -701,7 +699,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
 
         for (size_t i = 0; i < num_running_sequences; ++i) {
             Sequence::CPtr sequence = running_sequences[i];
-            size_t num_blocks = sequence_group->get_num_logical_blocks();
+            size_t num_blocks = m_scheduler->get_num_logical_blocks(sequence_group);
             size_t seq_id = sequence->get_id();
             OPENVINO_ASSERT(live_seq_ids_to_num_occupied_blocks.find(seq_id) == live_seq_ids_to_num_occupied_blocks.end(),
                     "duplicate seq_id ", seq_id, " among sequence groups");
@@ -810,7 +808,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
             }
         }
 
-        m_previous_num_blocks_before_eviction_per_sequence[seq_id] = seq_group_ptr->get_num_logical_blocks();
+        m_previous_num_blocks_before_eviction_per_sequence[seq_id] = m_scheduler->get_num_logical_blocks(seq_group_ptr);
 
         auto logical_blocks_to_evict = cache_eviction_algo.evict_logical_blocks();
         m_previous_evicted_block_logical_indices_per_sequence[seq_id] = logical_blocks_to_evict;

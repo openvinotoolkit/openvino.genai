@@ -138,6 +138,11 @@ public:
         return m_cache_orchestrator->get_block_size();
     }
 
+    size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
+        size_t block_size = get_block_size();
+        return (seq_group->get_context_len() - seq_group->get_num_evicted_tokens() + block_size - 1) / block_size;
+    }
+
     const std::vector<BlocksPerLayer>& get_block_tables(size_t seq_id) const {
         return m_cache_orchestrator->get_block_tables(seq_id);
     }
@@ -295,7 +300,7 @@ private:
 
                 // apply KV cache limitations
                 size_t block_size = get_block_size();
-                size_t currently_allocated_token_slots = sequence_group->get_num_blocks() * block_size;
+                size_t currently_allocated_token_slots = get_num_logical_blocks(sequence_group) * block_size;
                 size_t occupied_token_slots = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
                 OPENVINO_ASSERT(currently_allocated_token_slots >= occupied_token_slots, "internal error");
                 size_t available_slots = currently_allocated_token_slots - occupied_token_slots,
@@ -621,9 +626,9 @@ private:
         }
 
         size_t non_evictable_size = m_config.cache_eviction_config.get_max_cache_size() - m_config.cache_eviction_config.get_evictable_size();
-        OPENVINO_ASSERT(sequence_group->get_num_logical_blocks() * get_block_size() >= non_evictable_size);
+        OPENVINO_ASSERT(get_num_logical_blocks(sequence_group) * get_block_size() >= non_evictable_size);
 
-        return sequence_group->get_num_logical_blocks() * get_block_size() - non_evictable_size;
+        return get_num_logical_blocks(sequence_group) * get_block_size() - non_evictable_size;
     }
 };
 

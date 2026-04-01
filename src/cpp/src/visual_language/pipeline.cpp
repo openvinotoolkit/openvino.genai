@@ -557,6 +557,10 @@ public:
         m_is_chat_conversation = true;
         m_system_message = system_message;
         m_inputs_embedder->start_chat(m_system_message);
+        // Reset language model state and attention mask to discard any
+        // stale KV cache from a prior non-chat generate() call.
+        reset_language_state();
+        m_language.get_tensor("attention_mask").set_shape({1, 0});
         if (system_message.empty()) {
             return;
         }
@@ -718,7 +722,7 @@ private:
         // Update perf metrics with num_input_tokens
         perf_metrics.num_input_tokens = prompt_ids.get_size();
 
-        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size);
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config);
         requests.push_back(std::move(sequence_group));
 
         std::shared_ptr<StreamerBase> streamer_ptr = utils::create_streamer(streamer, m_tokenizer);

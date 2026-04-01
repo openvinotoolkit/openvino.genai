@@ -65,13 +65,13 @@ TEST(TestScheduler, general_test) {
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7};
         SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                utils::get_greedy_config(), 4);
+                                                                                utils::get_greedy_config());
         auto idx0 = (*sequence_group1)[0]->get_id();
         SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                utils::get_greedy_config(), 4);
+                                                                                utils::get_greedy_config());
         auto idx1 = (*sequence_group2)[0]->get_id();
         SequenceGroup::Ptr sequence_group3 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                utils::get_greedy_config(), 4);
+                                                                                utils::get_greedy_config());
         auto idx2 = (*sequence_group3)[0]->get_id();
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2, sequence_group3};
 
@@ -176,10 +176,10 @@ TEST_P(AppendSlotsSchedulerTest, test_append_slots_considers_all_sequences) {
     auto scheduler_config = GetParam();
     std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7};
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                            utils::get_greedy_config(), 4);
+                                                                            utils::get_greedy_config());
     auto idx0 = (*sequence_group1)[0]->get_id();
     SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                            utils::get_greedy_config(), 4);
+                                                                            utils::get_greedy_config());
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
@@ -247,11 +247,11 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
     auto scheduler_config = GetParam();
     std::vector<uint64_t> tokens1 = {0,1,2,3,4,5,6,7,8,9,10};
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens1.size()}, tokens1.data()),
-                                                                            utils::get_greedy_config(), 4);
+                                                                            utils::get_greedy_config());
     std::vector<uint64_t> tokens2 = {0,1,2,3,4,5,6,7};
     auto idx0 = (*sequence_group1)[0]->get_id();
     SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens2.size()}, tokens2.data()),
-                                                                            utils::get_greedy_config(), 4);
+                                                                            utils::get_greedy_config());
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
@@ -344,7 +344,7 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
 
         // create beam search group
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                utils::get_beam_search_config(), 4);
+                                                                                utils::get_beam_search_config());
         std::vector<SequenceGroup::Ptr> requests = {sequence_group};
         EXPECT_NO_THROW(requests[0]->get_running_sequences()[0]->get_sequence_group_ptr());
 
@@ -393,7 +393,7 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
 
         // create group, which requires 1 block
         SequenceGroup::Ptr sequence_group_greedy = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                utils::get_greedy_config(), 4);
+                                                                                utils::get_greedy_config());
 
         // set greedy group at the beginning of list to make it higher priority
         std::vector<SequenceGroup::Ptr> new_requests = {sequence_group_greedy, sequence_group};
@@ -456,10 +456,10 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9,10,11};
         SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                utils::get_greedy_config(), 4);
+                                                                                utils::get_greedy_config());
         auto idx0 = (*sequence_group1)[0]->get_id();
         SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                utils::get_greedy_config(), 4);
+                                                                                utils::get_greedy_config());
         auto idx1 = (*sequence_group2)[0]->get_id();
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
@@ -572,7 +572,7 @@ TEST(TestScheduler, prefix_caching_test) {
             std::vector<uint64_t> tokens = histrory_tokens;
             tokens.insert(tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
             SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                    utils::get_greedy_config(), 4);
+                                                                                    utils::get_greedy_config());
             scheduler.restore_cached_blocks(sequence_group);
             std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
@@ -640,10 +640,10 @@ TEST(TestScheduler, prefix_caching_test_two_identical_sequences) {
             std::vector<uint64_t> tokens = histrory_tokens;
             tokens.insert(tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
             SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                    utils::get_greedy_config(), 4);
+                                                                                    utils::get_greedy_config());
 
             SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                    utils::get_greedy_config(), 4);
+                                                                                    utils::get_greedy_config());
             std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
             // restore cached blocks
             for (auto request: requests) {
@@ -708,7 +708,7 @@ TEST(TestScheduler, prefix_caching_with_max_new_tokens_equal_1) {
 
         for (size_t chat_iteration = 0; chat_iteration < chat_iterations; chat_iteration++) {
             SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {prompt_tokens.size()}, prompt_tokens.data()),
-                                                                                    utils::get_greedy_config(), 32);
+                                                                                    utils::get_greedy_config());
 
             std::vector<SequenceGroup::Ptr> requests = {sequence_group};
             // restore cached blocks
@@ -751,10 +751,10 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
 
     std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9,10,11};
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                            utils::get_greedy_config(), 4);
+                                                                            utils::get_greedy_config());
     auto idx0 = (*sequence_group1)[0]->get_id();
     SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                            utils::get_greedy_config(), 4);
+                                                                            utils::get_greedy_config());
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
@@ -834,10 +834,10 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
 
     std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9};
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                            utils::get_greedy_config(), 4);
+                                                                            utils::get_greedy_config());
     auto idx0 = (*sequence_group1)[0]->get_id();
     SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                            utils::get_greedy_config(), 4);
+                                                                            utils::get_greedy_config());
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
@@ -955,12 +955,11 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0,
                                                                          ov::Tensor(ov::element::i64, {tokens1.size()},
                                                                                     tokens1.data()),
-                                                                         utils::get_greedy_config(),
-                                                                         2);
+                                                                         utils::get_greedy_config());
     std::vector<uint64_t> tokens2 = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}; // 5 full blocks, larger than eviction arena size (3 blocks) - will start evicting already at prompt stage
     auto idx1 = (*sequence_group1)[0]->get_id();
     SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens2.size()}, tokens2.data()),
-                                                                         utils::get_greedy_config(), 2);
+                                                                         utils::get_greedy_config());
     auto idx2 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
@@ -1063,7 +1062,7 @@ TEST(TestScheduler, prefix_caching_embeddings_test) {
         for (size_t chat_iteration = 0; chat_iteration < chat_iterations; chat_iteration++) {
             std::vector<std::vector<float>> embeddings = histrory_embeddings;
             embeddings.insert(embeddings.end(), prompt_embeddings.begin(), prompt_embeddings.end());
-            SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, embeds_matrix_to_tensor(embeddings), utils::get_greedy_config(), 4);
+            SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, embeds_matrix_to_tensor(embeddings), utils::get_greedy_config());
             scheduler.restore_cached_blocks(sequence_group);
             std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 

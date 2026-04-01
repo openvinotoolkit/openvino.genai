@@ -209,6 +209,10 @@ class ModelRunner {
     bool m_collect_attention_scores;
     bool m_is_use_per_layer_cache_control;
 
+    size_t _get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
+        return (seq_group->get_context_len() - seq_group->get_num_evicted_tokens() + m_block_size - 1) / m_block_size;
+    }
+
     bool m_is_use_rotation_inputs;
     std::vector<std::map<size_t, std::vector<size_t>>> m_rotated_block_logical_indices_per_sequence_for_each_layer;
     std::vector<ov::Tensor> m_cache_rotation_deltas_for_each_layer;
@@ -360,7 +364,7 @@ public:
             size_t num_sequences = sequence_group->num_running_seqs();
             batch_size_in_sequences += num_sequences;
             total_num_tokens += sequence_group->get_num_scheduled_tokens() * num_sequences;
-            total_num_blocks += sequence_group->get_num_blocks() * num_sequences;
+            total_num_blocks += _get_num_logical_blocks(sequence_group) * num_sequences;
             max_context_len_val = std::max(max_context_len_val, sequence_group->get_context_len());
 
             if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
@@ -599,7 +603,7 @@ public:
                     position_ids_idx++;
                 }
 
-                size_t num_blocks = sequence_group->get_num_logical_blocks();
+                size_t num_blocks = _get_num_logical_blocks(sequence_group);
                 size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
                 size_t num_past_blocks_to_ignore = 0;
 
@@ -992,7 +996,7 @@ private:
                     const auto& kv_blocks = scheduler_output.m_block_tables.at(seq_id);
 
                     if (is_fill_all) {
-                        size_t num_blocks = sequence_group->get_num_logical_blocks();
+                        size_t num_blocks = _get_num_logical_blocks(sequence_group);
                         for (size_t block_id = 0; block_id < num_blocks; ++block_id) {
                             // In case no cache eviction is requested, all per-layer block tables are expected to be
                             // identical at all times
@@ -1094,7 +1098,7 @@ private:
                 size_t num_running_sequences = running_sequences.size();
                 for (size_t k = 0; k < num_running_sequences; ++k) {
                     Sequence::CPtr sequence = running_sequences[k];
-                    size_t num_blocks = sequence_group->get_num_logical_blocks();
+                    size_t num_blocks = _get_num_logical_blocks(sequence_group);
                     size_t seq_id = sequence->get_id();
                     std::vector<size_t> remaining_logical_block_ids;
                     if (seq_id_to_skipped_blocks_map.find(seq_id) != seq_id_to_skipped_blocks_map.end()) {

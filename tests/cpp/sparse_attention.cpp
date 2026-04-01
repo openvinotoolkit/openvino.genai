@@ -83,7 +83,7 @@ protected:
        auto mock_sampling_params = GenerationConfig{};
 
        // prepare the required state of sequence group
-       sequence_group = std::make_shared<SequenceGroup>(0, mock_token_ids, mock_sampling_params, BLOCK_SIZE);
+       sequence_group = std::make_shared<SequenceGroup>(0, mock_token_ids, mock_sampling_params);
        sequence_group->schedule_tokens(test_struct.num_tokens_currently_in_cache);
        sequence_group->finish_iteration();
        sequence_group->schedule_tokens(test_struct.num_tokens_in_new_chunk);
