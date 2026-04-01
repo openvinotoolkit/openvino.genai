@@ -140,7 +140,8 @@ typedef struct {
  * @brief Generate results by ov_genai_vlm_pipeline with text and image inputs
  * @param pipe A pointer to the ov_genai_vlm_pipeline instance.
  * @param text_inputs A pointer to the input text string.
- * @param rgbs A pointer to the array of ov_tensor_t containing image data.
+ * @param rgbs A pointer to the array of ov_tensor_t containing image data. May be NULL only when num_images == 0.
+ * When num_images > 0, rgbs must be non-NULL and each rgbs[i] must be non-NULL.
  * @param num_images Number of images in the rgbs array.
  * @param config A pointer to the ov_genai_generation_config, the pointer can be NULL.
  * @param streamer A pointer to the stream callback. Set to NULL if no callback is needed. Either this or results must
@@ -162,6 +163,7 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm
  * @param pipe A pointer to the ov_genai_vlm_pipeline instance.
  * @param history A pointer to the ov_genai_chat_history instance.
  * @param rgbs A pointer to the array of ov_tensor_t containing image data associated with the last user message.
+ * May be NULL only when num_images == 0. When num_images > 0, rgbs must be non-NULL and each rgbs[i] must be non-NULL.
  * @param num_images Number of images in the rgbs array.
  * @param config A pointer to the ov_genai_generation_config, the pointer can be NULL.
  * @param streamer A pointer to the stream callback. Set to NULL if no callback is needed. Either this or results must

@@ -48,6 +48,13 @@
         goto err;                                                                                         \
     }
 
+static int has_capacity(size_t used, size_t capacity, size_t bytes_to_write) {
+    if (capacity == 0 || used >= capacity) {
+        return 0;
+    }
+    return bytes_to_write <= (capacity - used - 1);
+}
+
 // Returns 0 on success, -1 if buffer is too small.
 static int json_escape_string(const char* input, char* output, size_t output_size) {
     size_t i = 0;
@@ -57,12 +64,12 @@ static int json_escape_string(const char* input, char* output, size_t output_siz
         return -1;
     }
 
-    while (input[i] != '\0' && j < output_size - 1) {
+    while (input[i] != '\0') {
         unsigned char c = (unsigned char)input[i];
         switch (c) {
             case '"':
             case '\\':
-                if (j >= output_size - 3) {
+                if (!has_capacity(j, output_size, 2)) {
                     return -1;
                 }
                 output[j++] = '\\';
@@ -73,7 +80,7 @@ static int json_escape_string(const char* input, char* output, size_t output_siz
             case '\n':
             case '\r':
             case '\t':
-                if (j >= output_size - 3) {
+                if (!has_capacity(j, output_size, 2)) {
                     return -1;
                 }
                 output[j++] = '\\';
@@ -86,7 +93,7 @@ static int json_escape_string(const char* input, char* output, size_t output_siz
                 if (c < 0x20) {
                     char hex1;
                     char hex2;
-                    if (j >= output_size - 7) {
+                    if (!has_capacity(j, output_size, 6)) {
                         return -1;
                     }
                     output[j++] = '\\';
@@ -116,19 +123,22 @@ static int json_escape_string(const char* input, char* output, size_t output_siz
                                 break;
                             }
                         }
-                        if (valid && j + (size_t)utf8_len <= output_size - 1) {
+                        if (valid) {
+                            if (!has_capacity(j, output_size, (size_t)utf8_len)) {
+                                return -1;
+                            }
                             for (k = 0; k < utf8_len; ++k) {
                                 output[j++] = input[i + k];
                             }
                             i += (size_t)utf8_len - 1;
                         } else {
-                            if (j >= output_size - 2) {
+                            if (!has_capacity(j, output_size, 1)) {
                                 return -1;
                             }
                             output[j++] = input[i];
                         }
                     } else {
-                        if (j >= output_size - 2) {
+                        if (!has_capacity(j, output_size, 1)) {
                             return -1;
                         }
                         output[j++] = input[i];
@@ -154,6 +164,7 @@ static ov_genai_streaming_status_e stream_callback(const char* str, void* args) 
 }
 
 int main(int argc, char* argv[]) {
+    int return_code = EXIT_FAILURE;
     const char* models_path = NULL;
     const char* device = NULL;
     const char* image_path = NULL;
@@ -287,8 +298,12 @@ int main(int argc, char* argv[]) {
 
         printf("\n----------\nquestion:\n");
     }
+    return_code = EXIT_SUCCESS;
 
 err:
+    if (tensors) {
+        free_tensor_array((ov_tensor_t**)tensors, tensor_count);
+    }
     if (results) {
         ov_genai_vlm_decoded_results_free(results);
     }
@@ -308,5 +323,5 @@ err:
         ov_genai_vlm_pipeline_free(pipeline);
     }
 
-    return EXIT_SUCCESS;
+    return return_code;
 }

@@ -10,6 +10,122 @@
 #include "types_c.h"
 #include <stdarg.h>
 
+namespace {
+
+ov_status_e convert_c_tensors_to_cpp(const ov_tensor_t** rgbs,
+                                     size_t num_images,
+                                     std::vector<ov::Tensor>& rgbs_cpp) {
+    if (num_images > 0 && !rgbs) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+
+    rgbs_cpp.clear();
+    rgbs_cpp.reserve(num_images);
+    for (size_t i = 0; i < num_images; ++i) {
+        const ov_tensor* ct = rgbs[i];
+        if (!ct) {
+            return ov_status_e::INVALID_C_PARAM;
+        }
+
+        auto et = ov::element::Type_t::u8;
+
+        ov_shape_t shape_c{};
+        ov_tensor_get_shape(ct, &shape_c);
+        std::vector<size_t> dims(shape_c.rank);
+        for (size_t d = 0; d < shape_c.rank; ++d) {
+            dims[d] = shape_c.dims[d];
+        }
+        ov_shape_free(&shape_c);
+
+        void* data_ptr = nullptr;
+        ov_tensor_data(const_cast<ov_tensor*>(ct), &data_ptr);
+        if (!data_ptr) {
+            return ov_status_e::INVALID_C_PARAM;
+        }
+
+        rgbs_cpp.emplace_back(ov::element::Type(et), ov::Shape(dims), data_ptr);
+    }
+
+    return ov_status_e::OK;
+}
+
+template <typename GenerateWithStreamer, typename GenerateWithoutStreamer>
+ov_status_e generate_vlm_results(GenerateWithStreamer&& generate_with_streamer,
+                                 GenerateWithoutStreamer&& generate_without_streamer,
+                                 const streamer_callback* streamer,
+                                 ov_genai_vlm_decoded_results** results) {
+    try {
+        std::unique_ptr<ov_genai_vlm_decoded_results> _results = std::make_unique<ov_genai_vlm_decoded_results>();
+        _results->object = std::make_shared<ov::genai::VLMDecodedResults>();
+
+        if (streamer) {
+            auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
+                return static_cast<ov::genai::StreamingStatus>((streamer->callback_func)(word.c_str(), streamer->args));
+            };
+            *(_results->object) = generate_with_streamer(callback);
+        } else {
+            *(_results->object) = generate_without_streamer();
+        }
+
+        if (results) {
+            *results = _results.release();
+        }
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+
+    return ov_status_e::OK;
+}
+
+template <typename InputType>
+ov_status_e generate_vlm_with_optional_images(ov::genai::VLMPipeline& pipeline,
+                                              const InputType& input,
+                                              const std::vector<ov::Tensor>& rgbs_cpp,
+                                              size_t num_images,
+                                              const ov_genai_generation_config* config,
+                                              const streamer_callback* streamer,
+                                              ov_genai_vlm_decoded_results** results) {
+    if (num_images > 0) {
+        return generate_vlm_results(
+            [&](const auto& callback) {
+                return (config && config->object)
+                           ? pipeline.generate(input, rgbs_cpp, *(config->object), callback)
+                           : pipeline.generate(input, rgbs_cpp, {}, callback);
+            },
+            [&]() {
+                ov::AnyMap config_map = {ov::genai::images(rgbs_cpp)};
+                if (config && config->object) {
+                    config_map.insert(ov::genai::generation_config(*(config->object)));
+                }
+                return pipeline.generate(input, config_map);
+            },
+            streamer,
+            results
+        );
+    }
+
+    return generate_vlm_results(
+        [&](const auto& callback) {
+            ov::AnyMap config_map = {ov::genai::streamer(callback)};
+            if (config && config->object) {
+                config_map.insert(ov::genai::generation_config(*(config->object)));
+            }
+            return pipeline.generate(input, config_map);
+        },
+        [&]() {
+            ov::AnyMap config_map = {};
+            if (config && config->object) {
+                config_map.insert(ov::genai::generation_config(*(config->object)));
+            }
+            return pipeline.generate(input, config_map);
+        },
+        streamer,
+        results
+    );
+}
+
+}  // namespace
+
 ov_status_e ov_genai_vlm_decoded_results_create(ov_genai_vlm_decoded_results** results) {
     if (!results) {
         return ov_status_e::INVALID_C_PARAM;
@@ -131,56 +247,19 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
     }
 
     std::vector<ov::Tensor> rgbs_cpp;
-    rgbs_cpp.reserve(num_images);
-    for (size_t i = 0; i < num_images; ++i) {
-        const ov_tensor* ct = rgbs[i];
-
-        auto et = ov::element::Type_t::u8;
-
-        ov_shape_t shape_c{};
-        ov_tensor_get_shape(ct, &shape_c);
-        std::vector<size_t> dims(shape_c.rank);
-        for (size_t d = 0; d < shape_c.rank; ++d) dims[d] = shape_c.dims[d];
-        ov_shape_free(&shape_c);
-
-        void* data_ptr = nullptr;
-        ov_tensor_data(const_cast<ov_tensor*>(ct), &data_ptr);
-        if (!data_ptr) {
-            return ov_status_e::INVALID_C_PARAM;
-        }
-
-        rgbs_cpp.emplace_back(ov::element::Type(et), ov::Shape(dims), data_ptr);
+    ov_status_e status = convert_c_tensors_to_cpp(rgbs, num_images, rgbs_cpp);
+    if (status != ov_status_e::OK) {
+        return status;
     }
 
-    try {
-        std::unique_ptr<ov_genai_vlm_decoded_results> _results = std::make_unique<ov_genai_vlm_decoded_results>();
-        _results->object = std::make_shared<ov::genai::VLMDecodedResults>();
-        std::string input_str(text_inputs);
-        ov::genai::StringInputs input = {input_str};
-        
-        if (streamer) {
-            auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
-                return static_cast<ov::genai::StreamingStatus>((streamer->callback_func)(word.c_str(), streamer->args));
-            };
-            if (num_images > 0) {
-                *(_results->object) = (config && config->object)
-                                        ? pipe->object->generate(input_str, rgbs_cpp, *(config->object), callback)
-                                        : pipe->object->generate(input_str, rgbs_cpp, {}, callback);
-            }
-            if (num_images == 0){
-                *(_results->object) = (config && config->object)
-                ? pipe->object->generate(input_str, ov::genai::generation_config(*(config->object)), ov::genai::streamer(callback))
-                : pipe->object->generate(input_str, ov::genai::streamer(callback));
-            }
-        } 
-        if (results) {
-            *results = _results.release();
-        }
-
-    } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
-    }
-    return ov_status_e::OK;
+    std::string input_str(text_inputs);
+    return generate_vlm_with_optional_images(*(pipe->object),
+                                             input_str,
+                                             rgbs_cpp,
+                                             num_images,
+                                             config,
+                                             streamer,
+                                             results);
 } 
 
 ov_status_e ov_genai_vlm_pipeline_generate_with_history(ov_genai_vlm_pipeline* pipe,
@@ -194,73 +273,19 @@ ov_status_e ov_genai_vlm_pipeline_generate_with_history(ov_genai_vlm_pipeline* p
         return ov_status_e::INVALID_C_PARAM;
     }
 
-    if (num_images > 0 && !rgbs) {
-        return ov_status_e::INVALID_C_PARAM;
-    }
-
     std::vector<ov::Tensor> rgbs_cpp;
-    rgbs_cpp.reserve(num_images);
-    for (size_t i = 0; i < num_images; ++i) {
-        const ov_tensor* ct = rgbs[i];
-        if (!ct) {
-            return ov_status_e::INVALID_C_PARAM;
-        }
-
-        auto et = ov::element::Type_t::u8;
-
-        ov_shape_t shape_c{};
-        ov_tensor_get_shape(ct, &shape_c);
-        std::vector<size_t> dims(shape_c.rank);
-        for (size_t d = 0; d < shape_c.rank; ++d) {
-            dims[d] = shape_c.dims[d];
-        }
-        ov_shape_free(&shape_c);
-
-        void* data_ptr = nullptr;
-        ov_tensor_data(const_cast<ov_tensor*>(ct), &data_ptr);
-        if (!data_ptr) {
-            return ov_status_e::INVALID_C_PARAM;
-        }
-
-        rgbs_cpp.emplace_back(ov::element::Type(et), ov::Shape(dims), data_ptr);
+    ov_status_e status = convert_c_tensors_to_cpp(rgbs, num_images, rgbs_cpp);
+    if (status != ov_status_e::OK) {
+        return status;
     }
 
-    try {
-        std::unique_ptr<ov_genai_vlm_decoded_results> _results = std::make_unique<ov_genai_vlm_decoded_results>();
-        _results->object = std::make_shared<ov::genai::VLMDecodedResults>();
-
-        if (streamer) {
-            auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
-                return static_cast<ov::genai::StreamingStatus>((streamer->callback_func)(word.c_str(), streamer->args));
-            };
-            if (num_images > 0) {
-                *(_results->object) = (config && config->object)
-                                        ? pipe->object->generate(*(history->object), rgbs_cpp, *(config->object), callback)
-                                        : pipe->object->generate(*(history->object), rgbs_cpp, {}, callback);
-            } else {
-                *(_results->object) = (config && config->object)
-                                        ? pipe->object->generate(*(history->object), ov::genai::generation_config(*(config->object)), ov::genai::streamer(callback))
-                                        : pipe->object->generate(*(history->object), ov::genai::streamer(callback));
-            }
-        } else {
-            if (num_images > 0) {
-                *(_results->object) = (config && config->object)
-                                        ? pipe->object->generate(*(history->object), rgbs_cpp, *(config->object))
-                                        : pipe->object->generate(*(history->object), rgbs_cpp);
-            } else {
-                *(_results->object) = (config && config->object)
-                                        ? pipe->object->generate(*(history->object), *(config->object))
-                                        : pipe->object->generate(*(history->object));
-            }
-        }
-
-        if (results) {
-            *results = _results.release();
-        }
-    } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
-    }
-    return ov_status_e::OK;
+    return generate_vlm_with_optional_images(*(pipe->object),
+                                             *(history->object),
+                                             rgbs_cpp,
+                                             num_images,
+                                             config,
+                                             streamer,
+                                             results);
 }
 
 ov_status_e ov_genai_vlm_pipeline_start_chat(ov_genai_vlm_pipeline* pipe) {
