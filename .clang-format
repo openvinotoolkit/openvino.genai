@@ -7,6 +7,7 @@ Language: Cpp
 Standard: Cpp11
 
 AccessModifierOffset: -4
+AlignAfterOpenBracket: BlockIndent
 AlignConsecutiveMacros: true
 AllowAllArgumentsOnNextLine: false
 AllowAllConstructorInitializersOnNextLine: false
@@ -18,6 +19,7 @@ AllowShortLoopsOnASingleLine: false
 AlwaysBreakBeforeMultilineStrings: false
 BinPackArguments: false
 BinPackParameters: false
+BreakBeforeBraces: Attach
 CommentPragmas: '^#'
 DerivePointerAlignment: false
 FixNamespaceComments: true
