@@ -761,7 +761,8 @@ private:
 // TODO: remove it when GEMMA3 ticket-171180 is fixed
 bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    return vlm_config.model_type == VLMModelType::GEMMA3;
+    return vlm_config.model_type == VLMModelType::GEMMA3
+        || vlm_config.model_type == VLMModelType::GEMMA4;
 }
 
 VLMPipeline::VLMPipeline(
