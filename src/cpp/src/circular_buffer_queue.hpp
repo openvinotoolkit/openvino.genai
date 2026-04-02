@@ -3,11 +3,12 @@
 
 #pragma once
 
-#include <queue>
-#include <mutex>
-#include <future>
 #include <algorithm>
 #include <atomic>
+#include <future>
+#include <mutex>
+#include <numeric>
+#include <queue>
 
 namespace ov::genai {
 

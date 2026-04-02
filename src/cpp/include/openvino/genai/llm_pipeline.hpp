@@ -3,10 +3,14 @@
 
 #pragma once
 
-#include <optional>
-#include <variant>
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
+#include <iosfwd>
+#include <optional>
+#include <sstream>
+#include <variant>
 
 #include "openvino/core/any.hpp"
 #include "openvino/genai/generation_config.hpp"

@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <optional>
+
+#include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "utils.hpp"
 
