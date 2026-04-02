@@ -364,7 +364,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_word_at(const ov_genai_whisper_
     }
     try {
         if (!results->object->words.has_value()) {
-            return ov_status_e::NOT_BOUNDS;
+            return ov_status_e::NOT_FOUND;
         }
         if (index >= results->object->words->size()) {
             return ov_status_e::OUT_OF_BOUNDS;
