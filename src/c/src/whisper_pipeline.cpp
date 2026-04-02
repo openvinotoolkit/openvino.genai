@@ -364,7 +364,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_word_at(const ov_genai_whisper_
     }
     try {
         if (!results->object->words.has_value()) {
-            return ov_status_e::OUT_OF_BOUNDS;
+            return ov_status_e::NOT_BOUNDS;
         }
         if (index >= results->object->words->size()) {
             return ov_status_e::OUT_OF_BOUNDS;
@@ -506,7 +506,7 @@ ov_status_e ov_genai_whisper_pipeline_set_generation_config(ov_genai_whisper_pip
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_whisper_generation_config_set_return_word_timestamps(ov_genai_whisper_generation_config* config, bool return_word_timestamps) {
+ov_status_e ov_genai_whisper_generation_config_set_word_timestamps(ov_genai_whisper_generation_config* config, bool return_word_timestamps) {
     if (!config || !config->object) return ov_status_e::INVALID_C_PARAM;
     try {
         config->object->return_word_timestamps = return_word_timestamps;
