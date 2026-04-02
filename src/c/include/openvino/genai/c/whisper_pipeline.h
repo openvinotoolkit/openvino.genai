@@ -21,6 +21,12 @@ typedef struct ov_genai_whisper_decoded_result_chunk_opaque ov_genai_whisper_dec
 typedef struct ov_genai_whisper_word_timing_opaque ov_genai_whisper_word_timing;
 
 /**
+ * @brief Release the memory allocated for ov_genai_whisper_word_timing.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing to free memory.
+ */
+OPENVINO_GENAI_C_EXPORTS void ov_genai_whisper_word_timing_free(ov_genai_whisper_word_timing* word_timing);
+
+/**
  * @struct ov_genai_whisper_decoded_results
  * @brief type define ov_genai_whisper_decoded_results from ov_genai_whisper_decoded_results_opaque
  */
