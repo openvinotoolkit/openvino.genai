@@ -423,15 +423,18 @@ ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
         for (size_t i = 0; i < property_args_size / 2; ++i) {
             const char* key = va_arg(args_ptr, const char*);
             const char* val = va_arg(args_ptr, const char*);
-            
-            if (key && val) {
-                std::string s_key(key);
-                std::string s_val(val);
-                if (s_key == "word_timestamps") {
-                    property[s_key] = (s_val == "true" || s_val == "1");
-                } else {
-                    property[s_key] = s_val;
-                }
+
+            if (!key || !val) {
+                va_end(args_ptr);
+                return ov_status_e::INVALID_C_PARAM;
+            }
+
+            std::string s_key(key);
+            std::string s_val(val);
+            if (s_key == "word_timestamps") {
+                property[s_key] = (s_val == "true" || s_val == "1");
+            } else {
+                property[s_key] = s_val;
             }
         }
 
