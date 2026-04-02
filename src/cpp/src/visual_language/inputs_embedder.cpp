@@ -20,6 +20,7 @@
 #include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
+#include "visual_language/gemma4/classes.hpp"
 
 #include "utils.hpp"
 
@@ -288,6 +289,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::GEMMA4) {
+        m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, model_dir, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -323,7 +326,19 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
     } else if (vlm_config.model_type == VLMModelType::QWEN3_VL) {
         m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
-        m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config,
+                                                        models_map,
+                                                        tokenizer,
+                                                        config_dir_path,
+                                                        device,
+                                                        device_config);
+    } else if (vlm_config.model_type == VLMModelType::GEMMA4) {
+        m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config,
+                                                        models_map,
+                                                        tokenizer,
+                                                        config_dir_path,
+                                                        device,
+                                                        device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -386,6 +401,10 @@ bool InputsEmbedder::has_token_type_ids() const {
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_inputs() const {
     return m_impl->get_lm_extra_inputs();
+}
+
+CircularBufferQueue<ov::InferRequest>* InputsEmbedder::get_per_layer_embeddings_queue() const {
+    return m_impl->get_per_layer_embeddings_queue();
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {

@@ -72,6 +72,9 @@ public:
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
+    // returns per-layer embeddings inference queue, or nullptr if not available
+    CircularBufferQueue<ov::InferRequest>* get_per_layer_embeddings_queue() const;
+
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
@@ -194,6 +197,10 @@ private:
         virtual bool has_token_type_ids() const;
 
         virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
+
+        virtual CircularBufferQueue<ov::InferRequest>* get_per_layer_embeddings_queue() const {
+            return nullptr;
+        }
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
@@ -363,6 +370,7 @@ private:
     friend class InputsEmbedderQwen2_5_VL;
     friend class InputsEmbedderQwen3VL;
     friend class InputsEmbedderGemma3;
+    friend class InputsEmbedderGemma4;
 };
 
 template <typename Func>

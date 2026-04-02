@@ -1,30 +1,28 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "openvino/genai/visual_language/pipeline.hpp"
+
 #include <optional>
 #include <random>
 
-#include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/genai/visual_language/perf_metrics.hpp"
-#include "openvino/genai/tokenizer.hpp"
-#include "openvino/genai/text_streamer.hpp"
-#include "openvino/runtime/properties.hpp"
-#include "openvino/runtime/auto/properties.hpp"
-
-#include "visual_language/vlm_config.hpp"
-#include "visual_language/inputs_embedder.hpp"
-#include "visual_language/embedding_model.hpp"
-#include "visual_language/pipeline_base.hpp"
-#include "visual_language/continuous_batching_adapter.hpp"
-
-#include "visual_language/vision_registry.hpp"
-#include "visual_language/vlm_chat_context.hpp"
-
-#include "sampling/sampler.hpp"
-#include "utils.hpp"
 #include "lm_encoding.hpp"
 #include "logger.hpp"
 #include "lora/helper.hpp"
+#include "openvino/genai/text_streamer.hpp"
+#include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/visual_language/perf_metrics.hpp"
+#include "openvino/runtime/auto/properties.hpp"
+#include "openvino/runtime/properties.hpp"
+#include "sampling/sampler.hpp"
+#include "utils.hpp"
+#include "visual_language/continuous_batching_adapter.hpp"
+#include "visual_language/embedding_model.hpp"
+#include "visual_language/inputs_embedder.hpp"
+#include "visual_language/pipeline_base.hpp"
+#include "visual_language/vision_registry.hpp"
+#include "visual_language/vlm_chat_context.hpp"
+#include "visual_language/vlm_config.hpp"
 
 using namespace ov::genai;
 
@@ -736,15 +734,27 @@ private:
 
         const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
 
+        auto* per_layer_queue = m_inputs_embedder->get_per_layer_embeddings_queue();
+
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
-        return ov::genai::get_lm_encoded_results(
-            m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
-            position_ids, token_type_ids, cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
-            use_intermediate_remote_tensor, lm_extra_inputs
-        );
+        return ov::genai::get_lm_encoded_results(m_language,
+                                                 inputs_embeds,
+                                                 new_atten_mask,
+                                                 streamer_ptr,
+                                                 m_sampler,
+                                                 std::move(requests),
+                                                 position_ids,
+                                                 token_type_ids,
+                                                 cache_state,
+                                                 m_embedding,
+                                                 rope_delta,
+                                                 m_max_kv_cache_size,
+                                                 use_intermediate_remote_tensor,
+                                                 lm_extra_inputs,
+                                                 per_layer_queue);
     }
 };
 

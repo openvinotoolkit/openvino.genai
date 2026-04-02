@@ -86,7 +86,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     std::optional<int64_t> rope_delta,
     const size_t max_kv_cache_size,
     const bool use_intermediate_remote_tensor,
-    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs
+    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs,
+    CircularBufferQueue<ov::InferRequest>* per_layer_embeddings_queue
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -257,6 +258,16 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                     ov::Tensor new_visual_pos_masks{tensor.get_element_type(), {batch_size, 1}};
                     std::fill_n(new_visual_pos_masks.data<bool>(), new_visual_pos_masks.get_size(), false);
                     m_llm.set_tensor(name, new_visual_pos_masks);
+                } else if (name == "per_layer_inputs" && per_layer_embeddings_queue) {
+                    // Recompute per-layer embeddings for the new token(s)
+                    CircularBufferQueueElementGuard<ov::InferRequest> guard(per_layer_embeddings_queue);
+                    ov::InferRequest& per_layer_req = guard.get();
+                    per_layer_req.set_tensor("input_ids", new_input_ids);
+                    per_layer_req.infer();
+                    const ov::Tensor& per_layer_output = per_layer_req.get_output_tensor();
+                    ov::Tensor per_layer_result(per_layer_output.get_element_type(), per_layer_output.get_shape());
+                    std::memcpy(per_layer_result.data(), per_layer_output.data(), per_layer_output.get_byte_size());
+                    m_llm.set_tensor(name, per_layer_result);
                 }
             }
         } else {

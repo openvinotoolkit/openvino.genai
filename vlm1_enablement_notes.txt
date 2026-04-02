@@ -1,0 +1,2 @@
+1. test genai vs optimum-intel for text-only part slightly diverges when system-prompt used
+2. llm encoding.get_lm_encoded_results now has per_layer embeddings calculation. Consider moving it to a embedder method insteal of raw infer.

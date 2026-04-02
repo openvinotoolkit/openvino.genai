@@ -2,21 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "vision_encoder.hpp"
+
 #include "utils.hpp"
-
-
-#include "visual_language/qwen2vl/classes.hpp"
-#include "visual_language/qwen2_5_vl/classes.hpp"
-#include "visual_language/qwen3_vl/classes.hpp"
-#include "visual_language/phi3_vision/classes.hpp"
-#include "visual_language/phi4mm/classes.hpp"
-#include "visual_language/minicpm/classes.hpp"
+#include "visual_language/gemma3/classes.hpp"
+#include "visual_language/gemma4/classes.hpp"
+#include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/llava/classes.hpp"
-#include "visual_language/nanollava/classes.hpp"
 #include "visual_language/llava_next/classes.hpp"
 #include "visual_language/llava_next_video/classes.hpp"
-#include "visual_language/internvl_chat/classes.hpp"
-#include "visual_language/gemma3/classes.hpp"
+#include "visual_language/minicpm/classes.hpp"
+#include "visual_language/nanollava/classes.hpp"
+#include "visual_language/phi3_vision/classes.hpp"
+#include "visual_language/phi4mm/classes.hpp"
+#include "visual_language/qwen2_5_vl/classes.hpp"
+#include "visual_language/qwen2vl/classes.hpp"
+#include "visual_language/qwen3_vl/classes.hpp"
 
 namespace ov::genai {
 
@@ -79,6 +79,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderQwen3VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::GEMMA4) {
+        return std::make_shared<VisionEncoderGemma4>(model_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
@@ -114,6 +116,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderQwen3VL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::GEMMA4) {
+        return std::make_shared<VisionEncoderGemma4>(models_map, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
