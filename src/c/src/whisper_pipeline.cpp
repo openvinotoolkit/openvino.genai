@@ -518,3 +518,14 @@ ov_status_e ov_genai_whisper_pipeline_set_generation_config(ov_genai_whisper_pip
     }
     return ov_status_e::OK;
 }
+ov_status_e ov_genai_whisper_generation_config_set_return_word_timestamps(ov_genai_whisper_generation_config* config, bool return_word_timestamps) {
+    if (!config || !config->object) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        config->object->return_word_timestamps = return_word_timestamps;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
