@@ -419,19 +419,17 @@ ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
         ov::AnyMap property = {};
         va_list args_ptr;
         va_start(args_ptr, pipeline);
-        
-        for (size_t i = 0; i < property_args_size / 2; i++) {
-            const char* key = va_arg(args_ptr, const char*);
-            const char* val = va_arg(args_ptr, const char*);
-            
-            if (std::string(key) == "word_timestamps") {
-                property[key] = (std::string(val) == "true");
-            } else {
-                property[key] = std::string(val);
-            }
-        }
+
+        GET_PROPERTY_FROM_ARGS_LIST(property, args_ptr, property_args_size);
+
         va_end(args_ptr);
 
+        const auto word_timestamps_it = property.find("word_timestamps");
+        if (word_timestamps_it != property.end() && word_timestamps_it->second.is<std::string>()) {
+            const std::string& value = word_timestamps_it->second.as<std::string>();
+            const bool word_timestamps_flag = (value == "true") || (value == "1");
+            word_timestamps_it->second = word_timestamps_flag;
+        }
         std::unique_ptr<ov_genai_whisper_pipeline> _pipeline = std::make_unique<ov_genai_whisper_pipeline>();
         _pipeline->object = std::make_shared<ov::genai::WhisperPipeline>(
             std::filesystem::path(models_path),
