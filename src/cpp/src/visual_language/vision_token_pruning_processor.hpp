@@ -109,11 +109,13 @@ public:
      * @param video_pad_token Video pad token string
      * @return Pruned prompt if modifications were made, otherwise returns original_prompt unchanged
      */
-    std::string get_last_pruned_prompt(const std::string& original_prompt,
-                                       const std::string& vision_start_token,
-                                       const std::string& vision_end_token,
-                                       const std::string& image_pad_token,
-                                       const std::string& video_pad_token) const;
+    std::string get_last_pruned_prompt(
+        const std::string& original_prompt,
+        const std::string& vision_start_token,
+        const std::string& vision_end_token,
+        const std::string& image_pad_token,
+        const std::string& video_pad_token
+    ) const;
 
     /**
      * @brief Result structure for CDPruner visual token pruning pipeline.
@@ -132,11 +134,13 @@ public:
     /**
      * @brief Extract text features for CDPruner relevance calculation.
      */
-    ov::Tensor extract_text_features(const ov::Tensor& text_embeds,
-                                     const ov::Tensor& input_ids,
-                                     int64_t image_pad_token_id,
-                                     int64_t vision_start_token_id,
-                                     int64_t vision_end_token_id) const;
+    ov::Tensor extract_text_features(
+        const ov::Tensor& text_embeds,
+        const ov::Tensor& input_ids,
+        int64_t image_pad_token_id,
+        int64_t vision_start_token_id,
+        int64_t vision_end_token_id
+    ) const;
 
     /**
      * @brief Convert visual features to CDPruner batch format.
@@ -145,9 +149,11 @@ public:
      * @param tokens_per_image Token count for each image (when chunk_count > 1)
      * @return Vector of tensors, each [1, num_tokens, hidden_dim]
      */
-    std::vector<ov::Tensor> convert_visual_features(const ov::Tensor& vision_embeds,
-                                                    size_t chunk_count,
-                                                    const std::vector<size_t>& tokens_per_image) const;
+    std::vector<ov::Tensor> convert_visual_features(
+        const ov::Tensor& vision_embeds,
+        size_t chunk_count,
+        const std::vector<size_t>& tokens_per_image
+    ) const;
 
     /**
      * @brief Adjust position IDs after visual token pruning.
@@ -160,56 +166,66 @@ public:
      * @param spatial_merge_size Spatial merge size for coordinate conversion
      * @param keep_flags_per_region_out Output: keep flags for each vision region
      */
-    void adjust_position_ids(ov::Tensor& position_ids,
-                             const ov::Tensor& input_ids,
-                             const std::vector<std::array<size_t, 3>>& images_grid_thw,
-                             const std::vector<size_t>& images_sequence,
-                             int64_t image_pad_token_id,
-                             int64_t vision_start_token_id,
-                             size_t spatial_merge_size,
-                             std::vector<std::vector<bool>>& keep_flags_per_region_out) const;
+    void adjust_position_ids(
+        ov::Tensor& position_ids,
+        const ov::Tensor& input_ids,
+        const std::vector<std::array<size_t, 3>>& images_grid_thw,
+        const std::vector<size_t>& images_sequence,
+        int64_t image_pad_token_id,
+        int64_t vision_start_token_id,
+        size_t spatial_merge_size,
+        std::vector<std::vector<bool>>& keep_flags_per_region_out
+    ) const;
 
     /**
      * @brief Update 3D position IDs for Qwen2VL-style models (3D RoPE).
      */
-    ov::Tensor update_position_ids_3d(const ov::Tensor& original_position_ids,
-                                      const ov::Tensor& input_ids,
-                                      int64_t vision_start_token_id,
-                                      int64_t image_pad_token_id,
-                                      const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
-                                      const std::vector<std::vector<size_t>>& kept_indices_per_image,
-                                      size_t spatial_merge_size,
-                                      std::vector<std::vector<bool>>& keep_flags_out) const;
+    ov::Tensor update_position_ids_3d(
+        const ov::Tensor& original_position_ids,
+        const ov::Tensor& input_ids,
+        int64_t vision_start_token_id,
+        int64_t image_pad_token_id,
+        const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
+        const std::vector<std::vector<size_t>>& kept_indices_per_image,
+        size_t spatial_merge_size,
+        std::vector<std::vector<bool>>& keep_flags_out
+    ) const;
 
     /**
      * @brief Update 1D position IDs for LLaVA-style models.
      */
-    ov::Tensor update_position_ids_1d(const ov::Tensor& original_position_ids,
-                                      const ov::Tensor& input_ids,
-                                      int64_t vision_start_token_id,
-                                      int64_t image_pad_token_id,
-                                      const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
-                                      const std::vector<std::vector<size_t>>& kept_indices_per_image,
-                                      std::vector<std::vector<bool>>& keep_flags_out) const;
+    ov::Tensor update_position_ids_1d(
+        const ov::Tensor& original_position_ids,
+        const ov::Tensor& input_ids,
+        int64_t vision_start_token_id,
+        int64_t image_pad_token_id,
+        const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
+        const std::vector<std::vector<size_t>>& kept_indices_per_image,
+        std::vector<std::vector<bool>>& keep_flags_out
+    ) const;
 
     /**
      * @brief Generate pruned input_ids based on keep_flags.
      */
-    ov::Tensor generate_pruned_input_ids(const ov::Tensor& input_ids,
-                                         const std::vector<std::vector<bool>>& keep_flags_per_region,
-                                         int64_t image_pad_token_id,
-                                         int64_t vision_start_token_id,
-                                         int64_t vision_end_token_id) const;
+    ov::Tensor generate_pruned_input_ids(
+        const ov::Tensor& input_ids,
+        const std::vector<std::vector<bool>>& keep_flags_per_region,
+        int64_t image_pad_token_id,
+        int64_t vision_start_token_id,
+        int64_t vision_end_token_id
+    ) const;
 
     /**
      * @brief Generate pruned text embeddings by removing filtered image_pad positions.
      */
-    ov::Tensor generate_pruned_text_embeds(const ov::Tensor& input_ids,
-                                           const ov::Tensor& text_embeds,
-                                           int64_t image_pad_token_id,
-                                           int64_t vision_start_token_id,
-                                           int64_t vision_end_token_id,
-                                           const std::vector<std::vector<bool>>& keep_flags_per_region) const;
+    ov::Tensor generate_pruned_text_embeds(
+        const ov::Tensor& input_ids,
+        const ov::Tensor& text_embeds,
+        int64_t image_pad_token_id,
+        int64_t vision_start_token_id,
+        int64_t vision_end_token_id,
+        const std::vector<std::vector<bool>>& keep_flags_per_region
+    ) const;
 
     /**
      * @brief Execute the complete pruning pipeline.
@@ -229,10 +245,12 @@ public:
      * @param prev_hist_length Previous history length (modified in-place if pruning occurred)
      * @return std::optional<PruningResult> with pruned tensors if pruning occurred, std::nullopt otherwise
      */
-    std::optional<PruningResult> execute(const PruningContext& context,
-                                         ov::Tensor& position_ids,
-                                         utils::CacheState& cache_state,
-                                         size_t& prev_hist_length);
+    std::optional<PruningResult> execute(
+        const PruningContext& context,
+        ov::Tensor& position_ids,
+        utils::CacheState& cache_state,
+        size_t& prev_hist_length
+    );
 
 private:
     /// @brief CDPruner instance for token pruning (lazy initialized)

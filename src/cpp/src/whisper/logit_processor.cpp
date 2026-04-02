@@ -22,11 +22,13 @@ void do_suppress_tokens(ov::Tensor& logits, const size_t batch_idx, const std::v
     }
 }
 
-void process_whisper_timestamp_logits(ov::Tensor& logits,
-                                      const size_t batch_idx,
-                                      const ov::genai::WhisperGenerationConfig& config,
-                                      const std::vector<int64_t>& generated_tokens,
-                                      bool initial_step = false) {
+void process_whisper_timestamp_logits(
+    ov::Tensor& logits,
+    const size_t batch_idx,
+    const ov::genai::WhisperGenerationConfig& config,
+    const std::vector<int64_t>& generated_tokens,
+    bool initial_step = false
+) {
     const size_t batch_size = logits.get_shape().at(0);
 
     size_t vocab_size = logits.get_shape().back();

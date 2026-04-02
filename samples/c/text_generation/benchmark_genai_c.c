@@ -98,12 +98,14 @@ int parse_arguments(int argc, char* argv[], Options* options) {
     }
 
 int main(int argc, char* argv[]) {
-    Options options = {.model = NULL,
-                       .prompt = DEFAULT_PROMPT,
-                       .num_warmup = DEFAULT_NUM_WARMUP,
-                       .num_iter = DEFAULT_NUM_ITER,
-                       .max_new_tokens = DEFAULT_MAX_NEW_TOKENS,
-                       .device = DEFAULT_DEVICE};
+    Options options = {
+        .model = NULL,
+        .prompt = DEFAULT_PROMPT,
+        .num_warmup = DEFAULT_NUM_WARMUP,
+        .num_iter = DEFAULT_NUM_ITER,
+        .max_new_tokens = DEFAULT_MAX_NEW_TOKENS,
+        .device = DEFAULT_DEVICE
+    };
 
     int result = parse_arguments(argc, argv, &options);
     if (result == 0) {

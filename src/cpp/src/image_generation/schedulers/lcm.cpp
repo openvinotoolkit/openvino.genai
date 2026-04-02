@@ -1,14 +1,14 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "image_generation/schedulers/lcm.hpp"
+
 #include <cassert>
-#include <random>
 #include <fstream>
 #include <iterator>
+#include <random>
 
-#include "image_generation/schedulers/lcm.hpp"
 #include "image_generation/numpy_utils.hpp"
-
 #include "json_utils.hpp"
 
 namespace ov {
@@ -40,9 +40,8 @@ LCMScheduler::Config::Config(const std::filesystem::path& scheduler_config_path)
     read_json_param(data, "timestep_spacing", timestep_spacing);
 }
 
-LCMScheduler::LCMScheduler(const std::filesystem::path& scheduler_config_path) :
-    LCMScheduler(Config(scheduler_config_path)) {
-}
+LCMScheduler::LCMScheduler(const std::filesystem::path& scheduler_config_path)
+    : LCMScheduler(Config(scheduler_config_path)) {}
 
 LCMScheduler::LCMScheduler(const Config& scheduler_config)
     : m_config(scheduler_config),
@@ -55,7 +54,9 @@ LCMScheduler::LCMScheduler(const Config& scheduler_config)
         betas = m_config.trained_betas;
     } else if (m_config.beta_schedule == BetaSchedule::LINEAR) {
         for (size_t i = 0; i < m_config.num_train_timesteps; i++) {
-            betas.push_back(m_config.beta_start + (m_config.beta_end - m_config.beta_start) * i / (m_config.num_train_timesteps - 1));
+            betas.push_back(
+                m_config.beta_start + (m_config.beta_end - m_config.beta_start) * i / (m_config.num_train_timesteps - 1)
+            );
         }
     } else if (m_config.beta_schedule == BetaSchedule::SCALED_LINEAR) {
         float start = std::sqrt(m_config.beta_start);
@@ -93,26 +94,38 @@ void LCMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     size_t origin_timesteps_size = m_config.original_inference_steps * strength;
     std::vector<size_t> lcm_origin_timesteps(origin_timesteps_size);
     std::iota(lcm_origin_timesteps.begin(), lcm_origin_timesteps.end(), 1);
-    std::transform(lcm_origin_timesteps.begin(), lcm_origin_timesteps.end(), lcm_origin_timesteps.begin(), [&k](auto& x) {
-        return x * k - 1;
-    });
+    std::transform(
+        lcm_origin_timesteps.begin(),
+        lcm_origin_timesteps.end(),
+        lcm_origin_timesteps.begin(),
+        [&k](auto& x) {
+            return x * k - 1;
+        }
+    );
 
     size_t skipping_step = origin_timesteps_size / m_num_inference_steps;
-    assert(skipping_step >= 1 && "The combination of `original_steps x strength` is smaller than `num_inference_steps`");
+    assert(
+        skipping_step >= 1 && "The combination of `original_steps x strength` is smaller than `num_inference_steps`"
+    );
 
     // LCM Inference Steps Schedule
     std::reverse(lcm_origin_timesteps.begin(), lcm_origin_timesteps.end());
 
     using numpy_utils::linspace;
-    // v1. based on https://github.com/huggingface/diffusers/blame/2a7f43a73bda387385a47a15d7b6fe9be9c65eb2/src/diffusers/schedulers/scheduling_lcm.py#L387
+    // v1. based on
+    // https://github.com/huggingface/diffusers/blame/2a7f43a73bda387385a47a15d7b6fe9be9c65eb2/src/diffusers/schedulers/scheduling_lcm.py#L387
     std::vector<size_t> inference_indices = linspace<size_t, float>(0, origin_timesteps_size, m_num_inference_steps);
-    for (size_t i : inference_indices){
+    for (size_t i : inference_indices) {
         m_timesteps.push_back(lcm_origin_timesteps[i]);
     }
 
-    OPENVINO_ASSERT(!m_timesteps.empty(),
-                    "After adjusting the num_inference_steps by strength parameter: ", strength,
-                    " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a different strength value.");
+    OPENVINO_ASSERT(
+        !m_timesteps.empty(),
+        "After adjusting the num_inference_steps by strength parameter: ",
+        strength,
+        " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a different "
+        "strength value."
+    );
 
     // // v2. based on diffusers==0.23.1
     // std::vector<float> temp;
@@ -122,7 +135,12 @@ void LCMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     //     m_timesteps.push_back(temp[i]);
 }
 
-std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
+std::map<std::string, ov::Tensor> LCMScheduler::step(
+    ov::Tensor noise_pred,
+    ov::Tensor latents,
+    size_t inference_step,
+    std::shared_ptr<Generator> generator
+) {
     ov::Shape shape = latents.get_shape();
     size_t batch_size = shape[0], latent_size = ov::shape_size(shape) / batch_size;
     float* noise_pred_data = noise_pred.data<float>();
@@ -131,7 +149,8 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
     // 1. get previous step value
     int64_t prev_step_index = inference_step + 1;
     int64_t curr_step = m_timesteps[inference_step];
-    int64_t prev_timestep = prev_step_index < static_cast<int64_t>(m_timesteps.size()) ? m_timesteps[prev_step_index] : curr_step;
+    int64_t prev_timestep =
+        prev_step_index < static_cast<int64_t>(m_timesteps.size()) ? m_timesteps[prev_step_index] : curr_step;
 
     // 2. compute alphas, betas
     float alpha_prod_t = m_alphas_cumprod[curr_step];
@@ -156,8 +175,9 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
             predicted_original_sample_l.resize(latent_size);
 
             for (std::size_t j = 0; j < latent_size; ++j)
-                predicted_original_sample_l[j] = (latents_data[i * latent_size + j] -
-                    beta_prod_t_sqrt * noise_pred_data[i * latent_size + j]) / alpha_prod_t_sqrt;
+                predicted_original_sample_l[j] =
+                    (latents_data[i * latent_size + j] - beta_prod_t_sqrt * noise_pred_data[i * latent_size + j]) /
+                    alpha_prod_t_sqrt;
         }
     }
 
@@ -169,7 +189,7 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
     } else if (m_config.clip_sample) {
         for (std::size_t i = 0; i < batch_size; ++i) {
             for (float& value : predicted_original_sample[i]) {
-                value = std::clamp(value, - m_config.clip_sample_range, m_config.clip_sample_range);
+                value = std::clamp(value, -m_config.clip_sample_range, m_config.clip_sample_range);
             }
         }
     }
@@ -179,7 +199,8 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
     float* denoised_data = denoised.data<float>();
     for (std::size_t i = 0; i < batch_size; ++i) {
         for (std::size_t j = 0; j < latent_size; ++j) {
-            denoised_data[i * latent_size + j] = c_out * predicted_original_sample[i][j] + c_skip * latents_data[i * latent_size + j];
+            denoised_data[i * latent_size + j] =
+                c_out * predicted_original_sample[i][j] + c_skip * latents_data[i * latent_size + j];
         }
     }
 
@@ -191,19 +212,17 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
 
     if (inference_step != m_num_inference_steps - 1) {
         ov::Tensor rand_tensor = generator->randn_tensor(shape);
-        const float * rand_tensor_data = rand_tensor.data<float>();
+        const float* rand_tensor_data = rand_tensor.data<float>();
 
         for (std::size_t i = 0; i < batch_size * latent_size; ++i) {
-            prev_sample_data[i] = alpha_prod_t_prev_sqrt * denoised_data[i] + beta_prod_t_prev_sqrt * rand_tensor_data[i];
+            prev_sample_data[i] =
+                alpha_prod_t_prev_sqrt * denoised_data[i] + beta_prod_t_prev_sqrt * rand_tensor_data[i];
         }
     } else {
         std::copy_n(denoised_data, denoised.get_size(), prev_sample_data);
     }
 
-    return {
-        {"latent", prev_sample},
-        {"denoised", denoised}
-    };
+    return {{"latent", prev_sample}, {"denoised", denoised}};
 }
 
 std::vector<int64_t> LCMScheduler::get_timesteps() const {
@@ -234,12 +253,16 @@ std::vector<float> LCMScheduler::threshold_sample(const std::vector<float>& flat
     std::vector<float> thresholded_sample;
     // Calculate abs
     std::vector<float> abs_sample(flat_sample.size());
-    std::transform(flat_sample.begin(), flat_sample.end(), abs_sample.begin(), [](float val) { return std::abs(val); });
+    std::transform(flat_sample.begin(), flat_sample.end(), abs_sample.begin(), [](float val) {
+        return std::abs(val);
+    });
 
     // Calculate s, the quantile threshold
     std::sort(abs_sample.begin(), abs_sample.end());
-    const int s_index = std::min(static_cast<int>(std::round(m_config.dynamic_thresholding_ratio * flat_sample.size())),
-                                 static_cast<int>(flat_sample.size()) - 1);
+    const int s_index = std::min(
+        static_cast<int>(std::round(m_config.dynamic_thresholding_ratio * flat_sample.size())),
+        static_cast<int>(flat_sample.size()) - 1
+    );
     float s = abs_sample[s_index];
     s = std::clamp(s, 1.0f, m_config.sample_max_value);
 
@@ -255,13 +278,13 @@ void LCMScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t l
     float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
     float sqrt_one_minus_alpha_prod = std::sqrt(1.0f - m_alphas_cumprod[latent_timestep]);
 
-    float * init_latent_data = init_latent.data<float>();
-    const float * noise_data = noise.data<float>();
+    float* init_latent_data = init_latent.data<float>();
+    const float* noise_data = noise.data<float>();
 
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
         init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * noise_data[i];
     }
 }
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

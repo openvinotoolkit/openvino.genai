@@ -12,20 +12,24 @@ KVCrushAlgorithm::KVCrushAlgorithm(const KVCrushConfig& kvcrush_config, size_t b
       rng(std::mt19937(kvcrush_config.rng_seed)) {}
 
 // step 1: create_indicators_kvcrush()
-std::vector<size_t> KVCrushAlgorithm::create_indicators_kvcrush(size_t num_tokens_in_evictable_blocks,
+std::vector<size_t> KVCrushAlgorithm::create_indicators_kvcrush(
+    size_t num_tokens_in_evictable_blocks,
 
-                                                                std::vector<size_t>& evicted_block_indices,
-                                                                const std::vector<double>& layer_scores) {
+    std::vector<size_t>& evicted_block_indices,
+    const std::vector<double>& layer_scores
+) {
     // Step 1: Sort the scores of the blocks to be evicted
     const auto& blocks_eligible_for_kvcrush = evicted_block_indices;
     std::vector<size_t> indices(num_tokens_in_evictable_blocks);
     std::iota(indices.begin(), indices.end(), 0);
-    std::partial_sort(indices.begin(),
-                      indices.begin() + num_tokens_in_evictable_blocks / 2,
-                      indices.end(),
-                      [&](size_t i, size_t j) {
-                          return layer_scores[i] > layer_scores[j];
-                      });
+    std::partial_sort(
+        indices.begin(),
+        indices.begin() + num_tokens_in_evictable_blocks / 2,
+        indices.end(),
+        [&](size_t i, size_t j) {
+            return layer_scores[i] > layer_scores[j];
+        }
+    );
 
     std::vector<size_t> indicators(num_tokens_in_evictable_blocks, 0);
     for (size_t i = 0; i < num_tokens_in_evictable_blocks / 2; ++i) {
@@ -34,9 +38,11 @@ std::vector<size_t> KVCrushAlgorithm::create_indicators_kvcrush(size_t num_token
     return indicators;
 }
 // step 2: create_anchor_point_kvcrush()
-std::vector<size_t> KVCrushAlgorithm::create_anchor_point_kvcrush(size_t num_tokens_in_evictable_blocks,
+std::vector<size_t> KVCrushAlgorithm::create_anchor_point_kvcrush(
+    size_t num_tokens_in_evictable_blocks,
 
-                                                                  std::vector<size_t>& indicators) {
+    std::vector<size_t>& indicators
+) {
     // Step 2: Create a binary vector of size block_size as anchor point
     std::vector<size_t> anchor_point(m_block_size);
     // Initialize anchor_point based on anchor using switch-case
@@ -85,7 +91,8 @@ std::vector<std::pair<size_t, size_t>> KVCrushAlgorithm::calculate_hamming_dista
     size_t num_tokens_in_evictable_blocks,
 
     std::vector<size_t>& indicators,
-    std::vector<size_t>& anchor_point) {
+    std::vector<size_t>& anchor_point
+) {
     // Step 3: Calculate Hamming distances between anchor point and each block
     size_t num_blocks = num_tokens_in_evictable_blocks / m_block_size;
     std::vector<std::pair<size_t, size_t>> block_distances;  // pair<hamming_distance, block_idx>
@@ -113,7 +120,8 @@ std::vector<std::size_t> KVCrushAlgorithm::get_representative_blocks_kvcrush(
 
     size_t num_tokens_in_evictable_blocks,
     std::vector<std::pair<size_t, size_t>>& block_distances,
-    const std::vector<size_t>& blocks_eligible_for_kvcrush) {
+    const std::vector<size_t>& blocks_eligible_for_kvcrush
+) {
     // Step 4: Find the representative blocks
     // Filter block indices that are in blocks_eligible_for_kvcrush
     std::vector<size_t> filtered_block_indices;
@@ -150,7 +158,8 @@ std::vector<std::size_t> KVCrushAlgorithm::get_indices_of_blocks_to_retain_using
 
     size_t num_tokens_in_evictable_blocks,
     std::vector<std::size_t>& evicted_block_indices,
-    const std::vector<double>& layer_scores) {
+    const std::vector<double>& layer_scores
+) {
     // step 1: Create indicators_kvcrush makes binary feature vectors based on top-k/2 scores
     const auto& blocks_eligible_for_kvcrush = evicted_block_indices;  // only the blocks that are evicted by the score
                                                                       // based eviction are eligible for kvcrush
@@ -168,9 +177,11 @@ std::vector<std::size_t> KVCrushAlgorithm::get_indices_of_blocks_to_retain_using
 
     // Step 4: Find the representative blocks
     // Filter block indices that are in blocks_eligible_for_kvcrush
-    return get_representative_blocks_kvcrush(num_tokens_in_evictable_blocks,
-                                             block_distances,
-                                             blocks_eligible_for_kvcrush);
+    return get_representative_blocks_kvcrush(
+        num_tokens_in_evictable_blocks,
+        block_distances,
+        blocks_eligible_for_kvcrush
+    );
 }
 
 }  // namespace ov::genai

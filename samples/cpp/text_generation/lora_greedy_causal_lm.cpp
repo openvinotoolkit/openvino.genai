@@ -5,7 +5,9 @@
 
 int main(int argc, char* argv[]) try {
     if (4 > argc)
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <ADAPTER_SAFETENSORS_FILE> \"<PROMPT>\"");
+        throw std::runtime_error(
+            std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <ADAPTER_SAFETENSORS_FILE> \"<PROMPT>\""
+        );
 
     std::string models_path = argv[1];
     std::string adapter_path = argv[2];
@@ -15,7 +17,7 @@ int main(int argc, char* argv[]) try {
     using namespace ov::genai;
 
     Adapter adapter(adapter_path);
-    LLMPipeline pipe(models_path, device, adapters(adapter));    // register all required adapters here
+    LLMPipeline pipe(models_path, device, adapters(adapter));  // register all required adapters here
 
     // Resetting config to set greedy behaviour ignoring generation config from model directory.
     // It helps to compare two generations with and without LoRA adapter.

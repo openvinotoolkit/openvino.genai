@@ -16,7 +16,10 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 void init_video_generation_pipelines(py::module_& m) {
-    py::class_<ov::genai::VideoGenerationPerfMetrics, ov::genai::ImageGenerationPerfMetrics>(m, "VideoGenerationPerfMetrics")
+    py::class_<ov::genai::VideoGenerationPerfMetrics, ov::genai::ImageGenerationPerfMetrics>(
+        m,
+        "VideoGenerationPerfMetrics"
+    )
         .def(py::init<>());
 
     py::class_<ov::genai::VideoGenerationConfig>(m, "VideoGenerationConfig")
@@ -40,31 +43,40 @@ void init_video_generation_pipelines(py::module_& m) {
         .def_readonly("perf_metrics", &ov::genai::VideoGenerationResult::performance_stat);
 
     py::class_<ov::genai::Text2VideoPipeline>(m, "Text2VideoPipeline")
-        .def(py::init([](const std::filesystem::path& models_path) {
-                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 return std::make_unique<ov::genai::Text2VideoPipeline>(models_path);
-             }),
-             py::arg("models_path"))
+        .def(
+            py::init([](const std::filesystem::path& models_path) {
+                ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                return std::make_unique<ov::genai::Text2VideoPipeline>(models_path);
+            }),
+            py::arg("models_path")
+        )
         .def(
             py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                return std::make_unique<ov::genai::Text2VideoPipeline>(models_path,
-                                                                       device,
-                                                                       pyutils::kwargs_to_any_map(kwargs));
+                return std::make_unique<ov::genai::Text2VideoPipeline>(
+                    models_path,
+                    device,
+                    pyutils::kwargs_to_any_map(kwargs)
+                );
             }),
             py::arg("models_path"),
-            py::arg("device"))
-        .def("get_generation_config",
-             &ov::genai::Text2VideoPipeline::get_generation_config,
-             py::return_value_policy::copy)
+            py::arg("device")
+        )
+        .def(
+            "get_generation_config",
+            &ov::genai::Text2VideoPipeline::get_generation_config,
+            py::return_value_policy::copy
+        )
         .def("set_generation_config", &ov::genai::Text2VideoPipeline::set_generation_config, py::arg("config"))
-        .def("reshape",
-             &ov::genai::Text2VideoPipeline::reshape,
-             py::arg("num_videos_per_prompt"),
-             py::arg("num_frames"),
-             py::arg("height"),
-             py::arg("width"),
-             py::arg("guidance_scale"))
+        .def(
+            "reshape",
+            &ov::genai::Text2VideoPipeline::reshape,
+            py::arg("num_videos_per_prompt"),
+            py::arg("num_frames"),
+            py::arg("height"),
+            py::arg("width"),
+            py::arg("guidance_scale")
+        )
         .def(
             "compile",
             [](ov::genai::Text2VideoPipeline& pipe, const std::string& device, const py::kwargs& kwargs) {
@@ -72,7 +84,8 @@ void init_video_generation_pipelines(py::module_& m) {
                 py::gil_scoped_release rel;
                 pipe.compile(device, properties);
             },
-            py::arg("device"))
+            py::arg("device")
+        )
         .def(
             "compile",
             [](ov::genai::Text2VideoPipeline& pipe,
@@ -86,7 +99,8 @@ void init_video_generation_pipelines(py::module_& m) {
             },
             py::arg("text_encode_device"),
             py::arg("denoise_device"),
-            py::arg("vae_device"))
+            py::arg("vae_device")
+        )
         .def(
             "generate",
             [](ov::genai::Text2VideoPipeline& pipe, const std::string& prompt, const py::kwargs& kwargs) {
@@ -98,5 +112,6 @@ void init_video_generation_pipelines(py::module_& m) {
                 }
                 return result;
             },
-            py::arg("prompt"));
+            py::arg("prompt")
+        );
 }

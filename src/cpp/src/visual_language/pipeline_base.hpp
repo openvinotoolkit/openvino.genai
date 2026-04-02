@@ -23,8 +23,9 @@ class ov::genai::VLMPipeline::VLMPipelineBase {
         return config;
     }
 
-    static std::pair<std::vector<ov::Tensor>, std::vector<ov::Tensor>> 
-    extract_images_and_videos_from_config_map(const ov::AnyMap& config_map) {
+    static std::pair<std::vector<ov::Tensor>, std::vector<ov::Tensor>> extract_images_and_videos_from_config_map(
+        const ov::AnyMap& config_map
+    ) {
         std::vector<ov::Tensor> images_vector = {};
         std::vector<ov::Tensor> videos_vector = {};
 
@@ -61,7 +62,6 @@ class ov::genai::VLMPipeline::VLMPipelineBase {
     }
 
 public:
-
     virtual ~VLMPipelineBase() = default;
 
     virtual VLMDecodedResults generate(
@@ -79,10 +79,7 @@ public:
         const StreamerVariant& streamer
     ) = 0;
 
-    VLMDecodedResults generate(
-        const std::string& prompt,
-        const ov::AnyMap& config_map
-    ) {
+    VLMDecodedResults generate(const std::string& prompt, const ov::AnyMap& config_map) {
         auto [images_vector, videos_vector] = extract_images_and_videos_from_config_map(config_map);
         GenerationConfig config = resolve_generation_config(config_map);
         return generate(prompt, images_vector, videos_vector, config, utils::get_streamer_from_map(config_map));
@@ -103,10 +100,7 @@ public:
         const StreamerVariant& streamer
     ) = 0;
 
-    VLMDecodedResults generate(
-        const ChatHistory& history,
-        const ov::AnyMap& config_map
-    ) {
+    VLMDecodedResults generate(const ChatHistory& history, const ov::AnyMap& config_map) {
         auto [images_vector, videos_vector] = extract_images_and_videos_from_config_map(config_map);
         GenerationConfig config = resolve_generation_config(config_map);
         return generate(history, images_vector, videos_vector, config, utils::get_streamer_from_map(config_map));

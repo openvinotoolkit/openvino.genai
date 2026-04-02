@@ -1,11 +1,11 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <openvino/genai/visual_language/pipeline.hpp>
+#include <filesystem>
+#include <iostream>
 #include <opencv2/core.hpp>
 #include <opencv2/videoio.hpp>
-#include <iostream>
-#include <filesystem>
+#include <openvino/genai/visual_language/pipeline.hpp>
 
 namespace fs = std::filesystem;
 
@@ -34,7 +34,7 @@ ov::Tensor load_video(const std::filesystem::path& video_path, size_t num_frames
 
     std::vector<cv::Mat> frames;
     cv::Mat frame;
-    size_t width  = cap.get(cv::CAP_PROP_FRAME_WIDTH);
+    size_t width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
     size_t height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
     ov::Tensor video_tensor(ov::element::u8, ov::Shape{num_frames, height, width, 3});
     auto video_tensor_data = video_tensor.data<uint8_t>();
@@ -48,8 +48,11 @@ ov::Tensor load_video(const std::filesystem::path& video_path, size_t num_frames
         }
         frame_idx++;
     }
-    OPENVINO_ASSERT(frame_idx == total_num_frames, "Frame count mismatch: expected " + std::to_string(total_num_frames) + ", got " + std::to_string(frame_idx));
-    
+    OPENVINO_ASSERT(
+        frame_idx == total_num_frames,
+        "Frame count mismatch: expected " + std::to_string(total_num_frames) + ", got " + std::to_string(frame_idx)
+    );
+
     return video_tensor;
 }
 
@@ -109,27 +112,26 @@ int main(int argc, char* argv[]) try {
     );
     history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
     std::cout << "\n----------\n"
-        "question:\n";
+                 "question:\n";
     while (std::getline(std::cin, prompt)) {
         history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
         // New images and videos can be passed at each turn
-        ov::genai::VLMDecodedResults decoded_results = pipe.generate(
-            history,
-            ov::genai::generation_config(generation_config),
-            ov::genai::streamer(print_subword)
-        );
+        ov::genai::VLMDecodedResults decoded_results =
+            pipe.generate(history, ov::genai::generation_config(generation_config), ov::genai::streamer(print_subword));
         history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
         std::cout << "\n----------\n"
-            "question:\n";
+                     "question:\n";
     }
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

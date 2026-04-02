@@ -1,11 +1,11 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <math.h>
 
 #include "openvino/genai/c/whisper_pipeline.h"
 #include "whisper_utils.h"
@@ -46,7 +46,8 @@ int main(int argc, char* argv[]) {
 
     if (fabsf(file_sample_rate - 16000.0f) > SAMPLE_RATE_TOLERANCE) {
         size_t resampled_length;
-        float* resampled_audio = resample_audio(audio_data, audio_length, file_sample_rate, 16000.0f, &resampled_length);
+        float* resampled_audio =
+            resample_audio(audio_data, audio_length, file_sample_rate, 16000.0f, &resampled_length);
         if (!resampled_audio) {
             fprintf(stderr, "Error: Failed to resample audio\n");
             exit_code = EXIT_FAILURE;

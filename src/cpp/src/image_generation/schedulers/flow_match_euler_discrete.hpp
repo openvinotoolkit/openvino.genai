@@ -6,8 +6,8 @@
 #include <list>
 #include <string>
 
-#include "image_generation/schedulers/types.hpp"
 #include "image_generation/schedulers/ischeduler.hpp"
+#include "image_generation/schedulers/types.hpp"
 
 namespace ov {
 namespace genai {
@@ -20,7 +20,8 @@ public:
         bool use_dynamic_shifting = false;
         float base_shift = 0.5f, max_shift = 1.15f;
         int32_t base_image_seq_len = 256, max_image_seq_len = 4096;
-        std::optional<float> shift_terminal;  /// Stretches and shifts the timestep schedule to ensure it terminates at shift_terminal. Used by Lightricks/LTX-Video
+        std::optional<float> shift_terminal;  /// Stretches and shifts the timestep schedule to ensure it terminates at
+                                              /// shift_terminal. Used by Lightricks/LTX-Video
 
         Config() = default;
         explicit Config(const std::filesystem::path& scheduler_config_path);
@@ -39,7 +40,12 @@ public:
 
     void scale_model_input(ov::Tensor sample, size_t inference_step) override;
 
-    std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) override;
+    std::map<std::string, ov::Tensor> step(
+        ov::Tensor noise_pred,
+        ov::Tensor latents,
+        size_t inference_step,
+        std::shared_ptr<Generator> generator
+    ) override;
 
     void add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const override;
 
@@ -64,5 +70,5 @@ private:
     float calculate_shift(size_t image_seq_len);
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

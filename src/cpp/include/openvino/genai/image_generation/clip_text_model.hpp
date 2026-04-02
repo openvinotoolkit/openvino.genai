@@ -7,14 +7,13 @@
 #include <memory>
 #include <string>
 
-#include "openvino/genai/visibility.hpp"
-#include "openvino/genai/tokenizer.hpp"
-#include "openvino/genai/lora_adapter.hpp"
-
 #include "openvino/core/any.hpp"
-#include "openvino/runtime/tensor.hpp"
+#include "openvino/genai/lora_adapter.hpp"
+#include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/visibility.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
+#include "openvino/runtime/tensor.hpp"
 
 namespace ov {
 namespace genai {
@@ -30,43 +29,49 @@ public:
 
     explicit CLIPTextModel(const std::filesystem::path& root_dir);
 
-    CLIPTextModel(const std::filesystem::path& root_dir,
-                  const std::string& device,
-                  const ov::AnyMap& properties = {});
+    CLIPTextModel(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties = {});
 
-    CLIPTextModel(const std::string& model,
-                  const Tensor& weights,
-                  const Config& config,
-                  const Tokenizer& clip_tokenizer);
+    CLIPTextModel(
+        const std::string& model,
+        const Tensor& weights,
+        const Config& config,
+        const Tokenizer& clip_tokenizer
+    );
 
-    CLIPTextModel(const std::string& model,
-                  const Tensor& weights,
-                  const Config& config,
-                  const Tokenizer& clip_tokenizer,
-                  const std::string& device,
-                  const ov::AnyMap& properties = {});
+    CLIPTextModel(
+        const std::string& model,
+        const Tensor& weights,
+        const Config& config,
+        const Tokenizer& clip_tokenizer,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
+    );
 
-    template <typename... Properties,
-              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    CLIPTextModel(const std::filesystem::path& root_dir,
-                  const std::string& device,
-                  Properties&&... properties)
-        : CLIPTextModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    template <
+        typename... Properties,
+        typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    CLIPTextModel(const std::filesystem::path& root_dir, const std::string& device, Properties&&... properties)
+        : CLIPTextModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
-    template <typename... Properties,
-              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    CLIPTextModel(const std::string& model,
-                  const Tensor& weights,
-                  const Config& config,
-                  const Tokenizer& clip_tokenizer,
-                  const std::string& device,
-                  Properties&&... properties)
-        : CLIPTextModel(model,
-                        weights,
-                        config,
-                        clip_tokenizer,
-                        device,
-                        ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    template <
+        typename... Properties,
+        typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    CLIPTextModel(
+        const std::string& model,
+        const Tensor& weights,
+        const Config& config,
+        const Tokenizer& clip_tokenizer,
+        const std::string& device,
+        Properties&&... properties
+    )
+        : CLIPTextModel(
+              model,
+              weights,
+              config,
+              clip_tokenizer,
+              device,
+              ov::AnyMap{std::forward<Properties>(properties)...}
+          ) {}
 
     CLIPTextModel(const CLIPTextModel&);
 
@@ -79,9 +84,8 @@ public:
     CLIPTextModel& compile(const std::string& device, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<CLIPTextModel&, Properties...> compile(
-            const std::string& device,
-            Properties&&... properties) {
+    ov::util::EnableIfAllStringAny<CLIPTextModel&, Properties...>
+    compile(const std::string& device, Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -112,5 +116,5 @@ protected:
     void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties);
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

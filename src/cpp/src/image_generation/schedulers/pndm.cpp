@@ -1,12 +1,13 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "image_generation/schedulers/pndm.hpp"
+
 #include <cassert>
-#include <random>
 #include <fstream>
 #include <iterator>
+#include <random>
 
-#include "image_generation/schedulers/pndm.hpp"
 #include "image_generation/numpy_utils.hpp"
 
 namespace ov {
@@ -31,12 +32,10 @@ PNDMScheduler::Config::Config(const std::filesystem::path& scheduler_config_path
     read_json_param(data, "timestep_spacing", timestep_spacing);
 }
 
-PNDMScheduler::PNDMScheduler(const std::filesystem::path& scheduler_config_path) 
-    : PNDMScheduler(Config(scheduler_config_path)) {
-}
+PNDMScheduler::PNDMScheduler(const std::filesystem::path& scheduler_config_path)
+    : PNDMScheduler(Config(scheduler_config_path)) {}
 
-PNDMScheduler::PNDMScheduler(const Config& scheduler_config): m_config(scheduler_config) {
-
+PNDMScheduler::PNDMScheduler(const Config& scheduler_config) : m_config(scheduler_config) {
     std::vector<float> alphas, betas;
 
     using numpy_utils::linspace;
@@ -49,13 +48,19 @@ PNDMScheduler::PNDMScheduler(const Config& scheduler_config): m_config(scheduler
         float start = std::sqrt(m_config.beta_start);
         float end = std::sqrt(m_config.beta_end);
         betas = linspace<float>(start, end, m_config.num_train_timesteps);
-        std::for_each(betas.begin(), betas.end(), [] (float & x) { x *= x; });
+        std::for_each(betas.begin(), betas.end(), [](float& x) {
+            x *= x;
+        });
         // TODO: elif beta_schedule == "squaredcos_cap_v2":
     } else {
-        OPENVINO_THROW("'beta_schedule' must be one of 'LINEAR' or 'SCALED_LINEAR'. Please, add support of other types");
+        OPENVINO_THROW(
+            "'beta_schedule' must be one of 'LINEAR' or 'SCALED_LINEAR'. Please, add support of other types"
+        );
     }
 
-    std::transform(betas.begin(), betas.end(), std::back_inserter(alphas), [] (float b) { return 1.0f - b; });
+    std::transform(betas.begin(), betas.end(), std::back_inserter(alphas), [](float b) {
+        return 1.0f - b;
+    });
 
     for (size_t i = 1; i <= alphas.size(); i++) {
         float alpha_cumprod =
@@ -79,41 +84,43 @@ PNDMScheduler::PNDMScheduler(const Config& scheduler_config): m_config(scheduler
 void PNDMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     m_timesteps.clear(), m_prk_timesteps.clear(), m_plms_timesteps.clear();
 
-    OPENVINO_ASSERT(num_inference_steps <= m_config.num_train_timesteps,
-                    "`num_inference_steps` cannot be larger than `m_config.num_train_timesteps`");
+    OPENVINO_ASSERT(
+        num_inference_steps <= m_config.num_train_timesteps,
+        "`num_inference_steps` cannot be larger than `m_config.num_train_timesteps`"
+    );
 
     m_num_inference_steps = num_inference_steps;
 
     switch (m_config.timestep_spacing) {
-        case TimestepSpacing::LINSPACE:
-        {
-            using numpy_utils::linspace;
-            float end = static_cast<float>(m_config.num_train_timesteps - 1);
-            auto linspaced = linspace<float>(0.0f, end, num_inference_steps, true);
-            for (float val : linspaced) {
-                m_timesteps.push_back(static_cast<int64_t>(std::round(val)));
-            }
-            break;
+    case TimestepSpacing::LINSPACE: {
+        using numpy_utils::linspace;
+        float end = static_cast<float>(m_config.num_train_timesteps - 1);
+        auto linspaced = linspace<float>(0.0f, end, num_inference_steps, true);
+        for (float val : linspaced) {
+            m_timesteps.push_back(static_cast<int64_t>(std::round(val)));
         }
-        case TimestepSpacing::LEADING:
-        {
-            size_t step_ratio = m_config.num_train_timesteps / m_num_inference_steps;
-            for (size_t i = 0; i < m_num_inference_steps; ++i) {
-                m_timesteps.push_back(i * step_ratio + m_config.steps_offset);
-            }
-            break;
+        break;
+    }
+    case TimestepSpacing::LEADING: {
+        size_t step_ratio = m_config.num_train_timesteps / m_num_inference_steps;
+        for (size_t i = 0; i < m_num_inference_steps; ++i) {
+            m_timesteps.push_back(i * step_ratio + m_config.steps_offset);
         }
-        case TimestepSpacing::TRAILING:
-        {
-            float step_ratio = static_cast<float>(m_config.num_train_timesteps) / static_cast<float>(m_num_inference_steps);
-            for (float i = m_config.num_train_timesteps; i > 0; i-=step_ratio){
-                m_timesteps.push_back(static_cast<int64_t>(std::round(i)) - 1);
-            }
-            std::reverse(m_timesteps.begin(), m_timesteps.end());
-            break;
+        break;
+    }
+    case TimestepSpacing::TRAILING: {
+        float step_ratio = static_cast<float>(m_config.num_train_timesteps) / static_cast<float>(m_num_inference_steps);
+        for (float i = m_config.num_train_timesteps; i > 0; i -= step_ratio) {
+            m_timesteps.push_back(static_cast<int64_t>(std::round(i)) - 1);
         }
-        default:
-            OPENVINO_THROW("Unsupported value for 'timestep_spacing'. Please make sure to choose one of 'linspace', 'leading' or 'trailing'.");
+        std::reverse(m_timesteps.begin(), m_timesteps.end());
+        break;
+    }
+    default:
+        OPENVINO_THROW(
+            "Unsupported value for 'timestep_spacing'. Please make sure to choose one of 'linspace', 'leading' or "
+            "'trailing'."
+        );
     }
 
     if (m_config.skip_prk_steps) {
@@ -134,19 +141,29 @@ void PNDMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     m_cur_sample = ov::Tensor(ov::element::f32, {});
 
     // apply 'strength' used in image generation
-    // in diffusers, it's https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_img2img.py#L711
+    // in diffusers, it's
+    // https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_img2img.py#L711
     {
         size_t init_timestep = std::min<size_t>(num_inference_steps * strength, num_inference_steps);
         size_t t_start = std::max<size_t>(num_inference_steps - init_timestep, 0);
         m_timesteps = std::vector<int64_t>(m_timesteps.begin() + t_start, m_timesteps.end());
 
-        OPENVINO_ASSERT(!m_timesteps.empty(),
-                        "After adjusting the num_inference_steps by strength parameter: ", strength,
-                        " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a different strength value.");
+        OPENVINO_ASSERT(
+            !m_timesteps.empty(),
+            "After adjusting the num_inference_steps by strength parameter: ",
+            strength,
+            " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a "
+            "different strength value."
+        );
     }
 }
 
-std::map<std::string, ov::Tensor> PNDMScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
+std::map<std::string, ov::Tensor> PNDMScheduler::step(
+    ov::Tensor noise_pred,
+    ov::Tensor latents,
+    size_t inference_step,
+    std::shared_ptr<Generator> generator
+) {
     // noise_pred - model_output
     // latents - sample
     // inference_step
@@ -158,9 +175,12 @@ std::map<std::string, ov::Tensor> PNDMScheduler::step(ov::Tensor noise_pred, ov:
     }
 }
 
-std::map<std::string, ov::Tensor> PNDMScheduler::step_plms(ov::Tensor model_output, ov::Tensor sample, size_t timestep) {
-    OPENVINO_ASSERT(m_num_inference_steps != -1,
-                    "Number of inference steps isn't set, you need to run `set_timesteps` after creating the scheduler");
+std::map<std::string, ov::Tensor>
+PNDMScheduler::step_plms(ov::Tensor model_output, ov::Tensor sample, size_t timestep) {
+    OPENVINO_ASSERT(
+        m_num_inference_steps != -1,
+        "Number of inference steps isn't set, you need to run `set_timesteps` after creating the scheduler"
+    );
 
     int prev_timestep = timestep - m_config.num_train_timesteps / m_num_inference_steps;
 
@@ -211,8 +231,8 @@ std::map<std::string, ov::Tensor> PNDMScheduler::step_plms(ov::Tensor model_outp
         const float* ets_data_4 = m_ets[0].data<float>();
 
         for (size_t i = 0; i < model_output.get_size(); ++i) {
-            model_output_data[i] = (1.0f / 24.0f)
-                                   * (55.0f * ets_data_1[i] - 59.0f * ets_data_2[i] + 37.0f * ets_data_3[i] - 9.0f * ets_data_4[i]);
+            model_output_data[i] = (1.0f / 24.0f) * (55.0f * ets_data_1[i] - 59.0f * ets_data_2[i] +
+                                                     37.0f * ets_data_3[i] - 9.0f * ets_data_4[i]);
         }
     } else {
         OPENVINO_THROW("PNDMScheduler: Unsupported step_plms case.");
@@ -225,36 +245,39 @@ std::map<std::string, ov::Tensor> PNDMScheduler::step_plms(ov::Tensor model_outp
     return result;
 }
 
-ov::Tensor PNDMScheduler::get_prev_sample(ov::Tensor sample, size_t timestep, int prev_timestep, ov::Tensor model_output) {
+ov::Tensor
+PNDMScheduler::get_prev_sample(ov::Tensor sample, size_t timestep, int prev_timestep, ov::Tensor model_output) {
     float alpha_prod_t = m_alphas_cumprod[timestep];
     float alpha_prod_t_prev = (prev_timestep >= 0) ? m_alphas_cumprod[prev_timestep] : m_final_alpha_cumprod;
     float beta_prod_t = 1 - alpha_prod_t;
     float beta_prod_t_prev = 1 - alpha_prod_t_prev;
 
     float sample_coeff = std::sqrt((alpha_prod_t_prev / alpha_prod_t));
-    float model_output_denom_coeff = alpha_prod_t * std::sqrt(beta_prod_t_prev) +
-                                     std::sqrt((alpha_prod_t * beta_prod_t * alpha_prod_t_prev));
+    float model_output_denom_coeff =
+        alpha_prod_t * std::sqrt(beta_prod_t_prev) + std::sqrt((alpha_prod_t * beta_prod_t * alpha_prod_t_prev));
 
     float* model_output_data = model_output.data<float>();
     float* sample_data = sample.data<float>();
 
     switch (m_config.prediction_type) {
-        case PredictionType::EPSILON:
-            break;
-        case PredictionType::V_PREDICTION:
-            for (size_t i = 0; i < model_output.get_size(); ++i) {
-                model_output_data[i] = std::sqrt(alpha_prod_t) * model_output_data[i] + std::sqrt(beta_prod_t) * sample_data[i];
-            }
-            break;
-        default:
-            OPENVINO_THROW("Unsupported value for 'PredictionType'");
+    case PredictionType::EPSILON:
+        break;
+    case PredictionType::V_PREDICTION:
+        for (size_t i = 0; i < model_output.get_size(); ++i) {
+            model_output_data[i] =
+                std::sqrt(alpha_prod_t) * model_output_data[i] + std::sqrt(beta_prod_t) * sample_data[i];
+        }
+        break;
+    default:
+        OPENVINO_THROW("Unsupported value for 'PredictionType'");
     }
 
     ov::Tensor prev_sample = ov::Tensor(model_output.get_element_type(), model_output.get_shape());
     float* prev_sample_data = prev_sample.data<float>();
 
     for (size_t i = 0; i < prev_sample.get_size(); ++i) {
-        prev_sample_data[i] = sample_coeff * sample_data[i] - (alpha_prod_t_prev - alpha_prod_t) * model_output_data[i] / model_output_denom_coeff;
+        prev_sample_data[i] = sample_coeff * sample_data[i] -
+                              (alpha_prod_t_prev - alpha_prod_t) * model_output_data[i] / model_output_denom_coeff;
     }
 
     return prev_sample;
@@ -264,8 +287,8 @@ void PNDMScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t 
     float sqrt_alpha_prod = std::sqrt(m_alphas_cumprod[latent_timestep]);
     float sqrt_one_minus_alpha_prod = std::sqrt(1.0 - m_alphas_cumprod[latent_timestep]);
 
-    float * init_latent_data = init_latent.data<float>();
-    const float * noise_data = noise.data<float>();
+    float* init_latent_data = init_latent.data<float>();
+    const float* noise_data = noise.data<float>();
 
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
         init_latent_data[i] = sqrt_alpha_prod * init_latent_data[i] + sqrt_one_minus_alpha_prod * noise_data[i];
@@ -286,6 +309,5 @@ float PNDMScheduler::get_init_noise_sigma() const {
     return 1.0f;
 }
 
-
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

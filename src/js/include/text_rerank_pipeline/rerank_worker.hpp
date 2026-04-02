@@ -9,11 +9,13 @@
 
 class RerankWorker : public Napi::AsyncWorker {
 public:
-    RerankWorker(Napi::Function& callback,
-                 std::shared_ptr<ov::genai::TextRerankPipeline> pipe,
-                 std::shared_ptr<bool> is_reranking,
-                 std::string&& query,
-                 std::vector<std::string>&& documents);
+    RerankWorker(
+        Napi::Function& callback,
+        std::shared_ptr<ov::genai::TextRerankPipeline> pipe,
+        std::shared_ptr<bool> is_reranking,
+        std::string&& query,
+        std::vector<std::string>&& documents
+    );
     virtual ~RerankWorker() {}
     void Execute() override;
     void OnOK() override;

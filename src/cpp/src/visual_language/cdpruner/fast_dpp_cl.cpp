@@ -56,18 +56,19 @@ std::vector<size_t> OpenCLDPP::select(const ov::Tensor& kernel, size_t num_token
     OPENVINO_ASSERT(shape.size() == 3, "Kernel must be 3D tensor [B, N, N]");
 
     size_t batch_size = shape[0];
-    OPENVINO_ASSERT(batch_size == 1 || batch_size == 2,
-                    "Batch size must be 1 for single batch or 2 for split matrix");
+    OPENVINO_ASSERT(batch_size == 1 || batch_size == 2, "Batch size must be 1 for single batch or 2 for split matrix");
     size_t total_tokens = shape[1];
 
     OPENVINO_ASSERT(shape[1] == shape[2], "Kernel matrix must be square [B, N, N]");
 
-    OPENVINO_ASSERT(num_tokens / batch_size <= total_tokens,
-                    "Cannot select more tokens [",
-                    num_tokens / batch_size,
-                    "] than available [",
-                    total_tokens,
-                    "]");
+    OPENVINO_ASSERT(
+        num_tokens / batch_size <= total_tokens,
+        "Cannot select more tokens [",
+        num_tokens / batch_size,
+        "] than available [",
+        total_tokens,
+        "]"
+    );
 
     // Use OpenCL DPP implementation directly with ov::Tensor
     auto opencl_results = run_dpp_split_kernel_impl(kernel, num_tokens);
@@ -155,12 +156,16 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     // Create OpenCL buffers
     cl::Buffer buffer_mat(m_state->context, CL_MEM_READ_ONLY, kernel.get_byte_size());
     cl::Buffer buffer_di2s(m_state->context, CL_MEM_READ_WRITE, sizeof(float) * total_tokens_num * batch_size);
-    cl::Buffer buffer_cis(m_state->context,
-                          CL_MEM_READ_WRITE,
-                          sizeof(float) * selected_token_num_per_batch * total_tokens_num * batch_size);
-    cl::Buffer buffer_output_ids(m_state->context,
-                                 CL_MEM_READ_WRITE,
-                                 sizeof(int) * selected_token_num_per_batch * batch_size);
+    cl::Buffer buffer_cis(
+        m_state->context,
+        CL_MEM_READ_WRITE,
+        sizeof(float) * selected_token_num_per_batch * total_tokens_num * batch_size
+    );
+    cl::Buffer buffer_output_ids(
+        m_state->context,
+        CL_MEM_READ_WRITE,
+        sizeof(int) * selected_token_num_per_batch * batch_size
+    );
 
     // Use merged kernel approach (ENABLE_KERNEL_MERGE = 1)
     auto merged_kernel = m_state->get_kernel("dpp_impl");
@@ -180,11 +185,8 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     merged_kernel.setArg(9, sizeof(int) * lws[1], nullptr);    // local memory for argmax
 
     // Initialize buffers
-    m_state->queue.enqueueWriteBuffer(buffer_di2s,
-                                      CL_TRUE,
-                                      0,
-                                      sizeof(float) * total_tokens_num * batch_size,
-                                      vec_di2s.data());
+    m_state->queue
+        .enqueueWriteBuffer(buffer_di2s, CL_TRUE, 0, sizeof(float) * total_tokens_num * batch_size, vec_di2s.data());
     m_state->queue.enqueueWriteBuffer(buffer_mat, CL_TRUE, 0, kernel.get_byte_size(), kernel_data);
 
     // Main DPP algorithm loop using OpenCL kernels
@@ -204,11 +206,13 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     m_state->queue.finish();
 
     // Read back results
-    m_state->queue.enqueueReadBuffer(buffer_output_ids,
-                                     CL_TRUE,
-                                     0,
-                                     sizeof(int) * selected_token_num_per_batch * batch_size,
-                                     output_ids.data());
+    m_state->queue.enqueueReadBuffer(
+        buffer_output_ids,
+        CL_TRUE,
+        0,
+        sizeof(int) * selected_token_num_per_batch * batch_size,
+        output_ids.data()
+    );
 
     std::vector<size_t> results;
     for (auto id : output_ids)

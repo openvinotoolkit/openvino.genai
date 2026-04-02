@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
+
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
@@ -10,13 +11,14 @@
 #include <sstream>
 #include <string>
 #include <vector>
+
 #include "openvino/runtime/core.hpp"
 #include "utils.hpp"
 
 using namespace ov::genai::utils;
 
 struct CacheTypesModelParam {
-    std::string model_id;   // HuggingFace model id (e.g. "org/name")
+    std::string model_id;  // HuggingFace model id (e.g. "org/name")
     bool expected_kvcache;
     bool expected_linear;
 };
@@ -37,9 +39,7 @@ static std::vector<CacheTypesModelParam> load_cache_types_csv(const std::string&
         }
         std::istringstream ss(line);
         std::string model_id, kv_str, lin_str;
-        if (!std::getline(ss, model_id, ',') ||
-            !std::getline(ss, kv_str,   ',') ||
-            !std::getline(ss, lin_str,  ',')) {
+        if (!std::getline(ss, model_id, ',') || !std::getline(ss, kv_str, ',') || !std::getline(ss, lin_str, ',')) {
             continue;
         }
         entries.push_back({model_id, kv_str == "true", lin_str == "true"});
@@ -69,10 +69,8 @@ TEST_P(GetCacheTypesRealModel, MatchesExpected) {
     const auto model = core.read_model(xml_path);
     const auto types = get_cache_types(*model);
 
-    EXPECT_EQ(types.has_kvcache(), param.expected_kvcache)
-        << param.model_id << ": unexpected has_kvcache";
-    EXPECT_EQ(types.has_linear(), param.expected_linear)
-        << param.model_id << ": unexpected has_linear";
+    EXPECT_EQ(types.has_kvcache(), param.expected_kvcache) << param.model_id << ": unexpected has_kvcache";
+    EXPECT_EQ(types.has_linear(), param.expected_linear) << param.model_id << ": unexpected has_linear";
 }
 
 static std::vector<CacheTypesModelParam> get_csv_params() {
@@ -92,7 +90,9 @@ INSTANTIATE_TEST_SUITE_P(
         // Sanitize model name for use as a gtest test-case label
         std::string name = info.param.model_id.substr(info.param.model_id.rfind('/') + 1);
         for (char& c : name) {
-            if (!std::isalnum(static_cast<unsigned char>(c))) c = '_';
+            if (!std::isalnum(static_cast<unsigned char>(c)))
+                c = '_';
         }
         return name;
-    });
+    }
+);

@@ -23,12 +23,12 @@ namespace {
 // was already defined.
 class ScopedVar {
     bool was_already_set{false};
+
 public:
     static constexpr char ENVIRONMENT_VARIABLE_NAME[] = "OPENVINO_TOKENIZERS_PATH_GENAI";
     static constexpr wchar_t ENVIRONMENT_VARIABLE_NAME_W[] = L"OPENVINO_TOKENIZERS_PATH_GENAI";
 
     explicit ScopedVar(const std::filesystem::path& environment_variable_value) {
-
 #ifdef _WIN32
         wchar_t* value = nullptr;
         size_t len = 0;
@@ -47,7 +47,7 @@ public:
         }
 #endif
     }
-    
+
     ~ScopedVar() {
         if (!was_already_set) {
 #ifdef _WIN32
@@ -58,4 +58,4 @@ public:
         }
     }
 };
-}
+}  // namespace

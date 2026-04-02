@@ -25,10 +25,12 @@ struct AddonData {
     Napi::ObjectReference openvino_addon;
 };
 
-void init_class(Napi::Env env,
-                Napi::Object exports,
-                std::string class_name,
-                Prototype func,
-                Napi::FunctionReference& reference);
+void init_class(
+    Napi::Env env,
+    Napi::Object exports,
+    std::string class_name,
+    Prototype func,
+    Napi::FunctionReference& reference
+);
 
 Napi::Object init_module(Napi::Env env, Napi::Object exports);

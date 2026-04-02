@@ -224,8 +224,8 @@ auto perf_metrics_docstring = R"(
     :type WhisperRawPerfMetrics:
 )";
 
-OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const OptionalWhisperGenerationConfig& config,
-                                                                  const py::kwargs& kwargs) {
+OptionalWhisperGenerationConfig
+update_whisper_config_from_kwargs(const OptionalWhisperGenerationConfig& config, const py::kwargs& kwargs) {
     if (!config.has_value() && kwargs.empty())
         return std::nullopt;
 
@@ -239,11 +239,13 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
     return res_config;
 }
 
-py::object call_whisper_common_generate(WhisperPipeline& pipe,
-                                        const RawSpeechInput& raw_speech_input,
-                                        const OptionalWhisperGenerationConfig& config,
-                                        const pyutils::PyBindStreamerVariant& py_streamer,
-                                        const py::kwargs& kwargs) {
+py::object call_whisper_common_generate(
+    WhisperPipeline& pipe,
+    const RawSpeechInput& raw_speech_input,
+    const OptionalWhisperGenerationConfig& config,
+    const pyutils::PyBindStreamerVariant& py_streamer,
+    const py::kwargs& kwargs
+) {
     // whisper config should initialized from generation_config.json in case of only kwargs provided
     // otherwise it would be initialized with default values which is unexpected for kwargs use case
     // if full config was provided then rely on it as a base config
@@ -264,9 +266,11 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 
 void init_whisper_pipeline(py::module_& m) {
     // Binding for WhisperGenerationConfig
-    py::class_<WhisperGenerationConfig, GenerationConfig>(m,
-                                                          "WhisperGenerationConfig",
-                                                          whisper_generation_config_docstring)
+    py::class_<WhisperGenerationConfig, GenerationConfig>(
+        m,
+        "WhisperGenerationConfig",
+        whisper_generation_config_docstring
+    )
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
         .def(py::init([](const py::kwargs& kwargs) {
             return *update_whisper_config_from_kwargs(WhisperGenerationConfig(), kwargs);
@@ -295,9 +299,12 @@ void init_whisper_pipeline(py::module_& m) {
 
     py::class_<WhisperRawPerfMetrics>(m, "WhisperRawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
-        .def_property_readonly("features_extraction_durations", [](const WhisperRawPerfMetrics& rw) {
-            return common_utils::get_ms(rw, &WhisperRawPerfMetrics::features_extraction_durations);
-        })
+        .def_property_readonly(
+            "features_extraction_durations",
+            [](const WhisperRawPerfMetrics& rw) {
+                return common_utils::get_ms(rw, &WhisperRawPerfMetrics::features_extraction_durations);
+            }
+        )
         .def_property_readonly("word_level_timestamps_processing_durations", [](const WhisperRawPerfMetrics& rw) {
             return common_utils::get_ms(rw, &WhisperRawPerfMetrics::word_level_timestamps_processing_durations);
         });
@@ -305,7 +312,10 @@ void init_whisper_pipeline(py::module_& m) {
     py::class_<WhisperPerfMetrics, PerfMetrics>(m, "WhisperPerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
         .def("get_features_extraction_duration", &WhisperPerfMetrics::get_features_extraction_duration)
-        .def("get_word_level_timestamps_processing_duration", &WhisperPerfMetrics::get_word_level_timestamps_processing_duration)
+        .def(
+            "get_word_level_timestamps_processing_duration",
+            &WhisperPerfMetrics::get_word_level_timestamps_processing_duration
+        )
         .def_readonly("whisper_raw_metrics", &WhisperPerfMetrics::whisper_raw_metrics);
 
     py::class_<WhisperDecodedResultChunk>(m, "WhisperDecodedResultChunk", whisper_decoded_result_chunk)
@@ -324,10 +334,12 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readonly("end_ts", &WhisperWordTiming::end_ts);
 
     py::class_<WhisperDecodedResults>(m, "WhisperDecodedResults", whisper_decoded_results_docstring)
-        .def_property_readonly("texts",
-                               [](const WhisperDecodedResults& dr) -> py::typing::List<py::str> {
-                                   return pyutils::handle_utf8((std::vector<std::string>)dr);
-                               })
+        .def_property_readonly(
+            "texts",
+            [](const WhisperDecodedResults& dr) -> py::typing::List<py::str> {
+                return pyutils::handle_utf8((std::vector<std::string>)dr);
+            }
+        )
         .def_readonly("scores", &WhisperDecodedResults::scores)
         .def_readonly("chunks", &WhisperDecodedResults::chunks)
         .def_readonly("words", &WhisperDecodedResults::words)
@@ -361,7 +373,8 @@ void init_whisper_pipeline(py::module_& m) {
             WhisperPipeline class constructor.
             models_path (os.PathLike): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU).
-        )")
+        )"
+        )
 
         .def(
             "generate",
@@ -379,7 +392,8 @@ void init_whisper_pipeline(py::module_& m) {
             "generation_config",
             py::arg("streamer") = std::monostate(),
             "streamer",
-            (whisper_generate_docstring + std::string(" \n ") + whisper_generation_config_docstring).c_str())
+            (whisper_generate_docstring + std::string(" \n ") + whisper_generation_config_docstring).c_str()
+        )
 
         .def("get_tokenizer", &WhisperPipeline::get_tokenizer)
         .def("get_generation_config", &WhisperPipeline::get_generation_config, py::return_value_policy::copy)

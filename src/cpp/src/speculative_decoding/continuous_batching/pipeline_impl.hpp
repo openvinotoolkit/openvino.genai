@@ -8,26 +8,30 @@
 #include "update_request_structs.hpp"
 
 namespace ov::genai {
-class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
+class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl
+    : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
 public:
     const std::size_t default_num_assistant_tokens = 5;
- 
+
     ContinuousBatchingForSpeculativeDecodingImpl() = default;
 
-    ContinuousBatchingForSpeculativeDecodingImpl(const std::shared_ptr<ov::Model>& model,
-                                                 const Tokenizer& tokenizer,
-                                                 const GenerationConfig& generation_config,
-                                                 const SchedulerConfig& scheduler_config,
-                                                 const std::string& device,
-                                                 const ov::AnyMap& plugin_config,
-                                                 bool is_validation_mode_enabled);
+    ContinuousBatchingForSpeculativeDecodingImpl(
+        const std::shared_ptr<ov::Model>& model,
+        const Tokenizer& tokenizer,
+        const GenerationConfig& generation_config,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& plugin_config,
+        bool is_validation_mode_enabled
+    );
 
     void multistep();
 
     void finish_request(int64_t request_id = -1);
     void pull_awaiting_requests(bool is_pause_request = false);
     GeneratedRequests get_generated_requests();
-    UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_logit_processor);
+    UpdateRequestResult
+    update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_logit_processor);
     bool is_requests_empty();
 
     size_t get_processed_tokens_per_iteration();
@@ -47,20 +51,24 @@ class ContinuousBatchingPipeline::ContinuousBatchingForEagle3DecodingImpl
 public:
     ContinuousBatchingForEagle3DecodingImpl() = default;
 
-    ContinuousBatchingForEagle3DecodingImpl(const std::shared_ptr<ov::Model>& model,
-                                            const Tokenizer& tokenizer,
-                                            const GenerationConfig& generation_config,
-                                            const SchedulerConfig& scheduler_config,
-                                            const std::string& device,
-                                            const ov::AnyMap& plugin_config,
-                                            bool is_validation_mode_enabled)
-        : ContinuousBatchingForSpeculativeDecodingImpl(model,
-                                                       tokenizer,
-                                                       generation_config,
-                                                       scheduler_config,
-                                                       device,
-                                                       plugin_config,
-                                                       is_validation_mode_enabled) {
+    ContinuousBatchingForEagle3DecodingImpl(
+        const std::shared_ptr<ov::Model>& model,
+        const Tokenizer& tokenizer,
+        const GenerationConfig& generation_config,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& plugin_config,
+        bool is_validation_mode_enabled
+    )
+        : ContinuousBatchingForSpeculativeDecodingImpl(
+              model,
+              tokenizer,
+              generation_config,
+              scheduler_config,
+              device,
+              plugin_config,
+              is_validation_mode_enabled
+          ) {
         eagle_mode_enabled = true;
     };
 
@@ -115,7 +123,8 @@ public:
      * This function enables or disables the use of the internal hidden state in the model runner,
      * which is for the draft model 2...num_assistant forwards in each speculative decode step.
      *
-     * @param is_needed Boolean flag indicating whether the internal hidden state should be enabled (true) or disabled (false).
+     * @param is_needed Boolean flag indicating whether the internal hidden state should be enabled (true) or disabled
+     * (false).
      */
     void set_hidden_state_internal_needed(bool is_needed) {
         if (m_model_runner) {
@@ -123,4 +132,4 @@ public:
         }
     }
 };
-}
+}  // namespace ov::genai

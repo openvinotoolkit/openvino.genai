@@ -73,10 +73,11 @@ ov_genai_whisper_decoded_result_chunk_get_end_ts(const ov_genai_whisper_decoded_
  * will return OUT_OF_BOUNDS(-6).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_whisper_decoded_result_chunk_get_text(const ov_genai_whisper_decoded_result_chunk* chunk,
-                                               char* text,
-                                               size_t* text_size);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_decoded_result_chunk_get_text(
+    const ov_genai_whisper_decoded_result_chunk* chunk,
+    char* text,
+    size_t* text_size
+);
 
 /**
  * @brief Create WhisperDecodedResults
@@ -98,9 +99,10 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_whisper_decoded_results_free(ov_genai_whi
  * @param metrics A pointer to the newly created ov_genai_perf_metrics.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_whisper_decoded_results_get_perf_metrics(const ov_genai_whisper_decoded_results* results,
-                                                  ov_genai_perf_metrics** metrics);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_decoded_results_get_perf_metrics(
+    const ov_genai_whisper_decoded_results* results,
+    ov_genai_perf_metrics** metrics
+);
 
 /**
  * @brief Get number of text results from ov_genai_whisper_decoded_results.
@@ -123,11 +125,12 @@ ov_genai_whisper_decoded_results_get_texts_count(const ov_genai_whisper_decoded_
  * will return OUT_OF_BOUNDS(-6).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_whisper_decoded_results_get_text_at(const ov_genai_whisper_decoded_results* results,
-                                             size_t index,
-                                             char* text,
-                                             size_t* text_size);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_decoded_results_get_text_at(
+    const ov_genai_whisper_decoded_results* results,
+    size_t index,
+    char* text,
+    size_t* text_size
+);
 
 /**
  * @brief Get score at specific index from ov_genai_whisper_decoded_results.
@@ -136,10 +139,11 @@ ov_genai_whisper_decoded_results_get_text_at(const ov_genai_whisper_decoded_resu
  * @param score A pointer to the score value.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_whisper_decoded_results_get_score_at(const ov_genai_whisper_decoded_results* results,
-                                              size_t index,
-                                              float* score);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_decoded_results_get_score_at(
+    const ov_genai_whisper_decoded_results* results,
+    size_t index,
+    float* score
+);
 
 /**
  * @brief Check if chunks are available from ov_genai_whisper_decoded_results.
@@ -166,10 +170,11 @@ ov_genai_whisper_decoded_results_get_chunks_count(const ov_genai_whisper_decoded
  * @param chunk A pointer to the newly created ov_genai_whisper_decoded_result_chunk.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper_decoded_results* results,
-                                              size_t index,
-                                              ov_genai_whisper_decoded_result_chunk** chunk);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_decoded_results_get_chunk_at(
+    const ov_genai_whisper_decoded_results* results,
+    size_t index,
+    ov_genai_whisper_decoded_result_chunk** chunk
+);
 
 /**
  * @brief Get string representation from ov_genai_whisper_decoded_results.
@@ -182,10 +187,11 @@ ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper_decoded_res
  * will return OUT_OF_BOUNDS(-6).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_whisper_decoded_results_get_string(const ov_genai_whisper_decoded_results* results,
-                                            char* output,
-                                            size_t* output_size);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_decoded_results_get_string(
+    const ov_genai_whisper_decoded_results* results,
+    char* output,
+    size_t* output_size
+);
 
 /**
  * @brief Construct ov_genai_whisper_pipeline.
@@ -208,11 +214,13 @@ ov_genai_whisper_decoded_results_get_string(const ov_genai_whisper_decoded_resul
  * ov_genai_whisper_pipeline_create(model_path, "GPU", 2, &pipeline,
  *                                  "CACHE_DIR", "cache_dir");
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
-                                                                      const char* device,
-                                                                      const size_t property_args_size,
-                                                                      ov_genai_whisper_pipeline** pipeline,
-                                                                      ...);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_pipeline_create(
+    const char* models_path,
+    const char* device,
+    const size_t property_args_size,
+    ov_genai_whisper_pipeline** pipeline,
+    ...
+);
 
 /**
  * @brief Release the memory allocated by ov_genai_whisper_pipeline.
@@ -229,12 +237,13 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_whisper_pipeline_free(ov_genai_whisper_pi
  * @param results A pointer to the ov_genai_whisper_decoded_results, which retrieves the results of the generation.
  * @return Status code of the operation: OK(0) for success.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_whisper_pipeline_generate(ov_genai_whisper_pipeline* pipeline,
-                                   const float* raw_speech,
-                                   size_t raw_speech_size,
-                                   const ov_genai_whisper_generation_config* config,
-                                   ov_genai_whisper_decoded_results** results);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_pipeline_generate(
+    ov_genai_whisper_pipeline* pipeline,
+    const float* raw_speech,
+    size_t raw_speech_size,
+    const ov_genai_whisper_generation_config* config,
+    ov_genai_whisper_decoded_results** results
+);
 
 /**
  * @brief Get the WhisperGenerationConfig from ov_genai_whisper_pipeline.
@@ -242,9 +251,10 @@ ov_genai_whisper_pipeline_generate(ov_genai_whisper_pipeline* pipeline,
  * @param config A pointer to the newly created ov_genai_whisper_generation_config.
  * @return Status code of the operation: OK(0) for success.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_whisper_pipeline_get_generation_config(const ov_genai_whisper_pipeline* pipeline,
-                                                ov_genai_whisper_generation_config** config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_pipeline_get_generation_config(
+    const ov_genai_whisper_pipeline* pipeline,
+    ov_genai_whisper_generation_config** config
+);
 
 /**
  * @brief Set the WhisperGenerationConfig to ov_genai_whisper_pipeline.
@@ -252,6 +262,7 @@ ov_genai_whisper_pipeline_get_generation_config(const ov_genai_whisper_pipeline*
  * @param config A pointer to the ov_genai_whisper_generation_config instance.
  * @return Status code of the operation: OK(0) for success.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e
-ov_genai_whisper_pipeline_set_generation_config(ov_genai_whisper_pipeline* pipeline,
-                                                ov_genai_whisper_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_pipeline_set_generation_config(
+    ov_genai_whisper_pipeline* pipeline,
+    ov_genai_whisper_generation_config* config
+);

@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "include/text_embedding_pipeline/init_worker.hpp"
-#include "include/helper.hpp"
+
 #include <chrono>
 #include <thread>
+
+#include "include/helper.hpp"
 
 EmbeddingInitWorker::EmbeddingInitWorker(
     Function& callback,
@@ -13,24 +15,30 @@ EmbeddingInitWorker::EmbeddingInitWorker(
     const std::string device,
     Object config,
     Object properties
-) : AsyncWorker(callback),
-    pipe(pipe),
-    model_path(model_path),
-    device(device),
-    config(js_to_cpp<ov::AnyMap>(Env(), config)),
-    properties(js_to_cpp<ov::AnyMap>(Env(), properties)) {};
+)
+    : AsyncWorker(callback),
+      pipe(pipe),
+      model_path(model_path),
+      device(device),
+      config(js_to_cpp<ov::AnyMap>(Env(), config)),
+      properties(js_to_cpp<ov::AnyMap>(Env(), properties)) {};
 
 void EmbeddingInitWorker::Execute() {
     try {
         ov::genai::TextEmbeddingPipeline::Config config(this->config);
-        this->pipe = std::make_shared<ov::genai::TextEmbeddingPipeline>(this->model_path, this->device, config, this->properties);
-    } catch(const std::exception& ex) {
+        this->pipe = std::make_shared<ov::genai::TextEmbeddingPipeline>(
+            this->model_path,
+            this->device,
+            config,
+            this->properties
+        );
+    } catch (const std::exception& ex) {
         SetError(ex.what());
     }
 };
 
 void EmbeddingInitWorker::OnOK() {
     Callback().Call({
-        Env().Null()      // Error result
+        Env().Null()  // Error result
     });
 };

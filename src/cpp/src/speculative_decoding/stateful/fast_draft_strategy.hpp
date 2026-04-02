@@ -1,13 +1,12 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "sampling/sampler.hpp"
-#include "utils.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
-
+#include "sampling/sampler.hpp"
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "stateful_pipeline_base.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -26,9 +25,7 @@ public:
 
     int64_t get_generation_capacity() const;
 
-    int64_t infer_first(const ov::Tensor &input_ids,
-                        const ov::Tensor &attention_mask,
-                        const ov::Tensor &position_ids);
+    int64_t infer_first(const ov::Tensor& input_ids, const ov::Tensor& attention_mask, const ov::Tensor& position_ids);
 
     bool can_infer(const std::size_t prompt_len = 0);
 
@@ -54,8 +51,8 @@ private:
 
     void set_already_allocated_input_for_1_token();
 
-    std::variant<int64_t, std::vector<int64_t>> sample_tokens(
-        const ov::Tensor& logits, std::size_t num_tokens_to_return);
+    std::variant<int64_t, std::vector<int64_t>>
+    sample_tokens(const ov::Tensor& logits, std::size_t num_tokens_to_return);
 
 private:
     std::string m_device;
@@ -81,8 +78,8 @@ private:
 class StatefulSpeculativeLLMPipeline : public StatefulSpeculativePipelineBase {
 public:
     StatefulSpeculativeLLMPipeline(
-    const ov::genai::ModelDesc& main_model_desc, 
-    const ov::genai::ModelDesc& draft_model_desc
+        const ov::genai::ModelDesc& main_model_desc,
+        const ov::genai::ModelDesc& draft_model_desc
     );
 
     ~StatefulSpeculativeLLMPipeline();
@@ -96,9 +93,8 @@ protected:
     // Override base class methods
     GenerationConfig resolve_generation_config(OptionalGenerationConfig generation_config) override;
 
-    EncodedResults generate_tokens(const EncodedInputs& inputs,
-                                   const GenerationConfig& config,
-                                   StreamerVariant streamer) override;
+    EncodedResults
+    generate_tokens(const EncodedInputs& inputs, const GenerationConfig& config, StreamerVariant streamer) override;
 
 private:
     void update_candidate_strategy(const std::size_t matches_num);

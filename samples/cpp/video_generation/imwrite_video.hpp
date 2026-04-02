@@ -4,6 +4,7 @@
 #pragma once
 
 #include <string>
+
 #include "openvino/runtime/tensor.hpp"
 
 /**

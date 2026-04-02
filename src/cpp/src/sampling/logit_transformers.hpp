@@ -19,13 +19,12 @@ struct Token {
 };
 
 struct Logits {
-    float * m_data = nullptr;
+    float* m_data = nullptr;
     size_t m_size;
     // Late initialized for top_p or top_k transforms
     std::vector<Token> m_vector;
 
-    Logits(float* data, size_t size): m_data(data), m_size(size) {}
-
+    Logits(float* data, size_t size) : m_data(data), m_size(size) {}
 
     void initialize_vector() {
         OPENVINO_ASSERT(m_vector.size() == 0, "Logits vector already initialized");
@@ -59,15 +58,15 @@ public:
 
 /**
  * @brief Interface for logit transformers that maintain state across token generations.
- * 
+ *
  * ILogitTransformer interface is used for logit transformers that do not maintain state across token generations.
- * accept_tokens method is used to accept a sequence of token ids, which can be used to update the internal state of the transformer.
+ * accept_tokens method is used to accept a sequence of token ids, which can be used to update the internal state of the
+ * transformer.
  */
-class IStatefulLogitTransformer: public ILogitTransformer {
+class IStatefulLogitTransformer : public ILogitTransformer {
 public:
     virtual void accept_tokens(const TokenIds& input_ids) = 0;
 };
-
 
 class TopPFilter : public ILogitTransformer {
 public:
@@ -79,16 +78,24 @@ public:
         // This method partially sorts vector finding M top elements and stops when top_p condition is met.
         // It iterates a few times starting with M = 16 and multiplying it by 2 each iteration until M = 1024.
         // If top_p is found in considered scope it resizes logits vector and returns true. Otherwise it returns false.
-        // Note that it can we less performant than standard approach if logits value are more evenly distributed across the vector.
+        // Note that it can we less performant than standard approach if logits value are more evenly distributed across
+        // the vector.
         for (size_t step = 16; step <= 1024; step *= 2) {
             if (logits.m_vector.size() <= step)
                 break;
-            std::partial_sort(logits.m_vector.begin(), logits.m_vector.begin() + step, logits.m_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+            std::partial_sort(
+                logits.m_vector.begin(),
+                logits.m_vector.begin() + step,
+                logits.m_vector.end(),
+                [](const Token& lhs, const Token& rhs) {
+                    return lhs.m_log_prob > rhs.m_log_prob;
+                }
+            );
             float sum = 0.0;
             for (int i = 0; i < step; i++) {
                 sum += logits.m_vector[i].m_log_prob;
                 if (sum > m_top_p) {
-                    logits.resize(i+1);
+                    logits.resize(i + 1);
                     return true;
                 }
             }
@@ -97,13 +104,16 @@ public:
     }
 
     void full_sort_and_resize(Logits& logits) {
-        std::sort(logits.m_vector.begin(), logits.m_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+        std::sort(logits.m_vector.begin(), logits.m_vector.end(), [](const Token& lhs, const Token& rhs) {
+            return lhs.m_log_prob > rhs.m_log_prob;
+        });
         float probability_sum = 0.0f;
         size_t nucleus_size = 0;
         for (const auto& logit : logits.m_vector) {
             probability_sum += logit.m_log_prob;
             nucleus_size += 1;
-            if (probability_sum > m_top_p) break;
+            if (probability_sum > m_top_p)
+                break;
         }
         logits.resize(nucleus_size);
     }
@@ -111,7 +121,7 @@ public:
     void apply(Logits& logits) override {
         // Initialize and sort vector. Try partial sorting first and if it's not enough, sort entire vector.
         logits.initialize_vector();
-        if(!partial_sort_and_resize(logits))
+        if (!partial_sort_and_resize(logits))
             full_sort_and_resize(logits);
     }
 
@@ -123,9 +133,9 @@ class TopKFilter : public ILogitTransformer {
 public:
     TopKFilter(size_t top_k) : m_top_k(top_k) {}
 
-    // If this transform is used along with top_p, it should be applied after it since top_p sorts entire vector and top_k does it only partially
+    // If this transform is used along with top_p, it should be applied after it since top_p sorts entire vector and
+    // top_k does it only partially
     void apply(Logits& logits) override {
-
         if (m_top_k >= logits.m_size)
             return;
 
@@ -133,7 +143,14 @@ public:
         if (!logits.is_vector_initialized()) {
             // Initialize and partially sort vector
             logits.initialize_vector();
-            std::partial_sort(logits.m_vector.begin(), logits.m_vector.begin() + m_top_k, logits.m_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+            std::partial_sort(
+                logits.m_vector.begin(),
+                logits.m_vector.begin() + m_top_k,
+                logits.m_vector.end(),
+                [](const Token& lhs, const Token& rhs) {
+                    return lhs.m_log_prob > rhs.m_log_prob;
+                }
+            );
         }
         logits.resize(m_top_k);
     }
@@ -168,7 +185,6 @@ public:
 protected:
     float m_temperature = 0.f;
 };
-
 
 class IPenaltyTransformer : public ILogitTransformer {
 public:
@@ -249,16 +265,16 @@ protected:
 
 class EOSPenaltyTransform : public ILogitTransformer {
 public:
-    EOSPenaltyTransform(const std::set<int64_t>& stop_token_ids, size_t min_generated_tokens) :
-        m_stop_token_ids(stop_token_ids), m_applicable_tensor_len(min_generated_tokens) {}
+    EOSPenaltyTransform(const std::set<int64_t>& stop_token_ids, size_t min_generated_tokens)
+        : m_stop_token_ids(stop_token_ids),
+          m_applicable_tensor_len(min_generated_tokens) {}
 
     void apply(Logits& logits) override {
         // Since EOS penalty is applied early, the token vector is not initialized yet
         // and we can assume element order match token ids.
-        for (auto stop_token_id: m_stop_token_ids)
+        for (auto stop_token_id : m_stop_token_ids)
             logits.m_data[stop_token_id] = 0.f;
     }
-
 
     bool is_applicable(size_t generated_tokens_cnt = 0) override {
         return generated_tokens_cnt < m_applicable_tensor_len;
@@ -319,5 +335,5 @@ public:
     }
 };
 
-} // namespace LogitTransformers
-} // namespace ov::genai
+}  // namespace LogitTransformers
+}  // namespace ov::genai

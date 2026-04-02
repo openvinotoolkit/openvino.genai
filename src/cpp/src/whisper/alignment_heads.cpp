@@ -7,7 +7,8 @@ namespace ov::genai {
 
 std::vector<ov::Tensor> get_whisper_alignments_heads_qks(
     ov::InferRequest& request,
-    const std::vector<std::pair<size_t, size_t>>& alignment_heads) {
+    const std::vector<std::pair<size_t, size_t>>& alignment_heads
+) {
     // [layers] * [batch, num_heads, seq_len, frame_len] -> [layers] * [batch, seq_len, frame_len]
     std::vector<ov::Tensor> alignment_qks;
     for (const auto& [layer_idx, head_idx] : alignment_heads) {
@@ -31,9 +32,11 @@ std::vector<ov::Tensor> get_whisper_alignments_heads_qks(
             const size_t head_offset = head_idx * seq_len * frame_len;
             const size_t head_batch_offset = batch * seq_len * frame_len;
 
-            std::memcpy(head_data + head_batch_offset,
-                        alignment_data + batch_offset + head_offset,
-                        seq_len * frame_len * sizeof(float));
+            std::memcpy(
+                head_data + head_batch_offset,
+                alignment_data + batch_offset + head_offset,
+                seq_len * frame_len * sizeof(float)
+            );
         }
 
         alignment_qks.push_back(head_tensor);

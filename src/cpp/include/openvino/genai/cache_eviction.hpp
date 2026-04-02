@@ -4,25 +4,25 @@
 #pragma once
 
 #include <cstddef>
-#include <unordered_map>
-#include <sstream>
 #include <set>
+#include <sstream>
+#include <unordered_map>
 
 #include "openvino/core/except.hpp"
 
 namespace ov::genai {
 
 /**
-* @brief Represents the mode of per-token score aggregation when determining least important tokens for eviction
-*        from cache
-*/
+ * @brief Represents the mode of per-token score aggregation when determining least important tokens for eviction
+ *        from cache
+ */
 enum class AggregationMode {
-    SUM,     /**< In this mode the importance scores of each token will be summed after each step of generation */
+    SUM,      /**< In this mode the importance scores of each token will be summed after each step of generation */
     NORM_SUM, /**< Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated)
-                * of a given token in cache */
-    ADAPTIVE_RKV /** Switches the cache eviction algorithm to use Adaptive R-KV algorithm. The scores are aggregated within
-                   a configurable window size of the latest generated tokens. May not be used together with the KVCrush
-                   algorithm. */
+               * of a given token in cache */
+    ADAPTIVE_RKV /** Switches the cache eviction algorithm to use Adaptive R-KV algorithm. The scores are aggregated
+                   within a configurable window size of the latest generated tokens. May not be used together with the
+                   KVCrush algorithm. */
 };
 
 /**
@@ -36,8 +36,11 @@ enum class KVCrushAnchorPointMode {
              based on majority value */
     ALTERNATING, /**In this mode the anchor point is a vector of alternate 0s and 1s */
 #ifndef _WIN32
-    // KVCrushAnchorPointMode::ALTERNATE is conflicting with definitions in windows.h in MSVC versions (https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-getpolyfillmode)
-    ALTERNATE OPENVINO_ENUM_DEPRECATED("Please, use `KVCrushAnchorPointMode::ALTERNATING` instead of `KVCrushAnchorPointMode::ALTERNATE`.") = ALTERNATING /**In this mode the anchor point is a vector of alternate 0s and 1s */
+    // KVCrushAnchorPointMode::ALTERNATE is conflicting with definitions in windows.h in MSVC versions
+    // (https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-getpolyfillmode)
+    ALTERNATE OPENVINO_ENUM_DEPRECATED(
+        "Please, use `KVCrushAnchorPointMode::ALTERNATING` instead of `KVCrushAnchorPointMode::ALTERNATE`."
+    ) = ALTERNATING /**In this mode the anchor point is a vector of alternate 0s and 1s */
 #endif
 };
 
@@ -100,25 +103,28 @@ public:
 
 struct AdaptiveRKVConfig {
     AdaptiveRKVConfig() = default;
-    AdaptiveRKVConfig(double attention_mass_, size_t window_size_) : attention_mass(attention_mass_), window_size(window_size_) {};
+    AdaptiveRKVConfig(double attention_mass_, size_t window_size_)
+        : attention_mass(attention_mass_),
+          window_size(window_size_) {};
 
     double attention_mass = 0.9;
     size_t window_size = 8;
 };
 
-
 class CacheEvictionConfig {
 public:
     CacheEvictionConfig() = default;
 
-    CacheEvictionConfig(size_t start_size,
-                        size_t recent_size,
-                        size_t max_cache_size,
-                        AggregationMode aggregation_mode_,
-                        bool apply_rotation_ = false,
-                        size_t snapkv_window_size_ = 8,
-                        const KVCrushConfig& kvcrush_config_ = KVCrushConfig(0, KVCrushAnchorPointMode::RANDOM),
-                        const AdaptiveRKVConfig& adaptive_rkv_config_ = AdaptiveRKVConfig())
+    CacheEvictionConfig(
+        size_t start_size,
+        size_t recent_size,
+        size_t max_cache_size,
+        AggregationMode aggregation_mode_,
+        bool apply_rotation_ = false,
+        size_t snapkv_window_size_ = 8,
+        const KVCrushConfig& kvcrush_config_ = KVCrushConfig(0, KVCrushAnchorPointMode::RANDOM),
+        const AdaptiveRKVConfig& adaptive_rkv_config_ = AdaptiveRKVConfig()
+    )
         : aggregation_mode(aggregation_mode_),
           apply_rotation(apply_rotation_),
           snapkv_window_size(snapkv_window_size_),
@@ -131,8 +137,11 @@ public:
         OPENVINO_ASSERT(recent_size, "CacheEvictionConfig.recent_size must be non-zero");
         OPENVINO_ASSERT(max_cache_size, "CacheEvictionConfig.max_cache_size must be non-zero");
 
-        OPENVINO_ASSERT(max_cache_size > (start_size + recent_size),
-                        "CacheEvictionConfig.max_cache_size must be larger than CacheEvictionConfig.start_size + CacheEvictionConfig.recent_size");
+        OPENVINO_ASSERT(
+            max_cache_size > (start_size + recent_size),
+            "CacheEvictionConfig.max_cache_size must be larger than CacheEvictionConfig.start_size + "
+            "CacheEvictionConfig.recent_size"
+        );
         m_evictable_size = m_max_cache_size - m_start_size - m_recent_size;
     }
 
@@ -206,13 +215,13 @@ public:
 
 private:
     /** Number of tokens in the *beginning* of KV cache that should be retained
-     * in the KV cache for this sequence during generation. Must be non-zero and a multiple of the KV cache block size for
-     * this pipeline.*/
+     * in the KV cache for this sequence during generation. Must be non-zero and a multiple of the KV cache block size
+     * for this pipeline.*/
     std::size_t m_start_size = 32;
 
     /** Number of tokens in the *end* of KV cache that should be retained
-     * in the KV cache for this sequence during generation. Must be non-zero and a multiple of the KV cache block size for
-     * this pipeline.*/
+     * in the KV cache for this sequence during generation. Must be non-zero and a multiple of the KV cache block size
+     * for this pipeline.*/
     std::size_t m_recent_size = 128;
 
     /**
@@ -222,7 +231,6 @@ private:
      */
     std::size_t m_max_cache_size = 672;
     std::size_t m_evictable_size = 512;
-
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

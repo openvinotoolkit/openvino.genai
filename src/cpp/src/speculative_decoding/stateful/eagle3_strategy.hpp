@@ -107,18 +107,22 @@ public:
     ov::Tensor get_logits() const;
     ov::Tensor get_hidden_features() const;
 
-    void build_model_inputs(const size_t token_count,
-                            ov::Tensor& input_ids,
-                            ov::Tensor& attention_mask,
-                            ov::Tensor& position_ids);
+    void build_model_inputs(
+        const size_t token_count,
+        ov::Tensor& input_ids,
+        ov::Tensor& attention_mask,
+        ov::Tensor& position_ids
+    );
 
     /// @brief Samples tokens from logits
     /// @param num_tokens_to_validate Draft tokens to validate (0 for standard sampling)
     /// @return Vector of sampled token(s) - size 1 for standard sampling, size N for validation mode
-    std::vector<int64_t> sample_tokens(const ov::Tensor& logits,
-                                       size_t input_token_count,
-                                       size_t sample_count,
-                                       size_t num_tokens_to_validate = 0);
+    std::vector<int64_t> sample_tokens(
+        const ov::Tensor& logits,
+        size_t input_token_count,
+        size_t sample_count,
+        size_t num_tokens_to_validate = 0
+    );
 
     /// @brief Executes forward pass: prepare inputs, infer, and sample
     virtual InferResult forward(const InferContext& ctx) = 0;
@@ -160,9 +164,8 @@ public:
     /// @brief Initializes sequence with prompt tokens
     void initialize_sequence(const ov::Tensor& input_ids, const ov::genai::GenerationConfig& config);
 
-    InferenceOutput infer(const ov::Tensor& input_ids,
-                          const ov::Tensor& attention_mask,
-                          const ov::Tensor& position_ids);
+    InferenceOutput
+    infer(const ov::Tensor& input_ids, const ov::Tensor& attention_mask, const ov::Tensor& position_ids);
 
     InferResult forward(const InferContext& ctx) override;
 };
@@ -182,10 +185,12 @@ public:
     void initialize_sequence(const ov::Tensor& input_ids, const ov::genai::GenerationConfig& config);
 
     /// @brief Runs inference with hidden states (from target or internal source)
-    InferenceOutput infer(const ov::Tensor& input_ids,
-                          const ov::Tensor& attention_mask,
-                          const ov::Tensor& position_ids,
-                          const ov::Tensor& hidden_states);
+    InferenceOutput infer(
+        const ov::Tensor& input_ids,
+        const ov::Tensor& attention_mask,
+        const ov::Tensor& position_ids,
+        const ov::Tensor& hidden_states
+    );
 
     InferResult forward(const InferContext& ctx) override;
 };
@@ -198,8 +203,10 @@ public:
  */
 class StatefulEagle3LLMPipeline : public StatefulSpeculativePipelineBase {
 public:
-    StatefulEagle3LLMPipeline(const ov::genai::ModelDesc& target_model_desc,
-                              const ov::genai::ModelDesc& draft_model_desc);
+    StatefulEagle3LLMPipeline(
+        const ov::genai::ModelDesc& target_model_desc,
+        const ov::genai::ModelDesc& draft_model_desc
+    );
     ~StatefulEagle3LLMPipeline();
 
     ov::genai::SpeculativeDecodingMetrics get_speculative_decoding_metrics() const;
@@ -211,9 +218,8 @@ protected:
     // Override base class methods
     GenerationConfig resolve_generation_config(OptionalGenerationConfig generation_config) override;
 
-    EncodedResults generate_tokens(const EncodedInputs& inputs,
-                                   const GenerationConfig& config,
-                                   StreamerVariant streamer) override;
+    EncodedResults
+    generate_tokens(const EncodedInputs& inputs, const GenerationConfig& config, StreamerVariant streamer) override;
 
 private:
     struct SpeculativeResult {
@@ -223,10 +229,12 @@ private:
         std::vector<int64_t> validated_tokens;
     };
 
-    SpeculativeResult run_speculative_iteration(size_t token_count,
-                                                int64_t eos_token_id,
-                                                size_t current_generated_tokens,
-                                                size_t max_new_tokens);
+    SpeculativeResult run_speculative_iteration(
+        size_t token_count,
+        int64_t eos_token_id,
+        size_t current_generated_tokens,
+        size_t max_new_tokens
+    );
 
     std::unique_ptr<Eagle3DraftWrapper> m_draft;
     std::unique_ptr<Eagle3TargetWrapper> m_target;

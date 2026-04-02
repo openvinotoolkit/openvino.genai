@@ -4,9 +4,8 @@
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 
 #include <fstream>
-#include <utility>
-
 #include <nlohmann/json.hpp>
+#include <utility>
 
 #include "json_utils.hpp"
 #include "logger.hpp"
@@ -83,10 +82,12 @@ void TextEmbeddingPipeline::Config::validate() const {
 
 class TextEmbeddingPipeline::TextEmbeddingPipelineImpl {
 public:
-    TextEmbeddingPipelineImpl(const std::filesystem::path& models_path,
-                              const std::string& device,
-                              const Config& config,
-                              const ov::AnyMap& properties = {})
+    TextEmbeddingPipelineImpl(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        const Config& config,
+        const ov::AnyMap& properties = {}
+    )
         : m_config{config},
           m_tokenizer{models_path},
           m_max_position_embeddings{read_max_position_embeddings(models_path)} {
@@ -115,11 +116,13 @@ public:
         }
 
         if (device == "NPU") {
-            m_request = create_text_embedding_npu_request(model,
-                                                          m_config,
-                                                          properties,
-                                                          m_max_position_embeddings,
-                                                          is_seq_len_fixed);
+            m_request = create_text_embedding_npu_request(
+                model,
+                m_config,
+                properties,
+                m_max_position_embeddings,
+                is_seq_len_fixed
+            );
             m_post_request = create_text_embedding_npu_post_request(model, m_config);
         } else {
             if (m_config.batch_size.has_value() || m_config.max_length.has_value()) {
@@ -185,11 +188,13 @@ private:
         const auto input_shape = input.get_shape();
         const size_t sequence_length = input_shape[1];
         const size_t original_mask_size = m_attention_mask.get_size();
-        OPENVINO_ASSERT(sequence_length >= original_mask_size,
-                        "Attention mask size mismatch: expected at least ",
-                        original_mask_size,
-                        " elements, but got ",
-                        sequence_length);
+        OPENVINO_ASSERT(
+            sequence_length >= original_mask_size,
+            "Attention mask size mismatch: expected at least ",
+            original_mask_size,
+            " elements, but got ",
+            sequence_length
+        );
 
         // Create attention mask tensor matching the embedding output shape
         ov::Tensor attention_mask_tensor{ov::element::i64, {1, sequence_length}};
@@ -203,9 +208,11 @@ private:
         // which is greater than the original m_attention_mask size of 3800. We need to zero-fill
         // the remaining elements in the attention_mask_tensor to ensure correct masking behavior.
         if (sequence_length > original_mask_size) {
-            std::fill_n(attention_mask_tensor.data<int64_t>() + original_mask_size,
-                        sequence_length - original_mask_size,
-                        0);
+            std::fill_n(
+                attention_mask_tensor.data<int64_t>() + original_mask_size,
+                sequence_length - original_mask_size,
+                0
+            );
         }
 
         // Run post-processing inference
@@ -220,10 +227,12 @@ private:
         if (m_config.batch_size.has_value()) {
             // if batch_size is set, model shape is fixed
             // provide user friendly error message if number of texts is not equal to batch_size
-            OPENVINO_ASSERT(texts.size() == *m_config.batch_size,
-                            "Number of texts passed to pipeline should be equal to batch_size(",
-                            *m_config.batch_size,
-                            ")");
+            OPENVINO_ASSERT(
+                texts.size() == *m_config.batch_size,
+                "Number of texts passed to pipeline should be equal to batch_size(",
+                *m_config.batch_size,
+                ")"
+            );
         }
 
         const auto encoded = m_tokenizer.encode(texts, m_tokenization_params);
@@ -293,16 +302,20 @@ private:
     }
 };
 
-TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models_path,
-                                             const std::string& device,
-                                             const Config& config,
-                                             const ov::AnyMap& properties) {
+TextEmbeddingPipeline::TextEmbeddingPipeline(
+    const std::filesystem::path& models_path,
+    const std::string& device,
+    const Config& config,
+    const ov::AnyMap& properties
+) {
     m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, config, properties);
 };
 
-TextEmbeddingPipeline::TextEmbeddingPipeline(const std::filesystem::path& models_path,
-                                             const std::string& device,
-                                             const ov::AnyMap& properties) {
+TextEmbeddingPipeline::TextEmbeddingPipeline(
+    const std::filesystem::path& models_path,
+    const std::string& device,
+    const ov::AnyMap& properties
+) {
     const auto& plugin_properties = remove_config_properties(properties);
 
     m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, Config(properties), plugin_properties);

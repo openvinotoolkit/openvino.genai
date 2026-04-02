@@ -15,9 +15,12 @@ Napi::Function WhisperPerfMetricsWrapper::get_class(Napi::Env env) {
     auto properties =
         BasePerfMetricsWrapper<WhisperPerfMetricsWrapper, ov::genai::WhisperPerfMetrics>::get_class_properties();
     properties.push_back(
-        InstanceMethod("getFeaturesExtractionDuration", &WhisperPerfMetricsWrapper::get_features_extraction_duration));
-    properties.push_back(InstanceMethod("getWordLevelTimestampsProcessingDuration",
-                                        &WhisperPerfMetricsWrapper::get_word_level_timestamps_processing_duration));
+        InstanceMethod("getFeaturesExtractionDuration", &WhisperPerfMetricsWrapper::get_features_extraction_duration)
+    );
+    properties.push_back(InstanceMethod(
+        "getWordLevelTimestampsProcessingDuration",
+        &WhisperPerfMetricsWrapper::get_word_level_timestamps_processing_duration
+    ));
     properties.push_back(InstanceAccessor<&WhisperPerfMetricsWrapper::get_whisper_raw_metrics>("whisperRawMetrics"));
     return DefineClass(env, "WhisperPerfMetrics", properties);
 }
@@ -51,11 +54,18 @@ Napi::Value WhisperPerfMetricsWrapper::get_whisper_raw_metrics(const Napi::Callb
         "featuresExtractionDurations",
         cpp_to_js<std::vector<float>, Napi::Value>(
             info.Env(),
-            get_ms(_metrics.whisper_raw_metrics, &ov::genai::WhisperRawPerfMetrics::features_extraction_durations)));
-    obj.Set("wordLevelTimestampsProcessingDurations",
-            cpp_to_js<std::vector<float>, Napi::Value>(
-                info.Env(),
-                get_ms(_metrics.whisper_raw_metrics,
-                       &ov::genai::WhisperRawPerfMetrics::word_level_timestamps_processing_durations)));
+            get_ms(_metrics.whisper_raw_metrics, &ov::genai::WhisperRawPerfMetrics::features_extraction_durations)
+        )
+    );
+    obj.Set(
+        "wordLevelTimestampsProcessingDurations",
+        cpp_to_js<std::vector<float>, Napi::Value>(
+            info.Env(),
+            get_ms(
+                _metrics.whisper_raw_metrics,
+                &ov::genai::WhisperRawPerfMetrics::word_level_timestamps_processing_durations
+            )
+        )
+    );
     return obj;
 }

@@ -5,7 +5,6 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
-
 #include <openvino/core/op_extension.hpp>
 #include <openvino/openvino.hpp>
 
@@ -101,7 +100,8 @@ TEST(TestAddExtensions, test_extract_extensions_to_core) {
     // Use intentionally non-existent, platform-agnostic extension paths to trigger error handling.
     ov::AnyMap properties_path = {ov::genai::extensions(std::vector<std::filesystem::path>{"non_existent_path"})};
     ov::AnyMap properties_custom_op = {ov::genai::extensions(
-        std::vector<std::shared_ptr<ov::Extension>>{std::make_shared<ov::OpExtension<CustomAdd>>()})};
+        std::vector<std::shared_ptr<ov::Extension>>{std::make_shared<ov::OpExtension<CustomAdd>>()}
+    )};
 
     EXPECT_THROW(extract_extensions_to_core(properties_path), ov::Exception);
     EXPECT_NO_THROW(extract_extensions_to_core(properties_custom_op));

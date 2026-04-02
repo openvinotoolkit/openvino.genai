@@ -43,11 +43,13 @@ static bool hann_window(const size_t length, const bool periodic, std::vector<fl
 // naive Discrete Fourier Transform
 // input is real-valued
 // output is complex-valued
-static void dft(const std::vector<float>& in,
-                std::vector<float>& out,
-                const std::vector<float>& sin_vals,
-                const std::vector<float>& cos_vals,
-                const size_t n_fft) {
+static void dft(
+    const std::vector<float>& in,
+    std::vector<float>& out,
+    const std::vector<float>& sin_vals,
+    const std::vector<float>& cos_vals,
+    const size_t n_fft
+) {
     int N = in.size();
 
     out.resize(N * 2);
@@ -71,11 +73,13 @@ static void dft(const std::vector<float>& in,
 // Cooley-Tukey FFT
 // input is real-valued
 // output is complex-valued
-static void fft(const std::vector<float>& in,
-                std::vector<float>& out,
-                const std::vector<float>& sin_vals,
-                const std::vector<float>& cos_vals,
-                const size_t n_fft) {
+static void fft(
+    const std::vector<float>& in,
+    std::vector<float>& out,
+    const std::vector<float>& sin_vals,
+    const std::vector<float>& cos_vals,
+    const size_t n_fft
+) {
     out.resize(in.size() * 2);
 
     int N = in.size();
@@ -128,17 +132,19 @@ static void fft(const std::vector<float>& in,
     }
 }
 
-static void log_mel_spectrogram_worker_thread(int ith,
-                                              const std::vector<float>& hann,
-                                              const std::vector<float>& samples,
-                                              int n_samples,
-                                              int frame_size,
-                                              int frame_step,
-                                              int n_threads,
-                                              const std::vector<float>& mel_filter,
-                                              WhisperFeatures& features,
-                                              const std::vector<float>& sin_vals,
-                                              const std::vector<float>& cos_vals) {
+static void log_mel_spectrogram_worker_thread(
+    int ith,
+    const std::vector<float>& hann,
+    const std::vector<float>& samples,
+    int n_samples,
+    int frame_size,
+    int frame_step,
+    int n_threads,
+    const std::vector<float>& mel_filter,
+    WhisperFeatures& features,
+    const std::vector<float>& sin_vals,
+    const std::vector<float>& cos_vals
+) {
     std::vector<float> fft_in(frame_size, 0.0);
     std::vector<float> fft_out(2 * frame_size);
     int n_fft = 1 + (frame_size / 2);
@@ -226,8 +232,8 @@ float mel_to_hertz(const float mel) {
     return freq;
 }
 
-std::vector<std::vector<float>> create_triangular_filter_bank(const std::vector<float>& fft_freqs,
-                                                              const std::vector<float>& filter_freqs) {
+std::vector<std::vector<float>>
+create_triangular_filter_bank(const std::vector<float>& fft_freqs, const std::vector<float>& filter_freqs) {
     std::vector<float> filter_diff(filter_freqs.size() - 1);
     for (size_t i = 0; i < filter_diff.size(); i++) {
         filter_diff[i] = filter_freqs[i + 1] - filter_freqs[i];
@@ -264,11 +270,13 @@ std::vector<std::vector<float>> create_triangular_filter_bank(const std::vector<
     return result;
 }
 
-std::vector<std::vector<float>> mel_filter_bank(const int64_t num_frequency_bins,
-                                                const int64_t num_mel_filters,
-                                                const int64_t sampling_rate,
-                                                const float min_frequency = 0.0f,
-                                                const float max_frequency = 8000.0f) {
+std::vector<std::vector<float>> mel_filter_bank(
+    const int64_t num_frequency_bins,
+    const int64_t num_mel_filters,
+    const int64_t sampling_rate,
+    const float min_frequency = 0.0f,
+    const float max_frequency = 8000.0f
+) {
     OPENVINO_ASSERT(max_frequency <= (sampling_rate / 2), "max_frequency should be less or equal sampling_rate / 2");
 
     const float mel_min = hertz_to_mel(min_frequency);
@@ -315,9 +323,8 @@ void fill_sin_cos_table(std::vector<float>& sin_vals, std::vector<float>& cos_va
     }
 }
 
-std::vector<float> pad(const std::vector<float>& raw_speech,
-                       const size_t minimum_length,
-                       const size_t reflect_pad_size) {
+std::vector<float>
+pad(const std::vector<float>& raw_speech, const size_t minimum_length, const size_t reflect_pad_size) {
     // pad to minimum length if needed
     size_t total_pad_length = std::max(raw_speech.size(), minimum_length) + 2 * reflect_pad_size;
 
@@ -326,26 +333,32 @@ std::vector<float> pad(const std::vector<float>& raw_speech,
     std::copy(raw_speech.begin(), raw_speech.end(), padded_raw_speech.begin() + reflect_pad_size);
 
     // reflect pad
-    std::reverse_copy(padded_raw_speech.begin() + reflect_pad_size + 1,
-                      padded_raw_speech.begin() + reflect_pad_size + 1 + reflect_pad_size,
-                      padded_raw_speech.begin());
+    std::reverse_copy(
+        padded_raw_speech.begin() + reflect_pad_size + 1,
+        padded_raw_speech.begin() + reflect_pad_size + 1 + reflect_pad_size,
+        padded_raw_speech.begin()
+    );
 
-    std::reverse_copy(padded_raw_speech.end() - reflect_pad_size - 1 - reflect_pad_size,
-                      padded_raw_speech.end() - reflect_pad_size - 1,
-                      padded_raw_speech.end() - reflect_pad_size);
+    std::reverse_copy(
+        padded_raw_speech.end() - reflect_pad_size - 1 - reflect_pad_size,
+        padded_raw_speech.end() - reflect_pad_size - 1,
+        padded_raw_speech.end() - reflect_pad_size
+    );
 
     return padded_raw_speech;
 }
 
-WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_speech,
-                                              const size_t sampling_rate,
-                                              const size_t feature_size,
-                                              const size_t n_fft,
-                                              const size_t hop_length,
-                                              const size_t n_threads,
-                                              const std::vector<float>& mel_filter,
-                                              const std::vector<float>& sin_vals,
-                                              const std::vector<float>& cos_vals) {
+WhisperFeatures mel_spectrogram_convert_audio(
+    const std::vector<float>& raw_speech,
+    const size_t sampling_rate,
+    const size_t feature_size,
+    const size_t n_fft,
+    const size_t hop_length,
+    const size_t n_threads,
+    const std::vector<float>& mel_filter,
+    const std::vector<float>& sin_vals,
+    const std::vector<float>& cos_vals
+) {
     // Hanning window (Use cosf to eliminate difference)
     // ref: https://pytorch.org/docs/stable/generated/torch.hann_window.html
     // ref: https://github.com/openai/whisper/blob/main/whisper/audio.py#L147
@@ -366,32 +379,36 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
     {
         std::vector<std::thread> workers(n_threads - 1);
         for (int iw = 0; iw < n_threads - 1; ++iw) {
-            workers[iw] = std::thread(log_mel_spectrogram_worker_thread,
-                                      iw + 1,
-                                      std::cref(hann),
-                                      padded_raw_speech,
-                                      raw_speech.size() + reflect_pad_size,
-                                      n_fft,
-                                      hop_length,
-                                      n_threads,
-                                      std::cref(mel_filter),
-                                      std::ref(features),
-                                      std::cref(sin_vals),
-                                      std::cref(cos_vals));
+            workers[iw] = std::thread(
+                log_mel_spectrogram_worker_thread,
+                iw + 1,
+                std::cref(hann),
+                padded_raw_speech,
+                raw_speech.size() + reflect_pad_size,
+                n_fft,
+                hop_length,
+                n_threads,
+                std::cref(mel_filter),
+                std::ref(features),
+                std::cref(sin_vals),
+                std::cref(cos_vals)
+            );
         }
 
         // main thread
-        log_mel_spectrogram_worker_thread(0,
-                                          hann,
-                                          padded_raw_speech,
-                                          raw_speech.size() + reflect_pad_size,
-                                          n_fft,
-                                          hop_length,
-                                          n_threads,
-                                          mel_filter,
-                                          features,
-                                          sin_vals,
-                                          cos_vals);
+        log_mel_spectrogram_worker_thread(
+            0,
+            hann,
+            padded_raw_speech,
+            raw_speech.size() + reflect_pad_size,
+            n_fft,
+            hop_length,
+            n_threads,
+            mel_filter,
+            features,
+            sin_vals,
+            cos_vals
+        );
 
         for (int iw = 0; iw < n_threads - 1; ++iw) {
             workers[iw].join();
@@ -482,15 +499,17 @@ void WhisperFeatureExtractor::init_mel_filter() {
 
 WhisperFeatures WhisperFeatureExtractor::extract(const std::vector<float>& raw_speech) {
     size_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
-    return mel_spectrogram_convert_audio(raw_speech,
-                                         sampling_rate,
-                                         feature_size,
-                                         n_fft,
-                                         hop_length,
-                                         n_threads,
-                                         mel_filter,
-                                         sin_vals,
-                                         cos_vals);
+    return mel_spectrogram_convert_audio(
+        raw_speech,
+        sampling_rate,
+        feature_size,
+        n_fft,
+        hop_length,
+        n_threads,
+        mel_filter,
+        sin_vals,
+        cos_vals
+    );
 }
 
 }  // namespace genai

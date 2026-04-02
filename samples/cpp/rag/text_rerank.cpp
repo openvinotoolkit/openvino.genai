@@ -5,8 +5,9 @@
 
 int main(int argc, char* argv[]) try {
     if (argc < 4) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] +
-                                 " <MODEL_DIR> '<QUERY>' '<TEXT 1>' ['<TEXT 2>' ...]");
+        throw std::runtime_error(
+            std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<QUERY>' '<TEXT 1>' ['<TEXT 2>' ...]"
+        );
     }
 
     auto documents = std::vector<std::string>(argv + 3, argv + argc);

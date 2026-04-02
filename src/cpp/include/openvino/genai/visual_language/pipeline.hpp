@@ -3,9 +3,9 @@
 
 #pragma once
 
+#include <filesystem>
 #include <string>
 #include <vector>
-#include <filesystem>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/streamer_base.hpp"
@@ -14,7 +14,7 @@
 
 namespace ov::genai {
 
-class OPENVINO_GENAI_EXPORTS VLMDecodedResults : public DecodedResults{
+class OPENVINO_GENAI_EXPORTS VLMDecodedResults : public DecodedResults {
 public:
     VLMPerfMetrics perf_metrics;
 };
@@ -29,15 +29,11 @@ public:
     /// @param device Inference device. A tokenizer is always compiled
     /// for CPU.
     /// @param properties A config to pass to ov::Core::compile_model().
-    VLMPipeline(
-        const std::filesystem::path& models_path,
-        const std::string& device,
-        const ov::AnyMap& properties = {}
-    );
+    VLMPipeline(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties = {});
 
     /// @brief Construct a pipeline from a map of models and their weights.
-    /// @param models_map A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
-    /// and value is a pair of model IR as string and weights as tensor.
+    /// @param models_map A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language",
+    /// "resampler") and value is a pair of model IR as string and weights as tensor.
     /// @param tokenizer A tokenizer.
     /// @param config_dir_path A path to directory containing config.json.
     /// @param device Inference device. A tokenizer is always compiled
@@ -59,29 +55,37 @@ public:
     /// @param device Inference device. A tokenizer is always compiled
     /// for CPU.
     /// @param properties A config to pass to ov::Core::compile_model().
-    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    VLMPipeline(
-        const std::filesystem::path& models_path,
-        const std::string& device,
-        Properties&&... properties)
-        : VLMPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    template <
+        typename... Properties,
+        typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    VLMPipeline(const std::filesystem::path& models_path, const std::string& device, Properties&&... properties)
+        : VLMPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     /// @brief Construct a pipeline from a map of models and their weights.
-    /// @param models_map A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language", "resampler")
-    /// and value is a pair of model IR as string and weights as tensor.
+    /// @param models_map A map where key is model name (e.g. "vision_embeddings", "text_embeddings", "language",
+    /// "resampler") and value is a pair of model IR as string and weights as tensor.
     /// @param tokenizer A tokenizer.
     /// @param config_dir_path A path to directory containing config.json.
     /// @param device Inference device. A tokenizer is always compiled
     /// for CPU.
     /// @param properties A config to pass to ov::Core::compile_model().
-    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    template <
+        typename... Properties,
+        typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     VLMPipeline(
         const ModelsMap& models_map,
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
-        Properties&&... properties)
-        : VLMPipeline(models_map, tokenizer, config_dir_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+        Properties&&... properties
+    )
+        : VLMPipeline(
+              models_map,
+              tokenizer,
+              config_dir_path,
+              device,
+              ov::AnyMap{std::forward<Properties>(properties)...}
+          ) {}
 
     /// @brief Default destructor.
     ~VLMPipeline();
@@ -96,7 +100,8 @@ public:
     /// @param streamer A streamer to acquire intermediate result.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
+    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set
+    /// generation_config.apply_chat_template to false.
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
@@ -114,7 +119,8 @@ public:
     /// @param streamer A streamer to acquire intermediate result.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
+    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set
+    /// generation_config.apply_chat_template to false.
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
@@ -132,7 +138,8 @@ public:
     /// @param streamer A streamer to acquire intermediate result.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
+    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set
+    /// generation_config.apply_chat_template to false.
     VLMDecodedResults generate(
         const std::string& prompt,
         const ov::Tensor& image,
@@ -149,11 +156,9 @@ public:
     /// images.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
-    VLMDecodedResults generate(
-        const std::string& prompt,
-        const ov::AnyMap& config_map
-    );
+    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set
+    /// generation_config.apply_chat_template to false.
+    VLMDecodedResults generate(const std::string& prompt, const ov::AnyMap& config_map);
 
     /// @brief Generate a response given a prompt and arbitrary number
     /// of ov::Property instances.
@@ -166,15 +171,12 @@ public:
     /// ov::AnyMap.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
+    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set
+    /// generation_config.apply_chat_template to false.
     template <typename... Properties>
-    util::EnableIfAllStringAny<VLMDecodedResults, Properties...> generate(
-        const std::string& prompt,
-        Properties&&... properties
-    ) {
-        return generate(
-            prompt, AnyMap{std::forward<Properties>(properties)...}
-        );
+    util::EnableIfAllStringAny<VLMDecodedResults, Properties...>
+    generate(const std::string& prompt, Properties&&... properties) {
+        return generate(prompt, AnyMap{std::forward<Properties>(properties)...});
     }
 
     /// @brief Generate a response given a chat history and any number of
@@ -235,10 +237,7 @@ public:
     /// for its members, StreamerVariant a single image or multiple
     /// images/videos.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
-    VLMDecodedResults generate(
-        const ChatHistory& history,
-        const ov::AnyMap& config_map
-    );
+    VLMDecodedResults generate(const ChatHistory& history, const ov::AnyMap& config_map);
 
     /// @brief Generate a response given a chat history and config.
     /// @param history Chat history with messages.
@@ -248,13 +247,9 @@ public:
     /// ov::AnyMap.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     template <typename... Properties>
-    util::EnableIfAllStringAny<VLMDecodedResults, Properties...> generate(
-        const ChatHistory& history,
-        Properties&&... properties
-    ) {
-        return generate(
-            history, AnyMap{std::forward<Properties>(properties)...}
-        );
+    util::EnableIfAllStringAny<VLMDecodedResults, Properties...>
+    generate(const ChatHistory& history, Properties&&... properties) {
+        return generate(history, AnyMap{std::forward<Properties>(properties)...});
     }
 
     /// @brief Activate chat mode. Chat preserves previous history.
@@ -262,7 +257,7 @@ public:
     /// @param system_message Some chat_templates contain system role
     /// in addition to user and assistant roles. Set a message for that
     /// role.
-    void start_chat(const std::string& system_message="");
+    void start_chat(const std::string& system_message = "");
 
     /// @brief Deactivate chat mode.
     void finish_chat();
@@ -299,8 +294,8 @@ private:
  * pipe.generate(prompt, ov::genai::image(image_tensor)).
  * pipe.generate(prompt, ov::genai::images(image_tensors)).
  * pipe.generate(prompt, ov::genai::videos(videos_tensors)).
-*/
+ */
 static constexpr ov::Property<ov::Tensor> image{"image"};
 static constexpr ov::Property<std::vector<ov::Tensor>> images{"images"};
 static constexpr ov::Property<std::vector<ov::Tensor>> videos{"videos"};
-}
+}  // namespace ov::genai

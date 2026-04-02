@@ -5,11 +5,13 @@
 
 #include "include/helper.hpp"
 
-RerankWorker::RerankWorker(Napi::Function& callback,
-                           std::shared_ptr<ov::genai::TextRerankPipeline> pipe,
-                           std::shared_ptr<bool> is_reranking,
-                           std::string&& query,
-                           std::vector<std::string>&& documents)
+RerankWorker::RerankWorker(
+    Napi::Function& callback,
+    std::shared_ptr<ov::genai::TextRerankPipeline> pipe,
+    std::shared_ptr<bool> is_reranking,
+    std::string&& query,
+    std::vector<std::string>&& documents
+)
     : Napi::AsyncWorker(callback),
       pipe(pipe),
       is_reranking(is_reranking),
@@ -23,7 +25,8 @@ void RerankWorker::Execute() {
 void RerankWorker::OnOK() {
     *this->is_reranking = false;
     Callback().Call(
-        {Env().Null(), cpp_to_js<std::vector<std::pair<size_t, float>>, Napi::Value>(Env(), this->rerank_result)});
+        {Env().Null(), cpp_to_js<std::vector<std::pair<size_t, float>>, Napi::Value>(Env(), this->rerank_result)}
+    );
 };
 
 void RerankWorker::OnError(const Napi::Error& e) {

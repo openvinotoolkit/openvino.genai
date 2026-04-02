@@ -19,10 +19,12 @@ namespace audio {
  * @param file_path The name (and path) of the WAV file to be created
  * @param bits_per_sample The bit depth used to store each sample in the WAV file
  */
-void save_to_wav(const float* waveform_ptr,
-                 size_t waveform_size,
-                 const std::filesystem::path& file_path,
-                 uint32_t bits_per_sample);
+void save_to_wav(
+    const float* waveform_ptr,
+    size_t waveform_size,
+    const std::filesystem::path& file_path,
+    uint32_t bits_per_sample
+);
 
 /**
  * This function reads a binary file containing speaker embedding or 32-bit floating-point values and returns

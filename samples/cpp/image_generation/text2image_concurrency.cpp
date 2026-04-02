@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <iostream>
 
-#include "openvino/genai/image_generation/text2image_pipeline.hpp"
-
-
 #include "imwrite.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "progress_bar.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
@@ -40,10 +38,12 @@ int32_t main(int32_t argc, char* argv[]) try {
     } else {
         pipelines.emplace_back(models_path, device);
 
-        properties = ov::AnyMap{ov::genai::width(512),
-                                ov::genai::height(512),
-                                ov::genai::num_inference_steps(2),
-                                ov::genai::num_images_per_prompt(1)};
+        properties = ov::AnyMap{
+            ov::genai::width(512),
+            ov::genai::height(512),
+            ov::genai::num_inference_steps(2),
+            ov::genai::num_images_per_prompt(1)
+        };
     }
 
     // Clone pipeline for concurrent usage
@@ -56,7 +56,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
         std::cout << "Starting to generate with prompt: '" << prompt << "'..." << std::endl;
 
-        threads.emplace_back([i, &pipe, prompt, &properties] () {
+        threads.emplace_back([i, &pipe, prompt, &properties]() {
             ov::Tensor image = pipe.generate(prompt, properties);
 
             imwrite("image_" + std::to_string(i) + "_%d.bmp", image, true);
@@ -71,11 +71,13 @@ int32_t main(int32_t argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

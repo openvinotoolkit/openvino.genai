@@ -4,9 +4,8 @@
 #include "context_tokens.hpp"
 
 namespace {
-std::pair<std::vector<int64_t>, float> tokenize(std::string&& text,
-                                                const ov::genai::WhisperGenerationConfig& config,
-                                                ov::genai::Tokenizer& tokenizer) {
+std::pair<std::vector<int64_t>, float>
+tokenize(std::string&& text, const ov::genai::WhisperGenerationConfig& config, ov::genai::Tokenizer& tokenizer) {
     if (text.empty()) {
         return {{}, 0.0f};
     }
@@ -39,8 +38,8 @@ std::pair<std::vector<int64_t>, float> tokenize(std::string&& text,
 namespace ov {
 namespace genai {
 
-std::pair<WhisperContextTokens, float> prepare_context_tokens(const WhisperGenerationConfig& config,
-                                                              Tokenizer& tokenizer) {
+std::pair<WhisperContextTokens, float>
+prepare_context_tokens(const WhisperGenerationConfig& config, Tokenizer& tokenizer) {
     WhisperContextTokens context_tokens;
     float duration = 0.0f;
 
@@ -60,9 +59,11 @@ std::pair<WhisperContextTokens, float> prepare_context_tokens(const WhisperGener
     return {context_tokens, duration};
 }
 
-std::vector<int64_t> get_prompt_tokens(const WhisperContextTokens& context_tokens,
-                                       const WhisperGenerationConfig& config,
-                                       size_t chunk_offset) {
+std::vector<int64_t> get_prompt_tokens(
+    const WhisperContextTokens& context_tokens,
+    const WhisperGenerationConfig& config,
+    size_t chunk_offset
+) {
     bool should_add_initial_prompt = !context_tokens.initial_prompt.empty() && chunk_offset == 0;
     bool should_add_hotwords = !context_tokens.hotwords.empty();
 
@@ -73,9 +74,8 @@ std::vector<int64_t> get_prompt_tokens(const WhisperContextTokens& context_token
     std::vector<int64_t> prompt_tokens{config.prev_sot_token_id};
 
     if (should_add_initial_prompt) {
-        prompt_tokens.insert(prompt_tokens.end(),
-                             context_tokens.initial_prompt.begin(),
-                             context_tokens.initial_prompt.end());
+        prompt_tokens
+            .insert(prompt_tokens.end(), context_tokens.initial_prompt.begin(), context_tokens.initial_prompt.end());
     }
 
     if (should_add_hotwords) {

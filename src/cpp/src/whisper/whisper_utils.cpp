@@ -33,9 +33,11 @@ void infer_with_perf_metrics(ov::InferRequest& request, ov::genai::RawPerfMetric
     raw_metrics.m_batch_sizes.emplace_back(1);
 }
 
-void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
-                                size_t offset,
-                                std::vector<std::pair<size_t, size_t>>& ranges) {
+void filter_non_segment_metrics(
+    ov::genai::RawPerfMetrics& raw_metrics,
+    size_t offset,
+    std::vector<std::pair<size_t, size_t>>& ranges
+) {
     filter_by_ranges(raw_metrics.m_token_infer_durations, offset, ranges);
     filter_by_ranges(raw_metrics.m_new_token_times, offset, ranges);
     filter_by_ranges(raw_metrics.m_batch_sizes, offset, ranges);

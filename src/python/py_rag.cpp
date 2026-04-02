@@ -77,7 +77,8 @@ void init_rag_pipelines(py::module_& m) {
                 },
                 py::arg("texts"),
                 "List of texts ",
-                "Computes embeddings for a vector of texts")
+                "Computes embeddings for a vector of texts"
+            )
             .def(
                 "start_embed_documents_async",
                 [](TextEmbeddingPipeline& pipe, std::vector<std::string>& texts) -> void {
@@ -86,7 +87,8 @@ void init_rag_pipelines(py::module_& m) {
                 },
                 py::arg("texts"),
                 "List of texts ",
-                "Asynchronously computes embeddings for a vector of texts")
+                "Asynchronously computes embeddings for a vector of texts"
+            )
             .def(
                 "wait_embed_documents",
                 [](TextEmbeddingPipeline& pipe) -> py::typing::Union<EmbeddingResults> {
@@ -97,7 +99,8 @@ void init_rag_pipelines(py::module_& m) {
                     }
                     return py::cast(res);
                 },
-                "Waits computed embeddings of a vector of texts")
+                "Waits computed embeddings of a vector of texts"
+            )
             .def(
                 "embed_query",
                 [](TextEmbeddingPipeline& pipe, std::string& text) -> py::typing::Union<EmbeddingResult> {
@@ -110,7 +113,8 @@ void init_rag_pipelines(py::module_& m) {
                 },
                 py::arg("text"),
                 "text ",
-                "Computes embeddings for a query")
+                "Computes embeddings for a query"
+            )
             .def(
                 "start_embed_query_async",
                 [](TextEmbeddingPipeline& pipe, std::string& text) -> void {
@@ -119,7 +123,8 @@ void init_rag_pipelines(py::module_& m) {
                 },
                 py::arg("text"),
                 "text ",
-                "Asynchronously computes embeddings for a query")
+                "Asynchronously computes embeddings for a query"
+            )
             .def(
                 "wait_embed_query",
                 [](TextEmbeddingPipeline& pipe) -> py::typing::Union<EmbeddingResult> {
@@ -130,7 +135,8 @@ void init_rag_pipelines(py::module_& m) {
                     }
                     return py::cast(res);
                 },
-                "Waits computed embeddings for a query");
+                "Waits computed embeddings for a query"
+            );
 
     py::enum_<TextEmbeddingPipeline::PoolingType>(text_embedding_pipeline, "PoolingType")
         .value("CLS", TextEmbeddingPipeline::PoolingType::CLS, "First token embeddings")
@@ -142,9 +148,11 @@ void init_rag_pipelines(py::module_& m) {
         .def(py::init([](py::kwargs kwargs) {
             return TextEmbeddingPipeline::Config(pyutils::kwargs_to_any_map(kwargs));
         }))
-        .def("validate",
-             &TextEmbeddingPipeline::Config::validate,
-             "Checks that are no conflicting parameters. Raises exception if config is invalid.")
+        .def(
+            "validate",
+            &TextEmbeddingPipeline::Config::validate,
+            "Checks that are no conflicting parameters. Raises exception if config is invalid."
+        )
         .def_readwrite("max_length", &TextEmbeddingPipeline::Config::max_length)
         .def_readwrite("pad_to_max_length", &TextEmbeddingPipeline::Config::pad_to_max_length)
         .def_readwrite("batch_size", &TextEmbeddingPipeline::Config::batch_size)
@@ -162,10 +170,12 @@ void init_rag_pipelines(py::module_& m) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
 
             if (config.has_value()) {
-                return std::make_unique<TextEmbeddingPipeline>(models_path,
-                                                               device,
-                                                               *config,
-                                                               pyutils::kwargs_to_any_map(kwargs));
+                return std::make_unique<TextEmbeddingPipeline>(
+                    models_path,
+                    device,
+                    *config,
+                    pyutils::kwargs_to_any_map(kwargs)
+                );
             }
             return std::make_unique<TextEmbeddingPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
         }),
@@ -182,7 +192,8 @@ models_path (os.PathLike): Path to the directory containing model xml/bin files 
 device (str): Device to run the model on (e.g., CPU, GPU).
 config: (TextEmbeddingPipeline.Config): Optional pipeline configuration
 kwargs: Plugin and/or config properties
-)");
+)"
+    );
 
     auto text_rerank_pipeline =
         py::class_<ov::genai::TextRerankPipeline>(m, "TextRerankPipeline", "Text rerank pipeline")
@@ -200,7 +211,8 @@ kwargs: Plugin and/or config properties
                 },
                 py::arg("query"),
                 py::arg("texts"),
-                "Reranks a vector of texts based on the query.")
+                "Reranks a vector of texts based on the query."
+            )
             .def(
                 "start_rerank_async",
                 [](ov::genai::TextRerankPipeline& pipe,
@@ -211,7 +223,8 @@ kwargs: Plugin and/or config properties
                 },
                 py::arg("query"),
                 py::arg("texts"),
-                "Asynchronously reranks a vector of texts based on the query.")
+                "Asynchronously reranks a vector of texts based on the query."
+            )
             .def(
                 "wait_rerank",
                 [](ov::genai::TextRerankPipeline& pipe) -> py::typing::Union<std::vector<std::pair<size_t, float>>> {
@@ -222,7 +235,8 @@ kwargs: Plugin and/or config properties
                     }
                     return py::cast(res);
                 },
-                "Waits for reranked texts.");
+                "Waits for reranked texts."
+            );
 
     py::class_<ov::genai::TextRerankPipeline::Config>(text_rerank_pipeline, "Config", text_reranking_config_docstring)
         .def(py::init<>())
@@ -241,14 +255,18 @@ kwargs: Plugin and/or config properties
                     const py::kwargs& kwargs) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             if (config.has_value()) {
-                return std::make_unique<ov::genai::TextRerankPipeline>(models_path,
-                                                                       device,
-                                                                       *config,
-                                                                       pyutils::kwargs_to_any_map(kwargs));
+                return std::make_unique<ov::genai::TextRerankPipeline>(
+                    models_path,
+                    device,
+                    *config,
+                    pyutils::kwargs_to_any_map(kwargs)
+                );
             }
-            return std::make_unique<ov::genai::TextRerankPipeline>(models_path,
-                                                                   device,
-                                                                   pyutils::kwargs_to_any_map(kwargs));
+            return std::make_unique<ov::genai::TextRerankPipeline>(
+                models_path,
+                device,
+                pyutils::kwargs_to_any_map(kwargs)
+            );
         }),
         py::arg("models_path"),
         "Path to the directory containing model xml/bin files and tokenizer",
@@ -263,5 +281,6 @@ models_path (os.PathLike): Path to the directory containing model xml/bin files 
 device (str): Device to run the model on (e.g., CPU, GPU).
 config: (TextRerankPipeline.Config): Optional pipeline configuration
 kwargs: Plugin and/or config properties
-)");
+)"
+    );
 }

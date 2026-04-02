@@ -57,10 +57,12 @@ public:
      * @param config Pipeline configuration
      * @param properties Optional plugin properties to pass to ov::Core::compile_model().
      */
-    TextRerankPipeline(const std::filesystem::path& models_path,
-                       const std::string& device,
-                       const Config& config,
-                       const ov::AnyMap& properties = {});
+    TextRerankPipeline(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        const Config& config,
+        const ov::AnyMap& properties = {}
+    );
 
     /**
      * @brief Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir.
@@ -69,9 +71,11 @@ public:
      * @param device Device
      * @param properties Optional plugin and/or config properties
      */
-    TextRerankPipeline(const std::filesystem::path& models_path,
-                       const std::string& device,
-                       const ov::AnyMap& properties = {});
+    TextRerankPipeline(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
+    );
 
     /**
      * @brief Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir.
@@ -80,8 +84,9 @@ public:
      * @param device Device
      * @param properties Plugin and/or config properties
      */
-    template <typename... Properties,
-              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    template <
+        typename... Properties,
+        typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     TextRerankPipeline(const std::filesystem::path& models_path, const std::string& device, Properties&&... properties)
         : TextRerankPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 

@@ -74,9 +74,8 @@ CDPruner::CDPruner(const Config& config)
     validate_config(config);
 }
 
-std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visual_features,
-                                                         const ov::Tensor& text_features,
-                                                         bool silent) {
+std::vector<std::vector<size_t>>
+CDPruner::select_tokens(const ov::Tensor& visual_features, const ov::Tensor& text_features, bool silent) {
     validate_input_tensors(visual_features, text_features);
 
     const auto& visual_shape = visual_features.get_shape();
@@ -111,12 +110,16 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         ov::Tensor visual_second_half;
 
         if (use_splitting) {
-            visual_first_half = ov::Tensor(ov::element::f32,
-                                           {batch_size, first_half_size, feature_dim},
-                                           const_cast<float*>(visual_data));
-            visual_second_half = ov::Tensor(ov::element::f32,
-                                            {batch_size, second_half_size, feature_dim},
-                                            const_cast<float*>(visual_data + batch_size * first_half_size * feature_dim));
+            visual_first_half = ov::Tensor(
+                ov::element::f32,
+                {batch_size, first_half_size, feature_dim},
+                const_cast<float*>(visual_data)
+            );
+            visual_second_half = ov::Tensor(
+                ov::element::f32,
+                {batch_size, second_half_size, feature_dim},
+                const_cast<float*>(visual_data + batch_size * first_half_size * feature_dim)
+            );
         } else {
             visual_first_half = visual_features;
         }
@@ -237,8 +240,8 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
     return pruned_features;
 }
 
-ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_features_list,
-                                   const ov::Tensor& text_features) {
+ov::Tensor
+CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_features_list, const ov::Tensor& text_features) {
     if (visual_features_list.empty()) {
         return ov::Tensor();
     }
@@ -300,12 +303,16 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
         actual_total_tokens += feature.get_shape()[1];
     }
 
-    GENAI_DEBUG("[CDPruner] Concatenating %zu frames with total %zu tokens",
-                pruned_features_list.size(),
-                actual_total_tokens);
+    GENAI_DEBUG(
+        "[CDPruner] Concatenating %zu frames with total %zu tokens",
+        pruned_features_list.size(),
+        actual_total_tokens
+    );
 
-    ov::Tensor concatenated_features(first_pruned_feature.get_element_type(),
-                                     {actual_batch_size, actual_total_tokens, actual_hidden_dim});
+    ov::Tensor concatenated_features(
+        first_pruned_feature.get_element_type(),
+        {actual_batch_size, actual_total_tokens, actual_hidden_dim}
+    );
     float* concat_data = concatenated_features.data<float>();
 
     size_t offset_elements = 0;
@@ -340,11 +347,15 @@ void CDPruner::validate_config(const Config& config) {
         return;  // Pruning disabled, no validation needed
     }
 
-    OPENVINO_ASSERT(config.pruning_ratio >= 1 && config.pruning_ratio <= 100,
-                    "pruning ratio must be between 0 and 100");
+    OPENVINO_ASSERT(
+        config.pruning_ratio >= 1 && config.pruning_ratio <= 100,
+        "pruning ratio must be between 0 and 100"
+    );
 
-    OPENVINO_ASSERT(config.relevance_weight >= 0.0f && config.relevance_weight <= 1.0f,
-                    "relevance weight must be between 0.0 and 1.0");
+    OPENVINO_ASSERT(
+        config.relevance_weight >= 0.0f && config.relevance_weight <= 1.0f,
+        "relevance weight must be between 0.0 and 1.0"
+    );
 
     OPENVINO_ASSERT(config.numerical_threshold >= 0.0f, "numerical_threshold must be positive");
 
@@ -360,8 +371,9 @@ bool CDPruner::update_config(const Config& new_config) {
 
         // Determine what needs to be reinitialized based on config changes
         bool need_reinit_relevance = new_config.use_negative_relevance != m_config.use_negative_relevance;
-        bool need_reinit_kernel = (new_config.use_negative_relevance != m_config.use_negative_relevance ||
-                                   new_config.relevance_weight != m_config.relevance_weight);
+        bool need_reinit_kernel =
+            (new_config.use_negative_relevance != m_config.use_negative_relevance ||
+             new_config.relevance_weight != m_config.relevance_weight);
         bool need_reinit_dpp = (new_config.use_cl_kernel != m_config.use_cl_kernel);
 
         // Update the configuration
@@ -406,7 +418,8 @@ void CDPruner::validate_input_tensors(const ov::Tensor& visual_features, const o
     // Check tensor data types
     OPENVINO_ASSERT(
         visual_features.get_element_type() == ov::element::f32 && text_features.get_element_type() == ov::element::f32,
-        "Input tensors must be float32 type");
+        "Input tensors must be float32 type"
+    );
 }
 
 }  // namespace ov::genai::cdpruner

@@ -309,11 +309,13 @@ protected:
     }
 
     // Helper function to create visual features with simple test patterns
-    ov::Tensor createVisualFeatures(size_t batch_size,
-                                    size_t sequence_length,
-                                    size_t hidden_dim,
-                                    float base_value = 0.5f,
-                                    float scale = 0.01f) {
+    ov::Tensor createVisualFeatures(
+        size_t batch_size,
+        size_t sequence_length,
+        size_t hidden_dim,
+        float base_value = 0.5f,
+        float scale = 0.01f
+    ) {
         ov::Tensor visual_features(ov::element::f32, {batch_size, sequence_length, hidden_dim});
         float* visual_data = visual_features.data<float>();
 
@@ -343,16 +345,19 @@ protected:
     }
 
     // Helper function to create multi-frame visual features
-    std::vector<ov::Tensor> createMultiFrameVisualFeatures(size_t num_frames,
-                                                           size_t batch_size,
-                                                           size_t sequence_length_per_frame,
-                                                           size_t hidden_dim) {
+    std::vector<ov::Tensor> createMultiFrameVisualFeatures(
+        size_t num_frames,
+        size_t batch_size,
+        size_t sequence_length_per_frame,
+        size_t hidden_dim
+    ) {
         std::vector<ov::Tensor> visual_features;
         for (size_t frame = 0; frame < num_frames; ++frame) {
             // Each frame has a different base value pattern for testing
             float base_value = 0.1f * (frame + 1);
             visual_features.push_back(
-                createVisualFeatures(batch_size, sequence_length_per_frame, hidden_dim, base_value, 0.01f));
+                createVisualFeatures(batch_size, sequence_length_per_frame, hidden_dim, base_value, 0.01f)
+            );
         }
         return visual_features;
     }
@@ -559,7 +564,9 @@ std::string cdprunerParamToString(const ::testing::TestParamInfo<CDPrunerIntegra
 }
 
 // Instantiate the parameterized CDPruner integration test
-INSTANTIATE_TEST_SUITE_P(CDPrunerTest,
-                         CDPrunerIntegrationTest,
-                         ::testing::ValuesIn(generateCDPrunerTestParams()),
-                         cdprunerParamToString);
+INSTANTIATE_TEST_SUITE_P(
+    CDPrunerTest,
+    CDPrunerIntegrationTest,
+    ::testing::ValuesIn(generateCDPrunerTestParams()),
+    cdprunerParamToString
+);

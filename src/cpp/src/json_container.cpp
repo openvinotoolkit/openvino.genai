@@ -1,13 +1,12 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/core/except.hpp"
+#include "openvino/genai/json_container.hpp"
 
 #include <nlohmann/json.hpp>
 
-#include "openvino/genai/json_container.hpp"
 #include "json_utils.hpp"
-
+#include "openvino/core/except.hpp"
 
 namespace ov {
 namespace genai {
@@ -30,7 +29,7 @@ public:
             OPENVINO_THROW("Invalid JSON path '", path, "': ", e.what());
         }
     }
-    
+
     const nlohmann::ordered_json* get_json_value_ptr(const std::string& path, AccessMode mode) const {
         return const_cast<JsonContainerImpl*>(this)->get_json_value_ptr(path, mode);
     }
@@ -39,53 +38,52 @@ private:
     nlohmann::ordered_json m_json;
 };
 
-JsonContainer::JsonContainer() :
-    m_impl(std::make_shared<JsonContainerImpl>()) {}
+JsonContainer::JsonContainer() : m_impl(std::make_shared<JsonContainerImpl>()) {}
 
-JsonContainer::JsonContainer(bool value) :
-    m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
-JsonContainer::JsonContainer(int value) :
-    m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
-JsonContainer::JsonContainer(int64_t value) :
-    m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
-JsonContainer::JsonContainer(double value) :
-    m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
-JsonContainer::JsonContainer(float value) :
-    m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
-JsonContainer::JsonContainer(const std::string& value) :
-    m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
-JsonContainer::JsonContainer(const char* value) :
-    m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
-JsonContainer::JsonContainer(std::nullptr_t) :
-    m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(nullptr))) {}
+JsonContainer::JsonContainer(bool value) : m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
+JsonContainer::JsonContainer(int value) : m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
+JsonContainer::JsonContainer(int64_t value)
+    : m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
+JsonContainer::JsonContainer(double value)
+    : m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
+JsonContainer::JsonContainer(float value)
+    : m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
+JsonContainer::JsonContainer(const std::string& value)
+    : m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
+JsonContainer::JsonContainer(const char* value)
+    : m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(value))) {}
+JsonContainer::JsonContainer(std::nullptr_t)
+    : m_impl(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json(nullptr))) {}
 
-JsonContainer::JsonContainer(std::initializer_list<std::pair<std::string, ov::Any>> init) :
-    m_impl(std::make_shared<JsonContainerImpl>(ov::genai::utils::any_map_to_json(ov::AnyMap{init.begin(), init.end()}))) {}
+JsonContainer::JsonContainer(std::initializer_list<std::pair<std::string, ov::Any>> init)
+    : m_impl(
+          std::make_shared<JsonContainerImpl>(ov::genai::utils::any_map_to_json(ov::AnyMap{init.begin(), init.end()}))
+      ) {}
 
-JsonContainer::JsonContainer(const ov::AnyMap& data) :
-    m_impl(std::make_shared<JsonContainerImpl>(ov::genai::utils::any_map_to_json(data))) {}
+JsonContainer::JsonContainer(const ov::AnyMap& data)
+    : m_impl(std::make_shared<JsonContainerImpl>(ov::genai::utils::any_map_to_json(data))) {}
 
-JsonContainer::JsonContainer(ov::AnyMap&& data) :
-    m_impl(std::make_shared<JsonContainerImpl>(ov::genai::utils::any_map_to_json(std::move(data)))) {}
+JsonContainer::JsonContainer(ov::AnyMap&& data)
+    : m_impl(std::make_shared<JsonContainerImpl>(ov::genai::utils::any_map_to_json(std::move(data)))) {}
 
-JsonContainer::JsonContainer(std::shared_ptr<JsonContainerImpl> impl, const std::string& path) :
-    m_impl(std::move(impl)),
-    m_path(path) {}
+JsonContainer::JsonContainer(std::shared_ptr<JsonContainerImpl> impl, const std::string& path)
+    : m_impl(std::move(impl)),
+      m_path(path) {}
 
-JsonContainer::JsonContainer(const JsonContainer& other) :
-    m_impl(std::make_shared<JsonContainerImpl>(*other.m_impl->get_json_value_ptr(other.m_path, AccessMode::Read))),
-    m_path("") {}
+JsonContainer::JsonContainer(const JsonContainer& other)
+    : m_impl(std::make_shared<JsonContainerImpl>(*other.m_impl->get_json_value_ptr(other.m_path, AccessMode::Read))),
+      m_path("") {}
 
-JsonContainer::JsonContainer(JsonContainer&& other) noexcept :
-    m_impl(std::move(other.m_impl)),
-    m_path(std::move(other.m_path)) {}
+JsonContainer::JsonContainer(JsonContainer&& other) noexcept
+    : m_impl(std::move(other.m_impl)),
+      m_path(std::move(other.m_path)) {}
 
 JsonContainer::~JsonContainer() = default;
 
 JsonContainer JsonContainer::share() const {
     return JsonContainer(m_impl, m_path);
 }
-    
+
 JsonContainer JsonContainer::copy() const {
     return JsonContainer(*this);
 }
@@ -106,11 +104,11 @@ JsonContainer JsonContainer::array() {
     return JsonContainer(std::make_shared<JsonContainerImpl>(nlohmann::ordered_json::array()));
 }
 
-#define JSON_CONTAINER_PRIMITIVE_ASSIGNMENT(type) \
-    JsonContainer& JsonContainer::operator=(type value) { \
+#define JSON_CONTAINER_PRIMITIVE_ASSIGNMENT(type)                                    \
+    JsonContainer& JsonContainer::operator=(type value) {                            \
         auto json_value_ptr = m_impl->get_json_value_ptr(m_path, AccessMode::Write); \
-        *json_value_ptr = nlohmann::ordered_json(value); \
-        return *this; \
+        *json_value_ptr = nlohmann::ordered_json(value);                             \
+        return *this;                                                                \
     }
 
 JSON_CONTAINER_PRIMITIVE_ASSIGNMENT(bool)
@@ -235,8 +233,14 @@ std::optional<std::string> JsonContainer::as_string() const {
 bool JsonContainer::get_bool() const {
     auto json_value_ptr = m_impl->get_json_value_ptr(m_path, AccessMode::Read);
     if (!json_value_ptr->is_boolean()) {
-        OPENVINO_THROW("JsonContainer expected boolean at path '", m_path, "' but found ",
-            json_value_ptr->type_name(), " with value: ", json_value_ptr->dump());
+        OPENVINO_THROW(
+            "JsonContainer expected boolean at path '",
+            m_path,
+            "' but found ",
+            json_value_ptr->type_name(),
+            " with value: ",
+            json_value_ptr->dump()
+        );
     }
     try {
         return json_value_ptr->get<bool>();
@@ -248,8 +252,14 @@ bool JsonContainer::get_bool() const {
 int64_t JsonContainer::get_int() const {
     auto json_value_ptr = m_impl->get_json_value_ptr(m_path, AccessMode::Read);
     if (!json_value_ptr->is_number_integer()) {
-        OPENVINO_THROW("JsonContainer expected integer number at path '", m_path, "' but found ",
-            json_value_ptr->type_name(), " with value: ", json_value_ptr->dump());
+        OPENVINO_THROW(
+            "JsonContainer expected integer number at path '",
+            m_path,
+            "' but found ",
+            json_value_ptr->type_name(),
+            " with value: ",
+            json_value_ptr->dump()
+        );
     }
     try {
         return json_value_ptr->get<int64_t>();
@@ -261,8 +271,14 @@ int64_t JsonContainer::get_int() const {
 double JsonContainer::get_double() const {
     auto json_value_ptr = m_impl->get_json_value_ptr(m_path, AccessMode::Read);
     if (!json_value_ptr->is_number_float()) {
-        OPENVINO_THROW("JsonContainer expected floating-point number at path '", m_path, "' but found ",
-            json_value_ptr->type_name(), " with value: ", json_value_ptr->dump());
+        OPENVINO_THROW(
+            "JsonContainer expected floating-point number at path '",
+            m_path,
+            "' but found ",
+            json_value_ptr->type_name(),
+            " with value: ",
+            json_value_ptr->dump()
+        );
     }
     try {
         return json_value_ptr->get<double>();
@@ -274,8 +290,14 @@ double JsonContainer::get_double() const {
 std::string JsonContainer::get_string() const {
     auto json_value_ptr = m_impl->get_json_value_ptr(m_path, AccessMode::Read);
     if (!json_value_ptr->is_string()) {
-        OPENVINO_THROW("JsonContainer expected string at path '", m_path, "' but found ",
-            json_value_ptr->type_name(), " with value: ", json_value_ptr->dump());
+        OPENVINO_THROW(
+            "JsonContainer expected string at path '",
+            m_path,
+            "' but found ",
+            json_value_ptr->type_name(),
+            " with value: ",
+            json_value_ptr->dump()
+        );
     }
     try {
         return json_value_ptr->get<std::string>();
@@ -305,14 +327,14 @@ JsonContainer& JsonContainer::push_back(const JsonContainer& item) {
     return *this;
 }
 
-#define JSON_CONTAINER_PRIMITIVE_PUSH_BACK(type) \
-    JsonContainer& JsonContainer::push_back(type value) { \
+#define JSON_CONTAINER_PRIMITIVE_PUSH_BACK(type)                                     \
+    JsonContainer& JsonContainer::push_back(type value) {                            \
         auto json_value_ptr = m_impl->get_json_value_ptr(m_path, AccessMode::Write); \
-        if (!json_value_ptr->is_array()) { \
-            *json_value_ptr = nlohmann::ordered_json::array(); \
-        } \
-        json_value_ptr->push_back(nlohmann::ordered_json(value)); \
-        return *this; \
+        if (!json_value_ptr->is_array()) {                                           \
+            *json_value_ptr = nlohmann::ordered_json::array();                       \
+        }                                                                            \
+        json_value_ptr->push_back(nlohmann::ordered_json(value));                    \
+        return *this;                                                                \
     }
 
 JSON_CONTAINER_PRIMITIVE_PUSH_BACK(bool)
@@ -355,8 +377,13 @@ bool JsonContainer::empty() const {
 void JsonContainer::erase(const std::string& key) const {
     auto json_value_ptr = m_impl->get_json_value_ptr(m_path, AccessMode::Read);
     if (!json_value_ptr->is_object()) {
-        OPENVINO_THROW("JsonContainer erase by key is only supported for objects, but found ",
-            json_value_ptr->type_name(), " at path '", m_path, "'");
+        OPENVINO_THROW(
+            "JsonContainer erase by key is only supported for objects, but found ",
+            json_value_ptr->type_name(),
+            " at path '",
+            m_path,
+            "'"
+        );
     }
     auto erased_count = json_value_ptr->erase(key);
     if (erased_count == 0) {
@@ -367,12 +394,24 @@ void JsonContainer::erase(const std::string& key) const {
 void JsonContainer::erase(size_t index) const {
     auto json_value_ptr = m_impl->get_json_value_ptr(m_path, AccessMode::Read);
     if (!json_value_ptr->is_array()) {
-        OPENVINO_THROW("JsonContainer erase by index is only supported for arrays, but found ",
-            json_value_ptr->type_name(), " at path '", m_path, "'");
+        OPENVINO_THROW(
+            "JsonContainer erase by index is only supported for arrays, but found ",
+            json_value_ptr->type_name(),
+            " at path '",
+            m_path,
+            "'"
+        );
     }
     if (index >= json_value_ptr->size()) {
-        OPENVINO_THROW("JsonContainer erase index ", index, " is out of bounds for array of size ",
-            json_value_ptr->size(), " at path '", m_path, "'");
+        OPENVINO_THROW(
+            "JsonContainer erase index ",
+            index,
+            " is out of bounds for array of size ",
+            json_value_ptr->size(),
+            " at path '",
+            m_path,
+            "'"
+        );
     }
     json_value_ptr->erase(json_value_ptr->begin() + index);
 }
@@ -380,8 +419,13 @@ void JsonContainer::erase(size_t index) const {
 void JsonContainer::clear() const {
     auto json_value_ptr = m_impl->get_json_value_ptr(m_path, AccessMode::Read);
     if (!json_value_ptr->is_structured()) {
-        OPENVINO_THROW("JsonContainer clear is only supported for objects and arrays, but found ",
-            json_value_ptr->type_name(), " at path '", m_path, "'");
+        OPENVINO_THROW(
+            "JsonContainer clear is only supported for objects and arrays, but found ",
+            json_value_ptr->type_name(),
+            " at path '",
+            m_path,
+            "'"
+        );
     }
     json_value_ptr->clear();
 }
@@ -409,7 +453,6 @@ void* JsonContainer::_get_json_value_ptr() const {
     return m_impl->get_json_value_ptr(m_path, AccessMode::Read);
 }
 
-
 void JsonContainer::concatenate(JsonContainer& other) {
     auto dst_ = static_cast<nlohmann::ordered_json*>(this->_get_json_value_ptr());
     auto src_ = static_cast<const nlohmann::ordered_json*>(other._get_json_value_ptr());
@@ -418,14 +461,14 @@ void JsonContainer::concatenate(JsonContainer& other) {
     recursive_concat = [&recursive_concat](nlohmann::ordered_json& lvalue, const nlohmann::ordered_json& rvalue) {
         for (auto it = rvalue.begin(); it != rvalue.end(); ++it) {
             const auto& src_val = it.value();
-            
+
             if (!lvalue.contains(it.key())) {
                 lvalue[it.key()] = src_val;
                 continue;
             }
-            
+
             auto& dst_val = lvalue[it.key()];
-            
+
             // If both are objects, recursively concatenate
             if (src_val.is_object() && dst_val.is_object()) {
                 recursive_concat(dst_val, src_val);
@@ -437,15 +480,19 @@ void JsonContainer::concatenate(JsonContainer& other) {
             // Otherwise, type mismatch error
             else {
                 OPENVINO_THROW(
-                    "JsonContainer concatenate type mismatch for key '", it.key(), 
-                    "'. Source type: '", src_val.type_name(), 
-                    "', destination type: '", dst_val.type_name(), "'."
+                    "JsonContainer concatenate type mismatch for key '",
+                    it.key(),
+                    "'. Source type: '",
+                    src_val.type_name(),
+                    "', destination type: '",
+                    dst_val.type_name(),
+                    "'."
                 );
             }
         }
     };
-    
+
     recursive_concat(*dst_, *src_);
 }
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

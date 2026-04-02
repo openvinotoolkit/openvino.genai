@@ -1,9 +1,10 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "include/tokenizer.hpp"
+
 #include "include/addon.hpp"
 #include "include/helper.hpp"
-#include "include/tokenizer.hpp"
 
 TokenizerWrapper::TokenizerWrapper(const Napi::CallbackInfo& info) : Napi::ObjectWrap<TokenizerWrapper>(info) {
     if (info.Length() == 0) {
@@ -23,8 +24,11 @@ TokenizerWrapper::TokenizerWrapper(const Napi::CallbackInfo& info) : Napi::Objec
             return;
         }
 
-        OPENVINO_ASSERT(info.Length() == 4 || info.Length() == 5,
-                        "Tokenizer constructor expects 1-2 arguments (path[, properties]) or 4-5 arguments (models, tensors[, properties])");
+        OPENVINO_ASSERT(
+            info.Length() == 4 || info.Length() == 5,
+            "Tokenizer constructor expects 1-2 arguments (path[, properties]) or 4-5 arguments (models, tensors[, "
+            "properties])"
+        );
         OPENVINO_ASSERT(info[0].IsString(), "The argument 'tokenizerModel' must be a string");
         OPENVINO_ASSERT(info[1].IsObject(), "The argument 'tokenizerWeights' must be an OpenVINO Tensor");
         OPENVINO_ASSERT(info[2].IsString(), "The argument 'detokenizerModel' must be a string");
@@ -52,7 +56,8 @@ TokenizerWrapper::TokenizerWrapper(const Napi::CallbackInfo& info) : Napi::Objec
 }
 
 Napi::Function TokenizerWrapper::get_class(Napi::Env env) {
-    return DefineClass(env,
+    return DefineClass(
+        env,
         "Tokenizer",
         {
             InstanceMethod("applyChatTemplate", &TokenizerWrapper::apply_chat_template),
@@ -85,8 +90,10 @@ Napi::Object TokenizerWrapper::wrap(Napi::Env env, ov::genai::Tokenizer tokenize
 
 Napi::Value TokenizerWrapper::apply_chat_template(const Napi::CallbackInfo& info) {
     try {
-        OPENVINO_ASSERT(info.Length() >= 2,
-                       "Tokenizer.applyChatTemplate requires at least two arguments: chatHistory and addGenerationPrompt");
+        OPENVINO_ASSERT(
+            info.Length() >= 2,
+            "Tokenizer.applyChatTemplate requires at least two arguments: chatHistory and addGenerationPrompt"
+        );
         OPENVINO_ASSERT(info[0].IsObject(), "The argument 'chatHistory' must be an object");
         OPENVINO_ASSERT(info[1].IsBoolean(), "The argument 'addGenerationPrompt' must be a boolean");
 
@@ -110,7 +117,8 @@ Napi::Value TokenizerWrapper::apply_chat_template(const Napi::CallbackInfo& info
         if (!info[4].IsUndefined()) {
             extra_context = ov::genai::JsonContainer::from_json_string(json_stringify(info.Env(), info[4]));
         }
-        auto result = this->_tokenizer.apply_chat_template(history, add_generation_prompt, chat_template, tools, extra_context);
+        auto result =
+            this->_tokenizer.apply_chat_template(history, add_generation_prompt, chat_template, tools, extra_context);
         return Napi::String::New(info.Env(), result);
     } catch (std::exception& err) {
         Napi::Error::New(info.Env(), err.what()).ThrowAsJavaScriptException();
@@ -180,7 +188,7 @@ Napi::Value TokenizerWrapper::encode(const Napi::CallbackInfo& info) {
         // Parse encoding options from the last argument if it's an object
         ov::AnyMap tokenization_params;
         auto count_text_args = info.Length();
-        
+
         if (info[count_text_args - 1].IsObject() && !info[count_text_args - 1].IsArray()) {
             tokenization_params = js_to_cpp<ov::AnyMap>(env, info[count_text_args - 1]);
             count_text_args--;
@@ -195,7 +203,7 @@ Napi::Value TokenizerWrapper::encode(const Napi::CallbackInfo& info) {
             result = this->_tokenizer.encode(text, tokenization_params);
         } else if (count_text_args == 1 && info[0].IsArray()) {
             auto arr = info[0].As<Napi::Array>();
-            
+
             // Check if it's array of pairs [[str, str], ...]
             if (arr.Length() > 0 && arr.Get(uint32_t(0)).IsArray()) {
                 // Array of pairs
@@ -221,7 +229,10 @@ Napi::Value TokenizerWrapper::encode(const Napi::CallbackInfo& info) {
             auto prompts2 = js_to_cpp<std::vector<std::string>>(env, info[1]);
             result = this->_tokenizer.encode(prompts1, prompts2, tokenization_params);
         } else {
-            OPENVINO_THROW("Unsupported input type for encode. Expected: string, string[], [string, string][], or two string arrays");
+            OPENVINO_THROW(
+                "Unsupported input type for encode. Expected: string, string[], [string, string][], or two string "
+                "arrays"
+            );
         }
 
         return cpp_to_js<ov::genai::TokenizedInputs, Napi::Value>(env, result);
@@ -245,7 +256,7 @@ Napi::Value TokenizerWrapper::decode(const Napi::CallbackInfo& info) {
         // Handle different input types
         if (info[0].IsArray()) {
             auto arr = info[0].As<Napi::Array>();
-            
+
             // Check if it's a 2D array (batch of sequences)
             if (arr.Length() > 0 && arr.Get(uint32_t(0)).IsArray()) {
                 // Batch decoding: number[][] | bigint[][]

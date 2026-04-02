@@ -4,6 +4,7 @@
 #pragma once
 
 #include <napi.h>
+
 #include "openvino/genai/tokenizer.hpp"
 
 class TokenizerWrapper : public Napi::ObjectWrap<TokenizerWrapper> {
@@ -24,6 +25,7 @@ public:
     Napi::Value supports_paired_input(const Napi::CallbackInfo& info);
     Napi::Value encode(const Napi::CallbackInfo& info);
     Napi::Value decode(const Napi::CallbackInfo& info);
+
 private:
     ov::genai::Tokenizer _tokenizer;
 };

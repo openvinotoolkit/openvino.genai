@@ -14,12 +14,16 @@ ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::get_generated
         const auto request_id = request->get_request_id();
         auto validation_len = request->get_num_tokens_to_validate();
         auto generated_len = request->get_num_processed_tokens() - request->get_prompt_len() + 1;
-        result.insert({ request_id, { generated_len, validation_len } });
+        result.insert({request_id, {generated_len, validation_len}});
     }
     return result;
 }
 
-TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate_candidates(const TokenIds& input_ids, size_t num_pred_tokens, size_t max_ngram_size) {
+TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate_candidates(
+    const TokenIds& input_ids,
+    size_t num_pred_tokens,
+    size_t max_ngram_size
+) {
     if (num_pred_tokens == 0) {
         return std::vector<int64_t>{};
     }
@@ -42,8 +46,10 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
             // match found with the end at input_i
             size_t available_num_pred = std::min(input_length - start_candidate_idx, num_pred_tokens);
             // return candidates with length of available_num_pred
-            return std::vector<int64_t>{input_ids.cbegin() + start_candidate_idx,
-                                        input_ids.cbegin() + start_candidate_idx + available_num_pred};
+            return std::vector<int64_t>{
+                input_ids.cbegin() + start_candidate_idx,
+                input_ids.cbegin() + start_candidate_idx + available_num_pred
+            };
         }
     }
 
@@ -70,7 +76,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
                 const auto left_generated_len = request->get_max_new_tokens() - generated_len - 1;
                 min_num_assistant_tokens = std::min(sampling_params.num_assistant_tokens, left_generated_len);
             }
-            TokenIds candidates = generate_candidates(full_input_ids, min_num_assistant_tokens, sampling_params.max_ngram_size);
+            TokenIds candidates =
+                generate_candidates(full_input_ids, min_num_assistant_tokens, sampling_params.max_ngram_size);
 
             // Padding candidate tokens to maintain consistent shape.
             // Avoid shape checking and increasing the amount of computation when the shape changes.

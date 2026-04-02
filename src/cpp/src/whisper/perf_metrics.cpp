@@ -41,17 +41,21 @@ WhisperPerfMetrics WhisperPerfMetrics::operator+(const WhisperPerfMetrics& right
     // insert right metrics
     auto& result_features_extraction_durations = result.whisper_raw_metrics.features_extraction_durations;
     auto& right_features_extraction_durations = right.whisper_raw_metrics.features_extraction_durations;
-    result_features_extraction_durations.insert(result_features_extraction_durations.end(),
-                                                right_features_extraction_durations.begin(),
-                                                right_features_extraction_durations.end());
+    result_features_extraction_durations.insert(
+        result_features_extraction_durations.end(),
+        right_features_extraction_durations.begin(),
+        right_features_extraction_durations.end()
+    );
 
     auto& result_word_level_timestamps_processing_durations =
         result.whisper_raw_metrics.word_level_timestamps_processing_durations;
     auto& right_word_level_timestamps_processing_durations =
         right.whisper_raw_metrics.word_level_timestamps_processing_durations;
-    result_word_level_timestamps_processing_durations.insert(result_word_level_timestamps_processing_durations.end(),
-                                                             right_word_level_timestamps_processing_durations.begin(),
-                                                             right_word_level_timestamps_processing_durations.end());
+    result_word_level_timestamps_processing_durations.insert(
+        result_word_level_timestamps_processing_durations.end(),
+        right_word_level_timestamps_processing_durations.begin(),
+        right_word_level_timestamps_processing_durations.end()
+    );
     return result;
 }
 

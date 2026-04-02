@@ -1,9 +1,10 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <iostream>
-#include <fstream>
 #include "read_prompt_from_file.h"
+
+#include <fstream>
+#include <iostream>
 
 std::string utils::read_prompt(const std::string& file_path) {
     std::ifstream file(file_path);

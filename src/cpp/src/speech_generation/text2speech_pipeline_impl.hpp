@@ -21,9 +21,11 @@ public:
         m_generation_config.validate();
     }
 
-    virtual Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
-                                               const ov::Tensor& speaker_embedding,
-                                               const SpeechGenerationConfig& generation_config) = 0;
+    virtual Text2SpeechDecodedResults generate(
+        const std::vector<std::string>& texts,
+        const ov::Tensor& speaker_embedding,
+        const SpeechGenerationConfig& generation_config
+    ) = 0;
 
     virtual SpeechGenerationPerfMetrics get_performance_metrics();
 

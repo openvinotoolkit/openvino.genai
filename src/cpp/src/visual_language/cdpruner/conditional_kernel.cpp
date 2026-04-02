@@ -38,8 +38,10 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config)
         m_requests_initialized = true;
 
     } catch (const std::exception& e) {
-        GENAI_WARN("[CDPruner] ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " +
-                   std::string(e.what()));
+        GENAI_WARN(
+            "[CDPruner] ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " +
+            std::string(e.what())
+        );
         m_requests_initialized = false;
     }
 }
@@ -57,16 +59,18 @@ ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, co
     try {
         conditional_kernel = build_with_ov_model(visual_features, input_param);
     } catch (const std::exception& e) {
-        GENAI_WARN("[CDPruner] ConditionalKernelBuilder: OV model failed, falling back to normal pipeline: " +
-                   std::string(e.what()));
+        GENAI_WARN(
+            "[CDPruner] ConditionalKernelBuilder: OV model failed, falling back to normal pipeline: " +
+            std::string(e.what())
+        );
         conditional_kernel = build_with_normal_pipeline(visual_features, input_param);
     }
 
     return conditional_kernel;
 }
 
-ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visual_features,
-                                                         const ov::Tensor& text_features) {
+ov::Tensor
+ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visual_features, const ov::Tensor& text_features) {
     // Use OV model for building the kernel matrix
     OPENVINO_ASSERT(text_features.get_shape().size() == 2, "Text features must be 2D tensor [N, D]");
 
@@ -74,14 +78,18 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
     size_t feature_dim = visual_shape[2];
 
     // Check shape consistency
-    OPENVINO_ASSERT(text_features.get_shape()[1] == feature_dim,
-                    "Visual features and text features must have the same feature dimension");
+    OPENVINO_ASSERT(
+        text_features.get_shape()[1] == feature_dim,
+        "Visual features and text features must have the same feature dimension"
+    );
     ov::Tensor conditional_kernel = compute_conditional_kernel_with_model(visual_features, text_features);
     return conditional_kernel;
 }
 
-ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor& visual_features,
-                                                                const ov::Tensor& relevance_scores) {
+ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(
+    const ov::Tensor& visual_features,
+    const ov::Tensor& relevance_scores
+) {
     auto visual_shape = visual_features.get_shape();
     size_t batch_size = visual_shape[0];
     size_t num_tokens = visual_shape[1];
@@ -90,8 +98,10 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
     OPENVINO_ASSERT(relevance_scores.get_shape().size() == 2, "Relevance scores must be 2D tensor [B, N]");
     auto relevance_shape = relevance_scores.get_shape();
     // Check shape consistency
-    OPENVINO_ASSERT(relevance_shape[0] == batch_size && relevance_shape[1] == num_tokens,
-                    "Visual features and relevance scores must have consistent batch size and token count");
+    OPENVINO_ASSERT(
+        relevance_shape[0] == batch_size && relevance_shape[1] == num_tokens,
+        "Visual features and relevance scores must have consistent batch size and token count"
+    );
 
     // Step 1: L2 normalize visual features along the last dimension
     // This is equivalent to: image_normalized = image_features / image_features.norm(dim=-1, keepdim=True)
@@ -213,8 +223,10 @@ ov::Tensor ConditionalKernelBuilder::batch_matrix_multiply(const ov::Tensor& a, 
     size_t inner_dim = a_shape[2];
     size_t result_cols = b_shape[2];
 
-    OPENVINO_ASSERT(b_shape[0] == batch_size && b_shape[1] == inner_dim,
-                    "Incompatible matrix dimensions for batch multiplication");
+    OPENVINO_ASSERT(
+        b_shape[0] == batch_size && b_shape[1] == inner_dim,
+        "Incompatible matrix dimensions for batch multiplication"
+    );
 
     ov::Tensor result(ov::element::f32, {batch_size, result_rows, result_cols});
 
@@ -278,8 +290,10 @@ ov::Tensor ConditionalKernelBuilder::l2_normalize_features(const ov::Tensor& fea
     return normalized_features;
 }
 
-ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_normal(const ov::Tensor& similarity_matrix,
-                                                                       const ov::Tensor& relevance_scores) {
+ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_normal(
+    const ov::Tensor& similarity_matrix,
+    const ov::Tensor& relevance_scores
+) {
     // similarity_matrix: [B, N, N]
     // relevance_scores: [B, N]
     // Result: [B, N, N] - conditional kernel matrix
@@ -342,8 +356,10 @@ ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_normal(const ov:
     return conditional_kernel;
 }
 
-ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_with_model(const ov::Tensor& visual_features,
-                                                                           const ov::Tensor& text_features) {
+ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_with_model(
+    const ov::Tensor& visual_features,
+    const ov::Tensor& text_features
+) {
     // Input validation
     OPENVINO_ASSERT(visual_features.get_shape().size() == 3, "Visual features must be 3D tensor [B, N, D]");
     OPENVINO_ASSERT(text_features.get_shape().size() == 2, "Text features must be 2D tensor [M, D]");
@@ -353,8 +369,10 @@ ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_with_model(const
 
     OPENVINO_ASSERT(visual_shape[2] == text_shape[1], "Visual and text features must have same feature dimension");
 
-    OPENVINO_ASSERT(m_requests_initialized,
-                    "Conditional kernel infer request not initialized. Cannot use GPU acceleration.");
+    OPENVINO_ASSERT(
+        m_requests_initialized,
+        "Conditional kernel infer request not initialized. Cannot use GPU acceleration."
+    );
 
     // Use preinitialized infer request
     m_conditional_kernel_infer_request.set_input_tensor(0, visual_features);
@@ -389,38 +407,48 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_similarity_matrix_mo
 
     auto result = std::make_shared<ov::op::v0::Result>(matmul);
 
-    return std::make_shared<ov::Model>(ov::ResultVector{std::move(result)},
-                                       ov::ParameterVector{std::move(input_features)},
-                                       "SimilarityMatrix_Model");
+    return std::make_shared<ov::Model>(
+        ov::ResultVector{std::move(result)},
+        ov::ParameterVector{std::move(input_features)},
+        "SimilarityMatrix_Model"
+    );
 }
 
 std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_model() {
     // Input parameters
-    auto visual_input =
-        std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1, -1}  // [B, N, D]
-        );
-    auto text_input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1}  // [M, D]
+    auto visual_input = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::f32,
+        ov::PartialShape{-1, -1, -1}  // [B, N, D]
+    );
+    auto text_input = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::f32,
+        ov::PartialShape{-1, -1}  // [M, D]
     );
 
     // ========== RELEVANCE COMPUTATION ==========
     // Step 1.1: L2 normalize visual features (will be reused for kernel computation)
     auto axes = ov::op::v0::Constant::create(ov::element::i32, {1}, {2});
-    auto visual_l2_norm = std::make_shared<ov::op::v0::NormalizeL2>(visual_input,
-                                                                    axes,
-                                                                    m_config.numerical_threshold,
-                                                                    ov::op::EpsMode::ADD);
+    auto visual_l2_norm = std::make_shared<ov::op::v0::NormalizeL2>(
+        visual_input,
+        axes,
+        m_config.numerical_threshold,
+        ov::op::EpsMode::ADD
+    );
 
     // Step 1.2: L2 normalize text features
     auto axes_text = ov::op::v0::Constant::create(ov::element::i32, {1}, {1});
-    auto text_l2_norm = std::make_shared<ov::op::v0::NormalizeL2>(text_input,
-                                                                  axes_text,
-                                                                  m_config.numerical_threshold,
-                                                                  ov::op::EpsMode::ADD);
+    auto text_l2_norm = std::make_shared<ov::op::v0::NormalizeL2>(
+        text_input,
+        axes_text,
+        m_config.numerical_threshold,
+        ov::op::EpsMode::ADD
+    );
 
     // Step 1.3: Compute similarity matrix [B, N, M]
-    auto text_transposed =
-        std::make_shared<ov::op::v1::Transpose>(text_l2_norm,
-                                                ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {1, 0}));
+    auto text_transposed = std::make_shared<ov::op::v1::Transpose>(
+        text_l2_norm,
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {1, 0})
+    );
 
     auto text_visual_similarity = std::make_shared<ov::op::v0::MatMul>(visual_l2_norm, text_transposed);
 
@@ -436,7 +464,8 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_m
     if (m_config.use_negative_relevance) {
         processed_mean = std::make_shared<ov::op::v1::Multiply>(
             mean_similarity,
-            ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {-1.0f}));
+            ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {-1.0f})
+        );
     } else {
         processed_mean = mean_similarity;
     }
@@ -448,7 +477,8 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_m
     // Step 2.1: Compute visual self-similarity matrix [B, N, N]
     auto visual_transposed = std::make_shared<ov::op::v1::Transpose>(
         visual_l2_norm,  // Reuse normalized visual features
-        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{3}, {0, 2, 1}));
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{3}, {0, 2, 1})
+    );
 
     auto visual_self_similarity = std::make_shared<ov::op::v0::MatMul>(visual_l2_norm, visual_transposed);
 
@@ -479,9 +509,11 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_m
     // Create outputs
     auto kernel_result = std::make_shared<ov::op::v0::Result>(conditional_kernel);
 
-    return std::make_shared<ov::Model>(ov::ResultVector{std::move(kernel_result)},
-                                       ov::ParameterVector{std::move(visual_input), std::move(text_input)},
-                                       "CDPruner_Kernel_Model");
+    return std::make_shared<ov::Model>(
+        ov::ResultVector{std::move(kernel_result)},
+        ov::ParameterVector{std::move(visual_input), std::move(text_input)},
+        "CDPruner_Kernel_Model"
+    );
 }
 
 std::shared_ptr<ov::Node> ConditionalKernelBuilder::create_min_max_normalize_ops(std::shared_ptr<ov::Node> input) {

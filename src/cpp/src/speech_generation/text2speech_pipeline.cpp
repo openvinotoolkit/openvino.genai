@@ -37,9 +37,11 @@ const std::string get_class_name(const std::filesystem::path& root_dir) {
 namespace ov {
 namespace genai {
 
-Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
-                                         const std::string& device,
-                                         const ov::AnyMap& properties)
+Text2SpeechPipeline::Text2SpeechPipeline(
+    const std::filesystem::path& root_dir,
+    const std::string& device,
+    const ov::AnyMap& properties
+)
     : m_speech_gen_config(utils::from_config_json_if_exists<SpeechGenerationConfig>(root_dir)) {
     const std::string class_name = get_class_name(root_dir);
 
@@ -53,9 +55,11 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
     }
 }
 
-Text2SpeechDecodedResults Text2SpeechPipeline::generate(const std::vector<std::string>& texts,
-                                                        const ov::Tensor& speaker_embedding,
-                                                        const ov::AnyMap& properties) {
+Text2SpeechDecodedResults Text2SpeechPipeline::generate(
+    const std::vector<std::string>& texts,
+    const ov::Tensor& speaker_embedding,
+    const ov::AnyMap& properties
+) {
     return m_impl->generate(texts, speaker_embedding, m_speech_gen_config);
 }
 

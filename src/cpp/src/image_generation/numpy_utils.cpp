@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "image_generation/numpy_utils.hpp"
+
 #include "openvino/core/except.hpp"
 
 namespace ov {
@@ -48,7 +49,8 @@ void rescale_zero_terminal_snr(std::vector<float>& betas) {
     });
 }
 
-std::vector<float> interp(const std::vector<std::int64_t>& x, const std::vector<size_t>& xp, const std::vector<float>& fp) {
+std::vector<float>
+interp(const std::vector<std::int64_t>& x, const std::vector<size_t>& xp, const std::vector<float>& fp) {
     OPENVINO_ASSERT(xp.size() == fp.size(), "`xp` and `fp`vectors must have the same sizes");
 
     std::vector<float> interp_res;
@@ -82,8 +84,10 @@ ov::Tensor concat(ov::Tensor tensor_1, ov::Tensor tensor_2, int axis) {
     size_t rank = shape_1.size();
 
     OPENVINO_ASSERT(rank == shape_2.size(), "Shapes for concatenated tensors must have the same rank");
-    OPENVINO_ASSERT(tensor_1.get_element_type() == ov::element::f32 && tensor_2.get_element_type() == ov::element::f32,
-        "Concat supports only tensor of fp32 data type");
+    OPENVINO_ASSERT(
+        tensor_1.get_element_type() == ov::element::f32 && tensor_2.get_element_type() == ov::element::f32,
+        "Concat supports only tensor of fp32 data type"
+    );
 
     if (axis < 0) {
         axis += rank;
@@ -91,7 +95,16 @@ ov::Tensor concat(ov::Tensor tensor_1, ov::Tensor tensor_2, int axis) {
 
     ov::Shape dst_shape(rank);
     for (size_t d = 0; d < rank; ++d) {
-        OPENVINO_ASSERT(d == axis || shape_1[d] == shape_2[d], "Dimension ", d, " must be the same for tensor_1 (", shape_1[d], ") and tensor_2 (", shape_2[d], ")");
+        OPENVINO_ASSERT(
+            d == axis || shape_1[d] == shape_2[d],
+            "Dimension ",
+            d,
+            " must be the same for tensor_1 (",
+            shape_1[d],
+            ") and tensor_2 (",
+            shape_2[d],
+            ")"
+        );
         dst_shape[d] = d == axis ? shape_1[d] + shape_2[d] : shape_1[d];
     }
 
@@ -107,13 +120,13 @@ ov::Tensor concat(ov::Tensor tensor_1, ov::Tensor tensor_2, int axis) {
     }
 
     ov::Tensor dst_tensor(tensor_1.get_element_type(), dst_shape);
-    float * res = dst_tensor.data<float>();
+    float* res = dst_tensor.data<float>();
 
-    const float * data_1 = tensor_1.data<const float>();
-    const float * data_2 = tensor_2.data<const float>();
+    const float* data_1 = tensor_1.data<const float>();
+    const float* data_2 = tensor_2.data<const float>();
 
     for (size_t i = 0; i < num_iterations; ++i) {
-        std::memcpy(res          , data_1, chunk_1 * sizeof(float));
+        std::memcpy(res, data_1, chunk_1 * sizeof(float));
         std::memcpy(res + chunk_1, data_2, chunk_2 * sizeof(float));
 
         res += chunk_1 + chunk_2;
@@ -152,7 +165,6 @@ ov::Tensor repeat(const ov::Tensor input, const size_t n_times) {
     return tensor_repeated;
 }
 
-
-} // namespace ov
-} // namespace genai
-} // namespace numpy_utils
+}  // namespace numpy_utils
+}  // namespace genai
+}  // namespace ov

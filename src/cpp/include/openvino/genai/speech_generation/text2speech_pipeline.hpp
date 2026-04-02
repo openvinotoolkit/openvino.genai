@@ -31,12 +31,15 @@ public:
      * @param device A single device used for all models
      * @param properties Properties to pass to 'compile_model' or other pipeline properties like LoRA adapters
      */
-    Text2SpeechPipeline(const std::filesystem::path& models_path,
-                        const std::string& device,
-                        const ov::AnyMap& properties = {});
+    Text2SpeechPipeline(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
+    );
 
-    template <typename... Properties,
-              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    template <
+        typename... Properties,
+        typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     Text2SpeechPipeline(const std::filesystem::path& models_path, const std::string& device, Properties&&... properties)
         : Text2SpeechPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
@@ -49,9 +52,11 @@ public:
      * @param properties Speech generation parameters specified as properties
      * @returns raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
      */
-    Text2SpeechDecodedResults generate(const std::string& text,
-                                       const ov::Tensor& speaker_embedding = ov::Tensor(),
-                                       const ov::AnyMap& properties = {}) {
+    Text2SpeechDecodedResults generate(
+        const std::string& text,
+        const ov::Tensor& speaker_embedding = ov::Tensor(),
+        const ov::AnyMap& properties = {}
+    ) {
         return generate(std::vector<std::string>{text}, speaker_embedding, properties);
     }
 
@@ -64,14 +69,18 @@ public:
      * @param properties Speech generation parameters specified as properties
      * @returns raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
      */
-    Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
-                                       const ov::Tensor& speaker_embedding = ov::Tensor(),
-                                       const ov::AnyMap& properties = {});
+    Text2SpeechDecodedResults generate(
+        const std::vector<std::string>& texts,
+        const ov::Tensor& speaker_embedding = ov::Tensor(),
+        const ov::AnyMap& properties = {}
+    );
 
     template <typename... Properties>
-    Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
-                                       const ov::Tensor& speaker_embedding = ov::Tensor(),
-                                       Properties&&... properties) {
+    Text2SpeechDecodedResults generate(
+        const std::vector<std::string>& texts,
+        const ov::Tensor& speaker_embedding = ov::Tensor(),
+        Properties&&... properties
+    ) {
         return generate(texts, speaker_embedding, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 

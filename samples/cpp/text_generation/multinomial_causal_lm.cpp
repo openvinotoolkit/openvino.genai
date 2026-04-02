@@ -30,11 +30,13 @@ int main(int argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

@@ -3,16 +3,15 @@
 
 #pragma once
 
-#include <string>
-#include <random>
 #include <optional>
-
-#include "openvino/runtime/tensor.hpp"
-#include "openvino/runtime/properties.hpp"
+#include <random>
+#include <string>
 
 #include "openvino/genai/lora_adapter.hpp"
-#include "openvino/genai/visibility.hpp"
 #include "openvino/genai/taylorseer_config.hpp"
+#include "openvino/genai/visibility.hpp"
+#include "openvino/runtime/properties.hpp"
+#include "openvino/runtime/tensor.hpp"
 
 namespace ov {
 namespace genai {
@@ -53,7 +52,8 @@ public:
 };
 
 /**
- * Implementation of 'Generator' using standard C++ random library types 'std::mt19937' and 'std::normal_distribution<float>'
+ * Implementation of 'Generator' using standard C++ random library types 'std::mt19937' and
+ * 'std::normal_distribution<float>'
  */
 class OPENVINO_GENAI_EXPORTS CppStdGenerator : public Generator {
 public:
@@ -82,7 +82,8 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
      * Prompts and negative prompts
      */
     std::optional<std::string> prompt_2 = std::nullopt, prompt_3 = std::nullopt;
-    std::optional<std::string> negative_prompt = std::nullopt, negative_prompt_2 = std::nullopt, negative_prompt_3 = std::nullopt;
+    std::optional<std::string> negative_prompt = std::nullopt, negative_prompt_2 = std::nullopt,
+                               negative_prompt_3 = std::nullopt;
 
     /**
      * A number of images to generate per 'generate()' call
@@ -90,8 +91,8 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
     size_t num_images_per_prompt = 1;
 
     /**
-     * Random generator to initialize latents, add noise to initial images in case of image to image / inpainting pipelines
-     * By default, random generator is initialized as `CppStdGenerator(generation_config.rng_seed)`
+     * Random generator to initialize latents, add noise to initial images in case of image to image / inpainting
+     * pipelines By default, random generator is initialized as `CppStdGenerator(generation_config.rng_seed)`
      * @note If `generator` is specified, it has higher priority than `rng_seed` parameter.
      */
     std::shared_ptr<Generator> generator = nullptr;
@@ -245,8 +246,10 @@ static constexpr ov::Property<int> max_sequence_length{"max_sequence_length"};
 /**
  * User callback for image generation pipelines, which is called within a pipeline with the following arguments:
  * - Current inference step
- * - Total number of inference steps. Note, that in case of 'strength' parameter, the number of inference steps is reduced linearly
- * - Tensor representing current latent. Such latent can be converted to human-readable representation via image generation pipeline 'decode()' method
+ * - Total number of inference steps. Note, that in case of 'strength' parameter, the number of inference steps is
+ * reduced linearly
+ * - Tensor representing current latent. Such latent can be converted to human-readable representation via image
+ * generation pipeline 'decode()' method
  */
 static constexpr ov::Property<std::function<bool(size_t, size_t, ov::Tensor&)>> callback{"callback"};
 
@@ -257,5 +260,5 @@ static constexpr ov::Property<std::function<bool(size_t, size_t, ov::Tensor&)>> 
 OPENVINO_GENAI_EXPORTS
 std::pair<std::string, ov::Any> generation_config(const ImageGenerationConfig& generation_config);
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

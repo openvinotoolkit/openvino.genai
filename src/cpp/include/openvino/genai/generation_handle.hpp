@@ -7,19 +7,20 @@
 #include <unordered_map>
 
 #include "openvino/genai/generation_config.hpp"
-#include "openvino/genai/visibility.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/visibility.hpp"
 
 namespace ov::genai {
 
 enum class GenerationStatus {
-    RUNNING = 0, // Default status for ongoing generation
-    FINISHED = 1, // Status set when generation has been finished
-    IGNORED = 2, // Status set when generation run into out-of-memory condition and could not be continued
-    CANCEL = 3, // Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
-    STOP = 4, // Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
+    RUNNING = 0,   // Default status for ongoing generation
+    FINISHED = 1,  // Status set when generation has been finished
+    IGNORED = 2,   // Status set when generation run into out-of-memory condition and could not be continued
+    CANCEL = 3,    // Status set when generation handle is cancelled. The last prompt and all generated tokens will be
+                   // dropped from history, KV cache will include history but last step.
+    STOP = 4,      // Status set when generation handle is stopped. History will be kept, KV cache will include the last
+                   // prompt and generated tokens.
 };
-
 
 struct EncodedGenerationResult {
     // request ID - obsolete when handle API is approved as handle will connect results with prompts.
@@ -33,7 +34,7 @@ struct EncodedGenerationResult {
 
     // Status of generation
     GenerationStatus m_status = GenerationStatus::RUNNING;
-    
+
     // PerfMetrics but with empty tokenization/detokenization durations.
     PerfMetrics perf_metrics;
 
@@ -45,9 +46,9 @@ struct EncodedGenerationResult {
 };
 
 enum class GenerationFinishReason {
-    NONE = 0, // Default value, when generation is not yet finished
-    STOP = 1, // Generation finished naturally, by reaching end of sequence token
-    LENGTH = 2 // Generation finished by reaching max_new_tokens limit
+    NONE = 0,   // Default value, when generation is not yet finished
+    STOP = 1,   // Generation finished naturally, by reaching end of sequence token
+    LENGTH = 2  // Generation finished by reaching max_new_tokens limit
 };
 
 struct GenerationResult {
@@ -84,14 +85,17 @@ using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;
 
 class GenerationStream;
 
-class OPENVINO_GENAI_EXPORTS 
-GenerationHandleImpl {
+class OPENVINO_GENAI_EXPORTS GenerationHandleImpl {
     std::shared_ptr<GenerationStream> m_generation_stream;
-    ov::genai::GenerationConfig m_sampling_params; 
+    ov::genai::GenerationConfig m_sampling_params;
+
 public:
-    GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
-    m_generation_stream(std::move(generation_stream)),
-    m_sampling_params(sampling_params) {};
+    GenerationHandleImpl(
+        std::shared_ptr<GenerationStream> generation_stream,
+        const ov::genai::GenerationConfig& sampling_params
+    )
+        : m_generation_stream(std::move(generation_stream)),
+          m_sampling_params(sampling_params) {};
 
     ~GenerationHandleImpl();
 
@@ -118,4 +122,4 @@ public:
 };
 
 using GenerationHandle = std::shared_ptr<GenerationHandleImpl>;
-}
+}  // namespace ov::genai

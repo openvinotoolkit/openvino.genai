@@ -1,9 +1,10 @@
 // Copyright (C) 2024-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "load_image.hpp"
-#include <openvino/genai/visual_language/pipeline.hpp>
 #include <filesystem>
+#include <openvino/genai/visual_language/pipeline.hpp>
+
+#include "load_image.hpp"
 
 ov::genai::StreamingStatus print_subword(std::string&& subword) {
     std::cout << subword << std::flush;
@@ -12,7 +13,9 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
 
 int main(int argc, char* argv[]) try {
     if (argc < 3 || argc > 5) {
-        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> [DEVICE] [PROMPT_LOOKUP]");
+        throw std::runtime_error(
+            std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> [DEVICE] [PROMPT_LOOKUP]"
+        );
     }
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
@@ -44,7 +47,7 @@ int main(int argc, char* argv[]) try {
     std::string prompt;
 
     ov::genai::ChatHistory history;
-    
+
     std::cout << "question:\n";
     std::getline(std::cin, prompt);
 
@@ -61,11 +64,8 @@ int main(int argc, char* argv[]) try {
     while (std::getline(std::cin, prompt)) {
         history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
         // New images and videos can be passed at each turn
-        ov::genai::VLMDecodedResults decoded_results = pipe.generate(
-            history,
-            ov::genai::generation_config(generation_config),
-            ov::genai::streamer(print_subword)
-        );
+        ov::genai::VLMDecodedResults decoded_results =
+            pipe.generate(history, ov::genai::generation_config(generation_config), ov::genai::streamer(print_subword));
         history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
         std::cout << "\n----------\n"
                      "question:\n";
@@ -73,11 +73,13 @@ int main(int argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

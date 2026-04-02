@@ -4,12 +4,11 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
 #include <map>
+#include <vector>
 
-#include "openvino/genai/image_generation/scheduler.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
-
+#include "openvino/genai/image_generation/scheduler.hpp"
 #include "openvino/runtime/tensor.hpp"
 
 namespace ov {
@@ -23,17 +22,20 @@ public:
 
     virtual void scale_model_input(ov::Tensor sample, size_t inference_step) = 0;
 
-    virtual std::map<std::string, ov::Tensor> step(
-        ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) = 0;
+    virtual std::map<std::string, ov::Tensor>
+    step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) = 0;
 
     virtual void add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const = 0;
 
     virtual void set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength) {
-        OPENVINO_THROW("Scheduler doesn't support `set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength)` method");
+        OPENVINO_THROW(
+            "Scheduler doesn't support `set_timesteps(size_t image_seq_len, size_t num_inference_steps, float "
+            "strength)` method"
+        );
     }
 
     virtual std::vector<std::int64_t> get_timesteps() const {
-         OPENVINO_THROW("Scheduler doesn't support int timesteps");
+        OPENVINO_THROW("Scheduler doesn't support int timesteps");
     }
 
     virtual std::vector<float> get_float_timesteps() {
@@ -45,8 +47,7 @@ public:
     }
 
     virtual void set_begin_index(size_t begin_index) {};
-
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

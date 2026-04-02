@@ -1,20 +1,22 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <cstdint>
-#include <vector>
-#include <iostream>
-#include <string>
-#include <stdexcept>
-#include <filesystem>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/videoio.hpp>
-
 #include "imwrite_video.hpp"
 
-void save_video(const std::string& filename,
-                const ov::Tensor& video_tensor,  // [B, F, H, W, C], u8
-                float fps) {
+#include <cstdint>
+#include <filesystem>
+#include <iostream>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+void save_video(
+    const std::string& filename,
+    const ov::Tensor& video_tensor,  // [B, F, H, W, C], u8
+    float fps
+) {
     const ov::Shape shape = video_tensor.get_shape();
 
     if (shape.empty() || video_tensor.get_size() == 0) {

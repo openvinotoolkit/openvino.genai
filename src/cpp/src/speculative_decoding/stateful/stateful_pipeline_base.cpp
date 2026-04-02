@@ -16,8 +16,10 @@ struct overloaded : Ts... {
 template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
-StatefulSpeculativePipelineBase::StatefulSpeculativePipelineBase(const Tokenizer& tokenizer,
-                                                                 const GenerationConfig& generation_config)
+StatefulSpeculativePipelineBase::StatefulSpeculativePipelineBase(
+    const Tokenizer& tokenizer,
+    const GenerationConfig& generation_config
+)
     : LLMPipelineImplBase(tokenizer, generation_config) {
     m_sd_perf_metrics = SDPerModelsPerfMetrics();
 }
@@ -26,7 +28,8 @@ void StatefulSpeculativePipelineBase::ensure_num_assistant_tokens_is_set(Generat
     OPENVINO_ASSERT(
         config.assistant_confidence_threshold == 0.f,
         "Stateful (non-Continuous Batching) Speculative Decoding pipeline only supports num_assistant_tokens, "
-        "not assistant_confidence_threshold. Set assistant_confidence_threshold to 0.f or remove its specification.");
+        "not assistant_confidence_threshold. Set assistant_confidence_threshold to 0.f or remove its specification."
+    );
 
     if (config.num_assistant_tokens == 0) {
         config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
@@ -34,7 +37,8 @@ void StatefulSpeculativePipelineBase::ensure_num_assistant_tokens_is_set(Generat
 }
 
 GenerationConfig StatefulSpeculativePipelineBase::resolve_generation_config(
-    OptionalGenerationConfig generation_config) {
+    OptionalGenerationConfig generation_config
+) {
     GenerationConfig config = generation_config.value_or(m_generation_config);
 
     // Apply defaults from base config
@@ -91,10 +95,12 @@ std::vector<std::string> StatefulSpeculativePipelineBase::detokenize(const std::
     return result;
 }
 
-void StatefulSpeculativePipelineBase::update_decoded_results_with_perf_metrics(DecodedResults& decoded_results,
-                                                                               const EncodedResults& encoded_results,
-                                                                               float generate_duration_us,
-                                                                               TimePoint generate_start_time) {
+void StatefulSpeculativePipelineBase::update_decoded_results_with_perf_metrics(
+    DecodedResults& decoded_results,
+    const EncodedResults& encoded_results,
+    float generate_duration_us,
+    TimePoint generate_start_time
+) {
     // Use encoded_results as base (contains model-level metrics from generate_tokens)
     decoded_results.perf_metrics = encoded_results.perf_metrics;
     decoded_results.extended_perf_metrics = encoded_results.extended_perf_metrics;
@@ -117,22 +123,27 @@ void StatefulSpeculativePipelineBase::update_decoded_results_with_perf_metrics(D
     decoded_results.perf_metrics.evaluate_statistics(generate_start_time);
 }
 
-DecodedResults StatefulSpeculativePipelineBase::generate(StringInputs inputs,
-                                                         OptionalGenerationConfig generation_config,
-                                                         StreamerVariant streamer) {
+DecodedResults StatefulSpeculativePipelineBase::generate(
+    StringInputs inputs,
+    OptionalGenerationConfig generation_config,
+    StreamerVariant streamer
+) {
     ManualTimer generate_timer("StatefulSpeculativePipelineBase::generate(StringInputs)");
     generate_timer.start();
 
     // Extract prompt string
     std::string prompt = std::visit(
-        overloaded{[](const std::string& prompt_str) {
-                       return prompt_str;
-                   },
-                   [](std::vector<std::string>& prompts) {
-                       OPENVINO_ASSERT(prompts.size() == 1u, "Currently only batch size=1 is supported");
-                       return prompts.front();
-                   }},
-        inputs);
+        overloaded{
+            [](const std::string& prompt_str) {
+                return prompt_str;
+            },
+            [](std::vector<std::string>& prompts) {
+                OPENVINO_ASSERT(prompts.size() == 1u, "Currently only batch size=1 is supported");
+                return prompts.front();
+            }
+        },
+        inputs
+    );
 
     GenerationConfig config = resolve_generation_config(generation_config);
 
@@ -157,17 +168,21 @@ DecodedResults StatefulSpeculativePipelineBase::generate(StringInputs inputs,
     generate_timer.end();
 
     // Update performance metrics with outer layer timings
-    update_decoded_results_with_perf_metrics(decoded_results,
-                                             encoded_results,
-                                             generate_timer.get_duration_microsec(),
-                                             generate_timer.get_start_time());
+    update_decoded_results_with_perf_metrics(
+        decoded_results,
+        encoded_results,
+        generate_timer.get_duration_microsec(),
+        generate_timer.get_start_time()
+    );
 
     return decoded_results;
 }
 
-DecodedResults StatefulSpeculativePipelineBase::generate(const ChatHistory& history,
-                                                         OptionalGenerationConfig generation_config,
-                                                         StreamerVariant streamer) {
+DecodedResults StatefulSpeculativePipelineBase::generate(
+    const ChatHistory& history,
+    OptionalGenerationConfig generation_config,
+    StreamerVariant streamer
+) {
     ManualTimer generate_timer("StatefulSpeculativePipelineBase::generate(ChatHistory)");
     generate_timer.start();
 
@@ -176,10 +191,14 @@ DecodedResults StatefulSpeculativePipelineBase::generate(const ChatHistory& hist
 
     GenerationConfig config = resolve_generation_config(generation_config);
 
-    OPENVINO_ASSERT(config.apply_chat_template,
-                    "Chat template must be applied when using ChatHistory in generate method.");
-    OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(),
-                    "Chat template must not be empty when using ChatHistory in generate method.");
+    OPENVINO_ASSERT(
+        config.apply_chat_template,
+        "Chat template must be applied when using ChatHistory in generate method."
+    );
+    OPENVINO_ASSERT(
+        !m_tokenizer.get_chat_template().empty(),
+        "Chat template must not be empty when using ChatHistory in generate method."
+    );
     OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
 
     constexpr bool add_generation_prompt = true;
@@ -199,20 +218,24 @@ DecodedResults StatefulSpeculativePipelineBase::generate(const ChatHistory& hist
     generate_timer.end();
 
     // Update performance metrics with outer layer timings
-    update_decoded_results_with_perf_metrics(decoded_results,
-                                             encoded_results,
-                                             generate_timer.get_duration_microsec(),
-                                             generate_timer.get_start_time());
+    update_decoded_results_with_perf_metrics(
+        decoded_results,
+        encoded_results,
+        generate_timer.get_duration_microsec(),
+        generate_timer.get_start_time()
+    );
 
     return decoded_results;
 }
 
-EncodedResults StatefulSpeculativePipelineBase::generate(const EncodedInputs& inputs,
-                                                         OptionalGenerationConfig generation_config,
-                                                         StreamerVariant streamer) {
+EncodedResults StatefulSpeculativePipelineBase::generate(
+    const EncodedInputs& inputs,
+    OptionalGenerationConfig generation_config,
+    StreamerVariant streamer
+) {
     // Resolve configuration
     GenerationConfig config = resolve_generation_config(generation_config);
-    
+
     // Delegate to generate_tokens (implemented by child classes)
     return generate_tokens(inputs, config, streamer);
 }

@@ -38,8 +38,8 @@ std::shared_ptr<op::Op> get_cls_pooling_op(const ov::Output<ov::Node>& last_hidd
     return std::make_shared<op::v15::Squeeze>(slice, squeeze_axis);
 }
 
-std::shared_ptr<op::Op> get_mean_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node,
-                                            const ov::Output<ov::Node>& attention_mask) {
+std::shared_ptr<op::Op>
+get_mean_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node, const ov::Output<ov::Node>& attention_mask) {
     auto shape_of = std::make_shared<op::v3::ShapeOf>(last_hidden_state_node);
 
     auto unsqueze_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
@@ -69,17 +69,21 @@ std::shared_ptr<op::Op> get_mean_pooling_op(const ov::Output<ov::Node>& last_hid
     return std::make_shared<op::v1::Divide>(sum_hidden_state, max_expanded_mask);
 }
 
-std::shared_ptr<op::Op> get_last_token_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node,
-                                                  const ov::Output<ov::Node>& attention_mask,
-                                                  const TextEmbeddingPipeline::Config& config) {
+std::shared_ptr<op::Op> get_last_token_pooling_op(
+    const ov::Output<ov::Node>& last_hidden_state_node,
+    const ov::Output<ov::Node>& attention_mask,
+    const TextEmbeddingPipeline::Config& config
+) {
     const auto left_padding = config.padding_side.has_value() && config.padding_side.value() == "left";
 
     // shortcut for left padding. We can slice last token directly
     if (left_padding) {
         auto start = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
-        auto stop = std::make_shared<op::v0::Constant>(ov::element::i64,
-                                                       ov::Shape{1},
-                                                       std::vector<int64_t>{std::numeric_limits<int64_t>::max()});
+        auto stop = std::make_shared<op::v0::Constant>(
+            ov::element::i64,
+            ov::Shape{1},
+            std::vector<int64_t>{std::numeric_limits<int64_t>::max()}
+        );
         auto step = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
         auto axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
 
@@ -97,9 +101,11 @@ std::shared_ptr<op::Op> get_last_token_pooling_op(const ov::Output<ov::Node>& la
     return std::make_shared<op::v8::Gather>(last_hidden_state_node, subtract, axis_1, 1);
 }
 
-std::shared_ptr<op::Op> create_post_ops(const ov::Output<ov::Node>& input,
-                                        const ov::Output<ov::Node>& attention_mask,
-                                        const TextEmbeddingPipeline::Config& config) {
+std::shared_ptr<op::Op> create_post_ops(
+    const ov::Output<ov::Node>& input,
+    const ov::Output<ov::Node>& attention_mask,
+    const TextEmbeddingPipeline::Config& config
+) {
     if (config.pooling_type == TextEmbeddingPipeline::PoolingType::CLS) {
         return get_cls_pooling_op(input);
     } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::MEAN) {
@@ -111,8 +117,8 @@ std::shared_ptr<op::Op> create_post_ops(const ov::Output<ov::Node>& input,
     OPENVINO_THROW("Pooling type is not supported");
 }
 
-std::shared_ptr<op::Op> create_normalize_ops(const ov::Output<ov::Node>& input,
-                                             const TextEmbeddingPipeline::Config& config) {
+std::shared_ptr<op::Op>
+create_normalize_ops(const ov::Output<ov::Node>& input, const TextEmbeddingPipeline::Config& config) {
     if (config.normalize) {
         auto axis_const = std::make_shared<op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
         return std::make_shared<op::v0::NormalizeL2>(input, axis_const, 1e-12, op::EpsMode::MAX);
@@ -143,12 +149,14 @@ std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const 
     return processor.build();
 }
 
-std::shared_ptr<ov::Model> create_post_model(std::shared_ptr<ov::Model> model,
-                                             const TextEmbeddingPipeline::Config& config) {
+std::shared_ptr<ov::Model>
+create_post_model(std::shared_ptr<ov::Model> model, const TextEmbeddingPipeline::Config& config) {
     auto output_node = model->outputs()[0];
     auto output_shape = output_node.get_partial_shape();
-    auto input_param = std::make_shared<ov::op::v0::Parameter>(output_node.get_element_type(),
-                                                               ov::PartialShape{1, -1, output_shape[2]});
+    auto input_param = std::make_shared<ov::op::v0::Parameter>(
+        output_node.get_element_type(),
+        ov::PartialShape{1, -1, output_shape[2]}
+    );
     set_node_name(input_param, "embedding_hidden_state");
 
     auto attention_mask = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{1, -1});
@@ -167,9 +175,11 @@ std::shared_ptr<ov::Model> create_post_model(std::shared_ptr<ov::Model> model,
     return post_model;
 }
 
-void reshape_model(std::shared_ptr<Model>& model,
-                   const TextEmbeddingPipeline::Config& config,
-                   std::optional<size_t> max_position_embeddings) {
+void reshape_model(
+    std::shared_ptr<Model>& model,
+    const TextEmbeddingPipeline::Config& config,
+    std::optional<size_t> max_position_embeddings
+) {
     ov::PartialShape target_shape{ov::Dimension::dynamic(), ov::Dimension::dynamic()};
 
     if (config.batch_size.has_value()) {

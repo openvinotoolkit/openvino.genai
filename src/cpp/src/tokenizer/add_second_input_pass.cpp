@@ -2,24 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "add_second_input_pass.hpp"
-#include <openvino/pass/manager.hpp>
-#include <openvino/opsets/opset15.hpp>
-#include <openvino/op/util/op_types.hpp>
-#include <openvino/core/model.hpp>
-#include <openvino/core/rt_info.hpp>
-#include <openvino/op/parameter.hpp>
-#include <openvino/op/constant.hpp>
-#include <openvino/op/concat.hpp>
-#include <openvino/op/shape_of.hpp>
-#include <openvino/op/slice.hpp>
-#include <openvino/op/select.hpp>
-#include <openvino/op/equal.hpp>
-#include <openvino/op/maximum.hpp>
-#include <openvino/op/broadcast.hpp>
-#include <openvino/op/multiply.hpp>
 
 #include <iostream>
 #include <memory>
+#include <openvino/core/model.hpp>
+#include <openvino/core/rt_info.hpp>
+#include <openvino/op/broadcast.hpp>
+#include <openvino/op/concat.hpp>
+#include <openvino/op/constant.hpp>
+#include <openvino/op/equal.hpp>
+#include <openvino/op/maximum.hpp>
+#include <openvino/op/multiply.hpp>
+#include <openvino/op/parameter.hpp>
+#include <openvino/op/select.hpp>
+#include <openvino/op/shape_of.hpp>
+#include <openvino/op/slice.hpp>
+#include <openvino/op/util/op_types.hpp>
+#include <openvino/opsets/opset15.hpp>
+#include <openvino/pass/manager.hpp>
 #include <vector>
 
 using namespace ov;
@@ -35,7 +35,6 @@ template <typename T>
 std::shared_ptr<Constant> make_constant(T val, element::Type_t type = element::i32) {
     return std::make_shared<Constant>(element::from<T>(), Shape{}, std::vector<T>{val});
 }
-
 
 bool AddSecondInputPass::parse_inputs(std::shared_ptr<ov::Node>& combine_seg) {
     size_t num_segments = combine_seg->get_input_size() / 3;
@@ -73,7 +72,7 @@ bool AddSecondInputPass::parse_inputs(std::shared_ptr<ov::Node>& combine_seg) {
             for (size_t j = 0; j < 3 && j < trunc_inputs.size(); ++j) {
                 inputs.push_back(trunc_inputs[j]);
             }
-            
+
             for (size_t i = 3; i < trunc_inputs.size(); ++i) {
                 this->m_trunc_values.push_back(trunc_inputs[i]);
             }
@@ -96,31 +95,42 @@ bool AddSecondInputPass::parse_and_assert_postprocessor(const std::shared_ptr<ov
     nlohmann::json post_processor = nlohmann::json::parse(json_str);
 
     if (!post_processor.contains("pair")) {
-        m_pass_errors << "Could not add second input. post_processor does not contain input signature for paired input" << std::endl;
+        m_pass_errors << "Could not add second input. post_processor does not contain input signature for paired input"
+                      << std::endl;
         return false;
     }
 
     if (post_processor["single"]["ids"].get<std::vector<int>>() != m_input_signature) {
-        m_pass_errors << "Could not add second input. Input signature from rt_info does not match to the CombineSegments node inputs." << std::endl;
+        m_pass_errors << "Could not add second input. Input signature from rt_info does not match to the "
+                         "CombineSegments node inputs."
+                      << std::endl;
         return false;
     }
 
     auto pair_ids = post_processor["pair"]["ids"].get<std::vector<int>>();
     if (std::vector<int>(pair_ids.begin(), pair_ids.begin() + m_input_signature.size()) != m_input_signature) {
-        m_pass_errors << "Could not add second input. Paired inputs are allowed only when it's widening the single input." << std::endl;
+        m_pass_errors
+            << "Could not add second input. Paired inputs are allowed only when it's widening the single input."
+            << std::endl;
         return false;
     }
 
-    int num_main_inputs = std::count_if(pair_ids.begin(), pair_ids.end(), [](int v) { return v <= -1; });
+    int num_main_inputs = std::count_if(pair_ids.begin(), pair_ids.end(), [](int v) {
+        return v <= -1;
+    });
     if (num_main_inputs != 2) {
         m_pass_errors << "Could not add second input. Only 2 inputs are allowed for the paired input" << std::endl;
         return false;
     }
 
     auto single_ids = post_processor["single"]["ids"].get<std::vector<int>>();
-    int single_neg_count = std::count_if(single_ids.begin(), single_ids.end(), [](int v) { return v <= -1; });
+    int single_neg_count = std::count_if(single_ids.begin(), single_ids.end(), [](int v) {
+        return v <= -1;
+    });
     if (single_neg_count != 1) {
-        m_pass_errors << "Could not add second input. There should be exactly one sequence input in the single signature." << std::endl;
+        m_pass_errors
+            << "Could not add second input. There should be exactly one sequence input in the single signature."
+            << std::endl;
         return false;
     }
 
@@ -131,7 +141,7 @@ bool AddSecondInputPass::parse_and_assert_postprocessor(const std::shared_ptr<ov
 void AddSecondInputPass::insert_splits() {
     // Find the index of the first sequence input (-1)
     auto input_signature = this->m_input_signature;
-    
+
     auto it = std::find(input_signature.begin(), input_signature.end(), -1);
     if (it == input_signature.end()) {
         m_pass_errors << "No sequence input found in input_signature" << std::endl;
@@ -161,7 +171,7 @@ void AddSecondInputPass::insert_splits() {
     auto ends_1 = std::make_shared<Slice>(end, make_constant({0}), param_1_shape, make_constant({1}));
 
     // If the second input is empty we need to slice at least one element.
-    // If we don't do that input with shape [0] could not be specified together with input with shape [1] 
+    // If we don't do that input with shape [0] could not be specified together with input with shape [1]
     // in Select and broadcasted. This garbage values will be zeroed in Select.
     auto one_const = make_constant({1});
     auto second_start = std::make_shared<Minimum>(
@@ -179,7 +189,7 @@ void AddSecondInputPass::insert_splits() {
     begins_2 = std::make_shared<Select>(m_equal_node, zero_const, begins_2);
     // TODO: For correct behavior, 'ends_2' should be set to 1 when the second input is empty.
     // However, due to bug CSV-160624 (incorrect handling of empty second input in Select and broadcast),
-    // we temporarily set it to zero as a workaround. 
+    // we temporarily set it to zero as a workaround.
     // The following line to use 1 instead of 0 is kept for future reference: once bug CSV-160624 is resolved
     // auto one_const = make_constant({1});
     ends_2 = std::make_shared<Select>(m_equal_node, zero_const, ends_2);
@@ -207,7 +217,8 @@ void AddSecondInputPass::insert_splits() {
     if (!trunc_values.empty()) {
         auto trunc_const_max_len = std::dynamic_pointer_cast<Constant>(trunc_values[0].get_node_shared_ptr());
         if (trunc_const_max_len) {
-            int trunc_adj = trunc_const_max_len->get_vector<int>()[0] - (static_cast<int>(signature_to_extend.size()) - 1);
+            int trunc_adj =
+                trunc_const_max_len->get_vector<int>()[0] - (static_cast<int>(signature_to_extend.size()) - 1);
             trunc_values[0] = std::make_shared<Constant>(element::i32, Shape{}, std::vector<int32_t>{trunc_adj});
         }
     }
@@ -259,21 +270,14 @@ std::vector<ov::Output<ov::Node>> AddSecondInputPass::get_new_inputs() {
         auto added_spec_data = make_constant({value});
 
         // Nullify special tokens constant if ends for sequence_2 is nullified
-        auto select_node = std::make_shared<Select>(
-            m_equal_node,
-            make_constant({0}),
-            make_constant({1})
-        );
+        auto select_node = std::make_shared<Select>(m_equal_node, make_constant({0}), make_constant({1}));
         auto multiplied_ends = std::make_shared<Multiply>(added_spec_ends, select_node);
 
-        new_inputs.insert(new_inputs.end(), {
-            added_spec_begins,
-            multiplied_ends,
-            added_spec_data
-        });
+        new_inputs.insert(new_inputs.end(), {added_spec_begins, multiplied_ends, added_spec_data});
     }
     if (!m_post_processor["pair"].contains("type_ids")) {
-        m_pass_errors << "Could not add second input. post_processor does not contain 'type_ids' for paired input" << std::endl;
+        m_pass_errors << "Could not add second input. post_processor does not contain 'type_ids' for paired input"
+                      << std::endl;
         return {};
     }
     auto type_ids = m_post_processor["pair"]["type_ids"].get<std::vector<int>>();

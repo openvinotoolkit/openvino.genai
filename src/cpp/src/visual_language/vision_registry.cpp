@@ -6,7 +6,9 @@
 namespace ov::genai {
 
 VisionRegistry::VisionEntry::VisionEntry(VisionType t, ov::Tensor tensor)
-    : type(t), original(std::move(tensor)), ref_count(0) {}
+    : type(t),
+      original(std::move(tensor)),
+      ref_count(0) {}
 
 VisionRegistry::VisionEntry::VisionEntry(VisionEntry&& other) noexcept
     : type(other.type),
@@ -30,7 +32,7 @@ namespace {
 
 constexpr size_t MIN_SAMPLE_BYTES = 64 * 1024;
 constexpr size_t MAX_SAMPLE_BYTES = 256 * 1024;
-constexpr double SAMPLE_RATIO = 0.0625; // 1 / 16
+constexpr double SAMPLE_RATIO = 0.0625;               // 1 / 16
 constexpr size_t HASH_CHUNK_SIZE = sizeof(uint64_t);  // 8 bytes
 
 size_t calculate_hash_stride(size_t byte_size) {
@@ -40,15 +42,15 @@ size_t calculate_hash_stride(size_t byte_size) {
 
     size_t target_size = static_cast<size_t>(byte_size * SAMPLE_RATIO);
     target_size = std::clamp(target_size, MIN_SAMPLE_BYTES, MAX_SAMPLE_BYTES);
- 
+
     size_t stride = byte_size / target_size;
-    
+
     // Align to 8-byte chunks for uint64_t access
     stride = stride & ~(HASH_CHUNK_SIZE - 1);
     return std::max(HASH_CHUNK_SIZE, stride);
 }
 
-} // namespace
+}  // namespace
 
 // Hash tensor using FNV-1a algorithm.
 // See: https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
@@ -56,7 +58,7 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
     // FNV-1a parameters (64-bit)
     constexpr uint64_t FNV_OFFSET_BASIS = 0xcbf29ce484222325;
     constexpr uint64_t FNV_PRIME = 0x100000001b3;
-    
+
     uint64_t hash = FNV_OFFSET_BASIS;
 
     const auto& shape = tensor.get_shape();
@@ -66,36 +68,36 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
         hash ^= dim;
         hash *= FNV_PRIME;
     }
-    
+
     // Hash element type
     hash ^= static_cast<uint64_t>(tensor.get_element_type().hash());
     hash *= FNV_PRIME;
-    
+
     // Hash tensor content
     const uint8_t* data = tensor.data<uint8_t>();
     const size_t byte_size = tensor.get_byte_size();
     const uint64_t* data64 = reinterpret_cast<const uint64_t*>(data);
-    
+
     const size_t num_frames = shape.size() == 4 ? shape[0] : 1;
     const size_t frame_size_bytes = byte_size / num_frames;
     const size_t frame_chunks = frame_size_bytes / HASH_CHUNK_SIZE;
-    
+
     const size_t frame_stride = calculate_hash_stride(frame_size_bytes);
-    
+
     for (size_t frame_idx = 0; frame_idx < num_frames; ++frame_idx) {
         const uint64_t* frame_data = data64 + (frame_idx * frame_chunks);
-        
+
         for (size_t i = 0; i < frame_chunks; i += frame_stride) {
             hash ^= frame_data[i];
             hash *= FNV_PRIME;
         }
-        
+
         // Hash last chunk if strided loop didn't process it
         if (frame_stride > 1 && frame_chunks > 0 && (frame_chunks - 1) % frame_stride != 0) {
             hash ^= frame_data[frame_chunks - 1];
             hash *= FNV_PRIME;
         }
-        
+
         // Hash remaining bytes
         const size_t frame_offset = frame_idx * frame_size_bytes;
         const size_t remaining_start = frame_offset + frame_chunks * HASH_CHUNK_SIZE;
@@ -105,13 +107,13 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
             hash *= FNV_PRIME;
         }
     }
-    
+
     return hash;
 }
 
 VisionID VisionRegistry::register_vision(const ov::Tensor& tensor, VisionType type) {
     VisionID id = compute_hash(tensor);
-    
+
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_entries.find(id);
     if (it == m_entries.end()) {
@@ -188,8 +190,7 @@ const ov::Tensor& VisionRegistry::get_original(const VisionID& id) const {
 void VisionRegistry::set_encoded_image(const VisionID& id, EncodedImage encoded) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto& entry = m_entries.at(id);
-    OPENVINO_ASSERT(entry.type == VisionType::IMAGE, 
-                    "Cannot set encoded image for video entry");
+    OPENVINO_ASSERT(entry.type == VisionType::IMAGE, "Cannot set encoded image for video entry");
     entry.encoded_image = std::move(encoded);
 }
 
@@ -202,18 +203,15 @@ bool VisionRegistry::has_encoded_image(const VisionID& id) const {
 const EncodedImage& VisionRegistry::get_encoded_image(const VisionID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     const auto& entry = m_entries.at(id);
-    OPENVINO_ASSERT(entry.type == VisionType::IMAGE,
-                    "Cannot get encoded image for video entry");
-    OPENVINO_ASSERT(entry.encoded_image.has_value(),
-                    "Encoded image not available for id: ", id);
+    OPENVINO_ASSERT(entry.type == VisionType::IMAGE, "Cannot get encoded image for video entry");
+    OPENVINO_ASSERT(entry.encoded_image.has_value(), "Encoded image not available for id: ", id);
     return *entry.encoded_image;
 }
 
 void VisionRegistry::set_encoded_video(const VisionID& id, EncodedVideo encoded) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto& entry = m_entries.at(id);
-    OPENVINO_ASSERT(entry.type == VisionType::VIDEO,
-                    "Cannot set encoded video for image entry");
+    OPENVINO_ASSERT(entry.type == VisionType::VIDEO, "Cannot set encoded video for image entry");
     entry.encoded_video = std::move(encoded);
 }
 
@@ -226,11 +224,9 @@ bool VisionRegistry::has_encoded_video(const VisionID& id) const {
 const EncodedVideo& VisionRegistry::get_encoded_video(const VisionID& id) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     const auto& entry = m_entries.at(id);
-    OPENVINO_ASSERT(entry.type == VisionType::VIDEO,
-                    "Cannot get encoded video for image entry");
-    OPENVINO_ASSERT(entry.encoded_video.has_value(),
-                    "Encoded video not available for id: ", id);
+    OPENVINO_ASSERT(entry.type == VisionType::VIDEO, "Cannot get encoded video for image entry");
+    OPENVINO_ASSERT(entry.encoded_video.has_value(), "Encoded video not available for id: ", id);
     return *entry.encoded_video;
 }
 
-} // namespace ov::genai
+}  // namespace ov::genai

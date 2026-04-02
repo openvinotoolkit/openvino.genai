@@ -16,14 +16,18 @@ namespace genai {
 
 class SpeechT5TTSImpl : public Text2SpeechPipelineImpl {
 public:
-    SpeechT5TTSImpl(const std::filesystem::path& models_path,
-                    const std::string& device,
-                    const ov::AnyMap& properties,
-                    const Tokenizer& tokenizer);
+    SpeechT5TTSImpl(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        const ov::AnyMap& properties,
+        const Tokenizer& tokenizer
+    );
 
-    Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
-                                       const ov::Tensor& speaker_embedding,
-                                       const SpeechGenerationConfig& generation_config) override;
+    Text2SpeechDecodedResults generate(
+        const std::vector<std::string>& texts,
+        const ov::Tensor& speaker_embedding,
+        const SpeechGenerationConfig& generation_config
+    ) override;
 
     SpeechGenerationPerfMetrics get_performance_metrics() override;
 

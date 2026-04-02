@@ -6,13 +6,12 @@
 #include <memory>
 
 #include "openvino/core/model.hpp"
-#include "openvino/op/parameter.hpp"
-#include "openvino/op/result.hpp"
 #include "openvino/op/convert.hpp"
 #include "openvino/op/greater_eq.hpp"
+#include "openvino/op/parameter.hpp"
+#include "openvino/op/result.hpp"
 #include "openvino/op/select.hpp"
-
-#include "utils.hpp" // for utils::singleton_core
+#include "utils.hpp"  // for utils::singleton_core
 
 namespace ov {
 namespace genai {
@@ -25,11 +24,9 @@ std::shared_ptr<ov::Model> create_empty_model(ov::element::Type type = ov::eleme
     return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{parameter});
 }
 
-} // namespace
+}  // namespace
 
-IImageProcessor::IImageProcessor(const std::string& device) :
-    m_device(device) {
-}
+IImageProcessor::IImageProcessor(const std::string& device) : m_device(device) {}
 
 ov::Tensor IImageProcessor::execute(ov::Tensor image) {
     OPENVINO_ASSERT(m_request, "ImageProcessor model must be compiled first. Cannot infer non-compiled model");
@@ -42,38 +39,42 @@ void IImageProcessor::compile(std::shared_ptr<ov::Model> model) {
     m_request = utils::singleton_core().compile_model(model, m_device).create_infer_request();
 }
 
-ImageProcessor::ImageProcessor(const std::string& device, bool do_normalize, bool do_binarize, bool gray_scale_source) :
-    IImageProcessor(device) {
+ImageProcessor::ImageProcessor(const std::string& device, bool do_normalize, bool do_binarize, bool gray_scale_source)
+    : IImageProcessor(device) {
     auto image_processor_model = create_empty_model();
     merge_image_preprocessing(image_processor_model, do_normalize, do_binarize, gray_scale_source);
 
     compile(std::move(image_processor_model));
 }
 
-void ImageProcessor::merge_image_preprocessing(std::shared_ptr<ov::Model> model, bool do_normalize, bool do_binarize, bool gray_scale_source) {
+void ImageProcessor::merge_image_preprocessing(
+    std::shared_ptr<ov::Model> model,
+    bool do_normalize,
+    bool do_binarize,
+    bool gray_scale_source
+) {
     OPENVINO_ASSERT(do_normalize ^ do_binarize, "Both binarize and normalize are not supported");
 
     // https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_img2img.py#L90-L110
     ov::preprocess::PrePostProcessor ppp(model);
 
-    ov::preprocess::ColorFormat source_color_format = gray_scale_source ? ov::preprocess::ColorFormat::GRAY : ov::preprocess::ColorFormat::RGB;
+    ov::preprocess::ColorFormat source_color_format =
+        gray_scale_source ? ov::preprocess::ColorFormat::GRAY : ov::preprocess::ColorFormat::RGB;
 
-    ppp.input().tensor()
-        .set_layout("NHWC")
-        .set_element_type(ov::element::u8)
-        .set_color_format(source_color_format);
-    ppp.input().model()
-        .set_layout("NCHW");
+    ppp.input().tensor().set_layout("NHWC").set_element_type(ov::element::u8).set_color_format(source_color_format);
+    ppp.input().model().set_layout("NCHW");
 
     if (do_normalize) {
-        ppp.input().preprocess()
+        ppp.input()
+            .preprocess()
             .convert_layout()
             .convert_element_type(ov::element::f32)
             // this is less accurate that in VaeImageProcessor::normalize
             .scale(255.0 / 2.0)
             .mean(1.0f);
     } else if (do_binarize) {
-        ppp.input().preprocess()
+        ppp.input()
+            .preprocess()
             .convert_element_type(ov::element::f32)
             .convert_color(ov::preprocess::ColorFormat::GRAY)
             .scale(255.0f)
@@ -90,7 +91,12 @@ void ImageProcessor::merge_image_preprocessing(std::shared_ptr<ov::Model> model,
     ppp.build();
 }
 
-ImageResizer::ImageResizer(const std::string& device, ov::element::Type type, ov::Layout layout, ov::op::v11::Interpolate::InterpolateMode interpolation_mode) {
+ImageResizer::ImageResizer(
+    const std::string& device,
+    ov::element::Type type,
+    ov::Layout layout,
+    ov::op::v11::Interpolate::InterpolateMode interpolation_mode
+) {
     auto image_parameter = std::make_shared<ov::op::v0::Parameter>(type, ov::PartialShape::dynamic(4));
     image_parameter->get_output_tensor(0).add_names({"image"});
 
@@ -105,10 +111,8 @@ ImageResizer::ImageResizer(const std::string& device, ov::element::Type type, ov
     // This is to allow specifying layout on 'evaluation' stage
     const auto axes = op::v0::Constant::create<int64_t>(element::i64, Shape{2}, {height_idx, width_idx});
 
-    op::util::InterpolateBase::InterpolateAttrs attrs(interpolation_mode,
-                                                        op::util::InterpolateBase::ShapeCalcMode::SIZES,
-                                                        {0, 0},
-                                                        {0, 0});
+    op::util::InterpolateBase::InterpolateAttrs
+        attrs(interpolation_mode, op::util::InterpolateBase::ShapeCalcMode::SIZES, {0, 0}, {0, 0});
 
     attrs.coordinate_transformation_mode = op::util::InterpolateBase::CoordinateTransformMode::ASYMMETRIC;
     attrs.nearest_mode = op::util::InterpolateBase::NearestMode::FLOOR;
@@ -119,7 +123,10 @@ ImageResizer::ImageResizer(const std::string& device, ov::element::Type type, ov
     const auto interp = std::make_shared<op::v11::Interpolate>(image_parameter, target_spatial_shape, axes, attrs);
 
     auto result = std::make_shared<ov::op::v0::Result>(interp);
-    auto resize_model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{image_parameter, target_spatial_shape});
+    auto resize_model = std::make_shared<ov::Model>(
+        ov::ResultVector{result},
+        ov::ParameterVector{image_parameter, target_spatial_shape}
+    );
 
     m_request = utils::singleton_core().compile_model(resize_model, device).create_infer_request();
 }
@@ -144,9 +151,11 @@ size_t ImageResizer::get_and_check_width_idx(const Layout& layout, const Partial
     if (idx < 0) {
         idx = shape.rank().get_length() + idx;
     }
-    OPENVINO_ASSERT(idx >= 0 && shape.rank().get_length() > idx,
-                    "Width dimension is out of bounds ",
-                    std::to_string(idx));
+    OPENVINO_ASSERT(
+        idx >= 0 && shape.rank().get_length() > idx,
+        "Width dimension is out of bounds ",
+        std::to_string(idx)
+    );
     return idx;
 }
 
@@ -157,11 +166,13 @@ size_t ImageResizer::get_and_check_height_idx(const Layout& layout, const Partia
     if (idx < 0) {
         idx = shape.rank().get_length() + idx;
     }
-    OPENVINO_ASSERT(idx >= 0 && shape.rank().get_length() > idx,
-                    "Height dimension is out of bounds ",
-                    std::to_string(idx));
+    OPENVINO_ASSERT(
+        idx >= 0 && shape.rank().get_length() > idx,
+        "Height dimension is out of bounds ",
+        std::to_string(idx)
+    );
     return idx;
 }
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

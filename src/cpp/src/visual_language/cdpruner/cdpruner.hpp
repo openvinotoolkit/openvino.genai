@@ -40,9 +40,8 @@ public:
      * @param silent If true, suppress detailed logging output
      * @return Selected token indices for each batch [B, T]
      */
-    std::vector<std::vector<size_t>> select_tokens(const ov::Tensor& visual_features,
-                                                   const ov::Tensor& text_features,
-                                                   bool silent = false);
+    std::vector<std::vector<size_t>>
+    select_tokens(const ov::Tensor& visual_features, const ov::Tensor& text_features, bool silent = false);
 
     /**
      * @brief Apply pruning and return only selected features

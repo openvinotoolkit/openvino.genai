@@ -76,8 +76,8 @@ auto text_to_speech_generate_docstring = R"(
     :rtype: Text2SpeechDecodedResults
 )";
 
-SpeechGenerationConfig update_speech_generation_config_from_kwargs(const SpeechGenerationConfig& config,
-                                                                   const py::kwargs& kwargs) {
+SpeechGenerationConfig
+update_speech_generation_config_from_kwargs(const SpeechGenerationConfig& config, const py::kwargs& kwargs) {
     if (kwargs.empty())
         return config;
 
@@ -92,9 +92,11 @@ SpeechGenerationConfig update_speech_generation_config_from_kwargs(const SpeechG
 
 void init_speech_generation_pipeline(py::module_& m) {
     // Binding for SpeechGenerationConfig
-    py::class_<SpeechGenerationConfig, GenerationConfig>(m,
-                                                         "SpeechGenerationConfig",
-                                                         speech_generation_config_docstring)
+    py::class_<SpeechGenerationConfig, GenerationConfig>(
+        m,
+        "SpeechGenerationConfig",
+        speech_generation_config_docstring
+    )
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
         .def(py::init([](const py::kwargs& kwargs) {
             return update_speech_generation_config_from_kwargs(SpeechGenerationConfig(), kwargs);
@@ -106,9 +108,11 @@ void init_speech_generation_pipeline(py::module_& m) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
 
-    py::class_<SpeechGenerationPerfMetrics, PerfMetrics>(m,
-                                                         "SpeechGenerationPerfMetrics",
-                                                         speech_generation_perf_metrics_docstring)
+    py::class_<SpeechGenerationPerfMetrics, PerfMetrics>(
+        m,
+        "SpeechGenerationPerfMetrics",
+        speech_generation_perf_metrics_docstring
+    )
         .def(py::init<>())
         .def_readonly("num_generated_samples", &SpeechGenerationPerfMetrics::num_generated_samples)
         .def_readonly("m_evaluated", &SpeechGenerationPerfMetrics::m_evaluated)
@@ -135,7 +139,8 @@ void init_speech_generation_pipeline(py::module_& m) {
             Text2SpeechPipeline class constructor.
             models_path (os.PathLike): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU).
-        )")
+        )"
+        )
 
         .def(
             "generate",
@@ -163,7 +168,8 @@ void init_speech_generation_pipeline(py::module_& m) {
             "input text for which to generate speech.",
             py::arg("speaker_embedding") = py::none(),
             "vector representing the unique characteristics of a speaker's voice.",
-            (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
+            (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str()
+        )
 
         .def(
             "generate",
@@ -191,7 +197,8 @@ void init_speech_generation_pipeline(py::module_& m) {
             "a list of input texts for which to generate speeches.",
             py::arg("speaker_embedding") = py::none(),
             "vector representing the unique characteristics of a speaker's voice.",
-            (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
+            (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str()
+        )
 
         .def("get_generation_config", &Text2SpeechPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &Text2SpeechPipeline::set_generation_config, py::arg("config"));

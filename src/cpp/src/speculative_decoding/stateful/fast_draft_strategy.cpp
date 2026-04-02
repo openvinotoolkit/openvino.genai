@@ -2,61 +2,73 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "fast_draft_strategy.hpp"
-#include "continuous_batching/timer.hpp"
-#include "openvino/runtime/core.hpp"
-#include "openvino/core/parallel.hpp"
-#include "openvino/genai/text_streamer.hpp"
 
 #include <algorithm>
 
+#include "continuous_batching/timer.hpp"
+#include "openvino/core/parallel.hpp"
+#include "openvino/genai/text_streamer.hpp"
+#include "openvino/runtime/core.hpp"
+
 namespace ov::genai {
-template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+template <class... Ts>
+struct overloaded : Ts... {
+    using Ts::operator()...;
+};
+template <class... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
 
 bool are_tokenizers_equal(ov::genai::Tokenizer& lhs, ov::genai::Tokenizer& rhs);
-} // ov::genai
+}  // namespace ov::genai
 
 namespace {
-ov::genai::StreamingStatus stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
-                                                   const std::vector<int64_t>& tokens) {
+ov::genai::StreamingStatus
+stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_ptr, const std::vector<int64_t>& tokens) {
     if (streamer_ptr) {
         return streamer_ptr->write(tokens);
     }
     return ov::genai::StreamingStatus{};
 }
 
-void update_perf_stat_by_token_time(ov::genai::RawPerfMetrics& raw_perf_counters, const float duration_microsec,
-                                    const ov::genai::TimePoint new_token_time, const std::size_t num_generated_tokens) {
+void update_perf_stat_by_token_time(
+    ov::genai::RawPerfMetrics& raw_perf_counters,
+    const float duration_microsec,
+    const ov::genai::TimePoint new_token_time,
+    const std::size_t num_generated_tokens
+) {
     raw_perf_counters.m_token_infer_durations.emplace_back(duration_microsec);
     raw_perf_counters.m_inference_durations[0] += ov::genai::MicroSeconds(duration_microsec);
     raw_perf_counters.m_new_token_times.emplace_back(new_token_time);
     raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
 }
 
-void update_perf_stat_by_infer_duration(ov::genai::RawPerfMetrics& raw_perf_counters,
-                                        const float inference_duration,
-                                        const float token_duration,
-                                        const std::size_t num_generated_tokens) {
+void update_perf_stat_by_infer_duration(
+    ov::genai::RawPerfMetrics& raw_perf_counters,
+    const float inference_duration,
+    const float token_duration,
+    const std::size_t num_generated_tokens
+) {
     raw_perf_counters.m_durations.emplace_back(token_duration);
     raw_perf_counters.m_inference_durations[0] += ov::genai::MicroSeconds(inference_duration);
     raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
 }
 
-}// anonymous namespace
+}  // anonymous namespace
 
 namespace ov {
 namespace genai {
-    LLMInferWrapper::LLMInferWrapper(
-    const ov::genai::ModelDesc& model_desc
-) : m_device(model_desc.device),
-    m_properties(model_desc.properties),
-    m_generation_config(model_desc.generation_config),
-    m_tokenizer(model_desc.tokenizer) {
+LLMInferWrapper::LLMInferWrapper(const ov::genai::ModelDesc& model_desc)
+    : m_device(model_desc.device),
+      m_properties(model_desc.properties),
+      m_generation_config(model_desc.generation_config),
+      m_tokenizer(model_desc.tokenizer) {
     m_kv_pos = ov::genai::utils::get_kv_axes_pos(model_desc.model);
     m_cache_types = utils::get_cache_types(*model_desc.model);
-    OPENVINO_ASSERT(!m_cache_types.has_linear(),
+    OPENVINO_ASSERT(
+        !m_cache_types.has_linear(),
         "Stateful speculative decoding does not support models with linear attention states. "
-        "KV cache rollback would reset the entire state instead of trimming.");
+        "KV cache rollback would reset the entire state instead of trimming."
+    );
     if (m_device == "NPU") {
         auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, m_properties, m_kv_pos);
         m_max_prompt_len = kv_desc.max_prompt_len;
@@ -65,9 +77,11 @@ namespace genai {
     } else {
         // TODO: We might need it for manipulations with indices
         // utils::apply_gather_before_matmul_transformation(model_desc.model);
-        m_request = ov::genai::utils::singleton_core().compile_model(model_desc.model, m_device, m_properties).create_infer_request();
+        m_request = ov::genai::utils::singleton_core()
+                        .compile_model(model_desc.model, m_device, m_properties)
+                        .create_infer_request();
     }
-    raw_perf_metrics.m_inference_durations =  {{ ov::genai::MicroSeconds(0.0f) }};
+    raw_perf_metrics.m_inference_durations = {{ov::genai::MicroSeconds(0.0f)}};
 }
 
 std::string LLMInferWrapper::device() const {
@@ -99,9 +113,11 @@ int64_t LLMInferWrapper::get_generation_capacity() const {
     }
 }
 
-int64_t LLMInferWrapper::infer_first(const ov::Tensor &input_ids,
-                                     const ov::Tensor &attention_mask,
-                                     const ov::Tensor &position_ids) {
+int64_t LLMInferWrapper::infer_first(
+    const ov::Tensor& input_ids,
+    const ov::Tensor& attention_mask,
+    const ov::Tensor& position_ids
+) {
     ManualTimer infer_first_timer("infer_first()");
     infer_first_timer.start();
 
@@ -109,10 +125,10 @@ int64_t LLMInferWrapper::infer_first(const ov::Tensor &input_ids,
         // NB: Check if there is enough space in KV-cache to process input prompt
         auto prompt_len = input_ids.get_shape()[1];
         if (prompt_len > m_max_prompt_len) {
-            OPENVINO_THROW("LLM model on NPU may only process prompts up to "
-                           + std::to_string(m_max_prompt_len) + " tokens. "
-                           + "Set the \"MAX_PROMPT_LEN\" config option to "
-                           + "increase the limit.");
+            OPENVINO_THROW(
+                "LLM model on NPU may only process prompts up to " + std::to_string(m_max_prompt_len) + " tokens. " +
+                "Set the \"MAX_PROMPT_LEN\" config option to " + "increase the limit."
+            );
         }
     }
 
@@ -143,9 +159,12 @@ int64_t LLMInferWrapper::infer_first(const ov::Tensor &input_ids,
     last_token = std::get<int64_t>(sample_tokens(get_logits(), 1u));
 
     infer_first_timer.end();
-    update_perf_stat_by_infer_duration(raw_perf_metrics,
-         ov::genai::PerfMetrics::get_microsec(infer_end - infer_start),
-         infer_first_timer.get_duration_microsec(), BATCH_SIZE);
+    update_perf_stat_by_infer_duration(
+        raw_perf_metrics,
+        ov::genai::PerfMetrics::get_microsec(infer_end - infer_start),
+        infer_first_timer.get_duration_microsec(),
+        BATCH_SIZE
+    );
     return last_token;
 }
 
@@ -183,7 +202,10 @@ int64_t LLMInferWrapper::infer_next(int64_t token, bool append_perf_stat) {
     ++m_new_position_id;
     // However, attention_mask changes its shape on each iteration, it should be re-set explicitly
     m_new_atten_mask_data.push_back(1);
-    m_request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, ov::Shape{1,m_new_atten_mask_data.size()}, m_new_atten_mask_data.data()));
+    m_request.set_tensor(
+        "attention_mask",
+        ov::Tensor(ov::element::i64, ov::Shape{1, m_new_atten_mask_data.size()}, m_new_atten_mask_data.data())
+    );
 
     const auto infer_start = std::chrono::steady_clock::now();
     m_request.infer();
@@ -201,11 +223,11 @@ int64_t LLMInferWrapper::infer_next(int64_t token, bool append_perf_stat) {
             raw_perf_metrics,
             ov::genai::PerfMetrics::get_microsec(infer_end - infer_start),
             infer_next_timer.get_duration_microsec(),
-            BATCH_SIZE);
+            BATCH_SIZE
+        );
     } else {
-        raw_perf_metrics.m_durations.back() +=
-            ov::genai::MicroSeconds(infer_next_timer.get_duration_microsec());
-        raw_perf_metrics.m_inference_durations[0] += 
+        raw_perf_metrics.m_durations.back() += ov::genai::MicroSeconds(infer_next_timer.get_duration_microsec());
+        raw_perf_metrics.m_inference_durations[0] +=
             ov::genai::MicroSeconds(ov::genai::PerfMetrics::get_microsec(infer_end - infer_start));
     }
 
@@ -225,16 +247,21 @@ std::vector<int64_t> LLMInferWrapper::infer_next_return_all(const std::vector<in
     m_request.set_tensor("input_ids", new_input_ids);
 
     auto attention_mask = m_request.get_tensor("attention_mask");
-    ov::Tensor new_attention_mask(attention_mask.get_element_type(), ov::Shape{BATCH_SIZE, m_num_processed_tokens + tokens_size});
+    ov::Tensor new_attention_mask(
+        attention_mask.get_element_type(),
+        ov::Shape{BATCH_SIZE, m_num_processed_tokens + tokens_size}
+    );
     std::copy_n(attention_mask.data<int64_t>(), m_num_processed_tokens, new_attention_mask.data<int64_t>());
     std::fill_n(new_attention_mask.data<int64_t>() + m_num_processed_tokens, tokens_size, 1);
     m_request.set_tensor("attention_mask", new_attention_mask);
 
     auto position_ids = m_request.get_tensor("position_ids");
     ov::Tensor new_position_ids(position_ids.get_element_type(), ov::Shape{BATCH_SIZE, tokens_size});
-    std::iota(new_position_ids.data<int64_t>(),
-              new_position_ids.data<int64_t>() + new_position_ids.get_size(),
-              m_num_processed_tokens);
+    std::iota(
+        new_position_ids.data<int64_t>(),
+        new_position_ids.data<int64_t>() + new_position_ids.get_size(),
+        m_num_processed_tokens
+    );
     m_request.set_tensor("position_ids", new_position_ids);
 
     const auto infer_start = std::chrono::steady_clock::now();
@@ -260,8 +287,11 @@ std::vector<int64_t> LLMInferWrapper::infer_next_return_all(const std::vector<in
 
     infer_next_return_all_timer.end();
     update_perf_stat_by_infer_duration(
-        raw_perf_metrics, ov::genai::PerfMetrics::get_microsec(infer_end - infer_start),
-        infer_next_return_all_timer.get_duration_microsec(), tokens_size);
+        raw_perf_metrics,
+        ov::genai::PerfMetrics::get_microsec(infer_end - infer_start),
+        infer_next_return_all_timer.get_duration_microsec(),
+        tokens_size
+    );
     return sampled_tokens;
 }
 
@@ -282,7 +312,7 @@ void LLMInferWrapper::trim_kv_cache(const size_t tokens_to_remove) {
         // Trim kv_cache values on tokens_to_remove
         ov::genai::utils::CacheState to_trim_state(m_cache_types);
         to_trim_state.num_tokens_to_trim = tokens_to_remove;
-        to_trim_state.seq_length_axis =  m_kv_pos.seq_len;
+        to_trim_state.seq_length_axis = m_kv_pos.seq_len;
         to_trim_state.reset_mem_state = false;
         ov::genai::utils::trim_kv_cache(m_request, to_trim_state, {});
     }
@@ -300,7 +330,7 @@ void LLMInferWrapper::trim_kv_cache(const size_t tokens_to_remove) {
 }
 
 void LLMInferWrapper::reset_state() {
-    raw_perf_metrics.m_inference_durations =  {{ ov::genai::MicroSeconds(0.0f) }};
+    raw_perf_metrics.m_inference_durations = {{ov::genai::MicroSeconds(0.0f)}};
     return m_request.reset_state();
 }
 
@@ -309,14 +339,20 @@ void LLMInferWrapper::release_memory() {
 }
 
 void LLMInferWrapper::set_already_allocated_input_for_1_token() {
-    m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1},  reinterpret_cast<void*>(&m_new_input_token)));
-    m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, reinterpret_cast<void*>(&m_new_position_id)));
+    m_request.set_tensor(
+        "input_ids",
+        ov::Tensor(ov::element::i64, ov::Shape{1, 1}, reinterpret_cast<void*>(&m_new_input_token))
+    );
+    m_request.set_tensor(
+        "position_ids",
+        ov::Tensor(ov::element::i64, ov::Shape{1, 1}, reinterpret_cast<void*>(&m_new_position_id))
+    );
 }
 
 // TODO: Use already provided Sampler API, that will support both greedy and
 //       multinomial decoding.
 std::variant<int64_t, std::vector<int64_t>>
-    LLMInferWrapper::sample_tokens(const ov::Tensor& logits, std::size_t num_tokens_to_sample) {
+LLMInferWrapper::sample_tokens(const ov::Tensor& logits, std::size_t num_tokens_to_sample) {
     OPENVINO_ASSERT(m_num_processed_tokens > 0, "sample_tokens() can be called only after infer_first()!");
 
     // logits.shape = [1, seq_len, vocab_size].
@@ -347,8 +383,10 @@ std::variant<int64_t, std::vector<int64_t>>
     }
 }
 
-StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(const ov::genai::ModelDesc& main_model_desc,
-                                                               const ov::genai::ModelDesc& draft_model_desc)
+StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
+    const ov::genai::ModelDesc& main_model_desc,
+    const ov::genai::ModelDesc& draft_model_desc
+)
     : StatefulSpeculativePipelineBase(main_model_desc.tokenizer, main_model_desc.generation_config) {
     OPENVINO_ASSERT(main_model_desc.model != nullptr, "Main model cannot be null");
     OPENVINO_ASSERT(draft_model_desc.model != nullptr, "Draft model cannot be null");
@@ -367,9 +405,12 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(const ov::genai::
     ov::genai::Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
     ov::genai::Tokenizer draft_model_tokenizer = draft_model_desc.tokenizer;
     // todo: remove this condition after support of CVS-154103
-    OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
+    OPENVINO_ASSERT(
+        are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer),
+        "Tokenizers for draft and main models are different!"
+    );
     m_tokenizer = main_model_tokenizer;
-    
+
     // Draft model (which is smaller, less accurate but faster)
     auto draft_model_desc_copy = draft_model_desc;
     if (draft_model_desc_copy.device.empty()) {
@@ -413,9 +454,11 @@ GenerationConfig StatefulSpeculativeLLMPipeline::resolve_generation_config(Optio
     return config;
 }
 
-EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInputs& inputs,
-                                                               const GenerationConfig& config,
-                                                               StreamerVariant streamer) {
+EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(
+    const EncodedInputs& inputs,
+    const GenerationConfig& config,
+    StreamerVariant streamer
+) {
     ManualTimer generate_timer("StatefulSpeculativeLLMPipeline::generate_tokens(EncodedInputs)");
     generate_timer.start();
     ov::Tensor input_ids;
@@ -433,11 +476,12 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
     const size_t batch_size = prompt_shape[0];
     OPENVINO_ASSERT(batch_size == 1u, "Currently only batch size=1 is supported");
 
-    OPENVINO_ASSERT(config.is_greedy_decoding(),
-        "Currently only greedy decoding is supported");
+    OPENVINO_ASSERT(config.is_greedy_decoding(), "Currently only greedy decoding is supported");
 
-    OPENVINO_ASSERT(config.num_return_sequences == 1u,
-        "Currently only \"num_return_sequences\" equal to 1 is supported!");
+    OPENVINO_ASSERT(
+        config.num_return_sequences == 1u,
+        "Currently only \"num_return_sequences\" equal to 1 is supported!"
+    );
 
     m_main_request->set_generation_config(config);
 
@@ -472,8 +516,12 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
     auto out_token = m_main_request->infer_first(input_ids, attention_mask, position_ids);
 
     first_token_timer.end();
-    update_perf_stat_by_token_time(raw_perf_counters, first_token_timer.get_duration_microsec(),
-                                   first_token_timer.get_end_time(), 1u);
+    update_perf_stat_by_token_time(
+        raw_perf_counters,
+        first_token_timer.get_duration_microsec(),
+        first_token_timer.get_end_time(),
+        1u
+    );
 
     m_draft_request->infer_first(input_ids, attention_mask, position_ids);
 
@@ -482,14 +530,18 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
     auto main_logits = m_main_request->get_logits();
     size_t draft_vocab_size = draft_logits.get_shape().back();
     size_t main_vocab_size = main_logits.get_shape().back();
-    OPENVINO_ASSERT(draft_vocab_size == main_vocab_size,
-                    "Vocab sizes should be the same for the both: main and draft models!");
+    OPENVINO_ASSERT(
+        draft_vocab_size == main_vocab_size,
+        "Vocab sizes should be the same for the both: main and draft models!"
+    );
 
-    OPENVINO_ASSERT(draft_logits.get_shape().at(1) <= main_logits.get_shape().at(1),
-                    "Num of generated useful logits from draft models should be less"
-                    " or equal than ones from main model.");
+    OPENVINO_ASSERT(
+        draft_logits.get_shape().at(1) <= main_logits.get_shape().at(1),
+        "Num of generated useful logits from draft models should be less"
+        " or equal than ones from main model."
+    );
 
-    auto streaming_status = stream_generated_tokens(streamer_ptr, std::vector<int64_t> {out_token});
+    auto streaming_status = stream_generated_tokens(streamer_ptr, std::vector<int64_t>{out_token});
     results.tokens[0].push_back(out_token);
 
     // Creating timers for performance metrics calculation:
@@ -531,8 +583,9 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
             // model, but as main model will consume candidates + its previous output
             // then we need to preserve this one spot in main kvcache for previous
             // output.
-            m_main_request->get_kvcache_capacity() - 1);
-        int64_t generation_room_for_candidates = 
+            m_main_request->get_kvcache_capacity() - 1
+        );
+        int64_t generation_room_for_candidates =
             // Take into the account output token, generated on candidates.
             // If we accept all candidates by the main model, then we will generate
             // output of length equal to number of candidates + one output token from
@@ -540,8 +593,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
             // As output token number is limited we can generate candidates of only
             // remained output tokens number - 1 (for output token).
             m_main_request->get_generation_capacity() - 1;
-        int64_t candidates_can_be_generated = std::min(
-            kvcache_room_for_candidates, generation_room_for_candidates);
+        int64_t candidates_can_be_generated = std::min(kvcache_room_for_candidates, generation_room_for_candidates);
         if (candidates_can_be_generated <= 0) {
             auto remainder = m_main_request->get_generation_capacity();
             // If user asked for more tokens in answer and we have
@@ -557,7 +609,12 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
 
                     iteration_timer.end();
                     auto iteration_duration = iteration_timer.get_duration_microsec();
-                    update_perf_stat_by_token_time(raw_perf_counters, iteration_duration, main_timer.get_end_time(), 1u);
+                    update_perf_stat_by_token_time(
+                        raw_perf_counters,
+                        iteration_duration,
+                        main_timer.get_end_time(),
+                        1u
+                    );
 
                     main_timer.clear();
                     iteration_timer.clear();
@@ -566,8 +623,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
             }
             break;
         }
-        auto candidates_to_generate = std::min(static_cast<int64_t>(m_candidates_num),
-            candidates_can_be_generated);
+        auto candidates_to_generate = std::min(static_cast<int64_t>(m_candidates_num), candidates_can_be_generated);
         candidates.reserve(candidates_to_generate);
 
         // If draft_prefix_token is present, run an infer on it to collect KV cache for it
@@ -578,7 +634,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
         // Note: If `draft_prefix_exists == true`, then we append performance metrics of
         // newly generated candidate to the previously generated token on draft prefix prompt,
         // as we are only interested in one output from these two inference operations.
-        int64_t candidate = m_draft_request->infer_next(out_token, draft_prefix_exists); 
+        int64_t candidate = m_draft_request->infer_next(out_token, draft_prefix_exists);
         candidates.push_back(candidate);
 
         for (size_t i = 1; i < candidates_to_generate; i++) {
@@ -623,7 +679,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
         auto mismatched_candidates = candidates.size() - accepted_tokens_number;
         std::vector<int64_t> validated_tokens(ref_tokens.begin(), ref_tokens.end() - mismatched_candidates);
         out_token = validated_tokens.back();
-    
+
         // Phase 4: Update inference wrappers based on found matches and mismatches
         if (mismatched_candidates > 0) {
             m_draft_request->trim_kv_cache(mismatched_candidates - 1);
@@ -637,7 +693,10 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
         auto& main_perf_generated_tokens = m_main_request->raw_perf_metrics.m_batch_sizes.back();
         main_perf_generated_tokens -= mismatched_candidates;
         m_sd_metrics.update_draft_generated_len(0 /* request_id */, candidates_to_generate);
-        m_sd_metrics.update_acceptance_rate(0 /* request_id */, (accepted_tokens_number * 100.f) / candidates_to_generate);
+        m_sd_metrics.update_acceptance_rate(
+            0 /* request_id */,
+            (accepted_tokens_number * 100.f) / candidates_to_generate
+        );
         m_sd_metrics.update_draft_accepted_tokens(0 /* request_id */, accepted_tokens_number);
         m_sd_metrics.update_generated_len(validated_tokens.size());
         if (utils::env_setup_for_print_debug_info()) {
@@ -650,13 +709,18 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
 
         iteration_timer.end();
         auto iteration_duration = iteration_timer.get_duration_microsec();
-        update_perf_stat_by_token_time(raw_perf_counters, iteration_duration, main_timer.get_end_time(), validated_tokens.size());
+        update_perf_stat_by_token_time(
+            raw_perf_counters,
+            iteration_duration,
+            main_timer.get_end_time(),
+            validated_tokens.size()
+        );
         iteration_timer.clear();
         main_timer.clear();
     }
 
     m_streaming_was_cancelled = (streaming_status == ov::genai::StreamingStatus::CANCEL);
-    if (streamer_ptr) { // push streamer's cache
+    if (streamer_ptr) {  // push streamer's cache
         streamer_ptr->end();
     }
 
@@ -692,8 +756,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
     return results;
 }
 
-ov::genai::SpeculativeDecodingMetrics
-StatefulSpeculativeLLMPipeline::get_speculative_decoding_metrics() const {
+ov::genai::SpeculativeDecodingMetrics StatefulSpeculativeLLMPipeline::get_speculative_decoding_metrics() const {
     return m_sd_metrics;
 };
 

@@ -1,10 +1,10 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <limits>
-#include <cstdint>
-
 #include "gguf_tokenizer.hpp"
+
+#include <cstdint>
+#include <limits>
 
 #include "openvino/op/add.hpp"
 #include "openvino/op/constant.hpp"
@@ -27,7 +27,6 @@
 
 using namespace ov::op;
 
-
 constexpr int32_t MAX_LENGTH = 8192;
 constexpr float VOCAB_SIZE_CACHE_PROPORTION = 0.2f;
 constexpr int32_t MIN_CACHE_CAPACITY = 20'000;
@@ -39,7 +38,8 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 }
 
 std::map<std::string, GGUFMetaData> tokenizer_config_from_meta(
-    const std::unordered_map<std::string, GGUFMetaData>& metadata) {
+    const std::unordered_map<std::string, GGUFMetaData>& metadata
+) {
     std::map<std::string, GGUFMetaData> tokenizer_config;
 
     const std::string prefix = "tokenizer.";
@@ -124,7 +124,7 @@ bool is_special_token(int32_t token_type) {
 
 std::string quote_meta(const std::string& str) {
     std::string result = "(";
-    
+
     // todo: add also utf validate
     for (char c : str) {
         if (!std::isalnum(c) && c != '_') {
@@ -315,7 +315,8 @@ std::vector<std::string> split_utf8_chars(const std::string& input) {
         }
         OPENVINO_ASSERT(
             std::numeric_limits<size_t>::max() - i > len,
-            "UTF-8 character length exceeds size_t limit at index ", i
+            "UTF-8 character length exceeds size_t limit at index ",
+            i
         );
         result.emplace_back(input.substr(i, len));
         i += len;
@@ -356,9 +357,11 @@ std::vector<std::vector<uint8_t>> parse_bbpe_vocab(const std::vector<std::string
     return res;
 }
 
-ov::OutputVector parse_bbpe_config(const std::map<std::string, GGUFMetaData>& tokenizer_config,
-                                   ov::OutputVector inputs,
-                                   const FactoryCreateType& create_func) {
+ov::OutputVector parse_bbpe_config(
+    const std::map<std::string, GGUFMetaData>& tokenizer_config,
+    ov::OutputVector inputs,
+    const FactoryCreateType& create_func
+) {
     // 1. Parse vocab and add as input
     std::vector<std::string> vocab_from_config{};
     if (auto val = std::get_if<std::vector<std::string>>(&tokenizer_config.at("tokens"))) {
@@ -444,8 +447,10 @@ ov::OutputVector parse_bbpe_config(const std::map<std::string, GGUFMetaData>& to
 }
 
 std::tuple<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>, std::map<std::string, GGUFMetaData>>
-create_tokenizer_from_config(const std::shared_ptr<void>& shared_object_ov_tokenizers,
-                             const std::filesystem::path& gguf_model_path) {
+create_tokenizer_from_config(
+    const std::shared_ptr<void>& shared_object_ov_tokenizers,
+    const std::filesystem::path& gguf_model_path
+) {
     auto gguf_metadata = std::get<0>(get_gguf_data(gguf_model_path.string()));
     auto tokenizer_config = tokenizer_config_from_meta(gguf_metadata);
 
@@ -601,16 +606,21 @@ std::string patch_gguf_chat_template(const std::string& chat_template) {
 
     const std::string qwen3_substring_to_find_0 = R"({%- for index in range(ns.last_query_index, -1, -1) %})";
     const std::string qwen3_substring_to_find_1 = R"({%- set message = messages[index] %})";
-    const std::string qwen3_substring_to_find_2 = R"({%- if ns.multi_step_tool and message.role == "user" and not('<tool_response>' in message.content and '</tool_response>' in message.content) %})";
+    const std::string qwen3_substring_to_find_2 =
+        R"({%- if ns.multi_step_tool and message.role == "user" and not('<tool_response>' in message.content and '</tool_response>' in message.content) %})";
 
     const std::string qwen3_replacement_substring_0 = R"({%- for message in messages[::-1] %})";
     const std::string qwen3_replacement_substring_1 = R"({%- set index = (messages|length - 1) - loop.index0 %})";
-    const std::string qwen3_replacement_substring_2 = R"({%- if ns.multi_step_tool and message.role == "user" and not(message.content.startswith('<tool_response>') and message.content.endswith('</tool_response>')) %})";
+    const std::string qwen3_replacement_substring_2 =
+        R"({%- if ns.multi_step_tool and message.role == "user" and not(message.content.startswith('<tool_response>') and message.content.endswith('</tool_response>')) %})";
 
-    const std::string qwen3_substring_to_find = qwen3_substring_to_find_0 + "\n" + "    " + qwen3_substring_to_find_1 + "\n" + "    "  + qwen3_substring_to_find_2;
-    const std::string qwen3_replacement_substring = qwen3_replacement_substring_0 + "\n" + "    " + qwen3_replacement_substring_1 + "\n" + "    "  + qwen3_replacement_substring_2;
+    const std::string qwen3_substring_to_find = qwen3_substring_to_find_0 + "\n" + "    " + qwen3_substring_to_find_1 +
+                                                "\n" + "    " + qwen3_substring_to_find_2;
+    const std::string qwen3_replacement_substring = qwen3_replacement_substring_0 + "\n" + "    " +
+                                                    qwen3_replacement_substring_1 + "\n" + "    " +
+                                                    qwen3_replacement_substring_2;
     size_t pos_qwen3 = patched_chat_template.find(qwen3_substring_to_find);
-    
+
     if (pos_qwen3 != std::string::npos) {
         // Substring found, perform the replacement
         patched_chat_template.replace(pos_qwen3, qwen3_substring_to_find.length(), qwen3_replacement_substring);

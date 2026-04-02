@@ -6,9 +6,11 @@
 #include <chrono>
 #include <thread>
 
-StartChatWorker::StartChatWorker(Function& callback,
-                                 std::shared_ptr<ov::genai::LLMPipeline>& pipe,
-                                 std::string system_message)
+StartChatWorker::StartChatWorker(
+    Function& callback,
+    std::shared_ptr<ov::genai::LLMPipeline>& pipe,
+    std::string system_message
+)
     : AsyncWorker(callback),
       pipe(pipe),
       system_message(system_message) {};

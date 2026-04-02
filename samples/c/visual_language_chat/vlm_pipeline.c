@@ -6,10 +6,12 @@
  * @brief Example demonstrating how to use OpenVINO GenAI VLM Pipeline C API
  */
 
+#include "openvino/genai/c/vlm_pipeline.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "openvino/genai/c/vlm_pipeline.h"
+
 #include "load_image.h"
 
 #define MAX_PROMPT_LENGTH 64
@@ -40,10 +42,7 @@ int main(int argc, char* argv[]) {
     ov_genai_vlm_pipeline_create(models_path, device, 0, &pipeline);
 
     // Set up streaming callback
-    streamer_callback callback = {
-        .callback_func = stream_callback,
-        .args = NULL
-    };
+    streamer_callback callback = {.callback_func = stream_callback, .args = NULL};
 
     // Generate response
     ov_genai_vlm_decoded_results* results = NULL;
@@ -66,14 +65,13 @@ int main(int argc, char* argv[]) {
     while (fgets(prompt, MAX_PROMPT_LENGTH, stdin)) {
         prompt[strcspn(prompt, "\n")] = 0;
         if (strlen(prompt) == 0) {
-            continue; 
+            continue;
         }
         // New images and videos can be passed at each turn
         ov_genai_vlm_pipeline_generate(pipeline, prompt, NULL, 0, config, &callback, &results);
         printf("\n----------\nquestion:\n");
     }
     ov_genai_vlm_pipeline_finish_chat(pipeline);
-
 
     // Get performance metrics
     ov_genai_perf_metrics* metrics = NULL;

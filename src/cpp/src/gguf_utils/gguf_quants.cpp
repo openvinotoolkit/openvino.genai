@@ -28,10 +28,12 @@ void unpack_32_4(uint8_t* data, uint8_t* dst) {
 
 // Extracts (weight, scales, biases) from Q4_0 tensors.
 // Data layout is: |16 bit scale|32 x 4bit weights|.
-void extract_q4_0_data(const gguf_tensor& tensor,
-                       ov::Tensor& weights_arr,
-                       ov::Tensor& scales_arr,
-                       ov::Tensor& biases_arr) {
+void extract_q4_0_data(
+    const gguf_tensor& tensor,
+    ov::Tensor& weights_arr,
+    ov::Tensor& scales_arr,
+    ov::Tensor& biases_arr
+) {
     const uint64_t bytes_per_block = 18;  // 2 bytes scale, 32x0.5 byte weights
     auto data = static_cast<uint8_t*>(tensor.weights_data);
     auto weights = static_cast<uint8_t*>(weights_arr.data());
@@ -47,10 +49,12 @@ void extract_q4_0_data(const gguf_tensor& tensor,
 
 // Extracts (weight, scales, biases) from Q4_1 tensors.
 // Data layout is: |16 bit scale|16 bit bias|32 x 4bit weights|.
-void extract_q4_1_data(const gguf_tensor& tensor,
-                       ov::Tensor& weights_arr,
-                       ov::Tensor& scales_arr,
-                       ov::Tensor& biases_arr) {
+void extract_q4_1_data(
+    const gguf_tensor& tensor,
+    ov::Tensor& weights_arr,
+    ov::Tensor& scales_arr,
+    ov::Tensor& biases_arr
+) {
     const uint64_t bytes_per_block = 20;  // 2 bytes scale, 2 bytes bias, 32x0.5 byte weights
     auto data = static_cast<uint8_t*>(tensor.weights_data);
     auto weights = static_cast<uint8_t*>(weights_arr.data());
@@ -65,10 +69,12 @@ void extract_q4_1_data(const gguf_tensor& tensor,
 
 // Extracts (weight, scales, biases) from Q8_0 tensors.
 // Data layout is: |16 bit scale|32 x 8bit weights|.
-void extract_q8_0_data(const gguf_tensor& tensor,
-                       ov::Tensor& weights_arr,
-                       ov::Tensor& scales_arr,
-                       ov::Tensor& biases_arr) {
+void extract_q8_0_data(
+    const gguf_tensor& tensor,
+    ov::Tensor& weights_arr,
+    ov::Tensor& scales_arr,
+    ov::Tensor& biases_arr
+) {
     const uint64_t weights_per_block = 32;
     const uint64_t bytes_per_block = 34;  // 2 bytes scale, 32x1 byte weights
     auto data = static_cast<uint8_t*>(tensor.weights_data);
@@ -107,10 +113,12 @@ void unpack_256_4(const uint8_t* data, uint8_t* dst) {
     }
 }
 
-void extract_q4_k_data(const gguf_tensor& tensor,
-                       ov::Tensor& weights_arr,
-                       ov::Tensor& scales_arr,
-                       ov::Tensor& biases_arr) {
+void extract_q4_k_data(
+    const gguf_tensor& tensor,
+    ov::Tensor& weights_arr,
+    ov::Tensor& scales_arr,
+    ov::Tensor& biases_arr
+) {
     const uint64_t bytes_per_block = 2 + 2 + 12 + 128;
     const uint64_t n_super_block = tensor.bsize / bytes_per_block;
     auto data = static_cast<uint8_t*>(tensor.weights_data);
@@ -158,10 +166,12 @@ void extract_q4_k_data(const gguf_tensor& tensor,
     });
 }
 
-void extract_q6_k_data(const gguf_tensor& tensor,
-                       ov::Tensor& weights_arr,
-                       ov::Tensor& scales_arr,
-                       ov::Tensor& biases_arr) {
+void extract_q6_k_data(
+    const gguf_tensor& tensor,
+    ov::Tensor& weights_arr,
+    ov::Tensor& scales_arr,
+    ov::Tensor& biases_arr
+) {
     const uint64_t bytes_per_block = 128 + 64 + 16 + 2;
     const uint64_t n_super_block = tensor.bsize / bytes_per_block;
     auto data = static_cast<uint8_t*>(tensor.weights_data);
@@ -199,9 +209,11 @@ void extract_q6_k_data(const gguf_tensor& tensor,
     }
 }
 
-void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
-                         std::unordered_map<std::string, gguf_tensor_type>& qtype_map,
-                         const gguf_tensor& tensor) {
+void gguf_load_quantized(
+    std::unordered_map<std::string, ov::Tensor>& a,
+    std::unordered_map<std::string, gguf_tensor_type>& qtype_map,
+    const gguf_tensor& tensor
+) {
     uint64_t weights_per_byte;
     if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 || tensor.type == GGUF_TYPE_Q4_K) {
         weights_per_byte = 2;
@@ -221,11 +233,13 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
         weights_per_block = 32;
     }
 
-    OPENVINO_ASSERT(shape.back() % weights_per_block == 0,
-                    "[load_gguf] tensor ",
-                    name,
-                    " has incompatible last dim shape: ",
-                    shape.back());
+    OPENVINO_ASSERT(
+        shape.back() % weights_per_block == 0,
+        "[load_gguf] tensor ",
+        name,
+        " has incompatible last dim shape: ",
+        shape.back()
+    );
 
     auto weights_shape = shape;
     weights_shape.back() /= (weights_per_byte * 4);  // means u32 type can store 8 q4 or 4 q8
@@ -254,10 +268,12 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
     a.emplace(name, std::move(weights));
 
     auto check_insert = [](const auto& inserted) {
-        OPENVINO_ASSERT(inserted.second,
-                        "[load_gguf] Duplicate parameter name ",
-                        inserted.first->second.data(),
-                        ". This can happen when loading quantized tensors");
+        OPENVINO_ASSERT(
+            inserted.second,
+            "[load_gguf] Duplicate parameter name ",
+            inserted.first->second.data(),
+            ". This can happen when loading quantized tensors"
+        );
     };
 
     constexpr std::string_view weight_suffix = ".weight";

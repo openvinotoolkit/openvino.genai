@@ -5,16 +5,16 @@
 
 #include <filesystem>
 #include <limits>
-#include <variant>
-#include <string>
 #include <sstream>
+#include <string>
+#include <variant>
 
-#include "openvino/runtime/compiled_model.hpp"
-#include "openvino/runtime/infer_request.hpp"
-#include "openvino/genai/tokenizer.hpp"
-#include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/parsers.hpp"
+#include "openvino/genai/scheduler_config.hpp"
+#include "openvino/genai/tokenizer.hpp"
+#include "openvino/runtime/compiled_model.hpp"
+#include "openvino/runtime/infer_request.hpp"
 
 namespace ov {
 namespace genai {
@@ -26,7 +26,6 @@ namespace genai {
           "NEVER" stops when there cannot be better candidates.
  */
 enum class StopCriteria { EARLY, HEURISTIC, NEVER };
-
 
 /**
  * @brief StructuralTagItem is used to define a structural tag with its properties.
@@ -60,10 +59,12 @@ struct OPENVINO_GENAI_EXPORTS StructuralTagItem {
  *
  * Note:
  *   - Simple triggers like "<" may activate structured output unexpectedly if present in regular text.
- *   - Very specific or long triggers may be difficult for the model to generate, so structured output may not be triggered.
+ *   - Very specific or long triggers may be difficult for the model to generate, so structured output may not be
+ * triggered.
  *
  * @param structural_tags List of StructuralTagItem objects defining structural tags.
- * @param triggers List of strings that trigger structured output generation. Triggers may match the beginning or part of a tag's begin string.
+ * @param triggers List of strings that trigger structured output generation. Triggers may match the beginning or part
+ * of a tag's begin string.
  */
 struct OPENVINO_GENAI_EXPORTS StructuralTagsConfig {
 public:
@@ -81,24 +82,27 @@ public:
     std::vector<std::string> triggers;
 };
 
-/* 
-* Structured output parameters:
-* @param json_schema if set, the output will be a JSON string constrained by the specified json_schema.
-* @param regex if set, the output will be constrained by specified regex.
-* @param grammar if set, the output will be constrained by specified EBNF grammar.
-* @param structural_tags_config if set, the output could contain substrings constrained by the specified structural tags.
-* @param backend if set, the structured output generation will use specified backend, currently only "xgrammar" is supported.
-* 
-* If several parameters are set, e.g. json_schema and regex, then an error will be thrown when validating the configuration.
-*/
+/*
+ * Structured output parameters:
+ * @param json_schema if set, the output will be a JSON string constrained by the specified json_schema.
+ * @param regex if set, the output will be constrained by specified regex.
+ * @param grammar if set, the output will be constrained by specified EBNF grammar.
+ * @param structural_tags_config if set, the output could contain substrings constrained by the specified structural
+ * tags.
+ * @param backend if set, the structured output generation will use specified backend, currently only "xgrammar" is
+ * supported.
+ *
+ * If several parameters are set, e.g. json_schema and regex, then an error will be thrown when validating the
+ * configuration.
+ */
 class OPENVINO_GENAI_EXPORTS StructuredOutputConfig {
 public:
-    /* 
-    * @brief Constructor that initializes the structured output configuration with properties.
-    * @param properties A map of properties to initialize the structured output configuration.
-    * 
-    * Example: StructuredOutputConfig config({{ov::genai::json_schema(json_schema_str)}});
-    */
+    /*
+     * @brief Constructor that initializes the structured output configuration with properties.
+     * @param properties A map of properties to initialize the structured output configuration.
+     *
+     * Example: StructuredOutputConfig config({{ov::genai::json_schema(json_schema_str)}});
+     */
     StructuredOutputConfig(const ov::AnyMap& properties);
     StructuredOutputConfig() = default;
 
@@ -107,24 +111,38 @@ public:
         stream << '"';
         for (char character : input) {
             switch (character) {
-                case '"': stream << "\\\""; break;
-                case '\\': stream << "\\\\"; break;
-                case '\b': stream << "\\b"; break;
-                case '\f': stream << "\\f"; break;
-                case '\n': stream << "\\n"; break;
-                case '\r': stream << "\\r"; break;
-                case '\t': stream << "\\t"; break;
-                default: {
-                    // Interpret `character` as a raw byte to avoid sign-extension on platforms where `char` is signed. 
-                    unsigned char uc = static_cast<unsigned char>(character);
-                    if (uc < 0x20) {
-                        // control characters < 0x20 must be escaped as \uXXXX in JSON
-                        stream << "\\u" << std::hex << std::uppercase << std::setfill('0') << std::setw(4)
-                               << static_cast<int>(uc) << std::dec << std::nouppercase;
-                    } else {
-                        stream << character;
-                    }
+            case '"':
+                stream << "\\\"";
+                break;
+            case '\\':
+                stream << "\\\\";
+                break;
+            case '\b':
+                stream << "\\b";
+                break;
+            case '\f':
+                stream << "\\f";
+                break;
+            case '\n':
+                stream << "\\n";
+                break;
+            case '\r':
+                stream << "\\r";
+                break;
+            case '\t':
+                stream << "\\t";
+                break;
+            default: {
+                // Interpret `character` as a raw byte to avoid sign-extension on platforms where `char` is signed.
+                unsigned char uc = static_cast<unsigned char>(character);
+                if (uc < 0x20) {
+                    // control characters < 0x20 must be escaped as \uXXXX in JSON
+                    stream << "\\u" << std::hex << std::uppercase << std::setfill('0') << std::setw(4)
+                           << static_cast<int>(uc) << std::dec << std::nouppercase;
+                } else {
+                    stream << character;
                 }
+            }
             }
         }
         stream << '"';
@@ -267,26 +285,29 @@ public:
         std::shared_ptr<Union>,
         std::shared_ptr<Tag>,
         std::shared_ptr<TriggeredTags>,
-        std::shared_ptr<TagsWithSeparator>
-    >;
+        std::shared_ptr<TagsWithSeparator>>;
     using CompoundGrammar = StructuralTag;
 
     template <typename T>
     static std::string structural_tag_to_string(const T& g) {
         if constexpr (std::is_same_v<T, std::string>) {
-                return g;
-        } else if constexpr (std::is_same_v<T, ov::genai::StructuredOutputConfig::Regex> ||
-                      std::is_same_v<T, ov::genai::StructuredOutputConfig::JSONSchema> ||
-                      std::is_same_v<T, ov::genai::StructuredOutputConfig::EBNF> ||
-                      std::is_same_v<T, ov::genai::StructuredOutputConfig::ConstString> ||
-                      std::is_same_v<T, ov::genai::StructuredOutputConfig::AnyText> ||
-                      std::is_same_v<T, ov::genai::StructuredOutputConfig::QwenXMLParametersFormat>) {
+            return g;
+        } else if constexpr (
+            std::is_same_v<T, ov::genai::StructuredOutputConfig::Regex> ||
+            std::is_same_v<T, ov::genai::StructuredOutputConfig::JSONSchema> ||
+            std::is_same_v<T, ov::genai::StructuredOutputConfig::EBNF> ||
+            std::is_same_v<T, ov::genai::StructuredOutputConfig::ConstString> ||
+            std::is_same_v<T, ov::genai::StructuredOutputConfig::AnyText> ||
+            std::is_same_v<T, ov::genai::StructuredOutputConfig::QwenXMLParametersFormat>
+        ) {
             return g.to_string();
-        } else if constexpr (std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>> ||
-                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Union>> ||
-                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Tag>> ||
-                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TriggeredTags>> ||
-                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>>) {
+        } else if constexpr (
+            std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>> ||
+            std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Union>> ||
+            std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Tag>> ||
+            std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TriggeredTags>> ||
+            std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>>
+        ) {
             return g ? g->to_string() : std::string("null");
         } else {
             OPENVINO_THROW("Unsupported structural tag, cannot convert to string:" + std::string(typeid(g).name()));
@@ -297,18 +318,22 @@ public:
     static std::string structural_tag_to_json(const T& g) {
         if constexpr (std::is_same_v<T, std::string>) {
             return g;
-        } else if constexpr (std::is_same_v<T, ov::genai::StructuredOutputConfig::Regex> ||
-                             std::is_same_v<T, ov::genai::StructuredOutputConfig::JSONSchema> ||
-                             std::is_same_v<T, ov::genai::StructuredOutputConfig::EBNF> ||
-                             std::is_same_v<T, ov::genai::StructuredOutputConfig::ConstString> ||
-                             std::is_same_v<T, ov::genai::StructuredOutputConfig::AnyText> ||
-                             std::is_same_v<T, ov::genai::StructuredOutputConfig::QwenXMLParametersFormat>) {
+        } else if constexpr (
+            std::is_same_v<T, ov::genai::StructuredOutputConfig::Regex> ||
+            std::is_same_v<T, ov::genai::StructuredOutputConfig::JSONSchema> ||
+            std::is_same_v<T, ov::genai::StructuredOutputConfig::EBNF> ||
+            std::is_same_v<T, ov::genai::StructuredOutputConfig::ConstString> ||
+            std::is_same_v<T, ov::genai::StructuredOutputConfig::AnyText> ||
+            std::is_same_v<T, ov::genai::StructuredOutputConfig::QwenXMLParametersFormat>
+        ) {
             return g.to_json();
-        } else if constexpr (std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>> ||
-                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Union>> ||
-                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Tag>> ||
-                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TriggeredTags>> ||
-                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>>) {
+        } else if constexpr (
+            std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>> ||
+            std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Union>> ||
+            std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Tag>> ||
+            std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TriggeredTags>> ||
+            std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>>
+        ) {
             return g ? g->to_json() : std::string("null");
         } else {
             OPENVINO_THROW("Unsupported structural tag, cannot convert to json:" + std::string(typeid(g).name()));
@@ -334,7 +359,12 @@ public:
             std::ostringstream oss;
             oss << "{\"type\": \"sequence\", \"elements\": [";
             for (size_t i = 0; i < elements.size(); ++i) {
-                oss << std::visit([](const auto& g) { return structural_tag_to_json(g); }, elements[i]);
+                oss << std::visit(
+                    [](const auto& g) {
+                        return structural_tag_to_json(g);
+                    },
+                    elements[i]
+                );
                 if (i != elements.size() - 1) {
                     oss << ", ";
                 }
@@ -346,7 +376,12 @@ public:
             std::ostringstream oss;
             oss << "Concat(";
             for (size_t i = 0; i < elements.size(); ++i) {
-                oss << std::visit([](const auto& g) -> std::string { return structural_tag_to_string(g); }, elements[i]);
+                oss << std::visit(
+                    [](const auto& g) -> std::string {
+                        return structural_tag_to_string(g);
+                    },
+                    elements[i]
+                );
                 if (i != elements.size() - 1) {
                     oss << ", ";
                 }
@@ -375,7 +410,12 @@ public:
             std::ostringstream oss;
             oss << "{\"type\": \"or\", \"elements\": [";
             for (size_t i = 0; i < elements.size(); ++i) {
-                oss << std::visit([](const auto& g) -> std::string { return structural_tag_to_json(g); }, elements[i]);
+                oss << std::visit(
+                    [](const auto& g) -> std::string {
+                        return structural_tag_to_json(g);
+                    },
+                    elements[i]
+                );
                 if (i != elements.size() - 1) {
                     oss << ", ";
                 }
@@ -387,7 +427,12 @@ public:
             std::ostringstream oss;
             oss << "Union(";
             for (size_t i = 0; i < elements.size(); ++i) {
-                oss << std::visit([](const auto& g) -> std::string { return structural_tag_to_string(g); }, elements[i]);
+                oss << std::visit(
+                    [](const auto& g) -> std::string {
+                        return structural_tag_to_string(g);
+                    },
+                    elements[i]
+                );
                 if (i != elements.size() - 1) {
                     oss << ", ";
                 }
@@ -414,19 +459,32 @@ public:
         std::string end;
 
         Tag() = default;
-        Tag(const std::string& begin, StructuralTag content, const std::string& end) : begin(begin), content(std::move(content)), end(end) {};
+        Tag(const std::string& begin, StructuralTag content, const std::string& end)
+            : begin(begin),
+              content(std::move(content)),
+              end(end) {};
         std::string to_json() const {
             std::ostringstream oss;
-            oss << "{\"type\": \"tag\", \"begin\": " << format_for_json(begin) << ", \"content\": " <<
-                   std::visit([](const auto& g) -> std::string { return structural_tag_to_json(g); }, content) <<
-                   ", \"end\": " << format_for_json(end) << "}";
+            oss << "{\"type\": \"tag\", \"begin\": " << format_for_json(begin) << ", \"content\": "
+                << std::visit(
+                       [](const auto& g) -> std::string {
+                           return structural_tag_to_json(g);
+                       },
+                       content
+                   )
+                << ", \"end\": " << format_for_json(end) << "}";
             return oss.str();
         };
         std::string to_string() const {
             std::ostringstream oss;
-            oss << "Tag(begin=\"" << begin << "\", content=" <<
-                   std::visit([](const auto& g) -> std::string { return structural_tag_to_string(g); }, content) <<
-                   ", end=\"" << end << "\")";
+            oss << "Tag(begin=\"" << begin << "\", content="
+                << std::visit(
+                       [](const auto& g) -> std::string {
+                           return structural_tag_to_string(g);
+                       },
+                       content
+                   )
+                << ", end=\"" << end << "\")";
             return oss.str();
         };
         bool operator==(const Tag& other) const {
@@ -444,15 +502,20 @@ public:
     struct TriggeredTags {
         std::vector<std::string> triggers;
         std::vector<Tag> tags;
-        bool at_least_one = false;  // if true, at least one tag must be generated after trigger
-        bool stop_after_first = false; // if true, structured generation stops after first tag is generated
-        
+        bool at_least_one = false;      // if true, at least one tag must be generated after trigger
+        bool stop_after_first = false;  // if true, structured generation stops after first tag is generated
+
         TriggeredTags() = default;
-        TriggeredTags(const std::vector<std::string>& triggers,
-                      const std::vector<Tag>& tags,
-                      bool at_least_one = false,
-                      bool stop_after_first = false)
-            : triggers(triggers), tags(tags), at_least_one(at_least_one), stop_after_first(stop_after_first) {};
+        TriggeredTags(
+            const std::vector<std::string>& triggers,
+            const std::vector<Tag>& tags,
+            bool at_least_one = false,
+            bool stop_after_first = false
+        )
+            : triggers(triggers),
+              tags(tags),
+              at_least_one(at_least_one),
+              stop_after_first(stop_after_first) {};
         std::string to_json() const {
             std::ostringstream oss;
             oss << "{\"type\": \"triggered_tags\", \"triggers\": [";
@@ -469,8 +532,8 @@ public:
                     oss << ", ";
                 }
             }
-            oss << "], \"at_least_one\": " << (at_least_one ? "true" : "false") <<
-                   ", \"stop_after_first\": " << (stop_after_first ? "true" : "false") << "}";
+            oss << "], \"at_least_one\": " << (at_least_one ? "true" : "false")
+                << ", \"stop_after_first\": " << (stop_after_first ? "true" : "false") << "}";
             return oss.str();
         };
         std::string to_string() const {
@@ -489,8 +552,8 @@ public:
                     oss << ", ";
                 }
             }
-            oss << "], at_least_one=" << (at_least_one ? "True" : "False") <<
-                   ", stop_after_first=" << (stop_after_first ? "True" : "False") << ")";
+            oss << "], at_least_one=" << (at_least_one ? "True" : "False")
+                << ", stop_after_first=" << (stop_after_first ? "True" : "False") << ")";
             return oss.str();
         };
     };
@@ -505,26 +568,32 @@ public:
     struct TagsWithSeparator {
         std::vector<Tag> tags;
         std::string separator;
-        bool at_least_one = false;  // if true, at least one tag must be generated
-        bool stop_after_first = false; // if true, generation stops after first tag is generated
+        bool at_least_one = false;      // if true, at least one tag must be generated
+        bool stop_after_first = false;  // if true, generation stops after first tag is generated
 
         TagsWithSeparator() = default;
-        TagsWithSeparator(const std::vector<Tag>& tags, 
-                          const std::string& separator,
-                          bool at_least_one = false,
-                          bool stop_after_first = false)
-            : tags(tags), separator(separator), at_least_one(at_least_one), stop_after_first(stop_after_first) {};
+        TagsWithSeparator(
+            const std::vector<Tag>& tags,
+            const std::string& separator,
+            bool at_least_one = false,
+            bool stop_after_first = false
+        )
+            : tags(tags),
+              separator(separator),
+              at_least_one(at_least_one),
+              stop_after_first(stop_after_first) {};
         std::string to_json() const {
             std::ostringstream oss;
-            oss << "{\"type\": \"tags_with_separator\", \"separator\": " << format_for_json(separator) << ", \"tags\": [";
+            oss << "{\"type\": \"tags_with_separator\", \"separator\": " << format_for_json(separator)
+                << ", \"tags\": [";
             for (size_t i = 0; i < tags.size(); ++i) {
                 oss << tags[i].to_json();
                 if (i != tags.size() - 1) {
                     oss << ", ";
                 }
             }
-            oss << "], \"at_least_one\": " << (at_least_one ? "true" : "false") <<
-                   ", \"stop_after_first\": " << (stop_after_first ? "true" : "false") << "}";
+            oss << "], \"at_least_one\": " << (at_least_one ? "true" : "false")
+                << ", \"stop_after_first\": " << (stop_after_first ? "true" : "false") << "}";
             return oss.str();
         };
         std::string to_string() const {
@@ -536,8 +605,8 @@ public:
                     oss << ", ";
                 }
             }
-            oss << "], at_least_one=" << (at_least_one ? "true" : "false") <<
-                   ", stop_after_first=" << (stop_after_first ? "true" : "false") << ")";
+            oss << "], at_least_one=" << (at_least_one ? "true" : "false")
+                << ", stop_after_first=" << (stop_after_first ? "true" : "false") << ")";
             return oss.str();
         };
     };
@@ -553,34 +622,37 @@ public:
     void update_config(const ov::AnyMap& properties);
 };
 
-
 OPENVINO_GENAI_EXPORTS std::shared_ptr<StructuredOutputConfig::Concat>
-operator+(const StructuredOutputConfig::StructuralTag& lhs,
-          const StructuredOutputConfig::StructuralTag& rhs);
+operator+(const StructuredOutputConfig::StructuralTag& lhs, const StructuredOutputConfig::StructuralTag& rhs);
 
 OPENVINO_GENAI_EXPORTS std::shared_ptr<StructuredOutputConfig::Union>
-operator|(const StructuredOutputConfig::StructuralTag& lhs,
-          const StructuredOutputConfig::StructuralTag& rhs);
+operator|(const StructuredOutputConfig::StructuralTag& lhs, const StructuredOutputConfig::StructuralTag& rhs);
 
 /**
- * @brief Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
- * and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
+ * @brief Structure to keep generation config parameters. For a selected method of decoding, only parameters from that
+ group
+ * and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random
+ sampling parameters will
  * be used while greedy and beam search parameters will not affect decoding at all.
  *
  * Generic parameters:
  * @param max_length the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
  *        `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
- * @param max_new_tokens the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+ * @param max_new_tokens the maximum numbers of tokens to generate, excluding the number of tokens in the prompt.
+ max_new_tokens has priority over max_length.
  * @param ignore_eos if set to true, then generation will not stop even if <eos> token is met.
  * @param eos_token_id token_id of <eos> (end of sentence)
  * @param min_new_tokens set 0 probability for eos_token_id for the first eos_token_id generated tokens.
  *
  * @param stop_strings A set of strings that will cause pipeline to stop generating further tokens.
- * @param include_stop_str_in_output if set to true stop string that matched generation will be included in generation output (default: false)
+ * @param include_stop_str_in_output if set to true stop string that matched generation will be included in generation
+ output (default: false)
  * @param stop_token_ids A set of tokens that will cause pipeline to stop generating further tokens.
  * @param echo if set to true, output will include user prompt (default: false).
- * @param logprobs number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
- *                 Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+ * @param logprobs number of top logprobs computed for each position, if set to 0, logprobs are not computed and value
+ 0.0 is returned.
+ *                 Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1.
+ (default: 0).
  *
  * @param repetition_penalty the parameter for repetition penalty. 1.0 means no penalty.
  * @param presence_penalty reduces absolute log prob if the token was generated at least once.
@@ -588,24 +660,31 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  *
  * Beam search specific parameters:
  * @param num_beams number of beams for beam search. 1 disables beam search.
- * @param num_beam_groups number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
- * @param diversity_penalty this value is subtracted from a beam's score if it generates the same token as any beam from other group at a
+ * @param num_beam_groups number of groups to divide `num_beams` into in order to ensure diversity among different
+ groups of beams.
+ * @param diversity_penalty this value is subtracted from a beam's score if it generates the same token as any beam from
+ other group at a
  *        particular time. See https://arxiv.org/pdf/1909.05858.
- * @param length_penalty exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
+ * @param length_penalty exponential penalty to the length that is used with beam-based generation. It is applied as an
+ exponent to
  *        the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
  *        likelihood of the sequence (i.e. negative), `length_penalty` > 0.0 promotes longer sequences, while
  *        `length_penalty` < 0.0 encourages shorter sequences.
- * @param num_return_sequences the number of sequences to return for grouped beam search decoding per batch element. num_return_sequences must be less or equal to num_beams.
+ * @param num_return_sequences the number of sequences to return for grouped beam search decoding per batch element.
+ num_return_sequences must be less or equal to num_beams.
  * @param no_repeat_ngram_size if set to int > 0, all ngrams of that size can only occur once.
  * @param stop_criteria controls the stopping condition for grouped beam search. It accepts the following values:
- *        "EARLY", where the generation stops as soon as there are `num_beams` complete candidates; "HEURISTIC", where an
+ *        "EARLY", where the generation stops as soon as there are `num_beams` complete candidates; "HEURISTIC", where
+ an
  *        "HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
- *        "NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
+ *        "NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam
+ search algorithm).
  *
  * Random (or multinomial) sampling parameters:
  * @param do_sample whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
  * @param temperature the value used to modulate token probabilities for random sampling.
- * @param top_p - if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
+ * @param top_p - if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to
+ top_p or higher are kept for generation.
  * @param top_k the number of highest probability vocabulary tokens to keep for top-k-filtering.
  * @param rng_seed initializes random generator.
  *
@@ -614,15 +693,20 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param relevance_weight the weight of relevance for visual tokens.
  *
  * Assisting generation parameters:
- * @param assistant_confidence_threshold the lower token probability of candidate to be validated by main model in case of dynamic strategy candidates number update.
-          NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend for Speculative Decode.
- * @param num_assistant_tokens the defined candidates number to be generated by draft model/prompt lookup in case of static strategy candidates number update.
- *        NOTE: ContinuousBatching backend for Speculative Decode uses `num_assistant_tokens` as is. Stateful backend for Speculative Decode uses `num_assistant_tokens`'s
- *        copy as initial value and adjusts it based on recent number of accepted tokens. If `num_assistant_tokens` is not set, it defaults to `5` for both backends.
+ * @param assistant_confidence_threshold the lower token probability of candidate to be validated by main model in case
+ of dynamic strategy candidates number update. NOTE: `assistant_confidence_threshold` is supported only by
+ ContinuousBatching backend for Speculative Decode.
+ * @param num_assistant_tokens the defined candidates number to be generated by draft model/prompt lookup in case of
+ static strategy candidates number update.
+ *        NOTE: ContinuousBatching backend for Speculative Decode uses `num_assistant_tokens` as is. Stateful backend
+ for Speculative Decode uses `num_assistant_tokens`'s
+ *        copy as initial value and adjusts it based on recent number of accepted tokens. If `num_assistant_tokens` is
+ not set, it defaults to `5` for both backends.
  * @param max_ngram_size is maximum ngram to use when looking for matches in the prompt.
  *
- * @param structured_output_config if set, the output will be a string constrained by the specified json_schema, regex, or EBNF grammar.
- * 
+ * @param structured_output_config if set, the output will be a string constrained by the specified json_schema, regex,
+ or EBNF grammar.
+ *
  * @param apply_chat_template whether or not to apply chat_template for non-chat scenarios
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
@@ -683,7 +767,6 @@ public:
     // set to true if chat template should be applied for non-chat scenarios, set to false otherwise
     bool apply_chat_template = true;
 
-
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
      */
@@ -715,7 +798,7 @@ public:
  * utils that allow to use generate and operator() in the following way:
  * pipe.generate(input_ids, ov::genai::max_new_tokens(200), ov::genai::temperature(1.0f),...)
  * pipe(text, ov::genai::max_new_tokens(200), ov::genai::temperature(1.0f),...)
-*/
+ */
 static constexpr ov::Property<size_t> max_new_tokens{"max_new_tokens"};
 static constexpr ov::Property<size_t> max_length{"max_length"};
 static constexpr ov::Property<bool> ignore_eos{"ignore_eos"};

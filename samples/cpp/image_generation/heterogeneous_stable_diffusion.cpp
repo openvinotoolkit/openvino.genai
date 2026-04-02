@@ -1,16 +1,17 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/image_generation/text2image_pipeline.hpp"
-
 #include "imwrite.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "progress_bar.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc >= 3 && argc <= 6,
-                    "Usage: ",
-                    argv[0],
-                    " <MODEL_DIR> '<PROMPT>' [ <TXT_ENCODE_DEVICE> <UNET_DEVICE> <VAE_DEVICE> ]");
+    OPENVINO_ASSERT(
+        argc >= 3 && argc <= 6,
+        "Usage: ",
+        argv[0],
+        " <MODEL_DIR> '<PROMPT>' [ <TXT_ENCODE_DEVICE> <UNET_DEVICE> <VAE_DEVICE> ]"
+    );
 
     const std::string models_path = argv[1], prompt = argv[2];
 
@@ -52,7 +53,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     // Note that if there are device-specific properties that are needed, they can
     // be added using ov::device::properties groups, like this:
-    //ov::AnyMap properties = {ov::device::properties("CPU", ov::cache_dir("cpu_cache")),
+    // ov::AnyMap properties = {ov::device::properties("CPU", ov::cache_dir("cpu_cache")),
     //                         ov::device::properties("GPU", ov::cache_dir("gpu_cache")),
     //                         ov::device::properties("NPU", ov::cache_dir("npu_cache"))};
 
@@ -64,9 +65,11 @@ int32_t main(int32_t argc, char* argv[]) try {
     for (int imagei = 0; imagei < number_of_images_to_generate; imagei++) {
         std::cout << "Generating image " << imagei << std::endl;
 
-        ov::Tensor image = pipe.generate(prompt,
-                                         ov::genai::num_inference_steps(number_of_inference_steps_per_image),
-                                         ov::genai::callback(progress_bar));
+        ov::Tensor image = pipe.generate(
+            prompt,
+            ov::genai::num_inference_steps(number_of_inference_steps_per_image),
+            ov::genai::callback(progress_bar)
+        );
 
         imwrite("image_" + std::to_string(imagei) + ".bmp", image, true);
     }

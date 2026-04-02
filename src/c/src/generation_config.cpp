@@ -106,8 +106,8 @@ ov_status_e ov_genai_generation_config_set_logprobs(ov_genai_generation_config* 
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_generation_config_set_include_stop_str_in_output(ov_genai_generation_config* config,
-                                                                      const bool value) {
+ov_status_e
+ov_genai_generation_config_set_include_stop_str_in_output(ov_genai_generation_config* config, const bool value) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -118,9 +118,11 @@ ov_status_e ov_genai_generation_config_set_include_stop_str_in_output(ov_genai_g
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_generation_config_set_stop_strings(ov_genai_generation_config* config,
-                                                        const char** strings,
-                                                        const size_t count) {
+ov_status_e ov_genai_generation_config_set_stop_strings(
+    ov_genai_generation_config* config,
+    const char** strings,
+    const size_t count
+) {
     if (!config || !(config->object) || !strings) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -136,9 +138,11 @@ ov_status_e ov_genai_generation_config_set_stop_strings(ov_genai_generation_conf
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_generation_config_set_stop_token_ids(ov_genai_generation_config* config,
-                                                          const int64_t* token_ids,
-                                                          const size_t token_ids_num) {
+ov_status_e ov_genai_generation_config_set_stop_token_ids(
+    ov_genai_generation_config* config,
+    const int64_t* token_ids,
+    const size_t token_ids_num
+) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -197,8 +201,8 @@ ov_status_e ov_genai_generation_config_set_length_penalty(ov_genai_generation_co
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_generation_config_set_num_return_sequences(ov_genai_generation_config* config,
-                                                                const size_t value) {
+ov_status_e
+ov_genai_generation_config_set_num_return_sequences(ov_genai_generation_config* config, const size_t value) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -209,8 +213,8 @@ ov_status_e ov_genai_generation_config_set_num_return_sequences(ov_genai_generat
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_generation_config_set_no_repeat_ngram_size(ov_genai_generation_config* config,
-                                                                const size_t value) {
+ov_status_e
+ov_genai_generation_config_set_no_repeat_ngram_size(ov_genai_generation_config* config, const size_t value) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -323,8 +327,8 @@ ov_status_e ov_genai_generation_config_set_rng_seed(ov_genai_generation_config* 
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_generation_config_set_assistant_confidence_threshold(ov_genai_generation_config* config,
-                                                                          const float value) {
+ov_status_e
+ov_genai_generation_config_set_assistant_confidence_threshold(ov_genai_generation_config* config, const float value) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -335,8 +339,8 @@ ov_status_e ov_genai_generation_config_set_assistant_confidence_threshold(ov_gen
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_generation_config_set_num_assistant_tokens(ov_genai_generation_config* config,
-                                                                const size_t value) {
+ov_status_e
+ov_genai_generation_config_set_num_assistant_tokens(ov_genai_generation_config* config, const size_t value) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -371,8 +375,8 @@ ov_status_e ov_genai_generation_config_set_eos_token_id(ov_genai_generation_conf
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_generation_config_get_max_new_tokens(const ov_genai_generation_config* config,
-                                                          size_t* max_new_tokens) {
+ov_status_e
+ov_genai_generation_config_get_max_new_tokens(const ov_genai_generation_config* config, size_t* max_new_tokens) {
     if (!config || !(config->object) || !max_new_tokens) {
         return ov_status_e::INVALID_C_PARAM;
     }

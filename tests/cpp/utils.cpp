@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include <gtest/gtest.h>
 #include "utils.hpp"
 
+#include <gtest/gtest.h>
 
 using namespace ov::genai::utils;
 using map_type = std::map<std::string, int64_t>;

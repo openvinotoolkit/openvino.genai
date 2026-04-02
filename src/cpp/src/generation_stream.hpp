@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
-#include <mutex>
 #include <atomic>
+#include <mutex>
+
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_handle.hpp"
 #include "synchronized_queue.hpp"
@@ -56,4 +57,4 @@ public:
         m_status = GenerationStatus::CANCEL;
     }
 };
-}
+}  // namespace ov::genai

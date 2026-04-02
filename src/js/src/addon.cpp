@@ -19,11 +19,13 @@
 #include "include/whisper_pipeline/perf_metrics.hpp"
 #include "include/whisper_pipeline/pipeline_wrapper.hpp"
 
-void init_class(Napi::Env env,
-                Napi::Object exports,
-                std::string class_name,
-                Prototype func,
-                Napi::FunctionReference& reference) {
+void init_class(
+    Napi::Env env,
+    Napi::Object exports,
+    std::string class_name,
+    Prototype func,
+    Napi::FunctionReference& reference
+) {
     const auto& prototype = func(env);
 
     reference = Napi::Persistent(prototype);
@@ -59,42 +61,54 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
     init_class(env, exports, "LLMPipeline", &LLMPipelineWrapper::get_class, addon_data->core);
     init_class(env, exports, "VLMPipeline", &VLMPipelineWrapper::get_class, addon_data->vlm_pipeline);
     init_class(env, exports, "TextEmbeddingPipeline", &TextEmbeddingPipelineWrapper::get_class, addon_data->core);
-    init_class(env,
-               exports,
-               "TextRerankPipeline",
-               &TextRerankPipelineWrapper::get_class,
-               addon_data->text_rerank_pipeline);
+    init_class(
+        env,
+        exports,
+        "TextRerankPipeline",
+        &TextRerankPipelineWrapper::get_class,
+        addon_data->text_rerank_pipeline
+    );
     init_class(env, exports, "WhisperPipeline", &WhisperPipelineWrapper::get_class, addon_data->whisper_pipeline);
     init_class(env, exports, "Tokenizer", &TokenizerWrapper::get_class, addon_data->tokenizer);
     init_class(env, exports, "PerfMetrics", &PerfMetricsWrapper::get_class, addon_data->perf_metrics);
     init_class(env, exports, "VLMPerfMetrics", &VLMPerfMetricsWrapper::get_class, addon_data->vlm_perf_metrics);
-    init_class(env,
-               exports,
-               "WhisperPerfMetrics",
-               &WhisperPerfMetricsWrapper::get_class,
-               addon_data->whisper_perf_metrics);
+    init_class(
+        env,
+        exports,
+        "WhisperPerfMetrics",
+        &WhisperPerfMetricsWrapper::get_class,
+        addon_data->whisper_perf_metrics
+    );
     init_class(env, exports, "ChatHistory", &ChatHistoryWrap::get_class, addon_data->chat_history);
     init_class(env, exports, "ReasoningParser", &ReasoningParserWrapper::get_class, addon_data->reasoning_parser);
-    init_class(env,
-               exports,
-               "DeepSeekR1ReasoningParser",
-               &DeepSeekR1ReasoningParserWrapper::get_class,
-               addon_data->deepseek_r1_reasoning_parser);
-    init_class(env,
-               exports,
-               "Phi4ReasoningParser",
-               &Phi4ReasoningParserWrapper::get_class,
-               addon_data->phi4_reasoning_parser);
-    init_class(env,
-               exports,
-               "Llama3PythonicToolParser",
-               &Llama3PythonicToolParserWrapper::get_class,
-               addon_data->llama3_pythonic_tool_parser);
-    init_class(env,
-               exports,
-               "Llama3JsonToolParser",
-               &Llama3JsonToolParserWrapper::get_class,
-               addon_data->llama3_json_tool_parser);
+    init_class(
+        env,
+        exports,
+        "DeepSeekR1ReasoningParser",
+        &DeepSeekR1ReasoningParserWrapper::get_class,
+        addon_data->deepseek_r1_reasoning_parser
+    );
+    init_class(
+        env,
+        exports,
+        "Phi4ReasoningParser",
+        &Phi4ReasoningParserWrapper::get_class,
+        addon_data->phi4_reasoning_parser
+    );
+    init_class(
+        env,
+        exports,
+        "Llama3PythonicToolParser",
+        &Llama3PythonicToolParserWrapper::get_class,
+        addon_data->llama3_pythonic_tool_parser
+    );
+    init_class(
+        env,
+        exports,
+        "Llama3JsonToolParser",
+        &Llama3JsonToolParserWrapper::get_class,
+        addon_data->llama3_json_tool_parser
+    );
 
     // Expose a helper to set the openvino-node addon from JS (useful for ESM)
     exports.Set("setOpenvinoAddon", Napi::Function::New(env, set_ov_addon));

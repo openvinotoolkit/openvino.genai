@@ -26,9 +26,11 @@ public:
           m_feature_extractor{models_path / "preprocessor_config.json"},
           m_model_config{models_path / "config.json"} {}
 
-    virtual WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
-                                           OptionalWhisperGenerationConfig generation_config,
-                                           const std::shared_ptr<StreamerBase> streamer) = 0;
+    virtual WhisperDecodedResults generate(
+        const RawSpeechInput& raw_speech_input,
+        OptionalWhisperGenerationConfig generation_config,
+        const std::shared_ptr<StreamerBase> streamer
+    ) = 0;
 
     virtual ~WhisperPipelineImplBase() = default;
 };

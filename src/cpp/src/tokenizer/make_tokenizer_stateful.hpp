@@ -2,16 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/op/constant.hpp"
-#include "openvino/pass/pass.hpp"
 #include "openvino/pass/matcher_pass.hpp"
+#include "openvino/pass/pass.hpp"
 
 namespace ov {
 namespace genai {
 
-/** 
+/**
  * @brief This pass modifies tokenizer ov::Model so that special tokens adding will be
  *  enabled or disabled depending on stateful value.
- * 
+ *
  *  +--------------+
  *  |  DefaultMode |
  *  +--------------+
@@ -32,15 +32,15 @@ namespace genai {
  *          +-------------------------+
  *          |     CombineSegments     |
  *          +-------------------------+
-**/
+ **/
 class MakeAddSpecialTokensSatateful : public ov::pass::ModelPass {
 public:
     OPENVINO_MODEL_PASS_RTTI("MakeAddSpecialTokensSatateful");
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
-/** 
- * @brief This pass modifies tokenizer ov::Model so that inputs to RaggedToDense, CombineSegments 
+/**
+ * @brief This pass modifies tokenizer ov::Model so that inputs to RaggedToDense, CombineSegments
  * become modifiable during runtime so that padding can be controlled.
  */
 class MakePaddingSatateful : public ov::pass::ModelPass {
@@ -49,10 +49,10 @@ public:
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
-/** 
+/**
  * @brief This pass modifies tokenizer ov::Model so that special tokens adding will be
  *  enabled or disabled depending on stateful value.
- *                                          
+ *
  *                                  +--------------+
  *                                  |  DefaultMode |
  *                                  +--------------+
@@ -78,7 +78,7 @@ public:
  *                          +----------------------+
  *                          |     VocabDecoder     |
  *                          +----------------------+
-**/
+ **/
 class MakeVocabDecoderSatateful : public ov::pass::ModelPass {
 public:
     OPENVINO_MODEL_PASS_RTTI("MakeVocabDecoderSatateful");
@@ -92,5 +92,5 @@ inline const std::string IS_MAX_LENGTH_SET = "is_max_length_set";
 inline const std::string PAD_TO_MAX_LENGTH_VAR_ID = "pad_to_max_length";
 inline const std::string PAD_RIGHT_VAR_ID = "pad_right";
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

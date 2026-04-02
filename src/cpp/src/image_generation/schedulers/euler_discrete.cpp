@@ -43,11 +43,11 @@ EulerDiscreteScheduler::Config::Config(const std::filesystem::path& scheduler_co
 EulerDiscreteScheduler::EulerDiscreteScheduler(const std::filesystem::path& scheduler_config_path)
     : EulerDiscreteScheduler(Config(scheduler_config_path)) {}
 
-EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config) : 
-    m_config(scheduler_config), 
-    m_num_inference_steps(0),
-    m_step_index(-1),
-    m_begin_index(-1) {
+EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config)
+    : m_config(scheduler_config),
+      m_num_inference_steps(0),
+      m_step_index(-1),
+      m_begin_index(-1) {
     std::vector<float> alphas, betas;
 
     using numpy_utils::linspace;
@@ -65,7 +65,8 @@ EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config) :
         });
     } else {
         OPENVINO_THROW(
-            "'beta_schedule' must be one of 'LINEAR' or 'SCALED_LINEAR'. Please, add support of other types");
+            "'beta_schedule' must be one of 'LINEAR' or 'SCALED_LINEAR'. Please, add support of other types"
+        );
     }
 
     if (m_config.rescale_betas_zero_snr) {
@@ -101,7 +102,8 @@ EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config) :
     OPENVINO_ASSERT(
         m_config.timestep_type != TimestepType::CONTINUOUS || m_config.prediction_type != PredictionType::V_PREDICTION,
         "This case isn't supported: `timestep_type=continuous` and `prediction_type=v_prediction`. Please, add "
-        "support.");
+        "support."
+    );
 
     m_sigmas.push_back(0);
 }
@@ -118,7 +120,8 @@ void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float str
     OPENVINO_ASSERT(
         m_config.timestep_type != TimestepType::CONTINUOUS || m_config.prediction_type != PredictionType::V_PREDICTION,
         "This case isn't supported: `timestep_type=continuous` and `prediction_type=v_prediction`. Please, add "
-        "support.");
+        "support."
+    );
 
     switch (m_config.timestep_spacing) {
     case TimestepSpacing::LINSPACE: {
@@ -154,32 +157,36 @@ void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float str
     }
 
     switch (m_config.interpolation_type) {
-        case InterpolationType::LINEAR: {
-            using numpy_utils::interp;
+    case InterpolationType::LINEAR: {
+        using numpy_utils::interp;
 
-            std::vector<size_t> x_data_points(sigmas.size());
-            std::iota(x_data_points.begin(), x_data_points.end(), 0);
-            m_sigmas = interp(m_timesteps, x_data_points, sigmas);
-            break;
-        }
-        case InterpolationType::LOG_LINEAR: {
-            using numpy_utils::linspace;
+        std::vector<size_t> x_data_points(sigmas.size());
+        std::iota(x_data_points.begin(), x_data_points.end(), 0);
+        m_sigmas = interp(m_timesteps, x_data_points, sigmas);
+        break;
+    }
+    case InterpolationType::LOG_LINEAR: {
+        using numpy_utils::linspace;
 
-            m_sigmas = linspace<float>(std::log(sigmas.back()), std::log(sigmas[0]), num_inference_steps + 1, true);
-            std::transform(m_sigmas.begin(), m_sigmas.end(), m_sigmas.begin(), [](float x) {
-                return std::exp(x);
-            });
-            break;
-        }
-        default:
-            OPENVINO_THROW("Unsupported value for 'interpolation_type'");
+        m_sigmas = linspace<float>(std::log(sigmas.back()), std::log(sigmas[0]), num_inference_steps + 1, true);
+        std::transform(m_sigmas.begin(), m_sigmas.end(), m_sigmas.begin(), [](float x) {
+            return std::exp(x);
+        });
+        break;
+    }
+    default:
+        OPENVINO_THROW("Unsupported value for 'interpolation_type'");
     }
 
-    OPENVINO_ASSERT(!m_config.use_karras_sigmas,
-                    "Parameter 'use_karras_sigmas' is not supported. Please, add support.");
+    OPENVINO_ASSERT(
+        !m_config.use_karras_sigmas,
+        "Parameter 'use_karras_sigmas' is not supported. Please, add support."
+    );
 
-    OPENVINO_ASSERT(!m_config.use_exponential_sigmas,
-                    "Parameter 'use_exponential_sigmas' is not supported. Please, add support.");
+    OPENVINO_ASSERT(
+        !m_config.use_exponential_sigmas,
+        "Parameter 'use_exponential_sigmas' is not supported. Please, add support."
+    );
 
     OPENVINO_ASSERT(!m_config.use_beta_sigmas, "Parameter 'use_beta_sigmas' is not supported. Please, add support.");
 
@@ -196,7 +203,8 @@ void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float str
     m_sigmas.push_back(sigma_last);
 
     // apply 'strength' used in image generation
-    // in diffusers, it's https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl_img2img.py#L650
+    // in diffusers, it's
+    // https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl_img2img.py#L650
     {
         size_t init_timestep = std::min<size_t>(num_inference_steps * strength, num_inference_steps);
         size_t t_start = std::max<size_t>(num_inference_steps - init_timestep, 0);
@@ -206,13 +214,22 @@ void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float str
         m_timesteps = std::vector<int64_t>(m_timesteps.begin() + t_start, m_timesteps.end());
         m_begin_index = t_start;
 
-        OPENVINO_ASSERT(!m_timesteps.empty(),
-                        "After adjusting the num_inference_steps by strength parameter: ", strength,
-                        " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a different strength value.");
+        OPENVINO_ASSERT(
+            !m_timesteps.empty(),
+            "After adjusting the num_inference_steps by strength parameter: ",
+            strength,
+            " the number of pipeline steps is less then 1 and not appropriate for this pipeline. Please set a "
+            "different strength value."
+        );
     }
 }
 
-std::map<std::string, ov::Tensor> EulerDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) {
+std::map<std::string, ov::Tensor> EulerDiscreteScheduler::step(
+    ov::Tensor noise_pred,
+    ov::Tensor latents,
+    size_t inference_step,
+    std::shared_ptr<Generator> generator
+) {
     // noise_pred - model_output
     // latents - sample
     // inference_step
@@ -311,8 +328,8 @@ size_t EulerDiscreteScheduler::_index_for_timestep(int64_t timestep) const {
 void EulerDiscreteScheduler::add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const {
     const float sigma = m_sigmas[_index_for_timestep(latent_timestep)];
 
-    float * init_latent_data = init_latent.data<float>();
-    const float * noise_data = noise.data<float>();
+    float* init_latent_data = init_latent.data<float>();
+    const float* noise_data = noise.data<float>();
 
     for (size_t i = 0; i < init_latent.get_size(); ++i) {
         init_latent_data[i] = init_latent_data[i] + sigma * noise_data[i];

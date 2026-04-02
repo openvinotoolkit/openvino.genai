@@ -6,7 +6,6 @@
 #include <errno.h>
 #include <string.h>
 
-
 int load_wav_file(const char* filename, float** audio_data, size_t* audio_length, float* sample_rate) {
     FILE* file = fopen(filename, "rb");
     if (!file) {
@@ -101,12 +100,8 @@ int load_wav_file(const char* filename, float** audio_data, size_t* audio_length
     return 0;
 }
 
-
-float* resample_audio(const float* input,
-                      size_t input_length,
-                      float input_rate,
-                      float target_rate,
-                      size_t* output_length) {
+float*
+resample_audio(const float* input, size_t input_length, float input_rate, float target_rate, size_t* output_length) {
     if (input_rate == target_rate) {
         *output_length = input_length;
         float* output = (float*)malloc(input_length * sizeof(float));

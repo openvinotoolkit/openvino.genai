@@ -3,10 +3,10 @@
 
 #pragma once
 
+#include <initializer_list>
+#include <optional>
 #include <string>
 #include <vector>
-#include <optional>
-#include <initializer_list>
 
 #include "openvino/core/any.hpp"
 #include "openvino/genai/visibility.hpp"
@@ -35,7 +35,7 @@ public:
 
     /**
      * @brief Construct from initializer list of key-value pairs.
-     * 
+     *
      * Example:
      * JsonContainer({{"role", "user"}, {"content", "hello"}})
      */
@@ -79,10 +79,10 @@ public:
      * @throw ov::Exception if parsing fails
      */
     static JsonContainer from_json_string(const std::string& json_str);
-       
+
     /**
      * @brief Concatenates JsonContainers.
-     * 
+     *
      * Concatenates text fields from src into this JsonContainer. If field is not textual then it throws exception.
      * @param other Source JsonContainer to concatenate into this container
      * @throw ov::Exception if keys in both containers are not strings.
@@ -249,5 +249,5 @@ private:
     std::string m_path = "";
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

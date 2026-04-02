@@ -6,18 +6,16 @@
 #include <fstream>
 #include <memory>
 
-#include "minja/minja.hpp"
+#include "circular_buffer_queue.hpp"
+#include "gguf_utils/gguf_tokenizer.hpp"
+#include "json_utils.hpp"
 #include "minja/chat-template.hpp"
-
+#include "minja/minja.hpp"
 #include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
-
-#include "gguf_utils/gguf_tokenizer.hpp"
 #include "tokenizer/chat_template_fallback_map.hpp"
 #include "tokenizer/make_tokenizer_stateful.hpp"
 #include "tokenizer/tokenizers_path.hpp"
-#include "circular_buffer_queue.hpp"
-#include "json_utils.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -49,13 +47,22 @@ public:
     template <typename T>
     void set_state_value(ov::VariableState& state, std::optional<T> value, ov::AnyMap& state_flags);
 
-    void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, const ov::AnyMap& params);
+    void set_state_if_necessary(
+        CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard,
+        const ov::AnyMap& params
+    );
 
     TokenizerImpl(const std::filesystem::path& models_path, const ov::AnyMap& properties);
-    TokenizerImpl(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, const ov::AnyMap& properties);
+    TokenizerImpl(
+        const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models,
+        const ov::AnyMap& properties
+    );
 
     void setup_tokenizer(const std::filesystem::path& models_path, const ov::AnyMap& properties);
-    void setup_tokenizer(const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models, ov::AnyMap properties);
+    void setup_tokenizer(
+        const std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>>& models,
+        ov::AnyMap properties
+    );
 
     void read_config(const std::filesystem::path& tokenizer_path);
     void read_special_tokens_map(const std::filesystem::path& tokenizer_path);
@@ -63,26 +70,38 @@ public:
     void infer_special_tokens_if_necessary();
 
     TokenizedInputs encode(const std::string& prompt, const ov::AnyMap& tokenization_params = {});
-    TokenizedInputs encode(const std::vector<std::pair<std::string, std::string>>& prompts_pairs, const ov::AnyMap& tokenization_params = {});
-    TokenizedInputs encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params = {});
+    TokenizedInputs encode(
+        const std::vector<std::pair<std::string, std::string>>& prompts_pairs,
+        const ov::AnyMap& tokenization_params = {}
+    );
+    TokenizedInputs encode(
+        const std::vector<std::string>& prompts_1,
+        const std::vector<std::string>& prompts_2,
+        const ov::AnyMap& tokenization_params = {}
+    );
     TokenizedInputs encode(const std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params = {});
 
     TokenizedInputs get_copied_results(ov::Tensor input_ids, ov::Tensor attention_mask);
 
     std::string decode(const std::vector<int64_t>& tokens, const ov::AnyMap& detokenization_params = {});
     std::vector<std::string> decode(const ov::Tensor& tokens, const ov::AnyMap& detokenization_params = {});
-    std::vector<std::string> decode(const std::vector<std::vector<int64_t>>& lines, const ov::AnyMap& detokenization_params = {});
+    std::vector<std::string>
+    decode(const std::vector<std::vector<int64_t>>& lines, const ov::AnyMap& detokenization_params = {});
 
-    std::string apply_chat_template(const ChatHistory& history,
-                                    bool add_generation_prompt,
-                                    const std::string& chat_template,
-                                    const std::optional<JsonContainer>& tools,
-                                    const std::optional<JsonContainer>& extra_context) const;
+    std::string apply_chat_template(
+        const ChatHistory& history,
+        bool add_generation_prompt,
+        const std::string& chat_template,
+        const std::optional<JsonContainer>& tools,
+        const std::optional<JsonContainer>& extra_context
+    ) const;
 
     void set_chat_template(const std::string& chat_template);
     std::string get_chat_template() const;
     std::string get_original_chat_template() const;
-    std::shared_ptr<StructuredOutputController> get_structured_output_controller(std::optional<int> vocab_size = std::nullopt);
+    std::shared_ptr<StructuredOutputController> get_structured_output_controller(
+        std::optional<int> vocab_size = std::nullopt
+    );
 };
 
 }  // namespace genai

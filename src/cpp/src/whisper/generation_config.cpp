@@ -74,15 +74,19 @@ void WhisperGenerationConfig::validate() const {
     GenerationConfig::validate();
 
     if (is_multilingual && language.has_value()) {
-        OPENVINO_ASSERT(lang_to_id.count(*language),
-                        "'language' " + *language + " must be provided in generation_config.json 'lang_to_id' map.");
+        OPENVINO_ASSERT(
+            lang_to_id.count(*language),
+            "'language' " + *language + " must be provided in generation_config.json 'lang_to_id' map."
+        );
     }
 
     if (is_multilingual && task.has_value()) {
-        OPENVINO_ASSERT(*task == "transcribe" || *task == "translate",
-                        "'task' mast be 'transcribe' or 'translate'. Task provided: '",
-                        *task,
-                        "'.");
+        OPENVINO_ASSERT(
+            *task == "transcribe" || *task == "translate",
+            "'task' mast be 'transcribe' or 'translate'. Task provided: '",
+            *task,
+            "'."
+        );
     }
 
     if (!is_multilingual) {
@@ -90,15 +94,19 @@ void WhisperGenerationConfig::validate() const {
         OPENVINO_ASSERT(!task.has_value(), "Cannot specify 'task' for not multilingual model.");
     }
 
-    OPENVINO_ASSERT(num_return_sequences == 1,
-                    "'num_return_sequences' must be 1. Provided: ",
-                    num_return_sequences,
-                    ".");
+    OPENVINO_ASSERT(
+        num_return_sequences == 1,
+        "'num_return_sequences' must be 1. Provided: ",
+        num_return_sequences,
+        "."
+    );
 
     OPENVINO_ASSERT(!is_assisting_generation(), "Assisted generation is not supported.");
 
-    OPENVINO_ASSERT(!word_timestamps || !alignment_heads.empty(),
-                    "'word_timestamps' can be true only when 'alignment_heads' is set and not empty.");
+    OPENVINO_ASSERT(
+        !word_timestamps || !alignment_heads.empty(),
+        "'word_timestamps' can be true only when 'alignment_heads' is set and not empty."
+    );
 }
 }  // namespace genai
 }  // namespace ov

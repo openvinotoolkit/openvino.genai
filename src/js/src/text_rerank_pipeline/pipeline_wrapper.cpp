@@ -11,12 +11,14 @@ TextRerankPipelineWrapper::TextRerankPipelineWrapper(const Napi::CallbackInfo& i
     : Napi::ObjectWrap<TextRerankPipelineWrapper>(info) {}
 
 Napi::Function TextRerankPipelineWrapper::get_class(Napi::Env env) {
-    return DefineClass(env,
-                       "TextRerankPipeline",
-                       {
-                           InstanceMethod("init", &TextRerankPipelineWrapper::init),
-                           InstanceMethod("rerank", &TextRerankPipelineWrapper::rerank),
-                       });
+    return DefineClass(
+        env,
+        "TextRerankPipeline",
+        {
+            InstanceMethod("init", &TextRerankPipelineWrapper::init),
+            InstanceMethod("rerank", &TextRerankPipelineWrapper::rerank),
+        }
+    );
 }
 
 Napi::Value TextRerankPipelineWrapper::init(const Napi::CallbackInfo& info) {
@@ -34,13 +36,15 @@ Napi::Value TextRerankPipelineWrapper::init(const Napi::CallbackInfo& info) {
         OPENVINO_ASSERT(info[4].IsFunction(), "init callback is not a function");
         Napi::Function callback = info[4].As<Napi::Function>();
 
-        auto async_worker = new RerankInitWorker(callback,
-                                                 this->pipe,
-                                                 this->is_initializing,
-                                                 std::move(model_path),
-                                                 std::move(device),
-                                                 std::move(config),
-                                                 std::move(properties));
+        auto async_worker = new RerankInitWorker(
+            callback,
+            this->pipe,
+            this->is_initializing,
+            std::move(model_path),
+            std::move(device),
+            std::move(config),
+            std::move(properties)
+        );
         async_worker->Queue();
     } catch (const std::exception& ex) {
         *this->is_initializing = false;

@@ -34,9 +34,11 @@
 
 namespace {
 
-bool can_move_scale_after_matmul(const ov::Output<ov::Node>& query,
-                                 const ov::Output<ov::Node>& kT,
-                                 const ov::Output<ov::Node>& scale) {
+bool can_move_scale_after_matmul(
+    const ov::Output<ov::Node>& query,
+    const ov::Output<ov::Node>& kT,
+    const ov::Output<ov::Node>& scale
+) {
     const auto& scale_pshape = scale.get_partial_shape();
     const auto& query_pshape = query.get_partial_shape();
     if (scale_pshape.is_dynamic() || query_pshape.is_dynamic()) {
@@ -70,7 +72,8 @@ WhisperScaledDotProductAttentionDecomposition::WhisperScaledDotProductAttentionD
         auto& pattern_to_output = m.get_pattern_value_map();
 
         auto node = ov::as_type_ptr<ov::op::v13::ScaledDotProductAttention>(
-            pattern_to_output.at(pattern_node).get_node_shared_ptr());
+            pattern_to_output.at(pattern_node).get_node_shared_ptr()
+        );
 
         if (node == nullptr || transformation_callback(node)) {
             return false;
@@ -87,13 +90,16 @@ WhisperScaledDotProductAttentionDecomposition::WhisperScaledDotProductAttentionD
         return true;
     };
 
-    auto m = std::make_shared<ov::pass::pattern::Matcher>(pattern_node,
-                                                          "WhisperScaledDotProductAttentionDecompositionMatcher");
+    auto m = std::make_shared<ov::pass::pattern::Matcher>(
+        pattern_node,
+        "WhisperScaledDotProductAttentionDecompositionMatcher"
+    );
     register_matcher(m, callback);
 }
 
 std::shared_ptr<ov::Node> WhisperScaledDotProductAttentionDecomposition::decompose(
-    std::shared_ptr<ov::op::v13::ScaledDotProductAttention> node) {
+    std::shared_ptr<ov::op::v13::ScaledDotProductAttention> node
+) {
     using namespace ov::op;
     auto query = node->input_value(0);
     auto key = node->input_value(1);
@@ -107,8 +113,8 @@ std::shared_ptr<ov::Node> WhisperScaledDotProductAttentionDecomposition::decompo
     auto one_f = register_new_node<v1::ConvertLike>(one_i, query);
     auto zero_f = register_new_node<v1::ConvertLike>(zero_i, query);
 
-    auto build_extract_dim_subgraph = [this, &zero_i](const std::shared_ptr<v3::ShapeOf>& shape_of,
-                                                      const int64_t idx) -> std::shared_ptr<ov::Node> {
+    auto build_extract_dim_subgraph =
+        [this, &zero_i](const std::shared_ptr<v3::ShapeOf>& shape_of, const int64_t idx) -> std::shared_ptr<ov::Node> {
         const auto dim_to_extract_const = v0::Constant::create(element::i32, Shape{}, {idx});
         const auto gather = std::make_shared<v8::Gather>(shape_of, dim_to_extract_const, zero_i);
 
@@ -197,8 +203,10 @@ std::shared_ptr<ov::Node> WhisperScaledDotProductAttentionDecomposition::decompo
         auto zero_i = register_new_node(v0::Constant::create(element::i32, Shape{1}, {0}));
         auto one_i = register_new_node(v0::Constant::create(element::i32, Shape{1}, {1}));
 
-        auto q_last_but_one_dim = register_new_node<v1::Subtract>(register_new_node<v0::ShapeOf>(q_shape),
-                                                                  v0::Constant::create(element::i64, Shape{}, {1}));
+        auto q_last_but_one_dim = register_new_node<v1::Subtract>(
+            register_new_node<v0::ShapeOf>(q_shape),
+            v0::Constant::create(element::i64, Shape{}, {1})
+        );
         auto sink_target_shape_1 = register_new_node<v8::Slice>(q_shape, zero_i, q_last_but_one_dim, one_i);
         auto sink_target_shape = register_new_node<v0::Concat>(OutputVector{sink_target_shape_1, one_i}, 0);
         auto sink_broadcast = register_new_node<v1::Broadcast>(sink, sink_target_shape);

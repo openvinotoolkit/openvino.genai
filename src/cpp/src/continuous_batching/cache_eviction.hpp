@@ -3,19 +3,17 @@
 
 #pragma once
 
-
-#include <vector>
-#include <cstdlib>
 #include <cmath>
+#include <cstdlib>
 #include <deque>
+#include <vector>
 
-#include "openvino/openvino.hpp"
 #include "continuous_batching/attention_output.hpp"
-#include "openvino/genai/cache_eviction.hpp"
 #include "continuous_batching/kvcrush.hpp"
+#include "openvino/genai/cache_eviction.hpp"
+#include "openvino/openvino.hpp"
 
 namespace ov::genai {
-
 
 /**
  * @brief Keeps track of the accumulated token scores across model inferences and their lifetime.
@@ -29,54 +27,87 @@ public:
     /**
      * Constructs an EvictionScoreManager.
      * @param block_size Block size of the KV cache to evict from.
-     * @param num_decoder_layers Number of independent KV caches (each corresponding to a single attention layer) in the underlying LLM.
-     * @param max_pool_window_size Window size for the max pooling step applied to the newly registered scores before aggregation.
+     * @param num_decoder_layers Number of independent KV caches (each corresponding to a single attention layer) in the
+     * underlying LLM.
+     * @param max_pool_window_size Window size for the max pooling step applied to the newly registered scores before
+     * aggregation.
      * @param aggregation_mode Aggregation mode for the scores across register calls.
-     * @param ignore_first_n_blocks Number of blocks from the beginning of the per-token score vector, the scores for which will
-     * be disregarded and never aggregated.
-     * @param snapkv_window_size Window size for the SnapKV algorithm in effect. If non-zero, then by the start of the generation phase
-     * for the tracked sequence (when the total number of `num_snapkv_scores` passed to each `register_new_token_scores` call reaches
-     * the `snapkv_window_size`) the internal occurrence counters will be:
+     * @param ignore_first_n_blocks Number of blocks from the beginning of the per-token score vector, the scores for
+     * which will be disregarded and never aggregated.
+     * @param snapkv_window_size Window size for the SnapKV algorithm in effect. If non-zero, then by the start of the
+     * generation phase for the tracked sequence (when the total number of `num_snapkv_scores` passed to each
+     * `register_new_token_scores` call reaches the `snapkv_window_size`) the internal occurrence counters will be:
      * `| S | S | ... | S | S - 1 | S - 2 | ... | 2 | 1 |`,
-     * where `S` is equal to `snapkv_window_size`. In contrast, if this is set to 0, then the initial counter state would be
+     * where `S` is equal to `snapkv_window_size`. In contrast, if this is set to 0, then the initial counter state
+     * would be
      * `| L | L - 1 | ... | 2 | 1 |`,
      * where L is the prompt size of the sequence in tokens.
-     * @param adaptive_rkv_window_size AggregationMode::ADAPTIVE_RKV only - Number of last token scores that will be aggregated (using mean)
-     * for purposes of determining blocks in the evictable area that comprise the most attention mass.
+     * @param adaptive_rkv_window_size AggregationMode::ADAPTIVE_RKV only - Number of last token scores that will be
+     * aggregated (using mean) for purposes of determining blocks in the evictable area that comprise the most attention
+     * mass.
      */
-    explicit EvictionScoreManager(size_t block_size, size_t num_decoder_layers, size_t max_pool_window_size, AggregationMode aggregation_mode, size_t ignore_first_n_blocks = 0, size_t snapkv_window_size = 0, size_t adaptive_rkv_window_size = 8) : m_block_size(block_size), m_num_decoder_layers(num_decoder_layers), m_scores(num_decoder_layers), m_cache_counter(num_decoder_layers), m_max_pool_window_size(max_pool_window_size), m_aggregation_mode(aggregation_mode), m_ignore_first_n_blocks(ignore_first_n_blocks), m_snapkv_window_size(snapkv_window_size), m_num_registered_snapkv_aggregated_scores(0), m_adaptive_rkv_window_size(adaptive_rkv_window_size), m_previous_scores_queues(num_decoder_layers) {}
+    explicit EvictionScoreManager(
+        size_t block_size,
+        size_t num_decoder_layers,
+        size_t max_pool_window_size,
+        AggregationMode aggregation_mode,
+        size_t ignore_first_n_blocks = 0,
+        size_t snapkv_window_size = 0,
+        size_t adaptive_rkv_window_size = 8
+    )
+        : m_block_size(block_size),
+          m_num_decoder_layers(num_decoder_layers),
+          m_scores(num_decoder_layers),
+          m_cache_counter(num_decoder_layers),
+          m_max_pool_window_size(max_pool_window_size),
+          m_aggregation_mode(aggregation_mode),
+          m_ignore_first_n_blocks(ignore_first_n_blocks),
+          m_snapkv_window_size(snapkv_window_size),
+          m_num_registered_snapkv_aggregated_scores(0),
+          m_adaptive_rkv_window_size(adaptive_rkv_window_size),
+          m_previous_scores_queues(num_decoder_layers) {}
 
     /**
-     * Registers new token scores and aggregates them internally as necessary. The token scores provided may be corresponding not to all
-     * tokens in the current sequence length, in which case the set of logical block indices must be provided for which the score entries
-     * are missing.
+     * Registers new token scores and aggregates them internally as necessary. The token scores provided may be
+     * corresponding not to all tokens in the current sequence length, in which case the set of logical block indices
+     * must be provided for which the score entries are missing.
      *
-     * @param attention_scores_for_all_decoder_layers A vector of ov::Tensor, each ov::Tensor corresponding to the per-token attention
-     * scores in a corresponding decoder layer.
-     * @param skipped_logical_block_ids Logical block indices which had been skipped during inference call that produced the new scores, and
-     * which are missing from the new scores.
-     * @param num_snapkv_scores Number of latest token scores that were aggregated together when computing the registered score. If SnapKV is not used, this should be set to 0.
+     * @param attention_scores_for_all_decoder_layers A vector of ov::Tensor, each ov::Tensor corresponding to the
+     * per-token attention scores in a corresponding decoder layer.
+     * @param skipped_logical_block_ids Logical block indices which had been skipped during inference call that produced
+     * the new scores, and which are missing from the new scores.
+     * @param num_snapkv_scores Number of latest token scores that were aggregated together when computing the
+     * registered score. If SnapKV is not used, this should be set to 0.
      */
-    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers, const std::set<size_t>& skipped_logical_block_ids, size_t num_snapkv_scores = 0);
+    void register_new_token_scores(
+        const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers,
+        const std::set<size_t>& skipped_logical_block_ids,
+        size_t num_snapkv_scores = 0
+    );
 
     /**
      * Removes the scores from tracking for given block indices and given decoder layer.
      *
-     * @param evicted_block_indices A vector of logical block indices, the scores for which should be removed from tracking.
+     * @param evicted_block_indices A vector of logical block indices, the scores for which should be removed from
+     * tracking.
      * @param decoder_layer_idx The index of the decoder layer for which the block scores must be removed.
      */
     void remove_scores(const std::vector<std::size_t>& evicted_block_indices, size_t decoder_layer_idx);
 
     /**
-     * Adds two vectors of different length, treating the shorter one as values from which certain block-sized chunks had been
-     * skipped on purpose and which should not impact the final sum.
+     * Adds two vectors of different length, treating the shorter one as values from which certain block-sized chunks
+     * had been skipped on purpose and which should not impact the final sum.
      *
      * @param dst The destination vector.
-     * @param src The source vector. Must be shorter by N * B values than dst, where N is the size of the skipped logical block ID set,
-     * and B is the block size.
+     * @param src The source vector. Must be shorter by N * B values than dst, where N is the size of the skipped
+     * logical block ID set, and B is the block size.
      * @param skipped_logical_block_ids The set of logical block IDs that had been "skipped" from the src values.
      */
-    void add_with_skips(std::vector<double>& dst, const std::vector<double>& src, const std::set<size_t>& skipped_logical_block_ids) const;
+    void add_with_skips(
+        std::vector<double>& dst,
+        const std::vector<double>& src,
+        const std::set<size_t>& skipped_logical_block_ids
+    ) const;
 
     /**
      * @param layer_idx The decoder layer index.
@@ -107,18 +138,39 @@ private:
     size_t m_adaptive_rkv_window_size = 8;
 
     struct EvictionScoreRecord {
-        EvictionScoreRecord(const std::vector<double>& score_, const std::set<size_t>& skips_) : score(score_), skips(skips_) {};
+        EvictionScoreRecord(const std::vector<double>& score_, const std::set<size_t>& skips_)
+            : score(score_),
+              skips(skips_) {};
         std::vector<double> score;
         std::set<size_t> skips;
     };
 
     std::vector<std::deque<EvictionScoreRecord>> m_previous_scores_queues;
 
-    void _initialize_score_with_skips(std::vector<double>& dst, const std::vector<double>& src, const std::set<size_t> skipped_logical_block_ids);
-    void _accumulate_initial_scores(const std::vector<double>& max_pooled_hh_scores, size_t decoder_layer_idx, size_t num_snapkv_scores, const std::set<size_t>& skipped_logical_block_ids);
+    void _initialize_score_with_skips(
+        std::vector<double>& dst,
+        const std::vector<double>& src,
+        const std::set<size_t> skipped_logical_block_ids
+    );
+    void _accumulate_initial_scores(
+        const std::vector<double>& max_pooled_hh_scores,
+        size_t decoder_layer_idx,
+        size_t num_snapkv_scores,
+        const std::set<size_t>& skipped_logical_block_ids
+    );
 
-    void _accumulate_layer_scores_to(size_t decoder_layer_idx, const std::vector<double>& src, const std::set<size_t>& skipped_logical_block_ids, std::vector<double>& dst);
-    void _accumulate_with_existing_scores(const std::vector<double>& max_pooled_hh_scores, size_t decoder_layer_idx, size_t num_snapkv_scores, const std::set<size_t>& skipped_logical_block_ids);
+    void _accumulate_layer_scores_to(
+        size_t decoder_layer_idx,
+        const std::vector<double>& src,
+        const std::set<size_t>& skipped_logical_block_ids,
+        std::vector<double>& dst
+    );
+    void _accumulate_with_existing_scores(
+        const std::vector<double>& max_pooled_hh_scores,
+        size_t decoder_layer_idx,
+        size_t num_snapkv_scores,
+        const std::set<size_t>& skipped_logical_block_ids
+    );
     void _adjust_norm_sum_counters(size_t decoder_layer_idx, size_t old_size_in_tokens, size_t new_size_in_tokens);
 };
 
@@ -129,16 +181,16 @@ public:
     SnapKVScoreAggregationCalculator& operator=(const SnapKVScoreAggregationCalculator& rhs) = default;
     SnapKVScoreAggregationCalculator(size_t snapkv_window_size) : m_snapkv_window_size(snapkv_window_size) {}
 
-    size_t get_num_token_scores_to_aggregate(size_t prompt_len, size_t num_scheduled_tokens, size_t num_processed_tokens);
+    size_t
+    get_num_token_scores_to_aggregate(size_t prompt_len, size_t num_scheduled_tokens, size_t num_processed_tokens);
 
 private:
     size_t m_snapkv_window_size;
-
 };
 
 /**
- * @brief Determines blocks to be evicted from the KV cache of a sequence based on the importance score calculated from the
- * attention scores of each token at each attention layer in the LLM.
+ * @brief Determines blocks to be evicted from the KV cache of a sequence based on the importance score calculated from
+ * the attention scores of each token at each attention layer in the LLM.
  *
  * The KV cache is conceptually divided into three areas as shown below:
  *
@@ -152,24 +204,25 @@ private:
  * are filled, the algorithm determines the blocks from the *evictable area* that should be freed from this sequence
  * based on the importance scores accumulated after each previous generation step in the pipeline. The least important
  * tokens according to this score are to be evicted. Only the tokens from the *evictable area* are evicted - the tokens
- * in the *start* and *recent* areas are never evicted, but throughout the eviction process the *recent* blocks naturally
- * move into the *evictable* area.
+ * in the *start* and *recent* areas are never evicted, but throughout the eviction process the *recent* blocks
+ * naturally move into the *evictable* area.
  *
- * Eviction only starts when at least one block *past* the *recent area* is completely filled, and the corresponding number
- * of blocks is selected to be evicted, so that the remaining blocks completely fit into the arena defined by the *start*,
- * *evictable* and *recent* areas. This effectively caps the cache usage for the sequence by the size of the arena (plus,
- * in general, one partially filled block past the recent area).
+ * Eviction only starts when at least one block *past* the *recent area* is completely filled, and the corresponding
+ * number of blocks is selected to be evicted, so that the remaining blocks completely fit into the arena defined by the
+ * *start*, *evictable* and *recent* areas. This effectively caps the cache usage for the sequence by the size of the
+ * arena (plus, in general, one partially filled block past the recent area).
  *
  * Sizes of *start*, *evictable* and *recent* areas are configurable, but the *evictable* area size specifies the
  * _minimal_ size of the evictable area. When tokens overflow the eviction arena, the actual evictable area is
- * determined as the tokens between the fixed-size *start area* and the fixed-size *end area*, so at a given eviction step
- * there are in general more tokens considered for eviction than the specified *evictable* size.
+ * determined as the tokens between the fixed-size *start area* and the fixed-size *end area*, so at a given eviction
+ * step there are in general more tokens considered for eviction than the specified *evictable* size.
  *
  */
 class CacheEvictionAlgorithm {
 public:
     /**
-     * @brief A pair of indices specifying the logical block interval where the blocks may be evicted at this point in time.
+     * @brief A pair of indices specifying the logical block interval where the blocks may be evicted at this point in
+     * time.
      */
     class CacheEvictionRange : public std::pair<std::size_t, std::size_t> {
     public:
@@ -179,18 +232,26 @@ public:
             return inv;
         }
     };
-    CacheEvictionAlgorithm() = default;  // needed only to satisfy DefaultConstructible so that algo objects may be used as values in std::map
+    CacheEvictionAlgorithm() =
+        default;  // needed only to satisfy DefaultConstructible so that algo objects may be used as values in std::map
 
     /**
      * Constructs a CacheEvictionAlgorithm.
      * @param eviction_config The configuration struct for this algorithm.
      * @param block_size Block size of the KV cache to evict from.
-     * @param num_decoder_layers Number of independent KV caches (each corresponding to a single attention layer) in the underlying LLM.
+     * @param num_decoder_layers Number of independent KV caches (each corresponding to a single attention layer) in the
+     * underlying LLM.
      */
-    explicit CacheEvictionAlgorithm(const CacheEvictionConfig& eviction_config, size_t block_size, size_t num_decoder_layers, size_t max_pool_window_size);
+    explicit CacheEvictionAlgorithm(
+        const CacheEvictionConfig& eviction_config,
+        size_t block_size,
+        size_t num_decoder_layers,
+        size_t max_pool_window_size
+    );
 
     /**
-     * @return Maximum cache size (in tokens) after each eviction step. Could be used as an estimate of the maximum per-sequence cache usage.
+     * @return Maximum cache size (in tokens) after each eviction step. Could be used as an estimate of the maximum
+     * per-sequence cache usage.
      */
     std::size_t get_max_cache_size_after_eviction() const;
 
@@ -201,28 +262,35 @@ public:
 
     /**
      * Registers attention scores (for each layer) of each token in this sequence that is currently still represented
-     * (i.e. not evicted) in the corresponding KV cache. Must be called after each generation step to properly keep track of
-     * the tokens' lifetime in the KV cache and of the accumulated importance score of each token.
-     * @param attention_scores_for_all_decoder_layers A vector with a size equal to the configured num_decoder_layers, where each entry is a
-     * vector of per-token attention scores calculated within this layer.
-     * @param skipped_logical_block_ids The set of logical indices that have been skipped from the scores as part of the sparse attention prefill process
-     * @param num_snapkv_scores The number of SnapKV-aggregated scores in this score chunk. Set to 0 if SnapKV is not used
-     * (i.e. eviction_config.snapkv_window_size == 0)
+     * (i.e. not evicted) in the corresponding KV cache. Must be called after each generation step to properly keep
+     * track of the tokens' lifetime in the KV cache and of the accumulated importance score of each token.
+     * @param attention_scores_for_all_decoder_layers A vector with a size equal to the configured num_decoder_layers,
+     * where each entry is a vector of per-token attention scores calculated within this layer.
+     * @param skipped_logical_block_ids The set of logical indices that have been skipped from the scores as part of the
+     * sparse attention prefill process
+     * @param num_snapkv_scores The number of SnapKV-aggregated scores in this score chunk. Set to 0 if SnapKV is not
+     * used (i.e. eviction_config.snapkv_window_size == 0)
      */
-    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers, const std::set<size_t>& skipped_logical_block_ids, size_t num_snapkv_scores = 0);
+    void register_new_token_scores(
+        const AttentionScoresForEachDecoderLayer& attention_scores_for_all_decoder_layers,
+        const std::set<size_t>& skipped_logical_block_ids,
+        size_t num_snapkv_scores = 0
+    );
 
-    void register_new_token_scores(const AttentionScoresForEachDecoderLayer& attention_scores_across_decoder_layers_for_current_sequence, size_t num_snapkv_scores = 0);
+    void register_new_token_scores(
+        const AttentionScoresForEachDecoderLayer& attention_scores_across_decoder_layers_for_current_sequence,
+        size_t num_snapkv_scores = 0
+    );
     /**
-     * Returns the per-layer sets of logical block indices that should be evicted according to the internally computed importance scores
-     * and removes the corresponding blocks from the internal algorithm tracking.
+     * Returns the per-layer sets of logical block indices that should be evicted according to the internally computed
+     * importance scores and removes the corresponding blocks from the internal algorithm tracking.
      *
-     * @return A vector with size equal to the configured num_decoder_layers, where each entry is a set of logical indices that are to be
-     * evicted by the external cache-controlling mechanism.
+     * @return A vector with size equal to the configured num_decoder_layers, where each entry is a set of logical
+     * indices that are to be evicted by the external cache-controlling mechanism.
      */
     std::vector<std::set<std::size_t>> evict_logical_blocks();
 
     void register_block_diversity(const BlockDiversityForEachDecoderLayer& token_similarity_for_all_decoder_layers);
-
 
 private:
     std::size_t get_num_blocks(std::size_t num_tokens) const;
@@ -233,9 +301,13 @@ private:
 
     std::vector<double> get_scores_for_all_evictable_blocks(size_t decoder_layer_idx) const;
 
-    std::vector<std::size_t> get_indices_of_blocks_to_evict(const std::vector<double>& scores_for_each_evictable_block, size_t num_blocks_to_evict) const;
+    std::vector<std::size_t> get_indices_of_blocks_to_evict(
+        const std::vector<double>& scores_for_each_evictable_block,
+        size_t num_blocks_to_evict
+    ) const;
 
-    void remove_scores_of_evicted_blocks(const std::vector<std::size_t>& evicted_block_indices, size_t decoder_layer_idx);
+    void
+    remove_scores_of_evicted_blocks(const std::vector<std::size_t>& evicted_block_indices, size_t decoder_layer_idx);
 
     CacheEvictionConfig m_eviction_config;
     KVCrushAlgorithm m_kvcrush_algo;
@@ -246,8 +318,6 @@ private:
 
     std::vector<std::vector<double>> m_last_block_diversity;
 };
-
-
 
 /**
  * @brief Computes, based on the logical indices of the blocks to be evicted, the rotation coefficients for the
@@ -276,10 +346,12 @@ public:
      * @param kv_head_size The size (in elements) of the embedding dimension in the attention operation.
      * @param rope_theta The base RoPE angle used in the original LLM.
      */
-    CacheRotationCalculator(size_t block_size,
-                            size_t max_context_length,
-                            size_t kv_head_size,
-                            double rope_theta = 10000.0f);
+    CacheRotationCalculator(
+        size_t block_size,
+        size_t max_context_length,
+        size_t kv_head_size,
+        double rope_theta = 10000.0f
+    );
 
     using RotationCoefficientsPerToken = std::vector<std::vector<float>>;  // dimensions: [BLOCK_SIZE, head_size / 2]
 
@@ -290,10 +362,10 @@ public:
         bool operator==(const BlockRotationData& rhs) const {
             return (logical_block_idx == rhs.logical_block_idx) && (sines == rhs.sines) && (cosines == rhs.cosines);
         }
-        size_t logical_block_idx;             /** Logical index of the block AFTER eviction to which the rotation
-                                                 should be applied */
-        size_t rotation_delta;                /** Delta, in token positions, that should be applied to block contents
-                                                via rotation **/
+        size_t logical_block_idx; /** Logical index of the block AFTER eviction to which the rotation
+                                     should be applied */
+        size_t rotation_delta;    /** Delta, in token positions, that should be applied to block contents
+                                    via rotation **/
 
         // Fields below are currently only used for testing purposes
         RotationCoefficientsPerToken sines;   /** The sine coefficients to be applied to this block's contents for
@@ -313,9 +385,11 @@ public:
      * @return A vector of per-block rotation data, including the indices of blocks after eviction that should be
      * rotated, and the pre-computed trigonometric coefficients necessary for rotation.
      */
-    std::vector<BlockRotationData> get_rotation_data(const std::set<size_t>& evicted_block_logical_indices,
-                                                             size_t num_logical_blocks_before_eviction,
-                                                             bool deltas_only = true);
+    std::vector<BlockRotationData> get_rotation_data(
+        const std::set<size_t>& evicted_block_logical_indices,
+        size_t num_logical_blocks_before_eviction,
+        bool deltas_only = true
+    );
 
     /**
      * @return The size of the embedding dimension that this CacheRotationCalculator was initialized with.
@@ -334,54 +408,67 @@ private:
     std::vector<std::vector<float>> m_rope_cos_lut;  // dimensions: [ max_context_length, head_size / 2]
 };
 
-
 class AdaptiveRKVBlockCalculator {
 public:
-
-    AdaptiveRKVBlockCalculator(double attention_mass, size_t block_size) : m_attention_mass(attention_mass), m_block_size(block_size) {}
+    AdaptiveRKVBlockCalculator(double attention_mass, size_t block_size)
+        : m_attention_mass(attention_mass),
+          m_block_size(block_size) {}
 
     /**
-     * Computes the set of blocks that will NOT be retained as part of preserving the predefined attention mass and are therefore
-     * candidates for eviction based on diversity. Also returns the number of blocks kept for attention mass preservation.
+     * Computes the set of blocks that will NOT be retained as part of preserving the predefined attention mass and are
+     * therefore candidates for eviction based on diversity. Also returns the number of blocks kept for attention mass
+     * preservation.
      * @param max_num_blocks_kept Maximum number of blocks to keep for purposes of preserving the attention mass.
      * @param evictable_area_token_scores Vector of per-token attention scores from the currently evictable blocks.
      * @param deltas_only If true, the sines and cosines fields in each returned BlockRotationData will be left empty.
-     * @return The set of block indices that will NOT be retained for preserving attention mass (indexed from the beginning of the block area corresponding
-     * to evictable_area_token_scores) and the number of blocks that WERE kept for preserving attention mass.
+     * @return The set of block indices that will NOT be retained for preserving attention mass (indexed from the
+     * beginning of the block area corresponding to evictable_area_token_scores) and the number of blocks that WERE kept
+     * for preserving attention mass.
      */
-    std::pair<std::set<size_t>, size_t> get_diversity_block_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores);
-
+    std::pair<std::set<size_t>, size_t>
+    get_diversity_block_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores);
 
     /**
      * Filters and reduces the kernel-provided diversity values so that the resulting values provide correct diversity
-     * over the non-retained-by-attention-mass block set. The kernel-provided diversity is given for the entire eviction area
-     * as an array with shape [eviction_size / block_size, eviction_size] and requires masked reduction on the diversity block set
-     * along the last dimension, since the kernel currently does not use the information about the selected/non-selected blocks to do
-     * this masked reduction on its own.
+     * over the non-retained-by-attention-mass block set. The kernel-provided diversity is given for the entire eviction
+     * area as an array with shape [eviction_size / block_size, eviction_size] and requires masked reduction on the
+     * diversity block set along the last dimension, since the kernel currently does not use the information about the
+     * selected/non-selected blocks to do this masked reduction on its own.
      *
-     * @param unfiltered_diversity Diversity values as output by the kernel (model), corresponding to shape [eviction_size / block_size, eviction_size]
+     * @param unfiltered_diversity Diversity values as output by the kernel (model), corresponding to shape
+     * [eviction_size / block_size, eviction_size]
      * @param eviction_size The size, in tokens, of the currently evictable area of the sequence KV cache.
-     * @param diversity_blocks The set of block indices that correspond to the diversity block set in this eviction area, i.e. the block indices along
-     * which the masked reduction will occur.
-     * @return The vector of size [eviction_size / block_size] with final per-block diversity values for each block of the eviction area.
+     * @param diversity_blocks The set of block indices that correspond to the diversity block set in this eviction
+     * area, i.e. the block indices along which the masked reduction will occur.
+     * @return The vector of size [eviction_size / block_size] with final per-block diversity values for each block of
+     * the eviction area.
      */
-    std::vector<double> get_filtered_block_diversity(const std::vector<double>& unfiltered_diversity, size_t eviction_size, const std::set<size_t>& diversity_blocks);
-
+    std::vector<double> get_filtered_block_diversity(
+        const std::vector<double>& unfiltered_diversity,
+        size_t eviction_size,
+        const std::set<size_t>& diversity_blocks
+    );
 
     /**
-     * Computes the set of blocks that will be retained as most diverse blocks in addition to those that were already selected to be retained
-     * to preserve the predefined attention mass.
-     * @param num_blocks_left_to_fill Number of blocks remaining to preserve after the attention mass-retaining blocks have been selected.
-     * @param diversity_set Indices of blocks in the eviction area (indexed from the eviction area start) that are candidates for diversity-based
-     * selection.
+     * Computes the set of blocks that will be retained as most diverse blocks in addition to those that were already
+     * selected to be retained to preserve the predefined attention mass.
+     * @param num_blocks_left_to_fill Number of blocks remaining to preserve after the attention mass-retaining blocks
+     * have been selected.
+     * @param diversity_set Indices of blocks in the eviction area (indexed from the eviction area start) that are
+     * candidates for diversity-based selection.
      * @param filtered_block_diversity Per-block diversity values for each block in eviction area.
-     * @return The set of block indices that should be retained as most diverse in addition to the attention-mass-preserving blocks.
+     * @return The set of block indices that should be retained as most diverse in addition to the
+     * attention-mass-preserving blocks.
      */
-    std::set<size_t> get_most_diverse_blocks(size_t num_blocks_left_to_fill, const std::set<size_t>& diversity_set, const std::vector<double>& filtered_block_diversity);
+    std::set<size_t> get_most_diverse_blocks(
+        size_t num_blocks_left_to_fill,
+        const std::set<size_t>& diversity_set,
+        const std::vector<double>& filtered_block_diversity
+    );
 
 private:
     double m_attention_mass;
     size_t m_block_size;
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

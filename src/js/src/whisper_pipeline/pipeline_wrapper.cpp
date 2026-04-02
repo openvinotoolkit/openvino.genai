@@ -14,7 +14,11 @@
 #include "include/whisper_pipeline/init_worker.hpp"
 
 struct WhisperTsfnContext {
-    WhisperTsfnContext(std::vector<float> raw_speech, ov::AnyMap generation_config, std::shared_ptr<std::atomic<bool>> is_generating)
+    WhisperTsfnContext(
+        std::vector<float> raw_speech,
+        ov::AnyMap generation_config,
+        std::shared_ptr<std::atomic<bool>> is_generating
+    )
         : raw_speech(std::move(raw_speech)),
           generation_config(std::move(generation_config)),
           is_generating(is_generating) {}
@@ -35,7 +39,8 @@ void whisperPerformInferenceThread(WhisperTsfnContext* context) {
         auto status = context->callback_tsfn.BlockingCall([message](Napi::Env env, Napi::Function js_callback) {
             try {
                 js_callback.Call(
-                    {Napi::Error::New(env, "whisperPerformInferenceThread error. " + message).Value(), env.Null()});
+                    {Napi::Error::New(env, "whisperPerformInferenceThread error. " + message).Value(), env.Null()}
+                );
             } catch (const std::exception& err) {
                 std::cerr
                     << "The callback failed when attempting to return an error from whisperPerformInferenceThread. "
@@ -64,25 +69,30 @@ void whisperPerformInferenceThread(WhisperTsfnContext* context) {
         if (context->streamer_tsfn.has_value()) {
             streamer_var = [context, &streamer_exceptions](std::string word) {
                 std::promise<ov::genai::StreamingStatus> result_promise;
-                napi_status status = context->streamer_tsfn->BlockingCall(
-                    [word, &result_promise, &streamer_exceptions](Napi::Env env, Napi::Function js_callback) {
-                        try {
-                            auto callback_result = js_callback.Call({Napi::String::New(env, word)});
-                            if (callback_result.IsNumber()) {
-                                result_promise.set_value(static_cast<ov::genai::StreamingStatus>(
-                                    callback_result.As<Napi::Number>().Int32Value()));
-                            } else {
-                                result_promise.set_value(ov::genai::StreamingStatus::RUNNING);
-                            }
-                        } catch (const std::exception& err) {
-                            streamer_exceptions.push_back(err.what());
-                            result_promise.set_value(ov::genai::StreamingStatus::CANCEL);
+                napi_status status = context->streamer_tsfn->BlockingCall([word, &result_promise, &streamer_exceptions](
+                                                                              Napi::Env env,
+                                                                              Napi::Function js_callback
+                                                                          ) {
+                    try {
+                        auto callback_result = js_callback.Call({Napi::String::New(env, word)});
+                        if (callback_result.IsNumber()) {
+                            result_promise.set_value(
+                                static_cast<ov::genai::StreamingStatus>(callback_result.As<Napi::Number>().Int32Value())
+                            );
+                        } else {
+                            result_promise.set_value(ov::genai::StreamingStatus::RUNNING);
                         }
-                    });
+                    } catch (const std::exception& err) {
+                        streamer_exceptions.push_back(err.what());
+                        result_promise.set_value(ov::genai::StreamingStatus::CANCEL);
+                    }
+                });
 
                 if (status != napi_ok) {
-                    streamer_exceptions.push_back("The streamer callback BlockingCall failed with status: " +
-                                                  std::to_string(static_cast<int>(status)));
+                    streamer_exceptions.push_back(
+                        "The streamer callback BlockingCall failed with status: " +
+                        std::to_string(static_cast<int>(status))
+                    );
                     return ov::genai::StreamingStatus::CANCEL;
                 }
                 return result_promise.get_future().get();
@@ -117,8 +127,9 @@ void whisperPerformInferenceThread(WhisperTsfnContext* context) {
                 std::make_shared<ov::genai::WhisperDecodedResults>(std::move(result));
             std::shared_ptr<std::string> final_callback_error = std::make_shared<std::string>();
 
-            napi_status status = context->callback_tsfn.BlockingCall(
-                [final_result, final_callback_error](Napi::Env env, Napi::Function js_callback) {
+            napi_status status =
+                context->callback_tsfn.BlockingCall([final_result,
+                                                     final_callback_error](Napi::Env env, Napi::Function js_callback) {
                     try {
                         js_callback.Call({env.Null(), to_whisper_decoded_result(env, *final_result)});
                     } catch (const std::exception& err) {
@@ -141,15 +152,17 @@ WhisperPipelineWrapper::WhisperPipelineWrapper(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<WhisperPipelineWrapper>(info) {}
 
 Napi::Function WhisperPipelineWrapper::get_class(Napi::Env env) {
-    return DefineClass(env,
-                       "WhisperPipeline",
-                       {
-                           InstanceMethod("init", &WhisperPipelineWrapper::init),
-                           InstanceMethod("generate", &WhisperPipelineWrapper::generate),
-                           InstanceMethod("getTokenizer", &WhisperPipelineWrapper::get_tokenizer),
-                           InstanceMethod("getGenerationConfig", &WhisperPipelineWrapper::get_generation_config),
-                           InstanceMethod("setGenerationConfig", &WhisperPipelineWrapper::set_generation_config),
-                       });
+    return DefineClass(
+        env,
+        "WhisperPipeline",
+        {
+            InstanceMethod("init", &WhisperPipelineWrapper::init),
+            InstanceMethod("generate", &WhisperPipelineWrapper::generate),
+            InstanceMethod("getTokenizer", &WhisperPipelineWrapper::get_tokenizer),
+            InstanceMethod("getGenerationConfig", &WhisperPipelineWrapper::get_generation_config),
+            InstanceMethod("setGenerationConfig", &WhisperPipelineWrapper::set_generation_config),
+        }
+    );
 }
 
 Napi::Value WhisperPipelineWrapper::init(const Napi::CallbackInfo& info) {
@@ -166,12 +179,14 @@ Napi::Value WhisperPipelineWrapper::init(const Napi::CallbackInfo& info) {
         OPENVINO_ASSERT(info[3].IsFunction(), "init callback is not a function");
         Napi::Function callback = info[3].As<Napi::Function>();
 
-        auto async_worker = new WhisperInitWorker(callback,
-                                                  this->pipe,
-                                                  this->is_initializing,
-                                                  std::move(model_path),
-                                                  std::move(device),
-                                                  std::move(properties));
+        auto async_worker = new WhisperInitWorker(
+            callback,
+            this->pipe,
+            this->is_initializing,
+            std::move(model_path),
+            std::move(device),
+            std::move(properties)
+        );
         async_worker->Queue();
     } catch (const std::exception& ex) {
         *this->is_initializing = false;

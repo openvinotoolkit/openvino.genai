@@ -3,14 +3,15 @@
 
 // #pragma once
 
+#include "openvino/genai/perf_metrics.hpp"
+
 #include <chrono>
+#include <iostream>
 #include <map>
+#include <ostream>
 #include <string>
 #include <vector>
-#include <ostream>
-#include <iostream>
 
-#include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 
 namespace ov::genai {
@@ -76,16 +77,16 @@ void ov::genai::SDPerfMetrics::evaluate_statistics(std::optional<TimePoint> star
 }
 
 ov::genai::SDPerModelsPerfMetrics::SDPerModelsPerfMetrics() : num_accepted_tokens(0) {
-    raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
-    main_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
-    draft_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+    raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+    main_model_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+    draft_model_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 }
 
 size_t ov::genai::SDPerModelsPerfMetrics::get_num_accepted_tokens() {
     evaluate_statistics();
     return num_accepted_tokens;
 };
-    
+
 void ov::genai::SDPerModelsPerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     if (m_evaluated)
         return;

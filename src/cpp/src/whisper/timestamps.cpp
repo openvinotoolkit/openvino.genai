@@ -6,11 +6,13 @@
 namespace ov {
 namespace genai {
 
-ov::genai::ExtractedSegments extract_segments(const std::vector<int64_t>& tokens,
-                                              const ov::genai::WhisperGenerationConfig& config,
-                                              const size_t nb_max_frames,
-                                              const float time_precision,
-                                              const float time_offset) {
+ov::genai::ExtractedSegments extract_segments(
+    const std::vector<int64_t>& tokens,
+    const ov::genai::WhisperGenerationConfig& config,
+    const size_t nb_max_frames,
+    const float time_precision,
+    const float time_offset
+) {
     ov::genai::ExtractedSegments extracted_segments;
     std::optional<int64_t> token_start = std::nullopt;
     const size_t timestamp_begin = config.no_timestamps_token_id + 1;
@@ -47,9 +49,11 @@ ov::genai::ExtractedSegments extract_segments(const std::vector<int64_t>& tokens
             // each next timestamp token represents .02 time diff
             extracted_segments.last_offset = (token - timestamp_begin) * 2;
 
-            extracted_segments.non_timestamp_tokens.insert(extracted_segments.non_timestamp_tokens.end(),
-                                                           tokens.begin() + idx_start + 1,
-                                                           tokens.begin() + i);
+            extracted_segments.non_timestamp_tokens.insert(
+                extracted_segments.non_timestamp_tokens.end(),
+                tokens.begin() + idx_start + 1,
+                tokens.begin() + i
+            );
             extracted_segments.segment_ranges.emplace_back(idx_start + 1, i);
             token_start = std::nullopt;
         }
@@ -69,9 +73,8 @@ ov::genai::ExtractedSegments extract_segments(const std::vector<int64_t>& tokens
 
         extracted_segments.last_offset = nb_max_frames;
 
-        extracted_segments.non_timestamp_tokens.insert(extracted_segments.non_timestamp_tokens.end(),
-                                                       tokens.begin() + idx_start + 1,
-                                                       tokens.end());
+        extracted_segments.non_timestamp_tokens
+            .insert(extracted_segments.non_timestamp_tokens.end(), tokens.begin() + idx_start + 1, tokens.end());
 
         extracted_segments.segment_ranges.emplace_back(idx_start + 1, tokens.size());
     }

@@ -5,10 +5,10 @@
 
 #include <filesystem>
 
-#include "visual_language/vlm_config.hpp"
-#include "visual_language/vision_encoder.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/qwen2vl/classes.hpp"
+#include "visual_language/vision_encoder.hpp"
+#include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
 
@@ -25,7 +25,8 @@ public:
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
         const std::string& device,
-        const ov::AnyMap device_config);
+        const ov::AnyMap device_config
+    );
 
     InputsEmbedderQwen3VL(
         const VLMConfig& vlm_config,
@@ -33,7 +34,8 @@ public:
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
-        const ov::AnyMap device_config);
+        const ov::AnyMap device_config
+    );
 
     ov::Tensor get_inputs_embeds(
         const std::string& prompt,
@@ -43,7 +45,8 @@ public:
         bool recalculate_merged_embeddings = true,
         const std::vector<size_t>& image_sequence = {},
         const std::vector<size_t>& videos_sequence = {},
-        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}
+    ) override;
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const override;
 
@@ -54,7 +57,7 @@ public:
 protected:
     // Vision embeddings position model
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_pos;
-    
+
     // Cached extra inputs for language model
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs{
         {"deepstack_visual_embeds", ov::Tensor()},
@@ -75,11 +78,12 @@ protected:
         const std::vector<EncodedImage>& images,
         const std::vector<size_t>& images_sequence,
         const std::vector<EncodedVideo>& videos,
-        const std::vector<size_t>& videos_sequence) override;
+        const std::vector<size_t>& videos_sequence
+    ) override;
 
     /**
      * @brief Computes interpolated position embeddings.
-     * 
+     *
      * Calculates position interpolation indices and weights, runs vision_embeddings_pos model,
      * applies bilinear interpolation weights, sums corners, permutes for spatial merge.
      */
@@ -96,4 +100,4 @@ protected:
     ) const override;
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

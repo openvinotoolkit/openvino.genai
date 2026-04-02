@@ -97,7 +97,7 @@ TEST(TestBlockAllocator, FreesBlocksIndependentlyFromLayers) {
 
 class PrefixCachingBlockAllocatorTest : public testing::Test {
 protected:
-    PrefixCachingBlockAllocatorTest(): allocator(initial_num_free_blocks, true, num_layers) {}
+    PrefixCachingBlockAllocatorTest() : allocator(initial_num_free_blocks, true, num_layers) {}
     size_t num_layers = 3;
     size_t initial_num_free_blocks = 10;
     ov::genai::BlockAllocator allocator;
@@ -138,7 +138,10 @@ TEST_F(PrefixCachingBlockAllocatorTest, HandlesFreesCorrectlyWithMixedHashFrees)
         EXPECT_NO_THROW(allocator.free(mixed_hash_blocks, cached_blocks_map));
         EXPECT_EQ(allocator.num_free_blocks(0), 8);
         EXPECT_EQ(allocator.num_free_blocks(num_layers - 1), 8);
-        EXPECT_EQ(allocator.num_overwriteable_blocks(), 0);  // mixed hash, can't store under blocks across layers under same hash
+        EXPECT_EQ(
+            allocator.num_overwriteable_blocks(),
+            0
+        );  // mixed hash, can't store under blocks across layers under same hash
     }
 
     {
@@ -152,7 +155,10 @@ TEST_F(PrefixCachingBlockAllocatorTest, HandlesFreesCorrectlyWithMixedHashFrees)
         EXPECT_NO_THROW(allocator.free(mixed_hash_blocks, cached_blocks_map));
         EXPECT_EQ(allocator.num_free_blocks(0), 9);
         EXPECT_EQ(allocator.num_free_blocks(num_layers - 1), 9);
-        EXPECT_EQ(allocator.num_overwriteable_blocks(), 0);  // mixed hash, can't store under blocks across layers under same hash
+        EXPECT_EQ(
+            allocator.num_overwriteable_blocks(),
+            0
+        );  // mixed hash, can't store under blocks across layers under same hash
     }
 
     allocator.free(c, cached_blocks_map);
@@ -284,7 +290,7 @@ TEST(TestBlockAllocator, CalculatesUsagePercentageCorrectlyWithPrefixCaching) {
     ASSERT_NEAR(allocator.get_used_percentage(), 0.0, 1e-5);
 
     std::map<uint64_t, ov::genai::BlocksPerLayer> prefix_hash_map;
-    for (uint64_t mock_hash: {13, 42, 1337}) {
+    for (uint64_t mock_hash : {13, 42, 1337}) {
         allocator.allocate_block(mock_hash, prefix_hash_map);
     }
     ASSERT_NEAR(allocator.get_used_percentage(), 30.0, 1e-5);
@@ -293,7 +299,10 @@ TEST(TestBlockAllocator, CalculatesUsagePercentageCorrectlyWithPrefixCaching) {
     prefix_hash_map.erase(13);
     ASSERT_NEAR(allocator.get_used_percentage(), 20.0, 1e-5);
 
-    allocator.allocate_block(13, prefix_hash_map);  // despite ow has hash 13, new block allocated, ow[13 -> blk0], prefix_hash_map[13] -> blk3
+    allocator.allocate_block(
+        13,
+        prefix_hash_map
+    );  // despite ow has hash 13, new block allocated, ow[13 -> blk0], prefix_hash_map[13] -> blk3
     ASSERT_NEAR(allocator.get_used_percentage(), 30.0, 1e-5);
     for (auto& allocated_block : prefix_hash_map) {
         allocator.free(prefix_hash_map[allocated_block.first], prefix_hash_map);

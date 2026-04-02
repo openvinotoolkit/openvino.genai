@@ -9,7 +9,9 @@
 
 namespace ov::genai {
 
-std::vector<ov::Tensor> get_whisper_alignments_heads_qks(ov::InferRequest& request,
-                                                         const std::vector<std::pair<size_t, size_t>>& alignment_heads);
+std::vector<ov::Tensor> get_whisper_alignments_heads_qks(
+    ov::InferRequest& request,
+    const std::vector<std::pair<size_t, size_t>>& alignment_heads
+);
 
 }  // namespace ov::genai

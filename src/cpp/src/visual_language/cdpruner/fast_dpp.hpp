@@ -50,10 +50,12 @@ public:
      * @param split_point Split point for adjusting second half indices
      * @return Selected token indices for each batch [B, T]
      */
-    std::vector<std::vector<size_t>> select(const ov::Tensor& kernel_matrix_first,
-                                            const ov::Tensor& kernel_matrix_second,
-                                            size_t num_tokens_to_keep,
-                                            size_t split_point);
+    std::vector<std::vector<size_t>> select(
+        const ov::Tensor& kernel_matrix_first,
+        const ov::Tensor& kernel_matrix_second,
+        size_t num_tokens_to_keep,
+        size_t split_point
+    );
 
 private:
     /**
@@ -101,11 +103,13 @@ private:
      * @param split_point Split point for adjusting second half indices
      * @return Selected token indices for each batch [B, T]
      */
-    std::vector<std::vector<size_t>> select_parallel(const ov::Tensor& kernel_matrix_first,
-                                                     const ov::Tensor& kernel_matrix_second,
-                                                     size_t tokens_first_half,
-                                                     size_t tokens_second_half,
-                                                     size_t split_point);
+    std::vector<std::vector<size_t>> select_parallel(
+        const ov::Tensor& kernel_matrix_first,
+        const ov::Tensor& kernel_matrix_second,
+        size_t tokens_first_half,
+        size_t tokens_second_half,
+        size_t split_point
+    );
 
 #ifdef ENABLE_OPENCL_DPP
     /**
@@ -117,11 +121,13 @@ private:
      * @param split_point Split point for adjusting second half indices
      * @return Selected token indices for each batch [B, T]
      */
-    std::vector<std::vector<size_t>> select_parallel_opencl(const ov::Tensor& kernel_matrix_first,
-                                                            const ov::Tensor& kernel_matrix_second,
-                                                            size_t tokens_first_half,
-                                                            size_t tokens_second_half,
-                                                            size_t split_point);
+    std::vector<std::vector<size_t>> select_parallel_opencl(
+        const ov::Tensor& kernel_matrix_first,
+        const ov::Tensor& kernel_matrix_second,
+        size_t tokens_first_half,
+        size_t tokens_second_half,
+        size_t split_point
+    );
 #endif
 
     /**
@@ -140,12 +146,14 @@ private:
      * @param cis_data Orthogonalized vectors data pointer [T, N]
      * @param di2s_data Current diagonal scores data pointer [N]
      */
-    void update_orthogonal_vector(const float* batch_kernel_data,
-                                  size_t total_tokens,
-                                  size_t selected_idx,
-                                  size_t iteration,
-                                  float* cis_data,
-                                  const float* di2s_data);
+    void update_orthogonal_vector(
+        const float* batch_kernel_data,
+        size_t total_tokens,
+        size_t selected_idx,
+        size_t iteration,
+        float* cis_data,
+        const float* di2s_data
+    );
 
     /**
      * @brief Update marginal gains after selecting a token

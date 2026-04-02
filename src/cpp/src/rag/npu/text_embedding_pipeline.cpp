@@ -10,11 +10,13 @@
 namespace ov {
 namespace genai {
 
-InferRequest create_text_embedding_npu_request(std::shared_ptr<ov::Model>& model,
-                                               const TextEmbeddingPipeline::Config& config,
-                                               const ov::AnyMap& properties,
-                                               std::optional<size_t> max_position_embeddings,
-                                               const bool is_seq_len_fixed) {
+InferRequest create_text_embedding_npu_request(
+    std::shared_ptr<ov::Model>& model,
+    const TextEmbeddingPipeline::Config& config,
+    const ov::AnyMap& properties,
+    std::optional<size_t> max_position_embeddings,
+    const bool is_seq_len_fixed
+) {
     if (config.batch_size.has_value() && is_seq_len_fixed) {
         utils::reshape_model(model, config, max_position_embeddings);
     }
@@ -23,9 +25,11 @@ InferRequest create_text_embedding_npu_request(std::shared_ptr<ov::Model>& model
     if (model->is_dynamic()) {
         bool is_padding_on_left = config.padding_side.has_value() && config.padding_side.value() == "left";
         if (is_padding_on_left && is_seq_len_fixed && config.pooling_type != TextEmbeddingPipeline::PoolingType::MEAN) {
-            OPENVINO_THROW("Padding on left is only supported for the MEAN pooling type for dynamic inputs models."
-                           " In order to fix model shape, set batch_size, max_length and pad_to_max_length in the "
-                           "configuration.");
+            OPENVINO_THROW(
+                "Padding on left is only supported for the MEAN pooling type for dynamic inputs models."
+                " In order to fix model shape, set batch_size, max_length and pad_to_max_length in the "
+                "configuration."
+            );
         }
 
         auto kv_pos = utils::get_kv_axes_pos(model);
@@ -41,8 +45,8 @@ InferRequest create_text_embedding_npu_request(std::shared_ptr<ov::Model>& model
     return compiled_model.create_infer_request();
 }
 
-InferRequest create_text_embedding_npu_post_request(std::shared_ptr<ov::Model>& model,
-                                                    const TextEmbeddingPipeline::Config& config) {
+InferRequest
+create_text_embedding_npu_post_request(std::shared_ptr<ov::Model>& model, const TextEmbeddingPipeline::Config& config) {
     if (model->is_dynamic()) {
         ov::Core core = utils::singleton_core();
         auto post_model = utils::create_post_model(model, config);

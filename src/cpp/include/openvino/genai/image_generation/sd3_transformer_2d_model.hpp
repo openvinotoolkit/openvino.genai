@@ -8,11 +8,11 @@
 #include <vector>
 
 #include "openvino/core/any.hpp"
+#include "openvino/genai/lora_adapter.hpp"
+#include "openvino/genai/visibility.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
-#include "openvino/genai/visibility.hpp"
-#include "openvino/genai/lora_adapter.hpp"
 
 namespace ov {
 namespace genai {
@@ -30,36 +30,53 @@ public:
 
     explicit SD3Transformer2DModel(const std::filesystem::path& root_dir);
 
-    SD3Transformer2DModel(const std::filesystem::path& root_dir,
-                          const std::string& device,
-                          const ov::AnyMap& properties = {});
+    SD3Transformer2DModel(
+        const std::filesystem::path& root_dir,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
+    );
 
-    SD3Transformer2DModel(const std::string& model,
-                          const Tensor& weights,
-                          const Config& config,
-                          const size_t vae_scale_factor);
+    SD3Transformer2DModel(
+        const std::string& model,
+        const Tensor& weights,
+        const Config& config,
+        const size_t vae_scale_factor
+    );
 
-    SD3Transformer2DModel(const std::string& model,
-                          const Tensor& weights,
-                          const Config& config,
-                          const size_t vae_scale_factor,
-                          const std::string& device,
-                          const ov::AnyMap& properties = {});
+    SD3Transformer2DModel(
+        const std::string& model,
+        const Tensor& weights,
+        const Config& config,
+        const size_t vae_scale_factor,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
+    );
 
-    template <typename... Properties,
-              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    template <
+        typename... Properties,
+        typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     SD3Transformer2DModel(const std::filesystem::path& root_dir, const std::string& device, Properties&&... properties)
         : SD3Transformer2DModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
-    template <typename... Properties,
-              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    SD3Transformer2DModel(const std::string& model,
-                          const Tensor& weights,
-                          const Config& config,
-                          const size_t vae_scale_factor,
-                          const std::string& device,
-                          Properties&&... properties)
-        : SD3Transformer2DModel(model, weights, config, vae_scale_factor, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
+    template <
+        typename... Properties,
+        typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    SD3Transformer2DModel(
+        const std::string& model,
+        const Tensor& weights,
+        const Config& config,
+        const size_t vae_scale_factor,
+        const std::string& device,
+        Properties&&... properties
+    )
+        : SD3Transformer2DModel(
+              model,
+              weights,
+              config,
+              vae_scale_factor,
+              device,
+              ov::AnyMap{std::forward<Properties>(properties)...}
+          ) {}
 
     SD3Transformer2DModel(const SD3Transformer2DModel&);
 
@@ -72,8 +89,8 @@ public:
     SD3Transformer2DModel& compile(const std::string& device, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<SD3Transformer2DModel&, Properties...> compile(const std::string& device,
-                                                                                  Properties&&... properties) {
+    ov::util::EnableIfAllStringAny<SD3Transformer2DModel&, Properties...>
+    compile(const std::string& device, Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 

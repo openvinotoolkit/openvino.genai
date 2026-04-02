@@ -2,13 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "generation_config_utils.hpp"
+
 #include "utils.hpp"
 
 namespace ov::genai::utils {
 
 void validate_generation_config(const VideoGenerationConfig& config) {
-    OPENVINO_ASSERT(config.guidance_scale > 1.0f || config.negative_prompt == std::nullopt,
-                    "Guidance scale <= 1.0 ignores negative prompt");
+    OPENVINO_ASSERT(
+        config.guidance_scale > 1.0f || config.negative_prompt == std::nullopt,
+        "Guidance scale <= 1.0 ignores negative prompt"
+    );
 }
 
 void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& properties) {
@@ -33,8 +36,7 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
     read_anymap_param(properties, "adapters", config.adapters);
 
     // 'generator' has higher priority than 'seed' parameter
-    const bool have_generator_param =
-        properties.find(ov::genai::generator.name()) != properties.end();
+    const bool have_generator_param = properties.find(ov::genai::generator.name()) != properties.end();
 
     if (have_generator_param) {
         read_anymap_param(properties, "generator", config.generator);
@@ -52,4 +54,4 @@ std::pair<std::string, ov::Any> generation_config(const VideoGenerationConfig& g
     return {VIDEO_GENERATION_CONFIG, ov::Any::make<VideoGenerationConfig>(generation_config)};
 }
 
-} // namespace ov::genai::utils
+}  // namespace ov::genai::utils

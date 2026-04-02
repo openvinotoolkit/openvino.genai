@@ -3,14 +3,13 @@
 
 #include "llm/pipeline_static.hpp"
 
-#include "sampling/sampler.hpp"
-#include "utils.hpp"
-
 #include <fstream>
 
-#include "openvino/runtime/core.hpp"
 #include "openvino/core/parallel.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "openvino/runtime/core.hpp"
+#include "sampling/sampler.hpp"
+#include "utils.hpp"
 
 namespace {
 
@@ -43,7 +42,7 @@ void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
 
     const auto src_strides = src.get_strides();
     const auto dst_strides = dst.get_strides();
-    const auto elem_size   = src.get_byte_size() / src.get_size();
+    const auto elem_size = src.get_byte_size() / src.get_size();
 
     const auto C = src_shape[1];
     const auto H = src_shape[2];
@@ -57,15 +56,17 @@ void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
     const auto* src_p = static_cast<const uint8_t*>(src.data());
     auto* dst_p = static_cast<uint8_t*>(dst.data());
 
-    for (size_t i = 0; i < C*H; ++i) {
+    for (size_t i = 0; i < C * H; ++i) {
         const size_t src_offset = i * IS_H;
         const size_t dst_offset = i * OS_H;
         std::copy_n(src_p + src_offset, chunk_byte_size, dst_p + dst_offset);
     }
 }
 
-void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
-                             ov::genai::GenerationHandle& handle) {
+void stream_generated_tokens(
+    std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
+    ov::genai::GenerationHandle& handle
+) {
     if (streamer_ptr && handle->can_read()) {
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
         auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
@@ -75,18 +76,15 @@ void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_p
     }
 }
 
-enum StaticPipelineKind {
-    STATEFUL
-};
+enum StaticPipelineKind { STATEFUL };
 
 StaticPipelineKind str_to_pipeline(const std::string& str) {
     if (str == "STATEFUL") {
         return StaticPipelineKind::STATEFUL;
     }
-    OPENVINO_THROW("Unsupported \"PIPELINE\" provided: ",
-                   str, ". Please select \"STATEFUL\".");
+    OPENVINO_THROW("Unsupported \"PIPELINE\" provided: ", str, ". Please select \"STATEFUL\".");
 }
-} // anonymous namespace
+}  // anonymous namespace
 
 namespace ov {
 namespace genai {
@@ -96,20 +94,22 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::filesystem::path& models_path,
     const ov::genai::Tokenizer& tokenizer,
     const ov::AnyMap& config
-): StatefulLLMPipeline(
-       genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config),
-       tokenizer, config,
-       utils::from_config_json_if_exists(models_path)
-   ) {
-}
+)
+    : StatefulLLMPipeline(
+          genai::utils::singleton_core().read_model(models_path / "openvino_model.xml", {}, config),
+          tokenizer,
+          config,
+          utils::from_config_json_if_exists(models_path)
+      ) {}
 
 StatefulLLMPipeline::StatefulLLMPipeline(
     const std::shared_ptr<ov::Model>& model,
     const ov::genai::Tokenizer& tokenizer,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config
-) : LLMPipelineImplBase(tokenizer, generation_config),
-    m_sampler(m_tokenizer) {
+)
+    : LLMPipelineImplBase(tokenizer, generation_config),
+      m_sampler(m_tokenizer) {
     auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
     auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model, properties, kv_pos);
     m_max_prompt_len = kv_desc.max_prompt_len;
@@ -154,12 +154,12 @@ DecodedResults StatefulLLMPipeline::generate(
         }
     }
 
-    auto encode_stop_time =  std::chrono::steady_clock::now();
+    auto encode_stop_time = std::chrono::steady_clock::now();
     auto encoded_results = generate(tokenized_input, config, streamer);
 
-    auto decode_start_time =  std::chrono::steady_clock::now();
+    auto decode_start_time = std::chrono::steady_clock::now();
     DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
-    auto decode_stop_time =  std::chrono::steady_clock::now();
+    auto decode_stop_time = std::chrono::steady_clock::now();
 
     if (m_is_chat_conversation) {
         auto answer = decoded_results.texts[0];
@@ -192,22 +192,28 @@ DecodedResults StatefulLLMPipeline::generate(
 
     GenerationConfig config = generation_config.value_or(m_generation_config);
 
-    OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
-    OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
+    OPENVINO_ASSERT(
+        config.apply_chat_template,
+        "Chat template must be applied when using ChatHistory in generate method."
+    );
+    OPENVINO_ASSERT(
+        !m_tokenizer.get_chat_template().empty(),
+        "Chat template must not be empty when using ChatHistory in generate method."
+    );
     OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
-    
+
     constexpr bool add_generation_prompt = true;
     auto templated_chat_history = m_tokenizer.apply_chat_template(history, add_generation_prompt);
     // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
     auto tokenized_inputs = m_tokenizer.encode(templated_chat_history, ov::genai::add_special_tokens(false));
 
-    auto encode_stop_time =  std::chrono::steady_clock::now();
+    auto encode_stop_time = std::chrono::steady_clock::now();
     auto encoded_results = generate(tokenized_inputs, config, streamer);
 
-    auto decode_start_time =  std::chrono::steady_clock::now();
+    auto decode_start_time = std::chrono::steady_clock::now();
     DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
-    auto decode_stop_time =  std::chrono::steady_clock::now();
-    
+    auto decode_stop_time = std::chrono::steady_clock::now();
+
     // Update perf metrics
     decoded_results.perf_metrics = encoded_results.perf_metrics;
     auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
@@ -218,7 +224,7 @@ DecodedResults StatefulLLMPipeline::generate(
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
     decoded_results.perf_metrics.m_evaluated = false;
     decoded_results.perf_metrics.evaluate_statistics(start_time);
-    
+
     return decoded_results;
 }
 
@@ -254,11 +260,15 @@ EncodedResults StatefulLLMPipeline::generate(
 
     std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
-    OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
-        "Currently only greedy and multinomial decoding are supported");
+    OPENVINO_ASSERT(
+        config.is_greedy_decoding() || config.is_multinomial(),
+        "Currently only greedy and multinomial decoding are supported"
+    );
 
-    OPENVINO_ASSERT(config.num_return_sequences == 1u,
-        "Currently only \"num_return_sequences\" equal to 1 is supported!");
+    OPENVINO_ASSERT(
+        config.num_return_sequences == 1u,
+        "Currently only \"num_return_sequences\" equal to 1 is supported!"
+    );
 
     ov::genai::EncodedResults results;
     auto& raw_perf_counters = results.perf_metrics.raw_metrics;
@@ -270,9 +280,10 @@ EncodedResults StatefulLLMPipeline::generate(
     // NB: Check if there is enough space in KV-cache to process input prompt
     auto prompt_len = input_ids.get_size();
     if (prompt_len > m_max_prompt_len) {
-        OPENVINO_THROW("Static Stateful LLM pipeline may only process prompts up to "
-                       + std::to_string(m_max_prompt_len) + " tokens. "
-                       + "Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
+        OPENVINO_THROW(
+            "Static Stateful LLM pipeline may only process prompts up to " + std::to_string(m_max_prompt_len) +
+            " tokens. " + "Set the \"MAX_PROMPT_LEN\" config option to increase the limit."
+        );
     }
 
     ov::Tensor position_ids{ov::element::i64, input_ids.get_shape()};
@@ -301,14 +312,15 @@ EncodedResults StatefulLLMPipeline::generate(
     }
     int64_t output_sequence_len = logits.get_shape().at(1);
 
-    auto sequence_group = std::make_shared<SequenceGroup>(
-        0 /* request_id */, input_ids, config, 1 /* block_size */);
+    auto sequence_group = std::make_shared<SequenceGroup>(0 /* request_id */, input_ids, config, 1 /* block_size */);
     sequence_group->schedule_tokens(sequence_group->get_prompt_len());
     sequence_group->set_output_seq_len(output_sequence_len);
 
     // NB: Controls what tokens are ready to be pushed into the streamer
     GenerationHandle handle = std::make_shared<GenerationHandleImpl>(
-        sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters());
+        sequence_group->get_generation_stream(),
+        sequence_group->get_sampling_parameters()
+    );
 
     SamplerOutput sampler_output = m_sampler.sample({sequence_group}, logits);
     stream_generated_tokens(streamer_ptr, handle);
@@ -316,8 +328,14 @@ EncodedResults StatefulLLMPipeline::generate(
     int64_t input_ids_data = -1;
     int64_t position_ids_data = prompt_len - 1;
     std::vector<int64_t> attention_mask_data(prompt_len, 1);
-    m_request.set_tensor("input_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1},  reinterpret_cast<void*>(&input_ids_data)));
-    m_request.set_tensor("position_ids", ov::Tensor(ov::element::i64, ov::Shape{1,1}, reinterpret_cast<void*>(&position_ids_data)));
+    m_request.set_tensor(
+        "input_ids",
+        ov::Tensor(ov::element::i64, ov::Shape{1, 1}, reinterpret_cast<void*>(&input_ids_data))
+    );
+    m_request.set_tensor(
+        "position_ids",
+        ov::Tensor(ov::element::i64, ov::Shape{1, 1}, reinterpret_cast<void*>(&position_ids_data))
+    );
 
     while (sequence_group->is_running() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
         // KV Cache is full, no further generation is possible
@@ -336,7 +354,10 @@ EncodedResults StatefulLLMPipeline::generate(
         ++position_ids_data;
         // However, attention_mask changes its shape on each iteration, it should be re-set explicitly
         attention_mask_data.push_back(1);
-        m_request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, ov::Shape{1,attention_mask_data.size()}, attention_mask_data.data()));
+        m_request.set_tensor(
+            "attention_mask",
+            ov::Tensor(ov::element::i64, ov::Shape{1, attention_mask_data.size()}, attention_mask_data.data())
+        );
 
         m_request.infer();
 
@@ -347,7 +368,7 @@ EncodedResults StatefulLLMPipeline::generate(
         stream_generated_tokens(streamer_ptr, handle);
     }
 
-    if (streamer_ptr) { // push streamer's cache
+    if (streamer_ptr) {  // push streamer's cache
         streamer_ptr->end();
     }
 
@@ -387,38 +408,43 @@ StatefulLLMPipeline::~StatefulLLMPipeline() {
 }
 
 std::unique_ptr<LLMPipelineImplBase>
-LLMPipelineFactory::create(const std::filesystem::path& models_path,
-                           const ov::AnyMap& config) {
+LLMPipelineFactory::create(const std::filesystem::path& models_path, const ov::AnyMap& config) {
     return create(models_path, Tokenizer(models_path), config);
 }
 
-std::unique_ptr<LLMPipelineImplBase> LLMPipelineFactory::create(const std::shared_ptr<ov::Model>& model,
-                                                                const ov::genai::Tokenizer& tokenizer,
-                                                                const ov::AnyMap& properties,
-                                                                const ov::genai::GenerationConfig& generation_config) {
+std::unique_ptr<LLMPipelineImplBase> LLMPipelineFactory::create(
+    const std::shared_ptr<ov::Model>& model,
+    const ov::genai::Tokenizer& tokenizer,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config
+) {
     auto properties_copy = properties;
-    const auto pipeline_mode = str_to_pipeline(utils::pop_or_default(properties_copy, "STATIC_PIPELINE", std::string("STATEFUL")));
+    const auto pipeline_mode =
+        str_to_pipeline(utils::pop_or_default(properties_copy, "STATIC_PIPELINE", std::string("STATEFUL")));
     if (pipeline_mode == StaticPipelineKind::STATEFUL) {
-        return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(model,
-                                                                            tokenizer,
-                                                                            properties_copy,
-                                                                            generation_config);
+        return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(
+            model,
+            tokenizer,
+            properties_copy,
+            generation_config
+        );
     }
     OPENVINO_ASSERT(false);
 }
 
-std::unique_ptr<LLMPipelineImplBase>
-LLMPipelineFactory::create(const std::filesystem::path& models_path,
-                           const ov::genai::Tokenizer& tokenizer,
-                           const ov::AnyMap& config) {
+std::unique_ptr<LLMPipelineImplBase> LLMPipelineFactory::create(
+    const std::filesystem::path& models_path,
+    const ov::genai::Tokenizer& tokenizer,
+    const ov::AnyMap& config
+) {
     auto properties = config;
-    const auto pipeline_mode = str_to_pipeline(utils::pop_or_default(properties, "STATIC_PIPELINE", std::string("STATEFUL")));
+    const auto pipeline_mode =
+        str_to_pipeline(utils::pop_or_default(properties, "STATIC_PIPELINE", std::string("STATEFUL")));
     if (pipeline_mode == StaticPipelineKind::STATEFUL) {
         return std::make_unique<ov::genai::static_llm::StatefulLLMPipeline>(models_path, tokenizer, properties);
     }
     OPENVINO_ASSERT(false);
 }
-
 
 }  // namespace static_llm
 }  // namespace genai

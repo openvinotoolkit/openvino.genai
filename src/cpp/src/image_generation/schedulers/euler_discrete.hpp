@@ -7,8 +7,8 @@
 #include <list>
 #include <string>
 
-#include "image_generation/schedulers/types.hpp"
 #include "image_generation/schedulers/ischeduler.hpp"
+#include "image_generation/schedulers/types.hpp"
 
 namespace ov {
 namespace genai {
@@ -45,7 +45,12 @@ public:
 
     void scale_model_input(ov::Tensor sample, size_t inference_step) override;
 
-    std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) override;
+    std::map<std::string, ov::Tensor> step(
+        ov::Tensor noise_pred,
+        ov::Tensor latents,
+        size_t inference_step,
+        std::shared_ptr<Generator> generator
+    ) override;
 
     void add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const override;
 
@@ -61,5 +66,5 @@ private:
     size_t _index_for_timestep(int64_t timestep) const;
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

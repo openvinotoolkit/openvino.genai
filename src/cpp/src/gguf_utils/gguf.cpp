@@ -157,62 +157,82 @@ void set_value_from_gguf(gguf_ctx* ctx, uint32_t type, gguf_value* val, GGUFMeta
         ctx->off += gguf_array_header_size;  // Skip header
         char* data = reinterpret_cast<char*>(val) + gguf_array_header_size;
         auto size = static_cast<size_t>(val->array.len);
-        OPENVINO_ASSERT(val->array.type != GGUF_VALUE_TYPE_ARRAY,
-                        "[load_gguf] Only supports loading 1-layer of nested arrays.");
+        OPENVINO_ASSERT(
+            val->array.type != GGUF_VALUE_TYPE_ARRAY,
+            "[load_gguf] Only supports loading 1-layer of nested arrays."
+        );
         switch (val->array.type) {
         case GGUF_VALUE_TYPE_UINT8:
             value = ov::Tensor(ov::element::u8, ov::Shape{size});
-            std::memcpy(std::get<ov::Tensor>(value).data<uint8_t>(),
-                        reinterpret_cast<uint8_t*>(data),
-                        size * sizeof(uint8_t));
+            std::memcpy(
+                std::get<ov::Tensor>(value).data<uint8_t>(),
+                reinterpret_cast<uint8_t*>(data),
+                size * sizeof(uint8_t)
+            );
             break;
         case GGUF_VALUE_TYPE_INT8:
             value = ov::Tensor(ov::element::i8, ov::Shape{size});
-            std::memcpy(std::get<ov::Tensor>(value).data<int8_t>(),
-                        reinterpret_cast<int8_t*>(data),
-                        size * sizeof(int8_t));
+            std::memcpy(
+                std::get<ov::Tensor>(value).data<int8_t>(),
+                reinterpret_cast<int8_t*>(data),
+                size * sizeof(int8_t)
+            );
             break;
         case GGUF_VALUE_TYPE_UINT16:
             value = ov::Tensor(ov::element::u16, ov::Shape{size});
-            std::memcpy(std::get<ov::Tensor>(value).data<uint16_t>(),
-                        reinterpret_cast<uint16_t*>(data),
-                        size * sizeof(uint16_t));
+            std::memcpy(
+                std::get<ov::Tensor>(value).data<uint16_t>(),
+                reinterpret_cast<uint16_t*>(data),
+                size * sizeof(uint16_t)
+            );
             break;
         case GGUF_VALUE_TYPE_INT16:
             value = ov::Tensor(ov::element::i16, ov::Shape{size});
-            std::memcpy(std::get<ov::Tensor>(value).data<int16_t>(),
-                        reinterpret_cast<int16_t*>(data),
-                        size * sizeof(int16_t));
+            std::memcpy(
+                std::get<ov::Tensor>(value).data<int16_t>(),
+                reinterpret_cast<int16_t*>(data),
+                size * sizeof(int16_t)
+            );
             break;
         case GGUF_VALUE_TYPE_UINT32:
             value = ov::Tensor(ov::element::u32, ov::Shape{size});
-            std::memcpy(std::get<ov::Tensor>(value).data<uint32_t>(),
-                        reinterpret_cast<uint32_t*>(data),
-                        size * sizeof(uint32_t));
+            std::memcpy(
+                std::get<ov::Tensor>(value).data<uint32_t>(),
+                reinterpret_cast<uint32_t*>(data),
+                size * sizeof(uint32_t)
+            );
             break;
         case GGUF_VALUE_TYPE_INT32:
             value = ov::Tensor(ov::element::i32, ov::Shape{size});
-            std::memcpy(std::get<ov::Tensor>(value).data<int32_t>(),
-                        reinterpret_cast<int32_t*>(data),
-                        size * sizeof(int32_t));
+            std::memcpy(
+                std::get<ov::Tensor>(value).data<int32_t>(),
+                reinterpret_cast<int32_t*>(data),
+                size * sizeof(int32_t)
+            );
             break;
         case GGUF_VALUE_TYPE_UINT64:
             value = ov::Tensor(ov::element::u64, ov::Shape{size});
-            std::memcpy(std::get<ov::Tensor>(value).data<uint64_t>(),
-                        reinterpret_cast<uint64_t*>(data),
-                        size * sizeof(uint64_t));
+            std::memcpy(
+                std::get<ov::Tensor>(value).data<uint64_t>(),
+                reinterpret_cast<uint64_t*>(data),
+                size * sizeof(uint64_t)
+            );
             break;
         case GGUF_VALUE_TYPE_INT64:
             value = ov::Tensor(ov::element::i64, ov::Shape{size});
-            std::memcpy(std::get<ov::Tensor>(value).data<int64_t>(),
-                        reinterpret_cast<int64_t*>(data),
-                        size * sizeof(int64_t));
+            std::memcpy(
+                std::get<ov::Tensor>(value).data<int64_t>(),
+                reinterpret_cast<int64_t*>(data),
+                size * sizeof(int64_t)
+            );
             break;
         case GGUF_VALUE_TYPE_FLOAT32:
             value = ov::Tensor(ov::element::f32, ov::Shape{size});
-            std::memcpy(std::get<ov::Tensor>(value).data<float>(),
-                        reinterpret_cast<float*>(data),
-                        size * sizeof(float));
+            std::memcpy(
+                std::get<ov::Tensor>(value).data<float>(),
+                reinterpret_cast<float*>(data),
+                size * sizeof(float)
+            );
             break;
         case GGUF_VALUE_TYPE_BOOL:
             value = ov::Tensor(ov::element::boolean, ov::Shape{size});
@@ -231,9 +251,11 @@ void set_value_from_gguf(gguf_ctx* ctx, uint32_t type, gguf_value* val, GGUFMeta
         }
         case GGUF_VALUE_TYPE_FLOAT64:
             value = ov::Tensor(ov::element::f64, ov::Shape{size});
-            std::memcpy(std::get<ov::Tensor>(value).data<double>(),
-                        reinterpret_cast<double*>(data),
-                        size * sizeof(double));
+            std::memcpy(
+                std::get<ov::Tensor>(value).data<double>(),
+                reinterpret_cast<double*>(data),
+                size * sizeof(double)
+            );
             break;
         default:
             OPENVINO_THROW("[load_gguf] Multiple levels of nested arrays are not supported.");
@@ -263,16 +285,20 @@ std::unordered_map<std::string, GGUFMetaData> load_metadata(gguf_ctx* ctx) {
     return metadata;
 }
 
-void load_arrays(gguf_ctx* ctx,
-                 std::unordered_map<std::string, ov::Tensor>& array_map,
-                 std::unordered_map<std::string, gguf_tensor_type>& qtype_map) {
+void load_arrays(
+    gguf_ctx* ctx,
+    std::unordered_map<std::string, ov::Tensor>& array_map,
+    std::unordered_map<std::string, gguf_tensor_type>& qtype_map
+) {
     gguf_tensor tensor;
 
     auto check_insert = [](const auto& inserted) {
-        OPENVINO_ASSERT(inserted.second,
-                        "[load_gguf] Duplicate parameter name '",
-                        inserted.first->first,
-                        "'. This can happen when loading quantized tensors.");
+        OPENVINO_ASSERT(
+            inserted.second,
+            "[load_gguf] Duplicate parameter name '",
+            inserted.first->first,
+            "'. This can happen when loading quantized tensors."
+        );
     };
 
     while (gguf_get_tensor(ctx, &tensor)) {
@@ -374,26 +400,27 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
     config["architecture"] = arch;
     config["layer_num"] = metadata_to_int(metadata, arch + ".block_count");
     config["head_num"] = metadata_to_int(metadata, arch + ".attention.head_count");
-    config["head_size"] = metadata.count(arch + ".attention.key_length") ?
-                     metadata_to_int(metadata, arch + ".attention.key_length") :
-                     (metadata_to_int(metadata, arch + ".embedding_length") / 
-                     metadata_to_int(metadata, arch + ".attention.head_count"));
-    config["head_num_kv"] = metadata.count(arch + ".attention.head_count_kv") ?
-            metadata_to_int(metadata, arch + ".attention.head_count_kv") :
-            metadata_to_int(metadata, arch + ".attention.head_count");
+    config["head_size"] = metadata.count(arch + ".attention.key_length")
+                              ? metadata_to_int(metadata, arch + ".attention.key_length")
+                              : (metadata_to_int(metadata, arch + ".embedding_length") /
+                                 metadata_to_int(metadata, arch + ".attention.head_count"));
+    config["head_num_kv"] = metadata.count(arch + ".attention.head_count_kv")
+                                ? metadata_to_int(metadata, arch + ".attention.head_count_kv")
+                                : metadata_to_int(metadata, arch + ".attention.head_count");
     config["hidden_size"] = metadata_to_int(metadata, arch + ".embedding_length");
-    config["max_position_embeddings"] = metadata.count(arch + ".context_length") ?
-            metadata_to_int(metadata, arch + ".context_length") : 2048;
+    config["max_position_embeddings"] =
+        metadata.count(arch + ".context_length") ? metadata_to_int(metadata, arch + ".context_length") : 2048;
     config["rms_norm_eps"] = metadata_to_float(metadata, arch + ".attention.layer_norm_rms_epsilon");
-    config["rope_freq_base"] = metadata.count(arch + ".rope.freq_base") ?
-            metadata_to_float(metadata, arch + ".rope.freq_base") : 10000.0f;
+    config["rope_freq_base"] =
+        metadata.count(arch + ".rope.freq_base") ? metadata_to_float(metadata, arch + ".rope.freq_base") : 10000.0f;
     config["file_type"] = metadata_to_int(metadata, "general.file_type");
     return config;
 }
 
 std::unordered_map<std::string, ov::Tensor> consts_from_weights(
     const std::map<std::string, GGUFMetaData>& config,
-    const std::unordered_map<std::string, ov::Tensor>& weights) {
+    const std::unordered_map<std::string, ov::Tensor>& weights
+) {
     std::unordered_map<std::string, ov::Tensor> consts;
 
     consts["model.embed_tokens.weight"] = weights.at("token_embd.weight");
@@ -418,8 +445,9 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
     // Process layer weights
     for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
         consts[format("model.layers[%d].input_layernorm.weight", i)] = weights.at(format("blk.%d.attn_norm.weight", i));
-        consts[format("model.layers[%d].post_attention_layernorm.weight", i)] = weights.at(format("blk.%d.ffn_norm.weight", i));
-        
+        consts[format("model.layers[%d].post_attention_layernorm.weight", i)] =
+            weights.at(format("blk.%d.ffn_norm.weight", i));
+
         // Attention weights
         consts[format("model.layers[%d].self_attn.q_proj.weight", i)] = weights.at(format("blk.%d.attn_q.weight", i));
         if (weights.count(format("blk.%d.attn_q.bias", i))) {
@@ -433,17 +461,21 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
         if (weights.count(format("blk.%d.attn_v.bias", i))) {
             consts[format("model.layers[%d].self_attn.v_proj.bias", i)] = weights.at(format("blk.%d.attn_v.bias", i));
         }
-        consts[format("model.layers[%d].self_attn.o_proj.weight", i)] = weights.at(format("blk.%d.attn_output.weight", i));
+        consts[format("model.layers[%d].self_attn.o_proj.weight", i)] =
+            weights.at(format("blk.%d.attn_output.weight", i));
         if (weights.count(format("blk.%d.attn_output.bias", i))) {
-            consts[format("model.layers[%d].self_attn.o_proj.bias", i)] = weights.at(format("blk.%d.attn_output.bias", i));
+            consts[format("model.layers[%d].self_attn.o_proj.bias", i)] =
+                weights.at(format("blk.%d.attn_output.bias", i));
         }
 
-        //Qwen3
+        // Qwen3
         if (weights.count(format("blk.%d.attn_k_norm.weight", i))) {
-            consts[format("model.layers[%d].self_attn.k_norm.weight", i)] = weights.at(format("blk.%d.attn_k_norm.weight", i));
+            consts[format("model.layers[%d].self_attn.k_norm.weight", i)] =
+                weights.at(format("blk.%d.attn_k_norm.weight", i));
         }
         if (weights.count(format("blk.%d.attn_q_norm.weight", i))) {
-            consts[format("model.layers[%d].self_attn.q_norm.weight", i)] = weights.at(format("blk.%d.attn_q_norm.weight", i));
+            consts[format("model.layers[%d].self_attn.q_norm.weight", i)] =
+                weights.at(format("blk.%d.attn_q_norm.weight", i));
         }
 
         // MLP weights
@@ -460,51 +492,65 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
             consts[format("model.layers[%d].mlp.down_proj.bias", i)] = weights.at(format("blk.%d.ffn_down.bias", i));
         }
 
-        // Quantization parameters 
-        // If file_type not ALL_F32 = 0 or MOSTLY_F16 = 1, get dequant scales and biases 
-        if (std::get<int>(config.at("file_type")) != 0 && std::get<int>(config.at("file_type")) != 1) { 
+        // Quantization parameters
+        // If file_type not ALL_F32 = 0 or MOSTLY_F16 = 1, get dequant scales and biases
+        if (std::get<int>(config.at("file_type")) != 0 && std::get<int>(config.at("file_type")) != 1) {
             if (weights.count(format("blk.%d.attn_q.scales", i))) {
-                consts[format("model.layers[%d].self_attn.q_proj.scales", i)] = weights.at(format("blk.%d.attn_q.scales", i));
+                consts[format("model.layers[%d].self_attn.q_proj.scales", i)] =
+                    weights.at(format("blk.%d.attn_q.scales", i));
             }
             if (weights.count(format("blk.%d.attn_k.scales", i))) {
-                consts[format("model.layers[%d].self_attn.k_proj.scales", i)] = weights.at(format("blk.%d.attn_k.scales", i));
+                consts[format("model.layers[%d].self_attn.k_proj.scales", i)] =
+                    weights.at(format("blk.%d.attn_k.scales", i));
             }
             if (weights.count(format("blk.%d.attn_v.scales", i))) {
-                consts[format("model.layers[%d].self_attn.v_proj.scales", i)] = weights.at(format("blk.%d.attn_v.scales", i));
+                consts[format("model.layers[%d].self_attn.v_proj.scales", i)] =
+                    weights.at(format("blk.%d.attn_v.scales", i));
             }
             if (weights.count(format("blk.%d.attn_output.scales", i))) {
-                consts[format("model.layers[%d].self_attn.o_proj.scales", i)] = weights.at(format("blk.%d.attn_output.scales", i));
+                consts[format("model.layers[%d].self_attn.o_proj.scales", i)] =
+                    weights.at(format("blk.%d.attn_output.scales", i));
             }
             if (weights.count(format("blk.%d.ffn_gate.scales", i))) {
-                consts[format("model.layers[%d].mlp.gate_proj.scales", i)] = weights.at(format("blk.%d.ffn_gate.scales", i));
+                consts[format("model.layers[%d].mlp.gate_proj.scales", i)] =
+                    weights.at(format("blk.%d.ffn_gate.scales", i));
             }
             if (weights.count(format("blk.%d.ffn_up.scales", i))) {
-                consts[format("model.layers[%d].mlp.up_proj.scales", i)] = weights.at(format("blk.%d.ffn_up.scales", i));
+                consts[format("model.layers[%d].mlp.up_proj.scales", i)] =
+                    weights.at(format("blk.%d.ffn_up.scales", i));
             }
             if (weights.count(format("blk.%d.ffn_down.scales", i))) {
-                consts[format("model.layers[%d].mlp.down_proj.scales", i)] = weights.at(format("blk.%d.ffn_down.scales", i));
+                consts[format("model.layers[%d].mlp.down_proj.scales", i)] =
+                    weights.at(format("blk.%d.ffn_down.scales", i));
             }
 
             if (weights.count(format("blk.%d.attn_q.biases", i))) {
-                consts[format("model.layers[%d].self_attn.q_proj.biases", i)] = weights.at(format("blk.%d.attn_q.biases", i));
-            }  
+                consts[format("model.layers[%d].self_attn.q_proj.biases", i)] =
+                    weights.at(format("blk.%d.attn_q.biases", i));
+            }
             if (weights.count(format("blk.%d.attn_k.biases", i))) {
-                consts[format("model.layers[%d].self_attn.k_proj.biases", i)] = weights.at(format("blk.%d.attn_k.biases", i));
-            }    
+                consts[format("model.layers[%d].self_attn.k_proj.biases", i)] =
+                    weights.at(format("blk.%d.attn_k.biases", i));
+            }
             if (weights.count(format("blk.%d.attn_v.biases", i))) {
-                consts[format("model.layers[%d].self_attn.v_proj.biases", i)] = weights.at(format("blk.%d.attn_v.biases", i));
+                consts[format("model.layers[%d].self_attn.v_proj.biases", i)] =
+                    weights.at(format("blk.%d.attn_v.biases", i));
             }
             if (weights.count(format("blk.%d.attn_output.biases", i))) {
-                consts[format("model.layers[%d].self_attn.o_proj.biases", i)] = weights.at(format("blk.%d.attn_output.biases", i));
-            }      
+                consts[format("model.layers[%d].self_attn.o_proj.biases", i)] =
+                    weights.at(format("blk.%d.attn_output.biases", i));
+            }
             if (weights.count(format("blk.%d.ffn_gate.biases", i))) {
-                consts[format("model.layers[%d].mlp.gate_proj.biases", i)] = weights.at(format("blk.%d.ffn_gate.biases", i));
-            }        
+                consts[format("model.layers[%d].mlp.gate_proj.biases", i)] =
+                    weights.at(format("blk.%d.ffn_gate.biases", i));
+            }
             if (weights.count(format("blk.%d.ffn_up.biases", i))) {
-                consts[format("model.layers[%d].mlp.up_proj.biases", i)] = weights.at(format("blk.%d.ffn_up.biases", i));
-            }           
+                consts[format("model.layers[%d].mlp.up_proj.biases", i)] =
+                    weights.at(format("blk.%d.ffn_up.biases", i));
+            }
             if (weights.count(format("blk.%d.ffn_down.biases", i))) {
-                consts[format("model.layers[%d].mlp.down_proj.biases", i)] = weights.at(format("blk.%d.ffn_down.biases", i));
+                consts[format("model.layers[%d].mlp.down_proj.biases", i)] =
+                    weights.at(format("blk.%d.ffn_down.biases", i));
             }
         }
     }
@@ -514,7 +560,8 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
 
 std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(
     const std::map<std::string, GGUFMetaData>& config,
-    const std::unordered_map<std::string, gguf_tensor_type>& qtype) {
+    const std::unordered_map<std::string, gguf_tensor_type>& qtype
+) {
     std::unordered_map<std::string, gguf_tensor_type> qtype_map;
 
     if (qtype.count("token_embd.qtype")) {
@@ -531,25 +578,31 @@ std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(
 
     for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
         if (qtype.count(format("blk.%d.attn_norm.qtype", i))) {
-            qtype_map[format("model.layers[%d].input_layernorm.qtype", i)] = qtype.at(format("blk.%d.attn_norm.qtype", i));
+            qtype_map[format("model.layers[%d].input_layernorm.qtype", i)] =
+                qtype.at(format("blk.%d.attn_norm.qtype", i));
         }
 
         if (qtype.count(format("blk.%d.ffn_norm.qtype", i))) {
-            qtype_map[format("model.layers[%d].post_attention_layernorm.qtype", i)] = qtype.at(format("blk.%d.ffn_norm.qtype", i));
+            qtype_map[format("model.layers[%d].post_attention_layernorm.qtype", i)] =
+                qtype.at(format("blk.%d.ffn_norm.qtype", i));
         }
 
         // Attention weights
         if (qtype.count(format("blk.%d.attn_q.qtype", i))) {
-            qtype_map[format("model.layers[%d].self_attn.q_proj.qtype", i)] = qtype.at(format("blk.%d.attn_q.qtype", i));
+            qtype_map[format("model.layers[%d].self_attn.q_proj.qtype", i)] =
+                qtype.at(format("blk.%d.attn_q.qtype", i));
         }
         if (qtype.count(format("blk.%d.attn_k.qtype", i))) {
-            qtype_map[format("model.layers[%d].self_attn.k_proj.qtype", i)] = qtype.at(format("blk.%d.attn_k.qtype", i));
+            qtype_map[format("model.layers[%d].self_attn.k_proj.qtype", i)] =
+                qtype.at(format("blk.%d.attn_k.qtype", i));
         }
         if (qtype.count(format("blk.%d.attn_v.qtype", i))) {
-            qtype_map[format("model.layers[%d].self_attn.v_proj.qtype", i)] = qtype.at(format("blk.%d.attn_v.qtype", i));
+            qtype_map[format("model.layers[%d].self_attn.v_proj.qtype", i)] =
+                qtype.at(format("blk.%d.attn_v.qtype", i));
         }
         if (qtype.count(format("blk.%d.attn_output.qtype", i))) {
-            qtype_map[format("model.layers[%d].self_attn.o_proj.qtype", i)] = qtype.at(format("blk.%d.attn_output.qtype", i));
+            qtype_map[format("model.layers[%d].self_attn.o_proj.qtype", i)] =
+                qtype.at(format("blk.%d.attn_output.qtype", i));
         }
 
         // MLP weights
@@ -567,9 +620,10 @@ std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(
     return qtype_map;
 }
 
-std::tuple<std::map<std::string, GGUFMetaData>,
-           std::unordered_map<std::string, ov::Tensor>,
-           std::unordered_map<std::string, gguf_tensor_type>>
+std::tuple<
+    std::map<std::string, GGUFMetaData>,
+    std::unordered_map<std::string, ov::Tensor>,
+    std::unordered_map<std::string, gguf_tensor_type>>
 load_gguf(const std::string& file) {
     auto [metadata, weights, qtype] = get_gguf_data(file);
 

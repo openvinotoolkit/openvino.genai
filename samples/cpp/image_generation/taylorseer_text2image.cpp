@@ -1,14 +1,13 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/image_generation/text2image_pipeline.hpp"
-#include "openvino/genai/taylorseer_config.hpp"
-
-#include "imwrite.hpp"
-#include "progress_bar.hpp"
-
 #include <chrono>
 #include <iostream>
+
+#include "imwrite.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
+#include "openvino/genai/taylorseer_config.hpp"
+#include "progress_bar.hpp"
 
 int32_t main(int32_t argc, char* argv[]) try {
     if (argc != 3) {
@@ -30,13 +29,15 @@ int32_t main(int32_t argc, char* argv[]) try {
     std::cout << "Generating baseline image without caching...\n";
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    ov::Tensor baseline_image = pipe.generate(prompt,
+    ov::Tensor baseline_image = pipe.generate(
+        prompt,
         ov::genai::width(512),
         ov::genai::height(512),
         ov::genai::num_inference_steps(num_inference_steps),
         ov::genai::num_images_per_prompt(1),
         ov::genai::rng_seed(42),
-        ov::genai::callback(progress_bar));
+        ov::genai::callback(progress_bar)
+    );
 
     auto end_time = std::chrono::high_resolution_clock::now();
     auto baseline_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
@@ -57,13 +58,15 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     start_time = std::chrono::high_resolution_clock::now();
 
-    ov::Tensor image = pipe.generate(prompt,
+    ov::Tensor image = pipe.generate(
+        prompt,
         ov::genai::width(512),
         ov::genai::height(512),
         ov::genai::num_inference_steps(num_inference_steps),
         ov::genai::num_images_per_prompt(1),
         ov::genai::rng_seed(42),
-        ov::genai::callback(progress_bar));
+        ov::genai::callback(progress_bar)
+    );
 
     end_time = std::chrono::high_resolution_clock::now();
     auto taylorseer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
@@ -91,11 +94,13 @@ int32_t main(int32_t argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

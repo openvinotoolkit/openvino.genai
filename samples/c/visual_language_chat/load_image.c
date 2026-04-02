@@ -2,21 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "load_image.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
-  #define strcasecmp _stricmp
+#    define strcasecmp _stricmp
 #else
-  #include <strings.h>
+#    include <strings.h>
 #endif
 
 #ifdef _WIN32
-    #include <io.h>
-    #define stat _stat
+#    include <io.h>
+#    define stat _stat
 #else
-    #include <sys/stat.h>
+#    include <sys/stat.h>
 #endif
 
 #include "openvino/c/openvino.h"
@@ -24,14 +25,14 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-static const char* supported_extensions[] = {
-    ".jpg", ".jpeg", ".png", ".bmp", ".tga", ".psd", ".gif", ".hdr", ".pic", ".pnm"
-};
+static const char* supported_extensions[] =
+    {".jpg", ".jpeg", ".png", ".bmp", ".tga", ".psd", ".gif", ".hdr", ".pic", ".pnm"};
 static const size_t num_extensions = sizeof(supported_extensions) / sizeof(supported_extensions[0]);
 
 static int is_supported_image(const char* filename) {
-    if (!filename) return 0;
-    
+    if (!filename)
+        return 0;
+
     size_t len = strlen(filename);
     for (size_t i = 0; i < num_extensions; i++) {
         size_t ext_len = strlen(supported_extensions[i]);
@@ -54,7 +55,7 @@ typedef struct {
 
 static void* image_allocate(size_t bytes, size_t alignment, void* user_data) {
     image_allocator_t* allocator = (image_allocator_t*)user_data;
-    if (allocator && allocator->image_data && 
+    if (allocator && allocator->image_data &&
         allocator->channels * allocator->height * allocator->width == (int)bytes) {
         return allocator->image_data;
     }
@@ -63,7 +64,7 @@ static void* image_allocate(size_t bytes, size_t alignment, void* user_data) {
 
 static void image_deallocate(void* ptr, size_t bytes, size_t alignment, void* user_data) {
     image_allocator_t* allocator = (image_allocator_t*)user_data;
-    if (allocator && allocator->image_data && 
+    if (allocator && allocator->image_data &&
         allocator->channels * allocator->height * allocator->width == (int)bytes) {
         stbi_image_free(allocator->image_data);
         allocator->image_data = NULL;
@@ -81,33 +82,33 @@ ov_tensor_t* load_image(const char* image_path) {
         fprintf(stderr, "Error: image_path is NULL\n");
         return NULL;
     }
-    
+
     if (!file_exists(image_path)) {
         fprintf(stderr, "Error: Image file '%s' does not exist\n", image_path);
         return NULL;
     }
-    
+
     int width, height, channels;
     const int desired_channels = 3;
-    
+
     unsigned char* data = stbi_load(image_path, &width, &height, &channels, desired_channels);
     if (!data) {
         fprintf(stderr, "Error: Failed to load image '%s': %s\n", image_path, stbi_failure_reason());
         return NULL;
     }
-    
+
     image_allocator_t* allocator = (image_allocator_t*)malloc(sizeof(image_allocator_t));
     if (!allocator) {
         fprintf(stderr, "Error: Failed to allocate memory for allocator\n");
         stbi_image_free(data);
         return NULL;
     }
-    
+
     allocator->image_data = data;
     allocator->channels = desired_channels;
     allocator->height = height;
     allocator->width = width;
-    
+
     ov_tensor_t* tensor = NULL;
     ov_element_type_e input_type = U8;
     int64_t dims[4] = {1, height, width, desired_channels};
@@ -121,9 +122,9 @@ ov_tensor_t* load_image(const char* image_path) {
         data,
         &tensor
     );
-    
+
     free(allocator);
-    
+
     return tensor;
 }
 
@@ -132,27 +133,27 @@ const ov_tensor_t** load_images(const char* image_path, size_t* tensor_count) {
         fprintf(stderr, "Error: image_path or tensor_count is NULL\n");
         return NULL;
     }
-    
+
     if (!file_exists(image_path)) {
         fprintf(stderr, "Error: Image file '%s' does not exist\n", image_path);
         return NULL;
     }
-    
+
     ov_tensor_t* tensor = load_image(image_path);
     if (!tensor) {
         return NULL;
     }
-    
+
     const ov_tensor_t** tensors = (const ov_tensor_t**)malloc(sizeof(ov_tensor_t*));
     if (!tensors) {
         fprintf(stderr, "Error: Failed to allocate memory for single tensor\n");
         free_tensor(tensor);
         return NULL;
     }
-    
+
     tensors[0] = tensor;
     *tensor_count = 1;
-    
+
     return tensors;
 }
 
@@ -174,8 +175,9 @@ void free_tensor_array(ov_tensor_t** tensors, size_t count) {
 }
 
 int file_exists(const char* path) {
-    if (!path) return 0;
-    
+    if (!path)
+        return 0;
+
     struct stat buffer;
     return (stat(path, &buffer) == 0);
 }

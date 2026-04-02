@@ -2,43 +2,43 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
+
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/parsers.hpp"
 #include "openvino/genai/text_streamer.hpp"
-#include "openvino/genai/llm_pipeline.hpp"
 
 using namespace ov::genai;
 
 TEST(ParserTest, test_llama3_parser_1) {
-    std::string prompt = R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location="New York, NY", unit="celsius")]<|eom_id|>)";
+    std::string prompt =
+        R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location="New York, NY", unit="celsius")]<|eom_id|>)";
     // By default content should keep original values.
-    
+
     JsonContainer expected;
     expected["content"] = prompt;
     expected["tool_calls"] = JsonContainer::array();
-    expected["tool_calls"].push_back(JsonContainer({
-        {"name", "get_weather"},
-        {"arguments", JsonContainer{
-            {"location", "New York, NY"},
-            {"unit", "celsius"}
-        }}
-    }));
-
+    expected["tool_calls"].push_back(JsonContainer(
+        {{"name", "get_weather"}, {"arguments", JsonContainer{{"location", "New York, NY"}, {"unit", "celsius"}}}}
+    ));
 
     std::shared_ptr<Llama3PythonicToolParser> parser = std::make_shared<Llama3PythonicToolParser>();
     JsonContainer input;
     input["content"] = prompt;
     parser->parse(input);
-    
+
     ASSERT_TRUE(expected == input);
 }
 
 TEST(ParserTest, test_reasoning_parser_1) {
-    std::string prompt = R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜><think>\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n</think>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )";
-    
+    std::string prompt =
+        R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜><think>\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n</think>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )";
+
     JsonContainer expected;
-    expected["content"] = R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )";
-    expected["reasoning_content"] = R"(\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n)";
+    expected["content"] =
+        R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )";
+    expected["reasoning_content"] =
+        R"(\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n)";
 
     std::shared_ptr<ReasoningParser> parser = std::make_shared<ReasoningParser>(
         /*expect_open_tag*/ true,
@@ -52,11 +52,13 @@ TEST(ParserTest, test_reasoning_parser_1) {
 }
 
 TEST(ParserTest, test_reasoning_parser_2) {
-    std::string prompt = R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜><think>\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n</think>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )";
-    
+    std::string prompt =
+        R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜><think>\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n</think>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )";
+
     JsonContainer expected;
     expected["content"] = prompt;
-    expected["reasoning_content"] = R"(\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n)";
+    expected["reasoning_content"] =
+        R"(\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n)";
 
     std::shared_ptr<ReasoningParser> parser = std::make_shared<ReasoningParser>(
         /*expect_open_tag*/ true,
@@ -69,8 +71,6 @@ TEST(ParserTest, test_reasoning_parser_2) {
     ASSERT_EQ(input, expected);
 }
 
-
-
 class DeepSeekR1ReasoningParserTest : public ::testing::Test {
 protected:
     ov::genai::DeepSeekR1ReasoningIncrementalParser parser;
@@ -79,18 +79,112 @@ protected:
 
 TEST_F(DeepSeekR1ReasoningParserTest, ReasoningContentAccumulatesAcrossCalls) {
     std::vector<std::string> input_stream = {
-        "<｜begin▁of▁sentence｜>", "First", ",", " I", " recognize", " that", " the", " question", " is", " asking", 
-        " for", " the", " sum", " of", " ", "2", " and", " ", "1", ".\n\n", "I", " know", " that", " addition", 
-        " involves", " combining", " two", " numbers", " to", " find", " their", " total", ".\n\n", "Starting", 
-        " with", " ", "2", ",", " I", " add", " ", "1", " to", " it", ".\n\n", "2", " plus", " ", "1", " equals", 
-        " ", "3", ".\n", "</think>", "\n\n", "**", "Solution", ":", "**\n\n", "To", " find", " the", " sum", 
-        " of", " ", "2", " and", " ", "1", " follow", " these", " simple", " steps", ":\n\n", "1", ".", " **", 
-        "Start", " with", " the", " number", " ", "2", ".", "**\n", "2", ".", " **", "Add", " ", "1", " to", 
-        " it", ".", "**\n", "   \n", "  ", " \\", "[\n", "  "
+        "<｜begin▁of▁sentence｜>",
+        "First",
+        ",",
+        " I",
+        " recognize",
+        " that",
+        " the",
+        " question",
+        " is",
+        " asking",
+        " for",
+        " the",
+        " sum",
+        " of",
+        " ",
+        "2",
+        " and",
+        " ",
+        "1",
+        ".\n\n",
+        "I",
+        " know",
+        " that",
+        " addition",
+        " involves",
+        " combining",
+        " two",
+        " numbers",
+        " to",
+        " find",
+        " their",
+        " total",
+        ".\n\n",
+        "Starting",
+        " with",
+        " ",
+        "2",
+        ",",
+        " I",
+        " add",
+        " ",
+        "1",
+        " to",
+        " it",
+        ".\n\n",
+        "2",
+        " plus",
+        " ",
+        "1",
+        " equals",
+        " ",
+        "3",
+        ".\n",
+        "</think>",
+        "\n\n",
+        "**",
+        "Solution",
+        ":",
+        "**\n\n",
+        "To",
+        " find",
+        " the",
+        " sum",
+        " of",
+        " ",
+        "2",
+        " and",
+        " ",
+        "1",
+        " follow",
+        " these",
+        " simple",
+        " steps",
+        ":\n\n",
+        "1",
+        ".",
+        " **",
+        "Start",
+        " with",
+        " the",
+        " number",
+        " ",
+        "2",
+        ".",
+        "**\n",
+        "2",
+        ".",
+        " **",
+        "Add",
+        " ",
+        "1",
+        " to",
+        " it",
+        ".",
+        "**\n",
+        "   \n",
+        "  ",
+        " \\",
+        "[\n",
+        "  "
     };
-    
-    std::string ref_res = "First, I recognize that the question is asking for the sum of 2 and 1.\n\nI know that addition involves combining two numbers to find their total.\n\nStarting with 2, I add 1 to it.\n\n2 plus 1 equals 3.\n";
-    
+
+    std::string ref_res =
+        "First, I recognize that the question is asking for the sum of 2 and 1.\n\nI know that addition involves "
+        "combining two numbers to find their total.\n\nStarting with 2, I add 1 to it.\n\n2 plus 1 equals 3.\n";
+
     JsonContainer msg;
     JsonContainer accumulated_msg;
     for (int i = 1; i < input_stream.size(); i++) {
@@ -118,7 +212,7 @@ TEST(ParserTest, test_custom_parser) {
 
             // find text between <think> and </think>
             std::size_t start = content.find("<think>");
-            std::size_t end   = content.find("</think>");
+            std::size_t end = content.find("</think>");
             if (start != std::string::npos && end != std::string::npos && end > start) {
                 std::string think_text = content.substr(start + 7, end - (start + 7));
                 // trim leading/trailing whitespace
@@ -150,9 +244,11 @@ TEST(ParserTest, CustomParser_AccumulatesBetweenStartStop) {
     public:
         bool main_part_started = false;
 
-        std::string parse(JsonContainer& msg,
-                          std::string& delta_text,
-                          const std::optional<std::vector<int64_t>>& /*delta_tokens*/ = std::nullopt) override {
+        std::string parse(
+            JsonContainer& msg,
+            std::string& delta_text,
+            const std::optional<std::vector<int64_t>>& /*delta_tokens*/ = std::nullopt
+        ) override {
             // Ensure fields exist (Python test used dict defaults)
             if (!msg.contains("content")) {
                 msg.to_empty_object();
@@ -203,15 +299,14 @@ TEST(ParserTest, CustomParser_AccumulatesBetweenStartStop) {
     Tokenizer tok;
     std::shared_ptr<IncrementalParser> parser = std::make_shared<CustomParser>();
     CustomStreamer streamer(tok, {parser});
-    
-    
+
     // Same stream as in the Python example
     std::vector<std::string> stream_string = {"<think>", " ", "world", " ", "</think>", "!"};
 
     for (size_t i = 0; i < stream_string.size(); ++i) {
         streamer.write(stream_string[i]);
     }
-    
+
     JsonContainer msg = streamer.get_parsed_message();
     ASSERT_TRUE(msg.contains("reasoning_content"));
     ASSERT_EQ(msg["reasoning_content"].get_string(), " world ");

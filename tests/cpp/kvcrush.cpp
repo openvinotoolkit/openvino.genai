@@ -74,9 +74,11 @@ TEST_F(KVCrushAlgorithmTest, CreateIndicatorsTest) {
     auto scores = create_mock_scores(m_num_decoder_layers, num_tokens_in_evictable_blocks);
 
     // Execute
-    auto indicators = m_kvcrush_algo.create_indicators_kvcrush(num_tokens_in_evictable_blocks,
-                                                               evicted_block_indices,
-                                                               scores[decoder_layer_idx]);
+    auto indicators = m_kvcrush_algo.create_indicators_kvcrush(
+        num_tokens_in_evictable_blocks,
+        evicted_block_indices,
+        scores[decoder_layer_idx]
+    );
 
     // Verify
     EXPECT_EQ(indicators.size(), num_tokens_in_evictable_blocks);
@@ -236,58 +238,39 @@ TEST_F(KVCrushAlgorithmTest, CalculateHammingDistanceParameterizedTest) {
 
     std::vector<TestCase> test_cases = {
         // Case 1: Alternating 1s and 0s, anchor_point {0, 1, 0, 1}
-        {
-            {1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0},
-            {0, 1, 0, 1},
-            {4, 4, 4}
-        },
+        {{1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0}, {0, 1, 0, 1}, {4, 4, 4}},
         // Case 2: All indicators match anchor_point
-        {
-            {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1},
-            {0, 1, 0, 1},
-            {0, 0, 0}
-        },
+        {{0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1}, {0, 1, 0, 1}, {0, 0, 0}},
         // Case 3: All indicators are 1, anchor_point all 0
-        {
-            {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-            {0, 0, 0, 0},
-            {4, 4, 4}
-        },
+        {{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, {0, 0, 0, 0}, {4, 4, 4}},
         // Case 4: All indicators are 0, anchor_point all 1
-        {
-            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-            {1, 1, 1, 1},
-            {4, 4, 4}
-        },
+        {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {1, 1, 1, 1}, {4, 4, 4}},
         // Case 5: Mixed indicators, anchor_point {1, 0, 1, 0}
-        {
-            {1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0},
-            {1, 0, 1, 0},
-            {0, 4, 2}
-        }
+        {{1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0}, {1, 0, 1, 0}, {0, 4, 2}}
     };
 
     size_t num_tokens_in_evictable_blocks = 12;
     for (const auto& tc : test_cases) {
         ASSERT_EQ(tc.indicators.size(), num_tokens_in_evictable_blocks);
         ASSERT_EQ(tc.anchor_point.size(), m_block_size);
-        
+
         // Create mutable copies since the function expects non-const references
         std::vector<size_t> indicators_copy = tc.indicators;
         std::vector<size_t> anchor_point_copy = tc.anchor_point;
-        
-        auto block_distances =
-            m_kvcrush_algo.calculate_hamming_distance_kvcrush(num_tokens_in_evictable_blocks, indicators_copy, anchor_point_copy);
+
+        auto block_distances = m_kvcrush_algo.calculate_hamming_distance_kvcrush(
+            num_tokens_in_evictable_blocks,
+            indicators_copy,
+            anchor_point_copy
+        );
 
         size_t num_blocks = num_tokens_in_evictable_blocks / m_block_size;
         EXPECT_EQ(block_distances.size(), num_blocks);
 
         for (size_t i = 0; i < num_blocks; ++i) {
             EXPECT_EQ(block_distances[i].first, tc.expected_distances[i])
-                << "Block " << i << " failed for indicators: "
-                << ::testing::PrintToString(tc.indicators)
-                << " and anchor_point: "
-                << ::testing::PrintToString(tc.anchor_point);
+                << "Block " << i << " failed for indicators: " << ::testing::PrintToString(tc.indicators)
+                << " and anchor_point: " << ::testing::PrintToString(tc.anchor_point);
         }
     }
 }
@@ -303,33 +286,13 @@ TEST_F(KVCrushAlgorithmTest, GetRepresentativeBlocksParameterizedTest) {
 
     std::vector<TestCase> test_cases = {
         // Case 1: Uniform distances, select 2 out of 4
-        {
-            {{0, 0}, {1, 1}, {2, 2}, {3, 3}},
-            {0, 1, 2, 3},
-            2,
-            {0, 2}
-        },
+        {{{0, 0}, {1, 1}, {2, 2}, {3, 3}}, {0, 1, 2, 3}, 2, {0, 2}},
         // Case 2: All blocks eligible, budget equals number of blocks
-        {
-            {{0, 0}, {1, 1}, {2, 2}, {3, 3}},
-            {0, 1, 2, 3},
-            4,
-            {0, 1, 2, 3}
-        },
+        {{{0, 0}, {1, 1}, {2, 2}, {3, 3}}, {0, 1, 2, 3}, 4, {0, 1, 2, 3}},
         // Case 3: Only some blocks eligible
-        {
-            {{0, 0}, {1, 1}, {2, 2}, {3, 3}},
-            {1, 3},
-            2,
-            {1, 3}
-        },
+        {{{0, 0}, {1, 1}, {2, 2}, {3, 3}}, {1, 3}, 2, {1, 3}},
         // Case 4: Budget larger than eligible blocks
-        {
-            {{0, 0}, {1, 1}, {2, 2}, {3, 3}},
-            {2, 3},
-            5,
-            {2, 3}
-        }
+        {{{0, 0}, {1, 1}, {2, 2}, {3, 3}}, {2, 3}, 5, {2, 3}}
     };
 
     size_t num_tokens_in_evictable_blocks = 16;
@@ -339,9 +302,12 @@ TEST_F(KVCrushAlgorithmTest, GetRepresentativeBlocksParameterizedTest) {
 
         // Create mutable copies since the function expects non-const references
         std::vector<std::pair<size_t, size_t>> block_distances_copy = tc.block_distances;
-        
-        auto representative_blocks =
-            algo.get_representative_blocks_kvcrush(num_tokens_in_evictable_blocks, block_distances_copy, tc.keep_clus_eligible);
+
+        auto representative_blocks = algo.get_representative_blocks_kvcrush(
+            num_tokens_in_evictable_blocks,
+            block_distances_copy,
+            tc.keep_clus_eligible
+        );
 
         EXPECT_EQ(representative_blocks.size(), tc.expected_blocks.size())
             << "Failed for budget " << tc.budget << " and eligible blocks "
@@ -349,10 +315,8 @@ TEST_F(KVCrushAlgorithmTest, GetRepresentativeBlocksParameterizedTest) {
 
         for (size_t i = 0; i < tc.expected_blocks.size(); ++i) {
             EXPECT_EQ(representative_blocks[i], tc.expected_blocks[i])
-                << "Block " << i << " failed for distances: "
-                << ::testing::PrintToString(tc.block_distances)
-                << " and eligible: "
-                << ::testing::PrintToString(tc.keep_clus_eligible);
+                << "Block " << i << " failed for distances: " << ::testing::PrintToString(tc.block_distances)
+                << " and eligible: " << ::testing::PrintToString(tc.keep_clus_eligible);
         }
     }
 }

@@ -17,11 +17,13 @@ struct ExtractedSegments {
     std::vector<std::pair<size_t, size_t>> segment_ranges;
 };
 
-ExtractedSegments extract_segments(const std::vector<int64_t>& tokens,
-                                   const ov::genai::WhisperGenerationConfig& config,
-                                   const size_t nb_max_frames,
-                                   const float time_precision,
-                                   const float time_offset = 0.f);
+ExtractedSegments extract_segments(
+    const std::vector<int64_t>& tokens,
+    const ov::genai::WhisperGenerationConfig& config,
+    const size_t nb_max_frames,
+    const float time_precision,
+    const float time_offset = 0.f
+);
 
 }  // namespace genai
 }  // namespace ov

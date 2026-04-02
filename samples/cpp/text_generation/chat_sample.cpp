@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) try {
     // Default device is CPU; can be overridden by the second argument
     std::string device = (argc == 3) ? argv[2] : "CPU";  // GPU, NPU can be used as well
     ov::genai::LLMPipeline pipe(models_path, device);
-    
+
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
 
@@ -31,16 +31,18 @@ int main(int argc, char* argv[]) try {
         ov::genai::DecodedResults decoded_results = pipe.generate(chat_history, config, streamer);
         chat_history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
         std::cout << "\n----------\n"
-            "question:\n";
+                     "question:\n";
     }
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

@@ -3,15 +3,15 @@
 
 #pragma once
 
-#include "continuous_batching/pipeline_base.hpp"
-
-#include "openvino/genai/lora_adapter.hpp"
 #include "continuous_batching/cache_eviction.hpp"
+#include "continuous_batching/pipeline_base.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
 
-class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
+class ContinuousBatchingPipeline::ContinuousBatchingImpl
+    : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
     std::shared_ptr<Scheduler> m_scheduler;
     std::shared_ptr<ModelRunner> m_model_runner;
@@ -22,7 +22,8 @@ protected:
     std::vector<SequenceGroup::Ptr> m_requests;
     // requests added to the pipeline that will be added to m_requests in the next iteration
     std::vector<SequenceGroup::Ptr> m_awaiting_requests;
-    // Mutex protecting access to m_awaiting_requests, so add_request and step methods can be called from different threads
+    // Mutex protecting access to m_awaiting_requests, so add_request and step methods can be called from different
+    // threads
     std::mutex m_awaiting_requests_mutex;
 
     std::map<size_t, CacheEvictionAlgorithm> m_seq_group_id_to_cache_eviction_algo_map;
@@ -32,7 +33,7 @@ protected:
 
     // for perf metrics
     float m_load_time_ms = 0.0f;
-    size_t m_batch_size = 0; // stored number of processed tokens on last step
+    size_t m_batch_size = 0;  // stored number of processed tokens on last step
 
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
@@ -51,7 +52,6 @@ protected:
 
     std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
 
-
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;
 #endif
@@ -59,10 +59,12 @@ protected:
     // used by tests only
     ContinuousBatchingImpl() = default;
 
-    void initialize_pipeline(std::shared_ptr<ov::Model> model,
-                             const SchedulerConfig& scheduler_config,
-                             const std::string& device,
-                             const ov::AnyMap& plugin_config);
+    void initialize_pipeline(
+        std::shared_ptr<ov::Model> model,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& plugin_config
+    );
 
     /**
      * Pulls requests from awaiting queue to running queue
@@ -90,46 +92,57 @@ protected:
      */
     void _maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output);
 
-
     void _register_step_cache_usage(float step_cache_usage);
     void _reset_cache_usage_statistics();
     float _get_current_running_average_cache_usage() const;
-    void _compute_cache_rotation_data(const std::vector<SequenceGroup::Ptr>& sequence_groups, const Scheduler::Output& scheduler_output);
+    void _compute_cache_rotation_data(
+        const std::vector<SequenceGroup::Ptr>& sequence_groups,
+        const Scheduler::Output& scheduler_output
+    );
     void _prepare_rotation_data_storage(const SchedulerConfig& normalized_config, size_t embedding_size);
-    void _set_adaptive_rkv_diversity_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output);
+    void
+    _set_adaptive_rkv_diversity_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output);
 
     virtual void drop_requests();
 
 public:
-    ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
-                           const Tokenizer& tokenizer,
-                           const SchedulerConfig& scheduler_config,
-                           const std::string& device,
-                           const ov::AnyMap& properties,
-                           const ov::genai::GenerationConfig& generation_config,
-                           bool is_validation_mode_enabled = false);
+    ContinuousBatchingImpl(
+        const std::shared_ptr<ov::Model>& model,
+        const Tokenizer& tokenizer,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& properties,
+        const ov::genai::GenerationConfig& generation_config,
+        bool is_validation_mode_enabled = false
+    );
 
-    ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
-                           std::shared_ptr<InputsEmbedder> inputs_embedder,
-                           const Tokenizer& tokenizer,
-                           const SchedulerConfig& scheduler_config,
-                           const std::string& device,
-                           const ov::AnyMap& properties,
-                           const ov::genai::GenerationConfig& generation_config,
-                           bool is_validation_mode_enabled = false);
+    ContinuousBatchingImpl(
+        const std::shared_ptr<ov::Model>& model,
+        std::shared_ptr<InputsEmbedder> inputs_embedder,
+        const Tokenizer& tokenizer,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& properties,
+        const ov::genai::GenerationConfig& generation_config,
+        bool is_validation_mode_enabled = false
+    );
 
     virtual ~ContinuousBatchingImpl();
 
-    GenerationHandle add_request(uint64_t request_id,
-                                 const ov::Tensor& input_ids,
-                                 const ov::genai::GenerationConfig& sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt,
-                                 std::optional<ov::Tensor> prompt_ids = std::nullopt,
-                                 std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
+    GenerationHandle add_request(
+        uint64_t request_id,
+        const ov::Tensor& input_ids,
+        const ov::genai::GenerationConfig& sampling_params,
+        std::optional<ov::Tensor> token_type_ids = std::nullopt,
+        std::optional<ov::Tensor> prompt_ids = std::nullopt,
+        std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt
+    ) override;
 
-    GenerationHandle add_request(uint64_t request_id,
-                                 const std::string& prompt,
-                                 const ov::genai::GenerationConfig& sampling_params) override;
+    GenerationHandle add_request(
+        uint64_t request_id,
+        const std::string& prompt,
+        const ov::genai::GenerationConfig& sampling_params
+    ) override;
 
     bool has_non_finished_requests() override;
 
@@ -142,14 +155,17 @@ public:
      * depending on the pipeline configuration. prompt_ids is an optional batch of prompt ids, which represents the
      * token IDs of the prompt portion for each sequence in the batch.
      */
-    std::vector<EncodedGenerationResult>
-    generate(const std::vector<ov::Tensor>& input_ids,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer,
-             const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
-             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt,
-             const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
-             const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
+    std::vector<EncodedGenerationResult> generate(
+        const std::vector<ov::Tensor>& input_ids,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer,
+        const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
+        const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list =
+            std::nullopt,
+        const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list =
+            std::nullopt
+    ) override;
 
     /**
      * Updates LoRA adapters for current generation call
@@ -158,4 +174,4 @@ public:
 
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
 };
-} // namespace ov::genai
+}  // namespace ov::genai

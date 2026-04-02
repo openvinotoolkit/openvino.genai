@@ -4,9 +4,9 @@
 #pragma once
 
 #include <map>
+#include <openvino/runtime/properties.hpp>
 
 #include "openvino/core/core.hpp"
-#include <openvino/runtime/properties.hpp>
 
 namespace ov {
 namespace genai {

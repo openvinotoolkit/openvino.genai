@@ -10,10 +10,10 @@
 
 #pragma once
 #include "generation_config.h"
-#include "perf_metrics.h"
 #include "openvino/c/ov_common.h"
 #include "openvino/c/ov_tensor.h"
 #include "openvino/genai/c/visibility.h"
+#include "perf_metrics.h"
 
 /**
  * @struct ov_genai_vlm_decoded_results
@@ -40,8 +40,10 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_vlm_decoded_results_free(ov_genai_vlm_dec
  * @param metrics A pointer to the newly created ov_genai_perf_metrics.
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_decoded_results_get_perf_metrics(const ov_genai_vlm_decoded_results* results,
-                                                                                   ov_genai_perf_metrics** metrics);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_decoded_results_get_perf_metrics(
+    const ov_genai_vlm_decoded_results* results,
+    ov_genai_perf_metrics** metrics
+);
 
 /**
  * @brief Release the memory allocated by ov_genai_perf_metrics.
@@ -60,9 +62,8 @@ OPENVINO_GENAI_C_EXPORTS void ov_genai_vlm_decoded_results_perf_metrics_free(ov_
  * will return OUT_OF_BOUNDS(-6).
  * @return ov_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_decoded_results_get_string(const ov_genai_vlm_decoded_results* results,
-                                                                             char* output,
-                                                                             size_t* output_size);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_vlm_decoded_results_get_string(const ov_genai_vlm_decoded_results* results, char* output, size_t* output_size);
 
 /**
  * @struct ov_genai_vlm_pipeline
@@ -95,11 +96,13 @@ typedef struct ov_genai_vlm_pipeline_opaque ov_genai_vlm_pipeline;
  * ov_genai_vlm_pipeline_create(model_path, "NPU", 6, &pipeline, "MAX_PROMPT_LEN", "128", "MIN_RESPONSE_LEN",
  *                             "64", "CACHE_DIR", "cache_dir")
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_pipeline_create(const char* models_path,
-                                                                  const char* device,
-                                                                  const size_t property_args_size,
-                                                                  ov_genai_vlm_pipeline** pipe,
-                                                                  ...);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_pipeline_create(
+    const char* models_path,
+    const char* device,
+    const size_t property_args_size,
+    ov_genai_vlm_pipeline** pipe,
+    ...
+);
 
 /**
  * @brief Release the memory allocated by ov_genai_vlm_pipeline.
@@ -108,19 +111,19 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_pipeline_create(const char* mo
 OPENVINO_GENAI_C_EXPORTS void ov_genai_vlm_pipeline_free(ov_genai_vlm_pipeline* pipe);
 
 #ifndef OV_GENAI_STREAMING_STATUS_DEFINED
-#define OV_GENAI_STREAMING_STATUS_DEFINED
+#    define OV_GENAI_STREAMING_STATUS_DEFINED
 typedef enum {
     OV_GENAI_STREAMING_STATUS_RUNNING = 0,  // Continue to run inference
     OV_GENAI_STREAMING_STATUS_STOP =
         1,  // Stop generation, keep history as is, KV cache includes last request and generated tokens
     OV_GENAI_STREAMING_STATUS_CANCEL = 2  // Stop generate, drop last prompt and all generated tokens from history, KV
-                                           // cache includes history but last step
+                                          // cache includes history but last step
 } ov_genai_streaming_status_e;
 
-#endif // OV_GENAI_STREAMING_STATUS_DEFINED
+#endif  // OV_GENAI_STREAMING_STATUS_DEFINED
 
 #ifndef OV_GENAI_STREAMER_CALLBACK_DEFINED
-#define OV_GENAI_STREAMER_CALLBACK_DEFINED
+#    define OV_GENAI_STREAMER_CALLBACK_DEFINED
 /**
  * @brief Structure for streamer callback functions with arguments.
  *
@@ -129,11 +132,13 @@ typedef enum {
  * - `void* args`: A pointer to additional arguments, allowing flexible data passing.
  */
 typedef struct {
-    ov_genai_streaming_status_e(
-        OPENVINO_C_API_CALLBACK* callback_func)(const char* str, void* args);  //!< Pointer to the callback function
+    ov_genai_streaming_status_e(OPENVINO_C_API_CALLBACK* callback_func)(
+        const char* str,
+        void* args
+    );           //!< Pointer to the callback function
     void* args;  //!< Pointer to the arguments passed to the callback function
 } streamer_callback;
-#endif // OV_GENAI_STREAMER_CALLBACK_DEFINED
+#endif  // OV_GENAI_STREAMER_CALLBACK_DEFINED
 
 /**
  * @brief Generate results by ov_genai_vlm_pipeline with text and image inputs
@@ -144,17 +149,19 @@ typedef struct {
  * @param config A pointer to the ov_genai_generation_config, the pointer can be NULL.
  * @param streamer A pointer to the stream callback. Set to NULL if no callback is needed. Either this or results must
  * be non-NULL.
- * @param results A pointer to the ov_genai_vlm_decoded_results, which retrieves the results of the generation. Either this
- * or streamer must be non-NULL.
+ * @param results A pointer to the ov_genai_vlm_decoded_results, which retrieves the results of the generation. Either
+ * this or streamer must be non-NULL.
  * @return Status code of the operation: OK(0) for success.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
-                                                                    const char* text_inputs,
-                                                                    const ov_tensor_t** rgbs,
-                                                                    size_t num_images,
-                                                                    const ov_genai_generation_config* config,
-                                                                    const streamer_callback* streamer,
-                                                                    ov_genai_vlm_decoded_results** results);
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_pipeline_generate(
+    ov_genai_vlm_pipeline* pipe,
+    const char* text_inputs,
+    const ov_tensor_t** rgbs,
+    size_t num_images,
+    const ov_genai_generation_config* config,
+    const streamer_callback* streamer,
+    ov_genai_vlm_decoded_results** results
+);
 
 /**
  * @brief Start chat with keeping history in kv cache.
@@ -176,8 +183,8 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_pipeline_finish_chat(ov_genai_
  * @param config A pointer to the newly created ov_genai_generation_config.
  * @return Status code of the operation: OK(0) for success.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_pipeline_get_generation_config(const ov_genai_vlm_pipeline* pipe,
-                                                                                 ov_genai_generation_config** config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_vlm_pipeline_get_generation_config(const ov_genai_vlm_pipeline* pipe, ov_genai_generation_config** config);
 
 /**
  * @brief Set the GenerationConfig to ov_genai_vlm_pipeline.
@@ -185,5 +192,5 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_pipeline_get_generation_config
  * @param config A pointer to the ov_genai_generation_config instance.
  * @return Status code of the operation: OK(0) for success.
  */
-OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_vlm_pipeline_set_generation_config(ov_genai_vlm_pipeline* pipe,
-                                                                                 ov_genai_generation_config* config);
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_vlm_pipeline_set_generation_config(ov_genai_vlm_pipeline* pipe, ov_genai_generation_config* config);

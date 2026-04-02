@@ -16,14 +16,17 @@ class OPENVINO_GENAI_EXPORTS Image2ImagePipeline {
 public:
     explicit Image2ImagePipeline(const std::filesystem::path& models_path);
 
-    Image2ImagePipeline(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties = {});
+    Image2ImagePipeline(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
+    );
 
-    template <typename... Properties,
-              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    Image2ImagePipeline(const std::filesystem::path& models_path,
-                        const std::string& device,
-                        Properties&&... properties)
-        : Image2ImagePipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+    template <
+        typename... Properties,
+        typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    Image2ImagePipeline(const std::filesystem::path& models_path, const std::string& device, Properties&&... properties)
+        : Image2ImagePipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     Image2ImagePipeline(const InpaintingPipeline& pipe);
 
@@ -32,14 +35,16 @@ public:
         const std::shared_ptr<Scheduler>& scheduler_type,
         const CLIPTextModel& clip_text_model,
         const UNet2DConditionModel& unet,
-        const AutoencoderKL& vae);
+        const AutoencoderKL& vae
+    );
 
     // creates either LCM or SD pipeline from building blocks
     static Image2ImagePipeline latent_consistency_model(
         const std::shared_ptr<Scheduler>& scheduler_type,
         const CLIPTextModel& clip_text_model,
         const UNet2DConditionModel& unet,
-        const AutoencoderKL& vae);
+        const AutoencoderKL& vae
+    );
 
     // creates SDXL pipeline from building blocks
     static Image2ImagePipeline stable_diffusion_xl(
@@ -47,7 +52,8 @@ public:
         const CLIPTextModel& clip_text_model,
         const CLIPTextModelWithProjection& clip_text_model_with_projection,
         const UNet2DConditionModel& unet,
-        const AutoencoderKL& vae);
+        const AutoencoderKL& vae
+    );
 
     // creates Flux pipeline from building blocks
     static Image2ImagePipeline flux(
@@ -55,7 +61,8 @@ public:
         const CLIPTextModel& clip_text_model,
         const T5EncoderModel t5_encoder_model,
         const FluxTransformer2DModel& transformer,
-        const AutoencoderKL& vae);
+        const AutoencoderKL& vae
+    );
 
     // creates SD3 pipeline from building blocks
     static Image2ImagePipeline stable_diffusion_3(
@@ -64,7 +71,8 @@ public:
         const CLIPTextModelWithProjection& clip_text_model_2,
         const T5EncoderModel& t5_encoder_model,
         const SD3Transformer2DModel& transformer,
-        const AutoencoderKL& vae);
+        const AutoencoderKL& vae
+    );
 
     // creates SD3 pipeline from building blocks
     static Image2ImagePipeline stable_diffusion_3(
@@ -72,8 +80,9 @@ public:
         const CLIPTextModelWithProjection& clip_text_model_1,
         const CLIPTextModelWithProjection& clip_text_model_2,
         const SD3Transformer2DModel& transformer,
-        const AutoencoderKL& vae);
-    
+        const AutoencoderKL& vae
+    );
+
     /**
      * Method to clone the pipeline to be used in parallel by another thread.
      * Reuses underlying models and recreates scheduler and generation config.
@@ -93,9 +102,7 @@ public:
     void compile(const std::string& device, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<void, Properties...> compile(
-            const std::string& device,
-            Properties&&... properties) {
+    ov::util::EnableIfAllStringAny<void, Properties...> compile(const std::string& device, Properties&&... properties) {
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -107,37 +114,44 @@ public:
      * @param properties A map of properties which affect models compilation
      * @note If pipeline was compiled before, an exception is thrown.
      */
-    void compile(const std::string& text_encode_device,
-                 const std::string& denoise_device,
-                 const std::string& vae_device,
-                 const ov::AnyMap& properties = {});
+    void compile(
+        const std::string& text_encode_device,
+        const std::string& denoise_device,
+        const std::string& vae_device,
+        const ov::AnyMap& properties = {}
+    );
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<void, Properties...> compile(const std::string& text_encode_device,
-                                                                const std::string& denoise_device,
-                                                                const std::string& vae_device,
-                                                                Properties&&... properties) {
-        return compile(text_encode_device,
-                       denoise_device,
-                       vae_device,
-                       ov::AnyMap{std::forward<Properties>(properties)...});
+    ov::util::EnableIfAllStringAny<void, Properties...> compile(
+        const std::string& text_encode_device,
+        const std::string& denoise_device,
+        const std::string& vae_device,
+        Properties&&... properties
+    ) {
+        return compile(
+            text_encode_device,
+            denoise_device,
+            vae_device,
+            ov::AnyMap{std::forward<Properties>(properties)...}
+        );
     }
 
     /**
      * Performs initial image editing conditioned on a text prompt.
      * @param positive_prompt Prompt to generate image(s) from
      * @param initial_image RGB/BGR image of [1, height, width, 3] shape used to initialize latent image
-     * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
+     * @param properties Image generation parameters specified as properties. Values in 'properties' override default
+     * value for generation parameters.
      * @returns A tensor which has dimensions [num_images_per_prompt, height, width, 3]
-     * @note Output image size is the same as initial image size, but rounded down to be divisible by VAE scale factor (usually, 8)
+     * @note Output image size is the same as initial image size, but rounded down to be divisible by VAE scale factor
+     * (usually, 8)
      */
-    ov::Tensor generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties = {});
+    ov::Tensor
+    generate(const std::string& positive_prompt, ov::Tensor initial_image, const ov::AnyMap& properties = {});
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
-            const std::string& positive_prompt,
-            ov::Tensor initial_image,
-            Properties&&... properties) {
+    ov::util::EnableIfAllStringAny<ov::Tensor, Properties...>
+    generate(const std::string& positive_prompt, ov::Tensor initial_image, Properties&&... properties) {
         return generate(positive_prompt, initial_image, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -155,5 +169,5 @@ private:
     friend class InpaintingPipeline;
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/video_generation/text2video_pipeline.hpp"
+
 #include "video_generation/ltx_pipeline.hpp"
 
 using namespace ov::genai;
@@ -9,9 +10,11 @@ using namespace ov::genai;
 Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& model_path)
     : m_impl{std::make_unique<ov::genai::Text2VideoPipeline::LTXPipeline>(model_path)} {}
 
-Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& models_dir,
-                                       const std::string& device,
-                                       const AnyMap& properties)
+Text2VideoPipeline::Text2VideoPipeline(
+    const std::filesystem::path& models_dir,
+    const std::string& device,
+    const AnyMap& properties
+)
     : m_impl{std::make_unique<ov::genai::Text2VideoPipeline::LTXPipeline>(models_dir, device, properties)} {}
 
 VideoGenerationResult Text2VideoPipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
@@ -28,11 +31,13 @@ void Text2VideoPipeline::set_generation_config(const VideoGenerationConfig& gene
     replace_defaults(m_impl->m_generation_config);
 }
 
-void Text2VideoPipeline::reshape(int64_t num_videos_per_prompt,
-                                 int64_t num_frames,
-                                 int64_t height,
-                                 int64_t width,
-                                 float guidance_scale) {
+void Text2VideoPipeline::reshape(
+    int64_t num_videos_per_prompt,
+    int64_t num_frames,
+    int64_t height,
+    int64_t width,
+    float guidance_scale
+) {
     auto start_time = std::chrono::steady_clock::now();
     m_impl->reshape(num_videos_per_prompt, num_frames, height, width, guidance_scale);
     m_impl->save_load_time(start_time);
@@ -55,10 +60,12 @@ void Text2VideoPipeline::compile(const std::string& device, const ov::AnyMap& pr
     m_impl->save_load_time(start_time);
 }
 
-void Text2VideoPipeline::compile(const std::string& text_encode_device,
-                                 const std::string& denoise_device,
-                                 const std::string& vae_device,
-                                 const ov::AnyMap& properties) {
+void Text2VideoPipeline::compile(
+    const std::string& text_encode_device,
+    const std::string& denoise_device,
+    const std::string& vae_device,
+    const ov::AnyMap& properties
+) {
     auto start_time = std::chrono::steady_clock::now();
     m_impl->compile(text_encode_device, denoise_device, vae_device, properties);
     m_impl->save_load_time(start_time);

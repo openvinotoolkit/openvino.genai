@@ -3,12 +3,11 @@
 
 #pragma once
 
+#include <openvino/genai/lora_adapter.hpp>
+#include <regex>
+#include <set>
 #include <string>
 #include <unordered_map>
-#include <set>
-#include <regex>
-
-#include <openvino/genai/lora_adapter.hpp>
 
 #include "lora/common.hpp"
 
@@ -23,13 +22,21 @@ using NameMap = std::unordered_map<std::string, std::string>;
 struct RegexParser {
     std::regex pattern;
     std::vector<size_t> capture_indices;
-    RegexParser (const std::string& pattern, size_t capture_index) : pattern(pattern), capture_indices(1, capture_index) {}
-    RegexParser (const std::string& pattern, const std::vector<size_t>& capture_indices) : pattern(pattern), capture_indices(capture_indices) {}
-    std::optional<std::string> operator() (const std::string& name) const;
+    RegexParser(const std::string& pattern, size_t capture_index)
+        : pattern(pattern),
+          capture_indices(1, capture_index) {}
+    RegexParser(const std::string& pattern, const std::vector<size_t>& capture_indices)
+        : pattern(pattern),
+          capture_indices(capture_indices) {}
+    std::optional<std::string> operator()(const std::string& name) const;
 };
 
-NameMap maybe_map_sgm_blocks_to_diffusers(std::set<std::string> state_dict, int layers_per_block = 2,
-                                           const std::string& delimiter = "_", int block_slice_pos = 5);
+NameMap maybe_map_sgm_blocks_to_diffusers(
+    std::set<std::string> state_dict,
+    int layers_per_block = 2,
+    const std::string& delimiter = "_",
+    int block_slice_pos = 5
+);
 
 NameMap maybe_map_non_diffusers_lora_to_diffusers(const std::set<std::string>& keys);
 
@@ -39,7 +46,7 @@ utils::LoRATensors flux_kohya_lora_preprocessing(const utils::LoRATensors& tenso
 
 utils::LoRATensors flux_xlabs_lora_preprocessing(const utils::LoRATensors& tensors);
 
-}
+}  // namespace utils
 
 Adapter flux_adapter_normalization(const Adapter& adapter);
 
@@ -47,5 +54,5 @@ Adapter diffusers_adapter_normalization(const Adapter& adapter);
 
 std::string detect_lora_prefix(const AdapterConfig& adapters);
 
-}
-}
+}  // namespace genai
+}  // namespace ov

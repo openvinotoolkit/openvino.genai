@@ -5,7 +5,11 @@
 
 #include "openvino/genai/llm_pipeline.hpp"
 
-std::pair<std::string, ov::Tensor> decrypt_model(const std::filesystem::path& model_dir, const std::string& model_file_name, const std::string& weights_file_name) {
+std::pair<std::string, ov::Tensor> decrypt_model(
+    const std::filesystem::path& model_dir,
+    const std::string& model_file_name,
+    const std::string& weights_file_name
+) {
     std::ifstream model_file(model_dir / model_file_name);
     std::ifstream weights_file;
     if (!model_file.is_open()) {
@@ -22,8 +26,10 @@ std::pair<std::string, ov::Tensor> decrypt_model(const std::filesystem::path& mo
 }
 
 ov::genai::Tokenizer decrypt_tokenizer(const std::filesystem::path& models_path) {
-    auto [tok_model_str, tok_weights_tensor] = decrypt_model(models_path, "openvino_tokenizer.xml", "openvino_tokenizer.bin");
-    auto [detok_model_str, detok_weights_tensor] = decrypt_model(models_path, "openvino_detokenizer.xml", "openvino_detokenizer.bin");
+    auto [tok_model_str, tok_weights_tensor] =
+        decrypt_model(models_path, "openvino_tokenizer.xml", "openvino_tokenizer.bin");
+    auto [detok_model_str, detok_weights_tensor] =
+        decrypt_model(models_path, "openvino_detokenizer.xml", "openvino_detokenizer.bin");
 
     return ov::genai::Tokenizer(tok_model_str, tok_weights_tensor, detok_model_str, detok_weights_tensor);
 }
@@ -53,7 +59,7 @@ auto get_config_for_cache_encryption() {
     ov::AnyMap config;
     config.insert({ov::cache_dir("llm_cache")});
     ov::EncryptionCallbacks encryption_callbacks;
-    //use XOR-based encryption as an example
+    // use XOR-based encryption as an example
     encryption_callbacks.encrypt = encryption_callback;
     encryption_callbacks.decrypt = decryption_callback;
     config.insert(ov::cache_encryption_callbacks(encryption_callbacks));
@@ -75,11 +81,11 @@ int main(int argc, char* argv[]) try {
         // Cache compiled models on disk for GPU to save time on the
         // next run. It's not beneficial for CPU.
         config = get_config_for_cache_encryption();
-    } 
+    }
 
     auto [model_str, model_weights] = decrypt_model(models_path, "openvino_model.xml", "openvino_model.bin");
     ov::genai::Tokenizer tokenizer = decrypt_tokenizer(models_path);
-    
+
     ov::genai::LLMPipeline pipe(model_str, model_weights, tokenizer, device, config);
 
     std::string result = pipe.generate(prompt, ov::genai::max_new_tokens(100));
@@ -87,11 +93,13 @@ int main(int argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

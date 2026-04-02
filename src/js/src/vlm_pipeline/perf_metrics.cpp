@@ -14,7 +14,8 @@ VLMPerfMetricsWrapper::VLMPerfMetricsWrapper(const Napi::CallbackInfo& info)
 Napi::Function VLMPerfMetricsWrapper::get_class(Napi::Env env) {
     auto properties = BasePerfMetricsWrapper<VLMPerfMetricsWrapper, ov::genai::VLMPerfMetrics>::get_class_properties();
     properties.push_back(
-        InstanceMethod("getPrepareEmbeddingsDuration", &VLMPerfMetricsWrapper::get_prepare_embeddings_duration));
+        InstanceMethod("getPrepareEmbeddingsDuration", &VLMPerfMetricsWrapper::get_prepare_embeddings_duration)
+    );
     properties.push_back(InstanceAccessor<&VLMPerfMetricsWrapper::get_vlm_raw_metrics>("vlmRawMetrics"));
     return DefineClass(env, "VLMPerfMetrics", properties);
 }
@@ -39,10 +40,13 @@ Napi::Value VLMPerfMetricsWrapper::get_raw_metrics(const Napi::CallbackInfo& inf
 
 Napi::Value VLMPerfMetricsWrapper::get_vlm_raw_metrics(const Napi::CallbackInfo& info) {
     Napi::Object obj = Napi::Object::New(info.Env());
-    obj.Set("prepareEmbeddingsDurations",
-            cpp_to_js<std::vector<float>, Napi::Value>(
-                info.Env(),
-                get_ms(_metrics.vlm_raw_metrics, &ov::genai::VLMRawPerfMetrics::prepare_embeddings_durations)));
+    obj.Set(
+        "prepareEmbeddingsDurations",
+        cpp_to_js<std::vector<float>, Napi::Value>(
+            info.Env(),
+            get_ms(_metrics.vlm_raw_metrics, &ov::genai::VLMRawPerfMetrics::prepare_embeddings_durations)
+        )
+    );
 
     return obj;
 }

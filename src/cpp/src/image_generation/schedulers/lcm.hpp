@@ -4,19 +4,20 @@
 #pragma once
 
 #include <filesystem>
-#include <string>
 #include <random>
+#include <string>
 #include <vector>
 
-#include "image_generation/schedulers/types.hpp"
 #include "image_generation/schedulers/ischeduler.hpp"
+#include "image_generation/schedulers/types.hpp"
 
 namespace ov {
 namespace genai {
 
 class LCMScheduler : public IScheduler {
 public:
-    // values from https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_lcm.py#L197-L214
+    // values from
+    // https://github.com/huggingface/diffusers/blob/v0.31.0/src/diffusers/schedulers/scheduling_lcm.py#L197-L214
     struct Config {
         size_t num_train_timesteps = 1000;
         float beta_start = 0.00085f, beta_end = 0.012f;
@@ -50,7 +51,12 @@ public:
 
     void scale_model_input(ov::Tensor sample, size_t inference_step) override;
 
-    std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step, std::shared_ptr<Generator> generator) override;
+    std::map<std::string, ov::Tensor> step(
+        ov::Tensor noise_pred,
+        ov::Tensor latents,
+        size_t inference_step,
+        std::shared_ptr<Generator> generator
+    ) override;
 
     void add_noise(ov::Tensor init_latent, ov::Tensor noise, int64_t latent_timestep) const override;
 
@@ -67,5 +73,5 @@ private:
     std::vector<float> threshold_sample(const std::vector<float>& flat_sample);
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

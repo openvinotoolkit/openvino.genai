@@ -200,45 +200,72 @@ Napi::Value BasePerfMetricsWrapper<T, MetricsType>::get_grammar_compile_time(con
 template <class T, class MetricsType>
 Napi::Value BasePerfMetricsWrapper<T, MetricsType>::get_raw_metrics(const Napi::CallbackInfo& info) {
     Napi::Object obj = Napi::Object::New(info.Env());
-    obj.Set("generateDurations",
-            cpp_to_js<std::vector<float>, Napi::Value>(
-                info.Env(),
-                get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::generate_durations)));
-    obj.Set("tokenizationDurations",
-            cpp_to_js<std::vector<float>, Napi::Value>(
-                info.Env(),
-                get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::tokenization_durations)));
-    obj.Set("detokenizationDurations",
-            cpp_to_js<std::vector<float>, Napi::Value>(
-                info.Env(),
-                get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::detokenization_durations)));
+    obj.Set(
+        "generateDurations",
+        cpp_to_js<std::vector<float>, Napi::Value>(
+            info.Env(),
+            get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::generate_durations)
+        )
+    );
+    obj.Set(
+        "tokenizationDurations",
+        cpp_to_js<std::vector<float>, Napi::Value>(
+            info.Env(),
+            get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::tokenization_durations)
+        )
+    );
+    obj.Set(
+        "detokenizationDurations",
+        cpp_to_js<std::vector<float>, Napi::Value>(
+            info.Env(),
+            get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::detokenization_durations)
+        )
+    );
 
-    obj.Set("timesToFirstToken",
-            cpp_to_js<std::vector<float>, Napi::Value>(
-                info.Env(),
-                get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_times_to_first_token)));
-    obj.Set("newTokenTimes",
-            cpp_to_js<std::vector<double>, Napi::Value>(
-                info.Env(),
-                timestamp_to_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_new_token_times)));
-    obj.Set("tokenInferDurations",
-            cpp_to_js<std::vector<float>, Napi::Value>(
-                info.Env(),
-                get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_token_infer_durations)));
+    obj.Set(
+        "timesToFirstToken",
+        cpp_to_js<std::vector<float>, Napi::Value>(
+            info.Env(),
+            get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_times_to_first_token)
+        )
+    );
+    obj.Set(
+        "newTokenTimes",
+        cpp_to_js<std::vector<double>, Napi::Value>(
+            info.Env(),
+            timestamp_to_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_new_token_times)
+        )
+    );
+    obj.Set(
+        "tokenInferDurations",
+        cpp_to_js<std::vector<float>, Napi::Value>(
+            info.Env(),
+            get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_token_infer_durations)
+        )
+    );
     obj.Set("batchSizes", cpp_to_js<std::vector<size_t>, Napi::Value>(info.Env(), _metrics.raw_metrics.m_batch_sizes));
-    obj.Set("durations",
-            cpp_to_js<std::vector<float>, Napi::Value>(
-                info.Env(),
-                get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_durations)));
-    obj.Set("inferenceDurations",
-            cpp_to_js<std::vector<float>, Napi::Value>(
-                info.Env(),
-                get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_inference_durations)));
+    obj.Set(
+        "durations",
+        cpp_to_js<std::vector<float>, Napi::Value>(
+            info.Env(),
+            get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_durations)
+        )
+    );
+    obj.Set(
+        "inferenceDurations",
+        cpp_to_js<std::vector<float>, Napi::Value>(
+            info.Env(),
+            get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_inference_durations)
+        )
+    );
 
-    obj.Set("grammarCompileTimes",
-            cpp_to_js<std::vector<float>, Napi::Value>(
-                info.Env(),
-                get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_grammar_compile_times)));
+    obj.Set(
+        "grammarCompileTimes",
+        cpp_to_js<std::vector<float>, Napi::Value>(
+            info.Env(),
+            get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_grammar_compile_times)
+        )
+    );
 
     return obj;
 }

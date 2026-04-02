@@ -1,32 +1,30 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <fstream>
-#include <cstdlib>
+#include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <cxxopts.hpp>
+#include <fstream>
+#include <mutex>
+#include <nlohmann/json.hpp>
 #include <ostream>
 #include <random>
 #include <stdexcept>
 #include <thread>
-#include <mutex>
-#include <atomic>
-
-#include <nlohmann/json.hpp>
-#include <cxxopts.hpp>
 
 #include "openvino/genai/cache_eviction.hpp"
-#include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_handle.hpp"
+#include "openvino/genai/tokenizer.hpp"
 
 namespace {
 
 class AutoStartTimer {
     const decltype(std::chrono::steady_clock::now()) m_start;
+
 public:
-    AutoStartTimer() :
-        m_start(std::chrono::steady_clock::now()) {
-    }
+    AutoStartTimer() : m_start(std::chrono::steady_clock::now()) {}
 
     double current_in_milli() const {
         auto m_end = std::chrono::steady_clock::now();
@@ -81,7 +79,13 @@ struct Dataset {
     }
 };
 
-Dataset filtered_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_input_len, const size_t max_output_len) {
+Dataset filtered_dataset(
+    const std::string& models_path,
+    const std::string& dataset_path,
+    const size_t num_prompts,
+    const size_t max_input_len,
+    const size_t max_output_len
+) {
     std::ifstream json_file(dataset_path.c_str());
     OPENVINO_ASSERT(json_file.is_open(), "Cannot open dataset file");
 
@@ -96,8 +100,10 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
 
     ov::genai::Tokenizer tokenizer(models_path);
 
-    for (auto json_data_iterator = json_dataset.begin(); json_data_iterator != json_dataset.end() && dataset.size() < num_prompt_candidates; ++json_data_iterator) {
-        auto & json_data = *json_data_iterator;
+    for (auto json_data_iterator = json_dataset.begin();
+         json_data_iterator != json_dataset.end() && dataset.size() < num_prompt_candidates;
+         ++json_data_iterator) {
+        auto& json_data = *json_data_iterator;
 
         // Filter out the conversations with less than 2 turns.
         if (json_data["conversations"].size() < 2)
@@ -131,7 +137,8 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
     // sample dataset
     srand(42);
 
-    for (size_t selected_index = rand() % dataset.size(); sampled_dataset.size() < num_prompts; selected_index = rand() % dataset.size()) {
+    for (size_t selected_index = rand() % dataset.size(); sampled_dataset.size() < num_prompts;
+         selected_index = rand() % dataset.size()) {
         sampled_dataset.push_data(dataset.m_prompts[selected_index], dataset.m_sampling_params[selected_index]);
         sampled_dataset.push_lens(dataset.m_input_lens[selected_index], dataset.m_output_lens[selected_index]);
     }
@@ -140,13 +147,12 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
 }
 
 class GenerationInfo {
-
     struct SequenceInfo {
         std::chrono::milliseconds ttft;
         std::chrono::milliseconds cumulated_tpot;
         std::chrono::milliseconds mean_tpot;
         size_t num_output_tokens;
-    
+
         std::chrono::steady_clock::time_point start_time;
         std::chrono::steady_clock::time_point last_read_time;
 
@@ -164,7 +170,6 @@ class GenerationInfo {
             } else {
                 cumulated_tpot += std::chrono::duration_cast<std::chrono::milliseconds>(new_read_time - last_read_time);
                 mean_tpot = cumulated_tpot / num_output_tokens;
-
             }
             num_output_tokens++;
             last_read_time = new_read_time;
@@ -185,8 +190,7 @@ class GenerationInfo {
     size_t input_len;
 
 public:
-    GenerationInfo(ov::genai::GenerationHandle generation_handle, size_t input_len) : input_len(input_len)
-    {
+    GenerationInfo(ov::genai::GenerationHandle generation_handle, size_t input_len) : input_len(input_len) {
         this->generation_handle = std::move(generation_handle);
         start_time = std::chrono::steady_clock::now();
     }
@@ -197,8 +201,8 @@ public:
         sequences_info.at(sequence_id).update();
     }
 
-    void update(ov::genai::GenerationOutputs& outputs){
-        for (auto const& output: outputs) {
+    void update(ov::genai::GenerationOutputs& outputs) {
+        for (auto const& output : outputs) {
             update_sequence(output.first);
         }
     }
@@ -246,12 +250,16 @@ class GenerationInfoCollector {
     std::chrono::steady_clock::time_point start_time;
 
 public:
-
     void set_start_time(std::chrono::steady_clock::time_point start_time) {
         this->start_time = start_time;
     }
 
-    void add_generation(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, size_t request_id, bool is_speculative_decoding_enabled) {
+    void add_generation(
+        ov::genai::ContinuousBatchingPipeline* pipe,
+        Dataset* dataset,
+        size_t request_id,
+        bool is_speculative_decoding_enabled
+    ) {
         auto sampling_params = dataset->m_sampling_params[request_id];
         if (is_speculative_decoding_enabled) {
             // to enable static speculative decoding
@@ -259,7 +267,8 @@ public:
             // to enable dynamic speculative decoding
             // sampling_params.assistant_confidence_threshold = 0.4f;
         }
-        ov::genai::GenerationHandle generation_handle = pipe->add_request(request_id, dataset->m_prompts[request_id], sampling_params);
+        ov::genai::GenerationHandle generation_handle =
+            pipe->add_request(request_id, dataset->m_prompts[request_id], sampling_params);
         std::lock_guard<std::mutex> lock(mutex);
         generations_info.emplace_back(std::move(generation_handle), dataset->m_input_lens[request_id]);
     }
@@ -269,7 +278,7 @@ public:
         for (GenerationInfo& generation_info : generations_info) {
             if (!generation_info.is_active())
                 continue;
-            
+
             if (generation_info.is_finished()) {
                 num_finished++;
                 generation_info.set_inactive();
@@ -282,14 +291,14 @@ public:
     }
 
     void print_statistics() {
-        std::chrono::seconds total_duration = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start_time);
+        std::chrono::seconds total_duration =
+            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start_time);
         std::chrono::milliseconds mean_ttft = std::chrono::milliseconds::zero();
         std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
         size_t total_input_len = 0;
         size_t total_output_len = 0;
-        
-    
-        for (GenerationInfo& generation_info : generations_info){
+
+        for (GenerationInfo& generation_info : generations_info) {
             auto generation_metrics = generation_info.get_metrics();
             mean_ttft += generation_metrics.mean_ttft;
             mean_tpot += generation_metrics.mean_tpot;
@@ -304,11 +313,17 @@ public:
         std::cout << "Input throughput: " << total_input_len / total_duration.count() << " tokens / s" << std::endl;
         std::cout << "Output throughput: " << total_output_len / total_duration.count() << " tokens / s" << std::endl;
         std::cout << "Mean TTFT: " << mean_ttft.count() << " ms" << std::endl;
-        std::cout << "Mean TPOT: " << mean_tpot.count() << " ms" << std::endl; 
+        std::cout << "Mean TPOT: " << mean_tpot.count() << " ms" << std::endl;
     }
 };
 
-void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, std::string request_rate, GenerationInfoCollector* generation_info_collector, bool is_speculative_decoding_enabled) {
+void trafficSimulator(
+    ov::genai::ContinuousBatchingPipeline* pipe,
+    Dataset* dataset,
+    std::string request_rate,
+    GenerationInfoCollector* generation_info_collector,
+    bool is_speculative_decoding_enabled
+) {
     double numeric_request_rate;
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -373,19 +388,24 @@ bool parse_plugin_config_json(nlohmann::json& node, ov::AnyMap& device_config_ma
     for (auto& element : node.items()) {
         if (element.value().is_string()) {
             device_config_map[std::string(element.key())] = element.value().get<std::string>();
-            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::string>() << std::endl;
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::string>()
+                      << std::endl;
         } else if (element.value().is_number_integer()) {
             device_config_map[std::string(element.key())] = element.value().get<std::int64_t>();
-            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::int64_t>() << std::endl;
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::int64_t>()
+                      << std::endl;
         } else if (element.value().is_number_float()) {
             device_config_map[std::string(element.key())] = element.value().get<float>();
-            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<float>() << std::endl;
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<float>()
+                      << std::endl;
         } else if (element.value().is_number_unsigned()) {
             device_config_map[std::string(element.key())] = element.value().get<uint64_t>();
-            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<float>() << std::endl;
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<float>()
+                      << std::endl;
         } else if (element.value().is_boolean()) {
             device_config_map[std::string(element.key())] = element.value().get<bool>();
-            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<bool>() << std::endl;
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<bool>()
+                      << std::endl;
         } else {
             std::cout << "Error: nlohmann json type not supported for: " << element.key() << std::endl;
             return false;
@@ -406,9 +426,9 @@ bool parse_plugin_config_string(const std::string& config_string, ov::AnyMap& de
         node = nlohmann::json::parse(config_string);
     } catch (const nlohmann::json::parse_error& e) {
         std::cout << "ERROR: Plugin config json parser error - message: " << e.what() << '\n'
-                << "exception id: " << e.id << '\n'
-                << "byte position of error: " << e.byte << std::endl;
-                return false;
+                  << "exception id: " << e.id << '\n'
+                  << "byte position of error: " << e.byte << std::endl;
+        return false;
     } catch (...) {
         std::cout << "ERROR: Plugin config json parser error - message: " << std::endl;
         return false;
@@ -482,18 +502,26 @@ int main(int argc, char* argv[]) try {
 
     // Perform the first inference
     ov::genai::SchedulerConfig scheduler_config;
-    scheduler_config.max_num_batched_tokens = max_batch_size,
-    scheduler_config.cache_size = cache_size,
+    scheduler_config.max_num_batched_tokens = max_batch_size, scheduler_config.cache_size = cache_size,
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse,
-    scheduler_config.max_num_seqs = 256; // not used if dynamic_split_fuse=True
+    scheduler_config.max_num_seqs = 256;  // not used if dynamic_split_fuse=True
     if (use_cache_eviction) {
         scheduler_config.use_cache_eviction = true;
-        scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(32, 32, 128, ov::genai::AggregationMode::NORM_SUM, false, 8, ov::genai::KVCrushConfig(0, ov::genai::KVCrushAnchorPointMode::MEAN));
+        scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(
+            32,
+            32,
+            128,
+            ov::genai::AggregationMode::NORM_SUM,
+            false,
+            8,
+            ov::genai::KVCrushConfig(0, ov::genai::KVCrushAnchorPointMode::MEAN)
+        );
     }
 
     std::cout << "Benchmarking parameters: " << std::endl;
     std::cout << "\tMax number of batched tokens: " << scheduler_config.max_num_batched_tokens << std::endl;
-    std::cout << "\tScheduling type: " << (scheduler_config.dynamic_split_fuse ? "dynamic split-fuse" : "vLLM") << std::endl;
+    std::cout << "\tScheduling type: " << (scheduler_config.dynamic_split_fuse ? "dynamic split-fuse" : "vLLM")
+              << std::endl;
     if (!scheduler_config.dynamic_split_fuse) {
         std::cout << "\tMax number of batched sequences: " << scheduler_config.max_num_seqs << std::endl;
     }
@@ -506,31 +534,46 @@ int main(int argc, char* argv[]) try {
 
     ov::AnyMap device_config_map = {};
     if (is_speculative_decoding_enabled) {
-        device_config_map.insert({ ov::genai::draft_model(draft_model_path) });
+        device_config_map.insert({ov::genai::draft_model(draft_model_path)});
     }
     if (!parse_plugin_config_string(device_config, device_config_map)) {
         std::cout << "ERROR: Wrong json parameter in device_config." << std::endl;
         return EXIT_FAILURE;
     }
-    
+
     // Benchmarking
     std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
     ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map);
 
-    std::cout << "Setup finished, launching LLM executor, traffic simulation and statistics reporter threads" << std::endl;
+    std::cout << "Setup finished, launching LLM executor, traffic simulation and statistics reporter threads"
+              << std::endl;
 
     GenerationInfoCollector generation_info_collector;
 
     std::atomic<bool> finishGenerationThread{false};
     if (request_rate == "inf") {
-        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled);
+        std::thread trafficSimulatorThread(
+            trafficSimulator,
+            &pipe,
+            &dataset,
+            request_rate,
+            &generation_info_collector,
+            is_speculative_decoding_enabled
+        );
         trafficSimulatorThread.join();
     }
-    
+
     std::thread lmmEngineThread(llmEngineLoop, &pipe, &dataset, &finishGenerationThread);
     std::thread statisticsReporterThread(statisticsReporter, &generation_info_collector, num_prompts);
     if (request_rate != "inf") {
-        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector, is_speculative_decoding_enabled);
+        std::thread trafficSimulatorThread(
+            trafficSimulator,
+            &pipe,
+            &dataset,
+            request_rate,
+            &generation_info_collector,
+            is_speculative_decoding_enabled
+        );
         trafficSimulatorThread.join();
     }
     statisticsReporterThread.join();
@@ -541,11 +584,13 @@ int main(int argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

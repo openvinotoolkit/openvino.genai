@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <optional>
+
 #include "openvino/core/model.hpp"
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
 
@@ -20,11 +21,13 @@ public:
     virtual ov::Tensor infer(ov::Tensor latent_model_input, ov::Tensor timestep) = 0;
 
     // utility function to resize model given optional dimensions.
-    static void reshape(std::shared_ptr<ov::Model> model,
-                        std::optional<int> batch_size = {},
-                        std::optional<int> height = {},
-                        std::optional<int> width = {},
-                        std::optional<int> tokenizer_model_max_length = {}) {
+    static void reshape(
+        std::shared_ptr<ov::Model> model,
+        std::optional<int> batch_size = {},
+        std::optional<int> height = {},
+        std::optional<int> width = {},
+        std::optional<int> tokenizer_model_max_length = {}
+    ) {
         std::map<std::string, ov::PartialShape> name_to_shape;
         for (auto&& input : model->inputs()) {
             std::string input_name = input.get_any_name();
@@ -43,7 +46,7 @@ public:
                 if (width) {
                     name_to_shape[input_name][3] = *width;
                 }
-            }  else if (input_name == "encoder_hidden_states") {
+            } else if (input_name == "encoder_hidden_states") {
                 if (batch_size) {
                     name_to_shape[input_name][0] = *batch_size;
                 }

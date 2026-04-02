@@ -1,18 +1,19 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/image_generation/text2image_pipeline.hpp"
-#include "openvino/genai/image_generation/image2image_pipeline.hpp"
-#include "openvino/genai/image_generation/inpainting_pipeline.hpp"
-#include <cxxopts.hpp>
 #include <chrono>
+#include <cxxopts.hpp>
+
 #include "imwrite.hpp"
 #include "load_image.hpp"
+#include "openvino/genai/image_generation/image2image_pipeline.hpp"
+#include "openvino/genai/image_generation/inpainting_pipeline.hpp"
+#include "openvino/genai/image_generation/text2image_pipeline.hpp"
 #include "progress_bar.hpp"
 
 inline float get_total_text_encoder_infer_duration(ov::genai::ImageGenerationPerfMetrics& metrics) {
     float text_encoder_duration = 0.0f;
-    for(auto text_encoder : metrics.get_text_encoder_infer_duration()) {
+    for (auto text_encoder : metrics.get_text_encoder_infer_duration()) {
         text_encoder_duration += text_encoder.second;
     }
     return text_encoder_duration;
@@ -22,8 +23,7 @@ inline void print_one_generate(ov::genai::ImageGenerationPerfMetrics& metrics, s
     std::string prefix_idx = "[" + prefix + "-" + std::to_string(idx) + "]";
     std::cout << "\n";
     std::cout << prefix_idx << " generate time: " << metrics.get_generate_duration()
-              << " ms, total infer time:" << metrics.get_inference_duration()
-              << " ms" << std::endl;
+              << " ms, total infer time:" << metrics.get_inference_duration() << " ms" << std::endl;
     std::cout << prefix_idx << " text encoder infer time: " << get_total_text_encoder_infer_duration(metrics) << " ms"
               << std::endl;
     float first_iter_time, other_iter_avg_time;
@@ -52,19 +52,20 @@ inline void print_one_generate(ov::genai::ImageGenerationPerfMetrics& metrics, s
 }
 
 inline float calculate_average(std::vector<float>& durations) {
-    float duration_mean = std::accumulate(durations.begin(),
-                                           durations.end(),
-                                           0.0f,
-                                           [](const float& acc, const float& duration) -> float {
-                                               return acc + duration;
-                                           });
+    float duration_mean =
+        std::accumulate(durations.begin(), durations.end(), 0.0f, [](const float& acc, const float& duration) -> float {
+            return acc + duration;
+        });
     if (!durations.empty()) {
         duration_mean /= durations.size();
     }
     return duration_mean;
 }
 
-inline void print_statistic(std::vector<ov::genai::ImageGenerationPerfMetrics>& warmup_metrics, std::vector<ov::genai::ImageGenerationPerfMetrics>& iter_metrics) {
+inline void print_statistic(
+    std::vector<ov::genai::ImageGenerationPerfMetrics>& warmup_metrics,
+    std::vector<ov::genai::ImageGenerationPerfMetrics>& iter_metrics
+) {
     std::vector<float> generate_durations;
     std::vector<float> total_inference_durations;
     std::vector<float> text_encoder_durations;
@@ -128,8 +129,10 @@ inline std::vector<std::string> device_string_to_triplet(const std::string& devi
     } else if (devices.size() == 3) {
         return devices;
     } else {
-        throw std::invalid_argument("The device specified by -d/--device must be a single device (e.g. -d \"GPU\"), "
-                                    "or exactly 3 comma separated device names (e.g. -d \"CPU,NPU,GPU\")");
+        throw std::invalid_argument(
+            "The device specified by -d/--device must be a single device (e.g. -d \"GPU\"), "
+            "or exactly 3 comma separated device names (e.g. -d \"CPU,NPU,GPU\")"
+        );
     }
 }
 
@@ -143,10 +146,12 @@ void text2image(cxxopts::ParseResult& result) {
 
     ov::genai::Text2ImagePipeline pipe(models_path);
     if (result["reshape"].as<bool>()) {
-        pipe.reshape(result["num_images_per_prompt"].as<size_t>(),
-                     result["height"].as<size_t>(),
-                     result["width"].as<size_t>(),
-                     pipe.get_generation_config().guidance_scale);
+        pipe.reshape(
+            result["num_images_per_prompt"].as<size_t>(),
+            result["height"].as<size_t>(),
+            result["width"].as<size_t>(),
+            pipe.get_generation_config().guidance_scale
+        );
     }
     pipe.compile(devices[0], devices[1], devices[2]);
 
@@ -210,7 +215,8 @@ void image2image(cxxopts::ParseResult& result) {
 
     std::vector<ov::genai::ImageGenerationPerfMetrics> iter_metrics;
     for (size_t i = 0; i < num_iter; i++) {
-        ov::Tensor image = pipe.generate(prompt, image_input, ov::genai::strength(strength), ov::genai::callback(progress_bar));
+        ov::Tensor image =
+            pipe.generate(prompt, image_input, ov::genai::strength(strength), ov::genai::callback(progress_bar));
         ov::genai::ImageGenerationPerfMetrics metrics = pipe.get_performance_metrics();
         iter_metrics.emplace_back(metrics);
         std::string image_name = output_dir + "/image_" + std::to_string(i) + ".bmp";
@@ -318,11 +324,13 @@ int main(int argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

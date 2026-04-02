@@ -118,12 +118,14 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel,
 
     OPENVINO_ASSERT(shape[1] == shape[2], "Kernel matrix must be square [B, N, N]");
 
-    OPENVINO_ASSERT(num_tokens <= total_tokens,
-                    "Cannot select more tokens [",
-                    num_tokens,
-                    "] than available [",
-                    total_tokens,
-                    "]");
+    OPENVINO_ASSERT(
+        num_tokens <= total_tokens,
+        "Cannot select more tokens [",
+        num_tokens,
+        "] than available [",
+        total_tokens,
+        "]"
+    );
 
 #ifdef ENABLE_OPENCL_DPP
     // For small token counts, CPU implementation is faster due to GPU kernel launch overhead
@@ -153,10 +155,12 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel,
 }
 
 // Parallel DPP selection on two kernel matrices
-std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel_matrix_first,
-                                                       const ov::Tensor& kernel_matrix_second,
-                                                       size_t num_tokens_to_keep,
-                                                       size_t split_point) {
+std::vector<std::vector<size_t>> FastGreedyDPP::select(
+    const ov::Tensor& kernel_matrix_first,
+    const ov::Tensor& kernel_matrix_second,
+    size_t num_tokens_to_keep,
+    size_t split_point
+) {
     // Distribute tokens to keep between both halves
     size_t tokens_first_half = num_tokens_to_keep / 2;
     size_t tokens_second_half = num_tokens_to_keep - tokens_first_half;
@@ -164,28 +168,34 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel_
     // Check if OpenCL DPP is enabled and available
     if (m_config.use_cl_kernel) {
         GENAI_DEBUG("[CDPruner] Using OpenCL DPP parallel selection");
-        return select_parallel_opencl(kernel_matrix_first,
-                                      kernel_matrix_second,
-                                      tokens_first_half,
-                                      tokens_second_half,
-                                      split_point);
+        return select_parallel_opencl(
+            kernel_matrix_first,
+            kernel_matrix_second,
+            tokens_first_half,
+            tokens_second_half,
+            split_point
+        );
     }
 #endif
     // Fallback to parallel CPU processing
     GENAI_DEBUG("[CDPruner] Using DPP native CPU parallel selection");
-    return this->select_parallel(kernel_matrix_first,
-                                 kernel_matrix_second,
-                                 tokens_first_half,
-                                 tokens_second_half,
-                                 split_point);
+    return this->select_parallel(
+        kernel_matrix_first,
+        kernel_matrix_second,
+        tokens_first_half,
+        tokens_second_half,
+        split_point
+    );
 }
 
 // Parallel CPU DPP selection on split matrices
-std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel(const ov::Tensor& kernel_matrix_first,
-                                                                const ov::Tensor& kernel_matrix_second,
-                                                                size_t tokens_first_half,
-                                                                size_t tokens_second_half,
-                                                                size_t split_point) {
+std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel(
+    const ov::Tensor& kernel_matrix_first,
+    const ov::Tensor& kernel_matrix_second,
+    size_t tokens_first_half,
+    size_t tokens_second_half,
+    size_t split_point
+) {
     // Launch parallel tasks for DPP selection
     std::future<std::vector<std::vector<size_t>>> dpp_first_future = std::async(std::launch::async, [&]() {
         return this->select_cpu_internal(kernel_matrix_first, tokens_first_half);
@@ -234,11 +244,13 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel(const ov::Tensor
 
 #ifdef ENABLE_OPENCL_DPP
 // Parallel OpenCL DPP selection on split matrices
-std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov::Tensor& kernel_matrix_first,
-                                                                       const ov::Tensor& kernel_matrix_second,
-                                                                       size_t tokens_first_half,
-                                                                       size_t tokens_second_half,
-                                                                       size_t split_point) {
+std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(
+    const ov::Tensor& kernel_matrix_first,
+    const ov::Tensor& kernel_matrix_second,
+    size_t tokens_first_half,
+    size_t tokens_second_half,
+    size_t split_point
+) {
     // Initialize OpenCL DPP if not already done
     if (!m_opencl_dpp) {
         m_opencl_dpp = std::make_unique<OpenCLDPP>(m_config);
@@ -246,11 +258,13 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
 
     // Verify OpenCL is available - if not, fallback to CPU with original token counts
     if (!m_opencl_dpp || !m_opencl_dpp->is_available()) {
-        return select_parallel(kernel_matrix_first,
-                               kernel_matrix_second,
-                               tokens_first_half,
-                               tokens_second_half,
-                               split_point);
+        return select_parallel(
+            kernel_matrix_first,
+            kernel_matrix_second,
+            tokens_first_half,
+            tokens_second_half,
+            split_point
+        );
     }
 
     // OpenCL requires even total token count due to internal batch splitting
@@ -264,10 +278,14 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
     auto second_shape = kernel_matrix_second.get_shape();
 
     // Verify shapes are compatible
-    OPENVINO_ASSERT(first_shape.size() == 3 && second_shape.size() == 3,
-                    "Input kernel matrices must be 3D tensors with shape [B, tokens, tokens]");
-    OPENVINO_ASSERT(first_shape[1] == first_shape[2] && second_shape[1] == second_shape[2],
-                    "Kernel matrices must be square");
+    OPENVINO_ASSERT(
+        first_shape.size() == 3 && second_shape.size() == 3,
+        "Input kernel matrices must be 3D tensors with shape [B, tokens, tokens]"
+    );
+    OPENVINO_ASSERT(
+        first_shape[1] == first_shape[2] && second_shape[1] == second_shape[2],
+        "Kernel matrices must be square"
+    );
     OPENVINO_ASSERT(first_shape[0] == second_shape[0], "Kernel matrices must have the same batch size");
 
     size_t original_batch_size = first_shape[0];
@@ -498,9 +516,8 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_opencl_internal(const ov:
 }
 
 // Single batch OpenCL selection (similar to select_single_batch for CPU)
-std::vector<size_t> FastGreedyDPP::select_single_batch_opencl(const ov::Tensor& kernel,
-                                                              size_t batch_idx,
-                                                              size_t num_tokens) {
+std::vector<size_t>
+FastGreedyDPP::select_single_batch_opencl(const ov::Tensor& kernel, size_t batch_idx, size_t num_tokens) {
     // Extract single batch kernel matrix for OpenCL processing
     auto shape = kernel.get_shape();
     size_t total_tokens = shape[1];
@@ -540,12 +557,14 @@ size_t FastGreedyDPP::argmax(const ov::Tensor& scores) {
     return best_idx;
 }
 
-void FastGreedyDPP::update_orthogonal_vector(const float* batch_kernel_data,
-                                             size_t total_tokens,
-                                             size_t selected_idx,
-                                             size_t iteration,
-                                             float* cis_data,
-                                             const float* di2s_data) {
+void FastGreedyDPP::update_orthogonal_vector(
+    const float* batch_kernel_data,
+    size_t total_tokens,
+    size_t selected_idx,
+    size_t iteration,
+    float* cis_data,
+    const float* di2s_data
+) {
     // This implements the key DPP orthogonalization step:
     // eis = (kernel[batch, selected_idx] - sum(cis[:iteration] * cis[:iteration, selected_idx])) /
     // sqrt(di2s[selected_idx])
@@ -579,10 +598,12 @@ void FastGreedyDPP::update_orthogonal_vector(const float* batch_kernel_data,
     simd_vector_mul_scalar(cis_out, inv_norm, total_tokens);
 }
 
-void FastGreedyDPP::update_marginal_gains(size_t iteration,
-                                          size_t total_tokens,
-                                          const float* cis_data,
-                                          float* di2s_data) {
+void FastGreedyDPP::update_marginal_gains(
+    size_t iteration,
+    size_t total_tokens,
+    const float* cis_data,
+    float* di2s_data
+) {
     // This implements: di2s -= square(eis)
     // where eis is the newly computed orthogonal vector cis[iteration, :]
 

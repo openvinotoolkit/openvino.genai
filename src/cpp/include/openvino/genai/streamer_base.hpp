@@ -3,16 +3,18 @@
 
 #pragma once
 
-#include "openvino/genai/tokenizer.hpp"
 #include <variant>
+
+#include "openvino/genai/tokenizer.hpp"
 
 namespace ov {
 namespace genai {
 
 enum class StreamingStatus {
-    RUNNING = 0, // Continue to run of inference
-    STOP = 1, // Stop generation, keep history as is, KV cache includes last request and generated tokens
-    CANCEL = 2 // Stop generate, drop last prompt and all generated tokens from history, KV cache includes history but last step
+    RUNNING = 0,  // Continue to run of inference
+    STOP = 1,     // Stop generation, keep history as is, KV cache includes last request and generated tokens
+    CANCEL = 2  // Stop generate, drop last prompt and all generated tokens from history, KV cache includes history but
+                // last step
 };
 
 /**
@@ -24,7 +26,8 @@ public:
     /// @return StreamingStatus flag to indicate whether generation should continue to run, be stopped, or be cancelled
     virtual StreamingStatus write(int64_t token) = 0;
 
-    /// @brief write is called every time new vector of tokens is decoded, in case of assisting or prompt lookup decoding
+    /// @brief write is called every time new vector of tokens is decoded, in case of assisting or prompt lookup
+    /// decoding
     /// @return StreamingStatus flag to indicate whether generation should continue to run, be stopped, or be cancelled
     virtual StreamingStatus write(const std::vector<int64_t>& tokens) {
         for (const auto token : tokens) {

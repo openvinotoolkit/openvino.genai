@@ -1,11 +1,12 @@
 // Copyright (C) 2024-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <gtest/gtest.h>
 #include "sampling/sampler.hpp"
+
+#include <gtest/gtest.h>
+
 #include "openvino/genai/generation_config.hpp"
 #include "utils.hpp"
-
 
 using namespace ov::genai;
 
@@ -23,13 +24,13 @@ TEST(SamplerStopTokenIdsTest, multiple_stop_token_match) {
 
 TEST(SamplerStopTokenIdsTest, single_stop_sequence_no_match) {
     std::vector<int64_t> generated_tokens = {3, 4, 5, 6, 7, 8, 9};
-    std::set<int64_t> stop_token_ids = { 10 };
+    std::set<int64_t> stop_token_ids = {10};
     ASSERT_FALSE(is_stop_token_id_hit(generated_tokens.back(), stop_token_ids));
 }
 
 TEST(SamplerStopTokenIdsTest, multiple_stop_sequence_no_match) {
     std::vector<int64_t> generated_tokens = {3, 4, 5, 6, 7, 8, 9};
-    std::set<int64_t> stop_token_ids = { 10, 10, 11 };
+    std::set<int64_t> stop_token_ids = {10, 10, 11};
     ASSERT_FALSE(is_stop_token_id_hit(generated_tokens.back(), stop_token_ids));
 }
 
@@ -43,7 +44,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
     };
 
     // to emulate processed prompt and add next token [ 0 ]
-    sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);    
+    sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);
     sequence_groups.front()->update_processed_tokens_num(5);
 
     // append candidates [ 2, 3, 4 ]
@@ -60,10 +61,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
 
     // create ref tensor : to generate candidates + next token
     std::vector<float> logits = {
-        0, 1.f, 0, 0, 0,
-        0, 0, 1.f, 0, 0,
-        0, 0, 0, 1.f, 0,
-        0, 0, 0, 0, 1.f,
+        0, 1.f, 0, 0, 0, 0, 0, 1.f, 0, 0, 0, 0, 0, 1.f, 0, 0, 0, 0, 0, 1.f,
     };
 
     // shape 4 tokens + 1 batch + 5 vocab
@@ -72,8 +70,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
 
-    TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(),
-             expected{0, 1};
+    TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected{0, 1};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
 }
 
@@ -87,7 +84,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
     };
 
     // to emulate processed prompt and add next token [ 0 ]
-    sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);    
+    sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);
     sequence_groups.front()->update_processed_tokens_num(5);
 
     // append candidates [ 1, 2, 2 ]
@@ -105,10 +102,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
 
     // create ref tensor : to generate candidates + next token
     std::vector<float> logits = {
-        0, 1.f, 0, 0, 0,
-        0, 0, 1.f, 0, 0,
-        0, 0, 0, 1.f, 0,
-        0, 0, 0, 0, 1.f,
+        0, 1.f, 0, 0, 0, 0, 0, 1.f, 0, 0, 0, 0, 0, 1.f, 0, 0, 0, 0, 0, 1.f,
     };
 
     // shape 4 tokens + 1 batch + 5 vocab
@@ -117,8 +111,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
 
-    TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(),
-             expected{0, 1, 2, 3};
+    TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected{0, 1, 2, 3};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
 }
 
@@ -132,7 +125,7 @@ TEST(SamplerValidationMode, gen_phase) {
     };
 
     // to emulate processed prompt and add next token [ 0 ]
-    sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);    
+    sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);
     sequence_groups.front()->update_processed_tokens_num(5);
 
     // append candidates [ 1, 2, 3 ]
@@ -149,10 +142,7 @@ TEST(SamplerValidationMode, gen_phase) {
 
     // create ref tensor : to generate candidates + next token
     std::vector<float> logits = {
-        0, 1.f, 0, 0, 0,
-        0, 0, 1.f, 0, 0,
-        0, 0, 0, 1.f, 0,
-        0, 0, 0, 0, 1.f,
+        0, 1.f, 0, 0, 0, 0, 0, 1.f, 0, 0, 0, 0, 0, 1.f, 0, 0, 0, 0, 0, 1.f,
     };
 
     // shape 4 tokens + 1 batch + 5 vocab
@@ -161,8 +151,7 @@ TEST(SamplerValidationMode, gen_phase) {
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
 
-    TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(),
-             expected{0, 1, 2, 3, 4};
+    TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected{0, 1, 2, 3, 4};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
 }
 
@@ -191,14 +180,8 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_part_seq) {
 
     // create ref tensor : to generate candidates + next token
     std::vector<float> logits = {
-        0, 1.f, 0, 0, 0,
-        0, 0, 1.f, 0, 0,
-        0, 0, 0, 1.f, 0,
-        0, 0, 0, 0, 1.f,
-        1.f, 0, 0, 0, 0,
-        0, 1.f, 0, 0, 0,
-        0, 0, 1.f, 0, 0,
-        0, 0, 0, 1.f, 0,
+        0,   1.f, 0, 0, 0, 0, 0,   1.f, 0, 0, 0, 0, 0,   1.f, 0, 0, 0, 0, 0,   1.f,
+        1.f, 0,   0, 0, 0, 0, 1.f, 0,   0, 0, 0, 0, 1.f, 0,   0, 0, 0, 0, 1.f, 0,
     };
 
     // shape 4 tokens + 1 batch + 5 vocab
@@ -207,8 +190,7 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_part_seq) {
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
 
-    TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(),
-             expected{0, 1, 2};
+    TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected{0, 1, 2};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
 }
 
@@ -236,14 +218,8 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_whole_seq) {
 
     // create ref tensor : to generate candidates + next token
     std::vector<float> logits = {
-        0, 1.f, 0, 0, 0,
-        0, 0, 1.f, 0, 0,
-        0, 0, 0, 1.f, 0,
-        0, 0, 0, 0, 1.f,
-        1.f, 0, 0, 0, 0,
-        0, 1.f, 0, 0, 0,
-        0, 0, 1.f, 0, 0,
-        0, 0, 0, 1.f, 0,
+        0,   1.f, 0, 0, 0, 0, 0,   1.f, 0, 0, 0, 0, 0,   1.f, 0, 0, 0, 0, 0,   1.f,
+        1.f, 0,   0, 0, 0, 0, 1.f, 0,   0, 0, 0, 0, 1.f, 0,   0, 0, 0, 0, 1.f, 0,
     };
 
     // shape 4 tokens + 1 batch + 5 vocab
@@ -252,8 +228,7 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_whole_seq) {
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
 
-    TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(),
-             expected{0};
+    TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected{0};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
 }
 
@@ -281,14 +256,8 @@ TEST(SamplerValidationMode, prompt_phase) {
 
     // create ref tensor : to generate candidates + next token
     std::vector<float> logits = {
-        0, 1.f, 0, 0, 0,
-        0, 0, 1.f, 0, 0,
-        0, 0, 0, 1.f, 0,
-        0, 0, 0, 0, 1.f,
-        1.f, 0, 0, 0, 0,
-        0, 1.f, 0, 0, 0,
-        0, 0, 1.f, 0, 0,
-        0, 0, 0, 1.f, 0,
+        0,   1.f, 0, 0, 0, 0, 0,   1.f, 0, 0, 0, 0, 0,   1.f, 0, 0, 0, 0, 0,   1.f,
+        1.f, 0,   0, 0, 0, 0, 1.f, 0,   0, 0, 0, 0, 1.f, 0,   0, 0, 0, 0, 1.f, 0,
     };
 
     // shape 4 tokens + 1 batch + 5 vocab
@@ -297,7 +266,6 @@ TEST(SamplerValidationMode, prompt_phase) {
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
 
-    TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(),
-             expected{0, 1, 2, 3};
+    TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected{0, 1, 2, 3};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
 }

@@ -2,24 +2,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
-#include <vector>
-#include <optional>
-#include <cstring>
-#include <string>
 
-#include "openvino/genai/taylorseer_config.hpp"
+#include <cstring>
+#include <optional>
+#include <string>
+#include <vector>
+
 #include "diffusion_caching/taylorseer_lite.hpp"
+#include "openvino/genai/taylorseer_config.hpp"
 
 using ov::genai::TaylorSeerCacheConfig;
 using ov::genai::TaylorSeerState;
 
-
 class TaylorSeerCacheConfigTest : public ::testing::Test {
 protected:
-    void AssertConfigEquals(const TaylorSeerCacheConfig& config,
-                           size_t expected_interval,
-                           size_t expected_before,
-                           int expected_after) {
+    void AssertConfigEquals(
+        const TaylorSeerCacheConfig& config,
+        size_t expected_interval,
+        size_t expected_before,
+        int expected_after
+    ) {
         EXPECT_EQ(config.cache_interval, expected_interval);
         EXPECT_EQ(config.disable_cache_before_step, expected_before);
         EXPECT_EQ(config.disable_cache_after_step, expected_after);
@@ -39,7 +41,8 @@ TEST_F(TaylorSeerCacheConfigTest, InvalidCacheIntervalZero) {
             TaylorSeerState state(config, 10);
             (void)state;
         },
-        ov::Exception);
+        ov::Exception
+    );
 }
 
 TEST_F(TaylorSeerCacheConfigTest, InvalidCacheIntervalOne) {
@@ -49,7 +52,8 @@ TEST_F(TaylorSeerCacheConfigTest, InvalidCacheIntervalOne) {
             TaylorSeerState state(config, 10);
             (void)state;
         },
-        ov::Exception);
+        ov::Exception
+    );
 }
 
 struct FullConstructorParams {
@@ -59,27 +63,28 @@ struct FullConstructorParams {
 };
 
 class TSFullConstructorTest : public TaylorSeerCacheConfigTest,
-                           public ::testing::WithParamInterface<FullConstructorParams> {};
+                              public ::testing::WithParamInterface<FullConstructorParams> {};
 
 TEST_P(TSFullConstructorTest, AllParameters) {
     auto params = GetParam();
-    TaylorSeerCacheConfig config{params.cache_interval,
-                                  params.disable_cache_before_step,
-                                  params.disable_cache_after_step};
-    AssertConfigEquals(config, params.cache_interval,
-                      params.disable_cache_before_step,
-                      params.disable_cache_after_step);
+    TaylorSeerCacheConfig config{
+        params.cache_interval,
+        params.disable_cache_before_step,
+        params.disable_cache_after_step
+    };
+    AssertConfigEquals(
+        config,
+        params.cache_interval,
+        params.disable_cache_before_step,
+        params.disable_cache_after_step
+    );
 }
 
 INSTANTIATE_TEST_SUITE_P(
     CustomValues,
     TSFullConstructorTest,
-    ::testing::Values(
-        FullConstructorParams{3, 6, -2},
-        FullConstructorParams{3, 1, 24}
-    )
+    ::testing::Values(FullConstructorParams{3, 6, -2}, FullConstructorParams{3, 1, 24})
 );
-
 
 struct PartialConstructorParams {
     size_t cache_interval;
@@ -120,32 +125,34 @@ struct ToStringParams {
     int disable_cache_after_step;
 };
 
-class TSToStringTest : public TaylorSeerCacheConfigTest,
-                       public ::testing::WithParamInterface<ToStringParams> {};
+class TSToStringTest : public TaylorSeerCacheConfigTest, public ::testing::WithParamInterface<ToStringParams> {};
 
 TEST_P(TSToStringTest, FormatsCorrectly) {
     auto params = GetParam();
-    TaylorSeerCacheConfig config{params.cache_interval,
-                                  params.disable_cache_before_step,
-                                  params.disable_cache_after_step};
+    TaylorSeerCacheConfig config{
+        params.cache_interval,
+        params.disable_cache_before_step,
+        params.disable_cache_after_step
+    };
     std::string result = config.to_string();
 
     EXPECT_NE(result.find("TaylorSeerCacheConfig"), std::string::npos);
     EXPECT_NE(result.find("cache_interval: " + std::to_string(params.cache_interval)), std::string::npos);
-    EXPECT_NE(result.find("disable_cache_before_step: " + std::to_string(params.disable_cache_before_step)), std::string::npos);
-    EXPECT_NE(result.find("disable_cache_after_step: " + std::to_string(params.disable_cache_after_step)), std::string::npos);
+    EXPECT_NE(
+        result.find("disable_cache_before_step: " + std::to_string(params.disable_cache_before_step)),
+        std::string::npos
+    );
+    EXPECT_NE(
+        result.find("disable_cache_after_step: " + std::to_string(params.disable_cache_after_step)),
+        std::string::npos
+    );
 }
 
 INSTANTIATE_TEST_SUITE_P(
     VariousConfigurations,
     TSToStringTest,
-    ::testing::Values(
-        ToStringParams{3, 4, -2},
-        ToStringParams{5, 2, 26}
-    )
+    ::testing::Values(ToStringParams{3, 4, -2}, ToStringParams{5, 2, 26})
 );
-
-
 
 class TaylorSeerStateTest : public ::testing::Test {
 protected:
@@ -187,7 +194,6 @@ TEST_F(TaylorSeerStateTest, SecondUpdateComputesDerivative) {
     AssertTensorsEqual(state.get_taylor_factor(1), expected_derivative);
 }
 
-
 struct ShouldComputeParams {
     size_t current_step;
     size_t cache_interval;
@@ -198,14 +204,11 @@ struct ShouldComputeParams {
     std::string description;
 };
 
-class TSShouldComputeTest : public TaylorSeerStateTest,
-                            public ::testing::WithParamInterface<ShouldComputeParams> {};
+class TSShouldComputeTest : public TaylorSeerStateTest, public ::testing::WithParamInterface<ShouldComputeParams> {};
 
 TEST_P(TSShouldComputeTest, ComputeDecisions) {
     auto params = GetParam();
-    TaylorSeerCacheConfig config{params.cache_interval,
-                                  params.disable_before,
-                                  params.disable_after};
+    TaylorSeerCacheConfig config{params.cache_interval, params.disable_before, params.disable_after};
     TaylorSeerState state(config, params.num_inference_steps);
     bool result = state.should_compute(params.current_step);
     EXPECT_EQ(result, params.expected_result) << params.description;

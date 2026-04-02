@@ -18,11 +18,13 @@
 
 namespace {
 
-ov::InferRequest init_model(const std::filesystem::path& models_path,
-                            const std::string& model_file_name,
-                            const std::string& model_name,
-                            const std::string& device,
-                            const ov::AnyMap& properties) {
+ov::InferRequest init_model(
+    const std::filesystem::path& models_path,
+    const std::string& model_file_name,
+    const std::string& model_name,
+    const std::string& device,
+    const ov::AnyMap& properties
+) {
     ov::Core core = ov::genai::utils::singleton_core();
 
     auto compiled = core.compile_model(models_path / model_file_name, device, properties);
@@ -43,9 +45,8 @@ ov::InferRequest init_model(const std::filesystem::path& models_path,
     }
 }
 
-std::tuple<ov::Tensor, ov::Tensor> encode(ov::InferRequest& request,
-                                          const ov::Tensor& input_ids,
-                                          ov::genai::RawPerfMetrics& raw_metrics) {
+std::tuple<ov::Tensor, ov::Tensor>
+encode(ov::InferRequest& request, const ov::Tensor& input_ids, ov::genai::RawPerfMetrics& raw_metrics) {
     request.set_tensor("input_ids", input_ids);
 
     const auto infer_start = std::chrono::steady_clock::now();
@@ -57,9 +58,8 @@ std::tuple<ov::Tensor, ov::Tensor> encode(ov::InferRequest& request,
     return std::make_tuple(last_hidden_state, encoder_attention_mask);
 }
 
-ov::Tensor postnet(ov::InferRequest& request,
-                   const ov::Tensor& raw_spectrogram,
-                   ov::genai::RawPerfMetrics& raw_metrics) {
+ov::Tensor
+postnet(ov::InferRequest& request, const ov::Tensor& raw_spectrogram, ov::genai::RawPerfMetrics& raw_metrics) {
     request.set_tensor("raw_spectrogram", raw_spectrogram);
 
     const auto infer_start = std::chrono::steady_clock::now();
@@ -82,9 +82,11 @@ ov::Tensor vocoder(ov::InferRequest& request, const ov::Tensor& spectrogram, ov:
 }
 
 const ov::Tensor get_default_speaker_embedding() {
-    return ov::Tensor(ov::element::f32,
-                      ov::Shape{1, 512},
-                      reinterpret_cast<float*>(ov::genai::default_speaker_embedding_bytes));
+    return ov::Tensor(
+        ov::element::f32,
+        ov::Shape{1, 512},
+        reinterpret_cast<float*>(ov::genai::default_speaker_embedding_bytes)
+    );
 }
 
 }  // namespace
@@ -92,10 +94,12 @@ const ov::Tensor get_default_speaker_embedding() {
 namespace ov {
 namespace genai {
 
-SpeechT5TTSImpl::SpeechT5TTSImpl(const std::filesystem::path& models_path,
-                                 const std::string& device,
-                                 const ov::AnyMap& properties,
-                                 const Tokenizer& tokenizer)
+SpeechT5TTSImpl::SpeechT5TTSImpl(
+    const std::filesystem::path& models_path,
+    const std::string& device,
+    const ov::AnyMap& properties,
+    const Tokenizer& tokenizer
+)
     : m_tokenizer(tokenizer),
       m_reduction_factor(2),
       m_num_mel_bins(80) {
@@ -125,9 +129,11 @@ void SpeechT5TTSImpl::init_model_config_params(const std::filesystem::path& root
     }
 }
 
-Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::string>& texts,
-                                                    const ov::Tensor& speaker_embedding,
-                                                    const SpeechGenerationConfig& generation_config) {
+Text2SpeechDecodedResults SpeechT5TTSImpl::generate(
+    const std::vector<std::string>& texts,
+    const ov::Tensor& speaker_embedding,
+    const SpeechGenerationConfig& generation_config
+) {
     const ov::Tensor& used_speaker_embedding = speaker_embedding ? speaker_embedding : get_default_speaker_embedding();
 
     Text2SpeechDecodedResults gen_speech_res;
@@ -162,11 +168,13 @@ Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::strin
         // decoder loop
         while (true) {
             iter += 1;
-            m_decoder->start_async(inputs_embeds,
-                                   used_speaker_embedding,
-                                   last_hidden_state,
-                                   encoder_attention_mask,
-                                   spectrogram);
+            m_decoder->start_async(
+                inputs_embeds,
+                used_speaker_embedding,
+                last_hidden_state,
+                encoder_attention_mask,
+                spectrogram
+            );
             auto [out_seq, spectrum, prob, spectrogram_out] = m_decoder->wait();
             inputs_embeds = out_seq;
             spectrogram = spectrogram_out;
@@ -198,7 +206,8 @@ Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::strin
 
     const auto generation_end = std::chrono::steady_clock::now();
     gen_speech_res.perf_metrics.raw_metrics.generate_durations.emplace_back(
-        PerfMetrics::get_microsec(generation_end - generation_start));
+        PerfMetrics::get_microsec(generation_end - generation_start)
+    );
 
     gen_speech_res.perf_metrics.evaluate_statistics();
     m_perf_metrics = gen_speech_res.perf_metrics;

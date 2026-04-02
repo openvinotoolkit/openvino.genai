@@ -3,9 +3,11 @@
 
 #include "include/vlm_pipeline/start_chat_worker.hpp"
 
-VLMStartChatWorker::VLMStartChatWorker(Function& callback,
-                                       std::shared_ptr<ov::genai::VLMPipeline>& pipe,
-                                       std::string system_message)
+VLMStartChatWorker::VLMStartChatWorker(
+    Function& callback,
+    std::shared_ptr<ov::genai::VLMPipeline>& pipe,
+    std::string system_message
+)
     : AsyncWorker(callback),
       pipe(pipe),
       system_message(system_message) {};

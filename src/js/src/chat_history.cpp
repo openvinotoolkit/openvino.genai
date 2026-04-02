@@ -2,26 +2,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "include/chat_history.hpp"
+
 #include "include/helper.hpp"
 
 Napi::Function ChatHistoryWrap::get_class(Napi::Env env) {
-    return DefineClass(env, "ChatHistory", {
-        InstanceMethod("push", &ChatHistoryWrap::push_back),
-        InstanceMethod("pop", &ChatHistoryWrap::pop_back),
-        InstanceMethod("getMessages", &ChatHistoryWrap::get_messages),
-        InstanceMethod("setMessages", &ChatHistoryWrap::set_messages),
-        InstanceMethod("clear", &ChatHistoryWrap::clear),
-        InstanceMethod("size", &ChatHistoryWrap::size),
-        InstanceMethod("empty", &ChatHistoryWrap::empty),
-        InstanceMethod("setTools", &ChatHistoryWrap::set_tools),
-        InstanceMethod("getTools", &ChatHistoryWrap::get_tools),
-        InstanceMethod("setExtraContext", &ChatHistoryWrap::set_extra_context),
-        InstanceMethod("getExtraContext", &ChatHistoryWrap::get_extra_context)
-    });
+    return DefineClass(
+        env,
+        "ChatHistory",
+        {InstanceMethod("push", &ChatHistoryWrap::push_back),
+         InstanceMethod("pop", &ChatHistoryWrap::pop_back),
+         InstanceMethod("getMessages", &ChatHistoryWrap::get_messages),
+         InstanceMethod("setMessages", &ChatHistoryWrap::set_messages),
+         InstanceMethod("clear", &ChatHistoryWrap::clear),
+         InstanceMethod("size", &ChatHistoryWrap::size),
+         InstanceMethod("empty", &ChatHistoryWrap::empty),
+         InstanceMethod("setTools", &ChatHistoryWrap::set_tools),
+         InstanceMethod("getTools", &ChatHistoryWrap::get_tools),
+         InstanceMethod("setExtraContext", &ChatHistoryWrap::set_extra_context),
+         InstanceMethod("getExtraContext", &ChatHistoryWrap::get_extra_context)}
+    );
 }
 
-ChatHistoryWrap::ChatHistoryWrap(const Napi::CallbackInfo& info) 
-    : Napi::ObjectWrap<ChatHistoryWrap>(info) {
+ChatHistoryWrap::ChatHistoryWrap(const Napi::CallbackInfo& info) : Napi::ObjectWrap<ChatHistoryWrap>(info) {
     auto env = info.Env();
 
     try {
@@ -149,7 +151,10 @@ Napi::Value ChatHistoryWrap::set_extra_context(const Napi::CallbackInfo& info) {
     auto env = info.Env();
 
     try {
-        OPENVINO_ASSERT(info.Length() == 1, "ChatHistory.setExtraContext requires one argument with extra context object");
+        OPENVINO_ASSERT(
+            info.Length() == 1,
+            "ChatHistory.setExtraContext requires one argument with extra context object"
+        );
 
         m_chat_history.set_extra_context(js_to_cpp<ov::genai::JsonContainer>(env, info[0]));
         return info.This();

@@ -12,7 +12,6 @@
 #include "openvino/c/ov_common.h"
 #include "openvino/genai/c/whisper_pipeline.h"
 
-
 #define MAX_PATH_LENGTH 1024
 
 // Error handling macro
@@ -66,10 +65,7 @@ typedef struct {
 
 // Function declarations
 int load_wav_file(const char* filename, float** audio_data, size_t* audio_length, float* sample_rate);
-float* resample_audio(const float* input,
-                      size_t input_length,
-                      float input_rate,
-                      float target_rate,
-                      size_t* output_length);
+float*
+resample_audio(const float* input, size_t input_length, float input_rate, float target_rate, size_t* output_length);
 
 #endif  // WHISPER_UTILS_H

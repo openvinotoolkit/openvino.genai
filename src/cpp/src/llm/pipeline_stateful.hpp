@@ -1,7 +1,6 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-
 #include <limits>
 
 #include "llm/pipeline_base.hpp"
@@ -27,12 +26,13 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
-    // include reflection of tokens contained in the kv cache and amount of tokens, which are needed to trim from kv cache on the next step of chat
+    // include reflection of tokens contained in the kv cache and amount of tokens, which are needed to trim from kv
+    // cache on the next step of chat
     utils::CacheState m_cache_state;
 
     void reset_state();
-public:
 
+public:
     StatefulLLMPipeline(
         const ov::InferRequest& request,
         const ov::genai::Tokenizer& tokenizer,
@@ -60,17 +60,11 @@ public:
         const ov::AnyMap& plugin_config
     );
 
-    DecodedResults generate(
-        StringInputs inputs,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) override;
+    DecodedResults
+    generate(StringInputs inputs, OptionalGenerationConfig generation_config, StreamerVariant streamer) override;
 
-    DecodedResults generate(
-        const ChatHistory& history,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) override;
+    DecodedResults
+    generate(const ChatHistory& history, OptionalGenerationConfig generation_config, StreamerVariant streamer) override;
 
     EncodedResults generate(
         const EncodedInputs& inputs,
@@ -94,4 +88,4 @@ public:
     ~StatefulLLMPipeline();
 };
 
-} // namespace ov::genai
+}  // namespace ov::genai

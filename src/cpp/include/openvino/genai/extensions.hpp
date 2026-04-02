@@ -23,10 +23,11 @@ using ExtensionList = std::vector<std::variant<std::filesystem::path, std::share
  * like LLMPipeline or VLMPipeline, ensuring that the extensions are loaded into the OpenVINO Core instance before
  * model loading.
  */
-template <typename T,
-          typename = std::enable_if_t<
-              std::is_same_v<std::decay_t<T>,
-                             std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>>>>
+template <
+    typename T,
+    typename = std::enable_if_t<std::is_same_v<
+        std::decay_t<T>,
+        std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>>>>
 std::pair<std::string, ov::Any> extensions(T&& vector) {
     return {"extensions", ov::Any(std::forward<T>(vector))};
 }
@@ -43,7 +44,8 @@ std::pair<std::string, ov::Any> extensions(T&& vector) {
  */
 inline std::pair<std::string, ov::Any> extensions(const std::vector<std::filesystem::path>& paths) {
     return extensions(
-        std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>{paths.begin(), paths.end()});
+        std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>{paths.begin(), paths.end()}
+    );
 }
 
 /**
@@ -51,8 +53,11 @@ inline std::pair<std::string, ov::Any> extensions(const std::vector<std::filesys
  */
 inline std::pair<std::string, ov::Any> extensions(const std::vector<std::shared_ptr<ov::Extension>>& extension_list) {
     return extensions(
-        std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>{extension_list.begin(),
-                                                                                         extension_list.end()});
+        std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>{
+            extension_list.begin(),
+            extension_list.end()
+        }
+    );
 }
 
 }  // namespace genai

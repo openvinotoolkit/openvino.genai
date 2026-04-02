@@ -57,19 +57,24 @@ ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image);
 void bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height);
 void bilinear_resize(const clip_image_u8& src, clip_image_u8& dst, int target_width, int target_height);
 
-/** preprocess img and store the result in res_imgs, pad_to_square may be overridden to false depending on model configuration */
+/** preprocess img and store the result in res_imgs, pad_to_square may be overridden to false depending on model
+ * configuration */
 clip_image_f32 clip_image_preprocess(struct clip_ctx& ctx, const clip_image_u8& img);
 
 std::vector<clip_image_u8> get_image_patches(
-    const clip_image_u8& image, 
+    const clip_image_u8& image,
     const std::vector<std::pair<int, int>>& image_grid_pinpoints,
     const std::pair<int, int>& size,
     int patch_size
 );
 
-std::pair<int, int> select_best_resolution(const std::pair<int, int> & original_size, const std::vector<std::pair<int, int>> & possible_resolutions);
+std::pair<int, int> select_best_resolution(
+    const std::pair<int, int>& original_size,
+    const std::vector<std::pair<int, int>>& possible_resolutions
+);
 
-clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution, uint8_t pad_value = 0);
+clip_image_u8
+resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution, uint8_t pad_value = 0);
 
 clip_image_u8 center_crop(const clip_image_u8& image, size_t crop_height, size_t crop_width);
 

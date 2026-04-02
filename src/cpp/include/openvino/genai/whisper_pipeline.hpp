@@ -36,7 +36,7 @@ struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
 
     WhisperPerfMetrics() = default;
 
-    WhisperPerfMetrics(PerfMetrics& perf_metrics) : PerfMetrics(perf_metrics), features_extraction_duration(){};
+    WhisperPerfMetrics(PerfMetrics& perf_metrics) : PerfMetrics(perf_metrics), features_extraction_duration() {};
 
     void evaluate_statistics(std::optional<TimePoint> start_time = std::nullopt) override;
 
@@ -82,8 +82,10 @@ struct WhisperDecodedResults {
     }
 
     friend std::ostream& operator<<(std::ostream& os, const WhisperDecodedResults& dr) {
-        OPENVINO_ASSERT(dr.scores.size() == dr.texts.size(),
-                        "The number of scores and texts doesn't match in WhisperDecodedResults.");
+        OPENVINO_ASSERT(
+            dr.scores.size() == dr.texts.size(),
+            "The number of scores and texts doesn't match in WhisperDecodedResults."
+        );
         if (dr.texts.empty()) {
             return os;
         }
@@ -117,9 +119,11 @@ public:
      * @param device optional device
      * @param properties optional properties
      */
-    WhisperPipeline(const std::filesystem::path& models_path,
-                    const std::string& device,
-                    const ov::AnyMap& properties = {});
+    WhisperPipeline(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
+    );
 
     /**
      * @brief Constructs a WhisperPipeline from xml/bin files, tokenizers and configuration in the
@@ -129,8 +133,9 @@ public:
      * @param device optional device
      * @param properties optional properties
      */
-    template <typename... Properties,
-              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    template <
+        typename... Properties,
+        typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     WhisperPipeline(const std::filesystem::path& models_path, const std::string& device, Properties&&... properties)
         : WhisperPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
@@ -145,9 +150,11 @@ public:
      * @param streamer optional streamer
      * @return WhisperDecodedResults decoded resulting text transcription
      */
-    WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
-                                   OptionalWhisperGenerationConfig generation_config = std::nullopt,
-                                   StreamerVariant streamer = std::monostate());
+    WhisperDecodedResults generate(
+        const RawSpeechInput& raw_speech_input,
+        OptionalWhisperGenerationConfig generation_config = std::nullopt,
+        StreamerVariant streamer = std::monostate()
+    );
     /**
      * @brief High level generate that receives raw speech as a vector of floats and returns decoded output.
      * properties can be in any order pipe.generate(..., ov::genai::max_new_tokens(100),
@@ -158,8 +165,8 @@ public:
      * @return WhisperDecodedResults decoded resulting text transcription
      */
     template <typename... Properties>
-    util::EnableIfAllStringAny<WhisperDecodedResults, Properties...> generate(const RawSpeechInput& raw_speech_input,
-                                                                              Properties&&... properties) {
+    util::EnableIfAllStringAny<WhisperDecodedResults, Properties...>
+    generate(const RawSpeechInput& raw_speech_input, Properties&&... properties) {
         return generate(raw_speech_input, AnyMap{std::forward<Properties>(properties)...});
     }
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input, const ov::AnyMap& config_map);

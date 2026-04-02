@@ -4,17 +4,17 @@
 #pragma once
 
 #include "openvino/genai/llm_pipeline.hpp"
-#include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
+#include "openvino/genai/tokenizer.hpp"
 
 namespace ov {
 namespace genai {
 
 class LLMPipelineImplBase {
 public:
-    LLMPipelineImplBase(const Tokenizer& tokenizer,
-                        const GenerationConfig& config)
-    : m_tokenizer(tokenizer), m_generation_config(config) { }
+    LLMPipelineImplBase(const Tokenizer& tokenizer, const GenerationConfig& config)
+        : m_tokenizer(tokenizer),
+          m_generation_config(config) {}
 
     Tokenizer get_tokenizer() {
         return m_tokenizer;
@@ -39,23 +39,14 @@ public:
         m_generation_config.validate();
     }
 
-    virtual DecodedResults generate(
-        StringInputs inputs,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) = 0;
+    virtual DecodedResults
+    generate(StringInputs inputs, OptionalGenerationConfig generation_config, StreamerVariant streamer) = 0;
 
-    virtual DecodedResults generate(
-        const ChatHistory& history,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) = 0;
+    virtual DecodedResults
+    generate(const ChatHistory& history, OptionalGenerationConfig generation_config, StreamerVariant streamer) = 0;
 
-    virtual EncodedResults generate(
-        const EncodedInputs& inputs,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) = 0;
+    virtual EncodedResults
+    generate(const EncodedInputs& inputs, OptionalGenerationConfig generation_config, StreamerVariant streamer) = 0;
 
     virtual void start_chat(const std::string& system_message) = 0;
     virtual void finish_chat() = 0;

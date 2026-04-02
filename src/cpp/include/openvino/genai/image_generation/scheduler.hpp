@@ -5,8 +5,8 @@
 
 #include <filesystem>
 
-#include "openvino/genai/visibility.hpp"
 #include "openvino/core/deprecated.hpp"
+#include "openvino/genai/visibility.hpp"
 
 namespace ov {
 namespace genai {
@@ -17,18 +17,19 @@ public:
         AUTO,
         LCM,
         DDIM,
-        LMS_DISCRETE OPENVINO_ENUM_DEPRECATED("LMS_DISCRETE is deprecated. Please, select different scheduler type") = DDIM,
+        LMS_DISCRETE OPENVINO_ENUM_DEPRECATED("LMS_DISCRETE is deprecated. Please, select different scheduler type") =
+            DDIM,
         EULER_DISCRETE,
         FLOW_MATCH_EULER_DISCRETE,
         PNDM,
         EULER_ANCESTRAL_DISCRETE
     };
 
-    static std::shared_ptr<Scheduler> from_config(const std::filesystem::path& scheduler_config_path,
-                                                  Type scheduler_type = AUTO);
+    static std::shared_ptr<Scheduler>
+    from_config(const std::filesystem::path& scheduler_config_path, Type scheduler_type = AUTO);
 
     virtual ~Scheduler();
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

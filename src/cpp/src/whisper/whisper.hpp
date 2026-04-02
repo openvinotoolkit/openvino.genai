@@ -31,16 +31,18 @@ struct WhisperGenerateResult {
     WhisperPerfMetrics perf_metrics;
 };
 
-WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig& config,
-                                       const ov::genai::WhisperConfig& model_config,
-                                       const WhisperContextTokens& context_tokens,
-                                       const RawSpeechInput& raw_speech,
-                                       ov::InferRequest& encoder,
-                                       std::shared_ptr<WhisperDecoder> decoder,
-                                       WhisperFeatureExtractor& feature_extractor,
-                                       const std::shared_ptr<StreamerBase> streamer,
-                                       Sampler& sampler,
-                                       Tokenizer& tokenizer);
+WhisperGenerateResult whisper_generate(
+    const ov::genai::WhisperGenerationConfig& config,
+    const ov::genai::WhisperConfig& model_config,
+    const WhisperContextTokens& context_tokens,
+    const RawSpeechInput& raw_speech,
+    ov::InferRequest& encoder,
+    std::shared_ptr<WhisperDecoder> decoder,
+    WhisperFeatureExtractor& feature_extractor,
+    const std::shared_ptr<StreamerBase> streamer,
+    Sampler& sampler,
+    Tokenizer& tokenizer
+);
 
 }  // namespace genai
 }  // namespace ov

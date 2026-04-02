@@ -4,8 +4,8 @@
 #pragma once
 
 #include <cstddef>
-#include <unordered_map>
 #include <sstream>
+#include <unordered_map>
 
 namespace ov::genai {
 
@@ -27,13 +27,15 @@ class SparseAttentionConfig {
 public:
     SparseAttentionConfig() = default;
 
-    SparseAttentionConfig(SparseAttentionMode mode_,
-                          size_t num_last_dense_tokens_in_prefill_,
-                          size_t num_retained_start_tokens_in_cache_,
-                          size_t num_retained_recent_tokens_in_cache_,
-                          float xattention_threshold_,
-                          size_t xattention_block_size_,
-                          size_t xattention_stride_)
+    SparseAttentionConfig(
+        SparseAttentionMode mode_,
+        size_t num_last_dense_tokens_in_prefill_,
+        size_t num_retained_start_tokens_in_cache_,
+        size_t num_retained_recent_tokens_in_cache_,
+        float xattention_threshold_,
+        size_t xattention_block_size_,
+        size_t xattention_stride_
+    )
         : mode(mode_),
           num_last_dense_tokens_in_prefill(num_last_dense_tokens_in_prefill_),
           num_retained_start_tokens_in_cache(num_retained_start_tokens_in_cache_),
@@ -45,12 +47,11 @@ public:
     /**  Sparse attention mode to be applied. */
     SparseAttentionMode mode = SparseAttentionMode::TRISHAPE;
 
-    /** TRISHAPE and XATTENTION modes - Number of tokens from the end of the prompt for which full attention across previous KV
-     * cache contents will be computed. In contrast, for the rest of the tokens in the prompt only the sparse attention
-     * will be computed according to the selected algorithm.
-     * TRISHAPE: Due to the block-wise nature of continuous batching cache management, the actual number of prompt tokens
-     * for which the dense attention will be computed may be up to block-size larger than this value (depending on the
-     * prompt length and block size).
+    /** TRISHAPE and XATTENTION modes - Number of tokens from the end of the prompt for which full attention across
+     * previous KV cache contents will be computed. In contrast, for the rest of the tokens in the prompt only the
+     * sparse attention will be computed according to the selected algorithm. TRISHAPE: Due to the block-wise nature of
+     * continuous batching cache management, the actual number of prompt tokens for which the dense attention will be
+     * computed may be up to block-size larger than this value (depending on the prompt length and block size).
      * XATTENTION: Same as above applies, but the dense attention may overspill up to a subsequence chunk (i.e. multiple
      * blocks)
      * */

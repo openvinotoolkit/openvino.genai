@@ -42,9 +42,11 @@ ov::Tensor SpeechT5TTSDecoder::create_host_tensor(const element::Type element_ty
     }
 }
 
-SpeechT5TTSDecoder::SpeechT5TTSDecoder(const std::filesystem::path& models_path,
-                                       const std::string& device,
-                                       const ov::AnyMap& properties) {
+SpeechT5TTSDecoder::SpeechT5TTSDecoder(
+    const std::filesystem::path& models_path,
+    const std::string& device,
+    const ov::AnyMap& properties
+) {
     ov::Core core = utils::singleton_core();
 
     auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
@@ -57,17 +59,21 @@ SpeechT5TTSDecoder::SpeechT5TTSDecoder(const std::filesystem::path& models_path,
     m_beam_idx_tensor.data<int32_t>()[0] = 0;
 }
 
-std::shared_ptr<SpeechT5TTSDecoder> SpeechT5TTSDecoder::from_path(const std::filesystem::path& models_path,
-                                                                  const std::string& device,
-                                                                  const ov::AnyMap& properties) {
+std::shared_ptr<SpeechT5TTSDecoder> SpeechT5TTSDecoder::from_path(
+    const std::filesystem::path& models_path,
+    const std::string& device,
+    const ov::AnyMap& properties
+) {
     return std::make_shared<SpeechT5TTSDecoder>(models_path, device, properties);
 }
 
-void SpeechT5TTSDecoder::start_async(const Tensor& inputs_embeds,
-                                     const Tensor& speaker_embeddings,
-                                     const Tensor& encoder_hidden_states,
-                                     const Tensor& encoder_attention_mask,
-                                     const Tensor& spectrogram) {
+void SpeechT5TTSDecoder::start_async(
+    const Tensor& inputs_embeds,
+    const Tensor& speaker_embeddings,
+    const Tensor& encoder_hidden_states,
+    const Tensor& encoder_attention_mask,
+    const Tensor& spectrogram
+) {
     m_request.set_tensor("inputs_embeds", inputs_embeds);
     m_request.set_tensor("speaker_embeddings", speaker_embeddings);
     m_request.set_tensor("encoder_hidden_states", encoder_hidden_states);

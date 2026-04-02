@@ -14,10 +14,10 @@ void request_vl_sdpa_transformations(std::shared_ptr<ov::Model> model) {
 }
 
 bool check_vl_sdpa_transformations(const ov::CompiledModel& compiled_model) {
-    const std::vector<std::string> target_names {"cu_seq_lens", "cu_window_seqlens"};
+    const std::vector<std::string> target_names{"cu_seq_lens", "cu_window_seqlens"};
 
     bool exists = false;
-    for (auto &input : compiled_model.inputs()) {
+    for (auto& input : compiled_model.inputs()) {
         const auto& names = input.get_names();
 
         for (const auto& target : target_names) {

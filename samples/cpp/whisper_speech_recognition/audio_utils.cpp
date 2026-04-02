@@ -58,19 +58,25 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename) {
             }
         }
 
-        OPENVINO_ASSERT(drwav_init_memory(&wav, wav_data.data(), wav_data.size(), nullptr),
-                        "Failed to open WAV file from stdin");
+        OPENVINO_ASSERT(
+            drwav_init_memory(&wav, wav_data.data(), wav_data.size(), nullptr),
+            "Failed to open WAV file from stdin"
+        );
 
         fprintf(stderr, "%s: read %zu bytes from stdin\n", __func__, wav_data.size());
     } else if (is_wav_buffer(filename)) {
-        OPENVINO_ASSERT(drwav_init_memory(&wav, filename.c_str(), filename.size(), nullptr),
-                        "Failed to open WAV file from fname buffer");
+        OPENVINO_ASSERT(
+            drwav_init_memory(&wav, filename.c_str(), filename.size(), nullptr),
+            "Failed to open WAV file from fname buffer"
+        );
     } else if (!drwav_init_file(&wav, filename.c_str(), nullptr)) {
 #if defined(WHISPER_FFMPEG)
         OPENVINO_ASSERT(ffmpeg_decode_audio(fname, wav_data) == 0, "Failed to ffmpeg decode")
 
-        OPENVINO_ASSERT(drwav_init_memory(&wav, wav_data.data(), wav_data.size(), nullptr),
-                        "Failed to read wav data as wav")
+        OPENVINO_ASSERT(
+            drwav_init_memory(&wav, wav_data.data(), wav_data.size(), nullptr),
+            "Failed to read wav data as wav"
+        )
 #else
         throw std::runtime_error("failed to open as WAV file");
 #endif
@@ -86,13 +92,9 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename) {
         throw std::runtime_error("WAV file must be " + std::string{COMMON_SAMPLE_RATE / 1000} + " kHz");
     }
 
-    const uint64_t n =
-        wav_data.empty() 
-        ? wav.totalPCMFrameCount 
-        : (
-            wav_data.size() / 
-            (static_cast<uint64_t>(wav.channels) * static_cast<uint64_t>(wav.bitsPerSample) / 8ul)
-        );
+    const uint64_t n = wav_data.empty() ? wav.totalPCMFrameCount
+                                        : (wav_data.size() / (static_cast<uint64_t>(wav.channels) *
+                                                              static_cast<uint64_t>(wav.bitsPerSample) / 8ul));
 
     std::vector<int16_t> pcm16;
     pcm16.resize(n * wav.channels);

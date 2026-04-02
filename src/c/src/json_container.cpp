@@ -3,12 +3,13 @@
 
 #include "openvino/genai/c/json_container.h"
 
-#include "openvino/genai/json_container.hpp"
-#include "openvino/core/except.hpp"
-#include "types_c.h"
 #include <cstring>
-#include <string>
 #include <memory>
+#include <string>
+
+#include "openvino/core/except.hpp"
+#include "openvino/genai/json_container.hpp"
+#include "types_c.h"
 
 ov_genai_json_container_status_e ov_genai_json_container_create(ov_genai_json_container** container) {
     if (!container) {
@@ -24,9 +25,8 @@ ov_genai_json_container_status_e ov_genai_json_container_create(ov_genai_json_co
     return OV_GENAI_JSON_CONTAINER_OK;
 }
 
-ov_genai_json_container_status_e ov_genai_json_container_create_from_json_string(
-    ov_genai_json_container** container,
-    const char* json_str) {
+ov_genai_json_container_status_e
+ov_genai_json_container_create_from_json_string(ov_genai_json_container** container, const char* json_str) {
     if (!container || !json_str) {
         return OV_GENAI_JSON_CONTAINER_INVALID_PARAM;
     }
@@ -75,16 +75,14 @@ void ov_genai_json_container_free(ov_genai_json_container* container) {
     }
 }
 
-ov_genai_json_container_status_e ov_genai_json_container_to_json_string(
-    const ov_genai_json_container* container,
-    char* output,
-    size_t* output_size) {
+ov_genai_json_container_status_e
+ov_genai_json_container_to_json_string(const ov_genai_json_container* container, char* output, size_t* output_size) {
     if (!container || !(container->object) || !output_size) {
         return OV_GENAI_JSON_CONTAINER_INVALID_PARAM;
     }
     try {
         std::string json_str = container->object->to_json_string();
-        
+
         if (!output) {
             *output_size = json_str.length() + 1;
         } else {
@@ -100,9 +98,8 @@ ov_genai_json_container_status_e ov_genai_json_container_to_json_string(
     return OV_GENAI_JSON_CONTAINER_OK;
 }
 
-ov_genai_json_container_status_e ov_genai_json_container_copy(
-    const ov_genai_json_container* source,
-    ov_genai_json_container** target) {
+ov_genai_json_container_status_e
+ov_genai_json_container_copy(const ov_genai_json_container* source, ov_genai_json_container** target) {
     if (!source || !(source->object) || !target) {
         return OV_GENAI_JSON_CONTAINER_INVALID_PARAM;
     }

@@ -13,7 +13,6 @@ namespace genai {
 
 // Static Batch-Size 1 variant of SD3Transformer2DModel::Inference
 class SD3Transformer2DModel::InferenceStaticBS1 : public SD3Transformer2DModel::Inference {
-
     InferenceStaticBS1(const InferenceStaticBS1&) = delete;
     InferenceStaticBS1(InferenceStaticBS1&&) = delete;
     InferenceStaticBS1(InferenceStaticBS1& other) = delete;
@@ -32,21 +31,24 @@ public:
         return clone;
     }
 
-    virtual void compile(std::shared_ptr<ov::Model> model,
-                         const std::string& device,
-                         const ov::AnyMap& properties) override {
+    virtual void
+    compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties) override {
         // All shapes for input/output tensors should be static.
         // Double check this and throw runtime error if it's not the case.
         for (auto& input : model->inputs()) {
-            OPENVINO_ASSERT(!input.get_partial_shape().is_dynamic(),
-                            "SD3Transformer2DModel::InferenceStaticBS1::compile: input tensor " + input.get_any_name() +
-                                " shape is dynamic. Tensors must be reshaped to be static before compile is invoked.");
+            OPENVINO_ASSERT(
+                !input.get_partial_shape().is_dynamic(),
+                "SD3Transformer2DModel::InferenceStaticBS1::compile: input tensor " + input.get_any_name() +
+                    " shape is dynamic. Tensors must be reshaped to be static before compile is invoked."
+            );
         }
 
         for (auto& output : model->outputs()) {
-            OPENVINO_ASSERT(!output.get_partial_shape().is_dynamic(),
-                            "SD3Transformer2DModel::InferenceStaticBS1::compile: output tensor " + output.get_any_name() +
-                                " shape is dynamic. Tensors must be reshaped to be static before compile is invoked.");
+            OPENVINO_ASSERT(
+                !output.get_partial_shape().is_dynamic(),
+                "SD3Transformer2DModel::InferenceStaticBS1::compile: output tensor " + output.get_any_name() +
+                    " shape is dynamic. Tensors must be reshaped to be static before compile is invoked."
+            );
         }
 
         // we'll create a separate infer request for each batch.
@@ -73,15 +75,19 @@ public:
     }
 
     virtual void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) override {
-        OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
-                        "Transformer model must be compiled first");
+        OPENVINO_ASSERT(
+            m_native_batch_size && m_native_batch_size == m_requests.size(),
+            "Transformer model must be compiled first"
+        );
 
         size_t encoder_hidden_states_bs = encoder_hidden_states.get_shape()[0];
 
         OPENVINO_ASSERT(
             encoder_hidden_states_bs == m_native_batch_size,
-            ("SD3Transformer2DModel::InferenceStaticBS1::set_hidden_states: native batch size is " + std::to_string(m_native_batch_size) +
-             ", but encoder_hidden_states has batch size of " + std::to_string(encoder_hidden_states_bs)));
+            ("SD3Transformer2DModel::InferenceStaticBS1::set_hidden_states: native batch size is " +
+             std::to_string(m_native_batch_size) + ", but encoder_hidden_states has batch size of " +
+             std::to_string(encoder_hidden_states_bs))
+        );
 
         char* pHiddenStates = (char*)encoder_hidden_states.data();
         size_t hidden_states_batch_stride_bytes = encoder_hidden_states.get_strides()[0];
@@ -90,10 +96,12 @@ public:
             auto hidden_states_bs1 = m_requests[i].get_tensor(tensor_name);
 
             // wrap current pHiddenStates location as batch-1 tensor.
-            ov::Tensor bs1_wrapper(hidden_states_bs1.get_element_type(),
-                                   hidden_states_bs1.get_shape(),
-                                   pHiddenStates,
-                                   encoder_hidden_states.get_strides());
+            ov::Tensor bs1_wrapper(
+                hidden_states_bs1.get_element_type(),
+                hidden_states_bs1.get_shape(),
+                pHiddenStates,
+                encoder_hidden_states.get_strides()
+            );
 
             // copy it to infer request batch-1 tensor
             bs1_wrapper.copy_to(hidden_states_bs1);
@@ -104,8 +112,10 @@ public:
     }
 
     virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep) override {
-        OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
-                        "Transformer model must be compiled first");
+        OPENVINO_ASSERT(
+            m_native_batch_size && m_native_batch_size == m_requests.size(),
+            "Transformer model must be compiled first"
+        );
 
         OPENVINO_ASSERT(sample.get_shape()[0] == m_native_batch_size, "sample batch size must match native batch size");
 
@@ -130,10 +140,8 @@ public:
 
             // wrap a portion of out_sample tensor as a batch-1 tensor, as set this as output tensor.
             {
-                ov::Tensor bs1_wrapper(sample.get_element_type(),
-                                       bs1_sample_shape,
-                                       pOutSample,
-                                       out_sample.get_strides());
+                ov::Tensor
+                    bs1_wrapper(sample.get_element_type(), bs1_sample_shape, pOutSample, out_sample.get_strides());
                 m_requests[i].set_tensor("out_sample", bs1_wrapper);
             }
 

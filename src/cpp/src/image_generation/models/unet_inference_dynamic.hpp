@@ -21,7 +21,8 @@ public:
         return std::make_shared<UNetInferenceDynamic>(cloned);
     }
 
-    virtual void compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties) override {
+    virtual void
+    compile(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties) override {
         ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, properties);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition dynamic model");
         m_request = compiled_model.create_infer_request();
@@ -32,7 +33,7 @@ public:
         m_request.set_tensor(tensor_name, encoder_hidden_states);
     }
 
-    virtual void set_adapters(AdapterController &adapter_controller, const AdapterConfig& adapters) override {
+    virtual void set_adapters(AdapterController& adapter_controller, const AdapterConfig& adapters) override {
         OPENVINO_ASSERT(m_request, "UNet model must be compiled first");
         adapter_controller.apply(m_request, adapters);
     }
@@ -54,9 +55,11 @@ public:
         utils::export_model(compiled_model, blob_path / "openvino_model.blob");
     }
 
-    virtual void import_model(const std::filesystem::path& blob_path,
-                              const std::string& device,
-                              const ov::AnyMap& properties) override {
+    virtual void import_model(
+        const std::filesystem::path& blob_path,
+        const std::string& device,
+        const ov::AnyMap& properties
+    ) override {
         auto compiled_model = utils::import_model(blob_path / "openvino_model.blob", device, properties);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition dynamic model");
         m_request = compiled_model.create_infer_request();

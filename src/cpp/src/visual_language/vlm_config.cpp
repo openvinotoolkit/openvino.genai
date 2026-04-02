@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "vlm_config.hpp"
-#include "json_utils.hpp"
 
 #include <fstream>
+
+#include "json_utils.hpp"
 
 namespace ov::genai {
 
@@ -40,7 +41,7 @@ void assert_size(size_t size, VLMModelType model_type) {
     }
 }
 
-} // namespace
+}  // namespace
 
 VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     std::ifstream stream(json_path);
@@ -76,4 +77,4 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     read_json_param(parsed, "vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
 }
 
-} // namespace ov::genai
+}  // namespace ov::genai

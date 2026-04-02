@@ -35,7 +35,8 @@ void performInferenceThread(TsfnContext* context) {
         auto status = context->generate_tsfn.BlockingCall([message](Napi::Env env, Napi::Function jsCallback) {
             try {
                 jsCallback.Call(
-                    {Napi::Error::New(env, "performInferenceThread error. " + message).Value(), env.Null()});
+                    {Napi::Error::New(env, "performInferenceThread error. " + message).Value(), env.Null()}
+                );
             } catch (const std::exception& err) {
                 std::cerr << "The callback failed when attempting to return an error from performInferenceThread. "
                              "Details:\n"
@@ -66,25 +67,29 @@ void performInferenceThread(TsfnContext* context) {
         if (context->streamer_tsfn.has_value()) {
             streamer = [context, &streamer_exceptions](std::string word) {
                 std::promise<ov::genai::StreamingStatus> resultPromise;
-                napi_status status = context->streamer_tsfn->BlockingCall(
-                    [word, &resultPromise, &streamer_exceptions](Napi::Env env, Napi::Function jsCallback) {
-                        try {
-                            auto callback_result = jsCallback.Call({Napi::String::New(env, word)});
-                            if (callback_result.IsNumber()) {
-                                resultPromise.set_value(static_cast<ov::genai::StreamingStatus>(
-                                    callback_result.As<Napi::Number>().Int32Value()));
-                            } else {
-                                resultPromise.set_value(ov::genai::StreamingStatus::RUNNING);
-                            }
-                        } catch (const std::exception& err) {
-                            streamer_exceptions.push_back(err.what());
-                            resultPromise.set_value(ov::genai::StreamingStatus::CANCEL);
+                napi_status status = context->streamer_tsfn->BlockingCall([word, &resultPromise, &streamer_exceptions](
+                                                                              Napi::Env env,
+                                                                              Napi::Function jsCallback
+                                                                          ) {
+                    try {
+                        auto callback_result = jsCallback.Call({Napi::String::New(env, word)});
+                        if (callback_result.IsNumber()) {
+                            resultPromise.set_value(
+                                static_cast<ov::genai::StreamingStatus>(callback_result.As<Napi::Number>().Int32Value())
+                            );
+                        } else {
+                            resultPromise.set_value(ov::genai::StreamingStatus::RUNNING);
                         }
-                    });
+                    } catch (const std::exception& err) {
+                        streamer_exceptions.push_back(err.what());
+                        resultPromise.set_value(ov::genai::StreamingStatus::CANCEL);
+                    }
+                });
 
                 if (status != napi_ok) {
-                    streamer_exceptions.push_back("The streamer callback BlockingCall failed with the status: " +
-                                                  status);
+                    streamer_exceptions.push_back(
+                        "The streamer callback BlockingCall failed with the status: " + status
+                    );
                     return ov::genai::StreamingStatus::CANCEL;
                 }
 
@@ -92,16 +97,20 @@ void performInferenceThread(TsfnContext* context) {
             };
         }
 
-        std::visit(overloaded{[context, config, streamer, &result](ov::genai::StringInputs& inputs) {
-                                  result = context->pipe->generate(inputs, config, streamer);
-                              },
-                              [context, config, streamer, &result](ov::genai::ChatHistory& inputs) {
-                                  result = context->pipe->generate(inputs, config, streamer);
-                              },
-                              [&](auto&) {
-                                  OPENVINO_THROW("Unsupported type for generate inputs.");
-                              }},
-                   context->inputs);
+        std::visit(
+            overloaded{
+                [context, config, streamer, &result](ov::genai::StringInputs& inputs) {
+                    result = context->pipe->generate(inputs, config, streamer);
+                },
+                [context, config, streamer, &result](ov::genai::ChatHistory& inputs) {
+                    result = context->pipe->generate(inputs, config, streamer);
+                },
+                [&](auto&) {
+                    OPENVINO_THROW("Unsupported type for generate inputs.");
+                }
+            },
+            context->inputs
+        );
 
     } catch (const std::exception& e) {
         *context->is_generating = false;
@@ -148,15 +157,17 @@ void performInferenceThread(TsfnContext* context) {
 LLMPipelineWrapper::LLMPipelineWrapper(const Napi::CallbackInfo& info) : Napi::ObjectWrap<LLMPipelineWrapper>(info) {};
 
 Napi::Function LLMPipelineWrapper::get_class(Napi::Env env) {
-    return DefineClass(env,
-                       "LLMPipeline",
-                       {InstanceMethod("init", &LLMPipelineWrapper::init),
-                        InstanceMethod("generate", &LLMPipelineWrapper::generate),
-                        InstanceMethod("getTokenizer", &LLMPipelineWrapper::get_tokenizer),
-                        InstanceMethod("getGenerationConfig", &LLMPipelineWrapper::get_generation_config),
-                        InstanceMethod("setGenerationConfig", &LLMPipelineWrapper::set_generation_config),
-                        InstanceMethod("startChat", &LLMPipelineWrapper::start_chat),
-                        InstanceMethod("finishChat", &LLMPipelineWrapper::finish_chat)});
+    return DefineClass(
+        env,
+        "LLMPipeline",
+        {InstanceMethod("init", &LLMPipelineWrapper::init),
+         InstanceMethod("generate", &LLMPipelineWrapper::generate),
+         InstanceMethod("getTokenizer", &LLMPipelineWrapper::get_tokenizer),
+         InstanceMethod("getGenerationConfig", &LLMPipelineWrapper::get_generation_config),
+         InstanceMethod("setGenerationConfig", &LLMPipelineWrapper::set_generation_config),
+         InstanceMethod("startChat", &LLMPipelineWrapper::start_chat),
+         InstanceMethod("finishChat", &LLMPipelineWrapper::finish_chat)}
+    );
 }
 
 Napi::Value LLMPipelineWrapper::init(const Napi::CallbackInfo& info) {
@@ -200,22 +211,25 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         context->pipe = this->pipe;
         context->generation_config = std::make_shared<ov::AnyMap>(generation_config);
         // Create a ThreadSafeFunction
-        context->generate_tsfn =
-            Napi::ThreadSafeFunction::New(env,
-                                          callback,
-                                          "LLM_generate_callback",  // Name
-                                          0,                        // Unlimited queue
-                                          1,                        // Only one thread will use this initially
-                                          [context](Napi::Env) {    // Finalizer used to clean threads up
-                                              context->native_thread.join();
-                                              delete context;
-                                          });
+        context->generate_tsfn = Napi::ThreadSafeFunction::New(
+            env,
+            callback,
+            "LLM_generate_callback",  // Name
+            0,                        // Unlimited queue
+            1,                        // Only one thread will use this initially
+            [context](Napi::Env) {    // Finalizer used to clean threads up
+                context->native_thread.join();
+                delete context;
+            }
+        );
         if (streamer.IsFunction()) {
-            context->streamer_tsfn = Napi::ThreadSafeFunction::New(env,
-                                                                   streamer.As<Napi::Function>(),
-                                                                   "LLM_generate_streamer",  // Name
-                                                                   0,                        // Unlimited queue
-                                                                   1);  // Only one thread will use this initially
+            context->streamer_tsfn = Napi::ThreadSafeFunction::New(
+                env,
+                streamer.As<Napi::Function>(),
+                "LLM_generate_streamer",  // Name
+                0,                        // Unlimited queue
+                1
+            );  // Only one thread will use this initially
         }
         context->native_thread = std::thread(performInferenceThread, context);
     } catch (const std::exception& ex) {

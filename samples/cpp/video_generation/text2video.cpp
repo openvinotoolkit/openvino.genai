@@ -1,15 +1,14 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <memory>
-#include <string>
-#include <random>
 #include <filesystem>
-
-#include "progress_bar.hpp"
-#include "imwrite_video.hpp"
-
+#include <memory>
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
+#include <random>
+#include <string>
+
+#include "imwrite_video.hpp"
+#include "progress_bar.hpp"
 
 int main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
@@ -40,11 +39,13 @@ int main(int32_t argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }

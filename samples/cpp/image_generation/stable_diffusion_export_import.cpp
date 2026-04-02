@@ -51,11 +51,14 @@ void dedicated_models_export_import(const std::filesystem::path& root_dir) {
     auto imported_pipe = ov::genai::Text2ImagePipeline::stable_diffusion_xl(
         ov::genai::Scheduler::from_config(root_dir / "scheduler" / "scheduler_config.json"),
         ov::genai::CLIPTextModel(root_dir / "text_encoder", device, ov::genai::blob_path(blob_path / "text_encoder")),
-        ov::genai::CLIPTextModelWithProjection(root_dir / "text_encoder_2",
-                                               device,
-                                               ov::genai::blob_path(blob_path / "text_encoder_2")),
+        ov::genai::CLIPTextModelWithProjection(
+            root_dir / "text_encoder_2",
+            device,
+            ov::genai::blob_path(blob_path / "text_encoder_2")
+        ),
         ov::genai::UNet2DConditionModel(root_dir / "unet", device, ov::genai::blob_path(blob_path / "unet")),
-        ov::genai::AutoencoderKL(root_dir / "vae_decoder", device, ov::genai::blob_path(blob_path)));
+        ov::genai::AutoencoderKL(root_dir / "vae_decoder", device, ov::genai::blob_path(blob_path))
+    );
 };
 
 void export_import_with_reshape(const std::filesystem::path& root_dir, const std::string& prompt) {
@@ -84,9 +87,11 @@ void export_import_with_reshape(const std::filesystem::path& root_dir, const std
     for (int imagei = 0; imagei < number_of_images_to_generate; imagei++) {
         std::cout << "Generating image " << imagei << std::endl;
 
-        ov::Tensor image = imported_pipe.generate(prompt,
-                                                  ov::genai::num_inference_steps(number_of_inference_steps_per_image),
-                                                  ov::genai::callback(progress_bar));
+        ov::Tensor image = imported_pipe.generate(
+            prompt,
+            ov::genai::num_inference_steps(number_of_inference_steps_per_image),
+            ov::genai::callback(progress_bar)
+        );
 
         imwrite("image_" + std::to_string(imagei) + ".bmp", image, true);
     }

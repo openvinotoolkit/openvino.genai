@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "openvino/genai/visibility.hpp"
 #include "openvino/genai/json_container.hpp"
+#include "openvino/genai/visibility.hpp"
 
 namespace ov {
 namespace genai {
@@ -29,7 +29,7 @@ public:
 
     /**
      * @brief Construct from initializer list for convenient inline creation.
-     * 
+     *
      * Example:
      * ChatHistory history({
      *     {{"role", "system"}, {"content", "You are helpful assistant."}},
@@ -45,7 +45,7 @@ public:
     ChatHistory& push_back(std::initializer_list<std::pair<std::string, ov::Any>> message);
 
     void pop_back();
-    
+
     const JsonContainer& get_messages() const;
     JsonContainer& get_messages();
 
@@ -75,5 +75,5 @@ private:
     mutable std::shared_ptr<ChatHistoryInternalState> m_internal_state;
 };
 
-} // namespace genai
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

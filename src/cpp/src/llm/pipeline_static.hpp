@@ -13,17 +13,18 @@ namespace genai {
 namespace static_llm {
 
 struct LLMPipelineFactory {
-    static std::unique_ptr<LLMPipelineImplBase> create(const std::filesystem::path& models_path,
-                                                       const ov::genai::Tokenizer& tokenizer,
-                                                       const ov::AnyMap& config);
+    static std::unique_ptr<LLMPipelineImplBase>
+    create(const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const ov::AnyMap& config);
 
-    static std::unique_ptr<LLMPipelineImplBase> create(const std::filesystem::path& models_path,
-                                                       const ov::AnyMap& config);
+    static std::unique_ptr<LLMPipelineImplBase>
+    create(const std::filesystem::path& models_path, const ov::AnyMap& config);
 
-    static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Model>& model,
-                                                       const ov::genai::Tokenizer& tokenizer,
-                                                       const ov::AnyMap& properties,
-                                                       const ov::genai::GenerationConfig& generation_config);
+    static std::unique_ptr<LLMPipelineImplBase> create(
+        const std::shared_ptr<ov::Model>& model,
+        const ov::genai::Tokenizer& tokenizer,
+        const ov::AnyMap& properties,
+        const ov::genai::GenerationConfig& generation_config
+    );
 };
 
 class StatefulLLMPipeline : public LLMPipelineImplBase {
@@ -41,17 +42,11 @@ public:
         const ov::genai::GenerationConfig& generation_config
     );
 
-    DecodedResults generate(
-        StringInputs inputs,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) override;
+    DecodedResults
+    generate(StringInputs inputs, OptionalGenerationConfig generation_config, StreamerVariant streamer) override;
 
-    DecodedResults generate(
-        const ChatHistory& history,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) override;
+    DecodedResults
+    generate(const ChatHistory& history, OptionalGenerationConfig generation_config, StreamerVariant streamer) override;
 
     EncodedResults generate(
         const EncodedInputs& inputs,

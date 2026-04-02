@@ -44,7 +44,7 @@ public:
 
         /**
          * @brief Last token embeddings
-         * 
+         *
          * @note Specifying `ov::genai::padding_side = "left"` can optimize performance for this pooling type.
          */
         LAST_TOKEN = 2,
@@ -68,7 +68,7 @@ public:
 
         /**
          * @brief Batch size of embedding model.
-         * Useful for database population. If set, the pipeline will fix model shape for inference optimization. 
+         * Useful for database population. If set, the pipeline will fix model shape for inference optimization.
          * Number of documents passed to pipeline should be equal to batch_size.
          * For query embeddings, batch_size should be set to 1 or not set.
          */
@@ -126,10 +126,12 @@ public:
      * @param config Pipeline configuration
      * @param properties Optional plugin properties to pass to ov::Core::compile_model().
      */
-    TextEmbeddingPipeline(const std::filesystem::path& models_path,
-                          const std::string& device,
-                          const Config& config,
-                          const ov::AnyMap& properties = {});
+    TextEmbeddingPipeline(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        const Config& config,
+        const ov::AnyMap& properties = {}
+    );
 
     /**
      * @brief Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir.
@@ -138,9 +140,11 @@ public:
      * @param device Device
      * @param properties Optional plugin and/or config properties
      */
-    TextEmbeddingPipeline(const std::filesystem::path& models_path,
-                          const std::string& device,
-                          const ov::AnyMap& properties = {});
+    TextEmbeddingPipeline(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        const ov::AnyMap& properties = {}
+    );
 
     /**
      * @brief Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir.
@@ -149,11 +153,14 @@ public:
      * @param device Device
      * @param properties Plugin and/or config properties
      */
-    template <typename... Properties,
-              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    TextEmbeddingPipeline(const std::filesystem::path& models_path,
-                          const std::string& device,
-                          Properties&&... properties)
+    template <
+        typename... Properties,
+        typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    TextEmbeddingPipeline(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        Properties&&... properties
+    )
         : TextEmbeddingPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     /**

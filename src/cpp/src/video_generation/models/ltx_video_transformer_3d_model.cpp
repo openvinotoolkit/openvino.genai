@@ -7,9 +7,9 @@
 #include <numeric>
 
 #include "json_utils.hpp"
-#include "utils.hpp"
 #include "lora/helper.hpp"
 #include "lora/names_mapping.hpp"
+#include "utils.hpp"
 
 using namespace ov::genai;
 
@@ -27,14 +27,15 @@ std::pair<int64_t, int64_t> get_compression_ratio(const std::filesystem::path& c
     utils::read_json_param(data, "patch_size", patch_size);
     utils::read_json_param(data, "patch_size_t", patch_size_t);
 
-    const auto compression_factor = std::pow(2, std::accumulate(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+    const auto compression_factor =
+        std::pow(2, std::accumulate(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
     const int64_t spatial_compression_ratio = patch_size * compression_factor;
     const int64_t temporal_compression_ratio = patch_size_t * compression_factor;
 
     return {spatial_compression_ratio, temporal_compression_ratio};
 }
 
-} // namespace
+}  // namespace
 
 LTXVideoTransformer3DModel::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
@@ -51,12 +52,15 @@ LTXVideoTransformer3DModel::Config::Config(const std::filesystem::path& config_p
 LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const std::filesystem::path& root_dir)
     : m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
-    std::tie(m_spatial_compression_ratio, m_temporal_compression_ratio) = get_compression_ratio(root_dir.parent_path() / "vae_decoder" / "config.json");
+    std::tie(m_spatial_compression_ratio, m_temporal_compression_ratio) =
+        get_compression_ratio(root_dir.parent_path() / "vae_decoder" / "config.json");
 }
 
-LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const std::filesystem::path& root_dir,
-                                             const std::string& device,
-                                             const ov::AnyMap& properties)
+LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(
+    const std::filesystem::path& root_dir,
+    const std::string& device,
+    const ov::AnyMap& properties
+)
     : LTXVideoTransformer3DModel(root_dir) {
     compile(device, properties);
 }
@@ -67,7 +71,8 @@ const LTXVideoTransformer3DModel::Config& LTXVideoTransformer3DModel::get_config
     return m_config;
 }
 
-LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::string& device, const ov::AnyMap& properties) {
+LTXVideoTransformer3DModel&
+LTXVideoTransformer3DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     std::optional<AdapterConfig> adapters;
     auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
@@ -87,7 +92,10 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     return *this;
 }
 
-void LTXVideoTransformer3DModel::set_hidden_states(const std::string& tensor_name, const ov::Tensor& encoder_hidden_states) {
+void LTXVideoTransformer3DModel::set_hidden_states(
+    const std::string& tensor_name,
+    const ov::Tensor& encoder_hidden_states
+) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
     m_request.set_tensor(tensor_name, encoder_hidden_states);
 }
@@ -130,11 +138,13 @@ size_t LTXVideoTransformer3DModel::get_request_input_batch() {
     return shape[0];
 }
 
-LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_size,
-                                                            int64_t num_frames,
-                                                            int64_t height,
-                                                            int64_t width,
-                                                            int64_t tokenizer_model_max_length) {
+LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(
+    int64_t batch_size,
+    int64_t num_frames,
+    int64_t height,
+    int64_t width,
+    int64_t tokenizer_model_max_length
+) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
     // hidden_states=latent_model_input,
@@ -146,8 +156,8 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_si
     size_t patch_size_t = get_config().patch_size_t;
 
     num_frames = ((num_frames - 1) / m_temporal_compression_ratio + 1) / patch_size_t;
-    height /=  (m_spatial_compression_ratio * patch_size);
-    width /=  (m_spatial_compression_ratio * patch_size);
+    height /= (m_spatial_compression_ratio * patch_size);
+    width /= (m_spatial_compression_ratio * patch_size);
 
     std::map<std::string, ov::PartialShape> name_to_shape;
 

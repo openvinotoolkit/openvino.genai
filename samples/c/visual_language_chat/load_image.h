@@ -27,4 +27,4 @@ int file_exists(const char* path);
 }
 #endif
 
-#endif // LOAD_IMAGE_H
+#endif  // LOAD_IMAGE_H

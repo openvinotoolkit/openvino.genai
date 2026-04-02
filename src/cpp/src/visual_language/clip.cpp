@@ -4,6 +4,7 @@
 // Based on clip.cpp
 
 #include "clip.hpp"
+
 #include <cmath>
 
 clip_image_u8 tensor_to_clip_image_u8(const ov::Tensor& image_tensor) {
@@ -16,10 +17,7 @@ clip_image_u8 tensor_to_clip_image_u8(const ov::Tensor& image_tensor) {
 }
 
 ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image) {
-    ov::Tensor image_tensor{
-        ov::element::f32,
-        {1, 3, static_cast<size_t>(image.ny), static_cast<size_t>(image.nx)}
-    };
+    ov::Tensor image_tensor{ov::element::f32, {1, 3, static_cast<size_t>(image.ny), static_cast<size_t>(image.nx)}};
     std::memcpy(image_tensor.data<float>(), image.buf.data(), image.buf.size() * sizeof(float));
     return image_tensor;
 }
@@ -147,12 +145,14 @@ static Coeffs1D precompute_pillow_coeffs_1d(int inSize, int outSize, double base
 // ref:
 // https://github.com/python-pillow/Pillow/blob/12.1.0/src/libImaging/Resample.c#L82C1-L86C54
 template <typename FilterFn>
-static void resize_pillow_like(const clip_image_u8& img,
-                               clip_image_u8& dst,
-                               int target_width,
-                               int target_height,
-                               double base_support,
-                               FilterFn filter_fn) {
+static void resize_pillow_like(
+    const clip_image_u8& img,
+    clip_image_u8& dst,
+    int target_width,
+    int target_height,
+    double base_support,
+    FilterFn filter_fn
+) {
     const int inW = img.nx;
     const int inH = img.ny;
     const int outW = target_width;
@@ -264,7 +264,8 @@ void bilinear_resize(const clip_image_u8& img, clip_image_u8& dst, int target_wi
 }
 
 // llava-1.6 type of resize_and_pad (black by default)
-clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution, uint8_t pad_value) {
+clip_image_u8
+resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution, uint8_t pad_value) {
     int target_width = target_resolution.first;
     int target_height = target_resolution.second;
 
@@ -287,7 +288,7 @@ clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<i
     clip_image_u8 padded_image;
     padded_image.nx = target_width;
     padded_image.ny = target_height;
-    padded_image.buf.resize(3 * target_width * target_height, pad_value); // Initialize with pad value
+    padded_image.buf.resize(3 * target_width * target_height, pad_value);  // Initialize with pad value
 
     // Calculate padding offsets
     int pad_x = (target_width - new_width) / 2;
@@ -297,7 +298,8 @@ clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<i
     for (int y = 0; y < new_height; ++y) {
         for (int x = 0; x < new_width; ++x) {
             for (int c = 0; c < 3; ++c) {
-                padded_image.buf[3 * ((y + pad_y) * target_width + (x + pad_x)) + c] = resized_image.buf[3 * (y * new_width + x) + c];
+                padded_image.buf[3 * ((y + pad_y) * target_width + (x + pad_x)) + c] =
+                    resized_image.buf[3 * (y * new_width + x) + c];
             }
         }
     }
@@ -311,7 +313,10 @@ clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<i
  * @param possible_resolutions A list of possible resolutions in the format [(width1, height1), (width2, height2), ...].
  * @return The best fit resolution in the format (width, height).
  */
-std::pair<int, int> select_best_resolution(const std::pair<int, int> & original_size, const std::vector<std::pair<int, int>> & possible_resolutions) {
+std::pair<int, int> select_best_resolution(
+    const std::pair<int, int>& original_size,
+    const std::vector<std::pair<int, int>>& possible_resolutions
+) {
     // TODO Consider changing original_size and return value to (height, width) format
     int original_width = original_size.first;
     int original_height = original_size.second;
@@ -322,12 +327,14 @@ std::pair<int, int> select_best_resolution(const std::pair<int, int> & original_
     for (const auto& resolution : possible_resolutions) {
         int width = resolution.first;
         int height = resolution.second;
-        float scale = std::min(static_cast<float>(width) / original_width, static_cast<float>(height) / original_height);
+        float scale =
+            std::min(static_cast<float>(width) / original_width, static_cast<float>(height) / original_height);
         int downscaled_width = static_cast<int>(original_width * scale);
         int downscaled_height = static_cast<int>(original_height * scale);
         int effective_resolution = std::min(downscaled_width * downscaled_height, original_width * original_height);
         int wasted_resolution = (width * height) - effective_resolution;
-        if (effective_resolution > max_effective_resolution || (effective_resolution == max_effective_resolution && wasted_resolution < min_wasted_resolution)) {
+        if (effective_resolution > max_effective_resolution ||
+            (effective_resolution == max_effective_resolution && wasted_resolution < min_wasted_resolution)) {
             max_effective_resolution = effective_resolution;
             min_wasted_resolution = wasted_resolution;
             best_fit = resolution;
@@ -337,7 +344,8 @@ std::pair<int, int> select_best_resolution(const std::pair<int, int> & original_
     return best_fit;
 }
 
-// returns the normalized float tensor for llava-1.5, for spatial_unpad with anyres processing for llava-1.6 it returns the normalized image patch tensors as a vector
+// returns the normalized float tensor for llava-1.5, for spatial_unpad with anyres processing for llava-1.6 it returns
+// the normalized image patch tensors as a vector
 clip_image_f32 clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& img) {
     bool pad_to_square = true;
 
@@ -346,7 +354,6 @@ clip_image_f32 clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& img) {
     temp.ny = img.ny;
     temp.buf.resize(img.buf.size());
     memcpy(temp.buf.data(), img.buf.data(), temp.buf.size());
-
 
     const int nx = temp.nx;
     const int ny = temp.ny;
@@ -362,8 +369,8 @@ clip_image_f32 clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& img) {
     const int nx3 = nx;
     const int ny3 = ny;
 
-    const auto& m3 = ctx.image_mean; // {0.48145466f, 0.4578275f, 0.40821073f};
-    const auto& s3 = ctx.image_std;  // {0.26862954f, 0.26130258f, 0.27577711f};
+    const auto& m3 = ctx.image_mean;  // {0.48145466f, 0.4578275f, 0.40821073f};
+    const auto& s3 = ctx.image_std;   // {0.26862954f, 0.26130258f, 0.27577711f};
 
     for (int y = 0; y < ny3; y++) {
         for (int x = 0; x < nx3; x++) {
@@ -398,7 +405,7 @@ clip_image_f32 clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& img) {
 
                 const uint8_t v2 = std::min(std::max(std::round(v), 0.0f), 255.0f);
 
-                //rgb hwc ->chw
+                // rgb hwc ->chw
                 const int i = (y * nx3 + x) + c * nx3 * ny3;
 
                 res.buf[i] = ((float(v2) / 255.0f) - m3[c]) / s3[c];

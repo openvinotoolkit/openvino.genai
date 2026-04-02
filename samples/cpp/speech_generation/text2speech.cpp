@@ -5,10 +5,12 @@
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc == 3 || argc == 4,
-                    "Usage: ",
-                    argv[0],
-                    " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>]");
+    OPENVINO_ASSERT(
+        argc == 3 || argc == 4,
+        "Usage: ",
+        argv[0],
+        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>]"
+    );
 
     const std::string models_path = argv[1], prompt = argv[2];
     const std::string device = "CPU";

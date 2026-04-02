@@ -28,14 +28,20 @@ Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::file
         config.erase("eagle3_mode");
         auto it = config.find("hidden_layers_list");
         if (it != config.end()) {
-            OPENVINO_ASSERT(it->second.is<std::vector<int32_t>>(),
-                            "hidden_layers_list must be a vector of int32_t values");
+            OPENVINO_ASSERT(
+                it->second.is<std::vector<int32_t>>(),
+                "hidden_layers_list must be a vector of int32_t values"
+            );
             eagle_rt_info.hidden_layers_list = it->second.as<std::vector<int32_t>>();
             config.erase("hidden_layers_list");
         } else {
             // compute the layers from number of hidden layers
             auto config_file_path = models_path / "config.json";
-            OPENVINO_ASSERT(std::filesystem::exists(config_file_path), "Cannot deduce layers for hidden layer extraction because the file is missing: ", config_file_path);
+            OPENVINO_ASSERT(
+                std::filesystem::exists(config_file_path),
+                "Cannot deduce layers for hidden layer extraction because the file is missing: ",
+                config_file_path
+            );
             std::ifstream file(config_file_path);
 
             nlohmann::json data = nlohmann::json::parse(file);
@@ -49,7 +55,8 @@ Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::file
                 num_decoder_layers >= 10,
                 "num_decoder_layers must be at least 10 for automatic hidden layer selection, got: ",
                 num_decoder_layers,
-                ". For models with fewer layers, please explicitly specify 'hidden_layers_list' in the configuration.");
+                ". For models with fewer layers, please explicitly specify 'hidden_layers_list' in the configuration."
+            );
 
             // The following default hidden layer selection corresponds to the EAGLE reference implementation:
             // https://github.com/SafeAILab/EAGLE/blob/0ea94696/eagle/model/modeling_llama_kv.py#L1138
@@ -58,9 +65,12 @@ Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::file
             // Note: Integer division (num_decoder_layers / 2) is intentional and produces the desired behavior
             // for typical LLM layer counts (e.g., 12→6, 24→12, 32→16).
             // If you wish to use different layers, provide the "hidden_layers_list" parameter in the config.
-            eagle_rt_info.hidden_layers_list = { 2, num_decoder_layers / 2, num_decoder_layers - 3 };
+            eagle_rt_info.hidden_layers_list = {2, num_decoder_layers / 2, num_decoder_layers - 3};
         }
-        OPENVINO_ASSERT(eagle_rt_info.hidden_layers_list.size() == 3, "Eagle3 is expected to provide exactly three layers for extraction");
+        OPENVINO_ASSERT(
+            eagle_rt_info.hidden_layers_list.size() == 3,
+            "Eagle3 is expected to provide exactly three layers for extraction"
+        );
     }
     return eagle_rt_info;
 }
@@ -76,32 +86,33 @@ void apply_eagle3_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& propert
 
 void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::shared_ptr<ov::Model>& draft_model) {
     // extract embedding weight from main model
-    auto find_embedding_gather = [](const std::shared_ptr<ov::Model>& model)
-        -> std::shared_ptr<ov::Node> {
+    auto find_embedding_gather = [](const std::shared_ptr<ov::Model>& model) -> std::shared_ptr<ov::Node> {
         constexpr size_t MIN_VOCAB_SIZE_THRESHOLD = 1000;
         for (const auto& node : model->get_ordered_ops()) {
             auto gather = std::dynamic_pointer_cast<ov::op::util::GatherBase>(node);
-            if (!gather) continue;
+            if (!gather)
+                continue;
             // [vocab, hidden_size] * [batch, seq_len] -> [batch, seq_len, hidden_size]
             auto data_node = gather->input_value(0).get_node_shared_ptr();
             auto indices_node = gather->input_value(1).get_node_shared_ptr();
-            if (!data_node || !indices_node) continue;
+            if (!data_node || !indices_node)
+                continue;
             // indices_node should be on parameter path, maybe this is better rule
             ov::PartialShape ps = data_node->get_output_partial_shape(0);
             if (ps.rank().is_static() && ps.rank().get_length() >= 2) {
-                if (ps[0].is_static() && ps[0].get_length() > MIN_VOCAB_SIZE_THRESHOLD) { // Heuristic: vocab size > 1000
+                if (ps[0].is_static() &&
+                    ps[0].get_length() > MIN_VOCAB_SIZE_THRESHOLD) {  // Heuristic: vocab size > 1000
                     return gather;
                 }
             }
             std::string fname = data_node->get_friendly_name();
-            if (fname.find("embed_tokens") != std::string::npos ||
-                fname.find("embedding") != std::string::npos) {
+            if (fname.find("embed_tokens") != std::string::npos || fname.find("embedding") != std::string::npos) {
                 return gather;
             }
         }
         return nullptr;
     };
-    auto main_gather  = find_embedding_gather(main_model);
+    auto main_gather = find_embedding_gather(main_model);
     auto draft_gather = find_embedding_gather(draft_model);
     if (!main_gather || !draft_gather) {
         return;
@@ -117,12 +128,11 @@ void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::s
 
     // Helper function to recursively clone a node and its inputs
     // This handles cases where embedding has intermediate ops (Convert, FakeQuantize, etc.)
-    std::function<std::shared_ptr<ov::Node>(const std::shared_ptr<ov::Node>&,
-                                            std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>&)>
+    std::function<std::shared_ptr<
+        ov::Node>(const std::shared_ptr<ov::Node>&, std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>&)>
         clone_node_recursive =
             [&](const std::shared_ptr<ov::Node>& node,
                 std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>& cloned_nodes) -> std::shared_ptr<ov::Node> {
-
         auto it = cloned_nodes.find(node.get());
         if (it != cloned_nodes.end()) {
             return it->second;
@@ -132,9 +142,11 @@ void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::s
 
         if (auto constant = ov::as_type_ptr<ov::op::v0::Constant>(node)) {
             // For Constant nodes, create a deep copy with new data
-            cloned = std::make_shared<ov::op::v0::Constant>(constant->get_element_type(),
-                                                            constant->get_shape(),
-                                                            constant->get_data_ptr());
+            cloned = std::make_shared<ov::op::v0::Constant>(
+                constant->get_element_type(),
+                constant->get_shape(),
+                constant->get_data_ptr()
+            );
         } else {
             // For other nodes, clone recursively with cloned inputs
             ov::OutputVector cloned_inputs;
@@ -155,9 +167,11 @@ void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::s
     std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>> cloned_nodes;
     auto cloned_weight_node = clone_node_recursive(main_weight_node, cloned_nodes);
 
-    OPENVINO_ASSERT(cloned_weight_node,
-                    "Failed to clone embedding weight node from main model to draft model. "
-                    "This is required for Eagle3 speculative decoding.");
+    OPENVINO_ASSERT(
+        cloned_weight_node,
+        "Failed to clone embedding weight node from main model to draft model. "
+        "This is required for Eagle3 speculative decoding."
+    );
 
     // Replace draft model's weight node with the cloned subgraph
     // This avoids cross-model references by duplicating the vocabulary weights
@@ -169,10 +183,12 @@ void move_fc_from_draft_to_main(std::shared_ptr<ov::Model>& draft_model, std::sh
     auto remove_fc_and_rewire = [](const std::shared_ptr<ov::Model>& model) -> std::shared_ptr<ov::Node> {
         for (const auto& node : model->get_ordered_ops()) {
             auto matmul_node = ov::as_type_ptr<ov::op::v0::MatMul>(node);
-            if (!matmul_node) continue;
+            if (!matmul_node)
+                continue;
             auto input_node = matmul_node->get_input_node_shared_ptr(0);
             auto param_node = ov::as_type_ptr<ov::op::v0::Parameter>(input_node);
-            if (!param_node || input_node->get_friendly_name().find("hidden_states") == std::string::npos) continue;
+            if (!param_node || input_node->get_friendly_name().find("hidden_states") == std::string::npos)
+                continue;
             // Rewire all outputs of this MatMul to use the input_node directly
             for (auto& output : matmul_node->outputs()) {
                 for (auto& target : output.get_target_inputs()) {
@@ -228,17 +244,18 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
     }
     OPENVINO_ASSERT(
         hidden_layers_to_abstract.size() == 3 || hidden_layers_to_abstract.size() == 1,
-        "Expected exactly 1 or 3 hidden layers for extraction: 1 for draft model, 3 for main model (early/middle/late stages)."
+        "Expected exactly 1 or 3 hidden layers for extraction: 1 for draft model, 3 for main model (early/middle/late "
+        "stages)."
     );
 
     std::vector<std::string> patterns;
     if (hidden_layers_to_abstract.size() > 1) {
         patterns.reserve(hidden_layers_to_abstract.size());
         for (int32_t idx : hidden_layers_to_abstract) {
-            patterns.emplace_back("layers." + std::to_string(idx) + "/"); // main description
+            patterns.emplace_back("layers." + std::to_string(idx) + "/");  // main description
         }
     } else {
-        patterns.emplace_back("midlayer"); // draft description
+        patterns.emplace_back("midlayer");  // draft description
     }
 
     // Helper: check if node is a residual Add node with expected structure
@@ -246,7 +263,8 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
         if (const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
             auto input1 = add->get_input_node_shared_ptr(1);
             auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(input1);
-            if (!matmul) return false;
+            if (!matmul)
+                return false;
             auto matmul_input = matmul->get_input_node_shared_ptr(0);
             return matmul_input && ov::is_type<ov::op::v1::Multiply>(matmul_input);
         }
@@ -255,7 +273,8 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
 
     std::vector<ov::Output<ov::Node>> residual_outputs;
     for (const auto& node : model->get_ordered_ops()) {
-        if (!is_residual_node(node)) continue;
+        if (!is_residual_node(node))
+            continue;
         const std::string& name = node->get_friendly_name();
         for (const auto& pattern : patterns) {
             if (name.find(pattern) != std::string::npos) {
@@ -266,8 +285,10 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
     }
 
     if (!residual_outputs.empty()) {
-        OPENVINO_ASSERT(residual_outputs.size() == patterns.size(),
-                        "Number of extracted hidden states does not match the requested number.");
+        OPENVINO_ASSERT(
+            residual_outputs.size() == patterns.size(),
+            "Number of extracted hidden states does not match the requested number."
+        );
         std::shared_ptr<ov::Node> node_to_operate;
         if (residual_outputs.size() > 1) {
             auto concat = std::make_shared<ov::op::v0::Concat>(residual_outputs, -1);
