@@ -1,17 +1,9 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-
 import sys
+import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
-# win32 fails on ffmpeg DLLs load
-# import transformers.pipeline imports VideoClassificationPipeline which requires PyAV (ffmpeg bindings)
-# wa is to create mock 'av' module to prevent DLLs loading errors
-# ticket: 179943
-if sys.platform == "win32":
-    from types import ModuleType
-
-    sys.modules["av"] = ModuleType("av")
-    sys.modules["av"].__version__ = "0.0.0"
+patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import openvino_genai as ov_genai
 import functools
@@ -36,6 +28,8 @@ from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
 from typing import Any
 from difflib import SequenceMatcher
+
+from utils.dataset_utils import load_dataset_via_snapshot
 
 
 @pytest.fixture(scope="class", autouse=True)
@@ -209,7 +203,7 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
     # https://github.com/huggingface/datasets/issues/7647 dataset is fixed for streaming mode
     # if not long_form:
     if False:
-        ds = datasets.load_dataset(
+        ds = load_dataset_via_snapshot(
             "mozilla-foundation/common_voice_11_0",
             language,
             split="test",
@@ -217,7 +211,7 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
             trust_remote_code=True,
         )
     else:
-        ds = datasets.load_dataset(
+        ds = load_dataset_via_snapshot(
             "distil-whisper/meanwhile",
             split="test",
             streaming=True,
@@ -534,9 +528,7 @@ def test_longform_audio(model_descr, sample_from_dataset):
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_shortform(model_descr):
     samples = []
-    ds = datasets.load_dataset(
-        "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation"
-    )
+    ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
 
     for ds_row in ds:
         samples.append(ds_row["audio"]["array"])
@@ -575,7 +567,7 @@ def align_words_by_text(ref_words, test_words):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_reference):
-    ds = datasets.load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
+    ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
     samples = [i["audio"]["array"] for i in ds]
 
     pipe = read_whisper_model(model_descr, word_timestamps=True)[3]
