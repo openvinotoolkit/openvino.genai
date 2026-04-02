@@ -214,21 +214,25 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderGemma4::encode_images(const s
 NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(const std::string& prompt,
                                                         size_t base_id,
                                                         const std::vector<EncodedImage>& images) const {
-    auto [unified_prompt, images_sequence] = normalize(prompt, BOI_TOKEN, BOI_TOKEN, base_id, images.size());
+    const auto& boi = m_vlm_config.boi_token;
+    const auto& eoi = m_vlm_config.eoi_token;
+    const auto& img = m_vlm_config.image_token;
+
+    auto [unified_prompt, images_sequence] = normalize(prompt, boi, boi, base_id, images.size());
 
     for (size_t new_image_id : images_sequence) {
         const ov::Tensor& image_embed = images.at(new_image_id - base_id).resized_source;
         size_t num_image_tokens = image_embed.get_shape().at(1);
 
-        std::string expanded_tag = "\n\n" + std::string(BOI_TOKEN);
+        std::string expanded_tag = "\n\n" + boi;
         for (size_t i = 0; i < num_image_tokens; i++) {
-            expanded_tag += IMAGE_TOKEN;
+            expanded_tag += img;
         }
-        expanded_tag += std::string(EOI_TOKEN) + "\n\n";
+        expanded_tag += eoi + "\n\n";
 
-        size_t pos = unified_prompt.find(BOI_TOKEN);
+        size_t pos = unified_prompt.find(boi);
         OPENVINO_ASSERT(pos != std::string::npos, "Failed to find BOI token in prompt during normalization");
-        unified_prompt.replace(pos, std::string(BOI_TOKEN).length(), expanded_tag);
+        unified_prompt.replace(pos, boi.length(), expanded_tag);
     }
     return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
@@ -258,7 +262,19 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
         image_embeds.push_back(images.at(new_image_id).resized_source);
     }
 
-    ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
+    // Gemma4 Jinja chat template applies "| trim" to string content, stripping the
+    // leading "\n\n" that normalize_prompt places before the BOI token.
+    // Restore the "\n\n" padding to match the HF image prompt format.
+    std::string adjusted_prompt = prompt;
+    if (!images.empty()) {
+        const auto& boi = m_vlm_config.boi_token;
+        size_t boi_pos = adjusted_prompt.find(boi);
+        if (boi_pos != std::string::npos && (boi_pos < 2 || adjusted_prompt.substr(boi_pos - 2, 2) != "\n\n")) {
+            adjusted_prompt.insert(boi_pos, "\n\n");
+        }
+    }
+
+    ov::Tensor input_ids = get_encoded_input_ids(adjusted_prompt, metrics);
 
     // Compute per-layer embeddings if the model is available
     if (m_per_layer_embeddings_requests) {
@@ -276,28 +292,32 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
     }
 
     auto start_tokenizer_time = std::chrono::steady_clock::now();
-    ov::Tensor encoded_image_token = m_tokenizer.encode(IMAGE_TOKEN, ov::genai::add_special_tokens(false)).input_ids;
+    ov::Tensor encoded_image_token =
+        m_tokenizer.encode(m_vlm_config.image_token, ov::genai::add_special_tokens(false)).input_ids;
     auto end_tokenizer_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] +=
         ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
 
-    return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
+    auto merged = utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
+
+    return merged;
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderGemma4::get_position_ids(const size_t inputs_embeds_size,
                                                                                      const size_t history_size) {
-    // position_ids in Gemma4 are 1-indexed (same as Gemma3)
-    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size + 1);
+    // Gemma4 uses 0-indexed position_ids (matching HF/optimum-intel behavior).
+    // update_position_ids() in lm_encoding.cpp uses sum(attention_mask[:seq_len-1]) which
+    // produces 0-indexed positions during generation, so prefill must also be 0-indexed.
+    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderGemma4::get_generation_phase_position_ids(
     const size_t inputs_embeds_size,
     const size_t history_size,
     int64_t rope_delta) {
-    // position_ids in Gemma4 are 1-indexed (same as Gemma3)
-    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size + 1);
+    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size);
 }
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma4::get_lm_extra_inputs() const {

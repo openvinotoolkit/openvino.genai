@@ -58,11 +58,6 @@ public:
     }
 
 private:
-    // Gemma4 token strings
-    static constexpr const char* BOI_TOKEN = "<|image>";
-    static constexpr const char* EOI_TOKEN = "<image|>";
-    static constexpr const char* IMAGE_TOKEN = "<|image|>";
-
     // Per-layer text embeddings model (Gemma4-specific)
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_per_layer_embeddings_requests;
 

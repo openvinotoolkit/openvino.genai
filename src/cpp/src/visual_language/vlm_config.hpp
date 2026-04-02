@@ -97,6 +97,13 @@ public:
     /// @brief A string token denoting end of vision embeddings for gemma3-4b-it model.
     std::string end_of_image = "<end_of_image>";
 
+    /// @brief A string token denoting start of image embeddings for Gemma4 model.
+    std::string boi_token = "<|image>";
+    /// @brief A placeholder for image embeddings in text for Gemma4 model.
+    std::string image_token = "<|image|>";
+    /// @brief A string token denoting end of image embeddings for Gemma4 model.
+    std::string eoi_token = "<image|>";
+
     /// @brief A string token denoting start of video embeddings
     std::string video_start = "<video>";
 
