@@ -8,6 +8,7 @@ import os
 import json
 import logging
 import numpy as np
+from pathlib import Path
 from typing import Literal, Callable
 from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
@@ -32,6 +33,7 @@ from utils.ov_genai_pipelines import (
     GenerationChatInputsType,
 )
 from data.models import get_models_list, CHAT_MODELS_LIST, LINEAR_ATTENTION_MODELS_LIST
+from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 
 
 def assert_hf_equals_genai(hf_reference, genai_output, **kwargs) -> None:
@@ -70,6 +72,11 @@ PERF_METRICS_TEST_CASES = [
 PERF_METRICS_STRUCTURED_OUTPUT_TEST_CASES = [
     ({"max_new_tokens": 20}, "Generate json of a person"),
 ]
+
+CUSTOM_EXTENSIONS_TEST_CASES = [
+    ({"max_new_tokens": 20}, "Generate json of a person"),
+]
+
 
 INPUT_TENSORS_LIST = [
     # input_ids, attention_mask
@@ -1098,3 +1105,40 @@ def test_pipelines_generate_with_streaming(
         mock_streamer.assert_not_called()
     else:
         mock_streamer.assert_called()
+
+
+@pytest.mark.parametrize("llm_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
+@pytest.mark.parametrize("generation_config,prompt", CUSTOM_EXTENSIONS_TEST_CASES)
+def test_llm_pipeline_add_extension(
+    llm_model: OVConvertedModelSchema,
+    generation_config: dict,
+    prompt: str,
+    tmp_path: Path,
+) -> None:
+    myadd_model_path = get_extension_model(llm_model.models_path, tmp_path, "MyAdd")
+    assert_ir_contains_op_type(myadd_model_path, "MyAdd")
+
+    # The custom op "MyAdd" is provided by a compiled extension library and is intended to behave like OpenVINO "Add".
+    properties = {"extensions": [str(get_extension_lib_path())]}
+    ov_pipe_extension_path = ov_genai.LLMPipeline(myadd_model_path, "CPU", **properties)
+    result_extension_path = ov_pipe_extension_path.generate([prompt], **generation_config)
+
+    # The Python custom op "CustomAdd" is intended to behave like OpenVINO "Add", but it exercises Python ov.Op registration and callback-based evaluation.
+    customadd_model_path = get_extension_model(llm_model.models_path, tmp_path, "CustomAdd")
+    assert_ir_contains_op_type(customadd_model_path, "CustomAdd")
+    CustomAdd.evaluate_calls = 0
+    properties = {"extensions": [ov.OpExtension(CustomAdd)]}
+    ov_pipe_extension_obj = ov_genai.LLMPipeline(customadd_model_path, "CPU", **properties)
+    result_extension_obj = ov_pipe_extension_obj.generate([prompt], **generation_config)
+    assert CustomAdd.evaluate_calls > 0, "Python custom op 'CustomAdd' was not called"
+
+    # Reference result with the original model and without custom extensions.
+    ov_pipe_ref = ov_genai.LLMPipeline(llm_model.models_path, "CPU")
+    result_ref = ov_pipe_ref.generate([prompt], **generation_config)
+
+    assert result_extension_path.texts[0].strip() == result_ref.texts[0].strip(), (
+        "Result should be the same for model with extension 'MyAdd' and reference model."
+    )
+    assert result_extension_obj.texts[0].strip() == result_ref.texts[0].strip(), (
+        "Result should be the same for model with extension 'CustomAdd' and reference model."
+    )
