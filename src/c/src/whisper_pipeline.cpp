@@ -517,7 +517,7 @@ ov_status_e ov_genai_whisper_pipeline_set_generation_config(ov_genai_whisper_pip
 ov_status_e ov_genai_whisper_generation_config_set_word_timestamps(ov_genai_whisper_generation_config* config, bool return_word_timestamps) {
     if (!config || !config->object) return ov_status_e::INVALID_C_PARAM;
     try {
-        config->object->return_word_timestamps = return_word_timestamps;
+        config->object->word_timestamps = return_word_timestamps;
         return ov_status_e::OK;
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
