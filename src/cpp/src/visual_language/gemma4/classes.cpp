@@ -3,31 +3,87 @@
 
 #include "visual_language/gemma4/classes.hpp"
 
+#include <cmath>
+
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
 
 namespace ov::genai {
 namespace {
 
-clip_image_f32 preprocess_clip_image_gemma4(const clip_image_u8& image, const ProcessorConfig& config) {
-    clip_image_u8 resized_image;
-    bilinear_resize(image, resized_image, config.size_width, config.size_height);
-
-    clip_ctx ctx;
-    std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
-    std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
-
-    clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
-    return normalized_image;
-}
-
-ov::Tensor get_pixel_values_gemma4(const ov::Tensor& image, const ProcessorConfig& config) {
-    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
-    clip_image_f32 preprocessed_image = preprocess_clip_image_gemma4(input_image, config);
-    return clip_image_f32_to_tensor(preprocessed_image);
-}
-
 const std::string PER_LAYER_EMBEDDINGS_MODEL_NAME = "openvino_text_embeddings_per_layer_model.xml";
+
+/// @brief Compute target dimensions for aspect-ratio-preserving resize.
+/// Matches HF Gemma4ImageProcessor.get_aspect_ratio_preserving_size().
+std::pair<size_t, size_t> get_aspect_ratio_preserving_size(size_t height,
+                                                           size_t width,
+                                                           size_t patch_size,
+                                                           size_t max_patches,
+                                                           size_t pooling_kernel_size) {
+    const double total_px = static_cast<double>(height * width);
+    const double target_px = static_cast<double>(max_patches) * static_cast<double>(patch_size * patch_size);
+    const double factor = std::sqrt(target_px / total_px);
+    const double ideal_height = factor * static_cast<double>(height);
+    const double ideal_width = factor * static_cast<double>(width);
+    const size_t side_mult = pooling_kernel_size * patch_size;
+
+    size_t target_height = static_cast<size_t>(std::floor(ideal_height / static_cast<double>(side_mult))) * side_mult;
+    size_t target_width = static_cast<size_t>(std::floor(ideal_width / static_cast<double>(side_mult))) * side_mult;
+
+    OPENVINO_ASSERT(target_height != 0 || target_width != 0,
+                    "Cannot resize image to 0x0. Dimensions must be divisible by ",
+                    side_mult);
+
+    const size_t max_side_length = (max_patches / (pooling_kernel_size * pooling_kernel_size)) * side_mult;
+    if (target_height == 0) {
+        target_height = side_mult;
+        target_width = std::min(
+            static_cast<size_t>(std::floor(static_cast<double>(width) / static_cast<double>(height))) * side_mult,
+            max_side_length);
+    } else if (target_width == 0) {
+        target_width = side_mult;
+        target_height = std::min(
+            static_cast<size_t>(std::floor(static_cast<double>(height) / static_cast<double>(width))) * side_mult,
+            max_side_length);
+    }
+
+    return {target_height, target_width};
+}
+
+/// @brief Extract patches from a CHW float image into a flat [num_patches, patch_dim] tensor.
+/// Each patch stores pixels in HWC order within the patch, matching HF convert_image_to_patches().
+/// @param float_image CHW float image (clip_image_f32)
+/// @param patch_size Size of each square patch
+/// @param output Pointer to output buffer, must have space for num_patches * patch_dim floats
+/// @param num_patches_h Number of patches along height
+/// @param num_patches_w Number of patches along width
+void extract_patches(const clip_image_f32& float_image,
+                     size_t patch_size,
+                     float* output,
+                     size_t num_patches_h,
+                     size_t num_patches_w) {
+    const size_t patch_dim = patch_size * patch_size * 3;
+    const size_t nx = static_cast<size_t>(float_image.nx);
+    const size_t ny = static_cast<size_t>(float_image.ny);
+
+    for (size_t py = 0; py < num_patches_h; py++) {
+        for (size_t px = 0; px < num_patches_w; px++) {
+            const size_t patch_idx = py * num_patches_w + px;
+            float* dst = output + patch_idx * patch_dim;
+            for (size_t y = 0; y < patch_size; y++) {
+                for (size_t x = 0; x < patch_size; x++) {
+                    const size_t src_y = py * patch_size + y;
+                    const size_t src_x = px * patch_size + x;
+                    for (size_t c = 0; c < 3; c++) {
+                        // CHW source: buf[c * ny * nx + src_y * nx + src_x]
+                        // HWC within patch: dst[y * patch_size * 3 + x * 3 + c]
+                        dst[y * patch_size * 3 + x * 3 + c] = float_image.buf[c * ny * nx + src_y * nx + src_x];
+                    }
+                }
+            }
+        }
+    }
+}
 
 }  // namespace
 
@@ -37,13 +93,66 @@ EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyM
 
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
-    ov::Tensor pixel_values = get_pixel_values_gemma4(image, config);
+    // 1. Convert input tensor (NHWC uint8) to clip_image_u8 (HWC uint8)
+    clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
+    // 2. Compute aspect-ratio-preserving target size
+    const size_t max_patches = config.max_soft_tokens * config.pooling_kernel_size * config.pooling_kernel_size;
+    const auto [target_height, target_width] = get_aspect_ratio_preserving_size(static_cast<size_t>(input_image.ny),
+                                                                                static_cast<size_t>(input_image.nx),
+                                                                                config.patch_size,
+                                                                                max_patches,
+                                                                                config.pooling_kernel_size);
+
+    // 3. Bicubic resize
+    clip_image_u8 resized_image;
+    bicubic_resize(input_image, resized_image, static_cast<int>(target_width), static_cast<int>(target_height));
+
+    // 4. Rescale to [0,1] and convert to CHW float
+    // With mean=[0,0,0] and std=[1,1,1], clip_image_preprocess produces pixel/255.0
+    clip_ctx ctx;
+    std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
+    std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
+    clip_image_f32 float_image = clip_image_preprocess(ctx, resized_image);
+
+    // 5. Extract patches: (num_patches, patch_size*patch_size*3)
+    const size_t num_patches_h = target_height / config.patch_size;
+    const size_t num_patches_w = target_width / config.patch_size;
+    const size_t num_patches = num_patches_h * num_patches_w;
+    const size_t patch_dim = config.patch_size * config.patch_size * 3;
+
+    // Create padded pixel_values tensor [1, max_patches, patch_dim]
+    ov::Tensor pixel_values(ov::element::f32, {1, max_patches, patch_dim});
+    float* pv_data = pixel_values.data<float>();
+    std::fill(pv_data, pv_data + max_patches * patch_dim, 0.0f);
+
+    extract_patches(float_image, config.patch_size, pv_data, num_patches_h, num_patches_w);
+
+    // 6. Compute 2D position IDs: meshgrid(arange(patch_w), arange(patch_h), indexing="xy")
+    // Then pad to max_patches with -1
+    ov::Tensor image_position_ids(ov::element::i64, {1, max_patches, 2});
+    int64_t* pos_data = image_position_ids.data<int64_t>();
+    std::fill(pos_data, pos_data + max_patches * 2, int64_t{-1});
+
+    for (size_t py = 0; py < num_patches_h; py++) {
+        for (size_t px = 0; px < num_patches_w; px++) {
+            const size_t patch_idx = py * num_patches_w + px;
+            pos_data[patch_idx * 2 + 0] = static_cast<int64_t>(px);  // x coordinate
+            pos_data[patch_idx * 2 + 1] = static_cast<int64_t>(py);  // y coordinate
+        }
+    }
+
+    // 7. Run vision encoder
     encoder.set_tensor("pixel_values", pixel_values);
+    encoder.set_tensor("image_position_ids", image_position_ids);
     encoder.infer();
 
+    // 8. Output shape is [num_soft_tokens, hidden_size] → reshape to [1, num_soft_tokens, hidden_size]
     const ov::Tensor& infer_output = encoder.get_output_tensor();
-    ov::Tensor image_features(infer_output.get_element_type(), infer_output.get_shape());
+    const size_t num_soft_tokens = infer_output.get_shape()[0];
+    const size_t hidden_size = infer_output.get_shape()[1];
+
+    ov::Tensor image_features(infer_output.get_element_type(), {1, num_soft_tokens, hidden_size});
     std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
 
     return {std::move(image_features)};
@@ -111,11 +220,11 @@ NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(const std::string& promp
         const ov::Tensor& image_embed = images.at(new_image_id - base_id).resized_source;
         size_t num_image_tokens = image_embed.get_shape().at(1);
 
-        std::string expanded_tag = std::string(BOI_TOKEN);
+        std::string expanded_tag = "\n\n" + std::string(BOI_TOKEN);
         for (size_t i = 0; i < num_image_tokens; i++) {
             expanded_tag += IMAGE_TOKEN;
         }
-        expanded_tag += EOI_TOKEN;
+        expanded_tag += std::string(EOI_TOKEN) + "\n\n";
 
         size_t pos = unified_prompt.find(BOI_TOKEN);
         OPENVINO_ASSERT(pos != std::string::npos, "Failed to find BOI token in prompt during normalization");
