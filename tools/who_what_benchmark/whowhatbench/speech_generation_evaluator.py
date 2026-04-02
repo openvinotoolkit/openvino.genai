@@ -293,13 +293,7 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             )
 
             audio_path = os.path.join(audio_dir, f"{idx}.wav")
-            if generated_sr != self.sample_rate:
-                import librosa
-
-                generated_audio = librosa.resample(
-                    generated_audio.astype(float), orig_sr=generated_sr, target_sr=self.sample_rate
-                )
-            sf.write(audio_path, generated_audio, samplerate=self.sample_rate)
+            sf.write(audio_path, generated_audio, samplerate=generated_sr)
             audios.append(audio_path)
 
         return pd.DataFrame(
