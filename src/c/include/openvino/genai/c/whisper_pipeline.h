@@ -343,3 +343,12 @@ ov_genai_whisper_pipeline_get_generation_config(const ov_genai_whisper_pipeline*
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_pipeline_set_generation_config(ov_genai_whisper_pipeline* pipeline,
                                                 ov_genai_whisper_generation_config* config);
+
+/**
+ * @brief Sets whether to return word-level timestamps.
+ * @param config A pointer to the whisper generation config object.
+ * @param return_word_timestamps Boolean flag to enable/disable word timestamps.
+ * @return Status code of the operation.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e 
+ov_genai_whisper_generation_config_set_return_word_timestamps(ov_genai_whisper_generation_config* config, bool return_word_timestamps);
