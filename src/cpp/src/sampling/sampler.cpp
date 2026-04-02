@@ -546,52 +546,54 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
 
     if (logits.m_defer_expf) {
         // --- Deferred / fused expf path ---
-        if (logits.is_vector_initialized()) {
-            // K-element path (no effective top_p): m_vector holds K logits in heap order (min-heap from TopKFilter).
-            float max_val = logits.m_vector[0].m_log_prob;
-            for (size_t i = 1; i < logits.m_size; ++i)
-                if (logits.m_vector[i].m_log_prob > max_val)
-                    max_val = logits.m_vector[i].m_log_prob;
-            float sum_cum = 0.0f;
-            for (size_t i = 0; i < logits.m_size; ++i)
-                sum_cum += expf(logits.m_vector[i].m_log_prob - max_val);
-            // log_sum_cum = log(Σ exp(v[i])) used to compute log-probabilities.
-            const float log_sum_cum = logf(sum_cum) + max_val;
+        // defer_expf is only set when top_k > 0, so m_vector is always initialized here.
+        OPENVINO_ASSERT(logits.is_vector_initialized(),
+            "Internal error: m_defer_expf=true but m_vector not initialized. "
+            "defer_expf requires top_k > 0 which always populates m_vector via TopKFilter.");
+        // m_vector holds K logits in heap order (min-heap from TopKFilter).
+        float max_val = logits.m_vector[0].m_log_prob;
+        for (size_t i = 1; i < logits.m_size; ++i)
+            if (logits.m_vector[i].m_log_prob > max_val)
+                max_val = logits.m_vector[i].m_log_prob;
+        // Precompute weights once to avoid recomputing expf on every draw.
+        std::vector<float> weights(logits.m_size);
+        float sum_cum = 0.0f;
+        for (size_t i = 0; i < logits.m_size; ++i) {
+            weights[i] = expf(logits.m_vector[i].m_log_prob - max_val);
+            sum_cum += weights[i];
+        }
+        OPENVINO_ASSERT(sum_cum > 0.0f && std::isfinite(sum_cum),
+            "Sampling failed: all candidate logits are -inf or NaN. Check for aggressive penalty settings masking all tokens.");
+        // log_sum_cum = log(Σ exp(v[i])) used to compute log-probabilities.
+        const float log_sum_cum = logf(sum_cum) + max_val;
 
-            for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-                const float r = sum_cum * u(rng_engine);
-                float sum_run = 0.0f;
-                size_t sampled_idx = logits.m_size - 1;
-                for (size_t i = 0; i < logits.m_size; ++i) {
-                    sum_run += expf(logits.m_vector[i].m_log_prob - max_val);
-                    if (sum_run >= r) { sampled_idx = i; break; }
-                }
-                out_tokens.emplace_back(logits.m_vector[sampled_idx].m_log_prob - log_sum_cum,
-                                        logits.m_vector[sampled_idx].m_index);
+        for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
+            const float r = sum_cum * u(rng_engine);
+            float sum_run = 0.0f;
+            size_t sampled_idx = logits.m_size - 1;
+            for (size_t i = 0; i < logits.m_size; ++i) {
+                sum_run += weights[i];
+                if (sum_run >= r) { sampled_idx = i; break; }
             }
-        } else {
-            // Full-vocab path
-            const float max_val = *std::max_element(logits.m_data, logits.m_data + logits.m_size);
-            float sum_cum = 0.0f;
-            for (size_t i = 0; i < logits.m_size; ++i)
-                sum_cum += expf(logits.m_data[i] - max_val);
-            const float log_sum_cum = logf(sum_cum) + max_val;
-
-            for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-                const float r = sum_cum * u(rng_engine);
-                float sum_run = 0.0f;
-                size_t sampled_idx = logits.m_size - 1;
-                for (size_t i = 0; i < logits.m_size; ++i) {
-                    sum_run += expf(logits.m_data[i] - max_val);
-                    if (sum_run >= r) { sampled_idx = i; break; }
-                }
-                out_tokens.emplace_back(logits.m_data[sampled_idx] - log_sum_cum, sampled_idx);
-            }
+            out_tokens.emplace_back(logits.m_vector[sampled_idx].m_log_prob - log_sum_cum,
+                                    logits.m_vector[sampled_idx].m_index);
         }
     } else {
         // --- Normalised probability path (top_p active, deferring not possible) ---
+        // Pre-compute total weight once: TopP truncates without renormalizing, so Σ probs may be < 1.
+        // Scaling r by total_weight ensures uniform sampling within the actual probability mass (Fix 1).
+        float total_weight = 0.0f;
+        if (logits.is_vector_initialized()) {
+            for (size_t i = 0; i < logits.m_size; ++i)
+                total_weight += logits.m_vector[i].m_log_prob;
+        } else {
+            for (size_t i = 0; i < logits.m_size; ++i)
+                total_weight += logits.m_data[i];
+        }
+        OPENVINO_ASSERT(total_weight > 0.0f && std::isfinite(total_weight),
+            "Sampling failed: total probability mass is zero or NaN. Check for aggressive penalty settings masking all tokens.");
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-            const float r = u(rng_engine);
+            const float r = total_weight * u(rng_engine);
             float sum_cum = 0.0f;
             if (logits.is_vector_initialized()) {
                 size_t sampled_idx = logits.m_size - 1;  // fallback for floating-point rounding

@@ -1,6 +1,8 @@
 // Copyright (C) 2024-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
+
 #include <gtest/gtest.h>
 #include <openvino/core/except.hpp>
 
@@ -98,9 +100,16 @@ TEST_P(TopKFilteringTest, FilterResultEqualToReference) {
     ASSERT_TRUE(logits.is_vector_initialized());
     ASSERT_EQ(logits.m_size, logits.m_vector.size());
     ASSERT_EQ(logits.m_size, test_struct.expected_output.size());
-    for (size_t i = 0; i < logits.m_vector.size(); i++) {
-        EXPECT_NEAR(logits.m_vector[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
-        EXPECT_EQ(logits.m_vector[i].m_index, test_struct.expected_output[i].m_index);
+    // Sort by index for order-independent comparison: TopKFilter uses a min-heap
+    // so output order is not deterministic across stdlib implementations.
+    auto actual = logits.m_vector;
+    auto expected = test_struct.expected_output;
+    auto by_index = [](const Token& a, const Token& b) { return a.m_index < b.m_index; };
+    std::sort(actual.begin(), actual.end(), by_index);
+    std::sort(expected.begin(), expected.end(), by_index);
+    for (size_t i = 0; i < actual.size(); i++) {
+        EXPECT_NEAR(actual[i].m_log_prob, expected[i].m_log_prob, 1e-6);
+        EXPECT_EQ(actual[i].m_index, expected[i].m_index);
     }
 }
 
@@ -343,3 +352,64 @@ const std::vector<EOSPenaltyTransformTestStruct> EOS_PENALTY_TRANSFORM_TEST_CASE
 INSTANTIATE_TEST_SUITE_P(VariousInputs,
                          EOSPenaltyTransformTest,
                          testing::ValuesIn(EOS_PENALTY_TRANSFORM_TEST_CASES));
+
+// ---------------------------------------------------------------------------
+// Tests for the deferred-expf code path (TopKFilter + TemperatureLogitTransform
+// with defer_expf=true).  The deferred path keeps raw logits in m_vector and
+// moves the expf call to _multinomial_sample; Temperature must only scale.
+// ---------------------------------------------------------------------------
+
+TEST(TopKThenTemperatureTest, DeferredExpfPathScalesLogits) {
+    // Input: {1.0f, 2.0f, 3.0f}.
+    // TopKFilter(2) retains the 2 highest values: idx=2 (3.0f) and idx=1 (2.0f).
+    // TemperatureLogitTransform(2.0, defer_expf=true) divides by T=2:
+    //   idx=2 -> 1.5f,  idx=1 -> 1.0f.
+    float input[] = {1.0f, 2.0f, 3.0f};
+    auto logits = Logits(input, 3);
+
+    TopKFilter topk(2);
+    topk.apply(logits);
+    ASSERT_TRUE(logits.is_vector_initialized());
+    ASSERT_EQ(logits.m_size, 2u);
+
+    TemperatureLogitTransform temp(2.0, /*defer_expf=*/true);
+    temp.apply(logits);
+
+    ASSERT_TRUE(logits.m_defer_expf);
+    ASSERT_EQ(logits.m_size, 2u);
+
+    // Sort by index for order-independent comparison (heap order varies).
+    auto result = logits.m_vector;
+    std::sort(result.begin(), result.end(), [](const Token& a, const Token& b) {
+        return a.m_index < b.m_index;
+    });
+    EXPECT_EQ(result[0].m_index, 1);
+    EXPECT_NEAR(result[0].m_log_prob, 1.0f, 1e-6f);
+    EXPECT_EQ(result[1].m_index, 2);
+    EXPECT_NEAR(result[1].m_log_prob, 1.5f, 1e-6f);
+
+    // m_data must not be modified by the transforms.
+    EXPECT_NEAR(input[0], 1.0f, 1e-6f);
+    EXPECT_NEAR(input[1], 2.0f, 1e-6f);
+    EXPECT_NEAR(input[2], 3.0f, 1e-6f);
+}
+
+TEST(TopKThenTemperatureTest, DeferredExpfPathTemperatureOneIsNoOp) {
+    // T=1.0 must be a true no-op: values in m_vector must be identical after apply().
+    float input[] = {1.0f, 2.0f, 3.0f};
+    auto logits = Logits(input, 3);
+
+    TopKFilter topk(2);
+    topk.apply(logits);
+    const auto before = logits.m_vector;
+
+    TemperatureLogitTransform temp(1.0, /*defer_expf=*/true);
+    temp.apply(logits);
+
+    ASSERT_TRUE(logits.m_defer_expf);
+    ASSERT_EQ(logits.m_vector.size(), before.size());
+    for (size_t i = 0; i < logits.m_vector.size(); ++i) {
+        EXPECT_EQ(logits.m_vector[i].m_index, before[i].m_index);
+        EXPECT_EQ(logits.m_vector[i].m_log_prob, before[i].m_log_prob);
+    }
+}
