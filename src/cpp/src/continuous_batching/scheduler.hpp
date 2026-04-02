@@ -130,7 +130,7 @@ public:
             m_cache_orchestrator->free_empty_physical_blocks(seq_group);
     }
 
-    const std::vector<BlocksPerLayer>& get_block_tables(const Sequence& seq) const {
+    std::vector<BlocksPerLayer> get_block_tables(const Sequence& seq) const {
         return m_cache_orchestrator->get_block_tables(seq.get_id());
     }
 
@@ -143,7 +143,7 @@ public:
         return (seq_group->get_context_len() - seq_group->get_num_evicted_tokens() + block_size - 1) / block_size;
     }
 
-    const std::vector<BlocksPerLayer>& get_block_tables(size_t seq_id) const {
+    std::vector<BlocksPerLayer> get_block_tables(size_t seq_id) const {
         return m_cache_orchestrator->get_block_tables(seq_id);
     }
 

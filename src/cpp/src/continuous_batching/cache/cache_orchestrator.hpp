@@ -109,8 +109,10 @@ public:
                              const std::vector<size_t>& layer_ids) {
         m_cache_managers[type] = std::move(cache_mgr);
         m_block_managers[type] = std::move(block_mgr);
-        for (size_t layer_id : layer_ids) {
-            m_layer_to_cache_type[layer_id] = type;
+        for (size_t local_idx = 0; local_idx < layer_ids.size(); ++local_idx) {
+            size_t global_id = layer_ids[local_idx];
+            m_layer_to_cache_type[global_id] = type;
+            m_global_to_local_layer_id[global_id] = local_idx;
         }
         m_types_ordered.push_back(type);
     }
@@ -144,8 +146,23 @@ public:
     //  Block management  (applies to all registered types)
     // -----------------------------------------------------------------------
 
-    const std::vector<BlocksPerLayer>& get_block_tables(uint64_t seq_id) const {
-        return first_block_manager()->get_block_tables(seq_id);
+    /**
+     * @brief Compose a unified per-layer block table for a sequence by merging block tables
+     *        from all registered block managers.
+     *
+     * Each block manager stores block tables using local (0-based) layer indices.
+     * This method maps them back to global layer positions so the returned vector
+     * is indexed by global layer ID.
+     */
+    std::vector<BlocksPerLayer> get_block_tables(uint64_t seq_id) const {
+        const size_t total_layers = m_layer_to_cache_type.size();
+        std::vector<BlocksPerLayer> merged(total_layers);
+        for (const auto& [global_layer_id, type] : m_layer_to_cache_type) {
+            size_t local_idx = m_global_to_local_layer_id.at(global_layer_id);
+            const auto& local_tables = m_block_managers.at(type)->get_block_tables(seq_id);
+            merged[global_layer_id] = local_tables[local_idx];
+        }
+        return merged;
     }
 
     bool has_block_table(uint64_t seq_id) const {
@@ -364,6 +381,7 @@ private:
     std::map<CacheType, std::shared_ptr<ICacheManager>> m_cache_managers;
     std::map<CacheType, std::shared_ptr<BlockManager>> m_block_managers;
     std::map<size_t, CacheType> m_layer_to_cache_type;
+    std::map<size_t, size_t> m_global_to_local_layer_id;  ///< global layer ID -> local index within its block manager
     std::vector<CacheType> m_types_ordered;
 };
 
