@@ -182,11 +182,6 @@ ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper_decoded_res
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_decoded_results_get_words_count(const ov_genai_whisper_decoded_results* results, size_t* count);
 
-/**
- * @brief Release the memory allocated by ov_genai_whisper_word_timing.
- * @param word_timing A pointer to the ov_genai_whisper_word_timing to free memory.
- */
-OPENVINO_GENAI_C_EXPORTS void ov_genai_whisper_word_timing_free(ov_genai_whisper_word_timing* word_timing);
 
 /**
  * @brief Get start timestamp from ov_genai_whisper_word_timing.
