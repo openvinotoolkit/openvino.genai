@@ -246,19 +246,6 @@ ov_status_e ov_genai_whisper_decoded_results_get_words_count(const ov_genai_whis
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_whisper_word_timing_create(ov_genai_whisper_word_timing** word_timing) {
-    if (!word_timing) {
-        return ov_status_e::INVALID_C_PARAM;
-    }
-    try {
-        std::unique_ptr<ov_genai_whisper_word_timing> _word_timing = std::make_unique<ov_genai_whisper_word_timing>();
-        _word_timing->object = std::make_shared<ov::genai::WhisperWordTiming>();
-        *word_timing = _word_timing.release();
-    } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
-    }
-    return ov_status_e::OK;
-}
 
 void ov_genai_whisper_word_timing_free(ov_genai_whisper_word_timing* word_timing) {
     if (word_timing) {
@@ -518,15 +505,13 @@ ov_status_e ov_genai_whisper_pipeline_set_generation_config(ov_genai_whisper_pip
     }
     return ov_status_e::OK;
 }
-ov_status_e ov_genai_whisper_generation_config_set_word_timestamps(ov_genai_whisper_generation_config* config,
-                                                                     bool word_timestamps) {
-    if (!config || !config->object) {
-        return ov_status_e::INVALID_C_PARAM;
-    }
+
+ov_status_e ov_genai_whisper_generation_config_set_return_word_timestamps(ov_genai_whisper_generation_config* config, bool return_word_timestamps) {
+    if (!config || !config->object) return ov_status_e::INVALID_C_PARAM;
     try {
-        config->object->word_timestamps = word_timestamps;
+        config->object->return_word_timestamps = return_word_timestamps;
+        return ov_status_e::OK;
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
-    return ov_status_e::OK;
 }
