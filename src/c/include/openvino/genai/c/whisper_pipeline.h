@@ -352,4 +352,4 @@ ov_genai_whisper_pipeline_set_generation_config(ov_genai_whisper_pipeline* pipel
  * @return ov_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e 
-ov_genai_whisper_generation_config_set_word_timestamps(ov_genai_whisper_generation_config* config, bool return_word_timestamps);
+ov_genai_whisper_generation_config_set_word_timestamps(ov_genai_whisper_generation_config* config, bool word_timestamps);
