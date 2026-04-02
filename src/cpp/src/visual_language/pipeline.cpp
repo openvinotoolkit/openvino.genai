@@ -167,6 +167,7 @@ private:
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
             npu_auto_default_properties(device_properties);
         } else {
+            utils::apply_slice_before_matmul_transformation(language_model);
             compiled_language_model = utils::singleton_core().compile_model(language_model, device, lm_properties);
         }
         ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
