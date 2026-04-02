@@ -182,22 +182,63 @@ ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper_decoded_res
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_decoded_results_get_words_count(const ov_genai_whisper_decoded_results* results, size_t* count);
 
+/**
+ * @brief Create ov_genai_whisper_word_timing instance.
+ * @param word_timing A pointer to the newly created ov_genai_whisper_word_timing.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_word_timing_create(ov_genai_whisper_word_timing** word_timing);
 
+/**
+ * @brief Release the memory allocated by ov_genai_whisper_word_timing.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing to free memory.
+ */
 OPENVINO_GENAI_C_EXPORTS void ov_genai_whisper_word_timing_free(ov_genai_whisper_word_timing* word_timing);
 
+/**
+ * @brief Get start timestamp from ov_genai_whisper_word_timing.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing instance.
+ * @param start_ts A pointer to the start timestamp value.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_word_timing_get_start_ts(const ov_genai_whisper_word_timing* word_timing, float* start_ts);
 
+/**
+ * @brief Get end timestamp from ov_genai_whisper_word_timing.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing instance.
+ * @param end_ts A pointer to the end timestamp value.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_word_timing_get_end_ts(const ov_genai_whisper_word_timing* word_timing, float* end_ts);
 
+/**
+ * @brief Get word text from ov_genai_whisper_word_timing.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing instance.
+ * @param word A pointer to the buffer to store the word text.
+ * @param word_size A pointer to the size of the buffer or the required size for the word text.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_word_timing_get_word(const ov_genai_whisper_word_timing* word_timing, char* word, size_t* word_size);
 
+/**
+ * @brief Get number of token IDs associated with the word.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing instance.
+ * @param count A pointer to the number of token IDs.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_word_timing_get_token_ids_count(const ov_genai_whisper_word_timing* word_timing, size_t* count);
 
+/**
+ * @brief Get token ID at specific index from ov_genai_whisper_word_timing.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing instance.
+ * @param index The index of the token ID to retrieve.
+ * @param token_id A pointer to the token ID value.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_word_timing_get_token_id_at(const ov_genai_whisper_word_timing* word_timing, size_t index, int64_t* token_id);
 
