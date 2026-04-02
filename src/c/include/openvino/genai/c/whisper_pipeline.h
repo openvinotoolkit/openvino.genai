@@ -236,6 +236,13 @@ ov_genai_whisper_word_timing_get_token_ids_count(const ov_genai_whisper_word_tim
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_word_timing_get_token_id_at(const ov_genai_whisper_word_timing* word_timing, size_t index, int64_t* token_id);
 
+/**
+ * @brief Get word timing at specific index from ov_genai_whisper_decoded_results.
+ * @param results A pointer to the results instance.
+ * @param index The index of the word timing to retrieve.
+ * @param word_timing A pointer to store the newly created timing handle.
+ * @return ov_status_e Status code, OK(0) if successful. Returns NOT_FOUND if words are absent.
+ */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_decoded_results_get_word_timing_at(const ov_genai_whisper_decoded_results* results,
                                                     size_t index,
@@ -338,3 +345,11 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_pipeline_set_generation_config(ov_genai_whisper_pipeline* pipeline,
                                                 ov_genai_whisper_generation_config* config);
 
+/**
+ * @brief Sets whether to return word-level timestamps.
+ * @param config A pointer to the whisper generation config object.
+ * @param return_word_timestamps Boolean flag to enable/disable word timestamps.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e 
+ov_genai_whisper_generation_config_set_return_word_timestamps(ov_genai_whisper_generation_config* config, bool return_word_timestamps);
