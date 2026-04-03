@@ -582,8 +582,10 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
                 sum_run += weights[i];
                 if (sum_run >= r) { sampled_idx = i; break; }
             }
-            out_tokens.emplace_back(logits.m_vector[sampled_idx].m_log_prob - log_sum_cum,
-                                    logits.m_vector[sampled_idx].m_index);
+            const float log_prob = fallback_uniform
+                ? std::log(1.0f / static_cast<float>(logits.m_size))
+                : logits.m_vector[sampled_idx].m_log_prob - log_sum_cum;
+            out_tokens.emplace_back(log_prob, logits.m_vector[sampled_idx].m_index);
         }
     } else {
         // --- Normalised probability path (top_p active, deferring not possible) ---

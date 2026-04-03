@@ -174,8 +174,6 @@ def main():
     answer = pipe.generate(chat_history, generation_config, parsers=[CustomToolCallParser()])
 
     print("\n\nThe following tool calls were generated:")
-    print(f"[DEBUG] Raw model output: {answer.texts[0]!r}")
-    print(f"[DEBUG] Parsed result:    {answer.parsed[0]}")
     print_tool_call(answer)
 
     print()

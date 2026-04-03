@@ -34,9 +34,8 @@ public:
         }
 
         if (sampling_params.min_new_tokens > 0) {
-            auto transformer = std::shared_ptr<LogitTransformers::ILogitTransformer>(
-                new LogitTransformers::EOSPenaltyTransform(sampling_params.stop_token_ids, sampling_params.min_new_tokens));
-            m_logit_transformers.push_back(transformer);
+            m_logit_transformers.push_back(std::make_shared<LogitTransformers::EOSPenaltyTransform>(
+                sampling_params.stop_token_ids, sampling_params.min_new_tokens));
         }
 
         OPENVINO_ASSERT(structured_output_controller != nullptr || !sampling_params.is_structured_output_generation(), "Structured output controller is not set for structured output generation");
@@ -48,21 +47,18 @@ public:
 
         if (sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) {
             if (sampling_params.repetition_penalty != 1.0f) {
-                std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform> transformer =
-                    std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform>(new LogitTransformers::RepetitionPenaltyTransform(sampling_params.repetition_penalty));
+                auto transformer = std::make_shared<LogitTransformers::RepetitionPenaltyTransform>(sampling_params.repetition_penalty);
                 transformer->set_unique_prompt_token_ids(m_unique_prompt_token_ids);
                 transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
                 m_logit_transformers.push_back(transformer);
             }
             if (sampling_params.presence_penalty != 0.0f) {
-                std::shared_ptr<LogitTransformers::PresencePenaltyTransform> transformer = 
-                    std::shared_ptr<LogitTransformers::PresencePenaltyTransform>(new LogitTransformers::PresencePenaltyTransform(sampling_params.presence_penalty)); 
+                auto transformer = std::make_shared<LogitTransformers::PresencePenaltyTransform>(sampling_params.presence_penalty);
                 transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
                 m_logit_transformers.push_back(transformer);
             }
             if (sampling_params.frequency_penalty != 0.0f) {
-                std::shared_ptr<LogitTransformers::FrequencyPenaltyTransform> transformer = 
-                    std::shared_ptr<LogitTransformers::FrequencyPenaltyTransform>(new LogitTransformers::FrequencyPenaltyTransform(sampling_params.frequency_penalty));
+                auto transformer = std::make_shared<LogitTransformers::FrequencyPenaltyTransform>(sampling_params.frequency_penalty);
                 transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
                 m_logit_transformers.push_back(transformer);
             }
@@ -76,9 +72,7 @@ public:
                 // top_p: by the time it runs, m_vector holds normalised probabilities from temperature transform
 
                 if (sampling_params.top_k > 0 && sampling_params.top_k < std::numeric_limits<size_t>::max()) {
-                    auto transformer = std::shared_ptr<LogitTransformers::ILogitTransformer>(
-                        new LogitTransformers::TopKFilter(sampling_params.top_k));
-                    m_logit_transformers.push_back(transformer);
+                    m_logit_transformers.push_back(std::make_shared<LogitTransformers::TopKFilter>(sampling_params.top_k));
                 }
                 // Defer expf to the draw step (fused CDF scan) only when BOTH:
                 //   1. top_k > 0: TopKFilter will produce a K-element m_vector kept
@@ -91,13 +85,10 @@ public:
                 const bool top_k_active = (sampling_params.top_k > 0 &&
                                            sampling_params.top_k < std::numeric_limits<size_t>::max());
                 const bool defer_expf = top_k_active && (sampling_params.top_p == 1.0f);
-                auto transformer = std::shared_ptr<LogitTransformers::ILogitTransformer>(
-                    new LogitTransformers::TemperatureLogitTransform(sampling_params.temperature, defer_expf));
-                m_logit_transformers.push_back(transformer);
+                m_logit_transformers.push_back(std::make_shared<LogitTransformers::TemperatureLogitTransform>(
+                    sampling_params.temperature, defer_expf));
                 if (sampling_params.top_p != 1.0f) {
-                    auto transformer = std::shared_ptr<LogitTransformers::ILogitTransformer>(
-                        new LogitTransformers::TopPFilter(sampling_params.top_p));
-                    m_logit_transformers.push_back(transformer);
+                    m_logit_transformers.push_back(std::make_shared<LogitTransformers::TopPFilter>(sampling_params.top_p));
                 }
             }
             if (sampling_params.assistant_confidence_threshold > 0) {

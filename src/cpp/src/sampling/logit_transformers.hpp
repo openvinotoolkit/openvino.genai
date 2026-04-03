@@ -119,7 +119,9 @@ public:
             // Temperature WITH expf ran directly on m_data (full-vocab path, no effective top_k): Initialize m_vector with normalised probs.
             logits.initialize_vector();
         }
-        // m_vector already populated  by TopKFilter+Temperature or just initialized above. Either way it holds normalised probabilities.
+        // m_vector already populated by TopKFilter+Temperature (normalised probs) or just initialized above from m_data.
+        // Note: TopPFilter truncates but does NOT renormalize — the retained probabilities sum to at most top_p < 1.
+        // _multinomial_sample accounts for this by scaling the random draw by total_weight (not assuming sum == 1).
         if (!partial_sort_and_resize(logits))
             full_sort_and_resize(logits);
     }
