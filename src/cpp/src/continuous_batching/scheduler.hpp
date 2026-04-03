@@ -139,8 +139,7 @@ public:
     }
 
     size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
-        size_t block_size = get_block_size();
-        return (seq_group->get_context_len() - seq_group->get_num_evicted_tokens() + block_size - 1) / block_size;
+        return m_cache_orchestrator->get_num_logical_blocks(seq_group);
     }
 
     std::vector<BlocksPerLayer> get_block_tables(size_t seq_id) const {

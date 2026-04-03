@@ -282,8 +282,12 @@ public:
         return min_total;
     }
 
-    size_t get_block_size() const {
+    const size_t get_block_size() const {
         return first_block_manager()->get_block_size();
+    }
+
+    size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
+        return first_block_manager()->get_num_logical_blocks(seq_group);
     }
 
     // -----------------------------------------------------------------------
