@@ -4,10 +4,11 @@
 Why the current design needs changing?  
 The current VLMPipeline is monolithic — it owns the vision encoder, text embeddings, the tokenizer, and the LLM. The InputsEmbedder (which is the de facto "processor") is an internal class hidden in src, not exposed to users. This causes several problems:
 
+* It is not possible to define target device and plugin config separately for the processor models and the LLM model. (**CVS-162621**)
+* It is not possible to infer embeddings on NPU due to static shape limitations. (**CVS-178295**)
+* Missing support for manual chat template application (with separate engine).
 * No embedding reuse — you can't get vision embeddings without running the LLM.
 * No cache reuse between text generation pipeline and embeddings-only workflows (retrieval, similarity search, etc.). Moving VisionRegistry from Pipeline to Processor allows sharing cached embeddings across multiple pipelines and use cases.
-* It is not possible to define target device and plugin config separately for the processor models and the LLM model. (**CVS-162621**)
-* It is not possible to infer embeddings on NPU due to static shape limitations.
 * Multiple methods to work with history — `start_chat()`/`finish_chat()` coexists with `ChatHistory`, causing confusion about which approach to use. (Note: `LLMPipeline` has already deprecated these methods; `VLMPipeline` has not yet.)
 * Not aligned with other libraries, for example `transformers` — HuggingFace's pattern is Processor + Model, which allows users to inspect/modify embeddings between the two steps.
 
@@ -263,6 +264,8 @@ public:
         const VideoMetadata& video_metadata = {}
     );
 
+    // get_text_embeddings()?
+
     /// @brief Get the underlying tokenizer.
     /// Also provides access to set_chat_template() for overriding
     /// the chat template used by embed(ChatHistory, ...).
@@ -454,6 +457,22 @@ ov::genai::GenerationConfig config;
 config.max_new_tokens = 256;
 auto result = llm.generate(inputs, config);
 std::cout << result.texts.at(0) << std::endl;
+```
+
+### Example 1a: VLMPipeline — basic single image (Python)
+```python
+import openvino_genai as ov_genai
+
+processor = ov_genai.VLMProcessor("path/to/models", "GPU")
+llm = ov_genai.VLMPipeline("path/to/models", processor, "GPU")
+
+inputs = processor.embed(
+    "<|im_start|><ov_image_0> Describe this image<|im_end|><|im_start|>",
+    images=[image_tensor],
+)
+
+result = llm.generate(inputs, ov_genai.GenerationConfig(max_new_tokens=256))
+print(result.texts[0])
 ```
 
 ### Example 2: Custom device mapping and plugin configuration
