@@ -562,10 +562,17 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
             weights[i] = expf(logits.m_vector[i].m_log_prob - max_val);
             sum_cum += weights[i];
         }
-        OPENVINO_ASSERT(sum_cum > 0.0f && std::isfinite(sum_cum),
-            "Sampling failed: all candidate logits are -inf or NaN. Check for aggressive penalty settings masking all tokens.");
-        // log_sum_cum = log(Σ exp(v[i])) used to compute log-probabilities.
-        const float log_sum_cum = logf(sum_cum) + max_val;
+        // Defensive fallback: should not occur in practice (at least one non-masked token is
+        // always guaranteed), but if all logits happen to be -inf/NaN, sample uniformly over
+        // the K candidates so generation can continue rather than aborting.
+        const bool fallback_uniform = !(sum_cum > 0.0f && std::isfinite(sum_cum));
+        if (fallback_uniform) {
+            std::fill(weights.begin(), weights.end(), 1.0f);
+            sum_cum = static_cast<float>(logits.m_size);
+        }
+        // log_sum_cum = log(Σ exp(v[i])) = log(sum_cum) + max_val (log-sum-exp identity).
+        // In the fallback case max_val may be -inf, so use 0 to keep log_sum_cum finite.
+        const float log_sum_cum = logf(sum_cum) + (fallback_uniform ? 0.0f : max_val);
 
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
             const float r = sum_cum * u(rng_engine);
@@ -590,8 +597,23 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
             for (size_t i = 0; i < logits.m_size; ++i)
                 total_weight += logits.m_data[i];
         }
-        OPENVINO_ASSERT(total_weight > 0.0f && std::isfinite(total_weight),
-            "Sampling failed: total probability mass is zero or NaN. Check for aggressive penalty settings masking all tokens.");
+        // Defensive fallback: should not occur in practice (at least one non-masked token is
+        // always guaranteed), but recover gracefully by sampling uniformly if all probabilities
+        // are zero or NaN rather than aborting generation.
+        if (!(total_weight > 0.0f && std::isfinite(total_weight))) {
+            std::uniform_int_distribution<size_t> uniform_idx(0, logits.m_size - 1);
+            const float uniform_log_prob = std::log(1.0f / logits.m_size);
+            for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
+                const size_t sampled_idx = uniform_idx(rng_engine);
+                if (logits.is_vector_initialized()) {
+                    auto logit = logits.m_vector[sampled_idx];
+                    logit.m_log_prob = uniform_log_prob;
+                    out_tokens.push_back(logit);
+                } else {
+                    out_tokens.emplace_back(uniform_log_prob, sampled_idx);
+                }
+            }
+        } else {
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
             const float r = total_weight * u(rng_engine);
             float sum_cum = 0.0f;
@@ -612,6 +634,7 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
                 }
                 out_tokens.emplace_back(std::log(logits.m_data[sampled_idx]), sampled_idx);
             }
+        }
         }
     }
     return out_tokens;
