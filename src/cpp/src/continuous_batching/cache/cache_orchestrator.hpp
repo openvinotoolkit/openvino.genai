@@ -213,6 +213,20 @@ public:
         return max_required;
     }
 
+    /**
+     * @brief Returns the maximum token deficit for the target across all cache types.
+     * Each type independently computes required_blocks * block_size.
+     * @param seq_group The target sequence group.
+     * @return Maximum number of tokens needed across all cache types.
+     */
+    size_t required_tokens_count(SequenceGroup::CPtr seq_group) const {
+        size_t max_tokens = 0;
+        for (const auto& [type, block_mgr] : m_block_managers) {
+            max_tokens = std::max(max_tokens, block_mgr->required_tokens_count(seq_group));
+        }
+        return max_tokens;
+    }
+
     size_t num_free_blocks() const {
         size_t min_free = std::numeric_limits<size_t>::max();
         for (const auto& [type, block_mgr] : m_block_managers) {
@@ -309,6 +323,93 @@ public:
             min_tokens_released = std::min(min_tokens_released, block_mgr->free_partially_beam_search_group(seq_group, num_required_blocks));
         }
         return min_tokens_released;
+    }
+
+    // -----------------------------------------------------------------------
+    //  Token-level API  (cache-type-agnostic interface for the Scheduler)
+    // -----------------------------------------------------------------------
+
+    /**
+     * @brief Frees enough blocks from victim to release at least num_tokens tokens.
+     * Each cache type independently converts tokens to blocks and frees from its own pool.
+     * @param victim The sequence group to free from.
+     * @param num_tokens Minimum number of tokens to free from the group total.
+     * @return Number of tokens actually freed (minimum across all cache types).
+     */
+    size_t free_group_partially_by_tokens(SequenceGroup::Ptr victim, size_t num_tokens) {
+        size_t min_tokens_released = std::numeric_limits<size_t>::max();
+        for (auto& [type, block_mgr] : m_block_managers) {
+            min_tokens_released = std::min(min_tokens_released, block_mgr->free_group_partially_by_tokens(victim, num_tokens));
+        }
+        return min_tokens_released;
+    }
+
+    /**
+     * @brief Frees enough blocks from a beam search victim to release at least num_tokens tokens.
+     * Each cache type independently converts tokens to blocks and frees from its own pool.
+     * @param victim The sequence group to free from.
+     * @param num_tokens Minimum number of tokens to free from the group total.
+     * @return Number of tokens actually freed (minimum across all cache types).
+     */
+    size_t free_partially_beam_search_group_by_tokens(SequenceGroup::Ptr victim, size_t num_tokens) {
+        size_t min_tokens_released = std::numeric_limits<size_t>::max();
+        for (auto& [type, block_mgr] : m_block_managers) {
+            min_tokens_released = std::min(min_tokens_released, block_mgr->free_partially_beam_search_group_by_tokens(victim, num_tokens));
+        }
+        return min_tokens_released;
+    }
+
+    /**
+     * @brief Checks whether partially preempting victim can free enough blocks in every
+     * cache type's pool to satisfy the target sequence group's deficit.
+     * @param victim The sequence group to potentially free blocks from.
+     * @param target The sequence group that needs blocks allocated.
+     * @return Whether partial preemption of victim is sufficient for target in all cache types.
+     */
+    bool can_partially_preempt(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
+        return std::all_of(m_block_managers.begin(), m_block_managers.end(),
+            [&](const auto& pair) { return pair.second->can_partially_preempt(victim, target); });
+    }
+
+    /**
+     * @return Whether any token capacity has been allocated (at least one block in every type).
+     */
+    bool has_token_capacity() const {
+        return std::all_of(m_block_managers.begin(), m_block_managers.end(),
+            [](const auto& pair) { return pair.second->has_token_capacity(); });
+    }
+
+    /**
+     * @return Total token capacity (minimum across all cache types).
+     */
+    size_t total_token_capacity() const {
+        size_t min_capacity = std::numeric_limits<size_t>::max();
+        for (const auto& [type, block_mgr] : m_block_managers) {
+            min_capacity = std::min(min_capacity, block_mgr->total_token_capacity());
+        }
+        return min_capacity;
+    }
+
+    /**
+     * @brief Grows each cache type's block pool to accommodate the given number of additional tokens.
+     * Each type converts tokens to blocks using its own block size.
+     * @param num_tokens Number of additional tokens to accommodate.
+     */
+    void grow_capacity_by_tokens(size_t num_tokens) {
+        for (auto& [type, block_mgr] : m_block_managers) {
+            block_mgr->grow_capacity_by_tokens(num_tokens);
+        }
+    }
+
+    /**
+     * @brief Ensures each cache type's block pool has capacity for at least the given total number of tokens.
+     * Each type converts tokens to blocks using its own block size.
+     * @param num_tokens Total number of tokens the pools should accommodate.
+     */
+    void ensure_token_capacity(size_t num_tokens) {
+        for (auto& [type, block_mgr] : m_block_managers) {
+            block_mgr->ensure_token_capacity(num_tokens);
+        }
     }
 
     // -----------------------------------------------------------------------

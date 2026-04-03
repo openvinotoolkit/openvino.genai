@@ -610,6 +610,17 @@ public:
         return _blocks_released_to_tokens(sequence_group, blocks_num);
     }
 
+    /**
+     * Frees enough blocks from a sequence group to release at least the given number of tokens.
+     * @param sequence_group The sequence group to free blocks from.
+     * @param num_tokens The minimum number of tokens to free from the group.
+     * @return Number of tokens actually freed.
+     */
+    size_t free_group_partially_by_tokens(SequenceGroup::Ptr sequence_group, size_t num_tokens) {
+        size_t num_required_blocks = (num_tokens + m_block_size - 1) / m_block_size;
+        return free_group_partially(sequence_group, num_required_blocks);
+    }
+
     const size_t free_last_block_from_each_sequence(SequenceGroup::Ptr sequence_group) {
         size_t blocks_released = 0;
         auto not_finished_sequences = sequence_group->get_not_finished_sequences();
@@ -658,6 +669,17 @@ public:
     }
 
     /**
+     * Frees enough blocks from a beam search sequence group to release at least the given number of tokens.
+     * @param sequence_group The sequence group to free blocks from.
+     * @param num_tokens The minimum number of tokens to free from the group.
+     * @return Number of tokens actually freed.
+     */
+    size_t free_partially_beam_search_group_by_tokens(SequenceGroup::Ptr sequence_group, size_t num_tokens) {
+        size_t num_required_blocks = (num_tokens + m_block_size - 1) / m_block_size;
+        return free_partially_beam_search_group(sequence_group, num_required_blocks);
+    }
+
+    /**
      * Returns the total number of distinct physical blocks occupied by a given sequence group.
      * @param sequence_group The sequence group.
      * @return The number of distinct physical blocks occupied by this sequence group.
@@ -685,6 +707,64 @@ public:
      */
     size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
         return (seq_group->get_context_len() - seq_group->get_num_evicted_tokens() + m_block_size - 1) / m_block_size;
+    }
+
+    /**
+     * Checks whether partially preempting victim can free enough blocks to satisfy
+     * the target sequence group's deficit in this block manager's pool.
+     * @param victim The sequence group to potentially free blocks from.
+     * @param target The sequence group that needs blocks allocated.
+     * @return Whether the victim has enough occupied blocks to cover target's deficit.
+     */
+    bool can_partially_preempt(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
+        size_t needed = required_blocks_count(target);
+        if (needed == 0) {
+            return true;
+        }
+        size_t victim_occupied = get_number_of_blocks_occupied_by_sequence(victim);
+        return victim_occupied > needed;
+    }
+
+    /**
+     * @param seq_group The sequence group.
+     * @return Approximate number of tokens cached by this sequence group (blocks * block_size).
+     */
+    size_t tokens_occupied_by_sequence(SequenceGroup::Ptr seq_group) {
+        return get_number_of_blocks_occupied_by_sequence(seq_group) * m_block_size;
+    }
+
+    /**
+     * @return Total token capacity of this block manager (total_blocks * block_size).
+     */
+    size_t total_token_capacity() const {
+        return get_total_number_of_kv_blocks() * m_block_size;
+    }
+
+    /**
+     * @return Whether any blocks have been allocated (capacity > 0).
+     */
+    bool has_token_capacity() const {
+        return get_total_number_of_kv_blocks() > 0;
+    }
+
+    /**
+     * Grows the block pool to accommodate at least the given number of additional tokens.
+     * @param num_tokens Number of additional tokens to accommodate.
+     */
+    void grow_capacity_by_tokens(size_t num_tokens) {
+        size_t additional_blocks = (num_tokens + m_block_size - 1) / m_block_size;
+        increase_kv_blocks_number(get_total_number_of_kv_blocks() + additional_blocks);
+    }
+
+    /**
+     * Ensures the block pool has capacity for at least the given total number of tokens.
+     * @param num_tokens Total number of tokens the pool should accommodate.
+     */
+    void ensure_token_capacity(size_t num_tokens) {
+        size_t required_blocks = (num_tokens + m_block_size - 1) / m_block_size;
+        if (required_blocks > get_total_number_of_kv_blocks()) {
+            increase_kv_blocks_number(required_blocks);
+        }
     }
 
     /**
@@ -991,6 +1071,14 @@ public:
     }
 
     /**
+     * @param seq_group Pointer to a sequence group.
+     * @return The number of tokens corresponding to the block deficit for the group (required_blocks * block_size).
+     */
+    size_t required_tokens_count(SequenceGroup::CPtr seq_group) {
+        return required_blocks_count(seq_group) * m_block_size;
+    }
+
+    /**
      * Clean up not busy physical KV cache blocks in a sequence group.
      * @param seq_group Pointer to a sequence group.
      */
@@ -1175,7 +1263,7 @@ private:
         if (blocks_released == 0) {
             return 0;
         }
-        size_t processed_tokens = seq_group->get_num_processed_tokens();
+        const size_t processed_tokens = seq_group->get_num_processed_tokens();
         size_t tokens_in_last_block = processed_tokens % m_block_size;
         if (tokens_in_last_block == 0) {
             tokens_in_last_block = m_block_size;

@@ -86,7 +86,7 @@ public:
         // free some blocks taken by non-confirmed candidates in SD / prompt look-up
         clean_empty_blocks(sequence_groups);
 
-        if (m_cache_orchestrator->get_total_number_of_kv_blocks() == 0) {
+        if (!m_cache_orchestrator->has_token_capacity()) {
             _initialize_cache(sequence_groups);
         }
 
@@ -188,47 +188,47 @@ private:
     }
 
 
-    bool _preempt_by_recompute(SequenceGroup::Ptr sequence_group, size_t blocks_needed) {
-        size_t processed_tokens = sequence_group->get_num_processed_tokens();
+    bool _preempt_by_recompute(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
+        size_t processed_tokens = victim->get_num_processed_tokens();
         size_t prev_blocks_count = m_cache_orchestrator->num_free_blocks();
         size_t preempted_tokens = 0;
-        size_t num_blocks_occupied_by_sequence = m_cache_orchestrator->get_number_of_blocks_occupied_by_sequence(sequence_group);
-        bool was_evicted_from = (sequence_group->get_num_evicted_tokens() != 0);
+        bool was_evicted_from = (victim->get_num_evicted_tokens() != 0);
 
-        if (num_blocks_occupied_by_sequence <= blocks_needed || !m_can_use_partial_preemption || was_evicted_from) {
-            auto sequences = sequence_group->get_not_finished_sequences();
+        if (!m_cache_orchestrator->can_partially_preempt(victim, target) || !m_can_use_partial_preemption || was_evicted_from) {
+            auto sequences = victim->get_not_finished_sequences();
             for (size_t s = 0; s < sequences.size(); ++s) {
                 auto seq_id = sequences[s]->get_id();
                 m_cache_orchestrator->free_sequence(seq_id);
             }
-            sequence_group->preempt_tokens(processed_tokens);
+            victim->preempt_tokens(processed_tokens);
             if (was_evicted_from) {
-                sequence_group->reset_eviction_token_count();
+                victim->reset_eviction_token_count();
             }
-            sequence_group->set_waiting();
+            victim->set_waiting();
             return m_cache_orchestrator->num_free_blocks() > prev_blocks_count;
         }
 
-        if (sequence_group->get_sampling_parameters().is_beam_search()) {
-            preempted_tokens = m_cache_orchestrator->free_partially_beam_search_group(sequence_group, blocks_needed);
+        size_t tokens_needed = m_cache_orchestrator->required_tokens_count(target);
+        if (victim->get_sampling_parameters().is_beam_search()) {
+            preempted_tokens = m_cache_orchestrator->free_partially_beam_search_group_by_tokens(victim, tokens_needed);
         }
         else {
-            preempted_tokens = m_cache_orchestrator->free_group_partially(sequence_group, blocks_needed);
+            preempted_tokens = m_cache_orchestrator->free_group_partially_by_tokens(victim, tokens_needed);
         }
 
         // case when preemption requires preempt prompt tokens
-        if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
+        if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < victim->get_prompt_len()) {
             // preempt prompt fully to not leave partially generated prompt
             preempted_tokens = processed_tokens;
-            for (auto sequence: sequence_group->get_not_finished_sequences()) {
+            for (auto sequence: victim->get_not_finished_sequences()) {
                 auto seq_id = sequence->get_id();
                 if (m_cache_orchestrator->has_block_table(seq_id)) {
                     m_cache_orchestrator->free_sequence(seq_id);
                 }
             }
         }
-        sequence_group->preempt_tokens(preempted_tokens);
-        sequence_group->set_waiting();
+        victim->preempt_tokens(preempted_tokens);
+        victim->set_waiting();
         return m_cache_orchestrator->num_free_blocks() > prev_blocks_count;
     }
 
@@ -258,8 +258,7 @@ private:
                 // we have a cycle when current group need to evict itself to be in a running state
                 break;
             }
-            size_t blocks_needed = m_cache_orchestrator->required_blocks_count(sequence_group);
-            if (!_preempt_by_recompute(sequence_groups[evicted_sequence_group_id], blocks_needed)){
+            if (!_preempt_by_recompute(sequence_groups[evicted_sequence_group_id], sequence_group)){
                 break;
             }
         }
@@ -509,20 +508,19 @@ private:
     }
 
     void _initialize_cache(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
-        size_t blocks_sum = 0;
-        for (auto idx = 0; idx < sequence_groups.size(); idx++) {
+        size_t total_tokens = 0;
+        for (size_t idx = 0; idx < sequence_groups.size(); idx++) {
             auto seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
             const auto& gen_config = sequence_groups[idx]->get_sampling_parameters();
             seq_length = std::min(seq_length, sequence_groups[idx]->get_prompt_len() + sequence_groups[idx]->get_max_new_tokens());
-            size_t blocks_num = std::ceil(static_cast<float>(seq_length) / m_cache_orchestrator->get_block_size());
             if (gen_config.is_beam_search()) {
-                blocks_num *= gen_config.num_beams;
+                seq_length *= gen_config.num_beams;
             } else if (gen_config.is_multinomial()) {
-                blocks_num *= gen_config.num_return_sequences;
+                seq_length *= gen_config.num_return_sequences;
             }
-            blocks_sum += blocks_num;
+            total_tokens += seq_length;
         }
-        m_cache_orchestrator->increase_kv_blocks_number(blocks_sum);
+        m_cache_orchestrator->ensure_token_capacity(total_tokens);
         m_dynamic_memory_allocation = true;
     }
 
@@ -531,21 +529,22 @@ private:
             return false;
         }
         auto device = m_cache_orchestrator->get_device();
-        size_t current_num_of_kv_blocks = m_cache_orchestrator->get_total_number_of_kv_blocks();
-        size_t new_blocks_num = current_num_of_kv_blocks + std::ceil(m_cache_growth_num_tokens / get_block_size());
+        const size_t growth_tokens = static_cast<size_t>(m_cache_growth_num_tokens);
 
         if (device.find("GPU") == std::string::npos) {
-            m_cache_orchestrator->increase_kv_blocks_number(new_blocks_num);
+            m_cache_orchestrator->grow_capacity_by_tokens(growth_tokens);
         } else {
             const size_t available_gpu_memory = utils::get_available_gpu_memory(m_cache_orchestrator->get_device(), m_cache_orchestrator->get_num_layers());
             const size_t block_size_in_bytes = m_cache_orchestrator->get_block_size_in_bytes();
-            size_t required_memory = (new_blocks_num - current_num_of_kv_blocks) * block_size_in_bytes;
+            const size_t block_size = m_cache_orchestrator->get_block_size();
+            size_t growth_blocks = (growth_tokens + block_size - 1) / block_size;
+            size_t required_memory = growth_blocks * block_size_in_bytes;
             if (required_memory <= available_gpu_memory) {
-                m_cache_orchestrator->increase_kv_blocks_number(new_blocks_num);
+                m_cache_orchestrator->grow_capacity_by_tokens(growth_tokens);
             } else {
                 size_t possible_blocks_to_add = available_gpu_memory / block_size_in_bytes;
                 if (possible_blocks_to_add > 0) {
-                    m_cache_orchestrator->increase_kv_blocks_number(current_num_of_kv_blocks + possible_blocks_to_add);
+                    m_cache_orchestrator->grow_capacity_by_tokens(possible_blocks_to_add * block_size);
                 } else {
                     return false;
                 }
