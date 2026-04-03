@@ -557,10 +557,6 @@ public:
         m_is_chat_conversation = true;
         m_system_message = system_message;
         m_inputs_embedder->start_chat(m_system_message);
-        // Reset language model state and attention mask to discard any
-        // stale KV cache from a prior non-chat generate() call.
-        reset_language_state();
-        m_language.get_tensor("attention_mask").set_shape({1, 0});
         if (system_message.empty()) {
             return;
         }
