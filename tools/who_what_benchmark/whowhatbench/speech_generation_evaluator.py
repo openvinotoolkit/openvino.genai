@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any, Union
 
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -44,7 +45,7 @@ class TextToSpeechModelWrapper:
         if speaker_embedding is None:
             raise ValueError(
                 "This model requires speaker embeddings but none were provided. "
-                "Pass --speaker_embeddings with a binary float32 xvector file."
+                "Pass --speaker_embeddings with a .bin or .npy float32 xvector file."
             )
 
         import torch
@@ -223,7 +224,13 @@ class SpeechGenerationEvaluator(BaseEvaluator):
 
         import openvino as ov
 
-        speaker_embedding = np.fromfile(speaker_embedding_file_path, dtype=np.float32)
+        embedding_path = Path(speaker_embedding_file_path)
+        if embedding_path.suffix.lower() == ".npy":
+            speaker_embedding = np.load(embedding_path)
+        else:
+            speaker_embedding = np.fromfile(embedding_path, dtype=np.float32)
+
+        speaker_embedding = np.asarray(speaker_embedding, dtype=np.float32).reshape(-1)
         if speaker_embedding.size == 0:
             raise ValueError(f"Speaker embedding file is empty: {speaker_embedding_file_path}")
         if speaker_embedding.size != 512:

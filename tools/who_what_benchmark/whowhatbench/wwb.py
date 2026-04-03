@@ -331,7 +331,7 @@ def parse_args():
         "--speaker_embeddings",
         type=str,
         default=None,
-        help="Path to binary float32 speaker embedding file for text-to-speech generation.",
+        help="Path to .bin or .npy float32 speaker embedding file for text-to-speech generation.",
     )
     parser.add_argument(
         "--tts-eval-whisper-model",
