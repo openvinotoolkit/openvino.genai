@@ -310,6 +310,14 @@ class Text2VideoPipeline::LTXPipeline {
     std::string m_vae_device;
     ov::AnyMap m_compile_properties;
 
+    // Prompt Caching State
+    std::string m_cached_positive_prompt;
+    std::string m_cached_negative_prompt;
+    bool m_cached_do_cfg = false;
+    size_t m_cached_max_sequence_length = 0;
+    ov::Tensor m_cached_prompt_embeds;
+    ov::Tensor m_cached_attention_mask;
+
     ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_config,
                                size_t num_channels_latents,
                                size_t transformer_spatial_patch_size,
@@ -371,22 +379,50 @@ class Text2VideoPipeline::LTXPipeline {
                         ").");
 
         auto infer_start = std::chrono::steady_clock::now();
-        // torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
-        // genai m_t5_text_encoder->infer retuns the same tensor [negative_prompt_embeds, prompt_embeds]
-        infer_start = std::chrono::steady_clock::now();
-        ov::Tensor prompt_embeds =
-            m_t5_text_encoder->infer(positive_prompt,
-                                     negative_prompt,
-                                     do_classifier_free_guidance,
-                                     generation_config.max_sequence_length,
-                                     {ov::genai::pad_to_max_length(true),
-                                      ov::genai::max_length(generation_config.max_sequence_length),
-                                      ov::genai::add_special_tokens(true)});
+        ov::Tensor prompt_embeds;
+        ov::Tensor prompt_attention_mask;
 
-        auto infer_end = std::chrono::steady_clock::now();
-        m_perf_metrics.encoder_inference_duration["text_encoder"] = Ms{infer_end - infer_start}.count();
+        // Cache Hit Check
+        bool cache_hit = (m_cached_positive_prompt == positive_prompt) &&
+                         (m_cached_negative_prompt == negative_prompt) &&
+                         (m_cached_do_cfg == do_classifier_free_guidance) &&
+                         (m_cached_max_sequence_length == generation_config.max_sequence_length) &&
+                         (m_cached_prompt_embeds.get_size() > 0);
 
-        ov::Tensor prompt_attention_mask = m_t5_text_encoder->get_prompt_attention_mask();
+        if (cache_hit) {
+            prompt_embeds = m_cached_prompt_embeds;
+            prompt_attention_mask = m_cached_attention_mask;
+            m_perf_metrics.encoder_inference_duration["text_encoder"] = 0;
+        } else {
+            // torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
+            // genai m_t5_text_encoder->infer retuns the same tensor [negative_prompt_embeds, prompt_embeds]
+            infer_start = std::chrono::steady_clock::now();
+            prompt_embeds =
+                m_t5_text_encoder->infer(positive_prompt,
+                                         negative_prompt,
+                                         do_classifier_free_guidance,
+                                         generation_config.max_sequence_length,
+                                         {ov::genai::pad_to_max_length(true),
+                                          ov::genai::max_length(generation_config.max_sequence_length),
+                                          ov::genai::add_special_tokens(true)});
+
+            auto infer_end = std::chrono::steady_clock::now();
+            m_perf_metrics.encoder_inference_duration["text_encoder"] = Ms{infer_end - infer_start}.count();
+
+            prompt_attention_mask = m_t5_text_encoder->get_prompt_attention_mask();
+
+            // Update Cache State
+            m_cached_positive_prompt = positive_prompt;
+            m_cached_negative_prompt = negative_prompt;
+            m_cached_do_cfg = do_classifier_free_guidance;
+            m_cached_max_sequence_length = generation_config.max_sequence_length;
+
+            m_cached_prompt_embeds = ov::Tensor(prompt_embeds.get_element_type(), prompt_embeds.get_shape());
+            prompt_embeds.copy_to(m_cached_prompt_embeds);
+
+            m_cached_attention_mask = ov::Tensor(prompt_attention_mask.get_element_type(), prompt_attention_mask.get_shape());
+            prompt_attention_mask.copy_to(m_cached_attention_mask);
+        }
 
         prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_videos_per_prompt);
         prompt_attention_mask = numpy_utils::repeat(prompt_attention_mask, generation_config.num_videos_per_prompt);
