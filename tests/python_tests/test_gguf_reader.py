@@ -6,6 +6,7 @@ import pytest
 import torch
 import gc
 import sys
+import numpy as np
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
@@ -16,15 +17,17 @@ import openvino_genai as ov_genai
 from utils.hugging_face import (
     generation_config_to_hf,
     download_gguf_model,
+    download_vlm_gguf_model,
     load_hf_model_from_gguf,
     load_hf_tokenizer_from_gguf,
 )
 from utils.ov_genai_pipelines import (
     create_ov_pipeline,
+    create_ov_vlm_pipeline,
     GGUF_PIPELINE_TYPES,
     PipelineType,
 )
-from data.models import GGUF_MODEL_LIST
+from data.models import GGUF_MODEL_LIST, VLM_GGUF_MODEL_LIST
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,14 @@ class ModelInfo:
     dynamic_quantization_group_size: str | None
     opt_model: Any | None
     hf_tokenizer: Any | None
+
+
+@dataclass(frozen=True)
+class VLMModelInfo:
+    gguf_model_id: str
+    gguf_filenames: tuple[str, str]
+    gguf_dir_path: Path
+    prompt: str
 
 
 @pytest.fixture(scope="module")
@@ -53,6 +64,28 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
         opt_model=opt_model,
         hf_tokenizer=hf_tokenizer,
     )
+
+
+@pytest.fixture(scope="module")
+def model_vlm_gguf(request: pytest.FixtureRequest) -> VLMModelInfo:
+    meta_info = request.param
+    gguf_model_id = meta_info["gguf_model_id"]
+    gguf_filenames = tuple(meta_info["gguf_filenames"])
+    gguf_dir_path = download_vlm_gguf_model(gguf_model_id, gguf_filenames)
+    return VLMModelInfo(
+        gguf_model_id=gguf_model_id,
+        gguf_filenames=gguf_filenames,
+        gguf_dir_path=gguf_dir_path,
+        prompt=meta_info["prompt"],
+    )
+
+
+def get_test_image() -> ov.Tensor:
+    image = np.zeros((224, 224, 3), dtype=np.uint8)
+    image[..., 0] = 64
+    image[..., 1] = 128
+    image[..., 2] = 192
+    return ov.Tensor(image)
 
 
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
@@ -186,6 +219,7 @@ def test_full_gguf_pipeline(
 
     assert res_string_input_1 == res_string_input_2
 
+
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
 @pytest.mark.parametrize(
     "model_ids",
@@ -220,5 +254,43 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
+
+    assert res_string_input_1 == res_string_input_2
+
+
+@pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("model_vlm_gguf", VLM_GGUF_MODEL_LIST, indirect=True)
+@pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
+def test_full_vlm_gguf_pipeline(
+    model_vlm_gguf: VLMModelInfo,
+    pipeline_type: PipelineType,
+):
+    if sys.platform == 'darwin':
+        pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
+
+    gguf_dir_path = model_vlm_gguf.gguf_dir_path
+    prompt = model_vlm_gguf.prompt
+    image = get_test_image()
+
+    ov_generation_config = ov_genai.GenerationConfig()
+    ov_generation_config.max_new_tokens = 20
+    ov_generation_config.apply_chat_template = False
+
+    ov_pipe_gguf = create_ov_vlm_pipeline(
+        gguf_dir_path,
+        pipeline_type=pipeline_type,
+        enable_save_ov_model=True,
+    )
+    res_string_input_1 = ov_pipe_gguf.generate(prompt, image, generation_config=ov_generation_config)
+    del ov_pipe_gguf
+    gc.collect()
+
+    ov_pipe_native = create_ov_vlm_pipeline(
+        gguf_dir_path,
+        pipeline_type=pipeline_type,
+    )
+    res_string_input_2 = ov_pipe_native.generate(prompt, image, generation_config=ov_generation_config)
+    del ov_pipe_native
+    gc.collect()
 
     assert res_string_input_1 == res_string_input_2

@@ -56,3 +56,15 @@ GGUF_MODEL_LIST = (
         "dynamic_quantization_group_size": "64",
     },
 )
+
+
+VLM_GGUF_MODEL_LIST = (
+    {
+        "gguf_model_id": "Qwen/Qwen3-VL-4B-Instruct-GGUF",
+        "gguf_filenames": (
+            "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+            "mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf",
+        ),
+        "prompt": "Describe the image in one short sentence.",
+    },
+)
