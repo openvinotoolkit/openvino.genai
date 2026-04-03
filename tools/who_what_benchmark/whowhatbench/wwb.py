@@ -836,7 +836,6 @@ def create_evaluator(base_model, args):
                 test_data=prompts,
                 num_samples=args.num_samples,
                 gen_speech_fn=genai_gen_speech if args.genai else None,
-                sample_rate=16000,
                 speaker_embedding_file_path=args.speaker_embeddings,
                 whisper_model=args.tts_eval_whisper_model,
             )

@@ -17,7 +17,6 @@ import numpy as np
 import soundfile as sf
 
 
-DEFAULT_SR = 16000
 DEFAULT_WHISPER_MODEL = "base.en"
 LOGGER = logging.getLogger(__name__)
 
@@ -126,12 +125,12 @@ def _log(verbose: bool, msg: str = "") -> None:
         LOGGER.debug(msg)
 
 
-def load_audio_mono(path: str, sr: int) -> tuple[np.ndarray, int]:
+def load_audio_mono(path: str, sr: Optional[int] = None) -> tuple[np.ndarray, int]:
     audio, file_sr = sf.read(path, always_2d=False)
     if getattr(audio, "ndim", 1) == 2:
         audio = np.mean(audio, axis=1)
     audio = np.asarray(audio, dtype=np.float32)
-    if file_sr != sr:
+    if sr is not None and file_sr != sr:
         audio = librosa.resample(audio, orig_sr=file_sr, target_sr=sr)
         file_sr = sr
     peak = np.max(np.abs(audio)) if audio.size else 0.0
@@ -153,13 +152,11 @@ def relative_diff(a: Optional[float], b: Optional[float]) -> Optional[float]:
 class TTSSimilarityEvaluator:
     def __init__(
         self,
-        sample_rate: int = DEFAULT_SR,
         whisper_model: str = DEFAULT_WHISPER_MODEL,
         whisper_device: str = "auto",
         whisper_compute_type: str = "default",
         scoring_config: Optional[ScoringConfig] = None,
     ):
-        self.sample_rate = sample_rate
         self.whisper_model_name = whisper_model
         self.whisper_device = whisper_device
         self.whisper_compute_type = whisper_compute_type
@@ -229,20 +226,21 @@ class TTSSimilarityEvaluator:
             # By default, pywhispercpp will log "Transcribing ...", etc. so disable it.
             logging.getLogger("pywhispercpp").setLevel(logging.ERROR)
 
-        target_audio, sr_t = load_audio_mono(target_path, self.sample_rate)
-        reference_audio, sr_r = load_audio_mono(reference_path, self.sample_rate)
-        if not (sr_t == sr_r == self.sample_rate):
+        target_audio, sr_t = load_audio_mono(target_path)
+        reference_audio, sr_r = load_audio_mono(reference_path)
+        if sr_t != sr_r:
             raise ValueError(
-                f"Sample-rate mismatch after load: target={sr_t}, reference={sr_r}, requested={self.sample_rate}"
+                f"Sample-rate mismatch: target={sr_t}, reference={sr_r}. Target and reference must use the same sample rate."
             )
+        sr = sr_t  # Use native sample rate for all calculations
 
-        target_duration = duration_s(target_audio, self.sample_rate)
-        reference_duration = duration_s(reference_audio, self.sample_rate)
+        target_duration = duration_s(target_audio, sr)
+        reference_duration = duration_s(reference_audio, sr)
 
         _log(verbose, "=== TTS Similarity Evaluation ===")
         _log(verbose, f"Target:    {target_path}")
         _log(verbose, f"Reference: {reference_path}")
-        _log(verbose, f"Sample rate: {self.sample_rate}")
+        _log(verbose, f"Sample rate: {sr}")
         _log(
             verbose,
             f"Durations: target={format_float(target_duration)}s, reference={format_float(reference_duration)}s",
@@ -250,7 +248,7 @@ class TTSSimilarityEvaluator:
         _log(verbose)
 
         # Speaker
-        speaker_raw = self.compute_speaker_similarity(target_audio, reference_audio, self.sample_rate)
+        speaker_raw = self.compute_speaker_similarity(target_audio, reference_audio, sr)
         speaker_score = linear_similarity_score(speaker_raw, self.cfg.speaker_bad, self.cfg.speaker_good)
         _log(verbose, "--- Speaker ---")
         _log(verbose, f"Verification score: {speaker_raw}")
@@ -289,10 +287,10 @@ class TTSSimilarityEvaluator:
         _log(verbose)
 
         # Acoustic-lite
-        centroid_tgt = safe_float(np.mean(librosa.feature.spectral_centroid(y=target_audio, sr=self.sample_rate)))
-        centroid_ref = safe_float(np.mean(librosa.feature.spectral_centroid(y=reference_audio, sr=self.sample_rate)))
-        rolloff_tgt = safe_float(np.mean(librosa.feature.spectral_rolloff(y=target_audio, sr=self.sample_rate)))
-        rolloff_ref = safe_float(np.mean(librosa.feature.spectral_rolloff(y=reference_audio, sr=self.sample_rate)))
+        centroid_tgt = safe_float(np.mean(librosa.feature.spectral_centroid(y=target_audio, sr=sr)))
+        centroid_ref = safe_float(np.mean(librosa.feature.spectral_centroid(y=reference_audio, sr=sr)))
+        rolloff_tgt = safe_float(np.mean(librosa.feature.spectral_rolloff(y=target_audio, sr=sr)))
+        rolloff_ref = safe_float(np.mean(librosa.feature.spectral_rolloff(y=reference_audio, sr=sr)))
 
         centroid_diff = relative_diff(centroid_tgt, centroid_ref)
         rolloff_diff = relative_diff(rolloff_tgt, rolloff_ref)
@@ -356,7 +354,6 @@ class TTSSimilarityEvaluator:
 def evaluate_tts_similarity(
     target_path: str,
     reference_path: str,
-    sample_rate: int = DEFAULT_SR,
     whisper_model: str = DEFAULT_WHISPER_MODEL,
     whisper_device: str = "auto",
     whisper_compute_type: str = "default",
@@ -364,7 +361,6 @@ def evaluate_tts_similarity(
     verbose: bool = False,
 ) -> Scores:
     evaluator = TTSSimilarityEvaluator(
-        sample_rate=sample_rate,
         whisper_model=whisper_model,
         whisper_device=whisper_device,
         whisper_compute_type=whisper_compute_type,
@@ -381,7 +377,6 @@ def main() -> int:
     p = argparse.ArgumentParser(description="Evaluate similarity between a TTS target wav and a reference wav.")
     p.add_argument("--target", required=True)
     p.add_argument("--reference", required=True)
-    p.add_argument("--sample-rate", type=int, default=DEFAULT_SR)
     p.add_argument("--whisper-model", default=DEFAULT_WHISPER_MODEL)
     p.add_argument("--whisper-device", default="auto")
     p.add_argument("--whisper-compute-type", default="default")
@@ -395,7 +390,6 @@ def main() -> int:
     scores = evaluate_tts_similarity(
         target_path=args.target,
         reference_path=args.reference,
-        sample_rate=args.sample_rate,
         whisper_model=args.whisper_model,
         whisper_device=args.whisper_device,
         whisper_compute_type=args.whisper_compute_type,

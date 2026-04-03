@@ -111,7 +111,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         test_data: Union[str, list] = None,
         num_samples: int = None,
         gen_speech_fn=None,
-        sample_rate: int = 16000,
         speaker_embedding_file_path: str = None,
         whisper_model: str = "base.en",
     ) -> None:
@@ -121,7 +120,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         self.test_data = test_data
         self.num_samples = num_samples
         self.generation_fn = gen_speech_fn
-        self.sample_rate = sample_rate
         self.whisper_model = whisper_model
         self.whisper_device = "cpu"
         self.whisper_compute_type = "default"
@@ -136,7 +134,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         self.gt_dir = os.path.dirname(gt_data) if gt_data else os.getcwd()
 
         self._evaluator = TTSSimilarityEvaluator(
-            sample_rate=self.sample_rate,
             whisper_model=self.whisper_model,
             whisper_device=self.whisper_device,
             whisper_compute_type=self.whisper_compute_type,
