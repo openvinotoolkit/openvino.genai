@@ -179,6 +179,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     // Scheduler and Model Runner instantiation
     bool is_use_xattention = scheduler_config.use_sparse_attention && scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
     bool is_use_cache_eviction = scheduler_config.use_cache_eviction;
+    bool is_use_per_layer_cache_control = cache_orchestrator->needs_per_layer_block_indices();
     if (is_use_cache_eviction) {
         const auto& eviction_config = scheduler_config.cache_eviction_config;
         m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption, eviction_config.snapkv_window_size);
@@ -189,7 +190,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                                                        m_block_size,
                                                        m_num_decoder_layers,
                                                        /* collect_attention_scores = */ true,
-                                                       /* is_use_per_layer_cache_control = */ true,
+                                                       is_use_per_layer_cache_control,
                                                        /* is_use_rotation_inputs = */ is_apply_rotation,
                                                        /* is_aggregate_attention_scores = */ true,
                                                        is_use_xattention,
@@ -203,7 +204,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         m_model_runner =
             std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers,
                                                        /* collect_attention_scores = */ false,
-                                                       /* is_use_per_layer_cache_control = */ false,
+                                                       is_use_per_layer_cache_control,
                                                        /* is_use_rotation_inputs = */ false,
                                                        /* is_aggregate_attention_scores = */ false,
                                                        is_use_xattention,

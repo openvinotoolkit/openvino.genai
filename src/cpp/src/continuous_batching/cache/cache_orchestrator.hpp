@@ -85,7 +85,8 @@ public:
                 kv_manager->get_block_size(),
                 kv_manager->get_num_decoder_layers());
 
-            orchestrator->register_cache_type(CacheType::KV_CACHE, kv_manager, block_manager, layer_ids);
+            orchestrator->register_cache_type(CacheType::KV_CACHE, kv_manager, block_manager, layer_ids,
+                                               config.use_cache_eviction);
         }
 
         // Future cache types (e.g. LINEAR_ATTENTION, SLIDING_WINDOW) follow the same pattern.
@@ -98,17 +99,21 @@ public:
 
     /**
      * @brief Register a cache type with its managers and the model layers it handles.
-     * @param type         Cache type identifier.
-     * @param cache_mgr    Physical cache manager for this type.
-     * @param block_mgr    Block manager for this type.
-     * @param layer_ids    Decoder layer indices handled by this cache type.
+     * @param type              Cache type identifier.
+     * @param cache_mgr         Physical cache manager for this type.
+     * @param block_mgr         Block manager for this type.
+     * @param layer_ids         Decoder layer indices handled by this cache type.
+     * @param per_layer_control If true, the model was compiled with per-layer block index
+     *                          inputs for this cache type (e.g. for cache eviction).
      */
     void register_cache_type(CacheType type,
                              std::shared_ptr<ICacheManager> cache_mgr,
                              std::shared_ptr<BlockManager> block_mgr,
-                             const std::vector<size_t>& layer_ids) {
+                             const std::vector<size_t>& layer_ids,
+                             bool per_layer_control = false) {
         m_cache_managers[type] = std::move(cache_mgr);
         m_block_managers[type] = std::move(block_mgr);
+        m_per_layer_control[type] = per_layer_control;
         for (size_t local_idx = 0; local_idx < layer_ids.size(); ++local_idx) {
             size_t global_id = layer_ids[local_idx];
             m_layer_to_cache_type[global_id] = type;
@@ -468,6 +473,21 @@ public:
         return m_types_ordered;
     }
 
+    /**
+     * @brief Whether the model requires per-layer block index inputs.
+     *
+     * Returns true when any registered cache type has per-layer control enabled
+     * or when multiple cache types are registered (each type manages a different
+     * layer subset, so per-layer inputs are required).
+     */
+    bool needs_per_layer_block_indices() const {
+        if (m_types_ordered.size() > 1) {
+            return true;
+        }
+        return std::any_of(m_per_layer_control.begin(), m_per_layer_control.end(),
+            [](const auto& pair) { return pair.second; });
+    }
+
 private:
     const std::shared_ptr<BlockManager>& first_block_manager() const {
         OPENVINO_ASSERT(!m_block_managers.empty(), "No cache types registered");
@@ -483,6 +503,7 @@ private:
     std::map<CacheType, std::shared_ptr<BlockManager>> m_block_managers;
     std::map<size_t, CacheType> m_layer_to_cache_type;
     std::map<size_t, size_t> m_global_to_local_layer_id;  ///< global layer ID -> local index within its block manager
+    std::map<CacheType, bool> m_per_layer_control;          ///< per-type flag: layers managed individually or as one
     std::vector<CacheType> m_types_ordered;
 };
 
