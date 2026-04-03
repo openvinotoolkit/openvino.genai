@@ -121,8 +121,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         self.num_samples = num_samples
         self.generation_fn = gen_speech_fn
         self.whisper_model = whisper_model
-        self.whisper_device = "cpu"
-        self.whisper_compute_type = "default"
         self.last_cmp = None
         self.speaker_embedding_file_path = speaker_embedding_file_path
         self.speaker_embedding = None
@@ -135,8 +133,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
 
         self._evaluator = TTSSimilarityEvaluator(
             whisper_model=self.whisper_model,
-            whisper_device=self.whisper_device,
-            whisper_compute_type=self.whisper_compute_type,
         )
 
         if base_model:

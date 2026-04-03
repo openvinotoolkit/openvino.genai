@@ -153,13 +153,9 @@ class TTSSimilarityEvaluator:
     def __init__(
         self,
         whisper_model: str = DEFAULT_WHISPER_MODEL,
-        whisper_device: str = "auto",
-        whisper_compute_type: str = "default",
         scoring_config: Optional[ScoringConfig] = None,
     ):
         self.whisper_model_name = whisper_model
-        self.whisper_device = whisper_device
-        self.whisper_compute_type = whisper_compute_type
         self.cfg = scoring_config or ScoringConfig()
         self._whisper = None
         self._speaker_model = None
@@ -355,15 +351,11 @@ def evaluate_tts_similarity(
     target_path: str,
     reference_path: str,
     whisper_model: str = DEFAULT_WHISPER_MODEL,
-    whisper_device: str = "auto",
-    whisper_compute_type: str = "default",
     scoring_config: Optional[ScoringConfig] = None,
     verbose: bool = False,
 ) -> Scores:
     evaluator = TTSSimilarityEvaluator(
         whisper_model=whisper_model,
-        whisper_device=whisper_device,
-        whisper_compute_type=whisper_compute_type,
         scoring_config=scoring_config,
     )
     return evaluator.evaluate(target_path, reference_path, verbose=verbose)
@@ -378,8 +370,6 @@ def main() -> int:
     p.add_argument("--target", required=True)
     p.add_argument("--reference", required=True)
     p.add_argument("--whisper-model", default=DEFAULT_WHISPER_MODEL)
-    p.add_argument("--whisper-device", default="auto")
-    p.add_argument("--whisper-compute-type", default="default")
     p.add_argument("--json-out", default=None)
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args()
@@ -391,8 +381,6 @@ def main() -> int:
         target_path=args.target,
         reference_path=args.reference,
         whisper_model=args.whisper_model,
-        whisper_device=args.whisper_device,
-        whisper_compute_type=args.whisper_compute_type,
         verbose=args.verbose,
     )
 
