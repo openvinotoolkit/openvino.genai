@@ -297,7 +297,7 @@ private:
 
                 if (num_scheduled_tokens > 0) {
                     // allocate KV blocks if required
-                    m_cache_orchestrator->allocate_tokens(sequence, num_scheduled_tokens, sequence_group->get_prompt_len());
+                    m_cache_orchestrator->allocate_tokens(sequence, sequence_group, num_scheduled_tokens, sequence_group->get_prompt_len());
                     // and schedule tokens
                     sequence_group->schedule_tokens(num_scheduled_tokens);
 

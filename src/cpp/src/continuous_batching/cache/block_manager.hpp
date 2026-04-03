@@ -790,11 +790,7 @@ public:
      * @return The number of additional tokens that can be stored.
      */
     size_t available_token_slots(SequenceGroup::CPtr seq_group) const {
-        size_t num_logical = get_num_logical_blocks(seq_group);
-        size_t allocated_capacity = num_logical * m_block_size;
-        size_t occupied = seq_group->get_context_len() - seq_group->get_num_evicted_tokens();
-        size_t unused_in_existing = allocated_capacity >= occupied ? allocated_capacity - occupied : 0;
-        return unused_in_existing + num_free_blocks() * m_block_size;
+        return get_num_unused_tokens(seq_group) + num_free_blocks() * m_block_size;
     }
 
     /**
@@ -805,11 +801,7 @@ public:
      * @return Whether the allocation is feasible.
      */
     bool can_allocate_tokens(SequenceGroup::CPtr seq_group, size_t num_tokens) const {
-        size_t num_logical = get_num_logical_blocks(seq_group);
-        size_t allocated_capacity = num_logical * m_block_size;
-        size_t occupied = seq_group->get_context_len() - seq_group->get_num_evicted_tokens();
-        size_t unused_in_existing = allocated_capacity >= occupied ? allocated_capacity - occupied : 0;
-        size_t tokens_needing_new_blocks = num_tokens > unused_in_existing ? num_tokens - unused_in_existing : 0;
+        const size_t tokens_needing_new_blocks = num_tokens > get_num_unused_tokens(seq_group) ? num_tokens - get_num_unused_tokens(seq_group) : 0;
         size_t blocks_needed = (tokens_needing_new_blocks + m_block_size - 1) / m_block_size;
         return can_allocate_blocks(blocks_needed);
     }
@@ -818,17 +810,14 @@ public:
      * Allocates KV cache blocks to accommodate the given number of additional tokens for a sequence,
      * accounting for unused slots in already-allocated blocks.
      * @param sequence The sequence to allocate blocks for.
+     * @param seq_group The sequence group to which this sequence belongs.
      * @param num_tokens The number of additional tokens to accommodate.
      * @param prompt_size Prompt size for this sequence.
      */
-    void allocate_tokens(ov::genai::Sequence::Ptr sequence, size_t num_tokens, size_t prompt_size = 0) {
-        auto seq_group = sequence->get_sequence_group_ptr();
-        size_t num_logical = get_num_logical_blocks(seq_group);
-        size_t allocated_capacity = num_logical * m_block_size;
-        size_t occupied = seq_group->get_context_len() - seq_group->get_num_evicted_tokens();
-        size_t unused_in_existing = allocated_capacity >= occupied ? allocated_capacity - occupied : 0;
-        size_t tokens_needing_new_blocks = num_tokens > unused_in_existing ? num_tokens - unused_in_existing : 0;
-        size_t num_blocks = (tokens_needing_new_blocks + m_block_size - 1) / m_block_size;
+    void allocate_tokens(ov::genai::Sequence::Ptr sequence, SequenceGroup::CPtr seq_group, size_t num_tokens, size_t prompt_size = 0) {
+        const size_t unused_tokens = get_num_unused_tokens(seq_group);
+        const size_t tokens_needing_new_blocks = num_tokens > unused_tokens ? num_tokens - unused_tokens : 0;
+        const size_t num_blocks = (tokens_needing_new_blocks + m_block_size - 1) / m_block_size;
         if (num_blocks > 0) {
             allocate(sequence, num_blocks, prompt_size);
         }
@@ -1111,7 +1100,7 @@ public:
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         // Will always allocate the identical number of new blocks (if any) to each of the "layers" to keep the
         // number of blocks occupied by each "layer" identical at all times.
-        size_t num_logical_blocks = get_num_logical_blocks(seq_group);
+        const size_t num_logical_blocks = get_num_logical_blocks(seq_group);
         std::vector<Sequence::Ptr> running_sequences = seq_group->get_running_sequences();
 
         std::map<size_t, std::list<size_t>> copy_blocks_map;
@@ -1252,6 +1241,12 @@ public:
     }
 
 private:
+    size_t get_num_unused_tokens(SequenceGroup::CPtr seq_group) const {
+        const size_t occupied = seq_group->get_context_len() - seq_group->get_num_evicted_tokens();
+        // equivalent to: occupied % m_block_size == 0 ? 0 : m_block_size - (occupied % m_block_size)
+        return (m_block_size - occupied % m_block_size) % m_block_size;
+    }
+
     /**
      * Converts a number of blocks released to the corresponding number of tokens freed,
      * accounting for a potentially partial last block.

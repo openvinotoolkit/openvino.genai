@@ -175,9 +175,9 @@ public:
             [seq_id](const auto& pair) { return pair.second->has_block_table(seq_id); });
     }
 
-    void allocate_tokens(Sequence::Ptr sequence, size_t num_tokens, size_t prompt_size = 0) {
+    void allocate_tokens(Sequence::Ptr sequence, SequenceGroup::CPtr seq_group, size_t num_tokens, size_t prompt_size = 0) {
         for (auto& [type, block_mgr] : m_block_managers) {
-            block_mgr->allocate_tokens(sequence, num_tokens, prompt_size);
+            block_mgr->allocate_tokens(sequence, seq_group, num_tokens, prompt_size);
         }
     }
 
