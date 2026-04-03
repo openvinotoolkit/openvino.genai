@@ -4,7 +4,6 @@
 #include <atomic>
 #include <thread>
 #include <optional>
-#include <numeric>
 #include "openvino/genai/cache_eviction.hpp"
 
 #ifdef __APPLE__

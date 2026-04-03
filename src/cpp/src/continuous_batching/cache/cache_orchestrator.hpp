@@ -5,9 +5,12 @@
 
 #include <algorithm>
 #include <functional>
+#include <limits>
+#include <list>
 #include <map>
 #include <memory>
 #include <numeric>
+#include <set>
 #include <vector>
 
 #include "openvino/runtime/infer_request.hpp"
