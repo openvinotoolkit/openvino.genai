@@ -18,6 +18,7 @@ import soundfile as sf
 
 
 DEFAULT_WHISPER_MODEL = "base.en"
+WHISPER_SAMPLE_RATE = 16000
 LOGGER = logging.getLogger(__name__)
 
 
@@ -190,8 +191,12 @@ class TTSSimilarityEvaluator:
             self._speaker_model.eval()
         return self._speaker_model
 
-    def transcribe(self, path: str) -> str:
-        segments = self.whisper.transcribe(path)
+    def transcribe(self, audio: np.ndarray, sr: int) -> str:
+        audio = np.asarray(audio, dtype=np.float32)
+        if sr != WHISPER_SAMPLE_RATE:
+            audio = librosa.resample(audio, orig_sr=sr, target_sr=WHISPER_SAMPLE_RATE)
+
+        segments = self.whisper.transcribe(audio)
         return " ".join(seg.text.strip() for seg in segments).strip()
 
     def compute_speaker_similarity(self, target_audio: np.ndarray, reference_audio: np.ndarray, sr: int) -> float:
@@ -251,8 +256,8 @@ class TTSSimilarityEvaluator:
         _log(verbose)
 
         # Content
-        target_tx = self.transcribe(target_path)
-        reference_tx = self.transcribe(reference_path)
+        target_tx = self.transcribe(target_audio, sr)
+        reference_tx = self.transcribe(reference_audio, sr)
         norm_tgt = normalize_text(target_tx)
         norm_ref = normalize_text(reference_tx)
 
