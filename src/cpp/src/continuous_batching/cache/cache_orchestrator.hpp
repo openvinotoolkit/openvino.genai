@@ -210,14 +210,6 @@ public:
             [&seq_group](const auto& pair) { return pair.second->can_append_slots(seq_group); });
     }
 
-    size_t required_blocks_count(SequenceGroup::CPtr seq_group) const {
-        size_t max_required = 0;
-        for (const auto& [type, block_mgr] : m_block_managers) {
-            max_required = std::max(max_required, block_mgr->required_blocks_count(seq_group));
-        }
-        return max_required;
-    }
-
     /**
      * @brief Returns the maximum token deficit for the target across all cache types.
      * Each type independently computes required_blocks * block_size.
@@ -290,44 +282,8 @@ public:
         return min_total;
     }
 
-    void increase_kv_blocks_number(size_t new_num) {
-        for (auto& [type, block_mgr] : m_block_managers) {
-            block_mgr->increase_kv_blocks_number(new_num);
-        }
-    }
-
     size_t get_block_size() const {
         return first_block_manager()->get_block_size();
-    }
-
-    size_t get_number_of_blocks_occupied_by_sequence(SequenceGroup::Ptr seq_group) const {
-        size_t max_occupied = 0;
-        for (const auto& [type, block_mgr] : m_block_managers) {
-            max_occupied = std::max(max_occupied, block_mgr->get_number_of_blocks_occupied_by_sequence(seq_group));
-        }
-        return max_occupied;
-    }
-
-    /**
-     * @return Number of tokens freed (minimum across all cache managers).
-     */
-    size_t free_group_partially(SequenceGroup::Ptr seq_group, size_t num_required_blocks) {
-        size_t min_tokens_released = std::numeric_limits<size_t>::max();
-        for (auto& [type, block_mgr] : m_block_managers) {
-            min_tokens_released = std::min(min_tokens_released, block_mgr->free_group_partially(seq_group, num_required_blocks));
-        }
-        return min_tokens_released;
-    }
-
-    /**
-     * @return Number of tokens freed (minimum across all cache managers).
-     */
-    size_t free_partially_beam_search_group(SequenceGroup::Ptr seq_group, size_t num_required_blocks) {
-        size_t min_tokens_released = std::numeric_limits<size_t>::max();
-        for (auto& [type, block_mgr] : m_block_managers) {
-            min_tokens_released = std::min(min_tokens_released, block_mgr->free_partially_beam_search_group(seq_group, num_required_blocks));
-        }
-        return min_tokens_released;
     }
 
     // -----------------------------------------------------------------------
