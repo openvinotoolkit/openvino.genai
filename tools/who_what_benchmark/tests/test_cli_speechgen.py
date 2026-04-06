@@ -5,6 +5,7 @@ import pytest
 import logging
 import re
 from pathlib import Path
+import sys
 
 from conftest import convert_model, run_wwb
 from ov_utils import get_ov_cache_dir
@@ -47,6 +48,9 @@ def get_overall_score(output: str) -> float:
 
 
 def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_threshold, tmp_path):
+    if sys.platform == "darwin":
+        pytest.xfail("Ticket 184323")
+
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = convert_model(model_id)
 
