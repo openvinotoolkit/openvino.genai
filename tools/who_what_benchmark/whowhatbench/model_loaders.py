@@ -804,14 +804,18 @@ def _load_speecht5_processor(model_id, remote_code):
     return SpeechT5Processor.from_pretrained(model_id, trust_remote_code=remote_code)
 
 
-def _load_speecht5_hifigan_vocoder():
+def _load_speecht5_hifigan_vocoder(vocoder_path=None):
     from transformers import SpeechT5HifiGan
 
+    if vocoder_path is not None:
+        return SpeechT5HifiGan.from_pretrained(vocoder_path)
     return SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
 
 
 def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     from .speech_generation_evaluator import TextToSpeechModelWrapper
+
+    vocoder_path = kwargs.get("vocoder_path")
 
     if use_hf:
         logger.info("Using HF Transformers API")
@@ -825,9 +829,9 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         )
         processor = _load_speecht5_processor(model_id, remote_code)
 
-        # for HF, we need explicitly load the vocoder.
+        # for HF, we need to explicitly load the vocoder.
         # Assume it's microsoft/speecht5_hifigan for now.
-        vocoder = _load_speecht5_hifigan_vocoder()
+        vocoder = _load_speecht5_hifigan_vocoder(vocoder_path)
         return TextToSpeechModelWrapper(model, processor, vocoder)
 
     if use_genai:
@@ -839,12 +843,20 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
     remote_code, model_config = _resolve_remote_code_and_config(model_id)
 
+    from_pretrained_kwargs = {
+        "device": device,
+        "ov_config": ov_config,
+        "config": model_config,
+        "trust_remote_code": remote_code,
+    }
+    if vocoder_path is not None:
+        # Optimum forwards extra kwargs from from_pretrained() to export.
+        # Pass vocoder so that SpeechT5 export can consume it.
+        from_pretrained_kwargs["vocoder"] = vocoder_path
+
     model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
         model_id,
-        device=device,
-        ov_config=ov_config,
-        config=model_config,
-        trust_remote_code=remote_code,
+        **from_pretrained_kwargs,
     )
     processor = _load_speecht5_processor(model_id, remote_code)
 

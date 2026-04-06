@@ -340,6 +340,12 @@ def parse_args():
         help="whisper model name for TTS similarity content scoring.",
     )
     parser.add_argument(
+        "--vocoder_path",
+        type=str,
+        default=None,
+        help="Path to vocoder for text-to-speech scenarios.",
+    )
+    parser.add_argument(
         "--pruning_ratio",
         type=pruning_ratio_type,
         default=None,
@@ -838,6 +844,7 @@ def create_evaluator(base_model, args):
                 gen_speech_fn=genai_gen_speech if args.genai else None,
                 speaker_embedding_file_path=args.speaker_embeddings,
                 whisper_model=args.tts_eval_whisper_model,
+                vocoder_path=args.vocoder_path,
             )
         elif task == "visual-text" or task == "visual-video-text":
             processor, config = load_processor(args)
@@ -1122,6 +1129,9 @@ def main():
         taylorseer_config.disable_cache_before_step = ts_cfg.get("disable_cache_before_step", 6)
         taylorseer_config.disable_cache_after_step = ts_cfg.get("disable_cache_after_step", -2)
         logger.info(f"TaylorSeer config: {taylorseer_config}")
+
+    if args.model_type == "speech-generation" and args.vocoder_path is not None:
+        kwargs["vocoder_path"] = args.vocoder_path
 
     if args.base_model is not None:
         base_model = load_model(
