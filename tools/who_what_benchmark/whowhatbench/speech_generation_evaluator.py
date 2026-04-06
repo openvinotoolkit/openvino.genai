@@ -24,7 +24,7 @@ SPEAKER_SCORE_COL = "speaker score"
 CONTENT_SCORE_COL = "content score"
 DURATION_SCORE_COL = "duration score"
 ACOUSTIC_SCORE_COL = "acoustic score"
-OVERALL_SCORE_COL = "overall score"
+OVERALL_SCORE_COL = "overall similarity"
 
 
 class TextToSpeechModelWrapper:

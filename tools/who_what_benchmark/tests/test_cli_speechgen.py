@@ -36,7 +36,7 @@ def get_speaker_embedding():
 
 
 def get_overall_score(output: str) -> float:
-    metric_pattern = r"INFO:whowhatbench\.wwb:.*overall score"
+    metric_pattern = r"INFO:whowhatbench\.wwb:.*overall similarity"
     m = re.search(metric_pattern, output)
     assert m, "Could not find metrics header in output"
 
