@@ -188,8 +188,6 @@ wwb --target-model speecht5_tts_ov --gt-data speech_gen_test/gt.csv --model-type
 wwb --target-model speecht5_tts_ov --gt-data speech_gen_test/gt.csv --model-type speech-generation --output genai_output --speaker_embeddings cmu_us_slt_arctic-wav-arctic_a0508.bin --genai
 ```
 
-Speech-generation evaluation writes audio at 16 kHz for both reference and target files before scoring.
-
 The speech-generation evaluator reports these metrics:
 
 * `speaker score` - speaker similarity based on SpeechBrain speaker verification.
