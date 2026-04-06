@@ -88,15 +88,10 @@ def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_
             model_type,
             "--speaker_embeddings",
             speaker_embeddings,
-            "-v",
         ]
     )
 
-    # Some debug prints to help investigate CI results.
-    # TODO: Remove these.
-    print("optimum output: ", output)
     optimum_score = get_overall_score(output)
-    print("optimum_score: ", optimum_score)
     if optimum_threshold is not None:
         assert optimum_score >= optimum_threshold
 
