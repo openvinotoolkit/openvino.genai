@@ -221,6 +221,8 @@ class TTSSimilarityEvaluator:
         from jiwer import cer as jiwer_cer
         from jiwer import wer as jiwer_wer
 
+        # Temporary hack to get debug some CI results.
+        verbose = True
         if verbose:
             LOGGER.setLevel(logging.DEBUG)
         else:
