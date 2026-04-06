@@ -59,8 +59,7 @@ public:
 protected:
     // Vision embeddings position model
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_pos;
-    // Controlled by VISION_POS_EMBEDS env var: default uses patched model (device-side weighted sum);
-    // set VISION_POS_EMBEDS=CPP to force C++ fallback path.
+    // Set to true in constructor when VISION_POS_EMBEDS != "CPP" (patched model)
     bool m_use_patched_pos_model = false;
 
     // Cached extra inputs for language model

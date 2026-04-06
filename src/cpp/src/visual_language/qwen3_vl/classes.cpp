@@ -197,7 +197,7 @@ void permute_with_spatial_merge_and_add(
     const size_t embed_dim = pos_embeds.get_shape()[1];
     const float* pos_embeds_data = pos_embeds.data<const float>();
 
-    OPENVINO_ASSERT(spatial_merge_size > 0, "spatial_merge_size must be positive, got 0");
+    OPENVINO_ASSERT(spatial_merge_size > 0, "spatial_merge_size must be positive, got ", spatial_merge_size);
 
     size_t dst_offset = 0;
     size_t src_offset = 0;
