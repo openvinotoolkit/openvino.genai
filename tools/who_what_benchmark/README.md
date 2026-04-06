@@ -194,7 +194,7 @@ The speech-generation evaluator reports these metrics:
 * `content score` - transcript similarity between base model and target model output, based on whisper transcription and normalized text comparison.
 * `acoustic score` - overall sound-character similarity based on spectral features.
 * `duration score` - relative utterance length similarity between target and reference.
-* `overall score` - aggregate score used for sorting worst examples.
+* `overall similarity` - aggregate score used for sorting worst examples.
 
 ### API
 The API provides a way to access to investigate the worst generated text examples.
