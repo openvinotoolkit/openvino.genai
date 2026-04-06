@@ -36,12 +36,13 @@ def get_speaker_embedding():
 
 def get_overall_score(output: str) -> float:
     metric_pattern = r"INFO:whowhatbench\.wwb:.*overall score"
-    m = re.search(metric_pattern, output, re.DOTALL)
+    m = re.search(metric_pattern, output)
     assert m, "Could not find metrics header in output"
 
-    substr = output[m.end() :]
+    next_line = output[m.end() :].lstrip("\r").lstrip("\n").split("\n")[0]
     float_pattern = r"[-+]?\d*\.\d+"
-    matches = re.findall(float_pattern, substr)
+    matches = re.findall(float_pattern, next_line)
+    assert matches, f"Could not find scores in line: {next_line!r}"
     return float(matches[-1])
 
 
@@ -83,10 +84,15 @@ def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_
             model_type,
             "--speaker_embeddings",
             speaker_embeddings,
+            "-v",
         ]
     )
 
+    # Some debug prints to help investigate CI results.
+    # TODO: Remove these.
+    print("optimum output: ", output)
     optimum_score = get_overall_score(output)
+    print("optimum_score: ", optimum_score)
     if optimum_threshold is not None:
         assert optimum_score >= optimum_threshold
 
