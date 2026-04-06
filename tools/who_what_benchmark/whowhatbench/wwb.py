@@ -1049,7 +1049,7 @@ def print_rag_results(evaluator):
 
 
 def _format_score(score):
-    if score is None:
+    if pd.isna(score):
         return "N/A"
     return f"{score:.5f}"
 
