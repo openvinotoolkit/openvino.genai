@@ -77,7 +77,7 @@ jobs:
       - name: Install deps
         working-directory: ${{ github.workspace }}/.github/scripts/workflow_rerun
         run: |
-          python -m pip index versions requests 2>/dev/null | head -3
+          python -m pip index versions requests
           python -m pip install -r requirements.txt
           pip3 install -r requirements.txt
 
