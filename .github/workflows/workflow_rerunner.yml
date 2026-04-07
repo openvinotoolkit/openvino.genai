@@ -15,6 +15,9 @@ on:
       - '.github/workflows/workflow_rerunner.yml'
       - '.github/scripts/workflow_rerun/**'
 
+env:
+  PYTHON_VERSION: '3.11'
+
 permissions: read-all
 
 jobs:
@@ -35,10 +38,15 @@ jobs:
         with:
           sparse-checkout: '.github/scripts/workflow_rerun'
 
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
       - name: Install deps
         working-directory: ${{ github.workspace }}/.github/scripts/workflow_rerun
         run: |
-          python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
       - name: Dump GitHub context
@@ -76,16 +84,16 @@ jobs:
           sparse-checkout: '.github/scripts/workflow_rerun'
           lfs: false
 
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
       - name: Install deps
         working-directory: ${{ github.workspace }}/.github/scripts/workflow_rerun
         run: |
-          python3 --version
-          python3 -m pip install --upgrade pip
-          python3 -m pip --version
-          pip3 --version
-          python3 -m pip index versions requests
-          python3 -m pip install -r requirements.txt
-          pip3 install -r requirements.txt
+          python -m pip install -r requirements.txt
 
       - name: Test Rerunner (Tests)
         env:
