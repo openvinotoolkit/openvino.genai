@@ -179,15 +179,31 @@ class TextSimilarity:
             trust_remote_code = True
             tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
+        if hasattr(tokenizer, "pad_token") and tokenizer.pad_token:
+            pad_token = tokenizer.pad_token
+        else:
+            pad_token = tokenizer.eos_token
+
         model_kwargs = {"trust_remote_code": trust_remote_code, "device": "cpu"}
         if "tokenizer_kwargs" in inspect.signature(SentenceTransformer.__init__).parameters:
-            if hasattr(tokenizer, "pad_token") and tokenizer.pad_token:
-                pad_token = tokenizer.pad_token
-            else:
-                pad_token = tokenizer.eos_token
             model_kwargs["tokenizer_kwargs"] = {"pad_token": pad_token}
 
-        self.model = SentenceTransformer(model_id, **model_kwargs)
+        try:
+            self.model = SentenceTransformer(
+                model_id,
+                **model_kwargs,
+            )
+        except TypeError:
+            # sentence-transformers<3.0 does not accept tokenizer_kwargs
+            logging.warning(
+                "Installed sentence-transformers does not support tokenizer_kwargs; "
+                "falling back to default tokenizer configuration."
+            )
+            self.model = SentenceTransformer(
+                model_id,
+                trust_remote_code=trust_remote_code,
+                device="cpu",
+            )
 
     def evaluate(self, gt, prediction):
         return evaluate_similarity(self.model, gt, prediction)
