@@ -402,8 +402,12 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config,
                          const std::map<std::string, py::object>& tokenizer_plugin_config, const std::map<std::string, py::object>& inputs_embedder_plugin_config) {
                  ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, pyutils::properties_to_any_map(llm_plugin_config),
-                     pyutils::properties_to_any_map(tokenizer_plugin_config), pyutils::properties_to_any_map(inputs_embedder_plugin_config));
+                 ov::AnyMap llm_properties = pyutils::properties_to_any_map(llm_plugin_config);
+                 ov::AnyMap tokenizer_properties = pyutils::properties_to_any_map(tokenizer_plugin_config);
+                 ov::AnyMap inputs_embedder_properties = pyutils::properties_to_any_map(inputs_embedder_plugin_config);
+                 py::gil_scoped_release rel;
+                 return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, llm_properties,
+                     tokenizer_properties, inputs_embedder_properties);
              }),
              py::arg("models_path"),
              py::arg("scheduler_config"),
@@ -414,7 +418,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
 
         .def(py::init([](const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const py::kwargs& kwargs) {
                  ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, pyutils::kwargs_to_any_map(kwargs));
+                 ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                 py::gil_scoped_release rel;
+                 return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, properties);
              }),
              py::arg("models_path"),
              py::arg("tokenizer"),
