@@ -26,22 +26,22 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 4. Pass non-fundamental values by `const` reference wherever possible.
 5. Exceptions: use `OPENVINO_ASSERT(condition, ...)` for checks instead of `if` + `OPENVINO_THROW(...)` or `throw`.
 6. Avoid comments for OPENVINO_ASSERT() and OPENVINO_THROW() as the message should be self-explanatory.
-6. Formatting & Safety:
+7. Formatting & Safety:
    - No `using namespace std;`.
    - No `auto` for primitive types where it obscures readability.
    - Use `const` and `constexpr` wherever possible.
-7. Follow constructors and member initializer lists style instead of direct assignments in the constructor body.
-8. When initial container values are known upfront, prefer initializer-list / brace-initialization over constructing an empty container and immediately inserting values.
-9. Make sure the function names are descriptive.
-10. Check for variables with different names but similar meaning or aliasing.
-11. Avoid duplicate code. Ensure that common functionality is extracted into reusable functions or utilities.
-12. Avoid pronouns in comments and names to make the statements concise.
-13. Unused functions and constructors aren't allowed except for in `debug_utils.hpp`.
-14. `debug_utils.hpp` must never be included.
-15. Assumptions on the user's behalf aren't allowed. For example, the implementation shouldn't adjust config values silently or with a warning; it should throw an exception instead.
-16. Extend sample and functional tests with `tiny-random` model when a new model architecture is added.
-17. When factoring out a function, ensure the implementation doesn't change.
-18. Samples:
+8. Follow constructors and member initializer lists style instead of direct assignments in the constructor body.
+9. When initial container values are known upfront, prefer initializer-list / brace-initialization over constructing an empty container and immediately inserting values.
+10. Make sure the function names are descriptive.
+11. Check for variables with different names but similar meaning or aliasing.
+12. Avoid duplicate code. Ensure that common functionality is extracted into reusable functions or utilities.
+13. Avoid pronouns in comments and names to make the statements concise.
+14. Unused functions and constructors aren't allowed except for in `debug_utils.hpp`.
+15. `debug_utils.hpp` must never be included.
+16. Assumptions on the user's behalf aren't allowed. For example, the implementation shouldn't adjust config values silently or with a warning; it should throw an exception instead.
+17. Extend sample and functional tests with `tiny-random` model when a new model architecture is added.
+18. When factoring out a function, ensure the implementation doesn't change.
+19. Samples:
     - Avoid adding new samples unless there is a strong, clearly justified reason.
     - Keep command‑line arguments in samples minimal. Prefer hardcoding values.
     - Ensure new samples have corresponding tests.
