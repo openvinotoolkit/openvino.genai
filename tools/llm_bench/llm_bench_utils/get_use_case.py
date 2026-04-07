@@ -118,17 +118,19 @@ def get_use_case_by_model_id(model_id, task=None):
         for m_type in normalize_model_ids(use_case.model_types):
             # TODO go to equality and raise error if use_cases is already found, as it will mean that
             # model with that task can be applicable to execute with different pipelines and user doesn't specify one
-            if model_id.startswith(m_type):
-                if model_use_case is not None and model_use_case.task != use_case.task:
-                    log.warning(
-                        f"Model id `{model_id}` matches multiple use cases: "
-                        f"`{model_use_case.task}` and `{use_case.task}`. "
-                        f"Use case `{model_use_case.task}` will be used. "
-                        f"To select a specific task, set `-t`/`--task`."
-                    )
-                else:
-                    model_use_case = use_case
-                    model_type = m_type
+            if not model_id.startswith(m_type):
+                continue
+
+            if model_use_case is not None and model_use_case.task != use_case.task:
+                log.warning(
+                    f"Model id `{model_id}` matches multiple use cases: "
+                    f"`{model_use_case.task}` and `{use_case.task}`. "
+                    f"Use case `{model_use_case.task}` will be used. "
+                    f"To select a specific task, set `-t`/`--task`."
+                )
+            else:
+                model_use_case = use_case
+                model_type = m_type
 
     if model_use_case is None and task:
         # first use case is the default/most common, the following ones reflect specific cases
