@@ -133,7 +133,9 @@ private:
         m_is_npu = device.find("NPU") != std::string::npos;
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
-        auto& properties_copy = filtered_properties.fork();
+        auto [gguf_filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(filtered_properties.fork());
+        auto properties_copy = gguf_filtered_properties;
+
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
         // In case user provided properties per-device
@@ -144,6 +146,7 @@ private:
         auto device_properties = utils::pop_or_default<ov::AnyMap>(
             properties_copy, ov::device::properties.name(), { }
         );
+
         // Otherwise, the same properties are used for all models and devices
         auto lm_properties = device_properties.empty()
             ? properties_copy
@@ -179,8 +182,10 @@ private:
             : utils::pop_or_default<ov::AnyMap>(device_properties, embedder_device, {});
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
+
         // NPU does not support history, so use full chat history on each chat iteration.
         m_use_full_chat_history = m_is_npu;
+
         finalize_initialization(language_model, kv_pos);
     }
 
@@ -193,11 +198,11 @@ private:
         const ov::AnyMap& properties
     ) {
         m_is_npu = device.find("NPU") != std::string::npos;
-        OPENVINO_ASSERT(!m_is_npu,
-            "VLMPipeline initialization from string isn't supported for NPU device");
+        OPENVINO_ASSERT(!m_is_npu, "VLMPipeline initialization from string isn't supported for NPU device");
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
-        auto& properties_copy = filtered_properties.fork();
+        auto [gguf_filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(filtered_properties.fork());
+        auto properties_copy = gguf_filtered_properties;
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
 
@@ -217,7 +222,9 @@ private:
         m_language = utils::singleton_core().compile_model(
             m_language_pair.first, m_language_pair.second, device, properties_copy
         ).create_infer_request();
+
         m_language.get_tensor("attention_mask").set_shape({1, 0});
+
         finalize_initialization(language_model, kv_pos);
     }
 public:
