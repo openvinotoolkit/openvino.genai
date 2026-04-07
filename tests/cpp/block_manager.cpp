@@ -19,7 +19,7 @@ TEST(TestBlockManager, general_test) {
                                                    ov::Tensor(ov::element::i64, {prompt_ids.size()}, prompt_ids.data()),
                                                    ov::genai::utils::get_beam_search_config());
     auto sequence = sequence_group->get_not_finished_sequences()[0];
-    bm.allocate_tokens(sequence, 24, prompt_ids.size());
+    bm.allocate_tokens(sequence, sequence_group, 24, prompt_ids.size());
     auto seq_id = sequence->get_id();
     EXPECT_TRUE(bm.has_block_table(seq_id));
     EXPECT_EQ(bm.get_block_table(seq_id, 0).size(), 6);
@@ -33,7 +33,7 @@ TEST(TestBlockManager, general_test) {
     EXPECT_FALSE(bm.has_block_table(seq_id));
     EXPECT_EQ(bm.num_free_blocks(), 6);
 
-    bm.allocate_tokens(sequence, 8, prompt_ids.size());
+    bm.allocate_tokens(sequence, sequence_group, 8, prompt_ids.size());
     bm.fork_sequence(seq_id, 1);
     EXPECT_TRUE(bm.has_block_table(1));
     EXPECT_EQ(bm.get_block_table(1, 0).back()->get_references_count(), 2);
