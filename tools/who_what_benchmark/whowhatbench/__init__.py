@@ -14,6 +14,7 @@ from .text2video_evaluator import Text2VideoEvaluator
 from .chat_text_evaluator import ChatTextEvaluator
 from .speech_generation_evaluator import SpeechGenerationEvaluator
 from .chat_visualtext_evaluator import ChatVisualTextEvaluator
+from .text_agent_evaluator import TextAgentEvaluator
 
 
 __all__ = [
@@ -30,5 +31,6 @@ __all__ = [
     "ChatTextEvaluator",
     "SpeechGenerationEvaluator",
     "ChatVisualTextEvaluator",
+    "TextAgentEvaluator",
     "EVALUATOR_REGISTRY",
 ]
