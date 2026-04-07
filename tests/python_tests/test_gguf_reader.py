@@ -268,9 +268,6 @@ def test_full_vlm_gguf_pipeline(
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
 
-    if pipeline_type == PipelineType.STATEFUL:
-        pytest.skip("GGUF VLM currently supports only PAGED_ATTENTION")
-        
     gguf_dir_path = model_vlm_gguf.gguf_dir_path
     prompt = model_vlm_gguf.prompt
     image = get_test_image()

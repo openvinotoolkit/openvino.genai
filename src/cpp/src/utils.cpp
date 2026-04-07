@@ -501,7 +501,8 @@ ModelsMap read_models(const std::filesystem::path& models_dir, const ov::AnyMap&
         {"vision_embeddings", "openvino_vision_embeddings_model.xml"},
         {"vision_embeddings_pos", "openvino_vision_embeddings_pos_model.xml"},
         {"vision_embeddings_merger", "openvino_vision_embeddings_merger_model.xml"},
-        {"language", "openvino_model.xml"}
+        {"language", "openvino_model.xml"},
+        {"resampler", "openvino_vision_embeddings_merger_model.xml"}, //fix pytest resampler bug
     };
 
     for (const auto& model_file : model_files) {
