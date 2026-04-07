@@ -19,11 +19,39 @@ from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
-from whowhatbench.utils import get_json_config
+from whowhatbench.utils import (
+    get_json_config,
+    is_json_dataset,
+    resolve_json_dataset_path,
+    read_json_dataset,
+    get_json_config)
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _log_prompts_summary(prompts, source, verbose=False):
+    if not prompts:
+        raise ValueError(f"No prompts loaded from source: {source}")
+    prompt_list = []
+    if isinstance(prompts, dict):
+        raw_prompt_list = prompts.get("prompts")
+        if raw_prompt_list is None:
+            raise ValueError(f"'prompts' key missing in prompts source: {source}")
+        if not isinstance(raw_prompt_list, list):
+            raise ValueError(f"'prompts' field must be a list in prompts source: {source}")
+        if len(raw_prompt_list) == 0:
+            raise ValueError(f"No prompts found in 'prompts' list from source: {source}")
+        prompt_list = raw_prompt_list
+    logger.info("Prompts summary (%s): count=%d", source, len(prompt_list))
+    if verbose:
+        for idx, prompt in enumerate(prompt_list):
+            prompt_str = str(prompt).replace("\r", " ").replace("\n", " ")
+            preview = prompt_str[:200]
+            last_chars = prompt_str[-200:] if len(prompt_str) > 200 else ""
+            logger.info("Prompt %d: %s ... (last 200 chars: %s)", idx, preview, last_chars)
 
 
 def pruning_ratio_type(value: str) -> int:
@@ -93,6 +121,7 @@ def parse_args():
         type=str,
         choices=[
             "text",
+            "text-agent",
             "text-chat",
             "text-to-image",
             "text-to-video",
@@ -106,7 +135,7 @@ def parse_args():
             "text-reranking",
         ],
         default="text",
-        help="Indicates the model type: text - for causal text generation, visual-text - for Visual Language Models with image inputs, "
+        help="Indicates the model type: text - for causal text generation, text-agent - for agent-style JSON messages/tools datasets, visual-text - for Visual Language Models with image inputs, "
         "visual-video-text - for Visual Language Models with video inputs, text-to-image - for image generation, "
         "image-to-image - for image generation based on image and prompt, image-inpainting - for image generation based on image, mask and prompt, "
         "text-to-video - for video generation, text-reranking - for reranking a list of texts based on relevance to query, "
@@ -127,6 +156,7 @@ def parse_args():
         default=None,
         help="Name of the dataset with prompts. The interface for dataset is load_dataset from datasets library."
         " Please provide this argument in format path,name (for example wikitext,wikitext-2-v1)."
+        " Local .json/.jsonl files are also supported for chat messages datasets (records with messages/tools)."
         " If None then internal list of prompts will be used.",
     )
     parser.add_argument(
@@ -392,24 +422,39 @@ def check_args(args):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
 
 
-def load_prompts(args):
+def load_prompts(args, tokenizer=None):
     if args.dataset is None:
         return None
-    split = "validation"
+
+    dataset_split = "validation"
     if args.split is not None:
-        split = args.split
-    if "," in args.dataset:
-        path_name = args.dataset.split(",")
-        path = path_name[0]
-        name = path_name[1]
-    else:
-        path = args.dataset
+        dataset_split = args.split
+
+    path, separator, name = args.dataset.partition(",")
+    if not separator:
         name = None
-    data = load_dataset(path=path, name=name, split=split)
+    data = load_dataset(path=path, name=name, split=dataset_split)
 
     res = data[args.dataset_field]
-    res = {"prompts": list(res)}
-    return res
+    prompts = {"prompts": list(res)}
+    _log_prompts_summary(prompts, f"dataset:{path}:{dataset_split}", verbose=args.verbose)
+    return prompts
+
+
+def load_agent_dataset(args):
+    if args.dataset is None:
+        dataset_name = "messages_long.jsonl" if args.long_prompt else "messages_short.jsonl"
+        resolved_path = resolve_json_dataset_path(dataset_name)
+    else:
+        if not is_json_dataset(args.dataset):
+            raise ValueError("text-agent model type requires --dataset to be a .json/.jsonl file")
+        resolved_path = resolve_json_dataset_path(args.dataset)
+
+    data = read_json_dataset(resolved_path)
+    if args.num_samples is not None:
+        data = data[: args.num_samples]
+    logger.info("Agent dataset summary (json:%s): count=%d", resolved_path, len(data))
+    return data
 
 
 def load_tokenizer(args):
@@ -778,10 +823,10 @@ def create_evaluator(base_model, args):
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
-        prompts = load_prompts(args)
 
         if task == "text":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
+            prompts = load_prompts(args, tokenizer=tokenizer)
 
             if args.genai:
                 gen_answer_fn = genai_gen_text
@@ -814,7 +859,33 @@ def create_evaluator(base_model, args):
                     if args.assistant_confidence_threshold is not None else 0.0
                 ),
             )
+        elif task == "text-agent":
+            tokenizer = load_tokenizer(args)
+            dataset_records = load_agent_dataset(args)
+
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=dataset_records,
+                tokenizer=tokenizer,
+                similarity_model_id=args.data_encoder,
+                max_new_tokens=args.max_new_tokens,
+                num_samples=args.num_samples,
+                gen_answer_fn=None,
+                empty_adapters=args.empty_adapters,
+                num_assistant_tokens=(
+                    int(args.num_assistant_tokens)
+                    if args.num_assistant_tokens is not None else 0
+                ),
+                assistant_confidence_threshold=(
+                    float(args.assistant_confidence_threshold)
+                    if args.assistant_confidence_threshold is not None else 0.0
+                ),
+                is_genai_backend=args.genai,
+                omit_chat_template=args.omit_chat_template,
+            )
         elif task == "text-to-image":
+            prompts = load_prompts(args)
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -828,6 +899,7 @@ def create_evaluator(base_model, args):
                 seed=args.seed,
             )
         elif task == "text-to-video":
+            prompts = load_prompts(args)
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -852,6 +924,7 @@ def create_evaluator(base_model, args):
                 vocoder_path=args.vocoder_path,
             )
         elif task == "visual-text" or task == "visual-video-text":
+            prompts = load_prompts(args)
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
             if config and is_model_with_automatic_crop(config) and args.hf:
@@ -1237,7 +1310,8 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
+        if args.model_type in ["text", "text-agent", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
+
             print_text_results(evaluator)
         elif (
             "text-to-image" in args.model_type

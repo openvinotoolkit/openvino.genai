@@ -307,3 +307,55 @@ def parquet_generate_tables(self, files, *args, **kwargs):
 def disable_diffusers_model_progress_bar(model):
     if hasattr(model, "set_progress_bar_config"):
         model.set_progress_bar_config(disable=True)
+
+def is_json_dataset(dataset: str) -> bool:
+    """Check if the dataset path has a .json or .jsonl extension."""
+    if dataset is None:
+        return False
+    return dataset.lower().endswith((".json", ".jsonl"))
+
+
+def resolve_json_dataset_path(dataset_path: str) -> str:
+    """Resolve JSON dataset path, checking local filesystem first, then whowhatbench.prompts resources."""
+    if os.path.exists(dataset_path):
+        logger.info(f"JSON dataset found at local path: {dataset_path}")
+        return dataset_path
+
+    from importlib.resources import files
+    resource_path = files('whowhatbench.prompts').joinpath(dataset_path)
+    if resource_path.is_file():
+        logger.info(f"JSON dataset found in whowhatbench.prompts resources: {resource_path}")
+        return str(resource_path)
+
+    logger.error(f"JSON dataset file '{dataset_path}' not found in local filesystem or whowhatbench.prompts resources")
+    raise FileNotFoundError(
+        f"JSON dataset file '{dataset_path}' was not found as a local file or in whowhatbench.prompts resources"
+    )
+
+
+def read_json_dataset(dataset_path: str):
+    """Read JSON dataset from file. Supports both JSON array and JSONL (line-delimited JSON) formats."""
+    logger.info(f"Reading JSON dataset from: {dataset_path}")
+    with open(dataset_path, "r", encoding="utf-8") as input_file:
+        content = input_file.read()
+
+    # Try parsing as a standard JSON array first
+    try:
+        items = json.loads(content)
+        if not isinstance(items, list):
+            raise ValueError("Top-level JSON value is not an array")
+        logger.info(f"Loaded {len(items)} records from JSON dataset")
+        return items
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Fall back to JSONL (line-delimited JSON)
+    items = []
+    for line in content.splitlines():
+        line = line.strip()
+        if line:
+            items.append(json.loads(line))
+    logger.info(f"Loaded {len(items)} records from JSON dataset")
+    return items
+
+

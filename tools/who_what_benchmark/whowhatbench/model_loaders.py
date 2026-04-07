@@ -42,7 +42,10 @@ disable_progress_bar()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-PYTORCH_MODEL_DTYPE_KWARG = {"torch_dtype": torch.float32}
+if Version(__version__) >= Version("4.56"):
+    PYTORCH_MODEL_DTYPE_KWARG = {"dtype": torch.float32}
+else:
+    PYTORCH_MODEL_DTYPE_KWARG = {"torch_dtype": torch.float32}
 
 
 def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=False):
@@ -189,27 +192,28 @@ def load_text_llamacpp_pipeline(model_dir):
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {**PYTORCH_MODEL_DTYPE_KWARG}
+    is_cpu = not torch.cuda.is_available or device.lower() == "cpu"
     trust_remote_code = False
+    config = None
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
-    else:
-        try:
-            config = AutoConfig.from_pretrained(model_id)
-        except Exception:
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-            trust_remote_code = True
-        # MoE weights of gpt_oss models post-trained with MXFP4 quantization
-        # they are dequantized with torch.bfloat16 https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/integrations/mxfp4.py#L104
-        # forcing the model to any other type will cause a type mismatch error
-        # https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/gpt_oss/modeling_gpt_oss.py#L117
-        if getattr(config, "model_type", None) == "gpt_oss":
-            model_kwargs["torch_dtype"] = "auto"
+    if is_cpu:
+        if not kwargs.get('gguf_file'):
+            try:
+                config = AutoConfig.from_pretrained(model_id)
+            except Exception:
+                config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+                trust_remote_code = True
 
-    if not torch.cuda.is_available or device.lower() == "cpu":
+            # MoE weights of gpt_oss models post-trained with MXFP4 quantization
+            # are dequantized with bfloat16 in Transformers integration code.
+            # Keep automatic dtype selection here to avoid dtype mismatches during load.
+            if getattr(config, "model_type", None) == "gpt_oss":
+                model_kwargs["torch_dtype"] = "auto"
+
         is_gptq = False
         is_awq = False
         if not kwargs.get('gguf_file'):
-
             if getattr(config, "quantization_config", None):
                 is_gptq = config.quantization_config["quant_method"] == "gptq"
                 is_awq = config.quantization_config["quant_method"] == "awq"
@@ -229,6 +233,12 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
 
     if kwargs.get("adapters") is not None:
         model = apply_peft_adapters(model, kwargs["adapters"], kwargs.get("alphas", None))
+
+    if is_cpu and getattr(getattr(model, "config", None), "model_type", None) == "gpt_oss":
+        logger.info("Casting GPT-OSS HF model to float32 on CPU to avoid MoE dtype mismatches")
+        model = model.float()
+        if getattr(model, "config", None) is not None:
+            model.config.torch_dtype = torch.float32
 
     model.eval()
     return model
@@ -885,7 +895,7 @@ def load_model(
     else:
         ov_options = {}
 
-    if model_type == "text" or model_type == "text-chat":
+    if model_type == "text" or model_type == "text-chat" or model_type == "text-agent":
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(
