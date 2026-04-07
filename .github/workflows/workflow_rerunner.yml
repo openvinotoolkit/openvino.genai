@@ -79,11 +79,12 @@ jobs:
       - name: Install deps
         working-directory: ${{ github.workspace }}/.github/scripts/workflow_rerun
         run: |
-          python -m pip install --upgrade pip
-          python -m pip --version
+          python3 --version
+          python3 -m pip install --upgrade pip
+          python3 -m pip --version
           pip3 --version
-          python -m pip index versions requests
-          python -m pip install -r requirements.txt
+          python3 -m pip index versions requests
+          python3 -m pip install -r requirements.txt
           pip3 install -r requirements.txt
 
       - name: Test Rerunner (Tests)
