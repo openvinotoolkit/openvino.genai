@@ -47,6 +47,14 @@ tools:
 timeout-minutes: 10
 
 steps:
+  - name: Checkout repository
+    uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    with:
+      persist-credentials: false
+  - name: Setup Python
+    uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+    with:
+      python-version: "3.12"
   - name: Install Python requirements for CI Doctor
     run: pip install -r .github/scripts/ci-doctor/requirements.txt
 
@@ -56,6 +64,34 @@ steps:
       REPOSITORY: ${{ github.repository }}
       RUN_ID: ${{ github.event.workflow_run.id || github.event.inputs.run_id }}
     run: python3 .github/scripts/ci-doctor/ci_doctor_prepare.py -r "$REPOSITORY" --run-id "$RUN_ID"
+
+  - name: Get investigated run's head SHA
+    if: github.event_name == 'workflow_dispatch'
+    id: get-head-sha
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPOSITORY: ${{ github.repository }}
+      RUN_ID: ${{ github.event.inputs.run_id }}
+    run: |
+      HEAD_SHA=$(python3 -c "
+      import os, re
+      from github import Github, Auth
+      run_id = os.environ['RUN_ID']
+      if not re.fullmatch(r'[0-9]+', run_id):
+          raise SystemExit('RUN_ID must be numeric')
+      gh = Github(auth=Auth.Token(os.environ['GITHUB_TOKEN']))
+      run = gh.get_repo(os.environ['REPOSITORY']).get_workflow_run(int(run_id))
+      sha = run.head_sha
+      print(sha)
+      ")
+      echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+  - name: Checkout investigated run's commit
+    if: github.event_name == 'workflow_dispatch'
+    uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+    with:
+      ref: ${{ steps.get-head-sha.outputs.head_sha }}
+      persist-credentials: false
 
 source: githubnext/agentics/workflows/ci-doctor.md@0aa94a6e40aeaf131118476bc6a07e55c4ceb147
 ---

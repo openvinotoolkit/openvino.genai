@@ -566,7 +566,7 @@ jobs:
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
-    needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
@@ -585,10 +585,18 @@ jobs:
             cmd: 'python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 360
-          - name: 'LLM & VLM'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py ./tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py --override-ini cache_dir=/mount/caches/pytest/'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
-            timeout: 180
+          - name: 'LLM'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py --override-ini cache_dir=/mount/caches/pytest/'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
+            timeout: 90
+          - name: 'VLM (match_optimum_with_resolutions)'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "test_vlm_pipeline_match_optimum_with_resolutions" --override-ini cache_dir=/mount/caches/pytest/'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 90
+          - name: 'VLM'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions" --override-ini cache_dir=/mount/caches/pytest/'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 90
           - name: 'Video Generation'
             cmd: 'python -m pytest -v ./tests/python_tests/test_video_generation.py --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).video_generation.test }}
@@ -651,6 +659,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
 
     steps:
       - name: Clone openvino.genai
@@ -664,7 +673,7 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*,genai_tests_Release}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -875,12 +884,27 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt;${{ env.SRC_DIR }}/tools/llm_bench/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
+      - name: Convert models for cache types gtests
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
+        run: |
+          while IFS=',' read -r model_id _rest; do
+            [[ -z "${model_id}" || "${model_id}" =~ ^[[:space:]]*# ]] && continue
+            model_name="${model_id##*/}"
+            model_dir="${{ env.HF_HOME }}/ov_test_models/${model_name}"
+            if [[ ! -f "${model_dir}/openvino_model.xml" ]]; then
+              optimum-cli export openvino -m "${model_id}" --task text-generation-with-past "${model_dir}"
+            fi
+          done < "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
+
       - name: gtests unit tests
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
           ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="-AddSecondInputTest.*"
+        env:
+          TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
+          CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
 
       - name: Test Continuous Batching Tools
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
@@ -982,7 +1006,7 @@ jobs:
 
   genai_xgrammar_off_tests:
     name: Build & Test when ENABLE_XGRAMMAR=OFF
-    needs: [smart_ci, openvino_download, genai_build_wheels]
+    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheels]
     timeout-minutes: 45
     defaults:
       run:
@@ -999,6 +1023,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build_xgrammar
+      EXTENSION_LIB_PATH: ${{ github.workspace }}/ov/tests
 
     steps:
       - name: Clone openvino.genai
@@ -1010,7 +1035,7 @@ jobs:
       - name: Download Build Artifacts
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_tests_Release}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
