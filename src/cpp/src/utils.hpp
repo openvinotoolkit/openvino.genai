@@ -8,6 +8,7 @@
 #include <utility>
 #include <cstdint>
 
+#include "openvino/genai/extensions.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
@@ -105,6 +106,7 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
 const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
+const std::string EXTENSIONS_ARG_NAME = "extensions";
 
 template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
@@ -329,6 +331,31 @@ SchedulerConfig get_latency_oriented_scheduler_config();
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested = false);
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);
+
+/**
+ * @brief Extracts the "extensions" key from the provided properties map and returns the corresponding
+ * list of extensions.
+ *
+ * The "extensions" entry, if present, is expected to be an ov::Any containing a
+ * std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>, where each element is either:
+ *   - a std::filesystem::path pointing to an extension library file, or
+ *   - a std::shared_ptr<ov::Extension> representing an already constructed OpenVINO extension.
+ *
+ * @param properties Properties map that may contain the "extensions" key with a vector of extension specifications.
+ * @return An ExtensionList object representing the extracted extensions.
+ */
+ExtensionList extract_extensions(ov::AnyMap& properties);
+
+/**
+ * @brief Extracts extensions from properties and registers them in the shared ov::Core instance.
+ *
+ * Supported extension item types are:
+ *   - std::filesystem::path to an extension library, and
+ *   - std::shared_ptr<ov::Extension> for an already constructed extension object.
+ *
+ * @param properties Properties map that may contain the "extensions" key.
+ */
+void extract_extensions_to_core(ov::AnyMap& properties);
 
 void clear_false_prompt_lookup_from_config(ov::AnyMap& properties);
 
