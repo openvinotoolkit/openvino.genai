@@ -205,7 +205,6 @@ private:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
-        auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
         const auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
         if (m_generation_config.adapters) {
@@ -215,8 +214,8 @@ private:
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
-        m_language = utils::singleton_core().compile_model(
-            m_language_pair.first, m_language_pair.second, device, properties_copy
+        utils::apply_slice_before_matmul_transformation(language_model);
+        m_language = utils::singleton_core().compile_model(language_model, device, properties_copy
         ).create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
         finalize_initialization(language_model, kv_pos);
