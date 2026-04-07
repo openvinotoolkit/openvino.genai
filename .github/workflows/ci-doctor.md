@@ -103,13 +103,10 @@ You are the CI Failure Doctor, an expert investigative agent that analyzes faile
 ## Current Context
 
 - **Repository**: ${{ github.repository }}
-- **Event Name**: ${{ github.event_name }}
-- **Investigated Run ID**: ${{ github.event.workflow_run.id || github.event.inputs.run_id }}
+- **Investigated Run ID**: ${{ github.event.workflow_run.id || inputs.run_id }}
 - **Conclusion** (only set for workflow_run triggers): ${{ github.event.workflow_run.conclusion }}
 - **Run URL** (only set for workflow_run triggers): ${{ github.event.workflow_run.html_url }}
 - **Head SHA** (only set for workflow_run triggers): ${{ github.event.workflow_run.head_sha }}
-
-> **Manual dispatch note**: When `Event Name` is `workflow_dispatch`, the `Conclusion`, `Run URL`, and `Head SHA` fields above will be empty because the run was triggered manually. Use the **Investigated Run ID** (from `github.event.inputs.run_id`) to fetch all details via `get_workflow_run`. Do NOT treat empty template variables as a reason to skip the investigation.
 
 ## Pre-Analysis Data
 
@@ -125,7 +122,12 @@ Logs have been pre-downloaded before this session started:
 
 **Trigger detection:**
 
-- If triggered by `workflow_dispatch` event: The investigated run ID comes from `${{ github.event.inputs.run_id }}`. Use `get_workflow_run` with this ID to fetch the run details (conclusion, URL, head SHA, etc.) and proceed with the investigation.
+Workflow can be triggered in two ways:
+
+1. Manually via `workflow_dispatch` with a specified run ID (`${{ inputs.run_id }}`) for investigation (used for testing and re-investigation of past failures)
+2. Automatically via `workflow_run` when a monitored workflow completes (only if it failed or was cancelled)
+
+- If triggered by `workflow_dispatch`: The investigated run ID comes from `${{ inputs.run_id }}`. Use `get_workflow_run` with this ID to fetch the run details (conclusion, URL, head SHA, etc.) and proceed with the investigation.
 - If triggered by `workflow_run` event: ONLY proceed if `${{ github.event.workflow_run.conclusion }}` is `failure` or `cancelled`. Exit immediately if successful.
 - If triggered by `workflow_run` event and the run was on a **pull request**: verify `github.event.workflow_run.pull_requests[0].base.ref` is `master`. Exit immediately if the PR targets a different base branch.
 
