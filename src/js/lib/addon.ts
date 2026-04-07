@@ -203,11 +203,52 @@ export interface VLMPipeline {
   getGenerationConfig(): GenerationConfig;
 }
 
+export type { VideoGenerationPerfMetrics } from "./perfMetrics.js";
+import type { VideoGenerationPerfMetrics } from "./perfMetrics.js";
+
+export type VideoGenerationConfig = {
+  negative_prompt?: string;
+  height?: number;
+  width?: number;
+  num_frames?: number;
+  num_inference_steps?: number;
+  guidance_scale?: number;
+  frame_rate?: number;
+  num_videos_per_prompt?: number;
+  max_sequence_length?: number;
+  guidance_rescale?: number;
+};
+
+export type Text2VideoGenerateOptions = VideoGenerationConfig;
+
+export type Text2VideoResult = {
+  video: Tensor;
+  perfMetrics: VideoGenerationPerfMetrics;
+};
+
+export interface Text2VideoPipeline {
+  new (): Text2VideoPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: Record<string, unknown>,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    prompt: string,
+    options: Text2VideoGenerateOptions,
+    callback: (err: Error | null, result: Text2VideoResult) => void,
+  ): void;
+  getGenerationConfig(): VideoGenerationConfig;
+  setGenerationConfig(config: VideoGenerationConfig): void;
+}
+
 interface OpenVINOGenAIAddon {
   TextRerankPipeline: TextRerankPipeline;
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
+  Text2VideoPipeline: Text2VideoPipeline;
   WhisperPipeline: WhisperPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
@@ -242,6 +283,7 @@ export const {
   TextRerankPipeline,
   LLMPipeline,
   VLMPipeline,
+  Text2VideoPipeline,
   WhisperPipeline,
   ChatHistory,
   Tokenizer,

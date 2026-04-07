@@ -3,6 +3,7 @@
 
 import { LLMPipeline as LLM } from "./pipelines/llmPipeline.js";
 import { VLMPipeline as VLM } from "./pipelines/vlmPipeline.js";
+import { Text2VideoPipeline as Text2Video } from "./pipelines/text2VideoPipeline.js";
 import { TextEmbeddingPipeline as Embedding } from "./pipelines/textEmbeddingPipeline.js";
 import {
   TextRerankPipeline as TextRerank,
@@ -64,6 +65,17 @@ class PipelineFactory {
     return pipeline;
   }
 
+  static async Text2VideoPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: Record<string, unknown> = {},
+  ) {
+    const pipeline = new Text2Video(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
   static async WhisperPipeline(
     modelPath: string,
     device: string = "CPU",
@@ -79,6 +91,7 @@ class PipelineFactory {
 export const {
   LLMPipeline,
   VLMPipeline,
+  Text2VideoPipeline,
   TextEmbeddingPipeline,
   TextRerankPipeline,
   WhisperPipeline,
@@ -86,6 +99,12 @@ export const {
 export { DecodedResults, VLMDecodedResults, WhisperDecodedResults } from "./decodedResults.js";
 export type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
 export { PerfMetrics, VLMPerfMetrics, WhisperPerfMetrics } from "./perfMetrics.js";
+export type {
+  VideoGenerationConfig,
+  Text2VideoGenerateOptions,
+  VideoGenerationPerfMetrics,
+  Text2VideoResult,
+} from "./pipelines/text2VideoPipeline.js";
 export * from "./utils.js";
 export * from "./addon.js";
 export type { TokenizedInputs, EncodeOptions, DecodeOptions } from "./tokenizer.js";

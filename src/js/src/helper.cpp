@@ -1054,6 +1054,124 @@ Napi::Value cpp_to_js<ov::genai::TokenizedInputs, Napi::Value>(const Napi::Env& 
 }
 
 template <>
+ov::genai::VideoGenerationConfig js_to_cpp<ov::genai::VideoGenerationConfig>(const Napi::Env& env,
+                                                                              const Napi::Value& value) {
+    ov::genai::VideoGenerationConfig config;
+    OPENVINO_ASSERT(value.IsObject(), "VideoGenerationConfig must be a JS object");
+    auto obj = value.As<Napi::Object>();
+
+    if (obj.Has("negative_prompt") && !obj.Get("negative_prompt").IsUndefined()) {
+        config.negative_prompt = js_to_cpp<std::string>(env, obj.Get("negative_prompt"));
+    }
+    if (obj.Has("guidance_scale") && !obj.Get("guidance_scale").IsUndefined()) {
+        config.guidance_scale = obj.Get("guidance_scale").As<Napi::Number>().FloatValue();
+    }
+    if (obj.Has("height") && !obj.Get("height").IsUndefined()) {
+        config.height = js_to_cpp<int64_t>(env, obj.Get("height"));
+    }
+    if (obj.Has("width") && !obj.Get("width").IsUndefined()) {
+        config.width = js_to_cpp<int64_t>(env, obj.Get("width"));
+    }
+    if (obj.Has("num_inference_steps") && !obj.Get("num_inference_steps").IsUndefined()) {
+        config.num_inference_steps = js_to_cpp<int64_t>(env, obj.Get("num_inference_steps"));
+    }
+    if (obj.Has("num_videos_per_prompt") && !obj.Get("num_videos_per_prompt").IsUndefined()) {
+        config.num_videos_per_prompt =
+            static_cast<size_t>(obj.Get("num_videos_per_prompt").As<Napi::Number>().Int64Value());
+    }
+    if (obj.Has("num_frames") && !obj.Get("num_frames").IsUndefined()) {
+        config.num_frames = static_cast<size_t>(obj.Get("num_frames").As<Napi::Number>().Int64Value());
+    }
+    if (obj.Has("max_sequence_length") && !obj.Get("max_sequence_length").IsUndefined()) {
+        config.max_sequence_length = obj.Get("max_sequence_length").As<Napi::Number>().Int32Value();
+    }
+    if (obj.Has("guidance_rescale") && !obj.Get("guidance_rescale").IsUndefined()) {
+        config.guidance_rescale = obj.Get("guidance_rescale").As<Napi::Number>().FloatValue();
+    }
+    if (obj.Has("frame_rate") && !obj.Get("frame_rate").IsUndefined()) {
+        config.frame_rate = obj.Get("frame_rate").As<Napi::Number>().FloatValue();
+    }
+
+    return config;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::VideoGenerationConfig, Napi::Value>(const Napi::Env& env,
+                                                                     const ov::genai::VideoGenerationConfig& config) {
+    auto config_obj = Napi::Object::New(env);
+    config_obj.Set("guidance_scale", Napi::Number::New(env, config.guidance_scale));
+    config_obj.Set("height", Napi::Number::New(env, config.height));
+    config_obj.Set("width", Napi::Number::New(env, config.width));
+    config_obj.Set("num_inference_steps", Napi::Number::New(env, config.num_inference_steps));
+    config_obj.Set("num_videos_per_prompt", Napi::Number::New(env, static_cast<double>(config.num_videos_per_prompt)));
+    config_obj.Set("num_frames", Napi::Number::New(env, static_cast<double>(config.num_frames)));
+    config_obj.Set("max_sequence_length", Napi::Number::New(env, config.max_sequence_length));
+
+    if (config.negative_prompt.has_value()) {
+        config_obj.Set("negative_prompt", Napi::String::New(env, config.negative_prompt.value()));
+    }
+    if (config.guidance_rescale.has_value()) {
+        config_obj.Set("guidance_rescale", Napi::Number::New(env, config.guidance_rescale.value()));
+    }
+    if (config.frame_rate.has_value()) {
+        config_obj.Set("frame_rate", Napi::Number::New(env, config.frame_rate.value()));
+    }
+
+    return config_obj;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::VideoGenerationPerfMetrics, Napi::Value>(const Napi::Env& env,
+                                                                          const ov::genai::VideoGenerationPerfMetrics& perf) {
+    auto perf_obj = Napi::Object::New(env);
+    auto& mutable_perf = const_cast<ov::genai::VideoGenerationPerfMetrics&>(perf);
+
+    perf_obj.Set("loadTime", Napi::Number::New(env, mutable_perf.get_load_time()));
+    perf_obj.Set("generateDuration", Napi::Number::New(env, mutable_perf.get_generate_duration()));
+
+    auto iter_dur = mutable_perf.get_iteration_duration();
+    auto iter_obj = Napi::Object::New(env);
+    iter_obj.Set("mean", Napi::Number::New(env, iter_dur.mean));
+    iter_obj.Set("std", Napi::Number::New(env, iter_dur.std));
+    perf_obj.Set("iterationDuration", iter_obj);
+
+    auto encoder_durations = mutable_perf.get_text_encoder_infer_duration();
+    auto encoder_obj = Napi::Object::New(env);
+    for (const auto& [name, duration] : encoder_durations) {
+        encoder_obj.Set(name, Napi::Number::New(env, duration));
+    }
+    perf_obj.Set("encoderInferenceDuration", encoder_obj);
+
+    auto unet_dur = mutable_perf.get_unet_infer_duration();
+    auto unet_obj = Napi::Object::New(env);
+    unet_obj.Set("mean", Napi::Number::New(env, unet_dur.mean));
+    unet_obj.Set("std", Napi::Number::New(env, unet_dur.std));
+    perf_obj.Set("unetInferDuration", unet_obj);
+
+    auto trans_dur = mutable_perf.get_transformer_infer_duration();
+    auto trans_obj = Napi::Object::New(env);
+    trans_obj.Set("mean", Napi::Number::New(env, trans_dur.mean));
+    trans_obj.Set("std", Napi::Number::New(env, trans_dur.std));
+    perf_obj.Set("transformerInferDuration", trans_obj);
+
+    perf_obj.Set("vaeEncoderInferDuration",
+                 Napi::Number::New(env, mutable_perf.get_vae_encoder_infer_duration()));
+    perf_obj.Set("vaeDecoderInferDuration",
+                 Napi::Number::New(env, mutable_perf.get_vae_decoder_infer_duration()));
+
+    return perf_obj;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::VideoGenerationResult, Napi::Value>(const Napi::Env& env,
+                                                                      const ov::genai::VideoGenerationResult& result) {
+    auto result_obj = Napi::Object::New(env);
+    result_obj.Set("video", cpp_to_js<ov::Tensor, Napi::Value>(env, result.video));
+    result_obj.Set("perfMetrics", cpp_to_js<ov::genai::VideoGenerationPerfMetrics, Napi::Value>(env, result.performance_stat));
+    return result_obj;
+}
+
+template <>
 Napi::Value cpp_to_js<ov::genai::StructuredOutputConfig, Napi::Value>(const Napi::Env& env,
                                                                       const ov::genai::StructuredOutputConfig& config) {
     Napi::Object obj = Napi::Object::New(env);
