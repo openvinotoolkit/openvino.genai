@@ -111,7 +111,7 @@ public:
 
     bool is_cancelled();
 
-    void stop();
+    void stop(GenerationFinishReason finish_reason = GenerationFinishReason::NONE);
 
     void cancel();
 

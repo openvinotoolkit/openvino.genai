@@ -663,7 +663,7 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
         return;
     }
     if (streaming_status == StreamingStatus::TOOL_CALL_STOP) {
-        handle->stop();
+        handle->stop(GenerationFinishReason::TOOL_CALL);
         return;
     }
 

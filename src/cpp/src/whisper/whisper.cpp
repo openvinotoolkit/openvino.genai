@@ -68,8 +68,11 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
 
         auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
-        if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-            streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
+        if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
+            handle->cancel();
+        } else if (streaming_status == ov::genai::StreamingStatus::STOP ||
+                   streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+            handle->stop();
         }
     };
 

@@ -12,6 +12,7 @@ namespace ov::genai {
 class GenerationStream {
     std::mutex m_mutex;
     GenerationStatus m_status = GenerationStatus::RUNNING;
+    GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     SynchronizedQueue<GenerationOutputs> m_output_queue;
 
 public:
@@ -46,9 +47,15 @@ public:
         return m_status;
     }
 
-    void stop() {
+    GenerationFinishReason get_finish_reason() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_finish_reason;
+    }
+
+    void stop(GenerationFinishReason finish_reason = GenerationFinishReason::NONE) {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_status = GenerationStatus::STOP;
+        m_finish_reason = finish_reason;
     }
 
     void cancel() {

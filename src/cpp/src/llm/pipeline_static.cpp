@@ -69,8 +69,12 @@ void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_p
     if (streamer_ptr && handle->can_read()) {
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
         auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
-        if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-            streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
+        if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+            handle->stop(ov::genai::GenerationFinishReason::TOOL_CALL);
+        } else if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
+            handle->cancel();
+        } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
+            handle->stop();
         }
     }
 }
@@ -363,6 +367,9 @@ EncodedResults StatefulLLMPipeline::generate(
     results.tokens[0] = sequence->get_generated_ids();
     results.scores[0] = sequence->get_cumulative_log_prob();
     results.finish_reasons[0] = sequence->get_finish_reason();
+    if (results.finish_reasons[0] == GenerationFinishReason::NONE && sequence_group->handle_stopped()) {
+        results.finish_reasons[0] = sequence_group->get_generation_stream()->get_finish_reason();
+    }
     m_chat_generation_finish_status = sequence_group->get_generation_stream()->get_status();
     m_sampler.clear_request_info(sequence_group->get_request_id());
 
