@@ -237,7 +237,7 @@ public:
             )
         } {
         auto language_model_path = models_dir / "openvino_language_model.xml";
-        auto properties_copy = gguf_filtered_properties;
+        auto properties_copy = properties;
         auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         initialize_from_model_and_dir(language_model, models_dir, device, properties);
     }
