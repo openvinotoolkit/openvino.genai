@@ -20,14 +20,15 @@ add_library(stb_image INTERFACE)
 target_include_directories(stb_image INTERFACE ${stb_SOURCE_DIR})
 
 # VLM Pipeline Sample
-add_executable(vlm_pipeline_c vlm_pipeline.c load_image.c)
+add_executable(vlm_pipeline_c vlm_pipeline.c load_image.c ${CMAKE_CURRENT_SOURCE_DIR}/../common/json_utils.c)
 
 # Specifies that the source file should be compiled as a C source file
-set_source_files_properties(vlm_pipeline.c load_image.c PROPERTIES LANGUAGE C)
+set_source_files_properties(vlm_pipeline.c load_image.c ${CMAKE_CURRENT_SOURCE_DIR}/../common/json_utils.c PROPERTIES LANGUAGE C)
 
 target_include_directories(vlm_pipeline_c PRIVATE
     ${CMAKE_SOURCE_DIR}/src/c/include
     ${stb_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common
 )
 
 target_link_libraries(vlm_pipeline_c PRIVATE openvino::genai::c stb_image)
