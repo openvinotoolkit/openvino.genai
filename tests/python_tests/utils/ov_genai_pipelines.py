@@ -152,24 +152,24 @@ def create_ov_vlm_pipeline(
     enable_save_ov_model: bool | None = None,
 ):
     if ov_config is None:
-        ov_config = get_default_llm_properties()
+        ov_config = get_default_llm_properties().copy()
+    else:
+        ov_config = ov_config.copy()
 
     if scheduler_config is None:
         scheduler_config = SchedulerConfig()
 
+    if enable_save_ov_model is not None:
+        ov_config["enable_save_ov_model"] = enable_save_ov_model
+
     if pipeline_type == PipelineType.AUTO:
-        return VLMPipeline(models_path, device, ov_config)
+        return VLMPipeline(models_path, device, **ov_config)
     elif pipeline_type == PipelineType.STATEFUL:
-        if enable_save_ov_model is not None:
-            ov_config["enable_save_ov_model"] = enable_save_ov_model
-        return VLMPipeline(models_path, device, ov_config, ATTENTION_BACKEND="SDPA")
+        return VLMPipeline(models_path, device, **ov_config, ATTENTION_BACKEND="SDPA")
     elif pipeline_type == PipelineType.PAGED_ATTENTION:
-        if enable_save_ov_model is not None:
-            ov_config["enable_save_ov_model"] = enable_save_ov_model
-        return VLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA")
+        return VLMPipeline(models_path, device, **ov_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA")
     else:
         raise Exception(f"Unsupported VLM pipeline type: {pipeline_type}")
-
 
 def create_ov_cb_pipeline(
     models_path: Path,
