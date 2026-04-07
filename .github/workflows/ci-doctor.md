@@ -131,15 +131,12 @@ Logs have been pre-downloaded before this session started:
 
 ### Phase 1: Initial Triage
 
-1. **Resolve the investigated run**:
-   - If `${{ github.event_name }}` is `workflow_dispatch`: call `get_workflow_run` with run ID `${{ github.event.inputs.run_id }}` to fetch conclusion, URL, head SHA, etc.
-   - If `${{ github.event_name }}` is `workflow_run`: use the pre-populated context variables.
+1. **Get Workflow Details**: Call `get_workflow_run` with the **Investigated Run ID** to fetch the full run object (conclusion, URL, head SHA, jobs, etc.). Use this data for all subsequent steps.
 2. **Verify Failure**: Check that the investigated run's conclusion is `failure` or `cancelled`
    - **If the workflow was successful**: Call the `noop` tool with message "CI workflow completed successfully - no investigation needed" and **stop immediately**. Do not proceed with any further analysis.
    - **If the workflow failed or was cancelled**: Proceed with the investigation steps below.
-3. **Get Workflow Details**: Use `get_workflow_run` to get full details of the failed run
-4. **List Jobs**: Use `list_workflow_jobs` to identify which specific jobs failed
-5. **Quick Assessment**: Determine if this is a new type of failure or a recurring pattern
+3. **List Jobs**: Use `list_workflow_jobs` to identify which specific jobs failed
+4. **Quick Assessment**: Determine if this is a new type of failure or a recurring pattern
 
 ### Phase 2: Deep Log Analysis
 
