@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 #include "openvino/genai/json_container.hpp"
+#include "openvino/genai/streamer_base.hpp"
 
 namespace ov {
 namespace genai {
@@ -187,7 +188,7 @@ public:
 
     virtual ~IncrementalParser() = default;
 
-    virtual bool is_stop_invoked() const { return false; }
+    virtual StreamingStatus get_status() const { return StreamingStatus::RUNNING; }
 };
 
 /**

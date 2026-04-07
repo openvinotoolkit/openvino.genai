@@ -456,6 +456,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
     results.scores.resize(1u);
     results.scores[0] = 0u;
     results.tokens.resize(1u);
+    results.finish_reasons.resize(1u, GenerationFinishReason::NONE);
 
     ov::Tensor position_ids{ov::element::i64, input_ids.get_shape()};
     utils::initialize_position_ids(position_ids, attention_mask);

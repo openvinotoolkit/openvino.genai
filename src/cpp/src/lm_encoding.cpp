@@ -318,6 +318,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
             finish_info.results.tokens.push_back(sequence->get_generated_ids());
             finish_info.results.scores.push_back(score);
+            finish_info.results.finish_reasons.push_back(sequence->get_finish_reason());
         }
     }
 

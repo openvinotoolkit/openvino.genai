@@ -75,6 +75,7 @@ public:
             decoded.texts.push_back(result.texts.at(idx));
             decoded.scores.push_back(result.scores.at(idx));
         }
+        decoded.finish_reasons = result.finish_reasons;
         return decoded;
     }
 
@@ -113,6 +114,7 @@ public:
             decoded.texts.push_back(result.texts.at(idx));
             decoded.scores.push_back(result.scores.at(idx));
         }
+        decoded.finish_reasons = result.finish_reasons;
         return decoded;
     }
 

@@ -185,6 +185,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
     results.tokens.push_back(sequence->get_generated_ids());
     results.scores.push_back(score);
+    results.finish_reasons.push_back(sequence->get_finish_reason());
 
     sampler.clear_request_info(sequence_group->get_request_id());
 

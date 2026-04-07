@@ -599,6 +599,7 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     EncodedResults results;
     results.tokens = {m_target->get_generated_tokens()};
     results.scores = {0.0f};
+    results.finish_reasons = {GenerationFinishReason::NONE};
 
     generate_timer.end();
 

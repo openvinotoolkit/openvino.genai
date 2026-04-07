@@ -10,6 +10,7 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
@@ -46,6 +47,7 @@ class EncodedResults {
 public:
     std::vector<std::vector<int64_t>> tokens;
     std::vector<float> scores;
+    std::vector<GenerationFinishReason> finish_reasons;
     PerfMetrics perf_metrics;
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
 };
@@ -66,6 +68,7 @@ class DecodedResults {
 public:
     std::vector<std::string> texts;
     std::vector<float> scores;
+    std::vector<GenerationFinishReason> finish_reasons;
     PerfMetrics perf_metrics;
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
     std::vector<JsonContainer> parsed;

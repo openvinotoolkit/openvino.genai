@@ -158,7 +158,10 @@ DecodedResults StatefulLLMPipeline::generate(
     auto encoded_results = generate(tokenized_input, config, streamer);
 
     auto decode_start_time =  std::chrono::steady_clock::now();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    DecodedResults decoded_results;
+    decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
+    decoded_results.scores = encoded_results.scores;
+    decoded_results.finish_reasons = encoded_results.finish_reasons;
     auto decode_stop_time =  std::chrono::steady_clock::now();
 
     if (m_is_chat_conversation) {
@@ -205,7 +208,10 @@ DecodedResults StatefulLLMPipeline::generate(
     auto encoded_results = generate(tokenized_inputs, config, streamer);
 
     auto decode_start_time =  std::chrono::steady_clock::now();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    DecodedResults decoded_results;
+    decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
+    decoded_results.scores = encoded_results.scores;
+    decoded_results.finish_reasons = encoded_results.finish_reasons;
     auto decode_stop_time =  std::chrono::steady_clock::now();
     
     // Update perf metrics
@@ -266,6 +272,7 @@ EncodedResults StatefulLLMPipeline::generate(
     results.scores.resize(1u);
     results.scores[0] = 0u;
     results.tokens.resize(1u);
+    results.finish_reasons.resize(1u, GenerationFinishReason::NONE);
 
     // NB: Check if there is enough space in KV-cache to process input prompt
     auto prompt_len = input_ids.get_size();
@@ -355,6 +362,7 @@ EncodedResults StatefulLLMPipeline::generate(
     auto sequence = sequence_group->get_finished_sequences().front();
     results.tokens[0] = sequence->get_generated_ids();
     results.scores[0] = sequence->get_cumulative_log_prob();
+    results.finish_reasons[0] = sequence->get_finish_reason();
     m_chat_generation_finish_status = sequence_group->get_generation_stream()->get_status();
     m_sampler.clear_request_info(sequence_group->get_request_id());
 
