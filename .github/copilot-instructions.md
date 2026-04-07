@@ -25,7 +25,7 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 3. Avoid copies: large data structures (like tensors) must be passed by reference or moved, not copied.
 4. Pass non-fundamental values by `const` reference wherever possible.
 5. Exceptions: use `OPENVINO_ASSERT(condition, ...)` for checks instead of `if` + `OPENVINO_THROW(...)` or `throw`.
-6. Avoid comments for OPENVINO_ASSERT() and OPENVINO_THROW() as the message should be self-explanatory.
+6. Avoid redundant inline comments next to `OPENVINO_ASSERT()` and `OPENVINO_THROW()`; the error message argument must be clear and self-explanatory.
 7. Formatting & Safety:
    - No `using namespace std;`.
    - No `auto` for primitive types where it obscures readability.
@@ -58,4 +58,4 @@ When performing a code review on a Pull Request, additionally follow this protoc
 6. Documentation: ensure that any new public APIs have docstrings in C++ headers and Python bindings. Ensure that new public APIs have documentation updated in /site.
 7. Test Coverage: ensure that new features or changes have corresponding tests.
 8. Verify that the result of every newly introduced function is used in at least one call site except for `void` functions.
-9. Helper scripts shouldn't be commited.
+9. Helper scripts shouldn't be committed.
