@@ -935,6 +935,8 @@ class ExtendedPerfMetrics:
         ...
     def get_ttft(self) -> MeanStdPair:
         ...
+    def get_sampling_duration(self) -> MeanStdPair:
+        ...
     @property
     def raw_metrics(self) -> RawPerfMetrics:
         ...
@@ -2245,6 +2247,8 @@ class PerfMetrics:
         ...
     def get_ttft(self) -> MeanStdPair:
         ...
+    def get_sampling_duration(self) -> MeanStdPair:
+        ...
     @property
     def raw_metrics(self) -> RawPerfMetrics:
         ...
@@ -2391,6 +2395,9 @@ class RawPerfMetrics:
         ...
     @property
     def tokenization_durations(self) -> list[float]:
+        ...
+    @property
+    def sampling_durations(self) -> list[float]:
         ...
 class ReasoningIncrementalParser(IncrementalParser):
     def __init__(self, expect_open_tag: bool = True, keep_original_content: bool = True, open_tag: str = '<think>', close_tag: str = '</think>') -> None:
@@ -4808,6 +4815,10 @@ class WhisperPerfMetrics(PerfMetrics):
         ...
     def get_word_level_timestamps_processing_duration(self) -> MeanStdPair:
         ...
+    def get_encode_inference_duration(self) -> MeanStdPair:
+        ...
+    def get_decode_inference_duration(self) -> MeanStdPair:
+        ...
     @property
     def whisper_raw_metrics(self) -> WhisperRawPerfMetrics:
         ...
@@ -4970,14 +4981,20 @@ class WhisperPipeline:
         ...
 class WhisperRawPerfMetrics:
     """
-    
+
         Structure with whisper specific raw performance metrics for each generation before any statistics are calculated.
-    
+
         :param features_extraction_durations: Duration for each features extraction call.
         :type features_extraction_durations: list[MicroSeconds]
-    
+
         :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
         :type word_level_timestamps_processing_durations: list[MicroSeconds]
+
+        :param encode_inference_durations: Duration for each encoder inference call.
+        :type encode_inference_durations: list[MicroSeconds]
+
+        :param decode_inference_durations: Duration for each decoder inference call.
+        :type decode_inference_durations: list[MicroSeconds]
     """
     def __init__(self) -> None:
         ...
@@ -4986,6 +5003,12 @@ class WhisperRawPerfMetrics:
         ...
     @property
     def word_level_timestamps_processing_durations(self) -> list[float]:
+        ...
+    @property
+    def encode_inference_durations(self) -> list[float]:
+        ...
+    @property
+    def decode_inference_durations(self) -> list[float]:
         ...
 class WhisperWordTiming:
     """
