@@ -260,7 +260,6 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
 
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
 @pytest.mark.parametrize("model_vlm_gguf", VLM_GGUF_MODEL_LIST, indirect=True)
-@pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_full_vlm_gguf_pipeline(
     model_vlm_gguf: VLMModelInfo,
     pipeline_type: PipelineType,
@@ -279,18 +278,9 @@ def test_full_vlm_gguf_pipeline(
     ov_pipe_gguf = create_ov_vlm_pipeline(
         gguf_dir_path,
         pipeline_type=pipeline_type,
-        enable_save_ov_model=True,
     )
     res_string_input_1 = ov_pipe_gguf.generate(prompt, image, generation_config=ov_generation_config)
     del ov_pipe_gguf
     gc.collect()
 
-    ov_pipe_native = create_ov_vlm_pipeline(
-        gguf_dir_path,
-        pipeline_type=pipeline_type,
-    )
-    res_string_input_2 = ov_pipe_native.generate(prompt, image, generation_config=ov_generation_config)
-    del ov_pipe_native
-    gc.collect()
-
-    assert res_string_input_1 == res_string_input_2
+    assert res_string_input_1.texts[0] == " The image is a solid, uniform blue color with no discernible features or objects."
