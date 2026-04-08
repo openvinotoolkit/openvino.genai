@@ -777,7 +777,7 @@ VLMPipeline::VLMPipeline(
     if (utils::is_gguf_bundle_dir(models_dir)) {
         OPENVINO_ASSERT(device != "NPU", "VLMPipeline initialization from GGUF directory isn't supported for NPU device");
 
-        auto models_map = utils::read_models(models_dir, gguf_filtered_properties);
+        auto models_map = utils::read_models(models_dir, properties);
         auto tokenizer_path = utils::find_llm_gguf_in_dir(models_dir);
         auto tokenizer = Tokenizer(tokenizer_path, {});
         auto generation_config = utils::from_config_json_if_exists<GenerationConfig>(models_dir, "generation_config.json");
