@@ -167,6 +167,9 @@ private:
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
             npu_auto_default_properties(device_properties);
         } else {
+            // Slice-before-matmul rewrites LM logits to be produced only for the last token.
+            // After this transformation, the non-NPU path returns logits with seq_len == 1,
+            // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
             utils::apply_slice_before_matmul_transformation(language_model);
             compiled_language_model = utils::singleton_core().compile_model(language_model, device, lm_properties);
         }
@@ -214,6 +217,9 @@ private:
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
+        // Slice-before-matmul rewrites LM logits to be produced only for the last token.
+        // After this transformation, default path returns logits with seq_len == 1,
+        // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
         utils::apply_slice_before_matmul_transformation(language_model);
         m_language = utils::singleton_core().compile_model(language_model, device, properties_copy
         ).create_infer_request();
