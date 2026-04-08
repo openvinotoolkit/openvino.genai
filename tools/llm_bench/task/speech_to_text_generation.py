@@ -55,21 +55,20 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
         tm_infer_list = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
 
-        # Collect Whisper-specific per-stage metrics (all values in ms)
         wm = perf_metrics.whisper_raw_metrics
-        enc_durations = wm.encode_inference_durations  # list[float] ms per chunk
-        dec_durations = wm.decode_inference_durations  # list[float] ms per decode call
-        smp_durations = perf_metrics.raw_metrics.sampling_durations  # list[float] ms per token
+        enc_ms = [v / 1000 for v in wm.encode_inference_durations]
+        dec_ms = [v / 1000 for v in wm.decode_inference_durations]
+        smp_ms = [v / 1000 for v in perf_metrics.raw_metrics.sampling_durations]
         whisper_genai_metrics = {
             "tokenization_ms": perf_metrics.get_tokenization_duration().mean,
             "features_extraction_ms": perf_metrics.get_features_extraction_duration().mean,
-            "encode_first_ms": enc_durations[0] if len(enc_durations) > 0 else -1,
-            "decode_first_ms": dec_durations[0] if len(dec_durations) > 0 else -1,
-            "sampling_first_ms": smp_durations[0] if len(smp_durations) > 0 else -1,
-            "decode_other_avg_ms": (sum(dec_durations[1:]) / len(dec_durations[1:])) if len(dec_durations) > 1 else -1,
-            "sampling_other_avg_ms": (sum(smp_durations[1:]) / len(smp_durations[1:]))
-            if len(smp_durations) > 1
-            else -1,
+            "encode_first_ms": enc_ms[0] if enc_ms else -1,
+            "decode_first_ms": dec_ms[0] if dec_ms else -1,
+            "sampling_first_ms": smp_ms[0] if smp_ms else -1,
+            "decode_second_ms": dec_ms[1] if len(dec_ms) > 1 else -1,
+            "sampling_second_ms": smp_ms[1] if len(smp_ms) > 1 else -1,
+            "decode_other_avg_ms": (sum(dec_ms[2:]) / len(dec_ms[2:])) if len(dec_ms) > 2 else -1,
+            "sampling_other_avg_ms": (sum(smp_ms[2:]) / len(smp_ms[2:])) if len(smp_ms) > 2 else -1,
             "detokenization_ms": perf_metrics.get_detokenization_duration().mean,
         }
         result_text = result_text.texts[0]
