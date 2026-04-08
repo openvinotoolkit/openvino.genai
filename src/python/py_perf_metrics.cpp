@@ -207,6 +207,9 @@ void init_perf_metrics(py::module_& m) {
         })
         .def_property_readonly("grammar_compile_times", [](const RawPerfMetrics &rw) {
             return common_utils::get_ms(rw, &RawPerfMetrics::m_grammar_compile_times);
+        })
+        .def_property_readonly("sampling_durations", [](const RawPerfMetrics &rw) {
+            return common_utils::get_ms(rw, &RawPerfMetrics::m_sampling_durations);
         });
 
     py::class_<SummaryStats>(m, "SummaryStats")
@@ -243,6 +246,7 @@ void init_perf_metrics(py::module_& m) {
         .def("get_tokenization_duration", &PerfMetrics::get_tokenization_duration)
         .def("get_detokenization_duration", &PerfMetrics::get_detokenization_duration)
         .def("get_chat_template_duration", &PerfMetrics::get_chat_template_duration)
+        .def("get_sampling_duration", &PerfMetrics::get_sampling_duration)
         .def("__add__", &PerfMetrics::operator+, py::arg("metrics"))
         .def("__iadd__", &PerfMetrics::operator+=, py::arg("right"))
         .def_readonly("raw_metrics", &PerfMetrics::raw_metrics);
@@ -261,6 +265,7 @@ void init_perf_metrics(py::module_& m) {
         .def("get_tokenization_duration", &ExtendedPerfMetrics::get_tokenization_duration)
         .def("get_detokenization_duration", &ExtendedPerfMetrics::get_detokenization_duration)
         .def("get_chat_template_duration", &ExtendedPerfMetrics::get_chat_template_duration)
+        .def("get_sampling_duration", &ExtendedPerfMetrics::get_sampling_duration)
         .def("__add__", &ExtendedPerfMetrics::operator+, py::arg("metrics"))
         .def("__iadd__", &ExtendedPerfMetrics::operator+=, py::arg("right"))
         .def_readonly("raw_metrics", &ExtendedPerfMetrics::raw_metrics);
