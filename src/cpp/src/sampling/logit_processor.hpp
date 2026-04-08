@@ -33,6 +33,17 @@ public:
             m_unique_prompt_token_ids->insert(input_id);
         }
 
+        // When logprobs > 0: compute the full-vocab log-partition function and copy all logits
+        // to m_vector BEFORE any transform touches m_data.  This guarantees m_data holds the
+        // original model logits throughout, so the sampler can read m_data[token_index] to get
+        // a correct raw log-probability:  log p_i = m_data[token_index] − m_full_vocab_log_sum_exp.
+        // All subsequent transforms (penalties, TopKFilter, Temperature, TopPFilter) operate on
+        // m_vector only once it is initialised, leaving m_data pristine.
+        if (sampling_params.is_multinomial() && sampling_params.logprobs > 0) {
+            m_logit_transformers.push_back(std::make_shared<LogitTransformers::FullVocabLogSumExpTransform>());
+            m_logit_transformers.push_back(std::make_shared<LogitTransformers::CopyLogitsToVectorTransform>());
+        }
+
         if (sampling_params.min_new_tokens > 0) {
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::EOSPenaltyTransform>(
                 sampling_params.stop_token_ids, sampling_params.min_new_tokens));
@@ -71,19 +82,18 @@ public:
                 //
                 // top_p: by the time it runs, m_vector holds normalised probabilities from temperature transform
 
-                if (sampling_params.top_k > 0 && sampling_params.top_k < std::numeric_limits<size_t>::max()) {
-                    m_logit_transformers.push_back(std::make_shared<LogitTransformers::TopKFilter>(sampling_params.top_k));
-                }
-                // Defer expf to the draw step (fused CDF scan) only when BOTH:
-                //   1. top_k > 0: TopKFilter will produce a K-element m_vector kept
-                //      in heap order (not fully sorted), so the K candidates are
-                //      compact and adjacent in memory, making the CDF early-exit
-                //      scan effective.
-                //   2. top_p == 1.0: TopPFilter will NOT run (needs normalised probs).
-                // In that case TemperatureLogitTransform is basically a simple scaler.
-                // Otherwise it applies expf as TopPFilter needs probabilities
                 const bool top_k_active = (sampling_params.top_k > 0 &&
                                            sampling_params.top_k < std::numeric_limits<size_t>::max());
+                if (top_k_active) {
+                    m_logit_transformers.push_back(std::make_shared<LogitTransformers::TopKFilter>(sampling_params.top_k));
+                }
+                // Defer expf to the draw step (fused CDF scan) only when BOTH conditions hold:
+                //   1. top_k > 0: TopKFilter already populated m_vector with K candidates
+                //      in arbitrary order (heap order on the fast path, nth_element order
+                //      on the logprobs path). Either way the K candidates are compact in memory.
+                //   2. top_p == 1.0: TopPFilter will NOT run (it requires normalised probs).
+                // When deferred, TemperatureLogitTransform only scales logits by 1/T;
+                // expf and CDF scan are fused in _multinomial_sample.
                 const bool defer_expf = top_k_active && (sampling_params.top_p == 1.0f);
                 m_logit_transformers.push_back(std::make_shared<LogitTransformers::TemperatureLogitTransform>(
                     sampling_params.temperature, defer_expf));
