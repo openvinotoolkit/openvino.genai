@@ -397,15 +397,14 @@ public:
         m_stop_token_ids(stop_token_ids), m_applicable_tensor_len(min_generated_tokens) {}
 
     void apply(Logits& logits) override {
-        // Since EOS penalty is applied early, the token vector is not initialized yet
-        // and we can assume element order match token ids — unless logprobs > 0, in which
-        // case CopyLogitsToVectorTransform has already initialised m_vector. Use the same
-        // rule: operate on whichever buffer is active so m_data stays pristine.
+        // EOS penalty runs before CopyLogitsToVectorTransform in the pipeline, so m_vector
+        // is not yet initialised.  Use the is_vector_initialized() check defensively.
+        // Set -inf, so stop token gets zero probability mass.
         for (auto stop_token_id: m_stop_token_ids) {
             if (logits.is_vector_initialized())
-                logits.m_vector[stop_token_id].m_log_prob = 0.f;
+                logits.m_vector[stop_token_id].m_log_prob = -std::numeric_limits<float>::infinity();
             else
-                logits.m_data[stop_token_id] = 0.f;
+                logits.m_data[stop_token_id] = -std::numeric_limits<float>::infinity();
         }
     }
 

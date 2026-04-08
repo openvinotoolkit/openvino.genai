@@ -550,8 +550,7 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
         OPENVINO_ASSERT(logits.is_vector_initialized(),
             "Internal error: m_defer_expf=true but m_vector not initialized. "
             "defer_expf requires top_k > 0 which always populates m_vector via TopKFilter.");
-        // m_vector holds K logits in arbitrary order (heap order on the fast path,
-        // nth_element order on the logprobs path) — _multinomial_sample does its own max scan.
+        // m_vector holds K logits in arbitrary heap order — _multinomial_sample does its own max scan.
         float max_val = logits.m_vector[0].m_log_prob;
         for (size_t i = 1; i < logits.m_size; ++i)
             if (logits.m_vector[i].m_log_prob > max_val)
@@ -583,9 +582,9 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
                 sum_run += weights[i];
                 if (sum_run > r) { sampled_idx = i; break; }
             }
-            // When m_full_vocab_log_sum_exp is set (logprobs > 0, top_k active), m_data is still
-            // the original raw logits (TopK/Temperature only wrote to m_vector in deferred mode).
-            // Return raw log-probability: log p_i = raw_logit_i - log(sum_all exp(raw_logit_j)).
+            // When m_full_vocab_log_sum_exp is set (logprobs > 0), m_data holds the
+            // original raw model logits (grammar/penalties only wrote to m_vector).
+            // Return raw log-probability: log p_i = raw_logit_i − log(Σ exp(raw_logit_j)).
             const float log_prob = fallback_uniform
                 ? std::log(1.0f / static_cast<float>(logits.m_size))
                 : (!std::isnan(logits.m_full_vocab_log_sum_exp)
@@ -632,9 +631,9 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
                     if (sum_cum > r) { sampled_idx = i; break; }
                 }
                 auto logit = logits.m_vector[sampled_idx];
-                // When m_full_vocab_log_sum_exp is set (logprobs > 0, top_k active), m_data still
-                // holds original raw logits (TopK/Temperature only wrote to m_vector).
-                // Return raw log-probability: log p_i = raw_logit_i - log(sum_all exp(raw_logit_j)).
+                // When m_full_vocab_log_sum_exp is set (logprobs > 0), m_data holds the
+                // original raw model logits (grammar/penalties only wrote to m_vector).
+                // Return raw log-probability: log p_i = raw_logit_i − log(Σ exp(raw_logit_j)).
                 logit.m_log_prob = !std::isnan(logits.m_full_vocab_log_sum_exp)
                     ? logits.m_data[logit.m_index] - logits.m_full_vocab_log_sum_exp
                     : std::log(logit.m_log_prob);
