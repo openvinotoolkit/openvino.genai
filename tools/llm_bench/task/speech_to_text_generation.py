@@ -54,8 +54,27 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         ).tolist()
         tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
         tm_infer_list = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
+
+        # Collect Whisper-specific per-stage metrics (all values in ms)
+        wm = perf_metrics.whisper_raw_metrics
+        enc_durations = wm.encode_inference_durations  # list[float] ms per chunk
+        dec_durations = wm.decode_inference_durations  # list[float] ms per decode call
+        smp_durations = perf_metrics.raw_metrics.sampling_durations  # list[float] ms per token
+        whisper_genai_metrics = {
+            "tokenization_ms": perf_metrics.get_tokenization_duration().mean,
+            "features_extraction_ms": perf_metrics.get_features_extraction_duration().mean,
+            "encode_first_ms": enc_durations[0] if len(enc_durations) > 0 else -1,
+            "decode_first_ms": dec_durations[0] if len(dec_durations) > 0 else -1,
+            "sampling_first_ms": smp_durations[0] if len(smp_durations) > 0 else -1,
+            "decode_other_avg_ms": (sum(dec_durations[1:]) / len(dec_durations[1:])) if len(dec_durations) > 1 else -1,
+            "sampling_other_avg_ms": (sum(smp_durations[1:]) / len(smp_durations[1:]))
+            if len(smp_durations) > 1
+            else -1,
+            "detokenization_ms": perf_metrics.get_detokenization_duration().mean,
+        }
         result_text = result_text.texts[0]
     else:
+        whisper_genai_metrics = None
         additional_args = model_utils.setup_gen_config_use_custom_args()
         start = time.perf_counter()
         result_text = pipe(
@@ -99,7 +118,8 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         tms_infer=tm_infer_list,
         warm_up=(num == 0),
         prompt_idx=speech_id,
-        whisper=whisper_hook
+        whisper=whisper_hook,
+        whisper_genai=whisper_genai_metrics,
     )
     if num > 0:
         prev_md5 = md5_list[num - 1][speech_id]
