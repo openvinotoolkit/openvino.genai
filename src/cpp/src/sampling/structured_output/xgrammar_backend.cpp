@@ -3,6 +3,9 @@
 
 #include "xgrammar_backend.hpp"
 #include "logger.hpp"
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <iostream>
 
 namespace ov {

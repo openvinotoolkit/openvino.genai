@@ -24,8 +24,8 @@ struct Logits {
     // Late initialized for top_p or top_k transforms
     std::vector<Token> m_vector;
     // Set by TemperatureLogitTransform when top_k > 0 AND top_p == 1.0.
-    // When true, m_vector contains K elements in arbitrary order (heap order on the fast path,
-    // nth_element order on the logprobs path) with either:
+    // When true, m_vector contains K elements in arbitrary heap order (same on both the
+    // fast path and the logprobs path — TopKFilter always uses heap selection) with either:
     //   - raw logits unchanged         (T == 1.0 — TemperatureLogitTransform is a no-op)
     //   - logits scaled by 1/T         (T != 1.0 — pure multiply, no max subtraction)
     // _multinomial_sample owns the max scan and fuses expf() with the CDF scan.
@@ -263,8 +263,8 @@ public:
             // Standard path: compute softmax(logits / T) in place.
             // TopPFilter follows and requires normalised probabilities.
             if (logits.is_vector_initialized()) {
-                // m_vector holds K raw logits in arbitrary order — heap order (fast path, logprobs == 0)
-                // or nth_element order (logprobs > 0 path). Temperature does its own max scan so order
+                // m_vector holds K raw logits in arbitrary heap order (TopKFilter always uses
+                // heap selection on both paths). Temperature does its own max scan so order
                 // does not matter.
                 float max_logit = logits.m_vector[0].m_log_prob;
                 for (size_t i = 1; i < logits.m_size; i++)
@@ -397,9 +397,10 @@ public:
         m_stop_token_ids(stop_token_ids), m_applicable_tensor_len(min_generated_tokens) {}
 
     void apply(Logits& logits) override {
-        // EOS penalty runs before CopyLogitsToVectorTransform in the pipeline, so m_vector
-        // is not yet initialised.  Use the is_vector_initialized() check defensively.
-        // Set -inf, so stop token gets zero probability mass.
+        // When logprobs > 0 (multinomial), CopyLogitsToVectorTransform runs before this
+        // transform, so m_vector is already initialised.  Otherwise (fast path / greedy)
+        // m_vector is empty and we write directly to m_data.
+        // Set -inf so the stop token gets exactly zero probability mass.
         for (auto stop_token_id: m_stop_token_ids) {
             if (logits.is_vector_initialized())
                 logits.m_vector[stop_token_id].m_log_prob = -std::numeric_limits<float>::infinity();

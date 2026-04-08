@@ -505,16 +505,22 @@ Logits Sampler::_get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t to
 }
 
 Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
-    // For greedy sampling we do not expect sorting or shrinking considered tokens
-    // so we can operate directly on the data buffer
+    // For greedy sampling we do not expect sorting or shrinking considered tokens.
+    // When logprobs > 0, m_vector is initialized (penalties wrote there, m_data is pristine);
+    // scan m_vector so penalty effects influence token selection.
+    // Otherwise operate directly on m_data.
     size_t m = std::max(size_t(1), top_logprobs); // ensure m is at least 1
     std::vector<float> top_values(m, -std::numeric_limits<float>::infinity());
     std::vector<size_t> top_indexes(m, 0);
 
+    const bool use_vector = logits.is_vector_initialized();
+    auto value_at = [&](size_t i) { return use_vector ? logits.m_vector[i].m_log_prob : logits.m_data[i]; };
+    auto index_at = [&](size_t i) -> size_t { return use_vector ? static_cast<size_t>(logits.m_vector[i].m_index) : i; };
+
     for (size_t i = 0; i < logits.m_size; ++i) {
-        if (logits.m_data[i] > top_values.back()) {
-            top_values.back() = logits.m_data[i];
-            top_indexes.back() = i;
+        if (value_at(i) > top_values.back()) {
+            top_values.back() = value_at(i);
+            top_indexes.back() = index_at(i);
 
             for (size_t j = top_values.size() - 1; j > 0 && top_values[j] > top_values[j - 1]; --j) {
                 std::swap(top_values[j], top_values[j - 1]);
@@ -527,13 +533,18 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     float max_value = 0.0;
 
     if (top_logprobs) {
-        // apply log softmax to max value
-        max_value = top_values.front();
-        float log_sum = std::log(std::accumulate(
-            logits.m_data, logits.m_data + logits.m_size, 0.0f, [max_value](float accumulated, float to_add) {
-                return accumulated + std::exp(to_add - max_value);
-        }));
-        max_value = -log_sum;
+        if (!std::isnan(logits.m_full_vocab_log_sum_exp)) {
+            // Raw pre-penalty logprob: m_data is pristine (penalties wrote to m_vector).
+            max_value = logits.m_data[max_index] - logits.m_full_vocab_log_sum_exp;
+        } else {
+            // Post-penalty logprob: compute LSE over m_data (which penalties have modified).
+            max_value = top_values.front();
+            float log_sum = std::log(std::accumulate(
+                logits.m_data, logits.m_data + logits.m_size, 0.0f, [max_value](float accumulated, float to_add) {
+                    return accumulated + std::exp(to_add - max_value);
+            }));
+            max_value = -log_sum;
+        }
     }
 
     return Token(max_value, max_index);

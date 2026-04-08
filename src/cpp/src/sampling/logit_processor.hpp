@@ -39,7 +39,7 @@ public:
         //   log p_i = m_data[i] − m_full_vocab_log_sum_exp
         // All subsequent transforms (EOSPenalty, grammar, penalties, TopK/Temp/TopP) operate
         // on m_vector because is_vector_initialized() will be true from this point on.
-        if (sampling_params.is_multinomial() && sampling_params.logprobs > 0) {
+        if ((sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) && sampling_params.logprobs > 0) {
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::FullVocabLogSumExpTransform>());
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::CopyLogitsToVectorTransform>());
         }
