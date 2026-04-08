@@ -632,6 +632,11 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
                 }
             }
         } else {
+        // Sampling distributes r = total_weight * U(0,1), drawing from the conditional
+        // distribution p_i / total_weight.  The stored log-prob must reflect the same
+        // distribution: log(p_i / total_weight) = log(p_i) - log(total_weight).
+        // When total_weight == 1 (no TopP truncation) log_total_weight == 0, no-op.
+        const float log_total_weight = std::log(total_weight);
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
             const float r = total_weight * u(rng_engine);
             float sum_cum = 0.0f;
@@ -647,7 +652,7 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
                 // Return raw log-probability: log p_i = raw_logit_i − log(Σ exp(raw_logit_j)).
                 logit.m_log_prob = !std::isnan(logits.m_full_vocab_log_sum_exp)
                     ? logits.m_data[logit.m_index] - logits.m_full_vocab_log_sum_exp
-                    : std::log(logit.m_log_prob);
+                    : std::log(logit.m_log_prob) - log_total_weight;
                 out_tokens.push_back(logit);
             } else {
                 size_t sampled_idx = logits.m_size - 1;
@@ -655,7 +660,7 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
                     sum_cum += logits.m_data[i];
                     if (sum_cum > r) { sampled_idx = i; break; }
                 }
-                out_tokens.emplace_back(std::log(logits.m_data[sampled_idx]), sampled_idx);
+                out_tokens.emplace_back(std::log(logits.m_data[sampled_idx]) - log_total_weight, sampled_idx);
             }
         }
         }

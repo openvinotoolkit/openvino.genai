@@ -246,8 +246,10 @@ public:
         : m_temperature(temperature), m_defer_expf(defer_expf) {}
 
     void apply(Logits& logits) override {
-        if (m_defer_expf) {
-            // Deferred expf, only apply logits scaling at this moment
+        if (m_defer_expf && logits.is_vector_initialized()) {
+            // Deferred expf, only apply logits scaling at this moment.
+            // Guard on is_vector_initialized(): TopKFilter skips when top_k >= vocab_size,
+            // leaving m_vector empty. In that case fall through to the standard softmax path.
             if (m_temperature != 1.0f) {
                 const float scaling_factor = 1.0f / m_temperature;
                 if (logits.is_vector_initialized()) {
