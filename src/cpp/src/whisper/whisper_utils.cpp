@@ -69,10 +69,7 @@ void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
                                 size_t offset,
                                 std::vector<std::pair<size_t, size_t>>& ranges) {
     filter_non_segment_metrics(raw_metrics, offset, ranges);
-    // sampling durations are 1:1 with decode steps: same offset and ranges apply
     filter_by_ranges(raw_metrics.m_sampling_durations, offset, ranges);
-    // decode_inference_durations track every decoder call (including initial decode + decode_with_past)
-    // they are aligned with m_token_infer_durations, so the same offset/ranges apply
     filter_by_ranges(whisper_raw_metrics.decode_inference_durations, offset, ranges);
 }
 
