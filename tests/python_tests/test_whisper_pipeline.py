@@ -750,6 +750,9 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     assert perf_metrics.get_detokenization_duration().mean > 0
     assert perf_metrics.get_features_extraction_duration().mean > 0
     assert perf_metrics.get_word_level_timestamps_processing_duration().mean > 0
+    assert perf_metrics.get_encode_inference_duration().mean > 0
+    assert perf_metrics.get_decode_inference_duration().mean > 0
+    assert perf_metrics.get_sampling_duration().mean > 0
 
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     whisper_raw_metrics = perf_metrics.whisper_raw_metrics
@@ -766,6 +769,24 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     mean_dur, std_dur = perf_metrics.get_word_level_timestamps_processing_duration()
     assert np.allclose(mean_dur, np.mean(word_ts_raw_dur))
     assert np.allclose(std_dur, np.std(word_ts_raw_dur))
+
+    enc_raw_dur = np.array(whisper_raw_metrics.encode_inference_durations) / 1000
+    mean_dur, std_dur = perf_metrics.get_encode_inference_duration()
+    assert len(enc_raw_dur) > 0
+    assert np.allclose(mean_dur, np.mean(enc_raw_dur))
+    assert np.allclose(std_dur, np.std(enc_raw_dur))
+
+    dec_raw_dur = np.array(whisper_raw_metrics.decode_inference_durations) / 1000
+    mean_dur, std_dur = perf_metrics.get_decode_inference_duration()
+    assert len(dec_raw_dur) > 0
+    assert np.allclose(mean_dur, np.mean(dec_raw_dur))
+    assert np.allclose(std_dur, np.std(dec_raw_dur))
+
+    smp_raw_dur = np.array(perf_metrics.raw_metrics.sampling_durations) / 1000
+    mean_dur, std_dur = perf_metrics.get_sampling_duration()
+    assert len(smp_raw_dur) > 0
+    assert np.allclose(mean_dur, np.mean(smp_raw_dur))
+    assert np.allclose(std_dur, np.std(smp_raw_dur))
 
 
 @pytest.fixture(params=[
