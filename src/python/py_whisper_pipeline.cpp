@@ -209,6 +209,12 @@ auto raw_perf_metrics_docstring = R"(
 
     :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
     :type word_level_timestamps_processing_durations: list[MicroSeconds]
+
+    :param encode_inference_durations: Duration for each encoder inference call in milliseconds.
+    :type encode_inference_durations: list[float]
+
+    :param decode_inference_durations: Duration for each decoder inference call during token generation in milliseconds.
+    :type decode_inference_durations: list[float]
 )";
 
 auto perf_metrics_docstring = R"(
@@ -219,6 +225,12 @@ auto perf_metrics_docstring = R"(
 
     :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
     :type get_word_level_timestamps_processing_duration: MeanStdPair
+
+    :param get_encode_inference_duration: Returns mean and standard deviation of encoder inference duration in milliseconds.
+    :type get_encode_inference_duration: MeanStdPair
+
+    :param get_decode_inference_duration: Returns mean and standard deviation of decoder inference duration per token in milliseconds.
+    :type get_decode_inference_duration: MeanStdPair
 
     :param whisper_raw_metrics: Whisper specific raw metrics
     :type WhisperRawPerfMetrics:
