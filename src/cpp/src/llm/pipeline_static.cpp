@@ -302,13 +302,7 @@ EncodedResults StatefulLLMPipeline::generate(
     GenerationHandle handle = std::make_shared<GenerationHandleImpl>(
         sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters());
 
-    SamplerOutput sampler_output = [&] {
-        const auto sample_start = std::chrono::steady_clock::now();
-        auto out = m_sampler.sample({sequence_group}, logits);
-        raw_perf_counters.m_sampling_durations.emplace_back(
-            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
-        return out;
-    }();
+    SamplerOutput sampler_output = m_sampler.sample({sequence_group}, logits);
     stream_generated_tokens(streamer_ptr, handle);
 
     int64_t input_ids_data = -1;
