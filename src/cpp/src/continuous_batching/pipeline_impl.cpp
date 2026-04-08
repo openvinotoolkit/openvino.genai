@@ -222,6 +222,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
     m_sampler->set_seed(m_generation_config.rng_seed);
 
+    // Apply initial LoRA adapters to the infer request so that
+    // add_request + step() workflow uses the adapters specified at construction.
+    set_adapters(m_generation_config.adapters);
+
     // If eos_token_id was not provided, take value
     if (m_generation_config.eos_token_id == -1)
         m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
