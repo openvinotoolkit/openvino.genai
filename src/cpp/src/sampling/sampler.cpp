@@ -580,7 +580,7 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
             size_t sampled_idx = logits.m_size - 1;
             for (size_t i = 0; i < logits.m_size; ++i) {
                 sum_run += weights[i];
-                if (sum_run >= r) { sampled_idx = i; break; }
+                if (sum_run > r) { sampled_idx = i; break; }
             }
             const float log_prob = fallback_uniform
                 ? std::log(1.0f / static_cast<float>(logits.m_size))
@@ -623,7 +623,7 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
                 size_t sampled_idx = logits.m_size - 1;  // fallback for floating-point rounding
                 for (size_t i = 0; i < logits.m_size; ++i) {
                     sum_cum += logits.m_vector[i].m_log_prob;
-                    if (sum_cum >= r) { sampled_idx = i; break; }
+                    if (sum_cum > r) { sampled_idx = i; break; }
                 }
                 auto logit = logits.m_vector[sampled_idx];
                 logit.m_log_prob = std::log(logit.m_log_prob);
@@ -632,7 +632,7 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
                 size_t sampled_idx = logits.m_size - 1;
                 for (size_t i = 0; i < logits.m_size; ++i) {
                     sum_cum += logits.m_data[i];
-                    if (sum_cum >= r) { sampled_idx = i; break; }
+                    if (sum_cum > r) { sampled_idx = i; break; }
                 }
                 out_tokens.emplace_back(std::log(logits.m_data[sampled_idx]), sampled_idx);
             }
