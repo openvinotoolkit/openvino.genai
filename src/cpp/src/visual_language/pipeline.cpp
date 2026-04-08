@@ -805,7 +805,7 @@ VLMPipeline::VLMPipeline(
         }
     } else if (device == "NPU") {
         auto it = gguf_filtered_properties.find("scheduler_config");
-        OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
+        OPENVINO_ASSERT(it == gguf_filtered_properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, gguf_filtered_properties);
     } else {
         auto properties_copy = gguf_filtered_properties;
@@ -857,7 +857,7 @@ VLMPipeline::VLMPipeline(
     utils::clear_false_prompt_lookup_from_config(gguf_filtered_properties);
     if (device == "NPU") {
         auto it = gguf_filtered_properties.find("scheduler_config");
-        OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
+        OPENVINO_ASSERT(it == gguf_filtered_properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, gguf_filtered_properties, generation_config);
     } else {
         utils::extract_extensions_to_core(properties);
