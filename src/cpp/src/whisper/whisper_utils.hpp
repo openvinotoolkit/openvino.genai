@@ -13,6 +13,11 @@ namespace utils {
 
 void infer_with_perf_metrics(ov::InferRequest& request, ov::genai::RawPerfMetrics& raw_metrics);
 
+// Overload that also records the inference duration into an additional vector (e.g. whisper decode_inference_durations).
+void infer_with_perf_metrics(ov::InferRequest& request,
+                             ov::genai::RawPerfMetrics& raw_metrics,
+                             std::vector<ov::genai::MicroSeconds>& extra_durations);
+
 void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
                                 size_t offset,
                                 std::vector<std::pair<size_t, size_t>>& ranges);
