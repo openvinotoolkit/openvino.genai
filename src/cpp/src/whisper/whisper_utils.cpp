@@ -55,6 +55,27 @@ void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
     filter_by_ranges(raw_metrics.m_batch_sizes, offset, ranges);
 }
 
+void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
+                                ov::genai::WhisperRawPerfMetrics& whisper_raw_metrics,
+                                size_t offset,
+                                std::vector<std::pair<size_t, size_t>>& ranges) {
+    filter_non_segment_metrics(raw_metrics, offset, ranges);
+    filter_by_ranges(raw_metrics.m_sampling_durations, offset, ranges);
+    filter_by_ranges(whisper_raw_metrics.decode_inference_durations, offset, ranges);
+}
+
+void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
+                                ov::genai::WhisperRawPerfMetrics& whisper_raw_metrics,
+                                size_t offset,
+                                std::vector<std::pair<size_t, size_t>>& ranges) {
+    filter_non_segment_metrics(raw_metrics, offset, ranges);
+    // sampling durations are 1:1 with decode steps: same offset and ranges apply
+    filter_by_ranges(raw_metrics.m_sampling_durations, offset, ranges);
+    // decode_inference_durations track every decoder call (including initial decode + decode_with_past)
+    // they are aligned with m_token_infer_durations, so the same offset/ranges apply
+    filter_by_ranges(whisper_raw_metrics.decode_inference_durations, offset, ranges);
+}
+
 int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
     if (logits.get_shape()[0] <= batch_idx) {
         OPENVINO_THROW("logits batch size doesn't match the number of beams");
