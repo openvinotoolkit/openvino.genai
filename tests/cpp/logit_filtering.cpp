@@ -331,7 +331,11 @@ TEST_P(EOSPenaltyTransformTest, TransformResultEqualToReference) {
     ASSERT_FALSE(logits.is_vector_initialized());
     ASSERT_EQ(logits.m_size, EOSPenaltyTransformTestStruct::size); // penalty transform should not change buffer size
     for (size_t i = 0; i < logits.m_size; i++) {
-        EXPECT_NEAR(logits.m_data[i], test_struct.expected_output[i], 1e-6);
+        if (std::isinf(test_struct.expected_output[i])) {
+            EXPECT_EQ(logits.m_data[i], test_struct.expected_output[i]);
+        } else {
+            EXPECT_NEAR(logits.m_data[i], test_struct.expected_output[i], 1e-6);
+        }
     }
 }
 
@@ -340,12 +344,12 @@ const std::vector<EOSPenaltyTransformTestStruct> EOS_PENALTY_TRANSFORM_TEST_CASE
     EOSPenaltyTransformTestStruct{ // basic case, indices are applied, order is left as-is
         { 1 },
         { 1.0f, 2.0f, 3.0f },
-        { 1.0f, 0.0f, 3.0f },
+        { 1.0f, -std::numeric_limits<float>::infinity(), 3.0f },
     },
     EOSPenaltyTransformTestStruct{
         { 1, 0 },
         { 1.0f, 2.0f, 3.0f },
-        { 0.0f, 0.0f, 3.0f },
+        { -std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity(), 3.0f },
     },
 };
 
