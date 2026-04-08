@@ -426,7 +426,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         timer.start();
         const auto sample_start = std::chrono::steady_clock::now();
         sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled);
-        m_pipeline_metrics.sampling_duration = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start);
+        m_pipeline_metrics.sampling_duration =
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start);
         m_batch_size = sampler_output.num_generated_tokens;
         timer.end();
     }

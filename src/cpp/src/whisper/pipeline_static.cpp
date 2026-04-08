@@ -169,7 +169,8 @@ ov::Tensor decode(ov::Tensor& encoder_hidden_state,
     // NB: Fill decoder inputs
     encoder_hidden_state.copy_to(decoder.get_tensor("encoder_hidden_states"));
     set_decoder_input_ids(decoder, init_ids);
-    ov::genai::utils::infer_with_perf_metrics(decoder, raw_metrics, whisper_raw_metrics.decode_inference_durations);
+    ov::genai::utils::infer_with_perf_metrics(decoder, raw_metrics,
+                                              whisper_raw_metrics.decode_inference_durations);
     // NB: Processing here only non-empty tokens
     return ov::genai::utils::make_tensor_slice(decoder.get_tensor("logits"), 1, 0, init_ids.size());
 }
@@ -184,7 +185,8 @@ ov::Tensor decode_with_past(ov::InferRequest& decoder_with_past,
     OPENVINO_ASSERT(position_id >= 1);
     decoder_with_past.get_tensor("attention_mask").data<float>()[position_id - 1] = 0.0f;
 
-    ov::genai::utils::infer_with_perf_metrics(decoder_with_past, raw_metrics, whisper_raw_metrics.decode_inference_durations);
+    ov::genai::utils::infer_with_perf_metrics(decoder_with_past, raw_metrics,
+                                              whisper_raw_metrics.decode_inference_durations);
     return decoder_with_past.get_tensor("logits");
 }
 
@@ -1220,7 +1222,10 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                                                                   time_precision,
                                                                   chunk_time_offset);
 
-            ov::genai::utils::filter_non_segment_metrics(raw_metrics, perf_metrics.whisper_raw_metrics, output_tokens.size(), extracted_segments.segment_ranges);
+            ov::genai::utils::filter_non_segment_metrics(raw_metrics,
+                                                          perf_metrics.whisper_raw_metrics,
+                                                          output_tokens.size(),
+                                                          extracted_segments.segment_ranges);
 
             segments.insert(segments.end(), extracted_segments.segments.begin(), extracted_segments.segments.end());
 

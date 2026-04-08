@@ -217,7 +217,9 @@ PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
 
     // Concatenate sampling durations.
     auto& new_sampling_durations = res.raw_metrics.m_sampling_durations;
-    new_sampling_durations.insert(new_sampling_durations.end(), right.raw_metrics.m_sampling_durations.begin(), right.raw_metrics.m_sampling_durations.end());
+    new_sampling_durations.insert(new_sampling_durations.end(),
+                                  right.raw_metrics.m_sampling_durations.begin(),
+                                  right.raw_metrics.m_sampling_durations.end());
 
     // Concatenate structured output compilation times.
     auto& new_grammar_compile_times = res.raw_metrics.m_grammar_compile_times;
