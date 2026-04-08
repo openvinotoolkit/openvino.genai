@@ -486,7 +486,13 @@ ModelsMap read_models(const std::filesystem::path& models_dir, const ov::AnyMap&
 #ifdef ENABLE_GGUF
         ModelsMap models_map;
         for (const auto& gguf_model : gguf_models) {
-            merge_models_map(models_map, create_models_map_from_gguf(gguf_model, enable_save_ov_model));
+            auto partial = create_models_map_from_gguf(gguf_model, enable_save_ov_model);
+
+            if (partial.count("vision_embeddings_merger") && !partial.count("resampler")) {
+                partial["resampler"] = partial.at("vision_embeddings_merger");//fix pytest resampler bug
+            }
+
+            merge_models_map(models_map, partial);
         }
         return models_map;
 #else
