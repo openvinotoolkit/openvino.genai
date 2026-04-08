@@ -17,6 +17,7 @@ public:
         const StreamerVariant&,
         std::optional<std::vector<ov::Tensor>>,
         std::optional<std::vector<ov::Tensor>>,
+        const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>&,
         GenerateStrategy&);
 
     Eagle3DecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc, const std::vector<int>& hidden_layers_to_abstract);

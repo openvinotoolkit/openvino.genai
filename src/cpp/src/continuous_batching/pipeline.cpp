@@ -17,6 +17,7 @@
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "utils.hpp"
 #include "model_desc.hpp"
+#include "visual_language/chat_history_state.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "json_utils.hpp"
 
@@ -255,6 +256,10 @@ void ContinuousBatchingPipeline::set_config(const ov::genai::GenerationConfig& c
 
 PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
     return m_impl->get_metrics();
+}
+
+void ContinuousBatchingPipeline::initialize_chat_history_state(const ChatHistory& history) const {
+    ChatHistoryInternalState::get_or_create(history, m_impl->get_vision_registry());
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params) {

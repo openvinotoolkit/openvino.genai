@@ -160,10 +160,13 @@ public:
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
             m_generated_ids.pop_back();
-            if (m_type == SequenceGroupType::EMBEDDINGS) {
-                m_generated_ids_embeds.pop_back();
-                m_position_ids_list.pop_back();
-            }
+        }
+        if (m_type == SequenceGroupType::EMBEDDINGS) {
+            const size_t tokens_to_remove = static_cast<size_t>(n);
+            const size_t embeds_to_remove = std::min(tokens_to_remove, m_generated_ids_embeds.size());
+            const size_t position_ids_to_remove = std::min(tokens_to_remove, m_position_ids_list.size());
+            truncate_generated_ids_embeds(embeds_to_remove);
+            update_position_ids(position_ids_to_remove);
         }
     }
 

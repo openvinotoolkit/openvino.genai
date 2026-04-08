@@ -201,7 +201,6 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     for (const auto& checked_sequence : main_generated_requests) {
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
-        m_main_pipeline->update_embeddings(checked_sequence.first, update_result);
     }
 
     // finish draft request if the generation was completed
@@ -288,7 +287,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
     };
 
-    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, prompt_ids, strategy);
+    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, prompt_ids, lm_extra_inputs_list, strategy);
 }
 
 SpeculativeDecodingMetrics

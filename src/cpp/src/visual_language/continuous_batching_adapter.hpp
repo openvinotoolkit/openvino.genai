@@ -96,7 +96,7 @@ public:
     ) override {
         auto start_time = std::chrono::steady_clock::now();
         // Ensure chat history internal state is initialized for original history
-        ChatHistoryInternalState::get_or_create(history);
+        m_impl.initialize_chat_history_state(history);
         auto result = m_impl.generate({history}, {images}, {videos}, {std::move(generation_config)}, streamer)[0];
         auto stop_time = std::chrono::steady_clock::now();
 
