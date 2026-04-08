@@ -60,7 +60,7 @@ auto raw_perf_metrics_docstring = R"(
     :param grammar_compile_times: Time to compile the grammar in milliseconds.
     :type grammar_compile_times: list[float]
 
-    :param sampling_durations: Time spent in the sampler per sampling step in milliseconds. One entry per sampler.sample() call, parallel to token_infer_durations and m_batch_sizes.
+    :param sampling_durations: Time spent in the sampler per sampling step in microseconds. One entry per sampler.sample() call, parallel to token_infer_durations and m_batch_sizes.
     :type sampling_durations: list[float]
 )";
 
@@ -126,7 +126,7 @@ auto perf_metrics_docstring = R"(
     :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
     :type get_grammar_compile_time: SummaryStats
 
-    :param get_sampling_duration: Returns the mean and standard deviation of time spent in the sampler per token in milliseconds.
+    :param get_sampling_duration: Returns the mean and standard deviation of time spent in the sampler per sampling step in milliseconds.
     :type get_sampling_duration: MeanStdPair
 
     :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
