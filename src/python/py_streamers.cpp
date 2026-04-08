@@ -94,7 +94,8 @@ void init_streamers(py::module_& m) {
     py::enum_<ov::genai::StreamingStatus>(m, "StreamingStatus")
         .value("RUNNING", ov::genai::StreamingStatus::RUNNING)
         .value("CANCEL", ov::genai::StreamingStatus::CANCEL)
-        .value("STOP", ov::genai::StreamingStatus::STOP);
+        .value("STOP", ov::genai::StreamingStatus::STOP)
+        .value("TOOL_CALL_STOP", ov::genai::StreamingStatus::TOOL_CALL_STOP);
 
     auto streamer = py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase", streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())

@@ -104,6 +104,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
             return result_dicts;
         })
         .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
+        .def_readonly("finish_reasons", &DecodedResults::finish_reasons)
         .def_readonly("extended_perf_metrics", &DecodedResults::extended_perf_metrics)
         .def("__str__", [](const DecodedResults &dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);
@@ -122,6 +123,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def_readonly("tokens", &EncodedResults::tokens)
         .def_readonly("scores", &EncodedResults::scores)
         .def_readonly("perf_metrics", &EncodedResults::perf_metrics)
+        .def_readonly("finish_reasons", &EncodedResults::finish_reasons)
         .def_readonly("extended_perf_metrics", &EncodedResults::extended_perf_metrics);
 
     init_lora_adapter(m);
