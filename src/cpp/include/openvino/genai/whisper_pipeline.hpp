@@ -25,7 +25,11 @@ struct WhisperRawPerfMetrics {
     std::vector<MicroSeconds> word_level_timestamps_processing_durations;
     /** @brief Duration for each encoder inference call */
     std::vector<MicroSeconds> encode_inference_durations;
-    /** @brief Duration for each decoder inference call (initial decode + decode_with_past per token) */
+    /**
+     * @brief Duration for each decoder inference call during token generation.
+     * Includes the initial decode step and each decode_with_past step.
+     * Does not include auxiliary decoder calls such as language auto-detection.
+     */
     std::vector<MicroSeconds> decode_inference_durations;
 };
 
