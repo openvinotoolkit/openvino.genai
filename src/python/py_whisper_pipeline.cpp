@@ -210,10 +210,10 @@ auto raw_perf_metrics_docstring = R"(
     :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
     :type word_level_timestamps_processing_durations: list[MicroSeconds]
 
-    :param encode_inference_durations: Duration for each encoder inference call in milliseconds.
+    :param encode_inference_durations: Duration for each encoder inference call in microseconds.
     :type encode_inference_durations: list[float]
 
-    :param decode_inference_durations: Duration for each decoder inference call during token generation in milliseconds.
+    :param decode_inference_durations: Duration for each decoder inference call during token generation in microseconds.
     :type decode_inference_durations: list[float]
 )";
 

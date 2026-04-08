@@ -30,7 +30,7 @@ using MicroSeconds = std::chrono::duration<float, std::ratio<1, 1000000>>;
  * @param m_durations Total durations for each generate call in microseconds.
  * @param m_inference_durations Total inference duration for each generate call in microseconds.
  * @param m_grammar_compile_times Time to compile the grammar in microseconds.
- * @param m_sampling_durations Time spent in the sampler for each generated token in microseconds.
+ * @param m_sampling_durations Time spent in the sampler per sampling step in microseconds. One entry per sampler.sample() call, parallel to m_token_infer_durations and m_batch_sizes.
  */
 struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<MicroSeconds> generate_durations;
