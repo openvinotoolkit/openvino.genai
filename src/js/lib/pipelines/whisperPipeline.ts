@@ -59,10 +59,13 @@ export class WhisperPipeline {
   }
 
   /**
-   * Stream speech recognition chunks as an async iterator.
+   * Stream speech recognition results as an async iterator.
+   *
+   * For custom streaming control, use {@link generate} with a streamer callback instead.
+   *
    * @param rawSpeech - Audio samples as Float32Array or number[], normalized to ~[-1, 1], 16 kHz.
-   * @param options - Optional generation config (e.g. language, task, return_timestamps).
-   * @returns Async iterator yielding decoded text chunks.
+   * @param options - Optional generation config (e.g., language, task, return_timestamps).
+   * @returns Async iterator that yields decoded text chunks as strings.
    */
   stream(
     rawSpeech: RawSpeechInput,
@@ -148,9 +151,15 @@ export class WhisperPipeline {
   }
 
   /**
-   * Run speech recognition on raw audio samples.
+   * Run speech recognition with optional streaming.
+   *
+   * For simple streaming use cases, consider using {@link stream}, which provides
+   * a convenient async iterator interface.
+   *
    * @param rawSpeech - Audio samples as Float32Array or number[], normalized to ~[-1, 1], 16 kHz.
-   * @param options - Optional generation config and/or streamer callback.
+   * @param options - Optional parameters.
+   * @param options.generationConfig - Generation config (e.g., language, task, return_timestamps).
+   * @param options.streamer - Optional callback invoked for each decoded chunk.
    * @returns Decoded texts, scores, optional chunks with timestamps, and perf metrics.
    */
   async generate(
