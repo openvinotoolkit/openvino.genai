@@ -637,6 +637,22 @@ std::unique_ptr<CircularBufferQueue<ov::InferRequest>> create_vision_encoder_ire
 
     auto model = patch_preprocess_into_model(model_org, image_mean, image_scale);
     auto compiled_model = utils::singleton_core().compile_model(model, device, config);
+    std::cerr << "===== DEBUG patched vision model inputs =====" << std::endl;
+    for (const auto& input : model->inputs()) {
+        std::cerr << "model input any_name = " << input.get_any_name() << std::endl;
+        std::cerr << "tensor names = ";
+        for (const auto& n : input.get_names()) std::cerr << n << " ";
+        std::cerr << std::endl;
+    }
+
+    std::cerr << "===== DEBUG compiled vision model inputs =====" << std::endl;
+    for (const auto& input : compiled_model.inputs()) {
+        std::cerr << "compiled input any_name = " << input.get_any_name() << std::endl;
+        std::cerr << "tensor names = ";
+        for (const auto& n : input.get_names()) std::cerr << n << " ";
+        std::cerr << std::endl;
+    }
+
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     return std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -655,6 +671,10 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& model_di
                                            const ov::AnyMap properties)
     : VisionEncoder(model_dir, device, properties),
       use_ov_vision_preprocess(check_vision_preprocess_env()) {
+    std::cerr << "===== DEBUG VisionEncoderQwen2VL model_dir ctor =====" << std::endl;
+    std::cerr << "use_ov_vision_preprocess = " << use_ov_vision_preprocess << std::endl;
+    const char* env = std::getenv("VISION_PREPROCESS");
+    std::cerr << "VISION_PREPROCESS env = " << (env ? env : "<unset>") << std::endl;
     if (use_ov_vision_preprocess) {
         auto model_org = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
         m_ireq_queue_vision_encoder = create_vision_encoder_ireq(model_org, m_processor_config, device, properties);
@@ -667,6 +687,10 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
                                            const ov::AnyMap properties)
     : VisionEncoder(models_map, config_dir_path, device, properties),
       use_ov_vision_preprocess(check_vision_preprocess_env()) {
+    std::cerr << "===== DEBUG VisionEncoderQwen2VL models_map ctor =====" << std::endl;
+    std::cerr << "use_ov_vision_preprocess = " << use_ov_vision_preprocess << std::endl;
+    const char* env = std::getenv("VISION_PREPROCESS");
+    std::cerr << "VISION_PREPROCESS env = " << (env ? env : "<unset>") << std::endl;
     if (use_ov_vision_preprocess) {
         const auto& [vision_encoder_model, vision_encoder_weights] =
             utils::get_model_weights_pair(models_map, "vision_embeddings");
@@ -684,7 +708,14 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov:
                                                            size_t frame_id) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
-
+    std::cerr << "===== DEBUG encoder request inputs =====" << std::endl;
+    for (const auto& port : encoder.get_compiled_model().inputs()) {
+        std::cerr << "request input any_name = " << port.get_any_name() << std::endl;
+        std::cerr << "tensor names = ";
+        for (const auto& n : port.get_names()) std::cerr << n << " ";
+        std::cerr << std::endl;
+    }
+                                                        
     // The default value of temporal_patch_size for original QWen2-VL and QWen2.5-VL is 2.
     // If images.size() == 1: means processing image.
     // If images.size() == 2: means processing video.
@@ -745,7 +776,7 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov:
     };
     ov::Tensor flattened_patches(transposed_patches.get_element_type(), flattened_patches_shape);
     std::memcpy(flattened_patches.data(), transposed_patches.data(), transposed_patches.get_byte_size());
-
+    std::cerr << "about to set hidden_states" << std::endl;
     encoder.set_tensor("hidden_states", flattened_patches);
     encoder.infer();
 
@@ -775,7 +806,13 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::
                                                           size_t frame_id) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
-
+    std::cerr << "===== DEBUG encoder request inputs =====" << std::endl;
+    for (const auto& port : encoder.get_compiled_model().inputs()) {
+        std::cerr << "request input any_name = " << port.get_any_name() << std::endl;
+        std::cerr << "tensor names = ";
+        for (const auto& n : port.get_names()) std::cerr << n << " ";
+        std::cerr << std::endl;
+    }
     OPENVINO_ASSERT(images.size() == 1 || images.size() == 2);
     if (images.size() == 2) {
         OPENVINO_ASSERT(images[0].get_shape() == images[1].get_shape(), "Video frames should have same layout.");
@@ -845,7 +882,7 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::
     ov::Tensor reshape_shape8d(ov::element::i64, ov::Shape{8}, a_temp_shape8d);
     ov::Tensor reshape_shape4d(ov::element::i64, ov::Shape{4}, a_temp_shape4d);
     ov::Tensor reshape_shape2d(ov::element::i64, ov::Shape{2}, last_output_shape);
-
+    std::cerr << "about to set raw_images_1/raw_images_2 path" << std::endl;
     encoder.set_tensor("cond_img_vid", cond_img_vid);
     encoder.set_tensor("raw_images_1", input_image_1);
     encoder.set_tensor("raw_images_2", input_image_2);
