@@ -198,6 +198,7 @@ export class VLMPipeline {
    * @param options.videos - Array of video frame tensors to include in the prompt.
    * @param options.generationConfig - Generation configuration parameters (e.g., max_new_tokens, temperature).
    * @param options.streamer - Optional callback invoked for each generated token.
+   * - Return `StreamingStatus.RUNNING` to continue or `StreamingStatus.CANCEL` to stop
    * @returns Promise resolving to {@link VLMDecodedResults} containing texts, scores, and performance metrics.
    */
   async generate(
