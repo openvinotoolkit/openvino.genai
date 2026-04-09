@@ -533,18 +533,12 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     float max_value = 0.0;
 
     if (top_logprobs) {
-        if (!std::isnan(logits.m_full_vocab_log_sum_exp)) {
-            // Raw pre-penalty logprob: m_data is pristine (penalties wrote to m_vector).
-            max_value = logits.m_data[max_index] - logits.m_full_vocab_log_sum_exp;
-        } else {
-            // Post-penalty logprob: compute LSE over m_data (which penalties have modified).
-            max_value = top_values.front();
-            float log_sum = std::log(std::accumulate(
-                logits.m_data, logits.m_data + logits.m_size, 0.0f, [max_value](float accumulated, float to_add) {
-                    return accumulated + std::exp(to_add - max_value);
-            }));
-            max_value = -log_sum;
-        }
+        OPENVINO_ASSERT(!std::isnan(logits.m_full_vocab_log_sum_exp),
+            "Internal error: top_logprobs > 0 but m_full_vocab_log_sum_exp was not computed. "
+            "FullVocabLogSumExpTransform must run before _greedy_sample when logprobs > 0.");
+        // m_data is pristine (FullVocabLogSumExpTransform + CopyLogitsToVectorTransform ran first,
+        // so penalties/grammar only wrote to m_vector). Return raw log-probability.
+        max_value = logits.m_data[max_index] - logits.m_full_vocab_log_sum_exp;
     }
 
     return Token(max_value, max_index);

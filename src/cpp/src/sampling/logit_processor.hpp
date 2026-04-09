@@ -89,8 +89,7 @@ public:
                 }
                 // Defer expf to the draw step (fused CDF scan) only when BOTH conditions hold:
                 //   1. top_k > 0: TopKFilter already populated m_vector with K candidates
-                //      in arbitrary order (heap order on the fast path, nth_element order
-                //      on the logprobs path). Either way the K candidates are compact in memory.
+                //      in arbitrary order (not sorted).
                 //   2. top_p == 1.0: TopPFilter will NOT run (it requires normalised probs).
                 // When deferred, TemperatureLogitTransform only scales logits by 1/T;
                 // expf and CDF scan are fused in _multinomial_sample.

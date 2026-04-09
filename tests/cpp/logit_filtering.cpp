@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 #include <gtest/gtest.h>
 #include <openvino/core/except.hpp>
