@@ -61,8 +61,8 @@ public:
      * voice. If not provided for SpeechT5 TSS model, the 7306th vector from the validation set of the
      * `Matthijs/cmu-arctic-xvectors` dataset is used by default.
      * @param properties Speech generation parameters specified as properties
-    * @returns raw audios of the input texts spoken in the specified speaker's voice; sample rate is provided in
-    * `Text2SpeechDecodedResults::output_sample_rate`
+     * @returns raw audios of the input texts spoken in the specified speaker's voice; sample rate is provided in
+     * `Text2SpeechDecodedResults::output_sample_rate`
      */
     Text2SpeechDecodedResults generate(const std::string& text,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),
@@ -77,8 +77,8 @@ public:
      * voice. If not provided for SpeechT5 TSS model, the 7306th vector from the validation set of the
      * `Matthijs/cmu-arctic-xvectors` dataset is used by default.
      * @param properties Speech generation parameters specified as properties
-    * @returns raw audios of the input texts spoken in the specified speaker's voice; sample rate is provided in
-    * `Text2SpeechDecodedResults::output_sample_rate`
+     * @returns raw audios of the input texts spoken in the specified speaker's voice; sample rate is provided in
+     * `Text2SpeechDecodedResults::output_sample_rate`
      */
     Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
                                        const ov::Tensor& speaker_embedding = ov::Tensor(),
