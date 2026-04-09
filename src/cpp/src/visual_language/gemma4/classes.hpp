@@ -48,9 +48,14 @@ public:
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const override;
 
-    CircularBufferQueue<ov::InferRequest>* get_per_layer_embeddings_queue() const override {
-        return m_per_layer_embeddings_requests.get();
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() override {
+        return [this](const ov::Tensor& input_ids) {
+            return get_per_layer_embeddings(input_ids);
+        };
     }
+
+    // Compute per-layer embeddings from input_ids
+    ov::Tensor get_per_layer_embeddings(const ov::Tensor& input_ids);
 
 private:
     // Per-layer text embeddings model (Gemma4-specific)
@@ -58,9 +63,6 @@ private:
 
     // Extra inputs to pass to the language model
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
-
-    // Compute per-layer embeddings from input_ids
-    ov::Tensor compute_per_layer_embeddings(const ov::Tensor& input_ids);
 };
 
 }  // namespace ov::genai

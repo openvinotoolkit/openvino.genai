@@ -738,7 +738,7 @@ private:
 
         const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
 
-        auto* per_layer_queue = m_inputs_embedder->get_per_layer_embeddings_queue();
+        auto per_layer_callback = m_inputs_embedder->get_per_layer_embeddings_callback();
 
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
@@ -758,7 +758,7 @@ private:
                                                  m_max_kv_cache_size,
                                                  use_intermediate_remote_tensor,
                                                  lm_extra_inputs,
-                                                 per_layer_queue);
+                                                 std::move(per_layer_callback));
     }
 };
 

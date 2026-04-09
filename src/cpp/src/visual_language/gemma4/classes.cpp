@@ -233,7 +233,7 @@ NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(const std::string& promp
     return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
 
-ov::Tensor InputsEmbedderGemma4::compute_per_layer_embeddings(const ov::Tensor& input_ids) {
+ov::Tensor InputsEmbedderGemma4::get_per_layer_embeddings(const ov::Tensor& input_ids) {
     OPENVINO_ASSERT(m_per_layer_embeddings_requests, "Per-layer embeddings model is not loaded");
 
     CircularBufferQueueElementGuard<ov::InferRequest> guard(m_per_layer_embeddings_requests.get());
@@ -299,7 +299,7 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
 
     ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
 
-    m_lm_extra_inputs["per_layer_inputs"] = compute_per_layer_embeddings(input_ids);
+    m_lm_extra_inputs["per_layer_inputs"] = get_per_layer_embeddings(input_ids);
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
