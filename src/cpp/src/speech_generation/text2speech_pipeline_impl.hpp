@@ -35,9 +35,6 @@ public:
         const ov::Tensor& speaker_embedding,
         const SpeechGenerationConfig& generation_config) = 0;
 
-    virtual std::vector<std::vector<std::string>> phonemize(const std::vector<std::string>& texts,
-                                                            const SpeechGenerationConfig& generation_config) = 0;
-
     virtual SpeechGenerationPerfMetrics get_performance_metrics();
 
     /// @brief Get the expected speaker embedding shape for this backend.

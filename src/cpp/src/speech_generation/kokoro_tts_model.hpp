@@ -38,9 +38,6 @@ public:
                                                    const ov::Tensor& speaker_embedding,
                                                    const SpeechGenerationConfig& generation_config) override;
 
-    std::vector<std::vector<std::string>> phonemize(const std::vector<std::string>& texts,
-                                                    const SpeechGenerationConfig& generation_config) override;
-
     ov::Shape get_speaker_embedding_shape() const override;
 
 private:

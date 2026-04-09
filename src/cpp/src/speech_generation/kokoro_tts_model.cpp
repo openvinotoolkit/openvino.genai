@@ -1254,25 +1254,6 @@ Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
 #endif
 }
 
-std::vector<std::vector<std::string>> KokoroTTSImpl::phonemize(const std::vector<std::string>& texts,
-                                                               const SpeechGenerationConfig& generation_config) {
-#if !OPENVINO_GENAI_HAS_MISAKI_CPP
-    (void)texts;
-    (void)generation_config;
-    OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
-#else
-    ensure_g2p_initialized(generation_config);
-
-    std::vector<std::vector<std::string>> all_chunks;
-    all_chunks.reserve(texts.size());
-    const std::string language_variant = normalize_language_variant(generation_config.language);
-    for (const auto& text : texts) {
-        all_chunks.push_back(phonemize_single_text(*m_g2p, text, generation_config, language_variant));
-    }
-    return all_chunks;
-#endif
-}
-
 ov::Shape KokoroTTSImpl::get_speaker_embedding_shape() const {
     // Matches the native Kokoro voice pack shape: 510 length-indexed rows,
     // one per possible phoneme sequence length (1-510), each a [1, 256] style vector.

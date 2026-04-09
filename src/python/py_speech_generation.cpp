@@ -104,19 +104,6 @@ auto text_to_speech_generate_docstring = R"(
     :rtype: Text2SpeechDecodedResults
 )";
 
-auto text_to_speech_phonemize_docstring = R"(
-    Runs Kokoro text preprocessing and returns phoneme chunks used before acoustic inference.
-
-    :param text_or_texts: input text(s) to phonemize
-    :type text_or_texts: str or list[str]
-
-    :param properties: speech generation parameters specified as properties
-    :type properties: dict
-
-    :returns: phoneme chunks (or per-input phoneme chunk lists)
-    :rtype: list[str] or list[list[str]]
-)";
-
 auto text_to_speech_generate_from_phonemes_docstring = R"(
     Generates speech directly from precomputed Kokoro phoneme chunks.
 
@@ -291,40 +278,6 @@ void init_speech_generation_pipeline(py::module_& m) {
             py::arg("speaker_embedding") = py::none(),
             "vector representing the unique characteristics of a speaker's voice.",
             (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
-
-        .def(
-            "phonemize",
-            [](Text2SpeechPipeline& pipe,
-               const std::string& text,
-               const py::kwargs& kwargs) -> std::vector<std::string> {
-                std::vector<std::string> res;
-                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
-                {
-                    py::gil_scoped_release rel;
-                    res = pipe.phonemize(text, properties);
-                }
-                return res;
-            },
-            py::arg("text"),
-            "input text for which to generate Kokoro phoneme chunks.",
-            (text_to_speech_phonemize_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
-
-        .def(
-            "phonemize",
-            [](Text2SpeechPipeline& pipe,
-               const std::vector<std::string>& texts,
-               const py::kwargs& kwargs) -> std::vector<std::vector<std::string>> {
-                std::vector<std::vector<std::string>> res;
-                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
-                {
-                    py::gil_scoped_release rel;
-                    res = pipe.phonemize(texts, properties);
-                }
-                return res;
-            },
-            py::arg("texts"),
-            "input texts for which to generate Kokoro phoneme chunks.",
-            (text_to_speech_phonemize_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def(
             "generate_from_phonemes",
