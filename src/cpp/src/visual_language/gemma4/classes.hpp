@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2026 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -54,15 +54,14 @@ public:
         };
     }
 
-    // Compute per-layer embeddings from input_ids
-    ov::Tensor get_per_layer_embeddings(const ov::Tensor& input_ids);
-
 private:
     // Per-layer text embeddings model (Gemma4-specific)
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_per_layer_embeddings_requests;
 
     // Extra inputs to pass to the language model
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
+
+    ov::Tensor get_per_layer_embeddings(const ov::Tensor& input_ids);
 };
 
 }  // namespace ov::genai
