@@ -9,10 +9,12 @@ import {
   TextRerankPipelineOptions,
 } from "./pipelines/textRerankPipeline.js";
 import { WhisperPipeline as Whisper } from "./pipelines/whisperPipeline.js";
+import { Text2SpeechPipeline as Text2Speech } from "./pipelines/text2SpeechPipeline.js";
 import {
   LLMPipelineProperties,
   VLMPipelineProperties,
   WhisperPipelineProperties,
+  Text2SpeechPipelineProperties,
 } from "./utils.js";
 
 class PipelineFactory {
@@ -74,6 +76,17 @@ class PipelineFactory {
 
     return pipeline;
   }
+
+  static async Text2SpeechPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: Text2SpeechPipelineProperties = {},
+  ) {
+    const pipeline = new Text2Speech(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
 }
 
 export const {
@@ -82,10 +95,21 @@ export const {
   TextEmbeddingPipeline,
   TextRerankPipeline,
   WhisperPipeline,
+  Text2SpeechPipeline,
 } = PipelineFactory;
-export { DecodedResults, VLMDecodedResults, WhisperDecodedResults } from "./decodedResults.js";
+export {
+  DecodedResults,
+  VLMDecodedResults,
+  WhisperDecodedResults,
+  Text2SpeechDecodedResults,
+} from "./decodedResults.js";
 export type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
-export { PerfMetrics, VLMPerfMetrics, WhisperPerfMetrics } from "./perfMetrics.js";
+export {
+  PerfMetrics,
+  VLMPerfMetrics,
+  WhisperPerfMetrics,
+  Text2SpeechPerfMetrics,
+} from "./perfMetrics.js";
 export * from "./utils.js";
 export * from "./addon.js";
 export type { TokenizedInputs, EncodeOptions, DecodeOptions } from "./tokenizer.js";
