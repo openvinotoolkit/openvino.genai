@@ -231,8 +231,10 @@ public:
         } {
         auto language_model_path = models_dir / "openvino_language_model.xml";
         auto properties_copy = properties;
+
+        utils::extract_extensions_to_core(properties_copy);
         auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties_copy);
-        initialize_from_model_and_dir(language_model, models_dir, device, properties);
+        initialize_from_model_and_dir(language_model, models_dir, device, properties_copy);
     }
 
     VLMPipelineImpl(
@@ -244,9 +246,11 @@ public:
         const GenerationConfig& generation_config
     ) :
         m_generation_config{generation_config} {
+        auto properties_copy = properties;
+        utils::extract_extensions_to_core(properties_copy);
         const auto& language_pair = utils::get_model_weights_pair(models_map, "language");
         auto language_model = utils::singleton_core().read_model(language_pair.first, language_pair.second);
-        initialize_from_model_and_map(language_model, models_map, tokenizer, config_dir_path, device, properties);
+        initialize_from_model_and_map(language_model, models_map, tokenizer, config_dir_path, device, properties_copy);
     }
 
     VLMPipelineImpl(
@@ -779,9 +783,9 @@ VLMPipeline::VLMPipeline(
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
     } else {
-        auto properties_copy = properties;
+        utils::extract_extensions_to_core(properties);
         auto language_model_path = models_dir / "openvino_language_model.xml";
-        auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties_copy);
+        auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties);
         apply_linear_attention_backend_constraints(language_model, user_properties, attention_backend);
 
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -828,6 +832,7 @@ VLMPipeline::VLMPipeline(
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
     } else {
+        utils::extract_extensions_to_core(properties);
         const auto& [model_str, weights] = utils::get_model_weights_pair(models_map, "language");
         auto language_model = utils::singleton_core().read_model(model_str, weights);
         apply_linear_attention_backend_constraints(language_model, user_properties, attention_backend);

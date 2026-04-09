@@ -1,7 +1,14 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { PerfMetrics, VLMPerfMetrics, WhisperPerfMetrics } from "./perfMetrics.js";
+import { Tensor } from "openvino-node";
+
+import {
+  PerfMetrics,
+  VLMPerfMetrics,
+  WhisperPerfMetrics,
+  Text2SpeechPerfMetrics,
+} from "./perfMetrics.js";
 
 /**
  * Structure to store resulting batched text outputs and scores for each batch.
@@ -102,4 +109,18 @@ export class WhisperDecodedResults extends DecodedResults {
 
   /** Whisper-specific performance metrics. */
   override perfMetrics: WhisperPerfMetrics;
+}
+
+/**
+ * Result of Text2SpeechPipeline.generate() with audio tensors and perf metrics.
+ * Each element in `speeches` is an audio waveform tensor sampled at 16 kHz.
+ */
+export class Text2SpeechDecodedResults {
+  constructor(speeches: Tensor[], perfMetrics: Text2SpeechPerfMetrics) {
+    this.speeches = speeches;
+    this.perfMetrics = perfMetrics;
+  }
+
+  speeches: Tensor[];
+  perfMetrics: Text2SpeechPerfMetrics;
 }

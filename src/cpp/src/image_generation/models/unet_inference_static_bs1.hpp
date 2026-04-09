@@ -8,6 +8,7 @@
 #include "lora/helper.hpp"
 #include "image_generation/models/unet_inference.hpp"
 #include "utils.hpp"
+#include "logger.hpp"
 
 namespace ov {
 namespace genai {
@@ -27,6 +28,11 @@ public:
         auto clone = std::make_shared<UNetInferenceStaticBS1>();
         clone->m_native_batch_size = m_native_batch_size;
         clone->m_requests.reserve(m_requests.size());
+        clone->m_is_blob = m_is_blob;
+        // Do not copy adapter controller pointer from the original instance.
+        // The cloned inference object must be explicitly re-bound via set_adapters().
+        clone->m_adapter_controller = nullptr;
+        clone->m_last_adapter_config.reset();
         for (auto& request : m_requests) {
             clone->m_requests.push_back(request.get_compiled_model().create_infer_request());
         }
@@ -62,7 +68,7 @@ public:
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition batch-1 model");
 
-        for (int i = 0; i < m_native_batch_size; i++) {
+        for (size_t i = 0; i < m_native_batch_size; i++) {
             m_requests[i] = compiled_model.create_infer_request();
         }
     }
@@ -72,6 +78,27 @@ public:
                         "UNet model must be compiled first");
 
         size_t encoder_hidden_states_bs = encoder_hidden_states.get_shape()[0];
+        if (m_is_blob && encoder_hidden_states_bs != m_native_batch_size) {
+            GENAI_WARN("UNet model was imported from blob. "
+                       "The batch size of encoder hidden states does not match the batch size of native, therefore, "
+                       "update native batch size to align batch size of encoder hidden states.");
+
+            // Re-create infer requests with new batch size which based on batch size of encoder hidden states
+            auto compiled_model = m_requests[0].get_compiled_model();
+            m_native_batch_size = encoder_hidden_states_bs;
+            
+            m_requests.resize(m_native_batch_size);
+            for (size_t i = 0; i < m_native_batch_size; i++) {
+                m_requests[i] = compiled_model.create_infer_request();
+            }
+
+            // Re-apply adapters to newly created infer requests
+            if (m_adapter_controller && m_last_adapter_config) {
+                for (size_t i = 0; i < m_native_batch_size; i++) {
+                    m_adapter_controller->apply(m_requests[i], *m_last_adapter_config);
+                }
+            }
+        }
 
         OPENVINO_ASSERT(
             encoder_hidden_states_bs == m_native_batch_size,
@@ -82,7 +109,7 @@ public:
         char* pHiddenStates = (char *)encoder_hidden_states.data();
         size_t hidden_states_batch_stride_bytes = encoder_hidden_states.get_strides()[0];
 
-        for (int i = 0; i < m_native_batch_size; i++)
+        for (size_t i = 0; i < m_native_batch_size; i++)
         {
             auto hidden_states_bs1 = m_requests[i].get_tensor(tensor_name);
 
@@ -103,7 +130,11 @@ public:
     virtual void set_adapters(AdapterController& adapter_controller, const AdapterConfig& adapters) override {
         OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
                         "UNet model must be compiled first");
-        for (int i = 0; i < m_native_batch_size; i++) {
+        if (m_is_blob) {
+            m_adapter_controller = &adapter_controller;
+            m_last_adapter_config = adapters;
+        }
+        for (size_t i = 0; i < m_native_batch_size; i++) {
             adapter_controller.apply(m_requests[i], adapters);
         }
     }
@@ -125,7 +156,7 @@ public:
         auto bs1_sample_shape = sample.get_shape();
         bs1_sample_shape[0] = 1;
 
-        for (int i = 0; i < m_native_batch_size; i++) {
+        for (size_t i = 0; i < m_native_batch_size; i++) {
             m_requests[i].set_tensor("timestep", timestep);
 
             //wrap a portion of sample tensor as a batch-1 tensor, as set this as input tensor.
@@ -148,7 +179,7 @@ public:
             m_requests[i].start_async();
         }
 
-        for (int i = 0; i < m_native_batch_size; i++) {
+        for (size_t i = 0; i < m_native_batch_size; i++) {
             // wait for infer to complete.
             m_requests[i].wait();
         }
@@ -167,15 +198,14 @@ public:
     virtual void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties) override {
         auto compiled_model = utils::import_model(blob_path / "openvino_model.blob", device, properties);
 
-        // we'll create a separate infer request for each batch.
-        // todo: preserve original requested batch size when exporting the model
-        // current implementation imports model with batch = 1 and creates a single infer request.
+        m_is_blob = true;
+
         m_native_batch_size = compiled_model.input("sample").get_shape()[0];
         m_requests.resize(m_native_batch_size);
 
         ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition batch-1 model");
 
-        for (int i = 0; i < m_native_batch_size; i++) {
+        for (size_t i = 0; i < m_native_batch_size; i++) {
             m_requests[i] = compiled_model.create_infer_request();
         }
     }
@@ -183,6 +213,9 @@ public:
 private:
     std::vector<ov::InferRequest> m_requests;
     size_t m_native_batch_size = 0;
+    bool m_is_blob = false;
+    AdapterController* m_adapter_controller = nullptr;
+    std::optional<AdapterConfig> m_last_adapter_config;
 };
 
 }  // namespace genai
