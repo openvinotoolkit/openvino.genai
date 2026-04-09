@@ -711,6 +711,105 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
             )
 
 
+LORA_ADAPTER_REPO_ID = "likholat/tiny-random-qwen2vl-lora"
+
+
+def _create_nonzero_lora_adapter(base_adapter_path, tmp_dir):
+    """
+    Creates a LoRA adapter with non-zero B weights from an existing adapter.
+    The original adapter has all-zero B matrices (untrained), which means
+    LoRA has no effect. This function sets B weights to small random values
+    so that LoRA actually modifies the model output.
+    """
+    import numpy as np
+    from safetensors.numpy import load_file, save_file
+
+    tensors = load_file(str(base_adapter_path))
+    rng = np.random.default_rng(seed=42)
+    for key in tensors:
+        if "lora_B" in key:
+            tensors[key] = rng.standard_normal(tensors[key].shape).astype(tensors[key].dtype) * 0.1
+
+    out_path = Path(tmp_dir) / "adapter_model.safetensors"
+    save_file(tensors, str(out_path))
+    return out_path
+
+
+def test_vlm_cb_lora_generate_vs_add_request(cat_tensor: openvino.Tensor, tmp_path):
+    """
+    Regression test: LoRA adapters specified at CB pipeline construction
+    must be applied during add_request()+step() workflow, not only during generate().
+    Compares generate() vs add_request()+step() outputs - they must be identical.
+    Uses a modified adapter with non-zero B weights to ensure LoRA has observable effect.
+    """
+    from openvino_genai import Adapter, AdapterConfig
+
+    models_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen2vl")
+    lora_path = snapshot_download(LORA_ADAPTER_REPO_ID)
+    base_adapter_path = Path(lora_path) / "adapter_model.safetensors"
+    adapter_path = _create_nonzero_lora_adapter(base_adapter_path, tmp_path)
+
+    adapter = Adapter(str(adapter_path))
+    adapter_config = AdapterConfig(adapter, 2.0)
+
+    scheduler_config = SchedulerConfig()
+
+    # Sanity check: LoRA must actually change the output vs no-LoRA baseline
+    pipe_no_lora = ContinuousBatchingPipeline(models_path, scheduler_config, "CPU")
+    gc_no_lora = get_greedy()
+    gc_no_lora.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
+    res_no_lora = pipe_no_lora.generate(
+        [PROMPTS[0]], images=[[cat_tensor]], generation_config=[gc_no_lora],
+    )
+
+    # Path 1: generate() - calls set_adapters() internally (known-good)
+    pipe_generate = ContinuousBatchingPipeline(
+        models_path, scheduler_config, "CPU",
+        properties={"adapters": adapter_config},
+    )
+    gen_config_generate = get_greedy()
+    gen_config_generate.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
+    gen_config_generate.adapters = adapter_config
+    res_generate = pipe_generate.generate(
+        [PROMPTS[0]], images=[[cat_tensor]], generation_config=[gen_config_generate],
+    )
+
+    assert res_generate[0].texts[0] != res_no_lora[0].texts[0], (
+        "LoRA adapter has no effect on model output - test cannot validate LoRA application"
+    )
+
+    # Path 2: add_request() + step() — relies on adapters applied at construction
+    pipe_step = ContinuousBatchingPipeline(
+        models_path, scheduler_config, "CPU",
+        properties={"adapters": adapter_config},
+    )
+    gen_config_step = get_greedy()
+    gen_config_step.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
+    tokenizer = pipe_step.get_tokenizer()
+    handle = pipe_step.add_request(
+        0, PROMPTS[0], images=[cat_tensor], videos=[], generation_config=gen_config_step,
+    )
+    while handle.get_status() != GenerationStatus.FINISHED:
+        pipe_step.step()
+    outputs = handle.read_all()
+
+    # Both LoRA paths must produce identical token sequences
+    for out_idx, output in enumerate(outputs):
+        text = tokenizer.decode(output.generated_ids)
+        assert text == res_generate[0].texts[out_idx], (
+            f"add_request()+step() output differs from generate() - "
+            f"LoRA likely not applied during add_request()+step() workflow. "
+            f"Got '{text}', expected '{res_generate[0].texts[out_idx]}'"
+        )
+
+    # add_request()+step() result must differ from no-LoRA baseline
+    step_text = tokenizer.decode(outputs[0].generated_ids)
+    assert step_text != res_no_lora[0].texts[0], (
+        "add_request()+step() output matches no-LoRA baseline - "
+        "LoRA not applied during add_request()+step() workflow"
+    )
+
+
 @pytest.mark.parametrize(
     "config",
     [
