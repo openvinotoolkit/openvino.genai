@@ -11,6 +11,8 @@
 namespace {
 
 /// @brief Compute target dimensions for aspect-ratio-preserving resize.
+/// Total pixel count should match max_patches * patch_size^2
+/// Dimensions are divisible by pooling_kernel_size * patch_size.
 /// Matches HF Gemma4ImageProcessor.get_aspect_ratio_preserving_size().
 std::pair<size_t, size_t> get_aspect_ratio_preserving_size(size_t height,
                                                            size_t width,
@@ -117,7 +119,6 @@ EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyM
     // 5. Extract patches: (num_patches, patch_size*patch_size*3)
     const size_t num_patches_h = target_height / config.patch_size;
     const size_t num_patches_w = target_width / config.patch_size;
-    const size_t num_patches = num_patches_h * num_patches_w;
     const size_t patch_dim = config.patch_size * config.patch_size * 3;
 
     // Create padded pixel_values tensor [1, max_patches, patch_dim]
