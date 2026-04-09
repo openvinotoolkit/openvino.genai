@@ -11,8 +11,6 @@
 namespace ov::genai {
 namespace {
 
-const std::string PER_LAYER_EMBEDDINGS_MODEL_NAME = "openvino_text_embeddings_per_layer_model.xml";
-
 /// @brief Compute target dimensions for aspect-ratio-preserving resize.
 /// Matches HF Gemma4ImageProcessor.get_aspect_ratio_preserving_size().
 std::pair<size_t, size_t> get_aspect_ratio_preserving_size(size_t height,
@@ -163,17 +161,15 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::string& device,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-    // Load per-layer text embeddings model if available
-    auto per_layer_model_path = model_dir / PER_LAYER_EMBEDDINGS_MODEL_NAME;
-    if (std::filesystem::exists(per_layer_model_path)) {
-        auto compiled = utils::singleton_core().compile_model(per_layer_model_path, device, device_config);
-        ov::genai::utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
-        m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-            compiled.get_property(ov::optimal_number_of_infer_requests),
-            [&compiled]() -> ov::InferRequest {
-                return compiled.create_infer_request();
-            });
-    }
+    auto per_layer_model_path = model_dir / "openvino_text_embeddings_per_layer_model.xml";
+
+    auto compiled = utils::singleton_core().compile_model(per_layer_model_path, device, device_config);
+    ov::genai::utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
+    m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled]() -> ov::InferRequest {
+            return compiled.create_infer_request();
+        });
 }
 
 InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
@@ -185,16 +181,16 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
     // Per-layer embeddings model may be in models_map
     auto it = models_map.find("text_embeddings_per_layer");
-    if (it != models_map.end()) {
-        const auto& [model_str, weights] = it->second;
-        auto compiled = utils::singleton_core().compile_model(model_str, weights, device, device_config);
-        ov::genai::utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
-        m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-            compiled.get_property(ov::optimal_number_of_infer_requests),
-            [&compiled]() -> ov::InferRequest {
-                return compiled.create_infer_request();
-            });
-    }
+    OPENVINO_ASSERT(it != models_map.end(), "Per-layer text embeddings model not found in models map");
+
+    const auto& [model_str, weights] = it->second;
+    auto compiled = utils::singleton_core().compile_model(model_str, weights, device, device_config);
+    ov::genai::utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
+    m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled]() -> ov::InferRequest {
+            return compiled.create_infer_request();
+        });
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderGemma4::encode_images(const std::vector<ov::Tensor>& images) {
@@ -303,10 +299,7 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
 
     ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
 
-    // Compute per-layer embeddings if the model is available
-    if (m_per_layer_embeddings_requests) {
-        m_lm_extra_inputs["per_layer_inputs"] = compute_per_layer_embeddings(input_ids);
-    }
+    m_lm_extra_inputs["per_layer_inputs"] = compute_per_layer_embeddings(input_ids);
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
@@ -330,21 +323,6 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
     auto merged = utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 
     return merged;
-}
-
-std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderGemma4::get_position_ids(const size_t inputs_embeds_size,
-                                                                                     const size_t history_size) {
-    // Gemma4 uses 0-indexed position_ids (matching HF/optimum-intel behavior).
-    // update_position_ids() in lm_encoding.cpp uses sum(attention_mask[:seq_len-1]) which
-    // produces 0-indexed positions during generation, so prefill must also be 0-indexed.
-    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size);
-}
-
-std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderGemma4::get_generation_phase_position_ids(
-    const size_t inputs_embeds_size,
-    const size_t history_size,
-    int64_t rope_delta) {
-    return IInputsEmbedder::get_position_ids(inputs_embeds_size, history_size);
 }
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma4::get_lm_extra_inputs() const {

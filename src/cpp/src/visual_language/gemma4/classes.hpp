@@ -46,13 +46,6 @@ public:
                                       size_t base_id,
                                       const std::vector<EncodedImage>& images) const override;
 
-    std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size,
-                                                                   const size_t history_size) override;
-
-    std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size,
-                                                                                    const size_t history_size,
-                                                                                    int64_t rope_delta) override;
-
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const override;
 
     CircularBufferQueue<ov::InferRequest>* get_per_layer_embeddings_queue() const override {
