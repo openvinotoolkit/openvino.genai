@@ -227,7 +227,7 @@ export class LLMPipeline {
    *
    * @param inputs - Input prompt string, array of prompts, or chat history.
    * @param generationConfig - Generation configuration parameters.
-   * @param streamer - Optional callback invoked for each generated chunk.
+   * @param streamer - Optional callback invoked for each generated text chunk.
    * - Return `StreamingStatus.RUNNING` to continue or `StreamingStatus.CANCEL` to stop
    * @returns Resolves with decoded results once generation finishes.
    *
