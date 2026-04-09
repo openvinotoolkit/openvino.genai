@@ -11,6 +11,24 @@
 
 namespace ov::genai {
 
+class IncrementalParser::IncrementalParserImpl {
+public:
+    IncrementalParserImpl() = default;
+    StreamingStatus m_status = StreamingStatus::RUNNING;
+};
+
+IncrementalParser::IncrementalParser() : m_impl(std::make_unique<IncrementalParserImpl>()) {}
+
+IncrementalParser::~IncrementalParser() = default;
+
+StreamingStatus IncrementalParser::get_status() const {
+   return m_impl->m_status;
+}
+
+void IncrementalParser::set_status(StreamingStatus status) {
+    m_impl->m_status = status;
+}
+
 class ReasoningIncrementalParser::ReasoningParserImpl {
 private:
     // Values initialized from constructor don't need default member initializer.

@@ -257,11 +257,6 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readonly("perf_metrics", &EncodedGenerationResult::perf_metrics)
         .def_readonly("extended_perf_metrics", &EncodedGenerationResult::extended_perf_metrics);
 
-    py::enum_<ov::genai::GenerationFinishReason>(m, "GenerationFinishReason")
-        .value("NONE", ov::genai::GenerationFinishReason::NONE)
-        .value("STOP", ov::genai::GenerationFinishReason::STOP)
-        .value("LENGTH", ov::genai::GenerationFinishReason::LENGTH);
-
     py::class_<GenerationOutput, std::shared_ptr<GenerationOutput>>(m, "GenerationOutput")
         .def_readwrite("generated_ids", &GenerationOutput::generated_ids)
         .def_readwrite("generated_log_probs", &GenerationOutput::generated_log_probs)

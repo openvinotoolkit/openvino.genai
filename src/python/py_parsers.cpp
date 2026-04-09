@@ -197,6 +197,8 @@ void init_parsers(py::module_& m) {
             return res;
         }, py::arg("delta_message"), py::arg("delta_text"), py::arg("delta_tokens") = std::nullopt,
            "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.")
+        .def("get_status", &IncrementalParser::get_status, "Get the current streaming status of the parser.")
+        .def("set_status", &IncrementalParser::set_status, py::arg("status"), "Set the current streaming status of the parser.")
         .def("reset", &IncrementalParser::reset, "Reset the internal state of the parser.");
     
     py::class_<ReasoningIncrementalParser, std::shared_ptr<ReasoningIncrementalParser>, IncrementalParser>(m, "ReasoningIncrementalParser")

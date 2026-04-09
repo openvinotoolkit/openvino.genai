@@ -190,6 +190,7 @@ CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     for (auto& parser: m_pimpl->m_parsers) {
         delta_text = parser->parse(delta_message, delta_text, flushed_tokens);
         if (parser->get_status() == StreamingStatus::TOOL_CALL_STOP) {
+            is_stop_invoked = true;
             break;
         }
         // Message can be modified inside parser, if parser for example extracted tool calling from message content
@@ -199,6 +200,7 @@ CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     m_pimpl->m_parsed_message.concatenate(delta_message);
     auto stream_status = write(delta_message);
     if (is_stop_invoked) {
+        // status from parser has priority over status from write
         return StreamingStatus::TOOL_CALL_STOP;
     }
     return stream_status;

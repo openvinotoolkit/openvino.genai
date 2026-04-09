@@ -162,7 +162,7 @@ private:
  */
 class OPENVINO_GENAI_EXPORTS IncrementalParser {
 public:
-    IncrementalParser() = default;
+    IncrementalParser();
 
     /**
      * @brief Parse incremental text content and return filtered text.
@@ -186,9 +186,21 @@ public:
      */
     virtual void reset() = 0;
 
-    virtual ~IncrementalParser() = default;
+    virtual ~IncrementalParser();
 
-    virtual StreamingStatus get_status() const { return StreamingStatus::RUNNING; }
+    /**
+     * @brief Get the current streaming status of the parser.
+     */
+    StreamingStatus get_status() const;
+    
+    /**
+     * @brief Set the current streaming status of the parser.
+     */
+    void set_status(StreamingStatus status);
+
+private:
+    class IncrementalParserImpl;
+    std::unique_ptr<IncrementalParserImpl> m_impl;
 };
 
 /**

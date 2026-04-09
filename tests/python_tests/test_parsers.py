@@ -139,7 +139,7 @@ def test_several_incremental_parsers(hf_ov_genai_models):
     ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
     indirect=True
 )
-def test_several_incremental_parsers(hf_ov_genai_models):
+def test_stop_invoked_by_tool_call(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
 
     class CustomReasonParser(IncrementalParser):
@@ -163,11 +163,7 @@ def test_several_incremental_parsers(hf_ov_genai_models):
         started_took_call: bool = False
         accumulated_tool_call: StringIO = StringIO()
         deactivated: bool = False
-        do_stop: bool = False
 
-        def is_stop_invoked(self) -> bool:
-            return self.do_stop
-        
         def parse(self, delta_msg: dict, delta_text: str, delta_tokens=None) -> str:
             if self.deactivated:
                 return delta_text
@@ -183,7 +179,8 @@ def test_several_incremental_parsers(hf_ov_genai_models):
                 self.accumulated_tool_call.write(delta_text)
                 self.deactivated = True
                 delta_msg["tool_calls"] = [json.loads(self.accumulated_tool_call.getvalue())]
-                self.do_stop = True
+                self.set_status(StreamingStatus.TOOL_CALL_STOP)  # stop invoked by tool call
+
                 # If not keep took call in resulting string
                 # delta_text = ''
             elif self.started_took_call:
@@ -192,12 +189,10 @@ def test_several_incremental_parsers(hf_ov_genai_models):
 
     class CustomStreamer(TextParserStreamer):
         def write(self, message):
-            print(message)
-            
             return StreamingStatus.RUNNING
 
     streamer = CustomStreamer(genai_tokenizer, parsers=[IncrementalToolParser(), CustomReasonParser()])
-
+    
     stream_string = [
         "Hello",
         "{",
@@ -211,17 +206,18 @@ def test_several_incremental_parsers(hf_ov_genai_models):
         "</stop>",
         "!",
     ]
-    think_content = " world "
-    content = "".join(stream_string)
     tool_call = {"func_name": "weather", "location": "New York"}
 
+    is_stop_invoked = False
     for subword in stream_string:
-        streamer._write(subword)
+        if streamer._write(subword) == StreamingStatus.TOOL_CALL_STOP:
+            is_stop_invoked = True
+            break
 
     final_msg = streamer.get_parsed_message()
-    assert final_msg["reasoning_content"] == think_content
-    assert final_msg["content"] == content
     assert final_msg["tool_calls"][0] == tool_call
+    assert "reasoning_content" not in final_msg
+    assert is_stop_invoked
 
 
 @pytest.mark.parametrize(
