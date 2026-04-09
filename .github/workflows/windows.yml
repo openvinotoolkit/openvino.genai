@@ -888,9 +888,10 @@ jobs:
 
       - name: Install NPM dependencies for samples
         if: ${{ matrix.test.run_condition }}
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+        working-directory: ${{ env.SRC_DIR }}/samples/js
         run: |
-          npm install ${{ env.SRC_DIR }}/src/js
+          npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") ${{ env.SRC_DIR }}/src/js --ignore-scripts
+          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Test Samples (Python and C++)
