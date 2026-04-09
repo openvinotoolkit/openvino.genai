@@ -6,17 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(MISAKI_CPP_BUILD_PYTHON_BINDINGS "Build Python bindings for misaki_cpp" OFF)
 
-set(_MISAKI_DEFAULT_LEXICON_DIR "")
-if(EXISTS "${CMAKE_SOURCE_DIR}/data/us_gold.json" AND
-   EXISTS "${CMAKE_SOURCE_DIR}/data/us_silver.json" AND
-   EXISTS "${CMAKE_SOURCE_DIR}/data/gb_gold.json" AND
-   EXISTS "${CMAKE_SOURCE_DIR}/data/gb_silver.json")
-  set(_MISAKI_DEFAULT_LEXICON_DIR "${CMAKE_SOURCE_DIR}/data")
-endif()
-
-set(MISAKI_ENGLISH_LEXICON_DATA_DIR "${_MISAKI_DEFAULT_LEXICON_DIR}" CACHE PATH
-    "Directory containing required Misaki English lexicon files (us/gb gold/silver JSON)")
-
 include(FetchContent)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
