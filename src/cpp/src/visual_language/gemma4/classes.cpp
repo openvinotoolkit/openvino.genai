@@ -8,7 +8,6 @@
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
 
-namespace ov::genai {
 namespace {
 
 /// @brief Compute target dimensions for aspect-ratio-preserving resize.
@@ -84,6 +83,8 @@ void extract_patches(const clip_image_f32& float_image,
 }
 
 }  // namespace
+
+namespace ov::genai {
 
 EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
