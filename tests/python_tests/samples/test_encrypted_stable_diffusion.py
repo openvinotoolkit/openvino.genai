@@ -7,6 +7,7 @@ import sys
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
 
+
 class TestEncryptedStableDiffusion:
     PROMPT = "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
 
@@ -26,6 +27,6 @@ class TestEncryptedStableDiffusion:
         run_sample(py_command)
 
         # Run C++ sample
-        cpp_sample = SAMPLES_CPP_DIR / 'encrypted_stable_diffusion'
+        cpp_sample = SAMPLES_CPP_DIR / "encrypted_stable_diffusion"
         cpp_command = [cpp_sample, convert_model, sample_args]
         run_sample(cpp_command)
