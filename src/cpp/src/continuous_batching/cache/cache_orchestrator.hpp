@@ -285,8 +285,9 @@ public:
         return min_total;
     }
 
-    const size_t get_block_size() const {
-        return first_block_manager()->get_block_size();
+    /// @return Block size in tokens for the given cache type.
+    size_t get_block_size(CacheType type) const {
+        return m_block_managers.at(type)->get_block_size();
     }
 
     size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
@@ -296,6 +297,47 @@ public:
     // -----------------------------------------------------------------------
     //  Token-level API  (cache-type-agnostic interface for the Scheduler)
     // -----------------------------------------------------------------------
+
+    /// @return Approximate aggregate memory cost per token across all cache types.
+    size_t get_bytes_per_token() const {
+        size_t total = 0;
+        for (const auto& [type, cache_mgr] : m_cache_managers) {
+            total += cache_mgr->get_block_size_in_bytes() / m_block_managers.at(type)->get_block_size();
+        }
+        return total;
+    }
+
+    /// @return Exact memory needed to grow all caches by num_tokens tokens (accounting for block rounding).
+    size_t memory_cost_for_additional_tokens(size_t num_tokens) const {
+        size_t total = 0;
+        for (const auto& [type, block_mgr] : m_block_managers) {
+            const size_t bs = block_mgr->get_block_size();
+            const size_t blocks = (num_tokens + bs - 1) / bs;
+            total += blocks * m_cache_managers.at(type)->get_block_size_in_bytes();
+        }
+        return total;
+    }
+
+    /// @return Maximum additional tokens that fit within the memory budget across all cache types.
+    size_t max_additional_tokens_for_memory(size_t available_memory) const {
+        if (m_block_managers.empty() || available_memory == 0) {
+            return 0;
+        }
+        const size_t bpt = get_bytes_per_token();
+        if (bpt == 0) {
+            return 0;
+        }
+        size_t lo = 0, hi = available_memory / bpt;
+        while (lo < hi) {
+            const size_t mid = lo + (hi - lo + 1) / 2;
+            if (memory_cost_for_additional_tokens(mid) <= available_memory) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        return lo;
+    }
 
     /**
      * @brief Frees enough blocks from victim to release at least num_tokens tokens.

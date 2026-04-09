@@ -134,8 +134,8 @@ public:
         return m_cache_orchestrator->get_block_tables(seq.get_id());
     }
 
-    const size_t get_block_size() const {
-        return m_cache_orchestrator->get_block_size();
+    size_t get_block_size(CacheType type) const {
+        return m_cache_orchestrator->get_block_size(type);
     }
 
     size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
@@ -311,7 +311,7 @@ private:
                         scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
                         scheduler_output.m_apply_sparse_attention_mask = m_config.use_sparse_attention && m_config.sparse_attention_config.mode == SparseAttentionMode::TRISHAPE;
                         if (scheduler_output.m_apply_sparse_attention_mask) {
-                            TriShapeSparseAttentionTokenSkipper skipper(get_block_size(),
+                            TriShapeSparseAttentionTokenSkipper skipper(get_block_size(CacheType::KV_CACHE),
                                     m_config.sparse_attention_config.num_last_dense_tokens_in_prefill,
                                     m_config.sparse_attention_config.num_retained_start_tokens_in_cache,
                                     m_config.sparse_attention_config.num_retained_recent_tokens_in_cache);
@@ -534,16 +534,13 @@ private:
             m_cache_orchestrator->grow_capacity_by_tokens(growth_tokens);
         } else {
             const size_t available_gpu_memory = utils::get_available_gpu_memory(m_cache_orchestrator->get_device(), m_cache_orchestrator->get_num_layers());
-            const size_t block_size_in_bytes = m_cache_orchestrator->get_block_size_in_bytes();
-            const size_t block_size = m_cache_orchestrator->get_block_size();
-            size_t growth_blocks = (growth_tokens + block_size - 1) / block_size;
-            size_t required_memory = growth_blocks * block_size_in_bytes;
+            size_t required_memory = m_cache_orchestrator->memory_cost_for_additional_tokens(growth_tokens);
             if (required_memory <= available_gpu_memory) {
                 m_cache_orchestrator->grow_capacity_by_tokens(growth_tokens);
             } else {
-                size_t possible_blocks_to_add = available_gpu_memory / block_size_in_bytes;
-                if (possible_blocks_to_add > 0) {
-                    m_cache_orchestrator->grow_capacity_by_tokens(possible_blocks_to_add * block_size);
+                size_t possible_tokens = m_cache_orchestrator->max_additional_tokens_for_memory(available_gpu_memory);
+                if (possible_tokens > 0) {
+                    m_cache_orchestrator->grow_capacity_by_tokens(possible_tokens);
                 } else {
                     return false;
                 }
@@ -596,15 +593,16 @@ private:
             return 0;
         }
 
-        if (sequence_group->get_num_cached_tokens() % get_block_size() != 0) {
+        const size_t kv_block_size = get_block_size(CacheType::KV_CACHE);
+        if (sequence_group->get_num_cached_tokens() % kv_block_size != 0) {
             // Only request similarity computation once every block since eviction can only occur with a block granularity
             return 0;
         }
 
         size_t non_evictable_size = m_config.cache_eviction_config.get_max_cache_size() - m_config.cache_eviction_config.get_evictable_size();
-        OPENVINO_ASSERT(get_num_logical_blocks(sequence_group) * get_block_size() >= non_evictable_size);
+        OPENVINO_ASSERT(get_num_logical_blocks(sequence_group) * kv_block_size >= non_evictable_size);
 
-        return get_num_logical_blocks(sequence_group) * get_block_size() - non_evictable_size;
+        return get_num_logical_blocks(sequence_group) * kv_block_size - non_evictable_size;
     }
 };
 

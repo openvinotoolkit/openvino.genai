@@ -166,7 +166,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     };
     auto cache_orchestrator = CacheOrchestrator::create(infer_request, normalized_config, get_available_memory);
     m_num_decoder_layers = cache_orchestrator->get_num_layers();
-    m_block_size = cache_orchestrator->get_block_size();
 
     bool can_use_partial_preemption = true;
     if (execution_device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
@@ -179,6 +178,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     bool is_use_xattention = scheduler_config.use_sparse_attention && scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
     bool is_use_cache_eviction = scheduler_config.use_cache_eviction;
     bool is_use_per_layer_cache_control = cache_orchestrator->needs_per_layer_block_indices();
+    const size_t kv_block_size = cache_orchestrator->get_block_size(CacheType::KV_CACHE);
     if (is_use_cache_eviction) {
         const auto& eviction_config = scheduler_config.cache_eviction_config;
         m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption, eviction_config.snapkv_window_size);
@@ -186,7 +186,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         bool is_apply_rotation = eviction_config.apply_rotation;
         bool is_use_adaptive_rkv = (eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV);
         m_model_runner = std::make_shared<ModelRunner>(infer_request,
-                                                       m_block_size,
+                                                       kv_block_size,
                                                        m_num_decoder_layers,
                                                        /* collect_attention_scores = */ true,
                                                        is_use_per_layer_cache_control,
@@ -201,7 +201,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     } else {
         m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption);
         m_model_runner =
-            std::make_shared<ModelRunner>(infer_request, m_block_size, m_num_decoder_layers,
+            std::make_shared<ModelRunner>(infer_request, kv_block_size, m_num_decoder_layers,
                                                        /* collect_attention_scores = */ false,
                                                        is_use_per_layer_cache_control,
                                                        /* is_use_rotation_inputs = */ false,
@@ -228,9 +228,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_prepare_rotation_data_
         m_rotation_deltas_stores.push_back(store);
     }
 
-    size_t max_sequence_cache_occupation_length_in_blocks = normalized_config.max_num_batched_tokens / m_block_size  + 1;
+    size_t max_sequence_cache_occupation_length_in_blocks = normalized_config.max_num_batched_tokens / m_scheduler->get_block_size(CacheType::KV_CACHE)  + 1;
     m_cache_rotation_calculator = std::make_shared<CacheRotationCalculator>(
-        m_block_size,
+        m_scheduler->get_block_size(CacheType::KV_CACHE),
         max_sequence_cache_occupation_length_in_blocks,
         embedding_size);
     auto rotation_trig_lut = ov::Tensor(ov::element::f32, ov::Shape{max_sequence_cache_occupation_length_in_blocks, embedding_size});
@@ -742,8 +742,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
                 size_t block_offset = num_blocks_to_rotate_for_each_layer[layer_idx];
                 auto rotation_deltas_tensor_data =
                     m_rotation_deltas_stores[layer_idx].data<int32_t>() + block_offset;
-                for (size_t tok_idx = 0; tok_idx < m_block_size; tok_idx++) {
-                   rotation_deltas_tensor_data[tok_idx] = block_rotation_data.rotation_delta / m_block_size;
+                const size_t kv_block_size = m_scheduler->get_block_size(CacheType::KV_CACHE);
+                for (size_t tok_idx = 0; tok_idx < kv_block_size; tok_idx++) {
+                   rotation_deltas_tensor_data[tok_idx] = block_rotation_data.rotation_delta / kv_block_size;
                 }
                 num_blocks_to_rotate_for_each_layer[layer_idx] += 1;
             }
@@ -774,7 +775,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
         const auto& attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
         if (m_seq_group_id_to_cache_eviction_algo_map.find(seq_id) == m_seq_group_id_to_cache_eviction_algo_map.end()) {
             constexpr size_t MAX_POOL_WINDOW_SIZE = 7;
-            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_block_size, num_decoder_layers, MAX_POOL_WINDOW_SIZE);
+            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, m_scheduler->get_block_size(CacheType::KV_CACHE), num_decoder_layers, MAX_POOL_WINDOW_SIZE);
         }
         auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
         std::set<size_t> skip_set;
@@ -829,7 +830,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
         // Assuming that the evicted blocks are always full (since they by design are only selected from intermediate-age blocks)
         auto seq_group_ptr = seq_group_ptr_and_num_blocks_evicted.first;
         auto num_blocks_evicted = seq_group_ptr_and_num_blocks_evicted.second;
-        seq_group_ptr->register_token_eviction(num_blocks_evicted * m_block_size);
+        seq_group_ptr->register_token_eviction(num_blocks_evicted * m_scheduler->get_block_size(CacheType::KV_CACHE));
     }
 }
 

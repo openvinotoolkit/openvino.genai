@@ -599,8 +599,6 @@ public:
                 }
 
                 const auto& kv_blocks = scheduler_output.m_block_tables.at(sequence->get_id());
-                // TODO: `block_indices_begins` currently uses layer-0 logical block counts; if mixed cache
-                // models require per-layer divergence, migrate this to per-layer begins granularity.
                 const size_t num_blocks = kv_blocks[0].size();
                 const size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
                 size_t num_past_blocks_to_ignore = 0;
