@@ -64,9 +64,7 @@ export class WhisperPipeline {
    * For custom streaming control, use {@link generate} with a streamer callback instead.
    *
    * @param rawSpeech - Audio samples as Float32Array or number[], normalized to ~[-1, 1], 16 kHz.
-   * @param options - Optional generation parameters.
-   * @param options.generationConfig - Generation configuration (e.g. language, task, return_timestamps).
-   * @param options.streamer - Callback invoked with each decoded text chunk; return StreamingStatus to control generation.
+   * @param options - Optional generation config (e.g. language, task, return_timestamps).
    * @returns Async iterator that yields decoded text chunks as strings.
    */
   stream(
