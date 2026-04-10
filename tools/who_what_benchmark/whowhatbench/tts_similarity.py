@@ -42,13 +42,11 @@ class ScoringConfig:
     speaker_bad: float = 0.10
     speaker_good: float = 0.98
 
-    # Content score uses normalized WER/CER and is intentionally somewhat forgiving,
+    # Content score uses normalized WER and is intentionally somewhat forgiving,
     # since ASR can disagree on punctuation, hyphens, split words, etc.
     # Content score compares target vs reference (base model) output only.
     content_wer_bad: float = 0.35
-    content_cer_bad: float = 0.15
-    content_wer_weight: float = 0.60
-    content_cer_weight: float = 0.40
+    content_wer_weight: float = 1.0
 
     # Duration = relative difference in overall clip length.
     # ~1% is very close; ~20% is a clearly noticeable drift.
@@ -218,7 +216,6 @@ class TTSSimilarityEvaluator:
         reference_path: str,
         verbose: bool = False,
     ) -> Scores:
-        from jiwer import cer as jiwer_cer
         from jiwer import wer as jiwer_wer
 
         if verbose:
@@ -262,18 +259,12 @@ class TTSSimilarityEvaluator:
         norm_ref = normalize_text(reference_tx)
 
         wer_ref_norm = safe_float(jiwer_wer(norm_ref, norm_tgt))
-        cer_ref_norm = safe_float(jiwer_cer(norm_ref, norm_tgt))
-        content_score = weighted_mean(
-            [
-                (linear_distance_score(wer_ref_norm, 0.0, self.cfg.content_wer_bad), self.cfg.content_wer_weight),
-                (linear_distance_score(cer_ref_norm, 0.0, self.cfg.content_cer_bad), self.cfg.content_cer_weight),
-            ]
-        )
+        content_score = linear_distance_score(wer_ref_norm, 0.0, self.cfg.content_wer_bad)
 
         _log(verbose, "--- Content ---")
         _log(verbose, f"Reference transcript: {reference_tx}")
         _log(verbose, f"Target transcript:    {target_tx}")
-        _log(verbose, f"Normalized WER/CER (target vs reference): {wer_ref_norm}, {cer_ref_norm}")
+        _log(verbose, f"Normalized WER (target vs reference): {wer_ref_norm}")
         _log(verbose, f"Normalized transcripts match: {norm_tgt == norm_ref}")
         _log(verbose)
 
