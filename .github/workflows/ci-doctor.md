@@ -18,6 +18,10 @@ on:
 #     types:
 #       - completed
 
+engine:
+  id: copilot
+  model: gpt-5-mini
+
 rate-limit:
   max: 5 # Maximum runs per window
   window: 60 # Time window in minutes
