@@ -252,20 +252,24 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
         return ov_status_e::INVALID_C_PARAM;
     }
 
-    std::vector<ov::Tensor> rgbs_cpp;
-    ov_status_e status = convert_c_tensors_to_cpp(rgbs, num_images, rgbs_cpp);
-    if (status != ov_status_e::OK) {
-        return status;
-    }
+    try {
+        std::vector<ov::Tensor> rgbs_cpp;
+        ov_status_e status = convert_c_tensors_to_cpp(rgbs, num_images, rgbs_cpp);
+        if (status != ov_status_e::OK) {
+            return status;
+        }
 
-    std::string input_str(text_inputs);
-    return generate_vlm_with_optional_images(*(pipe->object),
-                                             input_str,
-                                             rgbs_cpp,
-                                             num_images,
-                                             config,
-                                             streamer,
-                                             results);
+        std::string input_str(text_inputs);
+        return generate_vlm_with_optional_images(*(pipe->object),
+                                                 input_str,
+                                                 rgbs_cpp,
+                                                 num_images,
+                                                 config,
+                                                 streamer,
+                                                 results);
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
 } 
 
 ov_status_e ov_genai_vlm_pipeline_generate_with_history(ov_genai_vlm_pipeline* pipe,
@@ -279,19 +283,23 @@ ov_status_e ov_genai_vlm_pipeline_generate_with_history(ov_genai_vlm_pipeline* p
         return ov_status_e::INVALID_C_PARAM;
     }
 
-    std::vector<ov::Tensor> rgbs_cpp;
-    ov_status_e status = convert_c_tensors_to_cpp(rgbs, num_images, rgbs_cpp);
-    if (status != ov_status_e::OK) {
-        return status;
-    }
+    try {
+        std::vector<ov::Tensor> rgbs_cpp;
+        ov_status_e status = convert_c_tensors_to_cpp(rgbs, num_images, rgbs_cpp);
+        if (status != ov_status_e::OK) {
+            return status;
+        }
 
-    return generate_vlm_with_optional_images(*(pipe->object),
-                                             *(history->object),
-                                             rgbs_cpp,
-                                             num_images,
-                                             config,
-                                             streamer,
-                                             results);
+        return generate_vlm_with_optional_images(*(pipe->object),
+                                                 *(history->object),
+                                                 rgbs_cpp,
+                                                 num_images,
+                                                 config,
+                                                 streamer,
+                                                 results);
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
 }
 
 ov_status_e ov_genai_vlm_pipeline_start_chat(ov_genai_vlm_pipeline* pipe) {
