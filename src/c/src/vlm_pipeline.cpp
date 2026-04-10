@@ -12,6 +12,11 @@
 
 namespace {
 
+struct ov_shape_guard {
+    ov_shape_t shape{};
+    ~ov_shape_guard() { ov_shape_free(&shape); }
+};
+
 ov_status_e convert_c_tensors_to_cpp(const ov_tensor_t** rgbs,
                                      size_t num_images,
                                      std::vector<ov::Tensor>& rgbs_cpp) {
@@ -29,16 +34,15 @@ ov_status_e convert_c_tensors_to_cpp(const ov_tensor_t** rgbs,
 
         auto et = ov::element::Type_t::u8;
 
-        ov_shape_t shape_c{};
-        ov_status_e status = ov_tensor_get_shape(ct, &shape_c);
+        ov_shape_guard guard;
+        ov_status_e status = ov_tensor_get_shape(ct, &guard.shape);
         if (status != ov_status_e::OK) {
             return status;
         }
-        std::vector<size_t> dims(shape_c.rank);
-        for (size_t d = 0; d < shape_c.rank; ++d) {
-            dims[d] = shape_c.dims[d];
+        std::vector<size_t> dims(guard.shape.rank);
+        for (size_t d = 0; d < guard.shape.rank; ++d) {
+            dims[d] = guard.shape.dims[d];
         }
-        ov_shape_free(&shape_c);
 
         void* data_ptr = nullptr;
         status = ov_tensor_data(const_cast<ov_tensor*>(ct), &data_ptr);
