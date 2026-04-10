@@ -499,23 +499,16 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
             continue;
         }
 
-        bool has_zero_dim = false;
         for (size_t i = 0; i < shape.rank().get_length(); i++) {
             // Find axis = 0. This would be sequence length axis.
             if (shape[i] == 0) {
                 kv_pos.seq_len = i;
-                has_zero_dim = true;
             } else if (shape[i].is_dynamic()) {
                 // Dynamic axis is a batch
                 kv_pos.batch = i;
             }
         }
-        // Only accept ReadValue nodes with a zero-dim (growing seq_len axis),
-        // which identifies actual KV-cache states. Hybrid models (e.g. Qwen3.5)
-        // may have fixed-size conv/ssm states without a zero-dim; skip those.
-        if (has_zero_dim) {
-            break;
-        }
+        break;
     }
 
     return kv_pos;
@@ -554,20 +547,13 @@ void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optio
         ov::Tensor old_tensor = state.get_state();
         // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
         auto shape = old_tensor.get_shape();
-
-        // Skip non-KV-cache states (e.g. conv/ssm states in hybrid models like Qwen3.5).
-        // KV-cache states have at least seq_length_axis+1 dimensions and enough tokens to trim.
-        if (shape.size() <= cache_state.seq_length_axis ||
-            shape[cache_state.seq_length_axis] < cache_state.num_tokens_to_trim) {
-            continue;
-        }
         OPENVINO_ASSERT(shape[cache_state.seq_length_axis] >= cache_state.num_tokens_to_trim,
                         "trim_kv_cache: requested to trim ", cache_state.num_tokens_to_trim,
                         " tokens, but cached sequence length is ", shape[cache_state.seq_length_axis],
                         " for state '", state.get_name(), "'.");
         shape[cache_state.seq_length_axis] -= cache_state.num_tokens_to_trim;
 
-        ov::Coordinate new_shape_begin(shape.size(), 0);
+        ov::Coordinate new_shape_begin{0, 0, 0, 0};
         ov::Coordinate new_shape_end{shape};
 
         auto trimmed_tensor = ov::Tensor(old_tensor, new_shape_begin, new_shape_end);
