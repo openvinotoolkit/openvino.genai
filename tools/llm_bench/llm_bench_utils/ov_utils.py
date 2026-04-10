@@ -164,6 +164,28 @@ def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
     return ov_model, tokenizer, from_pretrained_time, bench_hook, False
 
 
+def get_taylorseer_config_genai(pipe, config_data=None):
+    import openvino_genai
+    if config_data is not None:
+        if not isinstance(config_data, dict):
+            raise ValueError(f"--taylorseer_config must be a JSON object, got {type(config_data).__name__}")
+
+        taylorseer_config = openvino_genai.TaylorSeerCacheConfig()
+
+        if config_data.get("cache_interval") is not None:
+            taylorseer_config.cache_interval = config_data["cache_interval"]
+        if config_data.get("disable_cache_before_step") is not None:
+            taylorseer_config.disable_cache_before_step = config_data["disable_cache_before_step"]
+        if config_data.get("disable_cache_after_step") is not None:
+            taylorseer_config.disable_cache_after_step = config_data["disable_cache_after_step"]
+
+        gen_config = pipe.get_generation_config()
+        gen_config.taylorseer_config = taylorseer_config
+        pipe.set_generation_config(gen_config)
+
+    log.info(f"TaylorSeer config: {pipe.get_generation_config().taylorseer_config}")
+
+
 def get_scheduler_config_genai(config_data, config_name="CB config"):
     import openvino_genai
     user_config = copy.deepcopy(config_data)
@@ -526,6 +548,9 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation=True)
+
+    get_taylorseer_config_genai(image_gen_pipe, kwargs.get("taylorseer_config"))
+
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     return image_gen_pipe, end - start, True, callback
 
@@ -1294,6 +1319,9 @@ def create_genai_video_gen_model(model_path, device, ov_config, memory_data_coll
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation=True)
+
+    get_taylorseer_config_genai(video_gen_pipe, kwargs.get("taylorseer_config"))
+
     log.info(f"Pipeline initialization time: {end - start:.2f}s")
     return video_gen_pipe, orig_tokenizer, end - start, None, True
 

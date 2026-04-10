@@ -235,6 +235,14 @@ def get_argparser():
     )
     parser.add_argument("--empty_lora", action="store_true", help="Inference with empty LoRA config")
     parser.add_argument(
+        "--taylorseer_config",
+        required=False,
+        default=None,
+        help="Path to JSON file or JSON string with TaylorSeer cache configuration for GenAI video/image pipelines. "
+        "Supported keys: 'cache_interval', 'disable_cache_before_step', 'disable_cache_after_step'. "
+        "Pass '{\"disable_cache_after_step\": 0}' to disable TaylorSeer caching when it is enabled by default.",
+    )
+    parser.add_argument(
         "--use_cb",
         action="store_true",
         help="Deprecated, will be removed soon! Continues batching mode is used by default. "

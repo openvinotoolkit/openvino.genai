@@ -177,6 +177,7 @@ def analyze_args(args):
     model_args['lora_alphas'] = args.lora_alphas
     model_args['lora_mode'] = args.lora_mode
     model_args['empty_lora'] = args.empty_lora
+    model_args['taylorseer_config'] = get_config(args.taylorseer_config) if args.taylorseer_config else None
     model_args['devices'] = args.device
     model_args['prompt_index'] = [] if args.prompt_index is not None else None
     if model_args['prompt_index'] is not None:
