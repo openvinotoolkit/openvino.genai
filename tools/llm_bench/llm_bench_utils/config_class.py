@@ -229,6 +229,7 @@ USE_CASES = {
                 "granite",
                 "granitemoe",
                 "gptj",
+                "hunyuan",
                 "yi-",
                 "lfm2-moe",
                 "afmoe",
