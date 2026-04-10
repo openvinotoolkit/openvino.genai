@@ -9,6 +9,7 @@ from openvino_genai import (
     IncrementalParser,
     Parser,
     TextParserStreamer,
+    GenerationFinishReason,
     StreamingStatus,
     Llama3JsonToolParser,
     Phi4ReasoningParser,
@@ -76,7 +77,7 @@ def test_several_incremental_parsers(hf_ov_genai_models):
             return delta_text
 
     class IncrementalToolParser(IncrementalParser):
-        started_took_call: bool = False
+        started_tool_call: bool = False
         accumulated_tool_call: StringIO = StringIO()
         deactivated: bool = False
 
@@ -84,20 +85,15 @@ def test_several_incremental_parsers(hf_ov_genai_models):
             if self.deactivated:
                 return delta_text
 
-            if delta_text == "{" and not self.started_took_call:
-                self.started_took_call = True
+            if delta_text == "{" and not self.started_tool_call:
+                self.started_tool_call = True
                 self.accumulated_tool_call.write(delta_text)
-
-                # If not keep took call in resulting string
-                # delta_text = ''
-            elif self.started_took_call and delta_text == "}":
-                self.started_took_call = False
+            elif self.started_tool_call and delta_text == "}":
+                self.started_tool_call = False
                 self.accumulated_tool_call.write(delta_text)
                 self.deactivated = True
                 delta_msg["tool_calls"] = [json.loads(self.accumulated_tool_call.getvalue())]
-                # If not keep took call in resulting string
-                # delta_text = ''
-            elif self.started_took_call:
+            elif self.started_tool_call:
                 self.accumulated_tool_call.write(delta_text)
             return delta_text
 
@@ -160,7 +156,7 @@ def test_stop_invoked_by_tool_call(hf_ov_genai_models):
             return delta_text
 
     class IncrementalToolParser(IncrementalParser):
-        started_took_call: bool = False
+        started_tool_call: bool = False
         accumulated_tool_call: StringIO = StringIO()
         deactivated: bool = False
 
@@ -168,22 +164,16 @@ def test_stop_invoked_by_tool_call(hf_ov_genai_models):
             if self.deactivated:
                 return delta_text
 
-            if delta_text == "{" and not self.started_took_call:
-                self.started_took_call = True
+            if delta_text == "{" and not self.started_tool_call:
+                self.started_tool_call = True
                 self.accumulated_tool_call.write(delta_text)
-
-                # If not keep took call in resulting string
-                # delta_text = ''
-            elif self.started_took_call and delta_text == "}":
-                self.started_took_call = False
+            elif self.started_tool_call and delta_text == "}":
+                self.started_tool_call = False
                 self.accumulated_tool_call.write(delta_text)
                 self.deactivated = True
                 delta_msg["tool_calls"] = [json.loads(self.accumulated_tool_call.getvalue())]
                 self.set_status(StreamingStatus.TOOL_CALL_STOP)  # stop invoked by tool call
-
-                # If not keep took call in resulting string
-                # delta_text = ''
-            elif self.started_took_call:
+            elif self.started_tool_call:
                 self.accumulated_tool_call.write(delta_text)
             return delta_text
 
@@ -192,7 +182,7 @@ def test_stop_invoked_by_tool_call(hf_ov_genai_models):
             return StreamingStatus.RUNNING
 
     streamer = CustomStreamer(genai_tokenizer, parsers=[IncrementalToolParser(), CustomReasonParser()])
-    
+
     stream_string = [
         "Hello",
         "{",
@@ -760,3 +750,36 @@ def test_reset_incremental_parser(tmp_path, model_id):
 
     # Also asserts that resetting streamer between generations works correctly.
     assert res_streamer_2.parsed == res.parsed
+
+
+@pytest.mark.parametrize("model_id", ["katuni4ka/tiny-random-phi3"])
+def test_generate_stop_reason_tool_call_from_incremental_parser(tmp_path, model_id):
+    models_path = download_and_convert_model(model_id, padding_side="left").models_path
+    pipe = create_ov_pipeline(models_path)
+    tokenizer = pipe.get_tokenizer()
+
+    class StopOnFirstChunkParser(IncrementalParser):
+        def __init__(self):
+            super().__init__()
+            self.words_seen = 0
+
+        def parse(self, delta_msg: dict, delta_text: str, delta_tokens=None) -> str:
+            self.words_seen += len(delta_text.split())
+            if self.words_seen > 3:
+                self.set_status(StreamingStatus.TOOL_CALL_STOP)
+            return delta_text
+
+        def reset(self):
+            self.words_seen = 0
+
+    class CustomStreamer(TextParserStreamer):
+        def write(self, message):
+            return StreamingStatus.RUNNING
+
+    parser = StopOnFirstChunkParser()
+    streamer = CustomStreamer(tokenizer, parsers=[parser])
+
+    res = pipe.generate(['Please say "hello"'], max_new_tokens=64, streamer=streamer)
+
+    assert parser.words_seen > 3
+    assert res.finish_reasons == [GenerationFinishReason.TOOL_CALL]
