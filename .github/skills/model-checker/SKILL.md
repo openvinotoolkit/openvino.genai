@@ -1,10 +1,10 @@
 ---
-name: genai-model-checker
+name: model-checker
 description: "Validate a newly supported optimum-intel model with OpenVINO GenAI. Use when: checking new model support, verifying model export to OpenVINO IR, running GenAI inference test with llm_bench, benchmarking model accuracy with who-what-benchmark."
 argument-hint: "model_id and task (e.g. tencent/HY-MT1.5-1.8B text-generation-with-past)"
 ---
 
-# GenAI Model Checker
+# Model Checker
 
 Validates that a HuggingFace model exported via optimum-intel works correctly with OpenVINO GenAI pipelines and passes accuracy benchmarks.
 
@@ -46,13 +46,13 @@ Activate the Python virtual environment before running any commands.
 Run the checker script from the repository root:
 
 ```
-python3 .github/skills/genai-model-checker/scripts/check_model.py \
+python3 .github/skills/model-checker/scripts/check_model.py \
     --model-id <model_id> \
     --task <export_task> \
     --work-dir .model_enabler/model_checker
 ```
 
-Run `python3 .github/skills/genai-model-checker/scripts/check_model.py --help` for the full argument reference including defaults. The `--work-dir` is where all intermediate files, logs, and outputs will be stored. Do not pipe with any additional logging or redirection — the script handles its own logging.
+Run `python3 .github/skills/model-checker/scripts/check_model.py --help` for the full argument reference including defaults. The `--work-dir` is where all intermediate files, logs, and outputs will be stored. Do not pipe with any additional logging or redirection — the script handles its own logging.
 
 #### Skip flags (for re-runs after a fix)
 
@@ -83,7 +83,15 @@ The script logs progress for each step and exits with code 0 (pass) or non-zero 
 
 ### Step 3: Report Results
 
-Report results to the user. If all steps pass, indicate success and provide performance metrics and accuracy data. If a step fails, analyze tool logs and provide a summary with the failed tool log path.
+Results format:
+
+- **Model**: `<model_id>` (`<task>`)
+- **Validation**: PASSED / FAILED
+- **Performance** (if passed):
+  - 1st token latency, 2nd token latency, throughput
+  - Optimum similarity / GenAI similarity (if applicable)
+- **Logs**: paths to export log, llm_bench log, WWB logs
+- **Failed step analysis** (if failed): summary of the failure and relevant log path for details
 
 ### Security
 
