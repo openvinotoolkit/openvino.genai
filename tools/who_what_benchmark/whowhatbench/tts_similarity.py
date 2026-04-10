@@ -46,7 +46,6 @@ class ScoringConfig:
     # since ASR can disagree on punctuation, hyphens, split words, etc.
     # Content score compares target vs reference (base model) output only.
     content_wer_bad: float = 0.35
-    content_wer_weight: float = 1.0
 
     # Duration = relative difference in overall clip length.
     # ~1% is very close; ~20% is a clearly noticeable drift.
