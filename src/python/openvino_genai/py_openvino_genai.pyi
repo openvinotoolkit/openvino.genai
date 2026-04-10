@@ -927,6 +927,8 @@ class ExtendedPerfMetrics:
         ...
     def get_num_input_tokens(self) -> int:
         ...
+    def get_sampling_duration(self) -> MeanStdPair:
+        ...
     def get_throughput(self) -> MeanStdPair:
         ...
     def get_tokenization_duration(self) -> MeanStdPair:
@@ -934,8 +936,6 @@ class ExtendedPerfMetrics:
     def get_tpot(self) -> MeanStdPair:
         ...
     def get_ttft(self) -> MeanStdPair:
-        ...
-    def get_sampling_duration(self) -> MeanStdPair:
         ...
     @property
     def raw_metrics(self) -> RawPerfMetrics:
@@ -2239,6 +2239,8 @@ class PerfMetrics:
         ...
     def get_num_input_tokens(self) -> int:
         ...
+    def get_sampling_duration(self) -> MeanStdPair:
+        ...
     def get_throughput(self) -> MeanStdPair:
         ...
     def get_tokenization_duration(self) -> MeanStdPair:
@@ -2246,8 +2248,6 @@ class PerfMetrics:
     def get_tpot(self) -> MeanStdPair:
         ...
     def get_ttft(self) -> MeanStdPair:
-        ...
-    def get_sampling_duration(self) -> MeanStdPair:
         ...
     @property
     def raw_metrics(self) -> RawPerfMetrics:
@@ -2363,6 +2363,9 @@ class RawPerfMetrics:
     
         :param grammar_compile_times: Time to compile the grammar in milliseconds.
         :type grammar_compile_times: list[float]
+
+        :param sampling_durations: Time spent in the sampler per sampling step in microseconds. One entry per sampler.sample() call, parallel to token_infer_durations and m_batch_sizes.
+        :type sampling_durations: list[float]
     """
     def __init__(self) -> None:
         ...
@@ -2391,13 +2394,13 @@ class RawPerfMetrics:
     def m_times_to_first_token(self) -> list[float]:
         ...
     @property
+    def sampling_durations(self) -> list[float]:
+        ...
+    @property
     def token_infer_durations(self) -> list[float]:
         ...
     @property
     def tokenization_durations(self) -> list[float]:
-        ...
-    @property
-    def sampling_durations(self) -> list[float]:
         ...
 class ReasoningIncrementalParser(IncrementalParser):
     def __init__(self, expect_open_tag: bool = True, keep_original_content: bool = True, open_tag: str = '<think>', close_tag: str = '</think>') -> None:
@@ -4811,13 +4814,13 @@ class WhisperPerfMetrics(PerfMetrics):
     """
     def __init__(self) -> None:
         ...
-    def get_features_extraction_duration(self) -> MeanStdPair:
-        ...
-    def get_word_level_timestamps_processing_duration(self) -> MeanStdPair:
+    def get_decode_inference_duration(self) -> MeanStdPair:
         ...
     def get_encode_inference_duration(self) -> MeanStdPair:
         ...
-    def get_decode_inference_duration(self) -> MeanStdPair:
+    def get_features_extraction_duration(self) -> MeanStdPair:
+        ...
+    def get_word_level_timestamps_processing_duration(self) -> MeanStdPair:
         ...
     @property
     def whisper_raw_metrics(self) -> WhisperRawPerfMetrics:
@@ -4990,25 +4993,25 @@ class WhisperRawPerfMetrics:
         :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
         :type word_level_timestamps_processing_durations: list[MicroSeconds]
 
-        :param encode_inference_durations: Duration for each encoder inference call.
-        :type encode_inference_durations: list[MicroSeconds]
+        :param encode_inference_durations: Duration for each encoder inference call in microseconds.
+        :type encode_inference_durations: list[float]
 
-        :param decode_inference_durations: Duration for each decoder inference call.
-        :type decode_inference_durations: list[MicroSeconds]
+        :param decode_inference_durations: Duration for each decoder inference call during token generation in microseconds.
+        :type decode_inference_durations: list[float]
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def decode_inference_durations(self) -> list[float]:
+        ...
+    @property
+    def encode_inference_durations(self) -> list[float]:
         ...
     @property
     def features_extraction_durations(self) -> list[float]:
         ...
     @property
     def word_level_timestamps_processing_durations(self) -> list[float]:
-        ...
-    @property
-    def encode_inference_durations(self) -> list[float]:
-        ...
-    @property
-    def decode_inference_durations(self) -> list[float]:
         ...
 class WhisperWordTiming:
     """
