@@ -12,6 +12,9 @@ updates:
       time: "09:00"
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
+    ignore:
+      # Cannot be updated for the moment, ticket: 184608
+      - dependency-name: "openvinotoolkit/openvino/.github/actions/smart-ci"
     groups:
       github-actions:
         patterns:
