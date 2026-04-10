@@ -759,19 +759,25 @@ def test_vlm_cb_lora_generate_vs_add_request(cat_tensor: openvino.Tensor, tmp_pa
     gc_no_lora = get_greedy()
     gc_no_lora.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
     res_no_lora = pipe_no_lora.generate(
-        [PROMPTS[0]], images=[[cat_tensor]], generation_config=[gc_no_lora],
+        [PROMPTS[0]],
+        images=[[cat_tensor]],
+        generation_config=[gc_no_lora],
     )
 
     # Path 1: generate() - calls set_adapters() internally (known-good)
     pipe_generate = ContinuousBatchingPipeline(
-        models_path, scheduler_config, "CPU",
+        models_path,
+        scheduler_config,
+        "CPU",
         properties={"adapters": adapter_config},
     )
     gen_config_generate = get_greedy()
     gen_config_generate.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
     gen_config_generate.adapters = adapter_config
     res_generate = pipe_generate.generate(
-        [PROMPTS[0]], images=[[cat_tensor]], generation_config=[gen_config_generate],
+        [PROMPTS[0]],
+        images=[[cat_tensor]],
+        generation_config=[gen_config_generate],
     )
 
     assert res_generate[0].texts[0] != res_no_lora[0].texts[0], (
@@ -780,14 +786,20 @@ def test_vlm_cb_lora_generate_vs_add_request(cat_tensor: openvino.Tensor, tmp_pa
 
     # Path 2: add_request() + step() — relies on adapters applied at construction
     pipe_step = ContinuousBatchingPipeline(
-        models_path, scheduler_config, "CPU",
+        models_path,
+        scheduler_config,
+        "CPU",
         properties={"adapters": adapter_config},
     )
     gen_config_step = get_greedy()
     gen_config_step.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
     tokenizer = pipe_step.get_tokenizer()
     handle = pipe_step.add_request(
-        0, PROMPTS[0], images=[cat_tensor], videos=[], generation_config=gen_config_step,
+        0,
+        PROMPTS[0],
+        images=[cat_tensor],
+        videos=[],
+        generation_config=gen_config_step,
     )
     while handle.get_status() != GenerationStatus.FINISHED:
         pipe_step.step()
@@ -805,8 +817,7 @@ def test_vlm_cb_lora_generate_vs_add_request(cat_tensor: openvino.Tensor, tmp_pa
     # add_request()+step() result must differ from no-LoRA baseline
     step_text = tokenizer.decode(outputs[0].generated_ids)
     assert step_text != res_no_lora[0].texts[0], (
-        "add_request()+step() output matches no-LoRA baseline - "
-        "LoRA not applied during add_request()+step() workflow"
+        "add_request()+step() output matches no-LoRA baseline - LoRA not applied during add_request()+step() workflow"
     )
 
 
