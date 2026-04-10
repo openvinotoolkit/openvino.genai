@@ -114,14 +114,28 @@ class UseCaseTextReranker(UseCase):
     ov_cls: type | None = OVModelForSequenceClassification
     pt_cls: type | None = AutoModelForSequenceClassification
 
+    DEFAULT_MAX_LENGTH = 200
+    DEFAULT_MAX_LENGTH_QWEN = 8192
+
     def adjust_model_class_by_config(self, config):
         if self.is_qwen_causallm_arch(config):
             self.ov_cls = OVModelForCausalLM
             self.pt_cls = AutoModelForCausalLM
 
     @staticmethod
+    def is_qwen3(config):
+        return config.model_type == "qwen3"
+
+    @staticmethod
     def is_qwen_causallm_arch(config):
-        return config.model_type == "qwen3" and "Qwen3ForCausalLM" in config.architectures
+        return UseCaseTextReranker.is_qwen3(config) and "Qwen3ForCausalLM" in config.architectures
+
+    @staticmethod
+    def get_default_max_length(config):
+        if UseCaseTextReranker.is_qwen3(config):
+            return UseCaseTextReranker.DEFAULT_MAX_LENGTH_QWEN
+
+        return UseCaseTextReranker.DEFAULT_MAX_LENGTH
 
 
 @dataclass
