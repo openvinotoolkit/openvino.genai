@@ -65,6 +65,12 @@ public:
         float m_cache_usage = 0.0;
         // cache usage size in bytes
         size_t m_cache_size_in_bytes = 0;
+
+        // CausalConv1D cache support
+        // Block table per sequence for a single conv layer (all conv layers share the same blocks).
+        std::map<uint64_t, BlocksPerLayer> m_conv_block_table;
+        // Conv state kernel size minus 1 (0 means no conv cache).
+        size_t m_conv_cache_interval = 0;
     };
 
     Scheduler(std::shared_ptr<CacheOrchestrator> cache_orchestrator, const SchedulerConfig & config = {}, bool can_use_partial_preemption = true, size_t snapkv_window_size = 1) :
@@ -80,8 +86,8 @@ public:
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
         Output scheduler_output;
-        // map of src -> dst blocks copies, which need to be performed by ICacheManager
-        std::map<size_t, std::list<size_t>> block_copy_map;
+        // map of src -> dst blocks copies per cache type
+        std::map<CacheType, std::map<size_t, std::list<size_t>>> typed_block_copy_map;
 
         // free some blocks taken by non-confirmed candidates in SD / prompt look-up
         clean_empty_blocks(sequence_groups);
@@ -93,7 +99,7 @@ public:
         if (m_config.dynamic_split_fuse) {
             // deepspeed-mii case
             // generation phase is always scheduled first
-            _schedule_generate_phase_dynamic_split_fuse(sequence_groups, scheduler_output, block_copy_map);
+            _schedule_generate_phase_dynamic_split_fuse(sequence_groups, scheduler_output, typed_block_copy_map);
             // some tokens from generation prompt are also scheduled
             _schedule_prompt_phase_dynamic_split_fuse(sequence_groups, scheduler_output);
         } else {
@@ -104,7 +110,7 @@ public:
 
             if (!scheduler_output.is_prompt) {
                 // prompt sequences are not scheduler => scheduler generation phase by dynamic_split_fuse implementation
-                _schedule_generate_phase_dynamic_split_fuse(sequence_groups, scheduler_output, block_copy_map);
+                _schedule_generate_phase_dynamic_split_fuse(sequence_groups, scheduler_output, typed_block_copy_map);
             }
         }
 
@@ -115,7 +121,7 @@ public:
 
         static ManualTimer copy_blocks_timer("copy block");
         copy_blocks_timer.start();
-        m_cache_orchestrator->copy_blocks(block_copy_map);
+        m_cache_orchestrator->copy_blocks(typed_block_copy_map);
         copy_blocks_timer.end();
 
         return scheduler_output;
@@ -323,6 +329,12 @@ private:
 
                         scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
                         scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
+
+                        // fill conv block tables if conv cache is registered
+                        if (m_cache_orchestrator->has_conv_cache()) {
+                            scheduler_output.m_conv_block_table[seq_id] = m_cache_orchestrator->get_conv_block_table(seq_id);
+                            scheduler_output.m_conv_cache_interval = m_cache_orchestrator->get_conv_cache_interval();
+                        }
                     }
                 }
 
@@ -335,7 +347,7 @@ private:
 
     void _schedule_generate_phase_dynamic_split_fuse(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                                                      Output& scheduler_output,
-                                                     std::map<size_t, std::list<size_t>>& block_copy_map) {
+                                                     std::map<CacheType, std::map<size_t, std::list<size_t>>>& typed_block_copy_map) {
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
             // Note, that can_generate_tokens will mix preempted sequence groups
@@ -376,7 +388,7 @@ private:
                 }
 
                 // allocate new slots
-                std::map<size_t, std::list<size_t>> copy_blocks_map = m_cache_orchestrator->append_slots(sequence_group);
+                auto per_type_copy_map = m_cache_orchestrator->append_slots(sequence_group);
 
                 // add information to scheduler_output
                 {
@@ -402,12 +414,23 @@ private:
 
 
 
-                    // merge copy_blocks
-                    for (const auto& src_dst : copy_blocks_map) {
-                        size_t src_index = src_dst.first;
-                        const std::list<size_t>& dst_indexes = src_dst.second;
-                        for (const auto dst_index : dst_indexes)
-                            block_copy_map[src_index].push_back(dst_index);
+                    // merge per-type copy_blocks
+                    for (auto& [type, copy_map] : per_type_copy_map) {
+                        for (const auto& src_dst : copy_map) {
+                            size_t src_index = src_dst.first;
+                            const std::list<size_t>& dst_indexes = src_dst.second;
+                            for (const auto dst_index : dst_indexes)
+                                typed_block_copy_map[type][src_index].push_back(dst_index);
+                        }
+                    }
+
+                    // fill conv block tables if conv cache is registered
+                    if (m_cache_orchestrator->has_conv_cache()) {
+                        for (const auto& seq : sequence_group->get_running_sequences()) {
+                            size_t sid = seq->get_id();
+                            scheduler_output.m_conv_block_table[sid] = m_cache_orchestrator->get_conv_block_table(sid);
+                        }
+                        scheduler_output.m_conv_cache_interval = m_cache_orchestrator->get_conv_cache_interval();
                     }
                 }
 
@@ -489,6 +512,12 @@ private:
 
                         scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
                         scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
+
+                        // fill conv block tables if conv cache is registered
+                        if (m_cache_orchestrator->has_conv_cache()) {
+                            scheduler_output.m_conv_block_table[seq_id] = m_cache_orchestrator->get_conv_block_table(seq_id);
+                            scheduler_output.m_conv_cache_interval = m_cache_orchestrator->get_conv_cache_interval();
+                        }
                     }
 
                     // update "is_prompt" flag

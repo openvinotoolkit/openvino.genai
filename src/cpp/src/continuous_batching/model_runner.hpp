@@ -219,6 +219,7 @@ class ModelRunner {
     bool m_is_use_xattention_inputs;
 
     bool m_is_use_adaptive_rkv;
+    bool m_has_conv_cache = false;
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
@@ -242,6 +243,10 @@ class ModelRunner {
     ov::Tensor m_cached_token_type_ids;
     ov::Tensor m_cached_deepstack_visual_embeds;
     ov::Tensor m_cached_visual_pos_masks;
+    ov::Tensor m_cached_paged_conv_block_indices;
+    ov::Tensor m_cached_paged_conv_block_indices_begins;
+    ov::Tensor m_cached_paged_conv_past_lens;
+    ov::Tensor m_cached_paged_conv_cache_interval;
 public:
     /**
      * Constructs the ModelRunner.
@@ -281,6 +286,12 @@ public:
           m_is_use_adaptive_rkv(m_is_use_adaptive_rkv_inputs) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
+
+        // Detect conv cache from model inputs
+        try {
+            m_request.get_tensor("paged_conv_block_indices");
+            m_has_conv_cache = true;
+        } catch (const ov::Exception&) {}
     }
 
     /**
@@ -723,6 +734,10 @@ public:
             _set_adaptive_rkv_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
+        if (m_has_conv_cache && !scheduler_output.m_conv_block_table.empty()) {
+            _set_conv_inputs(sequence_groups, scheduler_output, batch_size_in_sequences);
+        }
+
         if (matmul_gathering_is_available) {
             // use pre-allocated tensor for gather_indices as well
             ov::Tensor gather_indices = m_request.get_tensor("sampled_tokens_indices");
@@ -733,6 +748,39 @@ public:
         if (m_is_aggregate_attention_scores && !m_cached_score_aggregation_window) {
             m_request.set_tensor("score_aggregation_window", score_aggregation_window);
         }
+
+        // {
+        //     // === DEBUG: dump all model inputs before inference ===
+        //     std::cerr << "\n=== ModelRunner::forward() — PRE-INFER DEBUG DUMP ===\n";
+        //     auto compiled_model = m_request.get_compiled_model();
+        //     for (const auto& input : compiled_model.inputs()) {
+        //         std::string name;
+        //         for (const auto& n : input.get_names()) { name = n; break; }
+        //         ov::Tensor t;
+        //         try { t = m_request.get_tensor(name); } catch (...) { std::cerr << "  [" << name << "] — UNBOUND\n"; continue; }
+        //         auto shape = t.get_shape();
+        //         std::cerr << "  [" << name << "]  shape={";
+        //         for (size_t i = 0; i < shape.size(); ++i) { if (i) std::cerr << ","; std::cerr << shape[i]; }
+        //         std::cerr << "}  type=" << t.get_element_type() << "  bytes=" << t.get_byte_size();
+
+        //         // Print values for small I32 / I64 tensors (< 64 elements)
+        //         if (t.get_size() > 0 && t.get_size() <= 64) {
+        //             if (t.get_element_type() == ov::element::i32) {
+        //                 std::cerr << "  vals=[";
+        //                 auto* d = t.data<int32_t>();
+        //                 for (size_t i = 0; i < t.get_size(); ++i) { if (i) std::cerr << ","; std::cerr << d[i]; }
+        //                 std::cerr << "]";
+        //             } else if (t.get_element_type() == ov::element::i64) {
+        //                 std::cerr << "  vals=[";
+        //                 auto* d = t.data<int64_t>();
+        //                 for (size_t i = 0; i < t.get_size(); ++i) { if (i) std::cerr << ","; std::cerr << d[i]; }
+        //                 std::cerr << "]";
+        //             }
+        //         }
+        //         std::cerr << "\n";
+        //     }
+        //     std::cerr << "=== END DEBUG DUMP ===\n\n";
+        // }
 
         {
             static ManualTimer timer("pure generate inference");
@@ -1391,6 +1439,84 @@ private:
             _fill_select_indices_from_block_tables(indices_tensor_names,
                                                    scheduler_output,
                                                    scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence);
+        }
+    }
+
+    /**
+     * @brief Fills paged_conv_* model inputs from the conv block tables in scheduler_output.
+     *
+     * Sets: paged_conv_block_indices, paged_conv_block_indices_begins,
+     *        paged_conv_past_lens, paged_conv_cache_interval.
+     */
+    void _set_conv_inputs(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                          const Scheduler::Output& scheduler_output,
+                          size_t batch_size_in_sequences) {
+        const size_t conv_cache_interval = scheduler_output.m_conv_cache_interval;
+
+        // PagedCausalConv1D expects 2 block indices per sequence: [read_block, write_block].
+        // For the basic case both point to the same physical block (in-place update).
+        const size_t blocks_per_sequence = 2;
+        ov::Tensor conv_block_indices = _get_or_resize_tensor(
+            m_cached_paged_conv_block_indices, "paged_conv_block_indices",
+            {batch_size_in_sequences * blocks_per_sequence}, ov::element::i32);
+        ov::Tensor conv_block_indices_begins = _get_or_resize_tensor(
+            m_cached_paged_conv_block_indices_begins, "paged_conv_block_indices_begins",
+            {batch_size_in_sequences + 1}, ov::element::i32);
+        ov::Tensor conv_past_lens = _get_or_resize_tensor(
+            m_cached_paged_conv_past_lens, "paged_conv_past_lens",
+            {batch_size_in_sequences}, ov::element::i32);
+        ov::Tensor conv_cache_interval_tensor = _get_or_resize_tensor(
+            m_cached_paged_conv_cache_interval, "paged_conv_cache_interval",
+            {batch_size_in_sequences}, ov::element::i32);
+
+        int32_t* block_indices_data = conv_block_indices.data<int32_t>();
+        int32_t* begins_data = conv_block_indices_begins.data<int32_t>();
+        int32_t* past_lens_data = conv_past_lens.data<int32_t>();
+        int32_t* interval_data = conv_cache_interval_tensor.data<int32_t>();
+
+        begins_data[0] = 0;
+        size_t seq_offset = 0;
+        size_t block_offset = 0;
+        size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+
+            for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                Sequence::CPtr sequence = running_sequences[seq_idx];
+                size_t seq_id = sequence->get_id();
+
+                const auto& conv_blocks = scheduler_output.m_conv_block_table.at(seq_id);
+                OPENVINO_ASSERT(!conv_blocks.empty(), "Conv block table empty for sequence ", seq_id);
+                int32_t phys_block = conv_blocks[0]->get_index();
+
+                // Block 0 = read, block 1 = write (both reference the same physical block)
+                block_indices_data[block_offset]     = phys_block;
+                block_indices_data[block_offset + 1] = phys_block;
+
+                begins_data[seq_offset + 1] = static_cast<int32_t>(block_offset + blocks_per_sequence);
+
+                past_lens_data[seq_offset] = static_cast<int32_t>(sequence_group->get_num_processed_tokens());
+                interval_data[seq_offset] = static_cast<int32_t>(conv_cache_interval);
+
+                seq_offset++;
+                block_offset += blocks_per_sequence;
+            }
+        }
+
+        if (!m_cached_paged_conv_block_indices) {
+            m_request.set_tensor("paged_conv_block_indices", conv_block_indices);
+        }
+        if (!m_cached_paged_conv_block_indices_begins) {
+            m_request.set_tensor("paged_conv_block_indices_begins", conv_block_indices_begins);
+        }
+        if (!m_cached_paged_conv_past_lens) {
+            m_request.set_tensor("paged_conv_past_lens", conv_past_lens);
+        }
+        if (!m_cached_paged_conv_cache_interval) {
+            m_request.set_tensor("paged_conv_cache_interval", conv_cache_interval_tensor);
         }
     }
 };

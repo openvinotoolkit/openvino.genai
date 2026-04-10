@@ -83,6 +83,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     bool allow_adaptive_rkv = scheduler_config.use_cache_eviction && scheduler_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV;
     ov::pass::SDPAToPagedAttention(is_need_per_layer_cache_control, is_need_per_layer_cache_control, allow_score_aggregation, allow_cache_rotation, allow_xattention, allow_adaptive_rkv).run_on_model(model);
     utils::apply_gather_before_matmul_transformation(model);
+    ov::save_model(model, "/home/apaniuko/cpp/openvino.genai/temp/lfm2-pa/model_after_transformation.xml");
+
 
     initialize_pipeline(model, scheduler_config, device, properties);
 }
@@ -165,7 +167,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         return get_available_cpu_memory();
     };
     auto cache_orchestrator = CacheOrchestrator::create(infer_request, normalized_config, get_available_memory);
-    m_num_decoder_layers = cache_orchestrator->get_num_layers();
+    m_num_decoder_layers = cache_orchestrator->get_num_decoder_layers();
 
     bool can_use_partial_preemption = true;
     if (execution_device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {

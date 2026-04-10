@@ -11,7 +11,8 @@ namespace ov::genai {
  * and handled by implementing a corresponding ICacheManager.
  */
 enum class CacheType {
-    KV_CACHE,  ///< Standard full-attention KV cache (PagedAttention style)
+    KV_CACHE,              ///< Standard full-attention KV cache (PagedAttention style)
+    CAUSAL_CONV1D_CACHE,   ///< Fixed-size causal convolution state cache
 };
 
 }  // namespace ov::genai

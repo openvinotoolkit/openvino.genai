@@ -19,6 +19,7 @@
 #include "continuous_batching/cache/i_cache_manager.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
+#include "continuous_batching/cache/causal_conv1d_cache_manager.hpp"
 
 namespace ov::genai {
 
@@ -59,7 +60,6 @@ public:
         size_t aggregate_block_size_in_bytes = 0;
         size_t total_num_layers = 0;
 
-        // KV Cache detection
         if (KVCacheManager::has_cache_inputs(compiled_model)) {
             auto kv_manager = std::make_shared<KVCacheManager>(infer_request);
 
@@ -92,7 +92,32 @@ public:
                                                config.use_cache_eviction);
         }
 
-        // Future cache types (e.g. LINEAR_ATTENTION, SLIDING_WINDOW) follow the same pattern.
+        if (CausalConv1DCacheManager::has_cache_inputs(compiled_model)) {
+            auto conv_manager = std::make_shared<CausalConv1DCacheManager>(infer_request);
+
+            total_num_layers += conv_manager->get_num_conv_layers();
+
+            std::vector<size_t> conv_layer_ids(conv_manager->get_num_conv_layers());
+            // Conv global layer IDs start after KV layers
+            size_t conv_start = total_num_layers - conv_manager->get_num_conv_layers();
+            std::iota(conv_layer_ids.begin(), conv_layer_ids.end(), conv_start);
+
+            // Derive num_conv_blocks from config; fall back to num_kv_blocks if unset
+            size_t num_conv_blocks = config.num_conv_blocks;
+            if (num_conv_blocks == 0) {
+                num_conv_blocks = config.num_kv_blocks > 0 ? config.num_kv_blocks : config.max_num_seqs;
+            }
+
+            auto conv_block_manager = std::make_shared<BlockManager>(
+                num_conv_blocks,
+                false,  // no prefix caching for conv (initially)
+                1,      // block_size in tokens (each block = one sequence's full conv state)
+                conv_manager->get_num_conv_layers(),
+                1);     // fixed_blocks_per_sequence = 1
+
+            orchestrator->register_cache_type(CacheType::CAUSAL_CONV1D_CACHE, conv_manager,
+                                               conv_block_manager, conv_layer_ids);
+        }
 
         OPENVINO_ASSERT(!orchestrator->get_registered_types().empty(),
                         "No supported cache types detected in the model");
@@ -135,9 +160,9 @@ public:
         }
     }
 
-    void copy_blocks(const std::map<size_t, std::list<size_t>>& block_copy_map) {
-        for (auto& [type, cache_mgr] : m_cache_managers) {
-            cache_mgr->copy_blocks(block_copy_map);
+    void copy_blocks(const std::map<CacheType, std::map<size_t, std::list<size_t>>>& per_type_copy_map) {
+        for (const auto& [type, copy_map] : per_type_copy_map) {
+            m_cache_managers.at(type)->copy_blocks(copy_map);
         }
     }
 
@@ -197,15 +222,15 @@ public:
             [&seq_group, num_tokens](const auto& pair) { return pair.second->can_allocate_tokens(seq_group, num_tokens); });
     }
 
-    std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::Ptr seq_group) {
-        std::map<size_t, std::list<size_t>> merged;
+    std::map<CacheType, std::map<size_t, std::list<size_t>>> append_slots(SequenceGroup::Ptr seq_group) {
+        std::map<CacheType, std::map<size_t, std::list<size_t>>> per_type;
         for (auto& [type, block_mgr] : m_block_managers) {
             auto copy_map = block_mgr->append_slots(seq_group);
-            for (auto& [src, dst_list] : copy_map) {
-                merged[src].insert(merged[src].end(), dst_list.begin(), dst_list.end());
+            if (!copy_map.empty()) {
+                per_type[type] = std::move(copy_map);
             }
         }
-        return merged;
+        return per_type;
     }
 
     bool can_append_slots(SequenceGroup::CPtr seq_group) const {
@@ -478,19 +503,51 @@ public:
         return m_types_ordered;
     }
 
+    // -----------------------------------------------------------------------
+    //  Conv cache helpers
+    // -----------------------------------------------------------------------
+
+    /// @return Whether a CausalConv1D cache type is registered.
+    bool has_conv_cache() const {
+        return m_cache_managers.count(CacheType::CAUSAL_CONV1D_CACHE) > 0;
+    }
+
     /**
-     * @brief Whether the model requires per-layer block index inputs.
+     * @brief Returns the conv block table for a sequence (first conv layer).
+     * All conv layers share the same block allocation, so a single layer suffices.
+     */
+    BlocksPerLayer get_conv_block_table(uint64_t seq_id) const {
+        OPENVINO_ASSERT(has_conv_cache(), "No conv cache registered");
+        return m_block_managers.at(CacheType::CAUSAL_CONV1D_CACHE)->get_block_tables(seq_id)[0];
+    }
+
+    /// @return The conv cache interval (kernel_size - 1).
+    size_t get_conv_cache_interval() const {
+        OPENVINO_ASSERT(has_conv_cache(), "No conv cache registered");
+        auto conv_mgr = std::dynamic_pointer_cast<CausalConv1DCacheManager>(
+            m_cache_managers.at(CacheType::CAUSAL_CONV1D_CACHE));
+        return conv_mgr->get_cache_interval();
+    }
+
+    /// @return Number of KV attention layers only (excluding conv / other cache types).
+    size_t get_num_decoder_layers() const {
+        auto it = m_cache_managers.find(CacheType::KV_CACHE);
+        return it != m_cache_managers.end() ? it->second->get_num_layers() : 0;
+    }
+
+    /**
+     * @brief Whether the model requires per-layer KV block index inputs.
      *
-     * Returns true when any registered cache type has per-layer control enabled
-     * or when multiple cache types are registered (each type manages a different
-     * layer subset, so per-layer inputs are required).
+     * Returns true when any registered cache type with shared block_indices inputs
+     * has per-layer control enabled. Cache types with their own dedicated inputs
+     * (e.g. CAUSAL_CONV1D_CACHE uses paged_conv_* inputs) do not contribute.
      */
     bool needs_per_layer_block_indices() const {
-        if (m_types_ordered.size() > 1) {
-            return true;
-        }
         return std::any_of(m_per_layer_control.begin(), m_per_layer_control.end(),
-            [](const auto& pair) { return pair.second; });
+            [](const auto& pair) {
+                // Only KV_CACHE uses block_indices / block_indices.N inputs
+                return pair.first == CacheType::KV_CACHE && pair.second;
+            });
     }
 
 private:

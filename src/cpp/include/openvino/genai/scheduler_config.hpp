@@ -25,6 +25,11 @@ struct SchedulerConfig {
     // When both num_kv_blocks and cache_size are equal to zero dynamic KV-cache allocation is turned on.
     std::size_t cache_size = 0;
 
+    // total number of causal conv1d state blocks available to scheduler logic.
+    // Each block holds the full conv state for one sequence.
+    // When 0, automatically derived from num_kv_blocks if conv layers are detected.
+    std::size_t num_conv_blocks = 0;
+
     // whether to split prompt / generate to different scheduling phases
     // Allows to process prompt partially in case when batch size is limited. 
     // If dynamic_split_fuse is turned off any prompt that is longer than batch size will lead to error.
@@ -70,7 +75,7 @@ struct SchedulerConfig {
 
     bool operator==(const SchedulerConfig& other) const {
         return max_num_batched_tokens == other.max_num_batched_tokens && num_kv_blocks == other.num_kv_blocks &&
-               cache_size == other.cache_size &&
+               cache_size == other.cache_size && num_conv_blocks == other.num_conv_blocks &&
                dynamic_split_fuse == other.dynamic_split_fuse && use_cache_eviction == other.use_cache_eviction &&
                max_num_seqs == other.max_num_seqs && enable_prefix_caching == other.enable_prefix_caching;
     }
@@ -88,6 +93,7 @@ struct SchedulerConfig {
         oss << "  max_num_batched_tokens: " << max_num_batched_tokens << "\n";
         oss << "  num_kv_blocks: " << num_kv_blocks << "\n";
         oss << "  cache_size: " << cache_size << "\n";
+        oss << "  num_conv_blocks: " << num_conv_blocks << "\n";
         oss << "  dynamic_split_fuse: " << std::boolalpha << dynamic_split_fuse << "\n";
         oss << "  use_cache_eviction: " << std::boolalpha << use_cache_eviction << "\n";
         if (use_cache_eviction) {

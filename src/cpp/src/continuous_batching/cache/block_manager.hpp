@@ -532,6 +532,7 @@ class BlockManager {
     bool m_enable_prefix_caching;
     size_t m_block_size;
     size_t m_num_layers;
+    size_t m_fixed_blocks_per_sequence = 0;  ///< When > 0, each sequence gets exactly this many blocks.
     // TODO: caching time can probably be improved if we use the prefix tree
     std::map<uint64_t, BlocksPerLayer> m_prefix_hash_to_occupied_block_map;
 
@@ -550,9 +551,15 @@ public:
      * @param num_layers The number of separate attention layers with KV caches in the LLM associated with the pipeline.
      * In current implementation each layer must have the same number of logical blocks allocated at all times.
      */
-    BlockManager(int num_blocks, bool enable_prefix_caching, size_t block_size, size_t num_layers = 1)
+    /**
+     * @param fixed_blocks_per_sequence When > 0, each sequence is allocated exactly this many blocks
+     *        regardless of context length. Used for fixed-size caches (e.g. CausalConv1D state).
+     *        When 0 (default), blocks grow with context length.
+     */
+    BlockManager(int num_blocks, bool enable_prefix_caching, size_t block_size, size_t num_layers = 1,
+                 size_t fixed_blocks_per_sequence = 0)
         : m_allocator(num_blocks, enable_prefix_caching, num_layers), m_enable_prefix_caching(enable_prefix_caching), m_block_size(block_size),
-        m_num_layers(num_layers) {
+        m_num_layers(num_layers), m_fixed_blocks_per_sequence(fixed_blocks_per_sequence) {
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
     }
 
@@ -706,6 +713,9 @@ public:
      * @return The number of logical blocks required by the sequence group.
      */
     size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
+        if (m_fixed_blocks_per_sequence > 0) {
+            return m_fixed_blocks_per_sequence;
+        }
         return (seq_group->get_context_len() - seq_group->get_num_evicted_tokens() + m_block_size - 1) / m_block_size;
     }
 
@@ -790,6 +800,22 @@ public:
      * @return The number of additional tokens that can be stored.
      */
     size_t available_token_slots(SequenceGroup::CPtr seq_group) const {
+        if (m_fixed_blocks_per_sequence > 0) {
+            // Fixed block count: once allocated, unlimited tokens can be served.
+            // If not yet allocated, capacity depends on available blocks.
+            bool all_allocated = true;
+            for (auto seq : seq_group->get_running_sequences()) {
+                auto it = m_block_table.find(seq->get_id());
+                if (it == m_block_table.end() || it->second[0].size() < m_fixed_blocks_per_sequence) {
+                    all_allocated = false;
+                    break;
+                }
+            }
+            if (all_allocated) {
+                return std::numeric_limits<size_t>::max();
+            }
+            return num_free_blocks() >= m_fixed_blocks_per_sequence ? std::numeric_limits<size_t>::max() : 0;
+        }
         return get_num_unused_tokens(seq_group) + num_free_blocks() * m_block_size;
     }
 
@@ -801,6 +827,19 @@ public:
      * @return Whether the allocation is feasible.
      */
     bool can_allocate_tokens(SequenceGroup::CPtr seq_group, size_t num_tokens) const {
+        if (m_fixed_blocks_per_sequence > 0) {
+            // Fixed block count: check if we can allocate the fixed number of blocks
+            // for each running sequence that does not yet have them.
+            for (auto seq : seq_group->get_running_sequences()) {
+                auto it = m_block_table.find(seq->get_id());
+                if (it == m_block_table.end() || it->second[0].size() < m_fixed_blocks_per_sequence) {
+                    if (!can_allocate_blocks(m_fixed_blocks_per_sequence)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
         const size_t tokens_needing_new_blocks = num_tokens > get_num_unused_tokens(seq_group) ? num_tokens - get_num_unused_tokens(seq_group) : 0;
         size_t blocks_needed = (tokens_needing_new_blocks + m_block_size - 1) / m_block_size;
         return can_allocate_blocks(blocks_needed);
@@ -815,6 +854,20 @@ public:
      * @param prompt_size Prompt size for this sequence.
      */
     void allocate_tokens(ov::genai::Sequence::Ptr sequence, SequenceGroup::CPtr seq_group, size_t num_tokens, size_t prompt_size = 0) {
+        if (m_fixed_blocks_per_sequence > 0) {
+            auto seq_id = sequence->get_id();
+            size_t current_blocks = 0;
+            if (m_block_table.find(seq_id) != m_block_table.end()) {
+                current_blocks = m_block_table[seq_id][0].size();
+            }
+            size_t blocks_needed = m_fixed_blocks_per_sequence > current_blocks
+                                       ? m_fixed_blocks_per_sequence - current_blocks
+                                       : 0;
+            if (blocks_needed > 0) {
+                allocate(sequence, blocks_needed, prompt_size);
+            }
+            return;
+        }
         const size_t unused_tokens = get_num_unused_tokens(seq_group);
         const size_t tokens_needing_new_blocks = num_tokens > unused_tokens ? num_tokens - unused_tokens : 0;
         const size_t num_blocks = (tokens_needing_new_blocks + m_block_size - 1) / m_block_size;
@@ -1079,8 +1132,11 @@ public:
         }
         for (const auto& sequence : seq_group->get_running_sequences()) {
             auto seq_id = sequence->get_id();
-            auto& block_table = m_block_table[seq_id];
-            size_t num_physical_blocks = block_table[0].size();
+            auto it = m_block_table.find(seq_id);
+            if (it == m_block_table.end() || it->second.empty() || it->second[0].empty()) {
+                continue;
+            }
+            size_t num_physical_blocks = it->second[0].size();
             if (num_physical_blocks > num_logical_blocks) {
                 free_sequence_partially(seq_id, num_physical_blocks - num_logical_blocks);
             }
