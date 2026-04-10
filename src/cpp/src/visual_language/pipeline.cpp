@@ -779,7 +779,7 @@ VLMPipeline::VLMPipeline(
 
         auto models_map = utils::read_models(models_dir, properties);
         auto tokenizer_path = utils::find_llm_gguf_in_dir(models_dir);
-        auto tokenizer = Tokenizer(tokenizer_path, {});
+        auto tokenizer = Tokenizer(tokenizer_path, properties);
         auto generation_config = utils::from_config_json_if_exists<GenerationConfig>(models_dir, "generation_config.json");
 
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues

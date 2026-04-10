@@ -503,16 +503,7 @@ std::shared_ptr<ov::Model> create_vision_embeddings_model(
     auto model = std::make_shared<ov::Model>(
         ov::OutputVector({result->output(0)}),
         inputs);
-    std::cerr << "===== DEBUG create_vision_embeddings_model outputs =====" << std::endl;
-    for (const auto& input : model->inputs()) {
-        std::cerr << "vision_embeddings input any_name = " << input.get_any_name() << std::endl;
-        std::cerr << "tensor names = ";
-        for (const auto& n : input.get_names()) std::cerr << n << " ";
-        std::cerr << std::endl;
-    }
-    for (const auto& output : model->outputs()) {
-        std::cerr << "vision_embeddings output any_name = " << output.get_any_name() << std::endl;
-    }
+
     return model;
 }
 
