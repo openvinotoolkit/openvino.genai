@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "generation_config_utils.hpp"
+#include "logger.hpp"
 #include "utils.hpp"
 
 namespace ov::genai::utils {

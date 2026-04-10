@@ -635,6 +635,7 @@ def genai_gen_text2video(
         frame_rate=frame_rate,
         guidance_scale=guidance_scale,
         guidance_rescale=guidance_rescale,
+        max_sequence_length=256,
         generator=generator,
         **kwargs,
     )
