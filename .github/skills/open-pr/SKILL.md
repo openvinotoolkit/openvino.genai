@@ -20,7 +20,6 @@ The user provides (or the agent infers from prior conversation):
 - **branch_name**: Name for the new branch (e.g. `fix/kv-cache-leak`)
 - **pr_title**: Concise PR title for release notes (e.g. `Fix KV-cache memory leak in continuous batching`)
 - **ticket** _(optional)_: Jira ticket number (e.g. `CVS-12345`) or GitHub issue number
-- **base_branch** _(optional)_: Target branch to merge into. Defaults to `master`.
 
 If the user does not provide these, infer sensible values from the conversation context and confirm with the user before proceeding.
 
@@ -90,7 +89,7 @@ The goal is a branch where the **full diff against `master`** contains only in-s
 
 ### Step 4: Stage and Commit
 
-Stage only the in-scope files identified in Step 1:
+Stage only the in-scope files identified in Step 2:
 
 ```bash
 git add <file1> <file2> ...
@@ -160,7 +159,7 @@ Use the GitHub MCP tool to create the pull request as a **draft**:
 
 - **Repository**: `openvinotoolkit/openvino.genai`
 - **Head branch**: `<fork_owner>:<branch_name>` (cross-fork format, e.g. `myuser:fix/kv-cache-leak`)
-- **Base branch**: `<base_branch>` (default: `master`)
+- **Base branch**: `master`
 - **Title**: `<pr_title>`
 - **Body**: The composed PR description from Step 8
 - **Draft**: `true`
