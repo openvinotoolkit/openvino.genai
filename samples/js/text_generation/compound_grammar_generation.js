@@ -122,7 +122,7 @@ async function main() {
     const generationConfig = {
         return_decoded_results: true,
         max_new_tokens: 300,
-        do_sample: true,
+        do_sample: false,
     };
 
     const userText1 = "Do dolphins have fingers?";
