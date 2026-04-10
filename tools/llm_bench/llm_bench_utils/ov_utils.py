@@ -164,8 +164,9 @@ def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
     return ov_model, tokenizer, from_pretrained_time, bench_hook, False
 
 
-def get_taylorseer_config_genai(pipe, config_data=None):
+def apply_taylorseer_config_genai(pipe, config_data=None):
     import openvino_genai
+
     if config_data is not None:
         if not isinstance(config_data, dict):
             raise ValueError(f"--taylorseer_config must be a JSON object, got {type(config_data).__name__}")
@@ -549,7 +550,7 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation=True)
 
-    get_taylorseer_config_genai(image_gen_pipe, kwargs.get("taylorseer_config"))
+    apply_taylorseer_config_genai(image_gen_pipe, kwargs.get("taylorseer_config"))
 
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     return image_gen_pipe, end - start, True, callback
@@ -1320,7 +1321,7 @@ def create_genai_video_gen_model(model_path, device, ov_config, memory_data_coll
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation=True)
 
-    get_taylorseer_config_genai(video_gen_pipe, kwargs.get("taylorseer_config"))
+    apply_taylorseer_config_genai(video_gen_pipe, kwargs.get("taylorseer_config"))
 
     log.info(f"Pipeline initialization time: {end - start:.2f}s")
     return video_gen_pipe, orig_tokenizer, end - start, None, True
