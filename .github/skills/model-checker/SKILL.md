@@ -31,13 +31,15 @@ The user must provide:
 
 ## Prerequisites
 
-Activate the Python virtual environment before running any commands.
+Ensure the Python virtual environment is activated before running any commands.
 
 1. **Locate the virtual environment** — check for common directories at the repository root: `.venv/`, `venv/`, `env/`. Use `list_dir` to find it. If none is found, ask the user for its location.
-2. **Activate** based on the current platform:
+2. **Check if already activated**: if `which python` or `where python` points inside the virtual environment, it's already activated. If not, proceed to activate it.
+3. **Activate** based on the current platform:
    - **Linux/macOS**: `source <venv_path>/bin/activate`
    - **Windows (cmd)**: `<venv_path>\Scripts\activate.bat`
    - **Windows (PowerShell)**: `<venv_path>\Scripts\Activate.ps1`
+4. The background terminal doesn't inherit the venv activation. Run it with the venv activated in the same command.
 
 ## Procedure
 
@@ -80,6 +82,8 @@ The script logs progress for each step and exits with code 0 (pass) or non-zero 
   Note: the WWB step is skipped automatically for `automatic-speech-recognition` (no WWB support).
 
 **Log files:** each tool writes its own dedicated log; paths are printed during execution. When a step fails, read the corresponding log for the full traceback and context before drawing any conclusions.
+
+**work-dir:** work-dir is in current workspace, prefer to use tool calls to access logs and outputs instead of custom bash commands.
 
 ### Step 3: Report Results
 
