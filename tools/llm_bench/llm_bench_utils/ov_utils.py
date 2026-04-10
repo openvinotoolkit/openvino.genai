@@ -13,11 +13,7 @@ import types
 from llm_bench_utils.hook_common import get_bench_hook
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
 from llm_bench_utils.model_utils import get_version_in_format_to_pars
-from llm_bench_utils.config_class import (
-    UseCaseSpeech2Text,
-    UseCaseTextGen,
-    PA_ATTENTION_BACKEND
-)
+from llm_bench_utils.config_class import UseCaseSpeech2Text, UseCaseTextGen, UseCaseTextReranker, PA_ATTENTION_BACKEND
 from transformers import pipeline
 import queue
 from transformers.generation.streamers import BaseStreamer
@@ -1184,13 +1180,17 @@ class OptimumChunkStreamer(BaseStreamer):
         return False
 
 
-def create_genai_text_reranker_model(model_path: Path, device: str, memory_monitor, tokenizer: AutoTokenizer, **kwargs):
+def create_genai_text_reranker_model(
+    model_path: Path, device: str, memory_monitor, tokenizer: AutoTokenizer, model_config: AutoConfig, **kwargs
+):
     import openvino_genai
 
     config = openvino_genai.TextRerankPipeline.Config()
     if kwargs.get("rerank_top_n") is not None:
         config.top_n = kwargs.get("rerank_top_n")
-    if kwargs.get("rerank_max_length") is not None:
+    if kwargs.get("rerank_max_length") is None:
+        config.max_length = UseCaseTextReranker.get_default_max_length(model_config)
+    else:
         config.max_length = kwargs.get("rerank_max_length")
 
     ov_config = kwargs['config']
@@ -1226,17 +1226,19 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor, **
     except Exception:
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         trust_remote_code = True
+    model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
     if kwargs.get("genai", True):
         if not is_genai_available(log_msg=True):
             raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
         try:
-            return create_genai_text_reranker_model(model_path, device, memory_monitor, tokenizer, **kwargs)
+            return create_genai_text_reranker_model(
+                model_path, device, memory_monitor, tokenizer, model_config, **kwargs
+            )
         except Exception as exp:
             raise RuntimeError(
                 f"Model is not supported by OpenVINO GenAI. "
                 f"GenAI pipeline loading failed with following error: {exp}"
             )
-    model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
     kwargs['use_case'].adjust_model_class_by_config(model_config)
     log.info("Selected Optimum Intel for benchmarking")
     if kwargs.get("mem_consumption"):
