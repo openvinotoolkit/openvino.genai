@@ -21,7 +21,7 @@ def get_speaker_embedding():
     speaker_embeddings_cache_dir = get_ov_cache_dir() / "test_data" / "speaker_embeddings"
     speaker_embeddings_cache_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = "cmu_us_slt_arctic-wav-arctic_a0508.bin"
+    filename = "cmu_us_bdl_arctic-wav-arctic_a0508.bin"
     embedding_file = Path(
         hf_hub_download(
             repo_id="Xenova/cmu-arctic-xvectors-extracted",
