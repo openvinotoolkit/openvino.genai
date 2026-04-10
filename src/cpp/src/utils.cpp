@@ -554,6 +554,13 @@ void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optio
         ov::Tensor old_tensor = state.get_state();
         // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
         auto shape = old_tensor.get_shape();
+
+        // Skip non-KV-cache states (e.g. conv/ssm states in hybrid models like Qwen3.5).
+        // KV-cache states have at least seq_length_axis+1 dimensions and enough tokens to trim.
+        if (shape.size() <= cache_state.seq_length_axis ||
+            shape[cache_state.seq_length_axis] < cache_state.num_tokens_to_trim) {
+            continue;
+        }
         OPENVINO_ASSERT(shape[cache_state.seq_length_axis] >= cache_state.num_tokens_to_trim,
                         "trim_kv_cache: requested to trim ", cache_state.num_tokens_to_trim,
                         " tokens, but cached sequence length is ", shape[cache_state.seq_length_axis],
