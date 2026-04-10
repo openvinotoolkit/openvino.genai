@@ -55,66 +55,63 @@ def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_
     MODEL_PATH = convert_model(model_id)
 
     # Collect reference with HF model
-    run_wwb(
-        [
-            "--base-model",
-            model_id,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--speaker_embeddings",
-            speaker_embeddings,
-            "--hf",
-        ]
-    )
+    base_args = [
+        "--base-model",
+        model_id,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--hf",
+    ]
+    if speaker_embeddings is not None:
+        base_args.extend(["--speaker_embeddings", speaker_embeddings])
+    run_wwb(base_args)
 
     # test Optimum
-    output = run_wwb(
-        [
-            "--target-model",
-            MODEL_PATH,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--speaker_embeddings",
-            speaker_embeddings,
-        ]
-    )
+    optimum_args = [
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+    ]
+    if speaker_embeddings is not None:
+        optimum_args.extend(["--speaker_embeddings", speaker_embeddings])
+    output = run_wwb(optimum_args)
 
     optimum_score = get_overall_score(output)
     if optimum_threshold is not None:
         assert optimum_score >= optimum_threshold
 
     # test GenAI
-    output = run_wwb(
-        [
-            "--target-model",
-            MODEL_PATH,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--speaker_embeddings",
-            speaker_embeddings,
-            "--genai",
-            "--output",
-            tmp_path,
-        ]
-    )
+    genai_args = [
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--genai",
+        "--output",
+        tmp_path,
+    ]
+    if speaker_embeddings is not None:
+        genai_args.extend(["--speaker_embeddings", speaker_embeddings])
+    output = run_wwb(genai_args)
 
     genai_score = get_overall_score(output)
     if genai_threshold is not None:
@@ -148,3 +145,18 @@ def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_
 def test_tts_speecht5(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
     speaker_embeddings = get_speaker_embedding()
     run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_threshold, tmp_path)
+
+
+@pytest.mark.speech_generation
+@pytest.mark.speecht5
+def test_tts_speecht5_default_speaker_embeddings(tmp_path):
+    model_id = "microsoft/speecht5_tts"
+    model_type = "speech-generation"
+    run_test(
+        model_id=model_id,
+        model_type=model_type,
+        speaker_embeddings=None,
+        optimum_threshold=0.90,
+        genai_threshold=0.90,
+        tmp_path=tmp_path,
+    )

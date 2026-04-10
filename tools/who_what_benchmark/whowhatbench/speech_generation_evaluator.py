@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Union
 
+import logging
 import os
 from pathlib import Path
 
@@ -19,6 +20,9 @@ from .registry import register_evaluator, BaseEvaluator
 from .tts_similarity import TTSSimilarityEvaluator
 
 PROMPTS_FILE = "speech_generation_prompts.yaml"
+DEFAULT_SPEAKER_EMBEDDING_REPO_ID = "Xenova/cmu-arctic-xvectors-extracted"
+DEFAULT_SPEAKER_EMBEDDING_FILENAME = "cmu_us_slt_arctic-wav-arctic_a0508.bin"
+LOGGER = logging.getLogger(__name__)
 
 SPEAKER_SCORE_COL = "speaker score"
 CONTENT_SCORE_COL = "content score"
@@ -242,6 +246,22 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             )
         return ov.Tensor(speaker_embedding.reshape(1, 512))
 
+    def _resolve_default_speaker_embedding_file(self) -> str:
+        from huggingface_hub import hf_hub_download
+
+        embedding_file = hf_hub_download(
+            repo_id=DEFAULT_SPEAKER_EMBEDDING_REPO_ID,
+            filename=DEFAULT_SPEAKER_EMBEDDING_FILENAME,
+            repo_type="dataset",
+        )
+        LOGGER.info(
+            "Using default speaker embeddings for SpeechT5: %s/%s -> %s",
+            DEFAULT_SPEAKER_EMBEDDING_REPO_ID,
+            DEFAULT_SPEAKER_EMBEDDING_FILENAME,
+            embedding_file,
+        )
+        return embedding_file
+
     def _generate_data(self, model, gen_speech_fn=None, audio_dir="reference"):
         def default_gen_speech_fn(model, prompt, speaker_embedding=None):
             result = model.generate(prompt, speaker_embedding)
@@ -253,6 +273,10 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             return audio_data, sr
 
         generation_fn = gen_speech_fn or default_gen_speech_fn
+
+        if self.speaker_embedding is None and isinstance(model, TextToSpeechModelWrapper):
+            self.speaker_embedding_file_path = self._resolve_default_speaker_embedding_file()
+            self.speaker_embedding = self._load_speaker_embedding(self.speaker_embedding_file_path)
 
         if self.test_data:
             if isinstance(self.test_data, str):

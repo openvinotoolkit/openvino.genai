@@ -188,6 +188,11 @@ wwb --target-model speecht5_tts_ov --gt-data speech_gen_test/gt.csv --model-type
 wwb --target-model speecht5_tts_ov --gt-data speech_gen_test/gt.csv --model-type speech-generation --output genai_output --speaker_embeddings cmu_us_slt_arctic-wav-arctic_a0508.bin --genai
 ```
 
+For SpeechT5, `--speaker_embeddings` is optional.
+If omitted for HF/Optimum, WWB will download and use
+`Xenova/cmu-arctic-xvectors-extracted/cmu_us_slt_arctic-wav-arctic_a0508.bin` automatically.
+For GenAI, this is the default speaker embedding that is compiled into the runtime.
+
 The speech-generation evaluator reports these metrics:
 
 * `speaker score` - speaker similarity based on SpeechBrain speaker verification.

@@ -331,7 +331,10 @@ def parse_args():
         "--speaker_embeddings",
         type=str,
         default=None,
-        help="Path to .bin or .npy float32 speaker embedding file for text-to-speech generation.",
+        help="Optional path to .bin or .npy float32 speaker embedding file for text-to-speech generation. "
+        "If omitted for SpeechT5 with HF/Optimum, WWB downloads "
+        "Xenova/cmu-arctic-xvectors-extracted/cmu_us_slt_arctic-wav-arctic_a0508.bin automatically. "
+        "For GenAI, this is the default speaker embedding that is compiled into the runtime.",
     )
     parser.add_argument(
         "--tts-eval-whisper-model",
