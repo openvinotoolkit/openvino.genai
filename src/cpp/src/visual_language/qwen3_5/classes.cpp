@@ -88,14 +88,14 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3_5::run_video_image_embeddi
     size_t image_tokens = calc_vec_tokens_num(reordered_images_grid_thw);
     size_t total_tokens = video_tokens + image_tokens;
 
-    size_t video_count = 0;
+    size_t video_token_count = 0;
     if (total_tokens > 0) {
-        video_count = vision_embeds_shape[0] * video_tokens / total_tokens;
+        video_token_count = vision_embeds_shape[0] * video_tokens / total_tokens;
     }
-    size_t image_count = vision_embeds_shape[0] - video_count;
+    size_t image_token_count = vision_embeds_shape[0] - video_token_count;
 
-    ov::Tensor video_embeds{vision_embeds.get_element_type(), {video_count, vision_embeds_shape[1]}};
-    ov::Tensor image_embeds{vision_embeds.get_element_type(), {image_count, vision_embeds_shape[1]}};
+    ov::Tensor video_embeds{vision_embeds.get_element_type(), {video_token_count, vision_embeds_shape[1]}};
+    ov::Tensor image_embeds{vision_embeds.get_element_type(), {image_token_count, vision_embeds_shape[1]}};
 
     std::memcpy(video_embeds.data(), vision_embeds.data(), video_embeds.get_byte_size());
     std::memcpy(image_embeds.data(),
