@@ -345,7 +345,7 @@ jobs:
           echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
       - if: github.event_name == 'workflow_dispatch'
         name: Checkout investigated run's commit
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # 93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           persist-credentials: false
           ref: ${{ steps.get-head-sha.outputs.head_sha }}
