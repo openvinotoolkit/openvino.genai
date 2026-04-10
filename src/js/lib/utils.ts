@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2026 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Parser } from "./parsers.js";
@@ -452,6 +452,16 @@ export type WhisperGenerationConfig = GenerationConfig & {
   suppress_tokens?: Uint[];
 };
 
+/** Generation config for Text2SpeechPipeline. Extends GenerationConfig with speech-specific options. */
+export type SpeechGenerationConfig = GenerationConfig & {
+  /** Minimum ratio of output length to input text length; prevents output that's too short. */
+  minlenratio?: number;
+  /** Maximum ratio of output length to input text length; prevents excessively long outputs. */
+  maxlenratio?: number;
+  /** Probability threshold for stopping decoding; when output probability exceeds this, generation stops. */
+  threshold?: number;
+};
+
 export type SchedulerConfig = {
   /** a maximum number of tokens to batch
    * (in contrast to max_batch_size which combines independent sequences, we consider total amount of tokens in a batch)
@@ -488,3 +498,5 @@ export type VLMPipelineProperties = {
 export type WhisperPipelineProperties = {
   schedulerConfig?: SchedulerConfig;
 } & Record<string, unknown>;
+
+export type Text2SpeechPipelineProperties = Record<string, unknown>;

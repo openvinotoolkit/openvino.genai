@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 
 import pandas as pd
@@ -9,21 +12,9 @@ from typing import Literal, Any, Union
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
 from .utils import get_ignore_parameters_flag, prepare_default_data_image, prepare_default_data_video
+from .visual_utils import fix_phi3_v_eos_token_id, MODEL_TYPE_TO_CLS_MAPPING
 
 DEF_VIDEO_FRAMES_AMOUNT = 10
-
-
-def fix_phi3_v_eos_token_id(model_type, tokenizer):
-    """
-    phi3_v configs aren't consistent. Override the default
-    eos_token_id with the one from a tokenizer similar to
-    an example in
-    https://huggingface.co/microsoft/Phi-3.5-vision-instruct
-    """
-    if 'phi3_v' == model_type:
-        return {"eos_token_id": tokenizer.eos_token_id}
-    else:
-        return dict()
 
 
 @register_evaluator("visual-text", "visual-video-text")
@@ -125,12 +116,15 @@ class VisualTextEvaluator(TextEvaluator):
             pruning_ratio,
             relevance_weight,
         ):
+            if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and "transformers" in str(type(model)):
+                inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type]()
+                preprocess_inputs = inputs_processor.preprocess_inputs
+            else:
+                from optimum.intel.openvino.modeling_visual_language import (
+                    MODEL_TYPE_TO_CLS_MAPPING as MODEL_TYPE_TO_CLS_MAPPING_OPT,
+                )
 
-            from optimum.intel.openvino.modeling_visual_language import \
-                MODEL_TYPE_TO_CLS_MAPPING
-            preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[
-                model.config.model_type
-            ].preprocess_inputs
+                preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING_OPT[model.config.model_type].preprocess_inputs
             inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config, video=video)
             tokens = model.generate(
                 **inputs,

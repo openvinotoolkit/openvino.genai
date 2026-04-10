@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from .registry import register_evaluator, EVALUATOR_REGISTRY
 from .text_evaluator import TextEvaluator
 from .text_evaluator import TextEvaluator as Evaluator
@@ -8,6 +11,8 @@ from .inpaint_evaluator import InpaintingEvaluator
 from .embeddings_evaluator import EmbeddingsEvaluator
 from .reranking_evaluator import RerankingEvaluator
 from .text2video_evaluator import Text2VideoEvaluator
+from .chat_text_evaluator import ChatTextEvaluator
+from .chat_visualtext_evaluator import ChatVisualTextEvaluator
 
 
 __all__ = [
@@ -21,5 +26,7 @@ __all__ = [
     "EmbeddingsEvaluator",
     "RerankingEvaluator",
     "Text2VideoEvaluator",
+    "ChatTextEvaluator",
+    "ChatVisualTextEvaluator",
     "EVALUATOR_REGISTRY",
 ]

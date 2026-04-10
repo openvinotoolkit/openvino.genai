@@ -6,11 +6,11 @@ There are several sample files:
  - [`text2image.cpp`](./text2image.cpp) demonstrates basic usage of the text to image pipeline
  - [`text2image_concurrency.cpp`](./text2image_concurrency.cpp) demonstrates concurrent usage of the text to image pipeline to create multiple images with different prompts
  - [`lora_text2image.cpp`](./lora_text2image.cpp) shows how to apply LoRA adapters to the pipeline
- - [`taylorseer_text2image.cpp`](./taylorseer_text2image.cpp) demonstrates text to image generation with TaylorSeer caching optimization for improved performance. Only the Flux model is supported.
+ - [`taylorseer_text2image.cpp`](./taylorseer_text2image.cpp) demonstrates text to image generation with TaylorSeer caching optimization for improved performance. Flux and StableDiffusion3 models are supported.
  - [`heterogeneous_stable_diffusion.cpp`](./heterogeneous_stable_diffusion.cpp) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`encrypted_stable_diffusion.cpp`](./encrypted_stable_diffusion.cpp) demonstrates how to use the text to image pipeline with encrypted models and cache encryption callbacks
  - [`image2image.cpp`](./image2image.cpp) demonstrates basic usage of the image to image pipeline
- - [`image2image_concurrency.cpp.cpp`](./image2image_concurrency.cpp) demonstrates concurrent usage of the image to image pipeline to create multiple images with different prompts
+ - [`image2image_concurrency.cpp`](./image2image_concurrency.cpp) demonstrates concurrent usage of the image to image pipeline to create multiple images with different prompts
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
  - [`benchmark_image_gen.cpp`](./benchmark_image_gen.cpp) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
  - [`stable_diffusion_export_import.cpp`](./stable_diffusion_export_import.cpp) demonstrates how to export and import compiled models from/to the text to image pipeline. Only the Stable Diffusion XL model is supported.
@@ -43,7 +43,7 @@ optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task sta
 
 ## Run text to image
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
+Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
 
 `stable_diffusion ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'`
 
