@@ -76,9 +76,6 @@ public:
     void set_config(const GenerationConfig& config);
     PipelineMetrics get_metrics() const;
     Tokenizer get_tokenizer();
-    const std::shared_ptr<VisionRegistry>& get_vision_registry() const {
-        return m_vision_registry;
-    }
 
     /**
      * Adds requests to awaiting queue using encoded inputs

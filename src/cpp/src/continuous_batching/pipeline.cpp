@@ -258,10 +258,6 @@ PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
     return m_impl->get_metrics();
 }
 
-void ContinuousBatchingPipeline::initialize_chat_history_state(const ChatHistory& history) const {
-    ChatHistoryInternalState::get_or_create(history, m_impl->get_vision_registry());
-}
-
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params) {
     return m_impl->add_request(request_id, prompt, sampling_params);
 }

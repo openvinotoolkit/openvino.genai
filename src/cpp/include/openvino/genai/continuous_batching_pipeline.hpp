@@ -174,8 +174,6 @@ public:
      */
     ov::genai::PipelineMetrics get_metrics() const;
 
-    void initialize_chat_history_state(const ChatHistory& history) const;
-
     /// @param request_id must be unique for every add_request() call.
     GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params);
