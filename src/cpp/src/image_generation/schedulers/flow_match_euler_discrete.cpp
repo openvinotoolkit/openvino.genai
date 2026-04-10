@@ -177,13 +177,13 @@ std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tens
     float* prev_sample_data = prev_sample.data<float>();
 
     OPENVINO_ASSERT(m_step_index >= 0, "Step index must be initialized before calling step()");
-    OPENVINO_ASSERT(static_cast<size_t>(m_step_index + 1) < m_sigmas.size(),
+    OPENVINO_ASSERT(m_step_index + 1 < m_sigmas.size(),
                     "Step index out of range for sigmas schedule (step_index=",
                     m_step_index,
                     ", sigmas_size=",
                     m_sigmas.size(),
                     ")");
-    const float sigma_diff = m_sigmas[static_cast<size_t>(m_step_index + 1)] - m_sigmas[static_cast<size_t>(m_step_index)];
+    const float sigma_diff = m_sigmas[m_step_index + 1] - m_sigmas[m_step_index];
 
     for (size_t i = 0; i < prev_sample.get_size(); ++i) {
         prev_sample_data[i] = sample_data[i] + sigma_diff * model_output_data[i];
@@ -196,7 +196,7 @@ std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tens
 
 std::vector<float> FlowMatchEulerDiscreteScheduler::get_float_timesteps() {
     OPENVINO_ASSERT(m_strength != -1,
-                    "Parameter 'strength' was not yes passed to Scheduler.");
+                    "Parameter 'strength' was not yet passed to Scheduler.");
     OPENVINO_ASSERT(m_num_inference_steps > 0, "Parameter 'num_inference_steps' was not passed to Scheduler.");
     OPENVINO_ASSERT(!m_timesteps.empty(), "'timesteps' have not yet been set.");
     // For Text2Image strength is always 1.0 (guaranteed by pipeline)
