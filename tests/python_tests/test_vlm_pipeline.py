@@ -68,6 +68,7 @@ from utils.generation_config import (
 )
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
+from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 import logging
@@ -2622,3 +2623,39 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_videochat(
         assert (
             output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
         )
+
+
+def test_vlm_pipeline_add_extension(cat_tensor, tmp_path: Path) -> None:
+    models_path = _get_ov_model(MODEL_IDS[0])
+    myadd_model_path = get_extension_model(models_path, tmp_path, "MyAdd")
+    assert_ir_contains_op_type(myadd_model_path, "MyAdd")
+
+    generation_config = GenerationConfig(max_new_tokens=20)
+
+    # The custom op "MyAdd" is provided by a compiled extension library and is intended to behave like OpenVINO "Add".
+    properties_path = {"extensions": [str(get_extension_lib_path())]}
+    pipe_extension_path = VLMPipeline(myadd_model_path, "CPU", config=properties_path)
+    result_extension_path = pipe_extension_path.generate(
+        PROMPTS[0], images=[cat_tensor], generation_config=generation_config
+    )
+    # The Python custom op "CustomAdd" is intended to behave like OpenVINO "Add", but it exercises Python ov.Op registration and callback-based evaluation.
+    customadd_model_path = get_extension_model(models_path, tmp_path, "CustomAdd")
+    assert_ir_contains_op_type(customadd_model_path, "CustomAdd")
+    CustomAdd.evaluate_calls = 0
+    properties_obj = {"extensions": [openvino.OpExtension(CustomAdd)]}
+    pipe_extension_obj = VLMPipeline(customadd_model_path, "CPU", config=properties_obj)
+    result_extension_obj = pipe_extension_obj.generate(
+        PROMPTS[0], images=[cat_tensor], generation_config=generation_config
+    )
+    assert CustomAdd.evaluate_calls > 0, "Python custom op 'CustomAdd' was not called"
+
+    # Reference result with the original model and without custom extensions.
+    pipe_ref = VLMPipeline(models_path, "CPU")
+    result_ref = pipe_ref.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
+    assert result_extension_path.texts[0].strip() == result_ref.texts[0].strip(), (
+        "Result should be the same for model with extension 'MyAdd' and reference model."
+    )
+    assert result_extension_obj.texts[0].strip() == result_ref.texts[0].strip(), (
+        "Result should be the same for model with extension 'CustomAdd' and reference model."
+    )

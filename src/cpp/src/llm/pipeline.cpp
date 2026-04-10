@@ -205,6 +205,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
+    utils::extract_extensions_to_core(properties);
 
     const auto model = utils::read_model(models_path, properties);
 
@@ -257,6 +258,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
+    utils::extract_extensions_to_core(properties);
 
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
     const auto model = utils::read_model(models_path, properties);
@@ -314,6 +316,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
+    utils::extract_extensions_to_core(properties);
 
     // PA backend does not support linear attention states (conv/SSM caches).
     const auto model = utils::singleton_core().read_model(model_str, weights_tensor);
