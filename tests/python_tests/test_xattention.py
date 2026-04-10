@@ -4,7 +4,6 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-import datasets
 import pytest
 
 from openvino_genai import (
@@ -33,10 +32,6 @@ class XAttentionSimilarityTestData:
     similarity_threshold: float
 
 
-@pytest.mark.skipif(
-    datasets.__version__.startswith("0."),
-    reason="unexpected datasets package version",
-)
 @pytest.mark.parametrize(
     "test_struct",
     [
@@ -91,6 +86,12 @@ def test_xattention_enabled_vs_disabled_similarity(test_struct):
         {},
         get_default_llm_properties(),
     )
+
+    model_no_xattn_config = model_no_xattn.get_config()
+    model_xattn_config = model_xattn.get_config()
+    assert not model_no_xattn_config.use_sparse_attention
+    assert model_xattn_config.use_sparse_attention
+    assert model_xattn_config.sparse_attention_config.mode == SparseAttentionMode.XATTENTION
 
     data_dict = load_prompts_dataset(test_struct.prompt_file)
     evaluator = whowhatbench.Evaluator(
