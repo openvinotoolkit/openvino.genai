@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <math.h>
 #include <iostream>
+#include <string>
 
 #include <openvino/openvino.hpp>
 #include "openvino/runtime/core.hpp"
@@ -31,6 +32,57 @@ static std::vector<Output<Node>> split_mrope_freqs(
     const std::vector<int64_t>& mrope_section);
 
 static const size_t GGML_QUANTIZATION_GROUP_SIZE = 32;
+
+namespace {
+
+void set_name(const std::shared_ptr<ov::Node>& node, const std::string& name) {
+    node->set_friendly_name(name);
+    if (node->get_output_size() > 0) {
+        node->output(0).set_names({name});
+    }
+}
+
+std::string normalize_name_key(std::string key) {
+    std::string out;
+    out.reserve(key.size() + 32);
+
+    for (char ch : key) {
+        if (ch == '[') {
+            out.push_back('.');
+        } else if (ch != ']') {
+            out.push_back(ch);
+        }
+    }
+
+    if (out.rfind("model.", 0) == 0) {
+        out = "model.language_model." + out.substr(std::string("model.").size());
+    }
+
+    return out;
+}
+
+std::string to_weight_name(const std::string& key) {
+    auto out = normalize_name_key(key);
+    if (out.rfind("model.language_model.", 0) == 0) {
+        return "self." + out;
+    }
+    return out;
+}
+
+std::string to_op_name(const std::string& key) {
+    auto out = normalize_name_key(key);
+    if (out.rfind("model.language_model.", 0) == 0) {
+        return "__module." + out;
+    }
+    return out;
+}
+
+std::string make_cache_output_name(int layer_idx, const std::string& kind) {
+    return "past_key_values." + std::to_string(layer_idx) + "." + kind;
+}
+
+}  // namespace
+
 
 Output<ov::Node> causal_mask(
     const Output<ov::Node>& attention_mask,
@@ -402,26 +454,33 @@ ov::Output<ov::Node> make_rms_norm_qwen3(
     float rms_norm_eps) {
     auto eps_node = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1,1,1,1}, rms_norm_eps);
     auto square = std::make_shared<ov::op::v1::Power>(
-        input, 
+        input,
         std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{}, 2.0f));
-    
+    set_name(square, to_op_name(key) + "/aten::pow/Power");
+
     auto variance = std::make_shared<ov::op::v1::ReduceMean>(
-        square, 
+        square,
         std::make_shared<ov::op::v0::Constant>(ov::element::i32, ov::Shape{1}, -1),
         true);
+    set_name(variance, to_op_name(key) + "/aten::mean/ReduceMean");
 
     auto add_eps = std::make_shared<ov::op::v1::Add>(variance, eps_node);
+    set_name(add_eps, to_op_name(key) + "/aten::add/Add");
+
     auto sqrt_node = std::make_shared<ov::op::v0::Sqrt>(add_eps);
+    set_name(sqrt_node, to_op_name(key) + "/aten::rsqrt/Sqrt");
+
     auto reciprocal = std::make_shared<ov::op::v1::Divide>(
         std::make_shared<ov::op::v0::Constant>(
             ov::element::f32, ov::Shape{}, 1.0f),
         sqrt_node);
+    set_name(reciprocal, to_op_name(key) + "/aten::rsqrt/Divide");
 
     std::shared_ptr<ov::Node> mul = std::make_shared<ov::op::v1::Multiply>(
         reciprocal, input, AutoBroadcastType::NUMPY);
+    set_name(mul, to_op_name(key) + "/aten::mul/Multiply");
 
     auto weight_tensor = weights.at(key + ".weight");
-    // Check if all elements are 1.0
     bool all_ones = true;
     if (weight_tensor.get_element_type() == ov::element::f32) {
         const float* data = weight_tensor.data<float>();
@@ -447,8 +506,11 @@ ov::Output<ov::Node> make_rms_norm_qwen3(
     if (!all_ones) {
         weight_tensor.set_shape(ov::Shape{1, 1, 1, weight_tensor.get_shape()[0]});
         auto weights_const = std::make_shared<ov::op::v0::Constant>(weight_tensor);
+        set_name(weights_const, to_weight_name(key) + ".weight");
+
         auto weights_f32 = std::make_shared<ov::op::v0::Convert>(weights_const, ov::element::f32);
         mul = std::make_shared<ov::op::v1::Multiply>(mul, weights_f32, AutoBroadcastType::NUMPY);
+        set_name(mul, to_op_name(key) + "/aten::mul/Multiply_1");
     }
 
     return mul;
@@ -464,15 +526,20 @@ std::shared_ptr<v1::Transpose> split_heads(const Output<Node>& x,
                                             const std::unordered_map<std::string, ov::Tensor>& weights) {
     auto shape = std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, 0, num_h, head_dim});
     auto reshaped = std::make_shared<v1::Reshape>(x, shape, true);
-    if (weights.count(key + ".weight")) { //Qwen3 rms_norm
+    set_name(reshaped, to_op_name(key) + "/aten::view/Reshape");
+
+    auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
+
+    if (weights.count(key + ".weight")) {
         auto mul = make_rms_norm_qwen3(key, reshaped, weights, rms_norm_eps);
-        auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
-        
-        return std::make_shared<v1::Transpose>(mul, transpose_order);
-    } else { //none-Qwen3 architecture
-        auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
-        return std::make_shared<v1::Transpose>(reshaped, transpose_order);
-    } 
+        auto transposed = std::make_shared<v1::Transpose>(mul, transpose_order);
+        set_name(transposed, to_op_name(key) + "/aten::transpose/Transpose");
+        return transposed;
+    } else {
+        auto transposed = std::make_shared<v1::Transpose>(reshaped, transpose_order);
+        set_name(transposed, to_op_name(key) + "/aten::transpose/Transpose");
+        return transposed;
+    }
 };
 
 std::tuple<Output<Node>, ov::SinkVector, std::pair<Output<Node>, Output<Node>>, Output<Node>>
@@ -518,7 +585,9 @@ multi_head_attention(
     );
 
     // 3. Handle cache
-    auto create_cache = [&](const std::string& name, const Output<Node>& init_value) {
+    auto create_cache = [&](const std::string& name,
+                            const std::string& output_name,
+                            const Output<Node>& init_value) {
         auto var_info = ov::op::util::VariableInfo{
                 ov::PartialShape{-1, num_heads_kv, -1, head_dim},
                 ov::element::f32,
@@ -526,7 +595,8 @@ multi_head_attention(
             };
         auto var = std::make_shared<ov::op::util::Variable>(var_info);
         auto read_value = std::make_shared<v6::ReadValue>(init_value, var);
-        auto gathered = std::make_shared<v8::Gather>(read_value, beam_idx, 
+        read_value->output(0).set_names({output_name});
+        auto gathered = std::make_shared<v8::Gather>(read_value, beam_idx,
             std::make_shared<v0::Constant>(element::i64, Shape{}, 0), 0);
         return std::make_pair(var, gathered);
     };
@@ -550,10 +620,12 @@ multi_head_attention(
 
     auto k_cache = create_cache(
         "past_key_values." + std::to_string(layer_idx) + ".keypresent." + std::to_string(layer_idx) + ".key",
+        make_cache_output_name(layer_idx, "key"),
         k_cache_default
     );
     auto v_cache = create_cache(
-        "past_key_values." + std::to_string(layer_idx) + ".valuepresent." + std::to_string(layer_idx) + ".key",
+        "past_key_values." + std::to_string(layer_idx) + ".valuepresent." + std::to_string(layer_idx) + ".value",
+        make_cache_output_name(layer_idx, "value"),
         v_cache_default
     );
 
@@ -610,11 +682,17 @@ multi_head_attention(
     // 6. Scaled dot product attention
     auto attention = std::make_shared<ScaledDotProductAttention>(
         q_rot, k_reshaped, v_reshaped, final_mask, false);
+    set_name(
+        attention,
+        to_op_name(key_name + ".self_attn") + "/aten::scaled_dot_product_attention/ScaledDotProductAttention");
 
     // 7. Reshape output
     auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
     auto context_transposed = std::make_shared<v1::Transpose>(attention, transpose_order);
+    set_name(context_transposed, to_op_name(key_name + ".self_attn") + "/aten::transpose/Transpose_3");
+
     auto output = std::make_shared<v1::Reshape>(context_transposed, output_shape, false);
+    set_name(output, to_op_name(key_name + ".self_attn") + "/aten::reshape/Reshape_1");
 
     return {
         output,
@@ -681,8 +759,11 @@ ov::Output<ov::Node> make_fp16_weights(
 
     // Create FP16 constant and convert to FP32
     auto weights_node = std::make_shared<v0::Constant>(weight_f16);
-    weights_node->set_friendly_name(key + ".weight");
-    return std::make_shared<ov::op::v0::Convert>(weights_node, ov::element::f32);
+    set_name(weights_node, to_weight_name(key) + ".weight");
+
+    auto weights_f32 = std::make_shared<ov::op::v0::Convert>(weights_node, ov::element::f32);
+    set_name(weights_f32, to_weight_name(key) + ".weight/fq_weights_1/convert");
+    return weights_f32;
 }
 
 // Retrieve tensors
@@ -727,7 +808,10 @@ ov::Output<ov::Node> make_int8_weights(
     // Create graph nodes
     auto weights_node = std::make_shared<v0::Constant>(ov::element::u8, ov::Shape{orig_shape[0], num_groups, group_size}, static_cast<uint8_t*>(weight.data()), nullptr);
     weights_node->get_rt_info()["__gguf_tensor_holder"] = weight;
+    set_name(weights_node, to_weight_name(key) + ".weight");
+
     auto scales_f16 = std::make_shared<ov::op::v0::Constant>(scales);
+    set_name(scales_f16, to_weight_name(key) + ".weight/scale");
     ov::Tensor biases_u8(ov::element::u8, scale_shape);
 
     // Calculate zero point
@@ -739,6 +823,7 @@ ov::Output<ov::Node> make_int8_weights(
     }
 
     auto zero_point = std::make_shared<ov::op::v0::Constant>(biases_u8);
+    set_name(zero_point, to_weight_name(key) + ".weight/zero_point");
 
     // Quantization operations
     auto weights_f16 = std::make_shared<ov::op::v0::Convert>(weights_node, ov::element::f16);
@@ -747,9 +832,12 @@ ov::Output<ov::Node> make_int8_weights(
     auto w_zp = std::make_shared<ov::op::v1::Subtract>(
         weights_f16, zero_point_f16, ov::op::AutoBroadcastType::NUMPY
     );
+    set_name(w_zp, to_weight_name(key) + ".weight/zero_point/subtract");
+
     auto w_zp_s = std::make_shared<ov::op::v1::Multiply>(
         w_zp, scales_f16, ov::op::AutoBroadcastType::NUMPY
     );
+    set_name(w_zp_s, to_weight_name(key) + ".weight/fq_weights_1");
 
     // Reshape back to original dimensions
     auto final_shape = std::make_shared<ov::op::v0::Constant>(
@@ -759,7 +847,9 @@ ov::Output<ov::Node> make_int8_weights(
         w_zp_s, final_shape, false
     );
 
-    return std::make_shared<ov::op::v0::Convert>(w_zp_s_r, ov::element::f32);
+    auto weights_f32 = std::make_shared<ov::op::v0::Convert>(w_zp_s_r, ov::element::f32);
+    set_name(weights_f32, to_weight_name(key) + ".weight/fq_weights_1/convert");
+    return weights_f32;
 }
 
 ov::Output<ov::Node> make_int4_weights(
@@ -802,7 +892,9 @@ ov::Output<ov::Node> make_int4_weights(
     };
 
     auto weights_node = std::make_shared<v0::Constant>(ov::element::u4, packed_shape, static_cast<uint8_t*>(weight.data()), nullptr);
-    weights_node->get_rt_info()["__gguf_tensor_holde"] = weight;
+    weights_node->get_rt_info()["__gguf_tensor_holder"] = weight;
+    set_name(weights_node, to_weight_name(key) + ".weight");
+
     auto weights_f16 = std::make_shared<ov::op::v0::Convert>(weights_node, ov::element::f16);
 
     // Pack zero points: two subsequent values into one
@@ -817,16 +909,21 @@ ov::Output<ov::Node> make_int4_weights(
     }
 
     auto zero_points_node = std::make_shared<ov::op::v0::Constant>(zero_point_tensor);
+    set_name(zero_points_node, to_weight_name(key) + ".weight/zero_point");
+
     auto zero_points_f16 = std::make_shared<ov::op::v0::Convert>(zero_points_node, ov::element::f16);
 
     auto scales_f16 = std::make_shared<ov::op::v0::Constant>(scales);
+    set_name(scales_f16, to_weight_name(key) + ".weight/scale");
 
     // Perform dequantization
     auto w_zp = std::make_shared<ov::op::v1::Subtract>(
         weights_f16, zero_points_f16, ov::op::AutoBroadcastType::NUMPY);
+    set_name(w_zp, to_weight_name(key) + ".weight/zero_point/subtract");
 
     auto w_zp_s = std::make_shared<ov::op::v1::Multiply>(
         w_zp, scales_f16, ov::op::AutoBroadcastType::NUMPY);
+    set_name(w_zp_s, to_weight_name(key) + ".weight/fq_weights_1");
 
     // Reshape back to original shape
     auto final_shape = std::make_shared<ov::op::v0::Constant>(
@@ -835,7 +932,9 @@ ov::Output<ov::Node> make_int4_weights(
     auto w_zp_s_r = std::make_shared<ov::op::v1::Reshape>(
         w_zp_s, final_shape, false);
 
-    return std::make_shared<ov::op::v0::Convert>(w_zp_s_r, ov::element::f32);
+    auto weights_f32 = std::make_shared<ov::op::v0::Convert>(w_zp_s_r, ov::element::f32);
+    set_name(weights_f32, to_weight_name(key) + ".weight/fq_weights_1/convert");
+    return weights_f32;
 }
 
 ov::Output<ov::Node> make_weights_subgraph(const std::string& key,
@@ -870,14 +969,17 @@ ov::Output<ov::Node> make_fc(
     int head_size = -1) {
     auto w_f32 = make_weights_subgraph(key, consts, qtype, reorder, head_size);
     std::shared_ptr<ov::Node> output = std::make_shared<ov::op::v0::MatMul>(input, w_f32, false, true);
+    set_name(output, to_op_name(key) + "/aten::linear/MatMul");
 
-    // Add post-MatMul Add operation if exists
     if (consts.count(key + ".bias")) {
         auto add_tensor = get_tensor(consts, key + ".bias");
         auto add_const = std::make_shared<v0::Constant>(add_tensor);
+        set_name(add_const, to_weight_name(key) + ".bias");
+
         auto add_convert = std::make_shared<ov::op::v0::Convert>(add_const, ov::element::f32);
         output = std::make_shared<ov::op::v1::Add>(
                                     output, add_convert, ov::op::AutoBroadcastType::NUMPY);
+        set_name(output, to_op_name(key) + "/aten::add/Add");
     }
     return output;
 }
@@ -912,29 +1014,36 @@ ov::Output<ov::Node> make_rms_norm(
     auto eps_node = std::make_shared<ov::op::v0::Constant>(
         ov::element::f32, ov::Shape{1,1,1}, epsilon);
     auto square = std::make_shared<ov::op::v1::Power>(
-        input, 
+        input,
         std::make_shared<ov::op::v0::Constant>(
             ov::element::f32, ov::Shape{1,1,1}, 2.0f));
-    
+    set_name(square, to_op_name(key) + "/aten::pow/Power");
+
     auto variance = std::make_shared<ov::op::v1::ReduceMean>(
-        square, 
+        square,
         std::make_shared<ov::op::v0::Constant>(
             ov::element::i32, ov::Shape{1}, -1),
         true);
+    set_name(variance, to_op_name(key) + "/aten::mean/ReduceMean");
 
     auto add_eps = std::make_shared<ov::op::v1::Add>(variance, eps_node);
+    set_name(add_eps, to_op_name(key) + "/aten::add/Add");
+
     auto sqrt_node = std::make_shared<ov::op::v0::Sqrt>(add_eps);
+    set_name(sqrt_node, to_op_name(key) + "/aten::rsqrt/Sqrt");
+
     auto reciprocal = std::make_shared<ov::op::v1::Divide>(
         std::make_shared<ov::op::v0::Constant>(
             ov::element::f32, ov::Shape{1,1,1}, 1.0f),
         sqrt_node);
+    set_name(reciprocal, to_op_name(key) + "/aten::rsqrt/Divide");
 
     std::shared_ptr<ov::Node> mul = std::make_shared<ov::op::v1::Multiply>(
         reciprocal, input, AutoBroadcastType::NUMPY);
+    set_name(mul, to_op_name(key) + "/aten::mul/Multiply");
 
     if (consts.count(key + ".weight")) {
         auto weight_tensor = consts.at(key + ".weight");
-        // Check if all elements are 1.0
         bool all_ones = true;
         if (weight_tensor.get_element_type() == ov::element::f32) {
             const float* data = weight_tensor.data<float>();
@@ -961,10 +1070,13 @@ ov::Output<ov::Node> make_rms_norm(
             weight_tensor.set_shape(ov::Shape{1, 1, weight_tensor.get_shape()[0]});
             auto weights_const = std::make_shared<ov::op::v0::Constant>(
                 weight_tensor);
+            set_name(weights_const, to_weight_name(key) + ".weight");
+
             auto weights_f32 = std::make_shared<ov::op::v0::Convert>(
                 weights_const, ov::element::f32);
             mul = std::make_shared<ov::op::v1::Multiply>(
                 mul, weights_f32, AutoBroadcastType::NUMPY);
+            set_name(mul, to_op_name(key) + "/aten::mul/Multiply_1");
         }
     }
 
@@ -1101,7 +1213,8 @@ std::tuple<ov::Output<ov::Node>,
     // Residual connection
     auto attn_add = std::make_shared<ov::op::v1::Add>(
         hidden_states, o_proj, ov::op::AutoBroadcastType::NUMPY);
-    attn_add->set_friendly_name(name_prefix + ".add0" + name_suffix);
+    attn_add->set_friendly_name(to_op_name(layer_prefix) + "/aten::add/Add");
+    attn_add->output(0).set_names({name_prefix + ".add0" + name_suffix});
 
     // Post-attention Layernorm
     auto post_attn_norm = make_rms_norm(
@@ -1124,7 +1237,8 @@ std::tuple<ov::Output<ov::Node>,
         qtypes.at(layer_prefix + ".mlp.up_proj.qtype"));
     auto mul = std::make_shared<ov::op::v1::Multiply>(
         silu, up_proj, ov::op::AutoBroadcastType::NUMPY);
-    mul->set_friendly_name(name_prefix + ".mlp.mul" + name_suffix);
+    mul->set_friendly_name(to_op_name(layer_prefix + ".mlp") + "/aten::mul/Multiply");
+    mul->output(0).set_names({name_prefix + ".mlp.mul" + name_suffix});
     auto down_proj = make_fc(
         layer_prefix + ".mlp.down_proj",
         mul,
@@ -1134,7 +1248,8 @@ std::tuple<ov::Output<ov::Node>,
     // Final residual connection
     auto output = std::make_shared<ov::op::v1::Add>(
         attn_add, down_proj, ov::op::AutoBroadcastType::NUMPY);
-    output->set_friendly_name(name_prefix + ".add1" + name_suffix);
+    output->set_friendly_name(to_op_name(layer_prefix) + "/aten::add/Add_1");
+    output->output(0).set_names({name_prefix + ".add1" + name_suffix});
 
     return {output, sinks, new_causal_mask, new_cos_sin, final_output_shape};
 }

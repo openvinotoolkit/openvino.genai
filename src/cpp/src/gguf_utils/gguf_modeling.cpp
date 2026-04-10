@@ -331,12 +331,12 @@ std::shared_ptr<ov::Model> create_vlm_language_model(
     set_name(logits, "logits");
 
     ov::ParameterVector inputs{
-        beam_idx,
-        deepstack_visual_embeds,
-        visual_pos_masks,
-        inputs_embeds,
+        attention_mask,
         position_ids,
-        attention_mask
+        inputs_embeds,
+        visual_pos_masks,
+        deepstack_visual_embeds,
+        beam_idx
     };
 
     auto model = std::make_shared<ov::Model>(ov::OutputVector({logits->output(0)}), sinks, inputs);
