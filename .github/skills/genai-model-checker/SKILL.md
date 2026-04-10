@@ -49,10 +49,10 @@ Run the checker script from the repository root:
 python3 .github/skills/genai-model-checker/scripts/check_model.py \
     --model-id <model_id> \
     --task <export_task> \
-    --work-dir /tmp/genai-model-check
+    --work-dir .model_enabler/model_checker
 ```
 
-Run `python3 .github/skills/genai-model-checker/scripts/check_model.py --help` for the full argument reference including defaults.
+Run `python3 .github/skills/genai-model-checker/scripts/check_model.py --help` for the full argument reference including defaults. The `--work-dir` is where all intermediate files, logs, and outputs will be stored. Do not pipe with any additional logging or redirection — the script handles its own logging.
 
 #### Skip flags (for re-runs after a fix)
 
