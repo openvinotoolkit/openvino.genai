@@ -144,7 +144,7 @@ def main():
 
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 300
-    generation_config.do_sample = True
+    generation_config.do_sample = False
 
     user_text_1 = "Do dolphins have fingers?"
     print("User: ", user_text_1)
