@@ -26,35 +26,69 @@ If the user does not provide these, infer sensible values from the conversation 
 
 ## Procedure
 
-### Step 1: Analyze Changes
+### Step 1: Identify Current State
 
-Review the current working tree to understand what was modified:
+Determine the current branch and its relationship to `master`:
 
 ```bash
+git branch --show-current
+git log --oneline master..HEAD
 git status
-git diff --stat
 ```
 
-Examine each changed file. Determine which changes are **in scope** (directly related to the task) and which are **out of scope** (unrelated formatting, debug leftovers, scratch files, unrelated refactors).
+This reveals:
+
+- **Current branch name** — may already be a feature branch, not `master`
+- **Commits ahead of master** — prior commits that may or may not be in scope
+- **Uncommitted changes** — staged and unstaged modifications
+
+### Step 2: Analyze All Changes Against Master
+
+Compare the **full delta** from `master` to the current state (both committed and uncommitted):
+
+```bash
+git diff master --stat
+git diff master
+```
+
+Examine every changed file in this diff. Determine which changes are **in scope** (directly related to the task) and which are **out of scope** (unrelated formatting, debug leftovers, scratch files, unrelated refactors, changes from prior unrelated commits).
 
 If out-of-scope changes are detected, inform the user and ask whether to:
 
-- Stash or revert the out-of-scope changes before committing
+- Revert or exclude the out-of-scope changes before committing
 - Include them anyway
 
 **Do not silently include unrelated changes.**
 
-### Step 2: Create a Branch
+### Step 3: Prepare the Branch
 
-Create and switch to a new branch from the current HEAD:
+Based on the analysis from Steps 1–2, determine the scenario:
+
+**Scenario A — Already on a feature branch with only in-scope changes (committed and/or uncommitted):**
+Reuse the current branch as `<branch_name>`. No branch switching needed. Proceed to Step 4 to commit any remaining uncommitted changes.
+
+**Scenario B — On `master` with uncommitted in-scope changes only:**
+Create a new branch from `master`:
 
 ```bash
 git checkout -b <branch_name>
 ```
 
-If the branch already exists, ask the user whether to reuse it or pick a different name.
+**Scenario C — Out-of-scope changes detected (any branch):**
+Create a new branch from `master` with only the in-scope changes:
 
-### Step 3: Stage and Commit
+```bash
+git stash  # if there are uncommitted in-scope changes
+git checkout master
+git checkout -b <branch_name>
+# apply only in-scope changes (e.g. git stash pop, git add only in-scope files)
+```
+
+If the branch name already exists, ask the user whether to reuse it or pick a different name.
+
+The goal is a branch where the **full diff against `master`** contains only in-scope changes.
+
+### Step 4: Stage and Commit
 
 Stage only the in-scope files identified in Step 1:
 
@@ -70,7 +104,7 @@ Write a clear, conventional commit message. Use a single-line summary (≤72 cha
 git commit -m "<summary>"
 ```
 
-### Step 4: Determine the Fork Remote
+### Step 5: Determine the Fork Remote
 
 The branch must be pushed to the user's **fork**, never directly to `openvinotoolkit/openvino.genai`.
 
@@ -90,7 +124,7 @@ Look for a remote whose URL contains the **user's GitHub username** (not `openvi
 
 If no fork remote is found, ask the user which remote to use. **Do not guess.**
 
-### Step 5: Push the Branch
+### Step 6: Push the Branch
 
 ```bash
 git push <fork_remote> <branch_name>
@@ -98,7 +132,7 @@ git push <fork_remote> <branch_name>
 
 If the push is rejected (e.g. branch exists on remote), ask the user how to proceed.
 
-### Step 6: Read the PR Template
+### Step 7: Read the PR Template
 
 Read the repository pull request template to get the latest structure:
 
@@ -108,7 +142,7 @@ Read the repository pull request template to get the latest structure:
 
 Parse the template to identify all sections and checklist items. The PR description must follow this template exactly.
 
-### Step 7: Compose the PR Description
+### Step 8: Compose the PR Description
 
 Fill in every section of the PR template:
 
@@ -120,7 +154,7 @@ Fill in every section of the PR template:
 
 Do **not** fabricate information. If unsure whether tests cover the change, leave the test checkbox unchecked and note it.
 
-### Step 8: Create the Pull Request
+### Step 9: Create the Pull Request
 
 Use the GitHub MCP tool to create the pull request as a **draft**:
 
@@ -128,10 +162,10 @@ Use the GitHub MCP tool to create the pull request as a **draft**:
 - **Head branch**: `<fork_owner>:<branch_name>` (cross-fork format, e.g. `myuser:fix/kv-cache-leak`)
 - **Base branch**: `<base_branch>` (default: `master`)
 - **Title**: `<pr_title>`
-- **Body**: The composed PR description from Step 7
+- **Body**: The composed PR description from Step 8
 - **Draft**: `true`
 
-### Step 9: Report
+### Step 10: Report
 
 After PR creation, report:
 
