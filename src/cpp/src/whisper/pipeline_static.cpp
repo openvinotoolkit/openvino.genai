@@ -291,9 +291,10 @@ void stream_generated_tokens(const std::shared_ptr<ov::genai::StreamerBase> stre
     auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
     if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
         handle->cancel();
-    } else if (streaming_status == ov::genai::StreamingStatus::STOP ||
-               streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+    } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
         handle->stop();
+    } else if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+        handle->stop(ov::genai::GenerationFinishReason::TOOL_CALL);
     }
 }
 
