@@ -832,6 +832,7 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
         },
         images_features_proj,
         base_id,
+        new_tokens.get_shape().at(1),
         m_vlm_config.hidden_size
     );
 

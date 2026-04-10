@@ -943,6 +943,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_promp
         },
         images_features_proj,
         base_id,
+        new_tokens.get_shape().at(1),
         m_vlm_config.hidden_size
     );
 
