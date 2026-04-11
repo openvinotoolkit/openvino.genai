@@ -917,6 +917,9 @@ class ExtendedPerfMetrics:
         :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
         :type get_grammar_compile_time: SummaryStats
     
+        :param get_sampling_duration: Returns the mean and standard deviation of time spent in the sampler per sampling step in milliseconds.
+        :type get_sampling_duration: MeanStdPair
+    
         :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawPerfMetrics
     """
@@ -2248,6 +2251,9 @@ class PerfMetrics:
         :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
         :type get_grammar_compile_time: SummaryStats
     
+        :param get_sampling_duration: Returns the mean and standard deviation of time spent in the sampler per sampling step in milliseconds.
+        :type get_sampling_duration: MeanStdPair
+    
         :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawPerfMetrics
     """
@@ -2404,7 +2410,7 @@ class RawPerfMetrics:
     
         :param grammar_compile_times: Time to compile the grammar in microseconds.
         :type grammar_compile_times: list[float]
-
+    
         :param sampling_durations: Time spent in the sampler per sampling step in microseconds. One entry per sampler.sample() call, parallel to token_infer_durations and m_batch_sizes.
         :type sampling_durations: list[float]
     """
@@ -4888,6 +4894,12 @@ class WhisperPerfMetrics(PerfMetrics):
         :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
         :type get_word_level_timestamps_processing_duration: MeanStdPair
     
+        :param get_encode_inference_duration: Returns mean and standard deviation of encoder inference duration in milliseconds.
+        :type get_encode_inference_duration: MeanStdPair
+    
+        :param get_decode_inference_duration: Returns mean and standard deviation of decoder inference duration per token in milliseconds.
+        :type get_decode_inference_duration: MeanStdPair
+    
         :param whisper_raw_metrics: Whisper specific raw metrics
         :type WhisperRawPerfMetrics:
     """
@@ -5063,18 +5075,18 @@ class WhisperPipeline:
         ...
 class WhisperRawPerfMetrics:
     """
-
+    
         Structure with whisper specific raw performance metrics for each generation before any statistics are calculated.
-
+    
         :param features_extraction_durations: Duration for each features extraction call.
         :type features_extraction_durations: list[MicroSeconds]
-
+    
         :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
         :type word_level_timestamps_processing_durations: list[MicroSeconds]
-
+    
         :param encode_inference_durations: Duration for each encoder inference call in microseconds.
         :type encode_inference_durations: list[float]
-
+    
         :param decode_inference_durations: Duration for each decoder inference call during token generation in microseconds.
         :type decode_inference_durations: list[float]
     """
