@@ -71,10 +71,12 @@ class GenAIModelWrapper:
 
         if model_type in (
             "text",
+            "text-chat",
             "visual-text",
             "visual-video-text",
             "text-embedding",
             "text-reranking",
+            "visual-text-chat",
         ):
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
@@ -724,8 +726,14 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
 def load_text2video_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     import openvino_genai
 
+    adapter_config = _create_genai_adapter_config(
+        adapters=kwargs.get("adapters"),
+        alphas=kwargs.get("alphas", None),
+    )
     return GenAIModelWrapper(
-        openvino_genai.Text2VideoPipeline(model_dir, device=device, **ov_config), model_dir, "text-to-video"
+        openvino_genai.Text2VideoPipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
+        model_dir,
+        "text-to-video",
     )
 
 
@@ -741,9 +749,20 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
             model = LTXPipeline.from_pretrained(model_id, **PYTORCH_MODEL_DTYPE_KWARG)
         except ValueError:
             model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG)
+        if kwargs.get("adapters") is not None:
+            adapters = kwargs["adapters"]
+            alphas = kwargs.get("alphas", None)
+            adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+
+            for idx, adapter in enumerate(adapters):
+                model.load_lora_weights(adapter, adapter_name=f"adapter_{idx}")
+            model.set_adapters([f"adapter_{idx}" for idx in range(len(adapters))], adapter_weights=alphas)
     else:
         logger.info("Using Optimum API")
         from optimum.intel import OVLTXPipeline
+
+        if "adapters" in kwargs and kwargs["adapters"] is not None:
+            raise ValueError("Adapters are not supported for OVLTXPipeline.")
 
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
         if kwargs.get("from_onnx"):
@@ -771,13 +790,13 @@ def load_model(
     else:
         ov_options = {}
 
-    if model_type == "text":
+    if model_type == "text" or model_type == "text-chat":
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(
             model_id, device, ov_options, use_hf, use_genai, **kwargs
         )
-    elif model_type == "visual-text" or model_type == "visual-video-text":
+    elif model_type == "visual-text" or model_type == "visual-video-text" or model_type == "visual-text-chat":
         kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "image-to-image":

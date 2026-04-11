@@ -6,7 +6,7 @@ import numpy as np
 import copy
 from pathlib import Path
 import llm_bench_utils.output_json as output_json
-from llm_bench_utils.memory_monitor import MemoryDataSummarizer, MemoryUnit
+from llm_bench_utils.memory_monitor import MemThreadHandler, MemoryUnit
 
 
 def output_comments(result, use_case, writer):
@@ -97,28 +97,34 @@ def output_avg_min_median(iter_data_list):
     return result
 
 
-def gen_data_to_csv(result: dict, iter_data: dict, pretrain_time: int, iter_timestamp: dict,
-                    memory_data_collector: MemoryDataSummarizer | None, mem_unit: MemoryUnit):
-    generation_time = iter_data['generation_time']
-    latency = iter_data['latency']
-    first_latency = iter_data['first_token_latency']
-    other_latency = iter_data['other_tokens_avg_latency']
-    first_token_infer_latency = iter_data['first_token_infer_latency']
-    other_token_infer_latency = iter_data['other_tokens_infer_avg_latency']
-    rss_mem = iter_data['max_rss_mem_consumption']
-    sys_mem = iter_data['max_sys_mem_consumption']
-    rss_mem_increase = iter_data['max_rss_mem_increase']
-    sys_mem_increase = iter_data['max_sys_mem_increase']
-    token_time = iter_data['tokenization_time']
-    detoken_time = iter_data['detokenization_time']
-    result['iteration'] = str(iter_data['iteration'])
-    result['pretrain_time(s)'] = pretrain_time
-    result['input_size'] = iter_data['input_size']
-    result['infer_count'] = iter_data['infer_count']
-    result['generation_time(s)'] = round(generation_time, 5) if generation_time != '' else generation_time
-    result['output_size'] = iter_data['output_size']
-    result['latency(ms)'] = round(latency, 5) if latency != '' else latency
-    result['result_md5'] = iter_data['result_md5']
+def gen_data_to_csv(
+    result: dict,
+    iter_data: dict,
+    pretrain_time: int,
+    iter_timestamp: dict,
+    memory_data_collector: MemThreadHandler | None,
+    mem_unit: MemoryUnit,
+):
+    generation_time = iter_data["generation_time"]
+    latency = iter_data["latency"]
+    first_latency = iter_data["first_token_latency"]
+    other_latency = iter_data["other_tokens_avg_latency"]
+    first_token_infer_latency = iter_data["first_token_infer_latency"]
+    other_token_infer_latency = iter_data["other_tokens_infer_avg_latency"]
+    rss_mem = iter_data["max_rss_mem_consumption"]
+    sys_mem = iter_data["max_sys_mem_consumption"]
+    rss_mem_increase = iter_data["max_rss_mem_increase"]
+    sys_mem_increase = iter_data["max_sys_mem_increase"]
+    token_time = iter_data["tokenization_time"]
+    detoken_time = iter_data["detokenization_time"]
+    result["iteration"] = str(iter_data["iteration"])
+    result["pretrain_time(s)"] = pretrain_time
+    result["input_size"] = iter_data["input_size"]
+    result["infer_count"] = iter_data["infer_count"]
+    result["generation_time(s)"] = round(generation_time, 5) if generation_time != "" else generation_time
+    result["output_size"] = iter_data["output_size"]
+    result["latency(ms)"] = round(latency, 5) if latency != "" else latency
+    result["result_md5"] = iter_data["result_md5"]
     if first_latency < 0:
         result['1st_latency(ms)'] = 'NA'
     else:
@@ -146,8 +152,21 @@ def gen_data_to_csv(result: dict, iter_data: dict, pretrain_time: int, iter_time
     result = result | output_json.get_pre_gen_memory_data(memory_data_collector, print_unit=mem_unit)
 
 
-def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, iter_timestamp, memory_data_collector):
-    mem_unit = memory_data_collector.memory_monitor.memory_unit if memory_data_collector else MemoryDataSummarizer.DEF_MEM_UNIT
+def write_result(
+    report_file,
+    model,
+    framework,
+    device,
+    model_args,
+    iter_data_list,
+    pretrain_time,
+    model_precision,
+    iter_timestamp,
+    memory_data_collector,
+):
+    mem_unit = MemThreadHandler.DEF_MEM_UNIT
+    if memory_data_collector.mth:
+        mem_unit = memory_data_collector.mth.memory_unit
     header = [
         'iteration',
         'model',
