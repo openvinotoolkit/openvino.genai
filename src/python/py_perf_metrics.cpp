@@ -60,7 +60,7 @@ auto raw_perf_metrics_docstring = R"(
     :param grammar_compile_times: Time to compile the grammar in milliseconds.
     :type grammar_compile_times: list[float]
 
-    :param sampling_durations: Time spent in the sampler per sampling step in microseconds. One entry per sampler.sample() call, parallel to token_infer_durations and m_batch_sizes.
+    :param sampling_durations: Time spent in the sampler per sampling step in milliseconds. One entry per sampler.sample() call, parallel to token_infer_durations and m_batch_sizes.
     :type sampling_durations: list[float]
 )";
 
