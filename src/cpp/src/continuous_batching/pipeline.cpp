@@ -105,7 +105,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
                                                        const ov::AnyMap& vision_encoder_properties) {
     auto start_time = std::chrono::steady_clock::now();
     auto properties_without_draft_model = properties;
-    auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_desr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_desr.properties, models_path);
 
@@ -312,7 +312,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto properties_without_draft_model = properties;
-    auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_desr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto model = language_model;
 
