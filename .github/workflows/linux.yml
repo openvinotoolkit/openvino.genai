@@ -566,7 +566,7 @@ jobs:
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
-    needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
@@ -659,6 +659,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
 
     steps:
       - name: Clone openvino.genai
@@ -672,7 +673,7 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*,genai_tests_Release}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -813,9 +814,10 @@ jobs:
 
       - name: Install NPM dependencies for samples
         if: ${{ matrix.test.run_condition }}
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+        working-directory: ${{ env.SRC_DIR }}/samples/js
         run: |
-          npm install ${{ env.SRC_DIR }}/src/js
+          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* ${{ env.SRC_DIR }}/src/js --ignore-scripts
+          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Test Samples (Python and C++)
@@ -1004,7 +1006,7 @@ jobs:
 
   genai_xgrammar_off_tests:
     name: Build & Test when ENABLE_XGRAMMAR=OFF
-    needs: [smart_ci, openvino_download, genai_build_wheels]
+    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheels]
     timeout-minutes: 45
     defaults:
       run:
@@ -1021,6 +1023,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build_xgrammar
+      EXTENSION_LIB_PATH: ${{ github.workspace }}/ov/tests
 
     steps:
       - name: Clone openvino.genai
@@ -1032,7 +1035,7 @@ jobs:
       - name: Download Build Artifacts
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_tests_Release}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 

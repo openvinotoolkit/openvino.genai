@@ -9,14 +9,14 @@
 EmbeddingInitWorker::EmbeddingInitWorker(
     Function& callback,
     std::shared_ptr<ov::genai::TextEmbeddingPipeline>& pipe,
-    const std::string model_path,
-    const std::string device,
+    std::filesystem::path model_path,
+    std::string device,
     Object config,
     Object properties
 ) : AsyncWorker(callback),
     pipe(pipe),
-    model_path(model_path),
-    device(device),
+    model_path(std::move(model_path)),
+    device(std::move(device)),
     config(js_to_cpp<ov::AnyMap>(Env(), config)),
     properties(js_to_cpp<ov::AnyMap>(Env(), properties)) {};
 
