@@ -45,7 +45,7 @@ class WhisperHook:
         self.latency_list.clear()
         for data in self.time_data:
             latency_data = {}
-            if "enc_token_time" and "enc_infer_time" in data:
+            if "enc_token_time" in data and "enc_infer_time" in data:
                 latency_data["enc_token_time"] = round(data["enc_token_time"] * 1000, 2)
                 latency_data["enc_infer_time"] = round(data["enc_infer_time"] * 1000, 2)
                 latency_data["enc_sample_time"] = round((data["enc_token_time"] - data["enc_infer_time"]) * 1000, 2)
@@ -84,25 +84,25 @@ class WhisperHook:
         str = ''
         for idx, data in enumerate(self.latency_list):
             title = f"[ INFO ] [{iter}][P{prompt_idx}][L{idx}]"
-            if "enc_token_time" and "enc_infer_time" in data:
+            if "enc_token_time" in data and "enc_infer_time" in data:
                 str += (
                     f"{title} encoder token latency: {data['enc_token_time']:.2f} ms/token, "
                     f"encoder infers latency: {data['enc_infer_time']:.2f} ms/infer, "
                     f"encoder sampling latency: {data['enc_sample_time']:.2f} ms"
                 )
-            if "dec_1st_token_time" and "dec_2nd_tokens_time" in data:
+            if "dec_1st_token_time" in data and "dec_2nd_tokens_time" in data:
                 str += (
                     f"\n{title} decoder first token latency: {data['dec_1st_token_time']} ms, "
                     f"decoder other tokens latency: {data['dec_2nd_tokens_time']} ms/token, "
                     f"decoder tokens count: {data['dec_token_count']}\n"
                 )
-            if "dec_1st_infer_time" and "dec_2nd_infers_time" in data:
+            if "dec_1st_infer_time" in data and "dec_2nd_infers_time" in data:
                 str += (
                     f"{title} decoder first infer latency: {data['dec_1st_infer_time']} ms, "
                     f"decoder other infers latency: {data['dec_2nd_infers_time']} ms/infer, "
                     f"decoder infers count: {data['dec_infer_count']}\n"
                 )
-            if "dec_1st_sample_time" and "dec_2nd_samples_time" in data:
+            if "dec_1st_sample_time" in data and "dec_2nd_samples_time" in data:
                 str += (
                     f"{title} decoder first sampling latency: {data['dec_1st_sample_time']} ms, "
                     f"decoder other sampling latency: {data['dec_2nd_samples_time']} ms/token"
