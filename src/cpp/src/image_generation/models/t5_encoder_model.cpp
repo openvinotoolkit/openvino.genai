@@ -88,6 +88,7 @@ T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::Any
 
 void T5EncoderModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
     if (adapters) {
+        OPENVINO_ASSERT(m_request, "T5 encoder model must be compiled first");
         m_adapter_controller.apply(m_request, *adapters);
     }
 }

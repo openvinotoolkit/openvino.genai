@@ -180,14 +180,16 @@ public:
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
-            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device, *updated_properties);
+            m_clip_text_encoder = std::make_shared<CLIPTextModel>(root_dir / "text_encoder", device,
+                *properties_for_text_encoder(*updated_properties, "lora_te"));
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string t5_text_encoder = data["text_encoder_2"][1].get<std::string>();
         if (t5_text_encoder == "T5EncoderModel") {
-            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_2", device, *updated_properties);
+            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_2", device,
+                *properties_for_text_encoder(*updated_properties, "lora_te2"));
         } else {
             OPENVINO_THROW("Unsupported '", t5_text_encoder, "' text encoder type");
         }
@@ -273,8 +275,8 @@ public:
                  const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
         auto updated_properties = update_adapters_in_properties(properties, &FluxPipeline::derived_adapters);
-        m_clip_text_encoder->compile(text_encode_device, *updated_properties);
-        m_t5_text_encoder->compile(text_encode_device, *updated_properties);
+        m_clip_text_encoder->compile(text_encode_device, *properties_for_text_encoder(*updated_properties, "lora_te"));
+        m_t5_text_encoder->compile(text_encode_device, *properties_for_text_encoder(*updated_properties, "lora_te2"));
         m_vae->compile(vae_device, *updated_properties);
         m_transformer->compile(denoise_device, *updated_properties);
     }
@@ -689,6 +691,19 @@ protected:
     // Returns non-empty updated adapters if they are required to be updated
     static std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters) {
         return ov::genai::derived_adapters(adapters, flux_adapter_normalization);
+    }
+
+    utils::SharedOptional<const ov::AnyMap> properties_for_text_encoder(
+            const ov::AnyMap& properties, const std::string& tensor_name_prefix) {
+        return update_adapters_in_properties(properties,
+            [&tensor_name_prefix](const AdapterConfig& adapters) -> std::optional<AdapterConfig> {
+                if (!adapters.get_tensor_name_prefix()) {
+                    std::optional<AdapterConfig> updated_adapters = adapters;
+                    updated_adapters->set_tensor_name_prefix(tensor_name_prefix);
+                    return updated_adapters;
+                }
+                return std::nullopt;
+        });
     }
 
     std::shared_ptr<FluxTransformer2DModel> m_transformer = nullptr;
