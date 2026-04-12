@@ -169,7 +169,7 @@ public:
         }
         const std::string transformer = data["transformer"][1].get<std::string>();
         if (transformer == "SD3Transformer2DModel") {
-            m_transformer = std::make_shared<SD3Transformer2DModel>(root_dir / "transformer", device, properties);
+            m_transformer = std::make_shared<SD3Transformer2DModel>(root_dir / "transformer", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
         }
@@ -177,9 +177,9 @@ public:
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, *updated_properties);
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
-                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, properties);
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, *updated_properties);
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
             }
