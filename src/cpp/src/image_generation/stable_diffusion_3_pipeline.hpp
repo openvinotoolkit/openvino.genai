@@ -141,18 +141,19 @@ public:
         using utils::read_json_param;
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
+        auto updated_properties = update_adapters_in_properties(properties, &StableDiffusion3Pipeline::derived_adapters);
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModelWithProjection") {
             m_clip_text_encoder_1 =
                 std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder", device,
-                    *properties_for_text_encoder(properties, "lora_te1"));
+                    *properties_for_text_encoder(*updated_properties, "lora_te1"));
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
             m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(root_dir / "text_encoder_2", device,
-                *properties_for_text_encoder(properties, "lora_te2"));
+                *properties_for_text_encoder(*updated_properties, "lora_te2"));
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
         }
@@ -161,7 +162,7 @@ public:
             const std::string text_encoder_3 = text_encoder_3_json.get<std::string>();
             if (text_encoder_3 == "T5EncoderModel") {
                 m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder_3", device,
-                    *properties_for_text_encoder(properties, "lora_te3"));
+                    *properties_for_text_encoder(*updated_properties, "lora_te3"));
             } else {
                 OPENVINO_THROW("Unsupported '", text_encoder_3, "' text encoder type");
             }
@@ -273,14 +274,15 @@ public:
                  const std::string& vae_device,
                  const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
+        auto updated_properties = update_adapters_in_properties(properties, &StableDiffusion3Pipeline::derived_adapters);
 
-        m_clip_text_encoder_1->compile(text_encode_device, *properties_for_text_encoder(properties, "lora_te1"));
-        m_clip_text_encoder_2->compile(text_encode_device, *properties_for_text_encoder(properties, "lora_te2"));
+        m_clip_text_encoder_1->compile(text_encode_device, *properties_for_text_encoder(*updated_properties, "lora_te1"));
+        m_clip_text_encoder_2->compile(text_encode_device, *properties_for_text_encoder(*updated_properties, "lora_te2"));
         if (m_t5_text_encoder) {
-            m_t5_text_encoder->compile(text_encode_device, *properties_for_text_encoder(properties, "lora_te3"));
+            m_t5_text_encoder->compile(text_encode_device, *properties_for_text_encoder(*updated_properties, "lora_te3"));
         }
-        m_transformer->compile(denoise_device, properties);
-        m_vae->compile(vae_device, properties);
+        m_transformer->compile(denoise_device, *updated_properties);
+        m_vae->compile(vae_device, *updated_properties);
     }
 
     std::shared_ptr<DiffusionPipeline> clone() override {
