@@ -946,16 +946,17 @@ public:
         auto consumers = target.get_target_inputs();
         bool transpose_in_end = false;
 
-        // FIXME: Should check rank of activations instead of target rank
-        if(target_rank >= 3 && target.get_partial_shape()[target_rank - 3].get_length() > 1) {
+        const auto activation_shape = activations.get_partial_shape();
+        const auto activation_rank = activation_shape.rank().get_length();
+        if(activation_rank >= 3 && activation_shape[activation_rank - 3].get_length() > 1) {
             // Permutation moves the two channel dims (last two) to the front and shifts spatial dims back:
             // e.g. rank=4: {2,3,0,1}, rank=3: {1,2,0}
-            std::vector<int> perm(target_rank);
-            perm[0] = target_rank - 2;
-            perm[1] = target_rank - 1;
-            for (int i = 2; i < target_rank; ++i)
+            std::vector<int> perm(activation_rank);
+            perm[0] = activation_rank - 2;
+            perm[1] = activation_rank - 1;
+            for (int i = 2; i < activation_rank; ++i)
                 perm[i] = i - 2;
-            auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{static_cast<size_t>(target_rank)}, perm);
+            auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{static_cast<size_t>(activation_rank)}, perm);
             auto transpose = register_new_node<v1::Transpose>(activations, transposition);
             activations = transpose;
             transpose_in_end = true;
