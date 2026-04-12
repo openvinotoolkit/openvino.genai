@@ -666,7 +666,8 @@ NodePtr tensors_multiplication(NodePtr input,
                                bool transpose_weights,
                                size_t alpha_pos,
                                size_t A_pos,
-                               bool transpose_in_end) {
+                               bool transpose_in_end,
+                               bool transpose_input = false) {
     const auto target_type = target.get_element_type();
     const auto target_shape = target.get_partial_shape();
     const auto target_rank = target_shape.rank().get_length();
@@ -688,10 +689,9 @@ NodePtr tensors_multiplication(NodePtr input,
                 // TODO: Apply alpha multiplication separately
                 input = std::make_shared<v1::Multiply>(input, normalized);
             } else {  // MatMul for A and B
-                input = std::make_shared<v0::MatMul>(input,
-                                                     normalized,
-                                                     /*transpose_a = */ false,
-                                                     transpose_weights);  // FIXME: verify transpose_a == true
+                // transpose_input applies only to the first matmul (A); subsequent ones (B) are always false
+                bool t_a = (i == A_pos) ? transpose_input : false;
+                input = std::make_shared<v0::MatMul>(input, normalized, t_a, transpose_weights);
             }
         } else {  // used in case of MODE_FUSE
             input = normalized;
@@ -934,8 +934,12 @@ public:
     LoRASeparateTransform(const LoRAWeightByNodeGetter& lora_getter) : LoRATransformBase(lora_getter) {}
 
     bool apply (NodePtr node, const LoRANode& lora_weight) override {
-        auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
+        auto activations = node->input_value(0);
         auto weights_input = node->input_value(1);
+        bool transpose_input = false;
+        if (auto matmul = std::dynamic_pointer_cast<v0::MatMul>(node)) {
+            transpose_input = matmul->get_transpose_a();
+        }
         auto weights_input_type = weights_input.get_element_type();
         NodePtr add_term = nullptr;
         NodePtr replacement = nullptr;
@@ -970,7 +974,8 @@ public:
                                              true,
                                              1, // alpha idx
                                              0, // A idx
-                                             transpose_in_end);
+                                             transpose_in_end,
+                                             transpose_input);
 
         replacement->get_output_tensor(0).add_names(target.get_names());
         for (auto consumer : consumers) {
