@@ -28,7 +28,7 @@ If either is missing, ask for them before proceeding.
 
 Read and follow the **model-checker** skill.
 
-Read **model_checker** step results. Depending on the results:
+Read **model-checker** step results. Depending on the results:
 
 - If all steps passed, proceed to Step 3.
 - If optimum-intel export failed or wwb results for optimum-intel below threshold, proceed to Step 4. Provide a summary of the failure and relevant log paths for context.
@@ -53,7 +53,7 @@ Report a structured summary:
   - Optimum similarity / GenAI similarity
 - **Model Enablement Status**:
   - **Enabled/Not Enabled** if passed all model-checker steps
-  - **Details**: Provide a summary of changes. Highlight design and architectural desicions made during enablement.
+  - **Details**: Provide a summary of changes. Highlight design and architectural decisions made during enablement.
 - **Docs Update Status**:
   - **Updated/Not Updated** if updated the supported models docs
   - **Details**: summary of doc changes.
