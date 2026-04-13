@@ -17,6 +17,8 @@ updates:
       - dependency-name: "openvinotoolkit/openvino"
       # Cannot be updated for the moment, ticket: 184715
       - dependency-name: "actions/checkout"
+      # Due to recent trivy security issues to be updated manually
+      - dependency-name: "aquasecurity/trivy-action"
     groups:
       github-actions:
         patterns:
