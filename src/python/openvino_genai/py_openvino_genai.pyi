@@ -295,9 +295,9 @@ class AutoencoderKL:
         """
     def compile(self, device: str, **kwargs) -> None:
         """
-                    Compiles the model.
-                    device (str): Device to run the model on (e.g., CPU, GPU).
-                    kwargs: Device properties.
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
@@ -447,18 +447,18 @@ class CLIPTextModel:
     @typing.overload
     def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: CLIPTextModel.Config, clip_tokenizer: Tokenizer) -> None:
         """
-                    CLIPTextModel class
+                    CLIPTextModel class constructor.
                     model (str): Pre-read model.
-                    weights (ov.Tensor): Pre-read model weights.
+                    weights (ov.Tensor): Pre-read model weights tensor.
                     config (CLIPTextModel.Config): CLIPTextModel configuration.
                     clip_tokenizer (Tokenizer): Tokenizer for text encoding.
         """
     @typing.overload
     def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: CLIPTextModel.Config, clip_tokenizer: Tokenizer, device: str, **kwargs) -> None:
         """
-                    CLIPTextModel class
+                    CLIPTextModel class constructor.
                     model (str): Pre-read model.
-                    weights (ov.Tensor): Pre-read model weights.
+                    weights (ov.Tensor): Pre-read model weights tensor.
                     config (CLIPTextModel.Config): CLIPTextModel configuration.
                     clip_tokenizer (Tokenizer): Tokenizer for text encoding.
                     device (str): Device on which inference will be done.
@@ -466,9 +466,9 @@ class CLIPTextModel:
         """
     def compile(self, device: str, **kwargs) -> None:
         """
-                    Compiles the model.
-                    device (str): Device to run the model on (e.g., CPU, GPU).
-                    kwargs: Device properties.
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
         """
     def export_model(self, export_path: os.PathLike | str | bytes) -> None:
         """
@@ -513,20 +513,20 @@ class CLIPTextModelWithProjection(CLIPTextModel):
                     model (CLIPTextModelWithProjection): CLIPText model with projection
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: CLIPTextModelWithProjection.Config, clip_tokenizer: Tokenizer) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: CLIPTextModel.Config, clip_tokenizer: Tokenizer) -> None:
         """
-                    CLIPTextModelWithProjection class
+                    CLIPTextModelWithProjection class constructor.
                     model (str): Pre-read model.
-                    weights (ov.Tensor): Pre-read model weights.
+                    weights (ov.Tensor): Pre-read model weights tensor.
                     config (CLIPTextModelWithProjection.Config): CLIPTextModelWithProjection configuration.
                     clip_tokenizer (Tokenizer): Tokenizer for text encoding.
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: CLIPTextModelWithProjection.Config, clip_tokenizer: Tokenizer, device: str, **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: CLIPTextModel.Config, clip_tokenizer: Tokenizer, device: str, **kwargs) -> None:
         """
-                    CLIPTextModelWithProjection class
+                    CLIPTextModelWithProjection class constructor.
                     model (str): Pre-read model.
-                    weights (ov.Tensor): Pre-read model weights.
+                    weights (ov.Tensor): Pre-read model weights tensor.
                     config (CLIPTextModelWithProjection.Config): CLIPTextModelWithProjection configuration.
                     clip_tokenizer (Tokenizer): Tokenizer for text encoding.
                     device (str): Device on which inference will be done.
@@ -982,20 +982,20 @@ class FluxTransformer2DModel:
                     model (FluxTransformer2DModel): FluxTransformer2DModel model
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: FluxTransformer2DModel.Config, vae_scale_factor: int) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: FluxTransformer2DModel.Config, vae_scale_factor: typing.SupportsInt) -> None:
         """
-                    FluxTransformer2DModel class
+                    FluxTransformer2DModel class constructor.
                     model (str): Pre-read model.
-                    weights (ov.Tensor): Pre-read model weights.
+                    weights (ov.Tensor): Pre-read model weights tensor.
                     config (FluxTransformer2DModel.Config): FluxTransformer2DModel configuration.
                     vae_scale_factor (int): VAE scale factor.
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: FluxTransformer2DModel.Config, vae_scale_factor: int, device: str, **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: FluxTransformer2DModel.Config, vae_scale_factor: typing.SupportsInt, device: str, **kwargs) -> None:
         """
-                    FluxTransformer2DModel class
+                    FluxTransformer2DModel class constructor.
                     model (str): Pre-read model.
-                    weights (ov.Tensor): Pre-read model weights.
+                    weights (ov.Tensor): Pre-read model weights tensor.
                     config (FluxTransformer2DModel.Config): FluxTransformer2DModel configuration.
                     vae_scale_factor (int): VAE scale factor.
                     device (str): Device on which inference will be done.
@@ -1003,9 +1003,9 @@ class FluxTransformer2DModel:
         """
     def compile(self, device: str, **kwargs) -> None:
         """
-                    Compiles the model.
-                    device (str): Device to run the model on (e.g., CPU, GPU).
-                    kwargs: Device properties.
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
         """
     def get_config(self) -> FluxTransformer2DModel.Config:
         ...
@@ -1468,9 +1468,9 @@ class Image2ImagePipeline:
     @typing.overload
     def compile(self, device: str, **kwargs) -> None:
         """
-                    Compiles the model.
-                    device (str): Device to run the model on (e.g., CPU, GPU).
-                    kwargs: Device properties.
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
         """
     @typing.overload
     def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
@@ -1735,9 +1735,9 @@ class InpaintingPipeline:
     @typing.overload
     def compile(self, device: str, **kwargs) -> None:
         """
-                    Compiles the model.
-                    device (str): Device to run the model on (e.g., CPU, GPU).
-                    kwargs: Device properties.
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
         """
     @typing.overload
     def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
@@ -2449,25 +2449,25 @@ class SD3Transformer2DModel:
     @typing.overload
     def __init__(self, model: SD3Transformer2DModel) -> None:
         """
-                    SD3Transformer2DModel model
+        SD3Transformer2DModel model
                     SD3Transformer2DModel class
                     model (SD3Transformer2DModel): SD3Transformer2DModel model
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: SD3Transformer2DModel.Config, vae_scale_factor: int) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: SD3Transformer2DModel.Config, vae_scale_factor: typing.SupportsInt) -> None:
         """
-                    SD3Transformer2DModel class
+                    SD3Transformer2DModel class constructor.
                     model (str): Pre-read model.
-                    weights (ov.Tensor): Pre-read model weights.
+                    weights (ov.Tensor): Pre-read model weights tensor.
                     config (SD3Transformer2DModel.Config): SD3Transformer2DModel configuration.
                     vae_scale_factor (int): VAE scale factor.
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: SD3Transformer2DModel.Config, vae_scale_factor: int, device: str, **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: SD3Transformer2DModel.Config, vae_scale_factor: typing.SupportsInt, device: str, **kwargs) -> None:
         """
-                    SD3Transformer2DModel class
+                    SD3Transformer2DModel class constructor.
                     model (str): Pre-read model.
-                    weights (ov.Tensor): Pre-read model weights.
+                    weights (ov.Tensor): Pre-read model weights tensor.
                     config (SD3Transformer2DModel.Config): SD3Transformer2DModel configuration.
                     vae_scale_factor (int): VAE scale factor.
                     device (str): Device on which inference will be done.
@@ -2475,9 +2475,9 @@ class SD3Transformer2DModel:
         """
     def compile(self, device: str, **kwargs) -> None:
         """
-                    Compiles the model.
-                    device (str): Device to run the model on (e.g., CPU, GPU).
-                    kwargs: Device properties.
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
         """
     def get_config(self) -> SD3Transformer2DModel.Config:
         ...
@@ -3373,26 +3373,26 @@ class T5EncoderModel:
     @typing.overload
     def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer: Tokenizer) -> None:
         """
-                    T5EncoderModel class
+                    T5EncoderModel class constructor.
                     model (str): Pre-read model.
-                    weights (ov.Tensor): Pre-read model weights.
+                    weights (ov.Tensor): Pre-read model weights tensor.
                     tokenizer (Tokenizer): Tokenizer for text encoding.
         """
     @typing.overload
     def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, tokenizer: Tokenizer, device: str, **kwargs) -> None:
         """
-                    T5EncoderModel class
+                    T5EncoderModel class constructor.
                     model (str): Pre-read model.
-                    weights (ov.Tensor): Pre-read model weights.
+                    weights (ov.Tensor): Pre-read model weights tensor.
                     tokenizer (Tokenizer): Tokenizer for text encoding.
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
     def compile(self, device: str, **kwargs) -> None:
         """
-                    Compiles the model.
-                    device (str): Device to run the model on (e.g., CPU, GPU).
-                    kwargs: Device properties.
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
         """
     def get_output_tensor(self, idx: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
         ...
@@ -3488,9 +3488,9 @@ class Text2ImagePipeline:
     @typing.overload
     def compile(self, device: str, **kwargs) -> None:
         """
-                    Compiles the model.
-                    device (str): Device to run the model on (e.g., CPU, GPU).
-                    kwargs: Device properties.
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
         """
     @typing.overload
     def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
@@ -4086,20 +4086,20 @@ class UNet2DConditionModel:
                     model (UNet2DConditionModel): UNet2DConditionModel model
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: UNet2DConditionModel.Config, vae_scale_factor: int) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: UNet2DConditionModel.Config, vae_scale_factor: typing.SupportsInt) -> None:
         """
-                    UNet2DConditionModel class
+                    UNet2DConditionModel class constructor.
                     model (str): Pre-read model.
-                    weights (ov.Tensor): Pre-read model weights.
+                    weights (ov.Tensor): Pre-read model weights tensor.
                     config (UNet2DConditionModel.Config): UNet2DConditionModel configuration.
                     vae_scale_factor (int): VAE scale factor.
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: UNet2DConditionModel.Config, vae_scale_factor: int, device: str, **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: UNet2DConditionModel.Config, vae_scale_factor: typing.SupportsInt, device: str, **kwargs) -> None:
         """
-                    UNet2DConditionModel class
+                    UNet2DConditionModel class constructor.
                     model (str): Pre-read model.
-                    weights (ov.Tensor): Pre-read model weights.
+                    weights (ov.Tensor): Pre-read model weights tensor.
                     config (UNet2DConditionModel.Config): UNet2DConditionModel configuration.
                     vae_scale_factor (int): VAE scale factor.
                     device (str): Device on which inference will be done.
@@ -4107,9 +4107,9 @@ class UNet2DConditionModel:
         """
     def compile(self, device: str, **kwargs) -> None:
         """
-                    Compiles the model.
-                    device (str): Device to run the model on (e.g., CPU, GPU).
-                    kwargs: Device properties.
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
         """
     def do_classifier_free_guidance(self, guidance_scale: typing.SupportsFloat) -> bool:
         ...

@@ -878,7 +878,7 @@ void init_autoencoder_kl(py::module_& m) {
                     self.compile(device,  map);
                 }
             },
-            py::arg("device"), "device on which inference will be done"
+            py::arg("device"), "device on which inference will be done",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
