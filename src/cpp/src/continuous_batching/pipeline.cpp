@@ -354,6 +354,10 @@ ov::genai::GenerationConfig ContinuousBatchingPipeline::get_config() const{
     return m_impl->get_config();
 }
 
+ov::genai::SchedulerConfig ContinuousBatchingPipeline::get_scheduler_config() const {
+    return m_impl->get_scheduler_config();
+}
+
 void ContinuousBatchingPipeline::set_config(const ov::genai::GenerationConfig& config) {
     m_impl->set_config(config);
 }

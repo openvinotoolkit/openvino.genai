@@ -87,11 +87,12 @@ def test_xattention_enabled_vs_disabled_similarity(test_struct):
         get_default_llm_properties(),
     )
 
-    model_no_xattn_config = model_no_xattn.get_config()
-    model_xattn_config = model_xattn.get_config()
-    assert not model_no_xattn_config.use_sparse_attention
-    assert model_xattn_config.use_sparse_attention
-    assert model_xattn_config.sparse_attention_config.mode == SparseAttentionMode.XATTENTION
+    effective_cfg_no_xattn = model_no_xattn.get_scheduler_config()
+    effective_cfg_xattn = model_xattn.get_scheduler_config()
+
+    assert not effective_cfg_no_xattn.use_sparse_attention
+    assert effective_cfg_xattn.use_sparse_attention
+    assert effective_cfg_xattn.sparse_attention_config.mode == SparseAttentionMode.XATTENTION
 
     data_dict = load_prompts_dataset(test_struct.prompt_file)
     evaluator = whowhatbench.Evaluator(
