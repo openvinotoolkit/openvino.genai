@@ -52,7 +52,7 @@ public:
         return m_finish_reason;
     }
 
-    void stop(GenerationFinishReason finish_reason = GenerationFinishReason::NONE) {
+    void stop(GenerationFinishReason finish_reason = GenerationFinishReason::STOP) {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_status = GenerationStatus::STOP;
         m_finish_reason = finish_reason;
