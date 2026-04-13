@@ -81,6 +81,12 @@ generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())
 
 Apply https://huggingface.co/microsoft/Phi-4-multimodal-instruct/discussions/78/files to fix the model export for `transformers>=4.50`
 
+#### VideoChat-Flash {#videochat-flash-notes}
+
+1. The current implementation supports video input only; image inference is not supported for this model type.
+2. Visual history is not preserved across rounds, so multi-turn interactions have limited visual context.
+3. If the number of input frames is not divisible by `mm_local_num_frames` (as defined in `config.json`), pad additional frames by duplicating the last frame. For example, if there are 10 frames and `mm_local_num_frames = 4`, pad to 12 frames.
+
 #### Qwen3-VL {#qwen3_vl-notes}
 
 The model requires `transformers>=4.57` for the export with `optimum-cli`.
