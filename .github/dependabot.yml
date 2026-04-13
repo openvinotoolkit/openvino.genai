@@ -15,6 +15,7 @@ updates:
     ignore:
       # Cannot be updated for the moment, ticket: 184608
       - dependency-name: "openvinotoolkit/openvino"
+      # Cannot be updated for the moment, ticket: 184715
       - dependency-name: "actions/checkout"
     groups:
       github-actions:
