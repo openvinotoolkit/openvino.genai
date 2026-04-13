@@ -9,13 +9,9 @@
  */
 
 #pragma once
-#include "openvino/c/openvino.h"
+#include "openvino/c/ov_common.h"
+#include "openvino/c/ov_tensor.h"
 #include "openvino/genai/c/visibility.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // We need an enum for status if it's not included
 typedef struct ov_genai_video_generation_config_opaque ov_genai_video_generation_config;
 typedef struct ov_genai_text2video_pipeline_opaque ov_genai_text2video_pipeline;
