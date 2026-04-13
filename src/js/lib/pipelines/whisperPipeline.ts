@@ -160,7 +160,7 @@ export class WhisperPipeline {
    * @param options - Optional parameters.
    * @param options.generationConfig - Generation config (e.g., language, task, return_timestamps).
    * @param options.streamer - Optional callback invoked for each decoded chunk.
-   * - Return `StreamingStatus.RUNNING` to continue or `StreamingStatus.CANCEL` to stop
+   * - Return a `StreamingStatus` flag to indicate whether generation should be stopped or cancelled
    * @returns Decoded texts, scores, optional chunks with timestamps, and perf metrics.
    */
   async generate(

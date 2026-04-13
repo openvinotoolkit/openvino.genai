@@ -228,7 +228,7 @@ export class LLMPipeline {
    * @param inputs - Input prompt string, array of prompts, or chat history.
    * @param generationConfig - Generation configuration parameters.
    * @param streamer - Optional callback invoked for each generated text chunk.
-   * - Return `StreamingStatus.RUNNING` to continue or `StreamingStatus.CANCEL` to stop
+   * - Return a `StreamingStatus` flag to indicate whether generation should be stopped or cancelled
    * @returns Resolves with decoded results once generation finishes.
    *
    * @example
@@ -240,6 +240,7 @@ export class LLMPipeline {
    * // With custom streamer
    * const result = await pipe.generate(prompt, config, (chunk) => {
    *   process.stdout.write(chunk);
+   *   return StreamingStatus.RUNNING;
    * });
    */
   async generate(
