@@ -25,6 +25,19 @@ public:
         properties} { }
 
     VLMContinuousBatchingAdapter(
+        const std::shared_ptr<ov::Model>& language_model,
+        const std::filesystem::path& models_dir,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& properties
+    ): m_impl{
+        language_model,
+        models_dir,
+        scheduler_config,
+        device,
+        properties} { }
+
+    VLMContinuousBatchingAdapter(
         const ModelsMap& models_map,
         const Tokenizer& tokenizer,
         const std::filesystem::path& config_dir_path,
@@ -33,6 +46,25 @@ public:
         const ov::AnyMap& properties,
         const ov::genai::GenerationConfig& generation_config
     ): m_impl{
+        models_map,
+        tokenizer,
+        scheduler_config,
+        device,
+        config_dir_path,
+        properties,
+        generation_config} { }
+
+    VLMContinuousBatchingAdapter(
+        const std::shared_ptr<ov::Model>& language_model,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& properties,
+        const ov::genai::GenerationConfig& generation_config
+    ): m_impl{
+        language_model,
         models_map,
         tokenizer,
         scheduler_config,
