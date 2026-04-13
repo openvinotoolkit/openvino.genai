@@ -14,7 +14,7 @@ updates:
     open-pull-requests-limit: 3
     ignore:
       # Cannot be updated for the moment, ticket: 184608
-      - dependency-name: "openvinotoolkit/openvino/.github/actions/smart-ci"
+      - dependency-name: "openvinotoolkit/openvino"
     groups:
       github-actions:
         patterns:
