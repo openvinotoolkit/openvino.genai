@@ -7,10 +7,13 @@ import torch
 import scipy
 import datetime
 import logging as log
+from transformers import AutoConfig
+
 import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
 import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
+from llm_bench_utils.config_class import UseCaseTextReranker
 from llm_bench_utils.prompt_utils import get_text_prompt
 import llm_bench_utils.gen_output_data as gen_output_data
 from task.pipeline_utils import CommonPipeline, execution_time_in_sec, collect_prompts_step
@@ -29,8 +32,11 @@ class TextRerankerOptimum(CommonPipeline):
         self.texts = get_texts_from_file(args)
 
         self.top_n = args.get("rerank_top_n")
-        self.max_length = args.get("rerank_max_length")
         self.use_case = args.get("use_case")
+
+        self.max_length = args.get("rerank_max_length")
+        if self.max_length is None:
+            self.max_length = UseCaseTextReranker.get_default_max_length(self.model.config)
 
     # according to transformers Qwen3-Embedding-0.6B model card:
     # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
@@ -40,18 +46,17 @@ class TextRerankerOptimum(CommonPipeline):
                  + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
         suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
         task = "Given a web search query, retrieve relevant passages that answer the query"
-        max_length = self.max_length or 8192
         pairs = []
         for doc in self.texts:
             pairs.append(f"{prefix}<Instruct>: {task}\n<Query>: {input_text}\n<Document>: {doc}{suffix}")
-        inputs = self.tokenizer(pairs, padding=True, truncation=True, max_length=max_length, return_tensors="pt", padding_side='left')
+        inputs = self.tokenizer(
+            pairs, padding=True, truncation=True, max_length=self.max_length, return_tensors="pt", padding_side="left"
+        )
         return inputs
 
     @execution_time_in_sec
     def tokenize(self, input_text: str, **kwargs):
-        tokenizer_kwargs = {"truncation": True, "padding": True}
-        if self.max_length is not None:
-            tokenizer_kwargs["max_length"] = self.max_length
+        tokenizer_kwargs = {"truncation": True, "padding": True, "max_length": self.max_length}
         inputs = [input_text] * len(self.texts)
         input_data = self.tokenizer(inputs, self.texts, return_tensors="pt", **tokenizer_kwargs)
         return input_data
@@ -221,12 +226,18 @@ class TextRerankerGenAI(CommonPipeline):
         self.texts = get_texts_from_file(args)
 
         self.top_n = args.get("rerank_top_n")
+
         self.max_length = args.get("rerank_max_length")
+        if self.max_length is None:
+            try:
+                model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
+            except Exception:
+                model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+
+            self.max_length = UseCaseTextReranker.get_default_max_length(model_config)
 
     def tokenize(self, input_text: str, **kwargs):
-        tokenizer_kwargs = {"truncation": True, "padding": True}
-        if self.max_length is not None:
-            tokenizer_kwargs["max_length"] = self.max_length
+        tokenizer_kwargs = {"truncation": True, "padding": True, "max_length": self.max_length}
         inputs = [input_text] * len(self.texts)
         input_data = self.tokenizer(inputs, return_tensors="pt", **tokenizer_kwargs)
         input_tokens = input_data["input_ids"] if "input_ids" in input_data else input_data

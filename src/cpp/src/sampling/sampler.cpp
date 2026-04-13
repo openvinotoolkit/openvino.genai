@@ -505,16 +505,22 @@ Logits Sampler::_get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t to
 }
 
 Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
-    // For greedy sampling we do not expect sorting or shrinking considered tokens
-    // so we can operate directly on the data buffer
+    // For greedy sampling we do not expect sorting or shrinking considered tokens.
+    // When logprobs > 0, m_vector is initialized (penalties wrote there, m_data is pristine);
+    // scan m_vector so penalty effects influence token selection.
+    // Otherwise operate directly on m_data.
     size_t m = std::max(size_t(1), top_logprobs); // ensure m is at least 1
     std::vector<float> top_values(m, -std::numeric_limits<float>::infinity());
     std::vector<size_t> top_indexes(m, 0);
 
+    const bool use_vector = logits.is_vector_initialized();
+    auto value_at = [&](size_t i) { return use_vector ? logits.m_vector[i].m_log_prob : logits.m_data[i]; };
+    auto index_at = [&](size_t i) -> size_t { return use_vector ? static_cast<size_t>(logits.m_vector[i].m_index) : i; };
+
     for (size_t i = 0; i < logits.m_size; ++i) {
-        if (logits.m_data[i] > top_values.back()) {
-            top_values.back() = logits.m_data[i];
-            top_indexes.back() = i;
+        if (value_at(i) > top_values.back()) {
+            top_values.back() = value_at(i);
+            top_indexes.back() = index_at(i);
 
             for (size_t j = top_values.size() - 1; j > 0 && top_values[j] > top_values[j - 1]; --j) {
                 std::swap(top_values[j], top_values[j - 1]);
@@ -527,42 +533,131 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     float max_value = 0.0;
 
     if (top_logprobs) {
-        // apply log softmax to max value
-        max_value = top_values.front();
-        float log_sum = std::log(std::accumulate(
-            logits.m_data, logits.m_data + logits.m_size, 0.0f, [max_value](float accumulated, float to_add) {
-                return accumulated + std::exp(to_add - max_value);
-        }));
-        max_value = -log_sum;
+        OPENVINO_ASSERT(!std::isnan(logits.m_full_vocab_log_sum_exp),
+            "Internal error: top_logprobs > 0 but m_full_vocab_log_sum_exp was not computed. "
+            "FullVocabLogSumExpTransform must run before _greedy_sample when logprobs > 0.");
+        // m_data is pristine (FullVocabLogSumExpTransform + CopyLogitsToVectorTransform ran first,
+        // so penalties/grammar only wrote to m_vector). Return raw log-probability.
+        max_value = logits.m_data[max_index] - logits.m_full_vocab_log_sum_exp;
     }
 
     return Token(max_value, max_index);
 }
 
 std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence) {
-    // If top_p or top_k was applied we use sorted vector, if not we go with original buffer.
-    std::vector<float> multinomial_weights;
-    multinomial_weights.reserve(logits.m_size);
-    if (logits.is_vector_initialized())
-        for (auto& logit: logits.m_vector) multinomial_weights.emplace_back(logit.m_log_prob);
-    else
-        multinomial_weights.assign(logits.m_data, logits.m_data + logits.m_size);
-
-    // std::discrete_distribution returns corrupted results when applied to log probabilities
-    // which result returning NAN only logprobs.
-    // so log() is applied after this line
-    auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
-
+    std::uniform_real_distribution<float> u(0.0f, 1.0f);
     std::vector<Token> out_tokens;
-    for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-        size_t element_to_pick = dist(rng_engine);
-        if (logits.is_vector_initialized()) {
-            auto logit = logits.m_vector[element_to_pick];
-            logit.m_log_prob = std::log(logit.m_log_prob);
-            out_tokens.push_back(logit);
+    out_tokens.reserve(num_tokens_per_sequence);
+
+    if (logits.m_defer_expf) {
+        // --- Deferred / fused expf path ---
+        // defer_expf is only set when top_k > 0, so m_vector is always initialized here.
+        OPENVINO_ASSERT(logits.is_vector_initialized(),
+            "Internal error: m_defer_expf=true but m_vector not initialized. "
+            "defer_expf requires top_k > 0 which always populates m_vector via TopKFilter.");
+        // m_vector holds K logits in arbitrary heap order — _multinomial_sample does its own max scan.
+        float max_val = logits.m_vector[0].m_log_prob;
+        for (size_t i = 1; i < logits.m_size; ++i)
+            if (logits.m_vector[i].m_log_prob > max_val)
+                max_val = logits.m_vector[i].m_log_prob;
+        // Precompute weights once to avoid recomputing expf on every draw.
+        std::vector<float> weights(logits.m_size);
+        float sum_cum = 0.0f;
+        for (size_t i = 0; i < logits.m_size; ++i) {
+            weights[i] = expf(logits.m_vector[i].m_log_prob - max_val);
+            sum_cum += weights[i];
         }
-        else
-            out_tokens.emplace_back(std::log(logits.m_data[element_to_pick]), element_to_pick);
+        // Defensive fallback: should not occur in practice (at least one non-masked token is
+        // always guaranteed), but if all logits happen to be -inf/NaN, sample uniformly over
+        // the K candidates so generation can continue rather than aborting.
+        const bool fallback_uniform = !(sum_cum > 0.0f && std::isfinite(sum_cum));
+        if (fallback_uniform) {
+            std::fill(weights.begin(), weights.end(), 1.0f);
+            sum_cum = static_cast<float>(logits.m_size);
+        }
+        // log_sum_cum = log(Σ exp(v[i])) = log(sum_cum) + max_val (log-sum-exp identity).
+        // In the fallback case max_val may be -inf, so use 0 to keep log_sum_cum finite.
+        const float log_sum_cum = logf(sum_cum) + (fallback_uniform ? 0.0f : max_val);
+
+        for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
+            const float r = sum_cum * u(rng_engine);
+            float sum_run = 0.0f;
+            size_t sampled_idx = logits.m_size - 1;
+            for (size_t i = 0; i < logits.m_size; ++i) {
+                sum_run += weights[i];
+                if (sum_run > r) { sampled_idx = i; break; }
+            }
+            // When m_full_vocab_log_sum_exp is set (logprobs > 0), m_data holds the
+            // original raw model logits (grammar/penalties only wrote to m_vector).
+            // Return raw log-probability: log p_i = raw_logit_i − log(Σ exp(raw_logit_j)).
+            const float log_prob = fallback_uniform
+                ? std::log(1.0f / static_cast<float>(logits.m_size))
+                : (!std::isnan(logits.m_full_vocab_log_sum_exp)
+                    ? logits.m_data[logits.m_vector[sampled_idx].m_index] - logits.m_full_vocab_log_sum_exp
+                    : logits.m_vector[sampled_idx].m_log_prob - log_sum_cum);
+            out_tokens.emplace_back(log_prob, logits.m_vector[sampled_idx].m_index);
+        }
+    } else {
+        // --- Normalised probability path (top_p active, deferring not possible) ---
+        // Pre-compute total weight once: TopP truncates without renormalizing, so Σ probs may be < 1.
+        // Scaling r by total_weight ensures uniform sampling within the actual probability mass (Fix 1).
+        float total_weight = 0.0f;
+        if (logits.is_vector_initialized()) {
+            for (size_t i = 0; i < logits.m_size; ++i)
+                total_weight += logits.m_vector[i].m_log_prob;
+        } else {
+            for (size_t i = 0; i < logits.m_size; ++i)
+                total_weight += logits.m_data[i];
+        }
+        // Defensive fallback: should not occur in practice (at least one non-masked token is
+        // always guaranteed), but recover gracefully by sampling uniformly if all probabilities
+        // are zero or NaN rather than aborting generation.
+        if (!(total_weight > 0.0f && std::isfinite(total_weight))) {
+            std::uniform_int_distribution<size_t> uniform_idx(0, logits.m_size - 1);
+            const float uniform_log_prob = std::log(1.0f / logits.m_size);
+            for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
+                const size_t sampled_idx = uniform_idx(rng_engine);
+                if (logits.is_vector_initialized()) {
+                    auto logit = logits.m_vector[sampled_idx];
+                    logit.m_log_prob = uniform_log_prob;
+                    out_tokens.push_back(logit);
+                } else {
+                    out_tokens.emplace_back(uniform_log_prob, sampled_idx);
+                }
+            }
+        } else {
+        // Sampling distributes r = total_weight * U(0,1), drawing from the conditional
+        // distribution p_i / total_weight.  The stored log-prob must reflect the same
+        // distribution: log(p_i / total_weight) = log(p_i) - log(total_weight).
+        // When total_weight == 1 (no TopP truncation) log_total_weight == 0, no-op.
+        const float log_total_weight = std::log(total_weight);
+        for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
+            const float r = total_weight * u(rng_engine);
+            float sum_cum = 0.0f;
+            if (logits.is_vector_initialized()) {
+                size_t sampled_idx = logits.m_size - 1;  // fallback for floating-point rounding
+                for (size_t i = 0; i < logits.m_size; ++i) {
+                    sum_cum += logits.m_vector[i].m_log_prob;
+                    if (sum_cum > r) { sampled_idx = i; break; }
+                }
+                auto logit = logits.m_vector[sampled_idx];
+                // When m_full_vocab_log_sum_exp is set (logprobs > 0), m_data holds the
+                // original raw model logits (grammar/penalties only wrote to m_vector).
+                // Return raw log-probability: log p_i = raw_logit_i − log(Σ exp(raw_logit_j)).
+                logit.m_log_prob = !std::isnan(logits.m_full_vocab_log_sum_exp)
+                    ? logits.m_data[logit.m_index] - logits.m_full_vocab_log_sum_exp
+                    : std::log(logit.m_log_prob) - log_total_weight;
+                out_tokens.push_back(logit);
+            } else {
+                size_t sampled_idx = logits.m_size - 1;
+                for (size_t i = 0; i < logits.m_size; ++i) {
+                    sum_cum += logits.m_data[i];
+                    if (sum_cum > r) { sampled_idx = i; break; }
+                }
+                out_tokens.emplace_back(std::log(logits.m_data[sampled_idx]) - log_total_weight, sampled_idx);
+            }
+        }
+        }
     }
     return out_tokens;
 }
@@ -822,7 +917,6 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
 
                 auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, logit_token_offset);
                 logit_processor.apply(logit_vector);
-                
                 Token sampled_token;
                 bool is_generate_n_tokens = false;
                 if (sampling_params.is_greedy_decoding()) {
