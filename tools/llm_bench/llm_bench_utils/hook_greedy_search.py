@@ -379,25 +379,38 @@ class GreedySearchHook:
         """Define a new greedy search function."""
         model._greedy_search = new_greedy_search.__get__(model, model.__class__)
         trans_version = version.parse(transformers.__version__)
-        if trans_version >= version.parse("4.57.0"):
-            import llm_bench_utils.llm_hook_sample.hook_sample_v57 as hook_sample_v57
+        if trans_version >= version.parse("5.3.0"):
+            import llm_bench_utils.llm_hook_sample.hook_sample_v5_3 as hook_sample_v5_3
 
-            type(model)._sample = hook_sample_v57.new_sample
+            type(model)._sample = hook_sample_v5_3.new_sample
+        if trans_version >= version.parse("5.0"):
+            import llm_bench_utils.llm_hook_sample.hook_sample_v5 as hook_sample_v5
+
+            type(model)._sample = hook_sample_v5.new_sample
+        elif trans_version >= version.parse("4.57.0"):
+            import tools.llm_bench.llm_bench_utils.llm_hook_sample.hook_sample_v4_57 as hook_sample_v4_57
+
+            type(model)._sample = hook_sample_v4_57.new_sample
         elif trans_version >= version.parse("4.55.0"):
-            import llm_bench_utils.llm_hook_sample.hook_sample_v55 as hook_sample_v55
-            model._sample = hook_sample_v55.new_sample.__get__(model, model.__class__)
+            import tools.llm_bench.llm_bench_utils.llm_hook_sample.hook_sample_v4_55 as hook_sample_v4_55
+
+            model._sample = hook_sample_v4_55.new_sample.__get__(model, model.__class__)
         elif trans_version >= version.parse('4.52.0'):
-            import llm_bench_utils.llm_hook_sample.hook_sample_v52 as hook_sample_v52
-            model._sample = hook_sample_v52.new_sample.__get__(model, model.__class__)
+            import tools.llm_bench.llm_bench_utils.llm_hook_sample.hook_sample_v4_52 as hook_sample_v4_52
+
+            model._sample = hook_sample_v4_52.new_sample.__get__(model, model.__class__)
         elif trans_version >= version.parse('4.51.0'):
-            import llm_bench_utils.llm_hook_sample.hook_sample_v51 as hook_sample_v51
-            model._sample = hook_sample_v51.new_sample.__get__(model, model.__class__)
+            import tools.llm_bench.llm_bench_utils.llm_hook_sample.hook_sample_v4_51 as hook_sample_v4_51
+
+            model._sample = hook_sample_v4_51.new_sample.__get__(model, model.__class__)
         elif trans_version >= version.parse('4.45.0'):
-            import llm_bench_utils.llm_hook_sample.hook_sample_v45 as hook_sample_v45
-            model._sample = hook_sample_v45.new_sample.__get__(model, model.__class__)
+            import tools.llm_bench.llm_bench_utils.llm_hook_sample.hook_sample_v4_45 as hook_sample_v4_45
+
+            model._sample = hook_sample_v4_45.new_sample.__get__(model, model.__class__)
         elif trans_version >= version.parse('4.43.0'):
-            import llm_bench_utils.llm_hook_sample.hook_sample_v43 as hook_sample_v43
-            model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)
+            import tools.llm_bench.llm_bench_utils.llm_hook_sample.hook_sample_v4_43 as hook_sample_v4_43
+
+            model._sample = hook_sample_v4_43.new_sample.__get__(model, model.__class__)
         else:
             model._sample = hook_sample.new_sample.__get__(model, model.__class__) 
        

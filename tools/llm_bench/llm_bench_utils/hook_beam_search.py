@@ -12,22 +12,34 @@ tm_list = []
 tm_infer_list = []
 tm_mm_embeddings = []
 
-if version.parse(transformers.__version__) >= version.parse("4.57.0"):
-    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v57 as hook_beam_search_v57
+if version.parse(transformers.__version__) >= version.parse("5.3.0"):
+    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v5_3 as hook_beam_search_v5_3
 
-    new_beam_search = hook_beam_search_v57.new_beam_search_v57
+    new_beam_search = hook_beam_search_v5_3.new_beam_search
+elif version.parse(transformers.__version__) >= version.parse("5.0"):
+    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v5 as hook_beam_search_v5
+
+    new_beam_search = hook_beam_search_v5.new_beam_search
+elif version.parse(transformers.__version__) >= version.parse("4.57.0"):
+    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_57 as hook_beam_search_v4_57
+
+    new_beam_search = hook_beam_search_v4_57.new_beam_search_v57
 elif version.parse(transformers.__version__) >= version.parse("4.55.0"):
-    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v55 as hook_beam_search_v55
-    new_beam_search = hook_beam_search_v55.new_beam_search_v55
+    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_55 as hook_beam_search_v4_55
+
+    new_beam_search = hook_beam_search_v4_55.new_beam_search_v55
 elif version.parse(transformers.__version__) >= version.parse("4.52.0"):
-    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v52 as hook_beam_search_v52
-    new_beam_search = hook_beam_search_v52.new_beam_search_v52
+    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_52 as hook_beam_search_v4_52
+
+    new_beam_search = hook_beam_search_v4_52.new_beam_search_v52
 elif version.parse(transformers.__version__) >= version.parse("4.51.0"):
-    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v51 as hook_beam_search_v51
-    new_beam_search = hook_beam_search_v51.new_beam_search_v51
+    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_51 as hook_beam_search_v4_51
+
+    new_beam_search = hook_beam_search_v4_51.new_beam_search_v51
 else:
-    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v40 as hook_beam_search_v40
-    new_beam_search = hook_beam_search_v40.new_beam_search_v40
+    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_40 as hook_beam_search_v4_40
+
+    new_beam_search = hook_beam_search_v4_40.new_beam_search_v40
 
 def new_get_multimodal_embeddings(
         self, input_ids, pixel_values=None, attention_mask=None, position_ids=None, **kwargs
