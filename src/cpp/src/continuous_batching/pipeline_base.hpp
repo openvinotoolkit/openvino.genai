@@ -75,8 +75,7 @@ protected:
 public:
     GenerationConfig get_config() const;
     virtual SchedulerConfig get_scheduler_config() const {
-        OPENVINO_ASSERT(false, "Scheduler config is not available for this continuous batching implementation");
-        return {};
+        OPENVINO_THROW("Scheduler config is not available for this continuous batching implementation");
     }
     void set_config(const GenerationConfig& config);
     PipelineMetrics get_metrics() const;
