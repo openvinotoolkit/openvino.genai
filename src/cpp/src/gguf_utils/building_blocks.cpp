@@ -211,24 +211,42 @@ Output<ov::Node> causal_mask(
 }
 
 // Rotate half the hidden dimensions of the input tensor
-Output<ov::Node> rotate_half(const Output<ov::Node>& x, int64_t head_size, const Output<Node>& axis) {
-    auto t58 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{head_size / 2});
-    auto t59 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{9223372036854775807});
-    auto t60 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
+Output<ov::Node> rotate_half(
+    const Output<ov::Node>& x,
+    int64_t head_size,
+    const Output<Node>& axis,
+    const std::string& self_attn_name,
+    int branch_idx) {
+    const std::string slice_name = self_attn_name + "/aten::slice/Slice" + (branch_idx == 0 ? "" : "_2");
+    const std::string neg_const_name = self_attn_name + "/aten::neg/Constant" + (branch_idx == 0 ? "" : "_1");
+    const std::string neg_convert_name = self_attn_name + "/aten::neg/ConvertLike" + (branch_idx == 0 ? "" : "_1");
+    const std::string neg_mul_name = self_attn_name + "/aten::neg/Multiply" + (branch_idx == 0 ? "" : "_1");
+    const std::string slice_name_2 = self_attn_name + "/aten::slice/Slice" + (branch_idx == 0 ? "_1" : "_3");
+    const std::string concat_name = self_attn_name + "/aten::cat/Concat" + (branch_idx == 0 ? "" : "_1");
 
-    // Slice second half
-    auto t62 = std::make_shared<ov::opset13::Slice>(x, t58, t59, t60, axis);
-    
-    // Multiply by -1
-    auto t63 = std::make_shared<ov::op::v0::Constant>(element::f32, Shape{1,1,1,1}, std::vector<float>{-1.0f});
-    auto t64 = std::make_shared<v1::Multiply>(t62, t63);
-    
-    // Slice first half
-    auto t65 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
-    auto t66 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{head_size / 2});
-    auto t67 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
-    auto t68 = std::make_shared<ov::opset13::Slice>(x, t65, t66, t67, axis);
-    auto rotated = std::make_shared<v0::Concat>(ov::OutputVector{t64, t68}, -1);
+    auto start_half = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{head_size / 2});
+    auto end_max = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{9223372036854775807});
+    auto step = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
+
+    auto second_half = std::make_shared<ov::opset13::Slice>(x, start_half, end_max, step, axis);
+    set_name(second_half, slice_name);
+
+    auto neg_const = std::make_shared<ov::op::v0::Constant>(element::i32, Shape{}, -1);
+    set_name(neg_const, neg_const_name);
+
+    auto neg_convert = std::make_shared<ov::op::v0::Convert>(neg_const, element::f32);
+    set_name(neg_convert, neg_convert_name);
+
+    auto neg_second = std::make_shared<v1::Multiply>(second_half, neg_convert, AutoBroadcastType::NUMPY);
+    set_name(neg_second, neg_mul_name);
+
+    auto start_zero = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
+    auto end_half = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{head_size / 2});
+    auto first_half = std::make_shared<ov::opset13::Slice>(x, start_zero, end_half, step, axis);
+    set_name(first_half, slice_name_2);
+
+    auto rotated = std::make_shared<v0::Concat>(ov::OutputVector{neg_second, first_half}, -1);
+    set_name(rotated, concat_name);
 
     return rotated;
 }
@@ -243,11 +261,11 @@ std::tuple<Output<ov::Node>, Output<ov::Node>, std::pair<Output<ov::Node>, Outpu
         int64_t head_size,
         const Output<Node>& hidden_dim,
         const std::pair<Output<ov::Node>, Output<ov::Node>>& cos_sin_cached,
+        const std::string& self_attn_name,
         int64_t unsqueeze_dim=1) {
-    
-    // Handle unsqueeze or cached values
+
     Output<ov::Node> cos_unsqueezed, sin_unsqueezed;
-    
+
     if (cos_sin_cached.first.get_node() == nullptr) {
         auto unsqueeze_axes1 = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{}, unsqueeze_dim);
         cos_unsqueezed = std::make_shared<v0::Unsqueeze>(cos, unsqueeze_axes1);
@@ -258,16 +276,25 @@ std::tuple<Output<ov::Node>, Output<ov::Node>, std::pair<Output<ov::Node>, Outpu
         sin_unsqueezed = cos_sin_cached.second;
     }
 
-    // Apply rotation
-    auto q_rot = std::make_shared<v1::Add>(
-        std::make_shared<v1::Multiply>(q, cos_unsqueezed),
-        std::make_shared<v1::Multiply>(rotate_half(q, head_size, hidden_dim), sin_unsqueezed)
-    );
+    auto q_mul_cos = std::make_shared<v1::Multiply>(q, cos_unsqueezed, AutoBroadcastType::NUMPY);
+    set_name(q_mul_cos, self_attn_name + "/aten::mul/Multiply");
 
-    auto k_rot = std::make_shared<v1::Add>(
-        std::make_shared<v1::Multiply>(k, cos_unsqueezed),
-        std::make_shared<v1::Multiply>(rotate_half(k, head_size, hidden_dim), sin_unsqueezed)
-    );
+    auto q_rot_half = rotate_half(q, head_size, hidden_dim, self_attn_name, 0);
+    auto q_mul_sin = std::make_shared<v1::Multiply>(q_rot_half, sin_unsqueezed, AutoBroadcastType::NUMPY);
+    set_name(q_mul_sin, self_attn_name + "/aten::mul/Multiply_1");
+
+    auto q_rot = std::make_shared<v1::Add>(q_mul_cos, q_mul_sin, AutoBroadcastType::NUMPY);
+    set_name(q_rot, self_attn_name + "/aten::add/Add");
+
+    auto k_mul_cos = std::make_shared<v1::Multiply>(k, cos_unsqueezed, AutoBroadcastType::NUMPY);
+    set_name(k_mul_cos, self_attn_name + "/aten::mul/Multiply_2");
+
+    auto k_rot_half = rotate_half(k, head_size, hidden_dim, self_attn_name, 1);
+    auto k_mul_sin = std::make_shared<v1::Multiply>(k_rot_half, sin_unsqueezed, AutoBroadcastType::NUMPY);
+    set_name(k_mul_sin, self_attn_name + "/aten::mul/Multiply_3");
+
+    auto k_rot = std::make_shared<v1::Add>(k_mul_cos, k_mul_sin, AutoBroadcastType::NUMPY);
+    set_name(k_rot, self_attn_name + "/aten::add/Add_1");
 
     return {q_rot, k_rot, {cos_unsqueezed, sin_unsqueezed}};
 }
@@ -517,27 +544,39 @@ ov::Output<ov::Node> make_rms_norm_qwen3(
 }
 
 // Helper function to split heads
-// There are q_norm k_norm in Qwen3, if key_name + ".self_attn.q_norm" + ".weight" exists, a rms_norm will be built, if not it will go to else branch.
+// There are q_norm k_norm in Qwen3, if norm_key + ".weight" exists, a rms_norm will be built, if not it will go to else branch.
 std::shared_ptr<v1::Transpose> split_heads(const Output<Node>& x,
                                             int num_h,
                                             int  head_dim,
                                             float rms_norm_eps,
-                                            const std::string& key,
+                                            const std::string& attn_key,
+                                            const std::string& norm_key,
+                                            const std::string& reshape_name,
+                                            const std::string& transpose_name,
                                             const std::unordered_map<std::string, ov::Tensor>& weights) {
     auto shape = std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, 0, num_h, head_dim});
     auto reshaped = std::make_shared<v1::Reshape>(x, shape, true);
-    set_name(reshaped, to_op_name(key) + "/aten::view/Reshape");
+    set_name(reshaped, reshape_name);
 
     auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
+    if (transpose_name.find("/aten::transpose/Transpose_1") != std::string::npos) {
+        set_name(transpose_order, to_op_name(attn_key) + "/aten::transpose/Constant_1");
+    } else if (transpose_name.find("/aten::transpose/Transpose_2") != std::string::npos) {
+        set_name(transpose_order, to_op_name(attn_key) + "/aten::transpose/Constant_2");
+    } else if (transpose_name.find("/aten::transpose/Transpose_3") != std::string::npos) {
+        set_name(transpose_order, to_op_name(attn_key) + "/aten::transpose/Constant_3");
+    } else {
+        set_name(transpose_order, to_op_name(attn_key) + "/aten::transpose/Constant");
+    }
 
-    if (weights.count(key + ".weight")) {
-        auto mul = make_rms_norm_qwen3(key, reshaped, weights, rms_norm_eps);
+    if (weights.count(norm_key + ".weight")) {
+        auto mul = make_rms_norm_qwen3(norm_key, reshaped, weights, rms_norm_eps);
         auto transposed = std::make_shared<v1::Transpose>(mul, transpose_order);
-        set_name(transposed, to_op_name(key) + "/aten::transpose/Transpose");
+        set_name(transposed, transpose_name);
         return transposed;
     } else {
         auto transposed = std::make_shared<v1::Transpose>(reshaped, transpose_order);
-        set_name(transposed, to_op_name(key) + "/aten::transpose/Transpose");
+        set_name(transposed, transpose_name);
         return transposed;
     }
 };
@@ -569,10 +608,41 @@ multi_head_attention(
     float rms_norm_eps = std::get<float>(configs.at("rms_norm_eps"));
 
     // 1. Split heads
-    // There are q_norm k_norm in Qwen3, if key_name + ".self_attn.q_norm" + ".weight" exists, a rms_norm will be built.
-    auto q_split = split_heads(query, num_heads, head_dim, rms_norm_eps, key_name + ".self_attn.q_norm", consts);
-    auto k_split = split_heads(key, num_heads_kv, head_dim, rms_norm_eps, key_name  + ".self_attn.k_norm", consts);
-    auto v_split = split_heads(value, num_heads_kv, head_dim, rms_norm_eps, key_name + ".self_attn.v_norm", consts);
+    // Keep the q/k/v view naming under self_attn, and start q_norm/k_norm naming from the RMSNorm body.
+    const auto self_attn_name = to_op_name(key_name + ".self_attn");
+    auto q_split = split_heads(
+        query,
+        num_heads,
+        head_dim,
+        rms_norm_eps,
+        key_name + ".self_attn",
+        key_name + ".self_attn.q_norm",
+        self_attn_name + "/aten::view/Reshape",
+        self_attn_name + "/aten::transpose/Transpose",
+        consts
+    );
+    auto k_split = split_heads(
+        key,
+        num_heads_kv,
+        head_dim,
+        rms_norm_eps,
+        key_name + ".self_attn",
+        key_name + ".self_attn.k_norm",
+        self_attn_name + "/aten::view/Reshape_1",
+        self_attn_name + "/aten::transpose/Transpose_1",
+        consts
+    );
+    auto v_split = split_heads(
+        value,
+        num_heads_kv,
+        head_dim,
+        rms_norm_eps,
+        key_name + ".self_attn",
+        key_name + ".self_attn.v_norm",
+        self_attn_name + "/aten::view/Reshape_2",
+        self_attn_name + "/aten::transpose/Transpose_2",
+        consts
+    );
 
     // 2. Apply rotary embeddings
     Output<Node> cos, sin;
@@ -581,7 +651,7 @@ multi_head_attention(
     }
 
     auto [q_rot, k_rot, new_cos_sin] = apply_rotary_pos_emb(
-        q_split, k_split, cos, sin, head_dim, hidden_dim, cos_sin_cached
+        q_split, k_split, cos, sin, head_dim, hidden_dim, cos_sin_cached, self_attn_name
     );
 
     // 3. Handle cache
@@ -630,7 +700,10 @@ multi_head_attention(
     );
 
     auto k_combined = std::make_shared<ov::opset13::Concat>(OutputVector{k_cache.second, k_rot}, 2);
+    set_name(k_combined, self_attn_name + "/aten::cat/Concat_2");
+
     auto v_combined = std::make_shared<ov::opset13::Concat>(OutputVector{v_cache.second, v_split}, 2);
+    set_name(v_combined, self_attn_name + "/aten::cat/Concat_3");
 
     auto k_assign = std::make_shared<ov::opset13::Assign>(k_combined, k_cache.first);
     auto v_assign = std::make_shared<ov::opset13::Assign>(v_combined, v_cache.first);
@@ -640,37 +713,64 @@ multi_head_attention(
     Output<Node> v_reshaped = v_combined;
     if (num_heads != num_heads_kv) {
         int kv_per_head = num_heads / num_heads_kv;
+
         auto unsqueeze_axes1 = std::make_shared<v0::Constant>(element::i64, Shape{}, 2);
         auto k_unsq = std::make_shared<v0::Unsqueeze>(k_combined, unsqueeze_axes1);
+        set_name(k_unsq, self_attn_name + "/aten::unsqueeze/Unsqueeze_2");
+
         auto unsqueeze_axes2 = std::make_shared<v0::Constant>(element::i64, Shape{}, 2);
         auto v_unsq = std::make_shared<v0::Unsqueeze>(v_combined, unsqueeze_axes2);
+        set_name(v_unsq, self_attn_name + "/aten::unsqueeze/Unsqueeze_3");
+
+        // Use dynamic seq_len from combined KV cache instead of hard-coded 0
+        auto gather_axis0 = std::make_shared<v0::Constant>(element::i64, Shape{}, 0);
+        auto idx0 = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0});
+        auto idx2 = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{2});
+
+        auto k_combined_shape = std::make_shared<v3::ShapeOf>(k_combined, element::i64);
+        auto v_combined_shape = std::make_shared<v3::ShapeOf>(v_combined, element::i64);
+
+        auto k_batch_dim = std::make_shared<v8::Gather>(k_combined_shape, idx0, gather_axis0);
+        auto v_batch_dim = std::make_shared<v8::Gather>(v_combined_shape, idx0, gather_axis0);
+
+        auto k_seq_len = std::make_shared<v8::Gather>(k_combined_shape, idx2, gather_axis0);
+        auto v_seq_len = std::make_shared<v8::Gather>(v_combined_shape, idx2, gather_axis0);
 
         auto broadcast_shape1 = std::make_shared<ov::opset13::Concat>(OutputVector{
-            batch_dim,
+            k_batch_dim,
             std::make_shared<v0::Constant>(element::i64, Shape{1}, num_heads_kv),
             std::make_shared<v0::Constant>(element::i64, Shape{1}, kv_per_head),
-            std::make_shared<v0::Constant>(element::i64, Shape{1}, 0),
+            k_seq_len,
             std::make_shared<v0::Constant>(element::i64, Shape{1}, head_dim)
         }, 0);
+
+        auto k_broadcast = std::make_shared<v3::Broadcast>(k_unsq, broadcast_shape1, BroadcastType::BIDIRECTIONAL);
+        set_name(k_broadcast, self_attn_name + "/aten::expand/Broadcast");
 
         k_reshaped = std::make_shared<v1::Reshape>(
-            std::make_shared<v3::Broadcast>(k_unsq, broadcast_shape1, BroadcastType::BIDIRECTIONAL),
+            k_broadcast,
             std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, num_heads, -1, head_dim}),
             true
         );
+        set_name(k_reshaped.get_node_shared_ptr(), self_attn_name + "/aten::reshape/Reshape");
 
         auto broadcast_shape2 = std::make_shared<ov::opset13::Concat>(OutputVector{
-            batch_dim,
+            v_batch_dim,
             std::make_shared<v0::Constant>(element::i64, Shape{1}, num_heads_kv),
             std::make_shared<v0::Constant>(element::i64, Shape{1}, kv_per_head),
-            std::make_shared<v0::Constant>(element::i64, Shape{1}, 0),
+            v_seq_len,
             std::make_shared<v0::Constant>(element::i64, Shape{1}, head_dim)
         }, 0);
+
+        auto v_broadcast = std::make_shared<v3::Broadcast>(v_unsq, broadcast_shape2, BroadcastType::BIDIRECTIONAL);
+        set_name(v_broadcast, self_attn_name + "/aten::expand/Broadcast_1");
+
         v_reshaped = std::make_shared<v1::Reshape>(
-            std::make_shared<v3::Broadcast>(v_unsq, broadcast_shape2, BroadcastType::BIDIRECTIONAL),
+            v_broadcast,
             std::make_shared<v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, num_heads, -1, head_dim}),
             true
         );
+        set_name(v_reshaped.get_node_shared_ptr(), self_attn_name + "/aten::reshape/Reshape_1");
     }
 
     // 5. Create causal mask if needed
@@ -684,15 +784,16 @@ multi_head_attention(
         q_rot, k_reshaped, v_reshaped, final_mask, false);
     set_name(
         attention,
-        to_op_name(key_name + ".self_attn") + "/aten::scaled_dot_product_attention/ScaledDotProductAttention");
+        self_attn_name + "/aten::scaled_dot_product_attention/ScaledDotProductAttention");
 
     // 7. Reshape output
     auto transpose_order = std::make_shared<v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
+    set_name(transpose_order, self_attn_name + "/aten::transpose/Constant_3");
     auto context_transposed = std::make_shared<v1::Transpose>(attention, transpose_order);
-    set_name(context_transposed, to_op_name(key_name + ".self_attn") + "/aten::transpose/Transpose_3");
+    set_name(context_transposed, self_attn_name + "/aten::transpose/Transpose_3");
 
-    auto output = std::make_shared<v1::Reshape>(context_transposed, output_shape, false);
-    set_name(output, to_op_name(key_name + ".self_attn") + "/aten::reshape/Reshape_1");
+    auto output = std::make_shared<v1::Reshape>(context_transposed, output_shape, true);
+    set_name(output, self_attn_name + "/aten::reshape/Reshape_2");
 
     return {
         output,
@@ -1230,6 +1331,7 @@ std::tuple<ov::Output<ov::Node>,
         consts,
         qtypes.at(layer_prefix + ".mlp.gate_proj.qtype"));
     auto silu = std::make_shared<ov::op::v4::Swish>(gate_proj);
+    set_name(silu, to_op_name(layer_prefix + ".mlp.act_fn") + "/aten::silu/Swish");
     auto up_proj = make_fc(
         layer_prefix + ".mlp.up_proj",
         post_attn_norm,
