@@ -1019,6 +1019,14 @@ std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& sh
     return std::make_pair(start, end);
 }
 
+ov::Tensor make_tensor_slice(const ov::Tensor& tensor, size_t dim, size_t start_pos, size_t end_pos) {
+    ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
+    start_shape[dim] = start_pos;
+    ov::Shape end_shape = tensor.get_shape();
+    end_shape[dim] = end_pos;
+    return ov::Tensor(tensor, start_shape, end_shape);
+}
+
 ov::genai::GenerationConfig get_beam_search_config() {
     ov::genai::GenerationConfig beam_search_config;
     beam_search_config.num_beams = 4;
