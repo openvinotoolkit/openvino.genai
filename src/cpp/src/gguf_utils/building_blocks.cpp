@@ -1524,96 +1524,98 @@ std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>> make_vision_attention(
         consts,
         qtypes.at(key + ".attn.qkv.qtype"));
 
+    const std::string attn_prefix = key.rfind("self.", 0) == 0
+        ? "__module." + key.substr(std::string("self.").size()) + ".attn"
+        : key + ".attn";
+
+    if (qkv.get_node_shared_ptr()) {
+        set_name(qkv.get_node_shared_ptr(), attn_prefix + "/aten::linear/Add");
+    }
+
     auto qkv_shape = std::make_shared<ov::op::v0::Constant>(
         ov::element::i64,
         ov::Shape{4},
-        std::vector<int64_t>{-1, 3, num_heads, head_dim});
+        std::vector<int64_t>{0, 3, num_heads, head_dim});
 
     auto qkv_reshape = std::make_shared<ov::op::v1::Reshape>(
         qkv,
         qkv_shape,
-        false);
+        true);
+    set_name(qkv_reshape, attn_prefix + "/aten::reshape/Reshape");
+
+    auto qkv_perm_order = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64,
+        ov::Shape{4},
+        std::vector<int64_t>{1, 0, 2, 3});
+    set_name(qkv_perm_order, attn_prefix + "/aten::permute/Constant");
 
     auto qkv_perm = std::make_shared<ov::op::v1::Transpose>(
         qkv_reshape,
-        std::make_shared<ov::op::v0::Constant>(
-            ov::element::i64,
-            ov::Shape{4},
-            std::vector<int64_t>{1, 0, 2, 3}));
+        qkv_perm_order);
+    set_name(qkv_perm, attn_prefix + "/aten::permute/Transpose");
 
     auto split_axis = std::make_shared<ov::op::v0::Constant>(
         ov::element::i64, ov::Shape{}, 0);
 
     auto qkv_split = std::make_shared<ov::op::v1::Split>(qkv_perm, split_axis, 3);
+    set_name(qkv_split, attn_prefix + "/prim::ListUnpack/Split");
 
     auto squeeze_axis = std::make_shared<ov::op::v0::Constant>(
         ov::element::i64, ov::Shape{}, 0);
 
-    ov::Output<ov::Node> q = std::make_shared<ov::op::v0::Squeeze>(qkv_split->output(0), squeeze_axis);
-    ov::Output<ov::Node> k = std::make_shared<ov::op::v0::Squeeze>(qkv_split->output(1), squeeze_axis);
-    ov::Output<ov::Node> v = std::make_shared<ov::op::v0::Squeeze>(qkv_split->output(2), squeeze_axis);
+    auto q_squeeze = std::make_shared<ov::op::v0::Squeeze>(qkv_split->output(0), squeeze_axis);
+    auto k_squeeze = std::make_shared<ov::op::v0::Squeeze>(qkv_split->output(1), squeeze_axis);
+    auto v_squeeze = std::make_shared<ov::op::v0::Squeeze>(qkv_split->output(2), squeeze_axis);
+    set_name(q_squeeze, attn_prefix + "/prim::ListUnpack/Squeeze");
+    set_name(k_squeeze, attn_prefix + "/prim::ListUnpack/Squeeze_0");
+    set_name(v_squeeze, attn_prefix + "/prim::ListUnpack/Squeeze_1");
+
+    ov::Output<ov::Node> q = q_squeeze;
+    ov::Output<ov::Node> k = k_squeeze;
+    ov::Output<ov::Node> v = v_squeeze;
 
     q = apply_rotary_pos_emb(q, rotary_pos_emb);
     k = apply_rotary_pos_emb(k, rotary_pos_emb);
 
-    auto q_t = std::make_shared<ov::op::v1::Transpose>(
-        q,
-        std::make_shared<ov::op::v0::Constant>(
-            ov::element::i64,
-            ov::Shape{3},
-            std::vector<int64_t>{1, 0, 2}));
+    auto q_transpose_order = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i32,
+        ov::Shape{3},
+        std::vector<int32_t>{1, 0, 2});
+    set_name(q_transpose_order, attn_prefix + "/aten::transpose/Constant");
+    auto q_t = std::make_shared<ov::op::v1::Transpose>(q, q_transpose_order);
+    set_name(q_t, attn_prefix + "/aten::transpose/Transpose");
 
-    auto k_t = std::make_shared<ov::op::v1::Transpose>(
-        k,
-        std::make_shared<ov::op::v0::Constant>(
-            ov::element::i64,
-            ov::Shape{3},
-            std::vector<int64_t>{1, 2, 0}));
+    auto k_transpose_order = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i32,
+        ov::Shape{3},
+        std::vector<int32_t>{1, 0, 2});
+    set_name(k_transpose_order, attn_prefix + "/aten::transpose/Constant_1");
+    auto k_t = std::make_shared<ov::op::v1::Transpose>(k, k_transpose_order);
+    set_name(k_t, attn_prefix + "/aten::transpose/Transpose_1");
 
-    auto v_t = std::make_shared<ov::op::v1::Transpose>(
-        v,
-        std::make_shared<ov::op::v0::Constant>(
-            ov::element::i64,
-            ov::Shape{3},
-            std::vector<int64_t>{1, 0, 2}));
+    auto v_transpose_order = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i32,
+        ov::Shape{3},
+        std::vector<int32_t>{1, 0, 2});
+    set_name(v_transpose_order, attn_prefix + "/aten::transpose/Constant_2");
+    auto v_t = std::make_shared<ov::op::v1::Transpose>(v, v_transpose_order);
+    set_name(v_t, attn_prefix + "/aten::transpose/Transpose_2");
 
-    auto scores = std::make_shared<ov::op::v0::MatMul>(
+    auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
         q_t,
         k_t,
-        false,
-        false);
-
-    auto scale = std::make_shared<ov::op::v0::Constant>(
-        ov::element::f32,
-        ov::Shape{},
-        1.0f / std::sqrt(static_cast<float>(head_dim)));
-
-    auto scores_scaled = std::make_shared<ov::op::v1::Multiply>(
-        scores,
-        scale,
-        ov::op::AutoBroadcastType::NUMPY);
-
-    auto scores_masked = std::make_shared<ov::op::v1::Add>(
-        scores_scaled,
-        attention_mask,
-        ov::op::AutoBroadcastType::NUMPY);
-
-    auto softmax = std::make_shared<ov::op::v8::Softmax>(
-        scores_masked,
-        -1);
-
-    auto context = std::make_shared<ov::op::v0::MatMul>(
-        softmax,
         v_t,
-        false,
+        attention_mask,
         false);
+    set_name(sdpa, attn_prefix + "/aten::scaled_dot_product_attention/ScaledDotProductAttention");
 
-    auto context_t = std::make_shared<ov::op::v1::Transpose>(
-        context,
-        std::make_shared<ov::op::v0::Constant>(
-            ov::element::i64,
-            ov::Shape{3},
-            std::vector<int64_t>{1, 0, 2}));
+    auto context_transpose_order = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i32,
+        ov::Shape{3},
+        std::vector<int32_t>{1, 0, 2});
+    set_name(context_transpose_order, attn_prefix + "/aten::transpose/Constant_3");
+    auto context_t = std::make_shared<ov::op::v1::Transpose>(sdpa, context_transpose_order);
+    set_name(context_t, attn_prefix + "/aten::transpose/Transpose_3");
 
     auto context_shape = std::make_shared<ov::op::v0::Constant>(
         ov::element::i64,
@@ -1624,6 +1626,7 @@ std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>> make_vision_attention(
         context_t,
         context_shape,
         false);
+    set_name(context_reshape, attn_prefix + "/aten::reshape/Reshape_1");
 
     auto proj = make_fc(
         key + ".attn.proj",
@@ -1631,5 +1634,5 @@ std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>> make_vision_attention(
         consts,
         qtypes.at(key + ".attn.proj.qtype"));
 
-    return {proj, softmax};
+    return {proj, sdpa};
 }
