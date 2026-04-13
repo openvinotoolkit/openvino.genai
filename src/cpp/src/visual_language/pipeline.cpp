@@ -79,7 +79,9 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // A language model used to generate a response.
     // Input shapes: inputs_embeds[N, conversation length, hidden_size],
     // position_ids[N, conversation length], beam_idx[N].
-    // Output shape: logits[N, conversation length, vocab_size].
+    // Output shape: logits[N, conversation length, vocab_size] for NPU,
+    // or logits[N, 1, vocab_size] for non-NPU if slice_before_matmul transformation
+    // is successfully applied (pattern may not match all model architectures).
     ov::InferRequest m_language;
     // LoRA adapter controller
     std::optional<AdapterController> m_adapter_controller;
