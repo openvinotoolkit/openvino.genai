@@ -131,9 +131,9 @@ def test_several_incremental_parsers(hf_ov_genai_models):
 
 
 @pytest.mark.parametrize(
-    "hf_ov_genai_models", 
+    "hf_ov_genai_models",
     ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
-    indirect=True
+    indirect=True,
 )
 def test_stop_invoked_by_tool_call(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
