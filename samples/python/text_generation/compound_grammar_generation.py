@@ -188,7 +188,7 @@ def main():
 
     reason = answer.finish_reasons[0]
     print()
-    print(f"Stop reason: {getattr(reason, 'name', reason)}")
+    print(f"Finish reason: {getattr(reason, 'name', reason)}")
 
     print("\n\nThe following tool calls were generated:")
     print_tool_call(answer)

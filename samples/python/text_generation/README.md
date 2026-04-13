@@ -304,7 +304,7 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   ```
 - **Notes:**
   This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation and parsing resulting output.
-  The sample prints the stop reason for each generation turn. In the tool-calling turn, generation is stopped with `TOOL_CALL` as soon as the incremental parser successfully parses the `functools[...]` payload.
+  The sample prints finish reason for each generation turn. In the tool-calling turn, generation is stopped with `TOOL_CALL` as soon as the incremental parser successfully parses the `functools[...]` payload.
   The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 

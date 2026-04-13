@@ -63,7 +63,7 @@ def test_several_incremental_parsers(hf_ov_genai_models):
         thinking_started: bool = False
         deactivated: bool = False
 
-        def parse(self, message: dict, delta_text: str, delta_tokens=None) -> dict:
+        def parse(self, message: dict, delta_text: str, delta_tokens=None) -> str:
             if self.deactivated:
                 return delta_text
 
@@ -142,7 +142,7 @@ def test_stop_invoked_by_tool_call(hf_ov_genai_models):
         thinking_started: bool = False
         deactivated: bool = False
 
-        def parse(self, message: dict, delta_text: str, delta_tokens=None) -> dict:
+        def parse(self, message: dict, delta_text: str, delta_tokens=None) -> str:
             if self.deactivated:
                 return delta_text
 
