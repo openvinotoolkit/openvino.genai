@@ -48,13 +48,13 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 ```
 
-If a converted model in OpenVINO IR format is available in the [OpenVINO optimized models](https://huggingface.co/OpenVINO) collection on Hugging Face, you can download it directly via huggingface-cli.
+If a converted model in OpenVINO IR format is available in the [OpenVINO optimized models](https://huggingface.co/OpenVINO) collection on Hugging Face, you can download it directly via hf
 
 For example:
 
 ```sh
 pip install huggingface-hub
-huggingface-cli download OpenVINO/whisper-tiny-int8-ov --local-dir whisper-tiny-int8-ov
+hf download OpenVINO/whisper-tiny-int8-ov --local-dir whisper-tiny-int8-ov
 ```
 
 ## Prepare audio file

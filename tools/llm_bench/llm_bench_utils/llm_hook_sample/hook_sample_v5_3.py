@@ -267,6 +267,7 @@ def new_sample(
         else self.__call__
     )
 
+    tic_infer = time.perf_counter()
     prefill_consumed = False
     tic = time.perf_counter()
     outputs = self._prefill(

@@ -136,7 +136,7 @@ def run_hugging_face(
                 attention_mask=attention_mask,
                 generation_config=hf_generation_config,
                 tokenizer=hf_tokenizer,
-                **extra_generate_kwargs(),
+                **extra_generate_kwargs(hf_generation_config),
             )
             all_text_batch = hf_tokenizer.batch_decode(
                 [generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True
@@ -176,14 +176,16 @@ def run_hugging_face(
             attention_mask=attention_mask,
             generation_config=hf_generation_config,
             tokenizer=hf_tokenizer,
-            **extra_generate_kwargs(),
+            **extra_generate_kwargs(hf_generation_config),
         )
 
         generation_ids = []
         scores = []
 
+        num_return_sequences = hf_generation_config.num_return_sequences or 1
+
         for idx, hf_encoded_out in enumerate(hf_encoded_outputs.sequences):
-            prompt_idx = idx // hf_generation_config.num_return_sequences
+            prompt_idx = idx // num_return_sequences
             prompt_len = 0 if generation_configs.echo else input_ids[prompt_idx].numel()
             decoded_text = hf_tokenizer.decode(hf_encoded_out[prompt_len:], skip_special_tokens=True)
             generation_ids.append(decoded_text)
@@ -191,7 +193,7 @@ def run_hugging_face(
                 scores.append(hf_encoded_outputs.sequences_scores[idx])
 
             # if we need to move to next generation result
-            if (idx + 1) // hf_generation_config.num_return_sequences != prompt_idx:
+            if (idx + 1) // num_return_sequences != prompt_idx:
                 generation_result = GenerationResult()
                 generation_result.m_generation_ids = generation_ids
                 generation_result.m_scores = scores
@@ -307,7 +309,7 @@ def export_with_optimum_cli(model_id: str, output_dir: Path, trust_remote_code: 
     if trust_remote_code:
         command.append("--trust-remote-code")
 
-    retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True))
+    retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, encoding="utf-8"))
 
 
 def download_and_convert_model_class(
