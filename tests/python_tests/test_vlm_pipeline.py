@@ -98,7 +98,6 @@ class VlmModelInfo:
 def _is_videochat_flash_qwen_model(model_id: str) -> bool:
     return "videochat-flash-qwen" in model_id.lower()
 
-
 VIDEOCHAT_FLASH_QWEN_MODEL_ID = "optimum-intel-internal-testing/tiny-videochat-flash-qwen"
 
 
@@ -142,27 +141,40 @@ PROMPTS: list[str] = [
     "Describe the image"
 ]
 
+VIDEO_MODEL_IDS: list[str] = []
+if is_transformers_version("<", "5.0"):
+    VIDEO_MODEL_IDS = [
+        "optimum-intel-internal-testing/tiny-random-llava-next-video",
+        "optimum-intel-internal-testing/tiny-random-qwen3-vl",
+        VIDEOCHAT_FLASH_QWEN_MODEL_ID,
+    ]
+else:
+    VIDEO_MODEL_IDS = [
+        "optimum-intel-internal-testing/tiny-random-qwen2vl",
+        "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+    ]
 
-VIDEO_MODEL_IDS = [
-    "optimum-intel-internal-testing/tiny-random-llava-next-video",
-    "optimum-intel-internal-testing/tiny-random-qwen2vl",
-    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
-    "optimum-intel-internal-testing/tiny-random-qwen3-vl",
-    VIDEOCHAT_FLASH_QWEN_MODEL_ID,
-]
 
-MODEL_IDS: list[str] = [
-    "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
-    "optimum-intel-internal-testing/tiny-random-phi3-vision",
-    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
-    "optimum-intel-internal-testing/tiny-random-llava",
-    "optimum-intel-internal-testing/tiny-random-llava-next",
-    "optimum-intel-internal-testing/tiny-random-internvl2",
-    "optimum-intel-internal-testing/tiny-random-gemma3",
-    "qnguyen3/nanoLLaVA",
-    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
-    *VIDEO_MODEL_IDS,
-]
+MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
+
+MODEL_IDS: list[str] = []
+if is_transformers_version("<", "5.0"):
+    MODEL_IDS = [
+        "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+        "optimum-intel-internal-testing/tiny-random-internvl2",
+        "optimum-intel-internal-testing/tiny-random-llava",
+        "optimum-intel-internal-testing/tiny-random-llava-next",
+        "optimum-intel-internal-testing/tiny-random-gemma3",
+        "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+        *VIDEO_MODEL_IDS,
+    ]
+else:
+    MODEL_IDS = [
+        "optimum-intel-internal-testing/tiny-random-phi3-vision",
+        "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
+        "qnguyen3/nanoLLaVA",
+        *VIDEO_MODEL_IDS,
+    ]
 
 
 ADD_REQUEST_MODEL_IDS = [
@@ -359,7 +371,12 @@ def _get_ov_model(model_id: str) -> str:
         if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
             # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
             processor.chat_template = tokenizer.chat_template
-        processor.audio_tokenizer = None
+
+        if is_transformers_version("<", "5.0"):
+            processor.audio_tokenizer = None
+        else:
+            if hasattr(processor, "audio_tokenizer"):
+                delattr(processor, "audio_tokenizer")
         processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
@@ -531,7 +548,7 @@ def ov_continuous_batching_pipe() -> ContinuousBatchingPipeline:
 
 @pytest.fixture(scope="module")
 def ov_continuous_batching_pipe_gemma() -> ContinuousBatchingPipeline:
-    models_path = _get_ov_model(MODEL_IDS[8])
+    models_path = _get_ov_model(MODEL_GEMMA)
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
 
@@ -653,6 +670,7 @@ def test_images(request: pytest.FixtureRequest):
     return [request.getfixturevalue(image) for image in request.param]
 
 
+@pytest.mark.transformers_dependent
 @parametrize_all_models
 def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
     ov_pipe = ov_pipe_model.pipeline
@@ -760,6 +778,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         pytest.param(get_beam_search(), id="beam_search"),
     ]
 )
+@pytest.mark.transformers_lower_v5
 def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
     ov_continuous_batching_pipe_gemma: ContinuousBatchingPipeline,
     config: GenerationConfig,
@@ -909,6 +928,7 @@ def iteration_images_and_videos(request):
 
 
 @parametrize_all_models
+@pytest.mark.transformers_dependent
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat(
     ov_pipe_model: VlmModelInfo,
@@ -950,6 +970,7 @@ def test_vlm_pipeline_chat(
 
 
 @parametrize_all_models
+@pytest.mark.transformers_dependent
 def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
@@ -1119,6 +1140,7 @@ def test_vlm_pipeline_chat_npu(ov_npu_pipe_model: VlmModelInfo, system_message, 
     run_chat(npu_pipe, system_message, iteration_images_npu)
 
 
+@pytest.mark.transformers_dependent
 @parametrize_all_models_with_video
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat_with_video(
@@ -1206,7 +1228,7 @@ def test_perf_metrics(
     max_new_tokens = DEFAULT_MAX_NEW_TOKENS
 
     # Using non-cached model to get more accurate load time
-    model_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-minicpmv-2_6")
+    model_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-phi3-vision")
     start_time = perf_counter_ns()
     pipe = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
     start_generate = perf_counter_ns()
@@ -1324,6 +1346,7 @@ def test_vlm_npu_multiple_images(
     ov_pipe.generate(PROMPTS[0], images=[cat_tensor, handwritten_tensor], generation_config=generation_config)
 
 
+@pytest.mark.transformers_dependent
 @parametrize_all_models
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
@@ -1451,6 +1474,7 @@ def test_start_chat_clears_history_cb_api(
     assert results_first_generate == results_second_generate
 
 
+@pytest.mark.transformers_dependent
 @parametrize_all_models
 def test_vlm_pipeline_chat_streamer_cancel_first_generate(
     request: pytest.FixtureRequest,
@@ -1561,27 +1585,39 @@ def conversation_video_requests(
     ]
 
 
-TAG_INSERTED_BY_TEMPLATE = [
-    ("optimum-intel-internal-testing/tiny-random-llava", "PA"),
-    ("optimum-intel-internal-testing/tiny-random-llava-next", "PA"),
-    ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"),
-    ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
-    ("optimum-intel-internal-testing/tiny-random-qwen3-vl", "PA"),
-    ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
-    ("qnguyen3/nanoLLaVA", "PA"),
-    ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
-]
+TAG_INSERTED_BY_TEMPLATE = []
+if is_transformers_version("<", "5.0"):
+    TAG_INSERTED_BY_TEMPLATE = [
+        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+        ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
+        ("optimum-intel-internal-testing/tiny-random-qwen3-vl", "PA"),
+        ("optimum-intel-internal-testing/tiny-random-llava", "PA"),
+        ("optimum-intel-internal-testing/tiny-random-llava-next", "PA"),
+    ]
+else:
+    TAG_INSERTED_BY_TEMPLATE = [
+        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"),
+        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+        ("qnguyen3/nanoLLaVA", "PA"),
+    ]
 
 
-IMAGE_ID_IGNORANT_MODELS_TO_TAG = TAG_INSERTED_BY_TEMPLATE + [
-    ("optimum-intel-internal-testing/tiny-random-internvl2", "PA"),
-]
+IMAGE_ID_IGNORANT_MODELS_TO_TAG = [*TAG_INSERTED_BY_TEMPLATE]
+if is_transformers_version("<", "5.0"):
+    IMAGE_ID_IGNORANT_MODELS_TO_TAG += [
+        ("optimum-intel-internal-testing/tiny-random-internvl2", "PA"),
+    ]
 
 
-MODELS_TO_TAG = IMAGE_ID_IGNORANT_MODELS_TO_TAG + [
-    ("optimum-intel-internal-testing/tiny-random-minicpmv-2_6", "PA"),
-    ("optimum-intel-internal-testing/tiny-random-phi3-vision", "PA"),
-]
+MODELS_TO_TAG = [*IMAGE_ID_IGNORANT_MODELS_TO_TAG]
+if is_transformers_version("<", "5.0"):
+    MODELS_TO_TAG += [
+        ("optimum-intel-internal-testing/tiny-random-minicpmv-2_6", "PA"),
+    ]
+else:
+    MODELS_TO_TAG += [
+        ("optimum-intel-internal-testing/tiny-random-phi3-vision", "PA"),
+    ]
 
 
 def get_vision_inputs_kwargs(visions: list[openvino.Tensor], vision_type: VisionType) -> dict:
@@ -1633,6 +1669,7 @@ def parametrize_model_with_vision_type(
     )
 
 
+@pytest.mark.transformers_dependent
 @parametrize_model_with_vision_type(
     TAG_INSERTED_BY_TEMPLATE,
     xfail={("optimum-intel-internal-testing/tiny-random-llava", "PA", VisionType.IMAGE): "CVS-179090"},
@@ -1691,6 +1728,7 @@ def test_model_tags_representation(
     retry(workaround_inconsistent_inference)
 
 
+@pytest.mark.transformers_dependent
 @parametrize_model_with_vision_type()
 def test_model_tags_prepend_native(
     ov_pipe_model: VlmModelInfo,
@@ -1728,6 +1766,7 @@ def test_model_tags_prepend_native(
     retry(workaround_inconsistent_inference)
 
 
+@pytest.mark.transformers_dependent
 @parametrize_model_with_vision_type()
 def test_model_tags_prepend_universal(
     ov_pipe_model: VlmModelInfo,
@@ -1764,6 +1803,7 @@ def test_model_tags_prepend_universal(
     retry(workaround_inconsistent_inference)
 
 
+@pytest.mark.transformers_dependent
 @parametrize_model_with_vision_type()
 def test_model_tags_append(
     ov_pipe_model: VlmModelInfo,
@@ -1815,6 +1855,7 @@ def test_model_tags_append(
     retry(workaround_inconsistent_inference)
 
 
+@pytest.mark.transformers_dependent
 @parametrize_model_with_vision_type(IMAGE_ID_IGNORANT_MODELS_TO_TAG)
 def test_model_tags_same_reference(
     ov_pipe_model: VlmModelInfo,
@@ -1848,6 +1889,7 @@ def test_model_tags_same_reference(
     retry(workaround_inconsistent_inference)
 
 
+@pytest.mark.transformers_dependent
 @parametrize_model_with_vision_type()
 def test_model_tags_older(
     ov_pipe_model: VlmModelInfo,
@@ -1869,6 +1911,7 @@ def test_model_tags_older(
     ov_pipe.finish_chat()
 
 
+@pytest.mark.transformers_dependent
 @parametrize_model_with_vision_type()
 def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo, vision_type: VisionType):
     ov_pipe = ov_pipe_model.pipeline
@@ -1877,6 +1920,7 @@ def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo, vision_type: 
         ov_pipe.generate(get_universal_tag(vision_type, 0))
 
 
+@pytest.mark.transformers_dependent
 @parametrize_model_with_vision_type()
 def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo, vision_type: VisionType):
     ov_pipe = ov_pipe_model.pipeline
@@ -2210,6 +2254,7 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
     )
 
 
+@pytest.mark.transformers_dependent
 @parametrize_optimum_vs_genai()
 def test_vlm_pipeline_match_optimum_with_resolutions(
     request: pytest.FixtureRequest,
@@ -2585,6 +2630,7 @@ def test_videochatflash_qwen_rejects_image_input(
         ov_videochatflash_qwen_pipe_raw.generate(PROMPTS[0], image=cat_tensor, generation_config=generation_config)
 
 
+@pytest.mark.transformers_lower_v5
 @pytest.mark.parametrize(
     "config",
     [

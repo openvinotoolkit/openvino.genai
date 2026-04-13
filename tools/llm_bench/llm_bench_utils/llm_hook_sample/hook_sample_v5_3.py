@@ -238,6 +238,7 @@ def new_sample(
         else self.__call__
     )
 
+    tic_infer = time.perf_counter()
     prefill_consumed = False
     tic = time.perf_counter()
     outputs = self._prefill(
@@ -312,6 +313,7 @@ def new_sample(
 
         unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)
         this_peer_finished = unfinished_sequences.max() == 0
+        hook_greedy.tm_list.append(time.perf_counter() - tic)
 
         hook_greedy.tm_list.append(time.perf_counter() - tic)
         # This is needed to properly delete outputs.logits which may be very large for first iteration

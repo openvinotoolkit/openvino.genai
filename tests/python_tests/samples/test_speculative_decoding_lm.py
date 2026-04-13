@@ -37,6 +37,7 @@ def _run_spec_case(convert_model, convert_draft_model, sample_args, env):
 class TestSpeculativeDecodingLM:
     @pytest.mark.llm
     @pytest.mark.samples
+    @pytest.mark.transformers_lower_v5
     @pytest.mark.parametrize(
         "convert_model, convert_draft_model, sample_args",
         [

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from openvino_genai import GenerationConfig, StopCriteria
+from optimum.intel.utils.import_utils import is_transformers_version
 
 from utils.ov_genai_pipelines import generate_and_compare, run_ov_pipeline, MAIN_PIPELINE_TYPES
 from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model
@@ -165,14 +166,8 @@ def test_greedy(model_tiny_random_phi3: OVConvertedModelSchema, generation_confi
     generate_and_compare(model_tiny_random_phi3, prompt, generation_config)
 
 
-@pytest.mark.parametrize(
-    "generation_config",
-    [
-        {"max_new_tokens": 30, "num_beams": 2},
-        {"max_new_tokens": 30, "num_beams": 2, "stop_criteria": StopCriteria.NEVER},
-        {"max_new_tokens": 30, "num_beams": 2, "stop_criteria": StopCriteria.EARLY},
-        {"max_new_tokens": 30, "num_beams": 2, "length_penalty": 1.0},
-        {"max_new_tokens": 30, "num_beams": 2, "no_repeat_ngram_size": 2},
+if is_transformers_version("<", "5.0"):
+    beam_search_generation_configs = [
         {
             "max_new_tokens": 30,
             "num_beams": 6,
@@ -180,6 +175,18 @@ def test_greedy(model_tiny_random_phi3: OVConvertedModelSchema, generation_confi
             "diversity_penalty": 1.2,
             "num_return_sequences": 3
         },
+    ]
+
+    beam_search_ids = [
+        "multiple_groups",
+    ]
+else:
+    beam_search_generation_configs = [
+        {"max_new_tokens": 30, "num_beams": 2},
+        {"max_new_tokens": 30, "num_beams": 2, "stop_criteria": StopCriteria.NEVER},
+        {"max_new_tokens": 30, "num_beams": 2, "stop_criteria": StopCriteria.EARLY},
+        {"max_new_tokens": 30, "num_beams": 2, "length_penalty": 1.0},
+        {"max_new_tokens": 30, "num_beams": 2, "no_repeat_ngram_size": 2},
         {"max_new_tokens": 30, "min_new_tokens": 15, "num_beams": 2, "num_return_sequences": 1},
         {
             "max_new_tokens": 30,
@@ -189,29 +196,29 @@ def test_greedy(model_tiny_random_phi3: OVConvertedModelSchema, generation_confi
         },
         {"max_new_tokens": 1, "min_new_tokens": 0, "echo": True},
         {"max_new_tokens": 30, "num_beams": 2, "echo": True},
-    ],
-    ids=[
+    ]
+
+    beam_search_ids = [
         "single_group_stop_criteria_heuristic",
         "single_group_stop_criteria_never",
         "single_group_stop_criteria_early",
         "single_group_lenght_penalty",
         "single_group_no_repeat_ngram_size",
-        "multiple_groups",
         "single_group_min_new_tokens",
         "single_group_with_multiple_stop_strings_no_match",
         "echo_with_generation",
         "single_group_with_echo",
     ]
-)
-def test_beam_search(
-    model_facebook_opt_125m: OVConvertedModelSchema, 
-    generation_config: GenerationConfig
-):
-    prompts = [ "What is OpenVINO?" ]
+
+
+@pytest.mark.transformers_dependent
+@pytest.mark.parametrize("generation_config", beam_search_generation_configs, ids=beam_search_ids)
+def test_beam_search(model_facebook_opt_125m: OVConvertedModelSchema, generation_config: GenerationConfig):
+    prompts = ["What is OpenVINO?"]
     generate_and_compare(model_facebook_opt_125m, prompts, generation_config)
 
 
-
+@pytest.mark.transformers_lower_v5
 @pytest.mark.xfail(
     raises=AssertionError,
     reason="Stop strings do not seem to work as expected with beam search in HF, so comparison will fail. If it changes, these cases shall be merged to the test above.",
@@ -245,8 +252,7 @@ def test_beam_search(
     ]
 )
 def test_beam_search_with_stop_string(
-    model_facebook_opt_125m: OVConvertedModelSchema, 
-    generation_config: GenerationConfig
+    model_facebook_opt_125m: OVConvertedModelSchema, generation_config: GenerationConfig
 ):
     prompts = [ "What is OpenVINO?" ]
     generate_and_compare(model_facebook_opt_125m, prompts, generation_config)

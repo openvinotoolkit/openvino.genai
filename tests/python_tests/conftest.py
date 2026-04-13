@@ -103,7 +103,7 @@ def image_generation_model(request):
             str(temp_path),
         ]
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
+        retry_request(lambda: subprocess.run(command, check=True, encoding="utf-8", text=True, capture_output=True))
 
     try:
         manager.execute(convert_model)
