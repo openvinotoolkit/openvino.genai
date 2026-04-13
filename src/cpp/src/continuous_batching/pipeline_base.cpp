@@ -407,6 +407,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         auto result = encoded_results[i];
         VLMDecodedResults gen_result;
         gen_result.perf_metrics = result.perf_metrics;
+        gen_result.extended_perf_metrics = result.extended_perf_metrics;
 
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
         gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;
@@ -553,6 +554,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         auto result = encoded_results.at(i);
         VLMDecodedResults gen_result;
         gen_result.perf_metrics = result.perf_metrics;
+        gen_result.extended_perf_metrics = result.extended_perf_metrics;
     
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
         gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;

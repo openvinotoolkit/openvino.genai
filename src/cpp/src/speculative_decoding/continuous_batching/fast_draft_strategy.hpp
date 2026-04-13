@@ -36,8 +36,7 @@ std::vector<EncodedGenerationResult> generate_common(
     std::optional<std::vector<ov::Tensor>> prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list,
     GenerateStrategy& strategy) {
-    self->perf_metrics() = ov::genai::SDPerModelsPerfMetrics();
-    self->draft_pipeline()->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
+    self->reset_generate_metrics();
 
     OPENVINO_ASSERT(!self->has_non_finished_requests(),
                     "Generate cannot be called while ContinuousBatchingPipeline is already running");
@@ -98,6 +97,7 @@ std::vector<EncodedGenerationResult> generate_common(
 
     self->perf_metrics().draft_model_metrics.raw_metrics = self->draft_pipeline()->raw_perf_metrics;
     uint64_t generate_duration_us = strategy.stop_timer(t_start);
+    const auto sd_metrics = self->get_speculative_decoding_metrics();
 
     std::vector<EncodedGenerationResult> results;
     results.reserve(all_requests.size());
@@ -152,6 +152,13 @@ protected:
     // Mutex protecting access to m_draft_generations, so add_request and step methods can be called from different threads
     std::mutex m_draft_generations_mutex;
     std::map<uint64_t, GenerationHandle> m_draft_generations;
+
+    void reset_generate_metrics() {
+        m_sd_metrics = SpeculativeDecodingMetrics();
+        m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
+        m_draft_pipeline->raw_perf_metrics = RawPerfMetrics{};
+        m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
+    }
 
     void drop_requests();
     bool is_requests_empty();

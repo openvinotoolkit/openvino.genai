@@ -84,6 +84,7 @@ benchmark_vlm [OPTIONS]
 ### Options
 
 - `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
+- `-dm, --draft_model` (default: empty): Path to the draft model and tokenizers base directory.
 - `-p, --prompt` (default: ''): The prompt to generate text. If without `-p` and `--pf`, the default prompt is `"What is on the image?"`
 - `--pf, --prompt_file` Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to the image.
@@ -98,6 +99,9 @@ benchmark_vlm [OPTIONS]
 
 ```
 benchmark_vlm -m miniCPM-V-2_6 -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3
+
+# With Eagle3 draft model
+benchmark_vlm -m /path/to/main_model -i /path/to/image.jpg -p "Who drew this painting?" --draft_model /path/to/draft_model
 ```
 
 ```

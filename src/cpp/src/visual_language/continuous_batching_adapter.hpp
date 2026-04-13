@@ -96,6 +96,7 @@ public:
 
         VLMDecodedResults decoded;
         decoded.perf_metrics = result.perf_metrics;
+        decoded.extended_perf_metrics = result.extended_perf_metrics;
         decoded.perf_metrics.load_time = get_load_time();
 
         decoded.perf_metrics.raw_metrics.generate_durations.clear();
@@ -134,6 +135,7 @@ public:
 
         VLMDecodedResults decoded;
         decoded.perf_metrics = result.perf_metrics;
+        decoded.extended_perf_metrics = result.extended_perf_metrics;
         decoded.perf_metrics.load_time = get_load_time();
 
         decoded.perf_metrics.raw_metrics.generate_durations.clear();
