@@ -84,6 +84,7 @@ class TestVideoGenerationConfig:
         pipe.set_generation_config(config)
         retrieved = pipe.get_generation_config()
         assert retrieved.guidance_scale == pytest.approx(0.5)
+        assert retrieved.negative_prompt == "bad quality"
 
 
 class TestText2VideoPipelineConstructor:
