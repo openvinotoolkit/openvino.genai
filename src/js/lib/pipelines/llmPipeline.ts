@@ -109,7 +109,7 @@ export class LLMPipeline {
    * @returns Async iterator producing subword chunks.
    *
    * @example
-   * // Stream tokens to console
+   * // Stream subword chunks to console
    * for await (const chunk of pipe.stream(prompt, { max_new_tokens: 100 })) {
    *   process.stdout.write(chunk);
    * }
