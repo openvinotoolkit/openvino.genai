@@ -637,7 +637,7 @@ void init_flux_transformer_2d_model(py::module_& m) {
         py::arg("vae_scale_factor"), "VAE scale factor",
         R"(
             FluxTransformer2DModel class constructor.
-            model (str): Pre-read model
+            model (str): Pre-read model.
             weights (ov.Tensor): Pre-read model weights tensor.
             config (FluxTransformer2DModel.Config): FluxTransformer2DModel configuration.
             vae_scale_factor (int): VAE scale factor.
@@ -659,7 +659,7 @@ void init_flux_transformer_2d_model(py::module_& m) {
         py::arg("device"), "Device on which inference will be done",
         R"(
             FluxTransformer2DModel class constructor.
-            model (str): Pre-read model
+            model (str): Pre-read model.
             weights (ov.Tensor): Pre-read model weights tensor.
             config (FluxTransformer2DModel.Config): FluxTransformer2DModel configuration.
             vae_scale_factor (int): VAE scale factor.
@@ -753,7 +753,7 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("vae_decoder_path"), "VAE decoder directory",
         py::arg("device"), "Device on which inference will be done",
         R"(
-            AutoencoderKL class initialized only with both encoder and decoder models.
+            AutoencoderKL class initialized with both encoder and decoder models.
             vae_encoder_path (os.PathLike): VAE encoder directory.
             vae_decoder_path (os.PathLike): VAE decoder directory.
             device (str): Device on which inference will be done.
@@ -778,7 +778,7 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("vae_decoder_weights"), "VAE decoder weights tensor",
         py::arg("vae_decoder_config"), "VAE decoder config",
         R"(
-            AutoencoderKL class initialized only with decoder model from string and weights tensor
+            AutoencoderKL class initialized only with decoder model from string and weights tensor.
             vae_decoder_model (str): Serialized VAE decoder model in OpenVINO IR format.
             vae_decoder_weights (ov.Tensor): VAE decoder weights tensor.
             vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
@@ -798,7 +798,7 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("vae_decoder_weights"), "VAE decoder weights tensor",
         py::arg("vae_decoder_config"), "VAE decoder config",
         R"(
-            AutoencoderKL class initialized with both encoder and decoder models from string and weights tensors
+            AutoencoderKL class initialized with both encoder and decoder models from string and weights tensors.
             vae_encoder_model (str): Serialized VAE encoder model in OpenVINO IR format.
             vae_encoder_weights (ov.Tensor): VAE encoder weights tensor.
             vae_decoder_model (str): Serialized VAE decoder model in OpenVINO IR format.
@@ -819,7 +819,7 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("vae_decoder_config"), "VAE decoder config",
         py::arg("device"), "Device on which inference will be done",
         R"(
-            AutoencoderKL class initialized only with decoder model from string and weights tensor with device and properties
+            AutoencoderKL class initialized only with decoder model from string and weights tensor with device and properties.
             vae_decoder_model (str): Serialized VAE decoder model in OpenVINO IR format.
             vae_decoder_weights (ov.Tensor): VAE decoder weights tensor.
             vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
@@ -844,7 +844,7 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("vae_decoder_config"), "VAE decoder config",
         py::arg("device"), "Device on which inference will be done",
         R"(
-            AutoencoderKL class initialized with both encoder and decoder models from string and weights tensors with device and properties
+            AutoencoderKL class initialized with both encoder and decoder models from string and weights tensors with device and properties.
             vae_encoder_model (str): Serialized VAE encoder model in OpenVINO IR format.
             vae_encoder_weights (ov.Tensor): VAE encoder weights tensor.
             vae_decoder_model (str): Serialized VAE decoder model in OpenVINO IR format.
