@@ -699,14 +699,7 @@ NodePtr tensors_multiplication(NodePtr input,
     }
 
     if (transpose_in_end) {
-        // Inverse of the permutation applied to activations in the caller: spatial dims back to the end.
-        // e.g. rank=4: {2,3,0,1}, rank=3: {2,0,1}
-        std::vector<int> perm(target_rank);
-        for (int i = 0; i < target_rank - 2; ++i)
-            perm[i] = i + 2;
-        perm[target_rank - 2] = 0;
-        perm[target_rank - 1] = 1;
-        auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{static_cast<size_t>(target_rank)}, perm);
+        auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int>{2, 3, 0, 1});
         input = std::make_shared<v1::Transpose>(input, transposition);
     } else if (input->get_output_partial_shape(0).rank().get_length() != target_rank) {
         input = unsqueeze(input, target_rank);
@@ -952,15 +945,8 @@ public:
 
         const auto activation_shape = activations.get_partial_shape();
         const auto activation_rank = activation_shape.rank().get_length();
-        if(activation_rank >= 3 && activation_shape[activation_rank - 3].get_length() > 1) {
-            // Permutation moves the two channel dims (last two) to the front and shifts spatial dims back:
-            // e.g. rank=4: {2,3,0,1}, rank=3: {1,2,0}
-            std::vector<int> perm(activation_rank);
-            perm[0] = activation_rank - 2;
-            perm[1] = activation_rank - 1;
-            for (int i = 2; i < activation_rank; ++i)
-                perm[i] = i - 2;
-            auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{static_cast<size_t>(activation_rank)}, perm);
+        if(activation_rank == 4 && activation_shape[activation_rank - 3].get_length() > 1) {
+            auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int>{2, 3, 0, 1});
             auto transpose = register_new_node<v1::Transpose>(activations, transposition);
             activations = transpose;
             transpose_in_end = true;
