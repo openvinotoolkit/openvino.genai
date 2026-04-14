@@ -265,16 +265,16 @@ def _setup_generation_config(
 
 def is_optimum_intel_version_for_videochat_flash_qwen():
     """
-    Return True when optimum-intel version exposes ``_OVVideoChatFlashQwenForCausalLM``,
-    otherwise return False.
+    Return True when optimum-intel exposes public support for
+    ``videochat_flash_qwen``, otherwise return False.
     """
 
     try:
-        import optimum.intel.openvino.modeling_visual_language as mod
+        from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
     except ImportError:
         return False
 
-    return hasattr(mod, "_OVVideoChatFlashQwenForCausalLM")
+    return "videochat_flash_qwen" in MODEL_TYPE_TO_CLS_MAPPING
 
 
 def _get_ov_model(model_id: str) -> str:
