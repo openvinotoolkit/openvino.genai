@@ -5,16 +5,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import gc
 
 from openvino_genai import (
     ContinuousBatchingPipeline,
     GenerationConfig,
     SparseAttentionMode,
+    SchedulerConfig,
 )
 
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model
-from test_kv_cache_eviction.kv_cache_eviction_utils import get_scheduler_config
 
 
 def load_prompts_dataset(file_name: str) -> dict[str, list[str]]:
@@ -54,15 +55,15 @@ def test_xattention_enabled_vs_disabled_similarity(test_struct):
     import whowhatbench
 
     seqs_per_request = 1
-    model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    model_id = "HuggingFaceTB/SmolLM2-135M-Instruct"
     model_schema = download_and_convert_model(model_id)
     tokenizer = model_schema.hf_tokenizer
     models_path = model_schema.models_path
 
-    scheduler_cfg_no_xattn = get_scheduler_config(1000)
+    scheduler_cfg_no_xattn = SchedulerConfig()
     scheduler_cfg_no_xattn.use_sparse_attention = False
 
-    scheduler_cfg_xattn = get_scheduler_config(1000)
+    scheduler_cfg_xattn = SchedulerConfig()
     scheduler_cfg_xattn.use_sparse_attention = True
     scheduler_cfg_xattn.sparse_attention_config.num_last_dense_tokens_in_prefill = 10
     scheduler_cfg_xattn.sparse_attention_config.mode = SparseAttentionMode.XATTENTION
@@ -113,7 +114,6 @@ def test_xattention_enabled_vs_disabled_similarity(test_struct):
     del model_xattn
     del model_no_xattn
     del data_dict
-    import gc
 
     gc.collect()
 
