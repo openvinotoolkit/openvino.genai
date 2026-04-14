@@ -3,6 +3,7 @@
 
 from openvino_genai import (
     GenerationConfig,
+    GenerationFinishReason,
     Tokenizer,
     LLMPipeline,
     StreamerBase,
@@ -382,6 +383,56 @@ def test_terminate_by_sampler(
     )
 
     assert len(encoded_results.tokens[0]) == num_iters
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize(
+    ("streaming_status", "expected_finish_reason"),
+    [
+        pytest.param(StreamingStatus.STOP, GenerationFinishReason.STOP, id="stop"),
+        pytest.param(StreamingStatus.TOOL_CALL_STOP, GenerationFinishReason.TOOL_CALL, id="tool_call_stop"),
+    ]
+)
+def test_terminate_finish_reason_by_sampler(
+    llm_model: OVConvertedModelSchema, 
+    streaming_status: StreamingStatus,
+    expected_finish_reason: GenerationFinishReason,
+):
+    model_path = llm_model.models_path
+    prompt = 'The Sun is yellow because'
+
+    current_iter = 0
+    num_iters = 10
+
+    class TestStreamer(StreamerBase):
+        def __init__(self):
+            StreamerBase.__init__(self)
+
+        def write(self, token_id) -> StreamingStatus:
+            nonlocal current_iter
+            current_iter += 1
+            return StreamingStatus.RUNNING if current_iter != num_iters else streaming_status
+        def end(self):
+            pass
+
+    tokenizer = Tokenizer(model_path)
+    tokenized_input = tokenizer.encode(prompt)
+    static_cpu_model = LLMPipeline(
+        model_path,
+        "CPU",
+        get_default_llm_properties(),
+        ATTENTION_BACKEND="SDPA",
+    )
+
+    encoded_results = static_cpu_model.generate(
+        tokenized_input, 
+        max_new_tokens=1000, 
+        ignore_eos=True, 
+        streamer=TestStreamer(),
+    )
+
+    assert len(encoded_results.tokens[0]) == num_iters
+    assert encoded_results.finish_reasons == [expected_finish_reason]
 
 
 # FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!

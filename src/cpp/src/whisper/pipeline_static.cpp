@@ -345,6 +345,9 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
     results.tokens[0] = sequence->get_generated_ids();
     results.scores[0] = sequence->get_cumulative_log_prob();
     results.finish_reasons[0] = sequence->get_finish_reason();
+    if (results.finish_reasons[0] == ov::genai::GenerationFinishReason::NONE && sequence_group->handle_stopped()) {
+        results.finish_reasons[0] = sequence_group->get_generation_stream()->get_finish_reason();
+    }
 
     sampler.clear_request_info(sequence_group->get_request_id());
 

@@ -183,14 +183,14 @@ CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     // Every time we start to cycle through iterative parsers we create a new delta_message.
     // Parsers should neither delete fields nor rewrite existing non-string data; they may only add fields
     // to delta_message or set string fields whose values will be concatenated with the accumulated message.
-    bool is_stop_invoked = false;
+    StreamingStatus parser_last_status = StreamingStatus::RUNNING;
 
     JsonContainer delta_message;
     // Iterate over all parsers and apply them to the message
     for (auto& parser: m_pimpl->m_parsers) {
         delta_text = parser->parse(delta_message, delta_text, flushed_tokens);
-        if (parser->get_status() == StreamingStatus::TOOL_CALL_STOP) {
-            is_stop_invoked = true;
+        parser_last_status = parser->get_status();
+        if (parser_last_status != StreamingStatus::RUNNING) {
             break;
         }
         // Message can be modified inside parser, if parser for example extracted tool calling from message content
@@ -199,9 +199,9 @@ CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     
     m_pimpl->m_parsed_message.concatenate(delta_message);
     auto stream_status = write(delta_message);
-    if (is_stop_invoked) {
-        // status from parser has priority over status from write
-        return StreamingStatus::TOOL_CALL_STOP;
+    if (parser_last_status != StreamingStatus::RUNNING) {
+        // stopping statuses from parser have priority over status from write
+        return parser_last_status;
     }
     return stream_status;
 }
