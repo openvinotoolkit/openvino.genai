@@ -66,11 +66,9 @@ public:
         // cache usage size in bytes
         size_t m_cache_size_in_bytes = 0;
 
-        // CausalConv1D cache support
-        // Block table per sequence for a single conv layer (all conv layers share the same blocks).
-        std::map<uint64_t, BlocksPerLayer> m_conv_block_table;
-        // Conv state kernel size minus 1 (0 means no conv cache).
-        size_t m_conv_cache_interval = 0;
+        // Linear attention cache support (CausalConv1D, GatedDeltaNet, etc.)
+        // Block table per sequence for linear attention (all linear attention layers share the same blocks).
+        std::map<uint64_t, BlocksPerLayer> m_linear_attention_block_table;
     };
 
     Scheduler(std::shared_ptr<CacheOrchestrator> cache_orchestrator, const SchedulerConfig & config = {}, bool can_use_partial_preemption = true, size_t snapkv_window_size = 1) :
@@ -330,10 +328,9 @@ private:
                         scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
                         scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
 
-                        // fill conv block tables if conv cache is registered
-                        if (m_cache_orchestrator->has_conv_cache()) {
-                            scheduler_output.m_conv_block_table[seq_id] = m_cache_orchestrator->get_conv_block_table(seq_id);
-                            scheduler_output.m_conv_cache_interval = m_cache_orchestrator->get_conv_cache_interval();
+                        // fill linear attention block tables if registered
+                        if (m_cache_orchestrator->has_linear_attention_cache()) {
+                            scheduler_output.m_linear_attention_block_table[seq_id] = m_cache_orchestrator->get_linear_attention_block_table(seq_id);
                         }
                     }
                 }
@@ -424,13 +421,12 @@ private:
                         }
                     }
 
-                    // fill conv block tables if conv cache is registered
-                    if (m_cache_orchestrator->has_conv_cache()) {
+                    // fill linear attention block tables if registered
+                    if (m_cache_orchestrator->has_linear_attention_cache()) {
                         for (const auto& seq : sequence_group->get_running_sequences()) {
                             size_t sid = seq->get_id();
-                            scheduler_output.m_conv_block_table[sid] = m_cache_orchestrator->get_conv_block_table(sid);
+                            scheduler_output.m_linear_attention_block_table[sid] = m_cache_orchestrator->get_linear_attention_block_table(sid);
                         }
-                        scheduler_output.m_conv_cache_interval = m_cache_orchestrator->get_conv_cache_interval();
                     }
                 }
 
@@ -513,10 +509,9 @@ private:
                         scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
                         scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
 
-                        // fill conv block tables if conv cache is registered
-                        if (m_cache_orchestrator->has_conv_cache()) {
-                            scheduler_output.m_conv_block_table[seq_id] = m_cache_orchestrator->get_conv_block_table(seq_id);
-                            scheduler_output.m_conv_cache_interval = m_cache_orchestrator->get_conv_cache_interval();
+                        // fill linear attention block tables if registered
+                        if (m_cache_orchestrator->has_linear_attention_cache()) {
+                            scheduler_output.m_linear_attention_block_table[seq_id] = m_cache_orchestrator->get_linear_attention_block_table(seq_id);
                         }
                     }
 

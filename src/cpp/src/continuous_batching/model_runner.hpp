@@ -219,7 +219,15 @@ class ModelRunner {
     bool m_is_use_xattention_inputs;
 
     bool m_is_use_adaptive_rkv;
-    bool m_has_conv_cache = false;
+    /// Descriptor for a linear attention paging group discovered from model inputs.
+    struct PagingGroup {
+        std::string prefix;  ///< e.g. "paged_conv_" or "paged_gdn."
+        ov::Tensor cached_block_indices;
+        ov::Tensor cached_block_indices_begins;
+        ov::Tensor cached_past_lens;
+        ov::Tensor cached_cache_interval;
+    };
+    std::vector<PagingGroup> m_linear_attention_paging_groups;
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
@@ -243,10 +251,6 @@ class ModelRunner {
     ov::Tensor m_cached_token_type_ids;
     ov::Tensor m_cached_deepstack_visual_embeds;
     ov::Tensor m_cached_visual_pos_masks;
-    ov::Tensor m_cached_paged_conv_block_indices;
-    ov::Tensor m_cached_paged_conv_block_indices_begins;
-    ov::Tensor m_cached_paged_conv_past_lens;
-    ov::Tensor m_cached_paged_conv_cache_interval;
 public:
     /**
      * Constructs the ModelRunner.
@@ -287,11 +291,22 @@ public:
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
 
-        // Detect conv cache from model inputs
-        try {
-            m_request.get_tensor("paged_conv_block_indices");
-            m_has_conv_cache = true;
-        } catch (const ov::Exception&) {}
+        // Discover linear attention paging groups from model inputs.
+        // Each group has {prefix}block_indices, {prefix}block_indices_begins,
+        // {prefix}past_lens, {prefix}cache_interval.
+        auto compiled_model = m_request.get_compiled_model();
+        for (const auto& input : compiled_model.inputs()) {
+            for (const auto& name : input.get_names()) {
+                const std::string marker = "block_indices_begins";
+                if (name.size() > marker.size() &&
+                    name.compare(0, 6, "paged_") == 0 &&
+                    name.compare(name.size() - marker.size(), marker.size(), marker) == 0) {
+                    std::string prefix = name.substr(0, name.size() - marker.size());
+                    m_linear_attention_paging_groups.push_back({prefix, {}, {}, {}, {}});
+                }
+                break;  // use first name per input
+            }
+        }
     }
 
     /**
@@ -734,8 +749,8 @@ public:
             _set_adaptive_rkv_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
-        if (m_has_conv_cache && !scheduler_output.m_conv_block_table.empty()) {
-            _set_conv_inputs(sequence_groups, scheduler_output, batch_size_in_sequences);
+        if (!m_linear_attention_paging_groups.empty() && !scheduler_output.m_linear_attention_block_table.empty()) {
+            _set_linear_attention_inputs(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
         if (matmul_gathering_is_available) {
@@ -1448,75 +1463,77 @@ private:
      * Sets: paged_conv_block_indices, paged_conv_block_indices_begins,
      *        paged_conv_past_lens, paged_conv_cache_interval.
      */
-    void _set_conv_inputs(const std::vector<SequenceGroup::Ptr>& sequence_groups,
-                          const Scheduler::Output& scheduler_output,
-                          size_t batch_size_in_sequences) {
-        const size_t conv_cache_interval = scheduler_output.m_conv_cache_interval;
-
-        // PagedCausalConv1D expects 2 block indices per sequence: [read_block, write_block].
-        // For the basic case both point to the same physical block (in-place update).
+    void _set_linear_attention_inputs(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                       const Scheduler::Output& scheduler_output,
+                                       size_t batch_size_in_sequences) {
+        // All linear attention paging groups share the same block table and layout:
+        // 2 block indices per sequence (read + write, same physical block).
         const size_t blocks_per_sequence = 2;
-        ov::Tensor conv_block_indices = _get_or_resize_tensor(
-            m_cached_paged_conv_block_indices, "paged_conv_block_indices",
-            {batch_size_in_sequences * blocks_per_sequence}, ov::element::i32);
-        ov::Tensor conv_block_indices_begins = _get_or_resize_tensor(
-            m_cached_paged_conv_block_indices_begins, "paged_conv_block_indices_begins",
-            {batch_size_in_sequences + 1}, ov::element::i32);
-        ov::Tensor conv_past_lens = _get_or_resize_tensor(
-            m_cached_paged_conv_past_lens, "paged_conv_past_lens",
-            {batch_size_in_sequences}, ov::element::i32);
-        ov::Tensor conv_cache_interval_tensor = _get_or_resize_tensor(
-            m_cached_paged_conv_cache_interval, "paged_conv_cache_interval",
-            {batch_size_in_sequences}, ov::element::i32);
+        const size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
 
-        int32_t* block_indices_data = conv_block_indices.data<int32_t>();
-        int32_t* begins_data = conv_block_indices_begins.data<int32_t>();
-        int32_t* past_lens_data = conv_past_lens.data<int32_t>();
-        int32_t* interval_data = conv_cache_interval_tensor.data<int32_t>();
+        for (auto& pg : m_linear_attention_paging_groups) {
+            ov::Tensor block_indices = _get_or_resize_tensor(
+                pg.cached_block_indices, pg.prefix + "block_indices",
+                {batch_size_in_sequences * blocks_per_sequence}, ov::element::i32);
+            ov::Tensor block_indices_begins = _get_or_resize_tensor(
+                pg.cached_block_indices_begins, pg.prefix + "block_indices_begins",
+                {batch_size_in_sequences + 1}, ov::element::i32);
+            ov::Tensor past_lens = _get_or_resize_tensor(
+                pg.cached_past_lens, pg.prefix + "past_lens",
+                {batch_size_in_sequences}, ov::element::i32);
+            ov::Tensor cache_interval = _get_or_resize_tensor(
+                pg.cached_cache_interval, pg.prefix + "cache_interval",
+                {batch_size_in_sequences}, ov::element::i32);
 
-        begins_data[0] = 0;
-        size_t seq_offset = 0;
-        size_t block_offset = 0;
-        size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+            int32_t* block_indices_data = block_indices.data<int32_t>();
+            int32_t* begins_data = block_indices_begins.data<int32_t>();
+            int32_t* past_lens_data = past_lens.data<int32_t>();
+            int32_t* interval_data = cache_interval.data<int32_t>();
 
-        for (size_t i = 0; i < num_sequence_groups; ++i) {
-            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
-            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+            begins_data[0] = 0;
+            size_t seq_offset = 0;
+            size_t block_offset = 0;
 
-            for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
-                Sequence::CPtr sequence = running_sequences[seq_idx];
-                size_t seq_id = sequence->get_id();
+            for (size_t i = 0; i < num_sequence_groups; ++i) {
+                size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+                std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
 
-                const auto& conv_blocks = scheduler_output.m_conv_block_table.at(seq_id);
-                OPENVINO_ASSERT(!conv_blocks.empty(), "Conv block table empty for sequence ", seq_id);
-                int32_t phys_block = conv_blocks[0]->get_index();
+                for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                    Sequence::CPtr sequence = running_sequences[seq_idx];
+                    size_t seq_id = sequence->get_id();
 
-                // Block 0 = read, block 1 = write (both reference the same physical block)
-                block_indices_data[block_offset]     = phys_block;
-                block_indices_data[block_offset + 1] = phys_block;
+                    const auto& la_blocks = scheduler_output.m_linear_attention_block_table.at(seq_id);
+                    OPENVINO_ASSERT(!la_blocks.empty(),
+                                    "Linear attention block table empty for sequence ", seq_id);
+                    int32_t phys_block = la_blocks[0]->get_index();
 
-                begins_data[seq_offset + 1] = static_cast<int32_t>(block_offset + blocks_per_sequence);
+                    // Block 0 = read, block 1 = write (both reference the same physical block)
+                    block_indices_data[block_offset]     = phys_block;
+                    block_indices_data[block_offset + 1] = phys_block;
 
-                past_lens_data[seq_offset] = static_cast<int32_t>(sequence_group->get_num_processed_tokens());
-                interval_data[seq_offset] = static_cast<int32_t>(conv_cache_interval);
+                    begins_data[seq_offset + 1] = static_cast<int32_t>(block_offset + blocks_per_sequence);
 
-                seq_offset++;
-                block_offset += blocks_per_sequence;
+                    past_lens_data[seq_offset] = static_cast<int32_t>(sequence_group->get_num_processed_tokens());
+                    interval_data[seq_offset] = 0;  // cache_interval = 0 (reserved for future prefix caching)
+
+                    seq_offset++;
+                    block_offset += blocks_per_sequence;
+                }
             }
-        }
 
-        if (!m_cached_paged_conv_block_indices) {
-            m_request.set_tensor("paged_conv_block_indices", conv_block_indices);
-        }
-        if (!m_cached_paged_conv_block_indices_begins) {
-            m_request.set_tensor("paged_conv_block_indices_begins", conv_block_indices_begins);
-        }
-        if (!m_cached_paged_conv_past_lens) {
-            m_request.set_tensor("paged_conv_past_lens", conv_past_lens);
-        }
-        if (!m_cached_paged_conv_cache_interval) {
-            m_request.set_tensor("paged_conv_cache_interval", conv_cache_interval_tensor);
+            if (!pg.cached_block_indices) {
+                m_request.set_tensor(pg.prefix + "block_indices", block_indices);
+            }
+            if (!pg.cached_block_indices_begins) {
+                m_request.set_tensor(pg.prefix + "block_indices_begins", block_indices_begins);
+            }
+            if (!pg.cached_past_lens) {
+                m_request.set_tensor(pg.prefix + "past_lens", past_lens);
+            }
+            if (!pg.cached_cache_interval) {
+                m_request.set_tensor(pg.prefix + "cache_interval", cache_interval);
+            }
         }
     }
 };

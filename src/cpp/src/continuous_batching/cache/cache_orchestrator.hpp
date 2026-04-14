@@ -19,7 +19,7 @@
 #include "continuous_batching/cache/i_cache_manager.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
-#include "continuous_batching/cache/causal_conv1d_cache_manager.hpp"
+#include "continuous_batching/cache/linear_attention_cache_manager.hpp"
 
 namespace ov::genai {
 
@@ -92,31 +92,31 @@ public:
                                                config.use_cache_eviction);
         }
 
-        if (CausalConv1DCacheManager::has_cache_inputs(compiled_model)) {
-            auto conv_manager = std::make_shared<CausalConv1DCacheManager>(infer_request);
+        if (LinearAttentionCacheManager::has_cache_inputs(compiled_model)) {
+            auto la_manager = std::make_shared<LinearAttentionCacheManager>(infer_request);
 
-            total_num_layers += conv_manager->get_num_conv_layers();
+            total_num_layers += la_manager->get_num_layers();
 
-            std::vector<size_t> conv_layer_ids(conv_manager->get_num_conv_layers());
-            // Conv global layer IDs start after KV layers
-            size_t conv_start = total_num_layers - conv_manager->get_num_conv_layers();
-            std::iota(conv_layer_ids.begin(), conv_layer_ids.end(), conv_start);
+            std::vector<size_t> la_layer_ids(la_manager->get_num_layers());
+            // Linear attention global layer IDs start after KV layers
+            size_t la_start = total_num_layers - la_manager->get_num_layers();
+            std::iota(la_layer_ids.begin(), la_layer_ids.end(), la_start);
 
-            // Derive num_conv_blocks from config; fall back to num_kv_blocks if unset
-            size_t num_conv_blocks = config.num_conv_blocks;
-            if (num_conv_blocks == 0) {
-                num_conv_blocks = config.num_kv_blocks > 0 ? config.num_kv_blocks : config.max_num_seqs;
+            // Derive num_linear_attention_blocks from config; fall back to num_kv_blocks if unset
+            size_t num_la_blocks = config.num_linear_attention_blocks;
+            if (num_la_blocks == 0) {
+                num_la_blocks = config.num_kv_blocks > 0 ? config.num_kv_blocks : config.max_num_seqs;
             }
 
-            auto conv_block_manager = std::make_shared<BlockManager>(
-                num_conv_blocks,
-                false,  // no prefix caching for conv (initially)
-                1,      // block_size in tokens (each block = one sequence's full conv state)
-                conv_manager->get_num_conv_layers(),
+            auto la_block_manager = std::make_shared<BlockManager>(
+                num_la_blocks,
+                false,  // no prefix caching for linear attention (initially)
+                1,      // block_size in tokens (each block = one sequence's full state)
+                la_manager->get_num_layers(),
                 1);     // fixed_blocks_per_sequence = 1
 
-            orchestrator->register_cache_type(CacheType::CAUSAL_CONV1D_CACHE, conv_manager,
-                                               conv_block_manager, conv_layer_ids);
+            orchestrator->register_cache_type(CacheType::LINEAR_ATTENTION_CACHE, la_manager,
+                                               la_block_manager, la_layer_ids);
         }
 
         OPENVINO_ASSERT(!orchestrator->get_registered_types().empty(),
@@ -504,29 +504,21 @@ public:
     }
 
     // -----------------------------------------------------------------------
-    //  Conv cache helpers
+    //  Linear attention cache helpers
     // -----------------------------------------------------------------------
 
-    /// @return Whether a CausalConv1D cache type is registered.
-    bool has_conv_cache() const {
-        return m_cache_managers.count(CacheType::CAUSAL_CONV1D_CACHE) > 0;
+    /// @return Whether a linear attention cache type is registered.
+    bool has_linear_attention_cache() const {
+        return m_cache_managers.count(CacheType::LINEAR_ATTENTION_CACHE) > 0;
     }
 
     /**
-     * @brief Returns the conv block table for a sequence (first conv layer).
-     * All conv layers share the same block allocation, so a single layer suffices.
+     * @brief Returns the linear attention block table for a sequence (first layer).
+     * All linear attention layers share the same block allocation, so a single layer suffices.
      */
-    BlocksPerLayer get_conv_block_table(uint64_t seq_id) const {
-        OPENVINO_ASSERT(has_conv_cache(), "No conv cache registered");
-        return m_block_managers.at(CacheType::CAUSAL_CONV1D_CACHE)->get_block_tables(seq_id)[0];
-    }
-
-    /// @return The conv cache interval (kernel_size - 1).
-    size_t get_conv_cache_interval() const {
-        OPENVINO_ASSERT(has_conv_cache(), "No conv cache registered");
-        auto conv_mgr = std::dynamic_pointer_cast<CausalConv1DCacheManager>(
-            m_cache_managers.at(CacheType::CAUSAL_CONV1D_CACHE));
-        return conv_mgr->get_cache_interval();
+    BlocksPerLayer get_linear_attention_block_table(uint64_t seq_id) const {
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_tables(seq_id)[0];
     }
 
     /// @return Number of KV attention layers only (excluding conv / other cache types).
@@ -540,7 +532,7 @@ public:
      *
      * Returns true when any registered cache type with shared block_indices inputs
      * has per-layer control enabled. Cache types with their own dedicated inputs
-     * (e.g. CAUSAL_CONV1D_CACHE uses paged_conv_* inputs) do not contribute.
+     * (e.g. LINEAR_ATTENTION_CACHE with paged_conv_ / paged_gdn. inputs) do not contribute.
      */
     bool needs_per_layer_block_indices() const {
         return std::any_of(m_per_layer_control.begin(), m_per_layer_control.end(),
