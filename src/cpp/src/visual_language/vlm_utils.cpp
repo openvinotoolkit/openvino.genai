@@ -74,10 +74,22 @@ ov::Tensor insert_image_placeholders(const std::vector<std::variant<ov::Tensor, 
 
 std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::Tensor& tokens) {
     std::vector<std::variant<ov::Tensor, size_t>> chunks;
+    OPENVINO_ASSERT(tokens.get_shape().size() == 2 && tokens.get_shape()[0] == 1,
+                    "Expected token tensor with shape [1, N], got ",
+                    tokens.get_shape());
+    OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64,
+                    "Expected token tensor element type i64, got ",
+                    tokens.get_element_type());
+
+    const size_t full_length = tokens.get_shape().at(1);
+    if (full_length == 0) {
+        return chunks;
+    }
+
     const int64_t* tokens_ptr = tokens.data<const int64_t>();
     int64_t last_token = tokens_ptr[0];
     size_t text_start = 0;
-    for (size_t offset = 1; offset < tokens.get_shape().at(1); ++offset) {
+    for (size_t offset = 1; offset < full_length; ++offset) {
         const int64_t next_token = tokens_ptr[offset];
         if (last_token < 0 && next_token >= 0) {
             text_start = offset;
@@ -93,7 +105,6 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
         last_token = next_token;
     }
 
-    const size_t full_length = tokens.get_shape().at(1);
     if (last_token >= 0) {
         chunks.emplace_back(std::in_place_type<ov::Tensor>,
                             ov::element::i64,
