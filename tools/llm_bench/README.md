@@ -223,7 +223,7 @@ python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandal
 - `--height`: Generated image height.
 - `--width`: Generated image width.
 - `--num_steps`: Number of inference steps for image generation.
-- `--static_reshape`: Reshape image generation pipeline to specific width & height at pipline creation time.
+- `--static_reshape`: Reshape image generation pipeline to specific width & height at pipeline creation time.
 - `--guidance_scale`: guidance_scale parameter for pipeline, supported via json JSON input only.
 - `--images`: Like a `--media`, path to the directory or single image.
 - `--taylorseer_config`: TaylorSeer cache configuration, supported via JSON string or path to JSON file.
