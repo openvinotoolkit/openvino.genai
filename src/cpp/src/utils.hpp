@@ -86,12 +86,15 @@ void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attenti
 template <typename T> struct OmitOptional { using value = T; };
 template <typename T> struct OmitOptional<std::optional<T>> { using value = T; };
 
+template <typename T> constexpr bool is_optional = false;
+template <typename T> constexpr bool is_optional<std::optional<T>> = true;
+
 template <typename T>
 void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T& param) {
     auto it = config_map.find(name);
     if (it != config_map.end()) {
         if (it->second.empty()) {
-            if (ov::genai::utils::is_container<T>)
+            if (ov::genai::utils::is_container<T> || ov::genai::utils::is_optional<T>)
                 param = T{};
             else {
                 OPENVINO_THROW("Got empty ov::Any for parameter name: " + name);
@@ -400,6 +403,11 @@ bool has_input(const std::shared_ptr<Model>& model, const std::string& name);
  * @return A pair of ov::Coordinate (start, end) for ROI slicing.
  */
 std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape, const size_t dim, const size_t range_start, const size_t range_end);
+
+/**
+ * Create a sub-tensor (ROI view) by slicing along a single dimension.
+ */
+ov::Tensor make_tensor_slice(const ov::Tensor& tensor, size_t dim, size_t start_pos, size_t end_pos);
 
 ov::genai::GenerationConfig get_beam_search_config();
 ov::genai::GenerationConfig get_greedy_config();
