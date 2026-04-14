@@ -135,6 +135,8 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         "--genai",
         "--num-inference-steps",
         "2",
+        "--taylorseer-config",
+        '{"disable_cache_after_step": 0}',
     ])
 
     assert "Metrics for model" in output
@@ -158,6 +160,8 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         "--genai",
         "--num-inference-steps",
         "2",
+        "--taylorseer-config",
+        '{"disable_cache_after_step": 0}',
     ])
     assert (tmp_path / "target").exists()
     assert (tmp_path / "target.csv").exists()
