@@ -699,6 +699,10 @@ NodePtr tensors_multiplication(NodePtr input,
     }
 
     if (transpose_in_end) {
+        // FIXME: Check the dimensions we really need to move, currently it is hardcoded 2 + 2 dimensions that usually
+        // appears in 2D Convolution case where we need to apply LoRA for the first two dimensions (channels) while
+        // interpreting two last dimensions (spatial )
+        // TODO: Stash transposition constant to reuse
         auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int>{2, 3, 0, 1});
         input = std::make_shared<v1::Transpose>(input, transposition);
     } else if (input->get_output_partial_shape(0).rank().get_length() != target_rank) {
@@ -946,6 +950,8 @@ public:
         const auto activation_shape = activations.get_partial_shape();
         const auto activation_rank = activation_shape.rank().get_length();
         if(activation_rank == 4 && activation_shape[activation_rank - 3].get_length() > 1) {
+            // FIXME: Check the dimensions we really need to move, currently it is hardcoded 2 + 2 dimensions
+            // FIXME: Stash transposition constant to reuse
             auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int>{2, 3, 0, 1});
             auto transpose = register_new_node<v1::Transpose>(activations, transposition);
             activations = transpose;
