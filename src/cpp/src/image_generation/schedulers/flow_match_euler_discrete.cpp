@@ -176,7 +176,6 @@ std::map<std::string, ov::Tensor> FlowMatchEulerDiscreteScheduler::step(ov::Tens
     ov::Tensor prev_sample(latents.get_element_type(), latents.get_shape());
     float* prev_sample_data = prev_sample.data<float>();
 
-    OPENVINO_ASSERT(m_step_index >= 0, "Step index must be initialized before calling step()");
     OPENVINO_ASSERT(m_step_index + 1 < m_sigmas.size(),
                     "Step index out of range for sigmas schedule (step_index=",
                     m_step_index,
