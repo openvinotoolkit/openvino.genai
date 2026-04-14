@@ -28,7 +28,11 @@ updates:
   # Enable version updates for npm
   #
   - package-ecosystem: "npm"
-    directory: "/"
+    directories:
+      - "/site"
+      - "/src/js"
+      - "/samples/js"
+      - "/.github/actions/install_wheel"
     schedule:
       interval: "daily"
       time: "09:00"
@@ -55,6 +59,16 @@ updates:
       time: "09:00"
       timezone: "Europe/Dublin"
     versioning-strategy: increase-if-necessary
+    ignore:
+      # PyTorch ecosystem packages use local version labels (+cpu, +cu118, etc.)
+      # which are incompatible with range specifiers (<=, >=) in PEP 440.
+      - dependency-name: "torch"
+      - dependency-name: "torchvision"
+      - dependency-name: "torchaudio"
+      - dependency-name: "torchcodec"
+      # cmake has two declarations with different environment markers per platform.
+      # Dependabot cannot handle multiple declarations of the same package name.
+      - dependency-name: "cmake"
     groups:
       pip-dependencies:
         patterns:
