@@ -221,7 +221,9 @@ if(MSVC)
     target_compile_options(${TARGET_NAME_OBJ} PRIVATE "/bigobj")
 endif()
 
-set_target_properties(${TARGET_NAME_OBJ} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(${TARGET_NAME_OBJ} PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    INTERPROCEDURAL_OPTIMIZATION_RELEASE ${ENABLE_LTO})
 
 # Shared library
 
