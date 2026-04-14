@@ -106,7 +106,7 @@ FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const Config& s
     m_sigmas.resize(sigmas.size());
     for (size_t i = 0; i < sigmas.size(); ++i) {
         m_sigmas[i] = static_cast<float>(sigmas[i]);
-        m_timesteps[i] = static_cast<float>(m_sigmas[i] * static_cast<float>(num_train_timesteps));
+        m_timesteps[i] = m_sigmas[i] * static_cast<float>(num_train_timesteps);
     }
 
     m_step_index = -1;
