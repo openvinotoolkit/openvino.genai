@@ -141,3 +141,22 @@ gh aw compile --validate
 - Workflows must be compiled to `.lock.yml` files before running in GitHub Actions
 - **Bash tools are enabled by default** - Don't restrict bash commands unnecessarily since workflows are sandboxed by the AWF
 - Follow security best practices: minimal permissions, explicit network access, no template injection
+
+## Creating Pull Requests
+
+When your work is complete and all tests pass:
+
+1. Create a new branch with a descriptive name: `agent/<short-description>`
+2. Commit all changes with a clear, conventional commit message
+3. Push the branch to the fork
+4. Create a **Draft PR** to the upstream repository using `gh pr create`:
+   ```
+   gh pr create --draft \
+     --title "[Agent] <descriptive title>" \
+     --body "<description of changes, link to related PRs if any>" \
+     --repo <upstream-org>/<repo-name>
+   ```
+5. Add the label `agent-generated` if the label exists
+6. Output the PR URL for tracking
+
+Refer to the [submit-draft-pr](skills/submit-draft-pr.md) skill for detailed instructions.
