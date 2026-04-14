@@ -14,7 +14,7 @@ TokenizerWrapper::TokenizerWrapper(const Napi::CallbackInfo& info) : Napi::Objec
     try {
         if (info.Length() == 1 || info.Length() == 2) {
             OPENVINO_ASSERT(info[0].IsString(), "Tokenizer constructor expects 'tokenizerPath' to be a string");
-            const auto tokenizer_path = js_to_cpp<std::string>(env, info[0]);
+            const auto tokenizer_path = js_to_cpp<std::filesystem::path>(env, info[0]);
             ov::AnyMap properties;
             if (info.Length() == 2) {
                 properties = js_to_cpp<ov::AnyMap>(env, info[1]);

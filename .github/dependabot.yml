@@ -12,6 +12,17 @@ updates:
       time: "09:00"
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
+    ignore:
+      # Cannot be updated for the moment, ticket: 184608
+      - dependency-name: "openvinotoolkit/openvino"
+      # Cannot be updated for the moment, ticket: 184715
+      - dependency-name: "actions/checkout"
+      # Due to recent trivy security issues to be updated manually
+      - dependency-name: "aquasecurity/trivy-action"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   #
   # Enable version updates for npm
@@ -24,6 +35,10 @@ updates:
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     versioning-strategy: increase-if-necessary
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
 
   #
   # Python dependencies
@@ -40,3 +55,7 @@ updates:
       time: "09:00"
       timezone: "Europe/Dublin"
     versioning-strategy: increase-if-necessary
+    groups:
+      pip-dependencies:
+        patterns:
+          - "*"

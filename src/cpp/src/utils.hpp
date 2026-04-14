@@ -6,7 +6,9 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <cstdint>
 
+#include "openvino/genai/extensions.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
@@ -84,12 +86,15 @@ void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attenti
 template <typename T> struct OmitOptional { using value = T; };
 template <typename T> struct OmitOptional<std::optional<T>> { using value = T; };
 
+template <typename T> constexpr bool is_optional = false;
+template <typename T> constexpr bool is_optional<std::optional<T>> = true;
+
 template <typename T>
 void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T& param) {
     auto it = config_map.find(name);
     if (it != config_map.end()) {
         if (it->second.empty()) {
-            if (ov::genai::utils::is_container<T>)
+            if (ov::genai::utils::is_container<T> || ov::genai::utils::is_optional<T>)
                 param = T{};
             else {
                 OPENVINO_THROW("Got empty ov::Any for parameter name: " + name);
@@ -104,6 +109,7 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
 const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
+const std::string EXTENSIONS_ARG_NAME = "extensions";
 
 template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
@@ -144,6 +150,23 @@ void release_core_plugin(const std::string& device);
 
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
 
+struct CacheTypes {
+    CacheTypes() = default;
+    explicit CacheTypes(uint8_t m) : mask(m) {}
+    void add_kvcache() { mask |= (1u << 0); }
+    void add_linear() { mask |= (1u << 1); }
+    bool has_kvcache() const { return (mask & (1u << 0)) != 0; }
+    bool has_linear() const { return (mask & (1u << 1)) != 0; }
+    bool is_hybrid() const { return has_kvcache() && has_linear(); }
+    uint8_t value() const { return mask; }
+private:
+    uint8_t mask = 0;
+};
+
+CacheTypes get_cache_types(const ov::Model& model);
+
+bool has_linear_attention_states(const std::shared_ptr<ov::Model>& model);
+
 struct KVAxesPosition {
     size_t batch;
     size_t seq_len;
@@ -151,9 +174,19 @@ struct KVAxesPosition {
 
 KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model);
 
-class KVCacheState {
+class CacheState {
     std::vector<int64_t> state;
+    CacheTypes cache_types;
 public:
+    // Default constructor
+    CacheState() = default;
+
+    // Construct from CacheTypes
+    explicit CacheState(CacheTypes cache_types) : cache_types(cache_types) {}
+
+    // Construct from model by detecting cache types inside the model
+    explicit CacheState(const std::shared_ptr<const ov::Model>& model) : cache_types(get_cache_types(*model)) {}
+
     size_t num_tokens_to_trim = 0;
     size_t seq_length_axis = 2;
     bool reset_mem_state = false;
@@ -171,9 +204,21 @@ public:
         num_tokens_to_trim = 0;
         state.clear();
     }
+
+    void set_cache_types(CacheTypes types) {
+        cache_types = types;
+    }
+
+    bool has_linear() const { return cache_types.has_linear(); }
+    bool has_kvcache() const { return cache_types.has_kvcache(); }
+    bool is_hybrid() const { return cache_types.is_hybrid(); }
+
+    bool needs_reset() const {
+        return reset_mem_state || (num_tokens_to_trim > 0 && has_linear());
+    }
 };
 
-void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller);
+void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optional<AdapterController> adapter_controller);
 
 ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front);
 
@@ -292,6 +337,31 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);
 
+/**
+ * @brief Extracts the "extensions" key from the provided properties map and returns the corresponding
+ * list of extensions.
+ *
+ * The "extensions" entry, if present, is expected to be an ov::Any containing a
+ * std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>, where each element is either:
+ *   - a std::filesystem::path pointing to an extension library file, or
+ *   - a std::shared_ptr<ov::Extension> representing an already constructed OpenVINO extension.
+ *
+ * @param properties Properties map that may contain the "extensions" key with a vector of extension specifications.
+ * @return An ExtensionList object representing the extracted extensions.
+ */
+ExtensionList extract_extensions(ov::AnyMap& properties);
+
+/**
+ * @brief Extracts extensions from properties and registers them in the shared ov::Core instance.
+ *
+ * Supported extension item types are:
+ *   - std::filesystem::path to an extension library, and
+ *   - std::shared_ptr<ov::Extension> for an already constructed extension object.
+ *
+ * @param properties Properties map that may contain the "extensions" key.
+ */
+void extract_extensions_to_core(ov::AnyMap& properties);
+
 void clear_false_prompt_lookup_from_config(ov::AnyMap& properties);
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
@@ -335,6 +405,11 @@ bool has_input(const std::shared_ptr<Model>& model, const std::string& name);
  * @return A pair of ov::Coordinate (start, end) for ROI slicing.
  */
 std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape, const size_t dim, const size_t range_start, const size_t range_end);
+
+/**
+ * Create a sub-tensor (ROI view) by slicing along a single dimension.
+ */
+ov::Tensor make_tensor_slice(const ov::Tensor& tensor, size_t dim, size_t start_pos, size_t end_pos);
 
 ov::genai::GenerationConfig get_beam_search_config();
 ov::genai::GenerationConfig get_greedy_config();

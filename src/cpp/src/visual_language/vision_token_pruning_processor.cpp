@@ -770,7 +770,7 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
 std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProcessor::execute(
     const PruningContext& context,
     ov::Tensor& position_ids,
-    utils::KVCacheState& kv_cache_state,
+    utils::CacheState& cache_state,
     size_t& prev_hist_length) {
     auto pruning_start = std::chrono::high_resolution_clock::now();
 
@@ -871,19 +871,19 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     size_t seq_len = position_ids.get_shape().back();
     result.updated_rope_delta = max_pos + 1 - static_cast<int64_t>(seq_len);
 
-    // Step 10: Update KV cache with pruned input_ids
-    auto& kv_history = kv_cache_state.get_state();
-    OPENVINO_ASSERT(kv_history.size() >= context.input_ids.get_size(),
-                    "KV cache history does not contain expected original prompt length");
+    // Step 10: Update cache state with pruned input_ids
+    auto& cache_history = cache_state.get_state();
+    OPENVINO_ASSERT(cache_history.size() >= context.input_ids.get_size(),
+                    "Cache history does not contain expected original prompt length");
 
-    // Resize KV cache to preserve history and remove unpruned current turn
-    // For chat mode: prev_hist_length = kv_history.size() - context.input_ids.size()
+    // Resize cache to preserve history and remove unpruned current turn
+    // For chat mode: prev_hist_length = cache_history.size() - context.input_ids.size()
     // For non-chat mode: prev_hist_length already contains correct history size
-    kv_history.resize(prev_hist_length);
-    kv_cache_state.add_inputs(result.pruned_input_ids);
+    cache_history.resize(prev_hist_length);
+    cache_state.add_inputs(result.pruned_input_ids);
 
     // Step 11: Update prev_hist_length for next iteration
-    prev_hist_length = kv_cache_state.get_state().size();
+    prev_hist_length = cache_state.get_state().size();
     auto pruning_end = std::chrono::high_resolution_clock::now();
     auto pruning_duration = std::chrono::duration_cast<std::chrono::milliseconds>(pruning_end - pruning_start).count();
 
