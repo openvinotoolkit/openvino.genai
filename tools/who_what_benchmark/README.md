@@ -197,7 +197,7 @@ The speech-generation evaluator reports these metrics:
 
 * `speaker score` - speaker similarity based on SpeechBrain speaker verification.
 * `content score` - transcript similarity between base model and target model output, based on whisper transcription and normalized text comparison.
-* `acoustic score` - overall sound-character similarity based on spectral features.
+* `acoustic score` - overall sound-character similarity based on spectral features (RMS, log-mel DTW, spectral rolloff)
 * `duration score` - relative utterance length similarity between target and reference.
 * `overall similarity` - aggregate score used for sorting worst examples.
 

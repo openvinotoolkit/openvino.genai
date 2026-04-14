@@ -10,6 +10,7 @@ import re
 import string
 from dataclasses import asdict, dataclass
 from typing import Any, Optional
+
 from sklearn.metrics.pairwise import cosine_similarity
 
 import librosa
@@ -30,7 +31,7 @@ class Scores:
     content: Optional[float]
     # Duration = similar overall utterance length / pacing?
     duration: Optional[float]
-    # Acoustic = similar overall spectral character / bandwidth?
+    # Acoustic = similar loudness / spectral richness / bandwidth?
     acoustic: Optional[float]
     overall: Optional[float]
 
@@ -52,25 +53,38 @@ class ScoringConfig:
     duration_diff_good: float = 0.01
     duration_diff_bad: float = 0.20
 
-    # Acoustic = compare coarse spectral centroid / rolloff summaries.
-    acoustic_centroid_diff_good: float = 0.05
-    acoustic_centroid_diff_bad: float = 0.35
+    # Acoustic = compare RMS loudness, log-mel spectral distance, and spectral rolloff.
+    # RMS: loudness / energy difference. Lower is better.
+    acoustic_rms_diff_good: float = 0.05
+    acoustic_rms_diff_bad: float = 0.35
+
+    # Log-mel DTW mean distance.
+    # Differences in harmonic structure. Lower-is-better.
+    acoustic_logmel_good: float = 18.0
+    acoustic_logmel_bad: float = 70.0
+
+    # Spectral rolloff: bandwidth / brightness / noise-floor differences.
+    # Lower-is-better.
     acoustic_rolloff_diff_good: float = 0.05
     acoustic_rolloff_diff_bad: float = 0.35
-    acoustic_centroid_weight: float = 0.50
-    acoustic_rolloff_weight: float = 0.50
 
-    # Overall weighting: content matters most, then speaker, then acoustic, then duration.
-    overall_content_weight: float = 0.35
+    # Weighting of the 3 acoustic sub-scores. Should sum to 1.0.
+    acoustic_rms_weight: float = 0.33
+    acoustic_logmel_weight: float = 0.34
+    acoustic_rolloff_weight: float = 0.33
+
+    # Overall weighting: equal weight to content, speaker, and acoustic.
+    # Duration is a bit less important and can vary, so weight it lower.
+    overall_content_weight: float = 0.30
     overall_speaker_weight: float = 0.30
-    overall_acoustic_weight: float = 0.25
+    overall_acoustic_weight: float = 0.30
     overall_duration_weight: float = 0.10
 
 
 def normalize_text(text: str) -> str:
     """Normalize text for forgiving transcript comparison."""
     text = text.lower().strip()
-    text = re.sub(r"[-‐‑‒–—]+", " ", text)  # treat hyphens/dashes as separators
+    text = re.sub(r"[-‐-‒–—]+", " ", text)  # treat hyphens/dashes as separators
     text = text.translate(str.maketrans("", "", string.punctuation))
     text = re.sub(r"\s+", " ", text)
     return text.strip()
@@ -145,6 +159,16 @@ def relative_diff(a: Optional[float], b: Optional[float]) -> Optional[float]:
     if a is None or b is None:
         return None
     return abs(a - b) / max(abs(b), 1e-8)
+
+
+def dtw_mean_distance(seq_a: np.ndarray, seq_b: np.ndarray) -> Optional[float]:
+    if seq_a.size == 0 or seq_b.size == 0:
+        return None
+    D, _ = librosa.sequence.dtw(X=seq_a, Y=seq_b, metric="euclidean")
+    if D.size == 0:
+        return None
+    path_len = max(1, D.shape[0] + D.shape[1])
+    return float(D[-1, -1] / path_len)
 
 
 class TTSSimilarityEvaluator:
@@ -277,40 +301,82 @@ class TTSSimilarityEvaluator:
         _log(verbose, f"Relative duration diff: {duration_diff}")
         _log(verbose)
 
-        # Acoustic-lite
-        centroid_tgt = safe_float(np.mean(librosa.feature.spectral_centroid(y=target_audio, sr=sr)))
-        centroid_ref = safe_float(np.mean(librosa.feature.spectral_centroid(y=reference_audio, sr=sr)))
-        rolloff_tgt = safe_float(np.mean(librosa.feature.spectral_rolloff(y=target_audio, sr=sr)))
-        rolloff_ref = safe_float(np.mean(librosa.feature.spectral_rolloff(y=reference_audio, sr=sr)))
+        # Acoustic (RMS + log-mel + rolloff)
+        rms_tgt = safe_float(np.mean(librosa.feature.rms(y=target_audio, frame_length=2048, hop_length=256)))
+        rms_ref = safe_float(np.mean(librosa.feature.rms(y=reference_audio, frame_length=2048, hop_length=256)))
+        rms_diff = relative_diff(rms_tgt, rms_ref)
 
-        centroid_diff = relative_diff(centroid_tgt, centroid_ref)
+        # STFT / spectrogram parameters:
+        # n_fft=1024: ~40–50 ms window at typical speech sample rates (good time/frequency balance)
+        # hop=256: ~75% overlap for smoother time resolution
+        # n_mels=80: common speech setting capturing sufficient spectral detail without being too heavy
+        n_fft = 1024
+        hop = 256
+        n_mels = 80
+
+        tgt_mel = librosa.power_to_db(
+            librosa.feature.melspectrogram(
+                y=target_audio,
+                sr=sr,
+                n_fft=n_fft,
+                hop_length=hop,
+                n_mels=n_mels,
+            ),
+            ref=np.max,
+        )
+        ref_mel = librosa.power_to_db(
+            librosa.feature.melspectrogram(
+                y=reference_audio,
+                sr=sr,
+                n_fft=n_fft,
+                hop_length=hop,
+                n_mels=n_mels,
+            ),
+            ref=np.max,
+        )
+        logmel_dtw = dtw_mean_distance(tgt_mel, ref_mel)
+
+        rolloff_tgt = safe_float(
+            np.mean(librosa.feature.spectral_rolloff(y=target_audio, sr=sr, n_fft=n_fft, hop_length=hop))
+        )
+        rolloff_ref = safe_float(
+            np.mean(librosa.feature.spectral_rolloff(y=reference_audio, sr=sr, n_fft=n_fft, hop_length=hop))
+        )
         rolloff_diff = relative_diff(rolloff_tgt, rolloff_ref)
+
+        rms_score = linear_distance_score(
+            rms_diff,
+            self.cfg.acoustic_rms_diff_good,
+            self.cfg.acoustic_rms_diff_bad,
+        )
+        logmel_score = linear_distance_score(
+            logmel_dtw,
+            self.cfg.acoustic_logmel_good,
+            self.cfg.acoustic_logmel_bad,
+        )
+        rolloff_score = linear_distance_score(
+            rolloff_diff,
+            self.cfg.acoustic_rolloff_diff_good,
+            self.cfg.acoustic_rolloff_diff_bad,
+        )
+
         acoustic_score = weighted_mean(
             [
-                (
-                    linear_distance_score(
-                        centroid_diff,
-                        self.cfg.acoustic_centroid_diff_good,
-                        self.cfg.acoustic_centroid_diff_bad,
-                    ),
-                    self.cfg.acoustic_centroid_weight,
-                ),
-                (
-                    linear_distance_score(
-                        rolloff_diff,
-                        self.cfg.acoustic_rolloff_diff_good,
-                        self.cfg.acoustic_rolloff_diff_bad,
-                    ),
-                    self.cfg.acoustic_rolloff_weight,
-                ),
+                (rms_score, self.cfg.acoustic_rms_weight),
+                (logmel_score, self.cfg.acoustic_logmel_weight),
+                (rolloff_score, self.cfg.acoustic_rolloff_weight),
             ]
         )
 
         _log(verbose, "--- Acoustic ---")
-        _log(verbose, f"Mean spectral centroid (tgt/ref): {centroid_tgt}, {centroid_ref}")
-        _log(verbose, f"Mean spectral rolloff  (tgt/ref): {rolloff_tgt}, {rolloff_ref}")
-        _log(verbose, f"Relative centroid diff:           {centroid_diff}")
-        _log(verbose, f"Relative rolloff diff:            {rolloff_diff}")
+        _log(verbose, f"Mean RMS (tgt/ref):                 {rms_tgt}, {rms_ref}")
+        _log(verbose, f"Relative RMS diff:                  {rms_diff}")
+        _log(verbose, f"Log-mel DTW mean distance:          {logmel_dtw}")
+        _log(verbose, f"Mean spectral rolloff (tgt/ref):    {rolloff_tgt}, {rolloff_ref}")
+        _log(verbose, f"Relative rolloff diff:              {rolloff_diff}")
+        _log(verbose, f"RMS Score:                          {rms_score}")
+        _log(verbose, f"Log-mel Score:                      {logmel_score}")
+        _log(verbose, f"Rolloff Score:                      {rolloff_score}")
         _log(verbose)
 
         valid = [content_score, speaker_score, duration_score, acoustic_score]
