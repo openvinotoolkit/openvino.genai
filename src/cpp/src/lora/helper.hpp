@@ -34,5 +34,9 @@ utils::SharedOptional<const AnyMap> update_adapters_in_properties(const AnyMap& 
 // Create a new AdapterConfig object with adapters modified by `action` function.
 std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, const AdapterAction& action);
 
+// Return a copy of `properties` with the `adapters` property updated to have `tensor_name_prefix` set,
+// but only if no prefix has been set yet. Used to scope LoRA weights to a specific text encoder.
+utils::SharedOptional<const ov::AnyMap> properties_for_text_encoder(const ov::AnyMap& properties, const std::string& tensor_name_prefix);
+
 }
 }

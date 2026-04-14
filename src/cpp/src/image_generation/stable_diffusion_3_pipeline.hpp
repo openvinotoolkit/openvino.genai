@@ -792,18 +792,6 @@ private:
         }
     }
 
-    utils::SharedOptional<const ov::AnyMap> properties_for_text_encoder(
-            const ov::AnyMap& properties, const std::string& tensor_name_prefix) {
-        return update_adapters_in_properties(properties,
-            [&tensor_name_prefix](const AdapterConfig& adapters) -> std::optional<AdapterConfig> {
-                if (!adapters.get_tensor_name_prefix()) {
-                    std::optional<AdapterConfig> updated_adapters = adapters;
-                    updated_adapters->set_tensor_name_prefix(tensor_name_prefix);
-                    return updated_adapters;
-                }
-                return std::nullopt;
-        });
-    }
 
     friend class Text2ImagePipeline;
     friend class Image2ImagePipeline;

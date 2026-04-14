@@ -12,7 +12,7 @@ from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 FLUX_MODEL_ID = "tiny-random-flux"
 SDXL_MODEL_ID = "tiny-random-sdxl"
-SD3_MODEL_ID = "stable-diffusion-3-tiny-random"
+SD3_MODEL_ID = "tiny-random-stable-diffusion-3"
 
 
 def get_random_image(height: int = 64, width: int = 64) -> ov.Tensor:

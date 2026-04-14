@@ -45,6 +45,18 @@ utils::SharedOptional<const AnyMap> update_adapters_in_properties(const AnyMap& 
 }
 
 
+utils::SharedOptional<const AnyMap> properties_for_text_encoder(const AnyMap& properties, const std::string& tensor_name_prefix) {
+    return update_adapters_in_properties(properties,
+        [&tensor_name_prefix](const AdapterConfig& adapters) -> std::optional<AdapterConfig> {
+            if (!adapters.get_tensor_name_prefix()) {
+                std::optional<AdapterConfig> updated_adapters = adapters;
+                updated_adapters->set_tensor_name_prefix(tensor_name_prefix);
+                return updated_adapters;
+            }
+            return std::nullopt;
+        });
+}
+
 std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, const AdapterAction& action) {
     std::optional<AdapterConfig> updated_adapters;
     auto adapters_vector = adapters.get_adapters_and_alphas();

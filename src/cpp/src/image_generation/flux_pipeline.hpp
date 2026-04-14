@@ -12,6 +12,7 @@
 
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
+#include "openvino/genai/image_generation/t5_encoder_model.hpp"
 #include "utils.hpp"
 
 inline ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_channels_latents, size_t height, size_t width) {
@@ -693,18 +694,6 @@ protected:
         return ov::genai::derived_adapters(adapters, flux_adapter_normalization);
     }
 
-    utils::SharedOptional<const ov::AnyMap> properties_for_text_encoder(
-            const ov::AnyMap& properties, const std::string& tensor_name_prefix) {
-        return update_adapters_in_properties(properties,
-            [&tensor_name_prefix](const AdapterConfig& adapters) -> std::optional<AdapterConfig> {
-                if (!adapters.get_tensor_name_prefix()) {
-                    std::optional<AdapterConfig> updated_adapters = adapters;
-                    updated_adapters->set_tensor_name_prefix(tensor_name_prefix);
-                    return updated_adapters;
-                }
-                return std::nullopt;
-        });
-    }
 
     std::shared_ptr<FluxTransformer2DModel> m_transformer = nullptr;
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder = nullptr;
