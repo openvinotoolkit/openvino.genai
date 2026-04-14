@@ -362,6 +362,7 @@ private:
     friend class InputsEmbedderQwen2VL;
     friend class InputsEmbedderQwen2_5_VL;
     friend class InputsEmbedderQwen3VL;
+    friend class InputsEmbedderQwen3_5;
     friend class InputsEmbedderGemma3;
 };
 
