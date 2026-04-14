@@ -756,7 +756,7 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
     ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get(), m_pos_emb);
     ov::Tensor clipped_vision_embeds = remove_second_dim_first_element(processed_vision_embeds);
     ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_guard.get());
-    projection_guard.get().set_tensor("hidden_states", merged_vision_features);
+    projection_guard.get().set_input_tensor(merged_vision_features);
     projection_guard.get().infer();
     ov::Tensor proj_features = projection_guard.get().get_output_tensor();
     ov::Tensor final_features = efficient_flatten(proj_features);
