@@ -54,6 +54,8 @@ def test_video_model_genai(model_id, model_type, tmp_path):
             "9",
             "--output",
             tmp_path,
+            "--taylorseer-config",
+            '{"disable_cache_after_step": 0}',
         ]
     )
 
