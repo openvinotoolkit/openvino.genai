@@ -266,7 +266,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
     auto generation_handle = py::class_<GenerationHandleImpl, std::shared_ptr<GenerationHandleImpl>>(m, "GenerationHandle")
         .def("get_status", &GenerationHandleImpl::get_status)
         .def("can_read", &GenerationHandleImpl::can_read)
-        .def("stop", &GenerationHandleImpl::stop)
+        .def("stop", &GenerationHandleImpl::stop, py::arg("finish_reason") = GenerationFinishReason::STOP)
         .def("cancel", &GenerationHandleImpl::cancel)
         .def("read", &GenerationHandleImpl::read)
         .def("read_all", &GenerationHandleImpl::read_all);

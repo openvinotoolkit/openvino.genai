@@ -190,6 +190,8 @@ CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     for (auto& parser: m_pimpl->m_parsers) {
         delta_text = parser->parse(delta_message, delta_text, flushed_tokens);
         parser_last_status = parser->get_status();
+        // If there is any stop status from parser we will stop streaming and this signal
+        // has priority over streaming status from write method of TextStreamer.
         if (parser_last_status != StreamingStatus::RUNNING) {
             break;
         }

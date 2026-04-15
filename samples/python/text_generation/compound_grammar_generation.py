@@ -104,6 +104,7 @@ class CustomToolCallIncrementalParser(IncrementalParser):
         return delta_text
 
     def reset(self):
+        self.set_status(StreamingStatus.RUNNING)
         self._content = ""
 
 
