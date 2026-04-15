@@ -101,13 +101,27 @@ public:
 
     // ── Legacy Whisper-compatible API ───────────────────────────────────
 
+    /**
+     * @brief Check if this implementation supports Whisper-specific features.
+     * @return true for Whisper models
+     */
+    bool supports_whisper_interface() const override { return true; }
+
     WhisperDecodedResults generate_whisper(
         const RawSpeechInput& raw_speech_input,
         OptionalWhisperGenerationConfig generation_config,
-        const std::shared_ptr<StreamerBase> streamer) override {
+        const std::shared_ptr<StreamerBase> streamer) {
         
         StreamerVariant sv = streamer ? StreamerVariant{streamer} : StreamerVariant{std::monostate{}};
         return m_whisper.generate(raw_speech_input, generation_config, sv);
+    }
+
+    WhisperGenerationConfig get_whisper_generation_config() const {
+        return m_whisper.get_generation_config();
+    }
+
+    void set_whisper_generation_config(const WhisperGenerationConfig& config) {
+        m_whisper.set_generation_config(config);
     }
 
     // ── Accessors ───────────────────────────────────────────────────────
@@ -163,14 +177,6 @@ public:
         }
         
         m_whisper.set_generation_config(wc);
-    }
-
-    WhisperGenerationConfig get_whisper_generation_config() const override {
-        return m_whisper.get_generation_config();
-    }
-
-    void set_whisper_generation_config(const WhisperGenerationConfig& config) override {
-        m_whisper.set_generation_config(config);
     }
 
 private:

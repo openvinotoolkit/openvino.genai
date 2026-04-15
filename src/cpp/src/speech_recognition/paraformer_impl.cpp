@@ -413,36 +413,6 @@ ASRDecodedResults ParaformerImpl::generate(
     return results;
 }
 
-WhisperDecodedResults ParaformerImpl::generate_whisper(
-    const RawSpeechInput& raw_speech_input,
-    OptionalWhisperGenerationConfig generation_config,
-    const std::shared_ptr<StreamerBase> streamer) {
-
-    // Convert to generic config if provided
-    ASRGenerationConfig config = m_generation_config;
-    if (generation_config.has_value()) {
-        config.max_new_tokens = generation_config->max_new_tokens;
-        if (generation_config->language.has_value()) {
-            config.language = generation_config->language.value();
-        }
-        if (generation_config->task.has_value()) {
-            config.task = generation_config->task.value();
-        }
-        config.return_timestamps = generation_config->return_timestamps;
-    }
-
-    // Call generic generate
-    ASRDecodedResults asr_results = generate(raw_speech_input, config, streamer);
-
-    // Convert to Whisper results
-    WhisperDecodedResults results;
-    results.texts = asr_results.texts;
-    results.scores = asr_results.scores;
-    results.perf_metrics = asr_results.perf_metrics;
-
-    return results;
-}
-
 Tokenizer ParaformerImpl::get_tokenizer() {
     OPENVINO_THROW("ParaformerImpl: get_tokenizer() not supported. "
                    "Paraformer uses internal detokenizer, not Tokenizer class. "
@@ -455,28 +425,6 @@ ASRGenerationConfig ParaformerImpl::get_generation_config() const {
 
 void ParaformerImpl::set_generation_config(const ASRGenerationConfig& config) {
     m_generation_config = config;
-}
-
-WhisperGenerationConfig ParaformerImpl::get_whisper_generation_config() const {
-    WhisperGenerationConfig wc;
-    wc.max_new_tokens = m_generation_config.max_new_tokens;
-    if (!m_generation_config.language.empty()) {
-        wc.language = m_generation_config.language;
-    }
-    wc.task = m_generation_config.task;
-    wc.return_timestamps = m_generation_config.return_timestamps;
-    return wc;
-}
-
-void ParaformerImpl::set_whisper_generation_config(const WhisperGenerationConfig& config) {
-    m_generation_config.max_new_tokens = config.max_new_tokens;
-    if (config.language.has_value()) {
-        m_generation_config.language = config.language.value();
-    }
-    if (config.task.has_value()) {
-        m_generation_config.task = config.task.value();
-    }
-    m_generation_config.return_timestamps = config.return_timestamps;
 }
 
 }  // namespace genai

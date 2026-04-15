@@ -127,7 +127,13 @@ WhisperDecodedResults ASRPipeline::generate(
     OptionalWhisperGenerationConfig generation_config,
     const std::shared_ptr<StreamerBase> streamer) {
     OPENVINO_ASSERT(m_impl != nullptr, "ASRPipeline: implementation not initialized");
-    return m_impl->generate_whisper(raw_speech_input, generation_config, streamer);
+    OPENVINO_ASSERT(m_impl->supports_whisper_interface(),
+                    "ASRPipeline: Whisper-specific generate() is only supported for Whisper models. "
+                    "Use generate() with ASRGenerationConfig for generic ASR models.");
+    
+    // Safe downcast since we verified supports_whisper_interface()
+    auto* whisper_impl = static_cast<WhisperPipelineWrapper*>(m_impl.get());
+    return whisper_impl->generate_whisper(raw_speech_input, generation_config, streamer);
 }
 
 // ── Accessors ───────────────────────────────────────────────────────────
@@ -151,12 +157,22 @@ void ASRPipeline::set_generation_config(const ASRGenerationConfig& config) {
 
 WhisperGenerationConfig ASRPipeline::get_whisper_generation_config() const {
     OPENVINO_ASSERT(m_impl != nullptr, "ASRPipeline: implementation not initialized");
-    return m_impl->get_whisper_generation_config();
+    OPENVINO_ASSERT(m_impl->supports_whisper_interface(),
+                    "ASRPipeline: get_whisper_generation_config() is only supported for Whisper models. "
+                    "Use get_generation_config() for generic ASR models.");
+    
+    auto* whisper_impl = static_cast<const WhisperPipelineWrapper*>(m_impl.get());
+    return whisper_impl->get_whisper_generation_config();
 }
 
 void ASRPipeline::set_whisper_generation_config(const WhisperGenerationConfig& config) {
     OPENVINO_ASSERT(m_impl != nullptr, "ASRPipeline: implementation not initialized");
-    m_impl->set_whisper_generation_config(config);
+    OPENVINO_ASSERT(m_impl->supports_whisper_interface(),
+                    "ASRPipeline: set_whisper_generation_config() is only supported for Whisper models. "
+                    "Use set_generation_config() for generic ASR models.");
+    
+    auto* whisper_impl = static_cast<WhisperPipelineWrapper*>(m_impl.get());
+    whisper_impl->set_whisper_generation_config(config);
 }
 
 // ── Model type detection ────────────────────────────────────────────────

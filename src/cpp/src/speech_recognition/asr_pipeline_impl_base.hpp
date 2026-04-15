@@ -41,22 +41,17 @@ public:
         const ASRGenerationConfig& config,
         const std::shared_ptr<StreamerBase> streamer) = 0;
 
-    // ── Legacy Whisper-compatible API ───────────────────────────────────
-
-    virtual WhisperDecodedResults generate_whisper(
-        const RawSpeechInput& raw_speech_input,
-        OptionalWhisperGenerationConfig generation_config,
-        const std::shared_ptr<StreamerBase> streamer) = 0;
-
     // ── Accessors (overridden per back-end) ─────────────────────────────
 
     virtual Tokenizer get_tokenizer() = 0;
     virtual ASRGenerationConfig get_generation_config() const = 0;
     virtual void set_generation_config(const ASRGenerationConfig& config) = 0;
     
-    // Legacy accessors
-    virtual WhisperGenerationConfig get_whisper_generation_config() const = 0;
-    virtual void set_whisper_generation_config(const WhisperGenerationConfig& config) = 0;
+    /**
+     * @brief Check if this implementation supports Whisper-specific features.
+     * @return true for Whisper models, false otherwise
+     */
+    virtual bool supports_whisper_interface() const { return false; }
 
     /** @brief Model load time in milliseconds. */
     float m_load_time_ms = 0;

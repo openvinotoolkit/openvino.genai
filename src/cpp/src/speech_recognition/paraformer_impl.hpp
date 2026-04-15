@@ -109,22 +109,12 @@ public:
         const ASRGenerationConfig& config,
         const std::shared_ptr<StreamerBase> streamer) override;
 
-    // ── Legacy Whisper-compatible API ───────────────────────────────────
-
-    WhisperDecodedResults generate_whisper(
-        const RawSpeechInput& raw_speech_input,
-        OptionalWhisperGenerationConfig generation_config,
-        const std::shared_ptr<StreamerBase> streamer) override;
-
     // ── Accessors ───────────────────────────────────────────────────────
 
     Tokenizer get_tokenizer() override;
     
     ASRGenerationConfig get_generation_config() const override;
     void set_generation_config(const ASRGenerationConfig& config) override;
-    
-    WhisperGenerationConfig get_whisper_generation_config() const override;
-    void set_whisper_generation_config(const WhisperGenerationConfig& config) override;
 
 private:
     ov::CompiledModel m_compiled_model;
