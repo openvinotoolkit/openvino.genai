@@ -1910,11 +1910,9 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
             self.model_dtype = model_dtype
 
         def __call__(self, images, return_tensors="pt"):
-            return {
-                "pixel_values": self.processor(images, return_tensors=return_tensors)["pixel_values"].to(
-                    dtype=self.model_dtype
-                )
-            }
+            return self.processor(images, return_tensors=return_tensors)["pixel_values"].to(
+                dtype=self.model_dtype
+            )
 
     def get_videochatflashqwen_processor():
         hf_model = transformers.AutoModelForCausalLM.from_pretrained(

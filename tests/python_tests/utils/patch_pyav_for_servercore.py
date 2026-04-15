@@ -15,6 +15,7 @@ def install_av_stub_module_for_windows():
 
     try:
         import av  # noqa: F401
+
         return
     except (ImportError, OSError):
         pass
