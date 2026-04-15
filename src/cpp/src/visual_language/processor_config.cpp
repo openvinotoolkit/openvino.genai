@@ -6,10 +6,7 @@
 
 #include <fstream>
 
-ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path) {
-    std::ifstream stream(json_path);
-    OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
-    nlohmann::json parsed = nlohmann::json::parse(stream);
+ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     using ov::genai::utils::read_json_param;
     read_json_param(parsed, "patch_size", patch_size); // For llava - stored in config.json vision_config
     read_json_param(parsed, "scale_resolution", scale_resolution);
@@ -50,4 +47,11 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     // Setting gemma3-4b-it config params
     read_json_param(parsed, "size.height", size_height);
     read_json_param(parsed, "size.width", size_width);
+}
+
+ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path) {
+    std::ifstream stream(json_path);
+    OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
+    nlohmann::json parsed = nlohmann::json::parse(stream);
+    *this = ProcessorConfig(parsed);
 }

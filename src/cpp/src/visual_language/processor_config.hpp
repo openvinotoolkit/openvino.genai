@@ -7,6 +7,7 @@
 #include <openvino/runtime/properties.hpp>
 #include <array>
 #include <filesystem>
+#include <nlohmann/json.hpp>
 
 namespace ov::genai {
 /// @brief A Configuration class passed to VisionEncoder and used to
@@ -62,6 +63,9 @@ public:
 
     /// @brief Default constructor
     ProcessorConfig() = default;
+
+    explicit ProcessorConfig(const nlohmann::json& parsed);
+
     /// @brief Construct ProcessorConfig from values in json_path.
     /// Keys in the file must match the ProcessorConfig's members.
     /// @param json_path A path to a file to extract the values from.
