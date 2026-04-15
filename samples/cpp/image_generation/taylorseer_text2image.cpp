@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <optional>
 
 int32_t main(int32_t argc, char* argv[]) try {
     if (argc != 3) {

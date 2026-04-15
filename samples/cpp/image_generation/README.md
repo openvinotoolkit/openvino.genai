@@ -112,7 +112,7 @@ With adapter | Without adapter
 
 ## Run text to image with TaylorSeer caching optimization
 
-The `taylorseer_text2image` sample demonstrates how to use TaylorSeer Lite caching to accelerate text to image generation. TaylorSeer is a caching optimization technique that uses Taylor series approximation to predict intermediate outputs during diffusion inference, reducing the number of computationally expensive transformer forward passes. TaylorSeer caching is **enabled by default** for Flux and StableDiffusion3 pipelines.
+The `taylorseer_text2image` sample demonstrates how to use TaylorSeer Lite caching to accelerate text to image generation. TaylorSeer is a caching optimization technique that uses Taylor series approximation to predict intermediate outputs during diffusion inference, reducing the number of computationally expensive transformer forward passes. TaylorSeer caching is **enabled by default** for Flux and StableDiffusion3 Text2Image pipelines.
 
 Run the sample with custom parameters:
 
