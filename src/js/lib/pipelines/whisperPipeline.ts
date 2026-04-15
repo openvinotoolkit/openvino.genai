@@ -60,6 +60,10 @@ export class WhisperPipeline {
 
   /**
    * Stream speech recognition results as an async iterator.
+   * The iterator yields decoded text chunks during generation.
+   * When generation finishes, the full decoded text is returned as the final
+   * iterator value (`done: true`). This value is not available through
+   * `for await...of`; call `next()` directly to read it.
    *
    * For custom streaming control, use {@link generate} with a streamer callback instead.
    *

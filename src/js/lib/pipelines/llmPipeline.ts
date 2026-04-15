@@ -101,7 +101,11 @@ export class LLMPipeline {
 
   /**
    * Stream generation results as an async iterator of strings.
-   * The iterator yields subword chunks.
+   * The iterator yields subword chunks during generation.
+   * When generation finishes, the full decoded text is returned as the final
+   * iterator value (`done: true`). This value is not available through
+   * `for await...of`; call `next()` directly to read it.
+   *
    * For batch processing or custom streaming control, see {@link generate}.
    *
    * @param inputs - Input prompt string or chat history.
