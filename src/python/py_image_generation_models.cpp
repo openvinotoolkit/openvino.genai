@@ -865,6 +865,7 @@ void init_autoencoder_kl(py::module_& m) {
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )")
+        .def("get_config", &ov::genai::AutoencoderKL::get_config)
         .def("reshape", &ov::genai::AutoencoderKL::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"))
         .def(
             "compile",
