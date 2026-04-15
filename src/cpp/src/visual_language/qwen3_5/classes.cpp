@@ -22,6 +22,7 @@ InputsEmbedderQwen3_5::InputsEmbedderQwen3_5(
     const ov::AnyMap device_config
 ) : InputsEmbedderQwen3VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
+// TODO Consider reusing parent qwen3_vl method with optional m_lm_extra_inputs
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3_5::run_video_image_embeddings_merger(
     const std::vector<EncodedImage>& images,
     const std::vector<size_t>& images_sequence,
@@ -72,7 +73,6 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3_5::run_video_image_embeddi
     vision_embeddings_merger.infer();
     
     ov::Tensor vision_embeds = vision_embeddings_merger.get_tensor("last_hidden_state");
-    // m_lm_extra_inputs["deepstack_visual_embeds"] = vision_embeddings_merger.get_tensor("deepstack_feature_lists");
     
     auto vision_embeds_shape = vision_embeds.get_shape();
 
@@ -98,6 +98,76 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3_5::run_video_image_embeddi
     return {video_embeds, image_embeds};
 }
 
+std::pair<ov::Tensor, int64_t> InputsEmbedderQwen3_5::create_position_ids(
+    const ov::Tensor& input_ids_tensor,
+    const std::vector<std::array<size_t, 3>>& images_grid_thw,
+    const std::vector<size_t>& images_sequence,
+    const size_t image_id,
+    const std::vector<std::array<size_t, 3>>& videos_grid_thw,
+    const std::vector<size_t>& videos_sequence,
+    const size_t video_id,
+    const int64_t vision_start_token_id,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) {
+    const auto& [vision_position_ids, rope_delta] = InputsEmbedderQwen2VL::create_position_ids(
+        input_ids_tensor,
+        images_grid_thw,
+        images_sequence,
+        image_id,
+        videos_grid_thw,
+        videos_sequence,
+        video_id,
+        vision_start_token_id,
+        history_vision_count
+    );
+
+    const auto& vision_position_ids_shape = vision_position_ids.get_shape();
+    const size_t batch_size = vision_position_ids_shape[1];
+    const size_t seq_len = vision_position_ids_shape[2];
+
+    ov::Tensor position_ids{vision_position_ids.get_element_type(), {4, batch_size, seq_len}};
+    int64_t* dst = position_ids.data<int64_t>();
+    const int64_t* src = vision_position_ids.data<const int64_t>();
+
+    // Add text position ids to dim 0
+    for (size_t b = 0; b < batch_size; ++b) {
+        for (size_t s = 0; s < seq_len; ++s) {
+            dst[b * seq_len + s] = static_cast<int64_t>(s);
+        }
+    }
+
+    // Append 3D vision position ids
+    std::memcpy(dst + batch_size * seq_len, src, 3 * batch_size * seq_len * sizeof(int64_t));
+
+    return {position_ids, rope_delta};
+}
+
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen3_5::get_generation_phase_position_ids(
+    const size_t inputs_embeds_size,
+    const size_t history_size,
+    int64_t rope_delta
+) {
+    const auto& vision_position_ids = InputsEmbedderQwen2VL::get_generation_phase_position_ids(
+        inputs_embeds_size,
+        history_size,
+        rope_delta
+    ).first;
+
+    ov::Tensor position_ids{vision_position_ids.get_element_type(), {4, 1, inputs_embeds_size}};
+    int64_t* dst = position_ids.data<int64_t>();
+    const int64_t* src = vision_position_ids.data<const int64_t>();
+
+    // Add text position ids to dim 0
+    const int64_t text_position_id = static_cast<int64_t>(history_size);
+    std::fill_n(dst, inputs_embeds_size, text_position_id);
+
+    // Append 3D vision position ids
+    std::memcpy(dst + inputs_embeds_size, src, 3 * inputs_embeds_size * sizeof(int64_t));
+    
+    return {position_ids, rope_delta};
+}
+
+// TODO Consider reusing parent qwen3_vl method with optional m_lm_extra_inputs
 ov::Tensor InputsEmbedderQwen3_5::get_inputs_embeds(
     const std::string& unified_prompt,
     const std::vector<ov::genai::EncodedImage>& images,
@@ -138,29 +208,19 @@ ov::Tensor InputsEmbedderQwen3_5::get_inputs_embeds(
     int64_t image_pad_token_id = m_vision_token_ids.at("image_pad");
     int64_t video_pad_token_id = m_vision_token_ids.at("video_pad");
 
-    m_position_ids = create_position_ids(input_ids, images_grid_thw, images_sequence, 0, 
-                                         videos_grid_thw, videos_sequence, 0, 
-                                         vision_start_token_id, history_vision_count);
-
-    int64_t position_ids_max = *std::max_element(m_position_ids.data<int64_t>(), 
-                                                 m_position_ids.data<int64_t>() + m_position_ids.get_size());
-    m_rope_delta = position_ids_max + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
+    std::tie(m_position_ids, m_rope_delta) = create_position_ids(
+        input_ids,
+        images_grid_thw,
+        images_sequence,
+        0,
+        videos_grid_thw,
+        videos_sequence,
+        0,
+        vision_start_token_id,
+        history_vision_count
+    );
 
     if (images.empty() && videos.empty()) {
-        // TODO Consider reusing qwen3_vl methods with optional m_lm_extra_inputs
-        // // visual_pos_masks extra input
-        // const size_t batch_size = input_ids.get_shape()[0];
-        // ov::Tensor visual_pos_masks(ov::element::boolean, {batch_size, 1});
-        // std::fill_n(visual_pos_masks.data<bool>(), visual_pos_masks.get_size(), false);
-        // m_lm_extra_inputs["visual_pos_masks"] = std::move(visual_pos_masks);
-
-        // // deepstack_visual_embeds extra input
-        // const size_t num_layers = m_vlm_config.vision_config_deepstack_visual_indexes.size();
-        // const size_t hidden_size = text_embeds.get_shape()[2];
-        // ov::Tensor deepstack_visual_embeds(ov::element::f32, {num_layers, 1, hidden_size});
-        // std::fill_n(deepstack_visual_embeds.data<float>(), deepstack_visual_embeds.get_size(), 0.0f);
-        // m_lm_extra_inputs["deepstack_visual_embeds"] = std::move(deepstack_visual_embeds);
-
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
         std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
         return inputs_embeds;
@@ -170,8 +230,6 @@ ov::Tensor InputsEmbedderQwen3_5::get_inputs_embeds(
         std::tie(m_merged_video_embeddings, m_merged_image_embeddings) = 
             run_video_image_embeddings_merger(images, images_sequence, videos, videos_sequence);
     }
-
-    // m_lm_extra_inputs["visual_pos_masks"] = create_visual_pos_masks(input_ids, image_pad_token_id, video_pad_token_id);
 
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(
         input_ids, text_embeds, m_merged_image_embeddings, m_merged_video_embeddings,
