@@ -18,6 +18,12 @@ on:
 #     types:
 #       - completed
 
+engine:
+  id: copilot
+  # Latest Copilot CLI v1.0.22 blocks safeoutputs MCP server: https://github.com/github/gh-aw/issues/25550
+  version: v1.0.20
+  model: gpt-5-mini
+
 rate-limit:
   max: 5 # Maximum runs per window
   window: 60 # Time window in minutes
