@@ -3,11 +3,13 @@
 
 #pragma once
 
-#include "openvino/genai/visibility.hpp"
-#include <openvino/runtime/properties.hpp>
 #include <array>
 #include <filesystem>
+
 #include <nlohmann/json.hpp>
+
+#include <openvino/runtime/properties.hpp>
+#include "openvino/genai/visibility.hpp"
 
 namespace ov::genai {
 /// @brief A Configuration class passed to VisionEncoder and used to
