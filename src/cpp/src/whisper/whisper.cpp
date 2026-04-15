@@ -189,7 +189,12 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
     results.tokens.push_back(sequence->get_generated_ids());
     results.scores.push_back(score);
-    results.finish_reasons.push_back(sequence->get_finish_reason());
+    
+    ov::genai::GenerationFinishReason finish_reason = sequence->get_finish_reason();
+    if (sequence_group->handle_stopped() && finish_reason == ov::genai::GenerationFinishReason::NONE) {
+        finish_reason = sequence_group->get_generation_stream()->get_finish_reason();
+    }
+    results.finish_reasons.push_back(finish_reason);
 
     sampler.clear_request_info(sequence_group->get_request_id());
 

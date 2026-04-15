@@ -661,6 +661,17 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
         streamer_ptr->end();
     }
 
+    if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+        results.finish_reasons[0] = GenerationFinishReason::TOOL_CALL;
+    } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
+        results.finish_reasons[0] = GenerationFinishReason::STOP;
+    } else if (m_main_request->get_generation_capacity() <= 0) {
+        results.finish_reasons[0] = GenerationFinishReason::LENGTH;
+    } else if (out_token == config.eos_token_id ||
+               std::find(config.stop_token_ids.begin(), config.stop_token_ids.end(), out_token) != config.stop_token_ids.end()) {
+        results.finish_reasons[0] = GenerationFinishReason::STOP;
+    }
+
     // If not chat conversation, then reset all states.
     if (!m_is_chat_active) {
         m_candidates_num = config.num_assistant_tokens;
