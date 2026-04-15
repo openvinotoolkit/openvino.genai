@@ -22,7 +22,7 @@ enum class GenerationStatus {
 
 enum class GenerationFinishReason {
     NONE = 0, // Default value, when generation is not yet finished
-    STOP = 1, // Generation finished naturally, by reaching end of sequence token
+    STOP = 1, // Generation finished due to an external stop request or by reaching EOS/stop-sequence
     LENGTH = 2, // Generation finished by reaching max_new_tokens limit
     TOOL_CALL = 3 // Generation stop invoked by tool calling parser
 };
