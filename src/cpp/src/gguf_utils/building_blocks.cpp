@@ -27,8 +27,8 @@ std::pair<Output<ov::Node>, Output<ov::Node>> rope_emb(
     bool is_vlm = false,
     const std::vector<int64_t>& mrope_section = {});
 
-static std::vector<Output<Node>> split_mrope_freqs(
-    const Output<Node>& freqs_transposed,
+static Output<Node> apply_interleaved_mrope_graph(
+    const Output<Node>& freqs,
     const std::vector<int64_t>& mrope_section);
 
 static const size_t GGML_QUANTIZATION_GROUP_SIZE = 32;
@@ -299,50 +299,69 @@ std::tuple<Output<ov::Node>, Output<ov::Node>, std::pair<Output<ov::Node>, Outpu
     return {q_rot, k_rot, {cos_unsqueezed, sin_unsqueezed}};
 }
 
-static std::vector<Output<Node>> split_mrope_freqs(
-    const Output<Node>& freqs_transposed,
+static Output<Node> apply_interleaved_mrope_graph(
+    const Output<Node>& freqs,
     const std::vector<int64_t>& mrope_section) {
+    OPENVINO_ASSERT(mrope_section.size() == 3, "[apply_interleaved_mrope_graph] Qwen3-VL expects 3 mRoPE sections.");
 
-    OPENVINO_ASSERT(!mrope_section.empty(), "[rope_emb] mrope_section must not be empty.");
-
-    std::vector<Output<Node>> split_inputs;
     auto axis0 = std::make_shared<v0::Constant>(element::i64, Shape{}, 0);
+    auto axis_last = std::make_shared<v0::Constant>(element::i64, Shape{}, 2);
 
-    for (size_t i = 0; i < mrope_section.size(); ++i) {
-        auto idx = std::make_shared<v0::Constant>(element::i64, Shape{}, static_cast<int64_t>(i));
-        split_inputs.push_back(std::make_shared<v8::Gather>(freqs_transposed, idx, axis0));
-    }
+    auto freqs_t = std::make_shared<v8::Gather>(
+        freqs, std::make_shared<v0::Constant>(element::i64, Shape{}, 0), axis0);
+    auto freqs_h = std::make_shared<v8::Gather>(
+        freqs, std::make_shared<v0::Constant>(element::i64, Shape{}, 1), axis0);
+    auto freqs_w = std::make_shared<v8::Gather>(
+        freqs, std::make_shared<v0::Constant>(element::i64, Shape{}, 2), axis0);
 
-    auto emb_half = std::make_shared<ov::opset13::Concat>(
-        NodeVector{
-            split_inputs[0].get_node_shared_ptr(),
-            split_inputs[1].get_node_shared_ptr(),
-            split_inputs[2].get_node_shared_ptr()
-        },
-        -1);
+    auto out_shape = std::make_shared<v3::ShapeOf>(freqs_t, element::i64);
+    auto bs_dim = std::make_shared<v8::Gather>(
+        out_shape, std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0}), axis0);
+    auto seq_dim = std::make_shared<v8::Gather>(
+        out_shape, std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1}), axis0);
 
-    auto emb_full = std::make_shared<ov::opset13::Concat>(
-        NodeVector{emb_half, emb_half},
-        -1);
+    auto make_indices = [&](int64_t offset, int64_t section_dim) -> Output<Node> {
+        const int64_t length = section_dim * 3;
+        std::vector<int64_t> idx_vals;
+        for (int64_t i = offset; i < length; i += 3) {
+            idx_vals.push_back(i);
+        }
 
-    std::vector<int64_t> split_sizes;
-    for (auto v : mrope_section) {
-        split_sizes.push_back(v * 2);
-    }
+        auto idx_1d = std::make_shared<v0::Constant>(element::i64, Shape{idx_vals.size()}, idx_vals);
+        auto idx_reshape_shape = std::make_shared<v0::Constant>(
+            element::i64, Shape{3}, std::vector<int64_t>{1, 1, static_cast<int64_t>(idx_vals.size())});
+        auto idx_3d = std::make_shared<v1::Reshape>(idx_1d, idx_reshape_shape, false);
 
-    std::vector<Output<Node>> pieces;
-    int64_t start = 0;
-    auto steps = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
-    auto axes_last = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{2});
+        auto idx_target_shape = std::make_shared<v0::Concat>(OutputVector{
+            bs_dim,
+            seq_dim,
+            std::make_shared<v0::Constant>(
+                element::i64, Shape{1}, std::vector<int64_t>{static_cast<int64_t>(idx_vals.size())})
+        }, 0);
 
-    for (size_t i = 0; i < split_sizes.size(); ++i) {
-        auto starts = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{start});
-        auto ends = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{start + split_sizes[i]});
-        pieces.push_back(std::make_shared<ov::opset13::Slice>(emb_full, starts, ends, steps, axes_last));
-        start += split_sizes[i];
-    }
+        return std::make_shared<v3::Broadcast>(idx_3d, idx_target_shape, BroadcastType::BIDIRECTIONAL);
+    };
 
-    return pieces;
+    auto slice_modality = [&](const Output<Node>& src, int64_t offset, int64_t section_dim) -> Output<Node> {
+        const int64_t length = section_dim * 3;
+        auto starts = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{offset});
+        auto ends = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{length});
+        auto steps = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{3});
+        auto axes = std::make_shared<v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{2});
+        return std::make_shared<ov::opset13::Slice>(src, starts, ends, steps, axes);
+    };
+
+    auto h_updates = slice_modality(freqs_h, 1, mrope_section[1]);
+    auto h_indices = make_indices(1, mrope_section[1]);
+    auto after_h = std::make_shared<ov::op::v12::ScatterElementsUpdate>(
+        freqs_t, h_indices, h_updates, axis_last);
+
+    auto w_updates = slice_modality(freqs_w, 2, mrope_section[2]);
+    auto w_indices = make_indices(2, mrope_section[2]);
+    auto after_w = std::make_shared<ov::op::v12::ScatterElementsUpdate>(
+        after_h, w_indices, w_updates, axis_last);
+
+    return after_w;
 }
 
 ov::Output<ov::Node> inject_visual_embeds(
@@ -454,19 +473,13 @@ std::pair<Output<ov::Node>, Output<ov::Node>> rope_emb(
 
     auto freqs_transposed = std::make_shared<v1::Transpose>(
         freqs,
-        std::make_shared<ov::op::v0::Constant>(element::i32, Shape{4}, std::vector<int32_t>{0, 1, 3, 2})
+        std::make_shared<ov::op::v0::Constant>(element::i64, Shape{4}, std::vector<int64_t>{0, 1, 3, 2})
     );
 
-    auto pieces = split_mrope_freqs(freqs_transposed, mrope_section);
+    auto freqs_interleaved = apply_interleaved_mrope_graph(freqs_transposed, mrope_section);
 
-    OPENVINO_ASSERT(pieces.size() == 3, "[rope_emb] Qwen3VL expects 3 mRoPE pieces.");
-
-    ov::NodeVector reordered;
-    reordered.push_back(pieces[0].get_node_shared_ptr());
-    reordered.push_back(pieces[1].get_node_shared_ptr());
-    reordered.push_back(pieces[2].get_node_shared_ptr());
-
-    auto emb = std::make_shared<ov::opset13::Concat>(reordered, -1);
+    auto emb = std::make_shared<ov::opset13::Concat>(
+        NodeVector{freqs_interleaved.get_node_shared_ptr(), freqs_interleaved.get_node_shared_ptr()}, -1);
 
     return {
         std::make_shared<ov::opset13::Cos>(emb),
@@ -884,6 +897,224 @@ ov::Tensor get_tensor(const std::unordered_map<std::string, ov::Tensor>& consts,
     return it->second;
 };
 
+
+ov::Tensor materialize_weight_to_f16_vlm_only(
+    const std::string& key,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    gguf_tensor_type qtype,
+    bool reorder,
+    int head_size,
+    size_t group_size = GGML_QUANTIZATION_GROUP_SIZE) {
+
+    if (qtype == gguf_tensor_type::GGUF_TYPE_F16) {
+        ov::Tensor w = get_tensor(consts, key + ".weight");
+        if (reorder) {
+            w = reorder_interleaved_format(w, head_size);
+        }
+        if (w.get_element_type() == ov::element::f16) {
+            return w;
+        }
+        if (w.get_element_type() == ov::element::f32) {
+            ov::Tensor out(ov::element::f16, w.get_shape());
+            const float* src = w.data<const float>();
+            ov::float16* dst = out.data<ov::float16>();
+            for (size_t i = 0; i < w.get_size(); ++i) {
+                dst[i] = ov::float16(src[i]);
+            }
+            return out;
+        }
+        OPENVINO_THROW("Unsupported FP weight type for ", key, ": ", w.get_element_type());
+    }
+
+    if (qtype == gguf_tensor_type::GGUF_TYPE_Q8_0 || qtype == gguf_tensor_type::GGUF_TYPE_Q6_K) {
+        ov::Tensor weight = get_tensor(consts, key + ".weight");
+        ov::Tensor scales = get_tensor(consts, key + ".scales");
+        ov::Tensor biases = get_tensor(consts, key + ".biases");
+
+        ov::Shape orig_shape = weight.get_shape();
+        orig_shape[1] *= sizeof(uint32_t) / sizeof(uint8_t);
+        const size_t rows = orig_shape[0];
+        const size_t cols = orig_shape[1];
+        const size_t num_groups = cols / group_size;
+
+        auto scale_shape = scales.get_shape();
+        while (scale_shape.size() < 3) {
+            scale_shape.push_back(1);
+        }
+        scales.set_shape(scale_shape);
+        biases.set_shape(scale_shape);
+
+        if (reorder) {
+            weight = reorder_interleaved_format(weight, head_size);
+            scales = reorder_interleaved_format(scales, head_size);
+            biases = reorder_interleaved_format(biases, head_size);
+        }
+
+        ov::Tensor out(ov::element::f16, orig_shape);
+        const uint8_t* w_data = static_cast<const uint8_t*>(weight.data());
+        const ov::float16* scale_data = scales.data<ov::float16>();
+        const ov::float16* bias_data = biases.data<ov::float16>();
+        ov::float16* dst = out.data<ov::float16>();
+
+        for (size_t r = 0; r < rows; ++r) {
+            for (size_t g = 0; g < num_groups; ++g) {
+                const size_t sb_index = r * num_groups + g;
+                const float scale = static_cast<float>(scale_data[sb_index]);
+                const float bias = static_cast<float>(bias_data[sb_index]);
+                for (size_t k = 0; k < group_size; ++k) {
+                    const size_t src_index = (r * num_groups + g) * group_size + k;
+                    const size_t dst_index = r * cols + g * group_size + k;
+                    dst[dst_index] = ov::float16(static_cast<float>(w_data[src_index]) * scale + bias);
+                }
+            }
+        }
+        return out;
+    }
+
+    if (qtype == gguf_tensor_type::GGUF_TYPE_Q4_0 ||
+        qtype == gguf_tensor_type::GGUF_TYPE_Q4_1 ||
+        qtype == gguf_tensor_type::GGUF_TYPE_Q4_K) {
+        ov::Tensor weight = get_tensor(consts, key + ".weight");
+        ov::Tensor scales = get_tensor(consts, key + ".scales");
+        ov::Tensor biases = get_tensor(consts, key + ".biases");
+
+        ov::Shape out_shape = weight.get_shape();
+        out_shape[1] *= sizeof(uint32_t) / sizeof(uint8_t) * 2;
+        const size_t rows = out_shape[0];
+        const size_t cols = out_shape[1];
+        const size_t num_groups = cols / group_size;
+
+        auto scale_shape = scales.get_shape();
+        while (scale_shape.size() < 3) {
+            scale_shape.push_back(1);
+        }
+        scales.set_shape(scale_shape);
+        biases.set_shape(scale_shape);
+
+        if (reorder) {
+            weight = reorder_interleaved_format(weight, head_size);
+            scales = reorder_interleaved_format(scales, head_size);
+            biases = reorder_interleaved_format(biases, head_size);
+        }
+
+        ov::Tensor out(ov::element::f16, out_shape);
+        const uint8_t* packed = static_cast<const uint8_t*>(weight.data());
+        const ov::float16* scale_data = scales.data<ov::float16>();
+        const ov::float16* bias_data = biases.data<ov::float16>();
+        ov::float16* dst = out.data<ov::float16>();
+
+        for (size_t r = 0; r < rows; ++r) {
+            for (size_t g = 0; g < num_groups; ++g) {
+                const size_t sb_index = r * num_groups + g;
+                const float scale = static_cast<float>(scale_data[sb_index]);
+                const float bias = static_cast<float>(bias_data[sb_index]);
+                const uint8_t zp = static_cast<uint8_t>(std::round(-1.f * bias / scale));
+
+                for (size_t k = 0; k < group_size; ++k) {
+                    const size_t nibble_index = (r * num_groups + g) * group_size + k;
+                    const uint8_t byte = packed[nibble_index / 2];
+                    const uint8_t q = (nibble_index % 2 == 0) ? (byte & 0x0F) : ((byte >> 4) & 0x0F);
+                    const float val = (static_cast<float>(q) - static_cast<float>(zp)) * scale;
+                    dst[r * cols + g * group_size + k] = ov::float16(val);
+                }
+            }
+        }
+        return out;
+    }
+
+    OPENVINO_THROW("Unsupported quantization type for eager materialization: ", static_cast<int>(qtype));
+}
+
+ov::Tensor concat_weights_f16_vlm_only(const std::vector<ov::Tensor>& tensors) {
+    OPENVINO_ASSERT(!tensors.empty(), "concat_weights_f16_vlm_only expects non-empty tensor list");
+    const auto cols = tensors.front().get_shape().at(1);
+    size_t total_rows = 0;
+    for (const auto& t : tensors) {
+        OPENVINO_ASSERT(t.get_element_type() == ov::element::f16, "concat_weights_f16_vlm_only expects f16 tensors");
+        OPENVINO_ASSERT(t.get_shape().size() == 2, "concat_weights_f16_vlm_only expects rank-2 tensors");
+        OPENVINO_ASSERT(t.get_shape()[1] == cols, "concat_weights_f16_vlm_only expects same input width");
+        total_rows += t.get_shape()[0];
+    }
+
+    ov::Tensor out(ov::element::f16, ov::Shape{total_rows, cols});
+    ov::float16* dst = out.data<ov::float16>();
+    size_t row_offset = 0;
+    for (const auto& t : tensors) {
+        const size_t rows = t.get_shape()[0];
+        const size_t elems = rows * cols;
+        std::memcpy(dst + row_offset * cols, t.data<const ov::float16>(), elems * sizeof(ov::float16));
+        row_offset += rows;
+    }
+    return out;
+}
+
+std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>, ov::Output<ov::Node>>
+make_qkv_fused_fc_vlm_only(
+    const std::string& layer_prefix,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    const std::unordered_map<std::string, gguf_tensor_type>& qtypes,
+    bool q_reorder,
+    bool k_reorder,
+    bool v_reorder,
+    int head_size) {
+
+    const auto q_key = layer_prefix + ".self_attn.q_proj";
+    const auto k_key = layer_prefix + ".self_attn.k_proj";
+    const auto v_key = layer_prefix + ".self_attn.v_proj";
+
+    const auto q_w = materialize_weight_to_f16_vlm_only(
+        q_key, consts, qtypes.at(q_key + ".qtype"), q_reorder, head_size);
+    const auto k_w = materialize_weight_to_f16_vlm_only(
+        k_key, consts, qtypes.at(k_key + ".qtype"), k_reorder, head_size);
+    const auto v_w = materialize_weight_to_f16_vlm_only(
+        v_key, consts, qtypes.at(v_key + ".qtype"), v_reorder, head_size,
+        qtypes.at(v_key + ".qtype") == gguf_tensor_type::GGUF_TYPE_Q6_K ? 16 : GGML_QUANTIZATION_GROUP_SIZE);
+
+    const int64_t q_out = static_cast<int64_t>(q_w.get_shape()[0]);
+    const int64_t k_out = static_cast<int64_t>(k_w.get_shape()[0]);
+    const int64_t v_out = static_cast<int64_t>(v_w.get_shape()[0]);
+
+    auto fused_w_f16 = concat_weights_f16_vlm_only({q_w, k_w, v_w});
+    auto fused_const = std::make_shared<ov::op::v0::Constant>(fused_w_f16);
+    set_name(fused_const, to_weight_name(q_key) + ".fused_qkv_weight");
+
+    auto fused_w_f32 = std::make_shared<ov::op::v0::Convert>(fused_const, ov::element::f32);
+    set_name(fused_w_f32, to_weight_name(q_key) + ".fused_qkv_weight/convert");
+
+    auto fused = std::make_shared<ov::op::v0::MatMul>(input, fused_w_f32, false, true);
+    set_name(fused, to_op_name(q_key) + "/aten::linear/MatMul_fused_3FCs");
+
+    auto axis = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{2});
+    auto step = std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{1});
+
+    auto q_slice = std::make_shared<ov::opset13::Slice>(
+        fused,
+        std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{0}),
+        std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{q_out}),
+        step,
+        axis);
+    set_name(q_slice, to_op_name(q_key) + "/aten::linear/MatMul_split.out0");
+
+    auto k_slice = std::make_shared<ov::opset13::Slice>(
+        fused,
+        std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{q_out}),
+        std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{q_out + k_out}),
+        step,
+        axis);
+    set_name(k_slice, to_op_name(q_key) + "/aten::linear/MatMul_split.out1");
+
+    auto v_slice = std::make_shared<ov::opset13::Slice>(
+        fused,
+        std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{q_out + k_out}),
+        std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{q_out + k_out + v_out}),
+        step,
+        axis);
+    set_name(v_slice, to_op_name(q_key) + "/aten::linear/MatMul_split.out2");
+
+    return {q_slice, k_slice, v_slice};
+}
+
 ov::Output<ov::Node> make_int8_weights(
     const std::string& key,
     const std::unordered_map<std::string, ov::Tensor>& consts,
@@ -1256,27 +1487,42 @@ std::tuple<ov::Output<ov::Node>,
     if (std::get<std::string>(configs.at("architecture")).find("llama") != std::string::npos) {
         reorder = true;
     }
-    auto q = make_fc(
-        layer_prefix + ".self_attn.q_proj",
-        input_layernorm,
-        consts,
-        qtypes.at(layer_prefix + ".self_attn.q_proj.qtype"),
-        reorder,
-        std::get<int>(configs.at("head_size")));
-    
-    auto k = make_fc(
-        layer_prefix + ".self_attn.k_proj",
-        input_layernorm,
-        consts,
-        qtypes.at(layer_prefix + ".self_attn.k_proj.qtype"),
-        reorder,
-        std::get<int>(configs.at("head_size")));
+    ov::Output<ov::Node> q;
+    ov::Output<ov::Node> k;
+    ov::Output<ov::Node> v;
+    if (is_vlm) {
+        std::tie(q, k, v) = make_qkv_fused_fc_vlm_only(
+            layer_prefix,
+            input_layernorm,
+            consts,
+            qtypes,
+            reorder,
+            reorder,
+            false,
+            std::get<int>(configs.at("head_size")));
+    } else {
+        q = make_fc(
+            layer_prefix + ".self_attn.q_proj",
+            input_layernorm,
+            consts,
+            qtypes.at(layer_prefix + ".self_attn.q_proj.qtype"),
+            reorder,
+            std::get<int>(configs.at("head_size")));
 
-    auto v = make_fc(
-        layer_prefix + ".self_attn.v_proj",
-        input_layernorm,
-        consts,
-        qtypes.at(layer_prefix + ".self_attn.v_proj.qtype"));
+        k = make_fc(
+            layer_prefix + ".self_attn.k_proj",
+            input_layernorm,
+            consts,
+            qtypes.at(layer_prefix + ".self_attn.k_proj.qtype"),
+            reorder,
+            std::get<int>(configs.at("head_size")));
+
+        v = make_fc(
+            layer_prefix + ".self_attn.v_proj",
+            input_layernorm,
+            consts,
+            qtypes.at(layer_prefix + ".self_attn.v_proj.qtype"));
+    }
 
     // Handle output shape
     std::shared_ptr<ov::Node> final_output_shape = output_shape;
