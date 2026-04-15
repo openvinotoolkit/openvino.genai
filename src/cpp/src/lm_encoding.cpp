@@ -32,18 +32,35 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
 }
 
 void update_3d_position_ids(ov::Tensor&& position_ids, const ov::Tensor& attention_mask, const int64_t rope_delta) {
+    constexpr size_t thw_dim_size = 3;
+    constexpr size_t text_thw_dim_size = 4;
+    
     const size_t batch_size = attention_mask.get_shape().at(0);
     const size_t sequence_length = attention_mask.get_shape().at(1);
-    const size_t thw_dim_size = 3;
+    const size_t dim_0_size = position_ids.get_shape().at(0);
 
-    position_ids.set_shape({thw_dim_size, batch_size, 1});
+    OPENVINO_ASSERT(dim_0_size == thw_dim_size || dim_0_size == text_thw_dim_size,
+        "Unsupported first dimension in 3D position ids: ", dim_0_size);
+
+    position_ids.set_shape({dim_0_size, batch_size, 1});
     int64_t* position_ids_data = position_ids.data<int64_t>();
 
-    int64_t pos_id = static_cast<int64_t>(sequence_length) - 1 + rope_delta;
+    const int64_t vision_position_id = static_cast<int64_t>(sequence_length) - 1 + rope_delta;
 
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        for (size_t dim = 0; dim < thw_dim_size; ++dim) {
-            position_ids_data[dim * batch_size + batch] = pos_id;
+    // For THW-only layout, all dims use vision_position_id.
+    // For text + THW layout (e.g. Qwen3.5), text position id (without rope_delta) is prepended to dim 0.
+    const size_t vision_dim_idx = (dim_0_size == text_thw_dim_size) ? 1 : 0;
+
+    if (dim_0_size == text_thw_dim_size) {
+        const int64_t text_position_id = static_cast<int64_t>(sequence_length) - 1;
+        for (size_t batch = 0; batch < batch_size; ++batch) {
+            position_ids_data[batch] = text_position_id;
+        }
+    }
+
+    for (size_t dim = vision_dim_idx; dim < dim_0_size; ++dim) {
+        for (size_t batch = 0; batch < batch_size; ++batch) {
+            position_ids_data[dim * batch_size + batch] = vision_position_id;
         }
     }
 }
