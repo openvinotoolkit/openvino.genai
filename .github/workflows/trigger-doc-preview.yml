@@ -10,6 +10,8 @@ jobs:
   trigger-preview:
     if: github.event.label.name == 'deploy-doc-preview'
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write # maybe we do not need it
     environment:
       name: preview-doc
       deployment: false
