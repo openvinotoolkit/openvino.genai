@@ -780,8 +780,17 @@ multi_head_attention(
     }
 
     // 6. Scaled dot product attention
+    // NOTE:
+    //   The GGUF-generated LM graph originally created a 4-input SDPA node
+    //   (query, key, value, mask). The PyTorch-converted IR that works on GPU
+    //   uses the 5-input form with an explicit scalar `scale` input.
+    //   Match that IR structure here to keep CPU/GPU behavior aligned.
+    const float attn_scale_value = 1.0f / std::sqrt(static_cast<float>(head_dim));
+    auto attn_scale = std::make_shared<v0::Constant>(element::f32, Shape{}, attn_scale_value);
+    set_name(attn_scale, self_attn_name + "/aten::scaled_dot_product_attention/ConvertLike");
+
     auto attention = std::make_shared<ScaledDotProductAttention>(
-        q_rot, k_reshaped, v_reshaped, final_mask, false);
+        q_rot, k_reshaped, v_reshaped, final_mask, attn_scale, false);
     set_name(
         attention,
         self_attn_name + "/aten::scaled_dot_product_attention/ScaledDotProductAttention");
@@ -1601,11 +1610,16 @@ std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>> make_vision_attention(
     auto v_t = std::make_shared<ov::op::v1::Transpose>(v, v_transpose_order);
     set_name(v_t, attn_prefix + "/aten::transpose/Transpose_2");
 
+    const float attn_scale_value = 1.0f / std::sqrt(static_cast<float>(head_dim));
+    auto attn_scale = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{}, attn_scale_value);
+    set_name(attn_scale, attn_prefix + "/aten::scaled_dot_product_attention/ConvertLike");
+
     auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
         q_t,
         k_t,
         v_t,
         attention_mask,
+        attn_scale,
         false);
     set_name(sdpa, attn_prefix + "/aten::scaled_dot_product_attention/ScaledDotProductAttention");
 
