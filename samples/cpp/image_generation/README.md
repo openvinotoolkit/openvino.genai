@@ -172,13 +172,14 @@ auto pipe = ov::genai::Text2ImagePipeline::stable_diffusion(
 );
 ```
 
-The sample also demonstrates how to enable user-defined encryption for plugin cache using `ov::EncryptionCallbacks`.
+The sample also demonstrates how to enable user-defined encryption and decryption callbacks for plugin cache using `ov::EncryptionCallbacks`.
 
 **Main Features:**
 - Read model and tokenizer directly from memory buffers
 - Support for encrypted model files with custom decryption
-- Cache encryption callbacks for secure compiled model storage
+- Demonstration of cache encryption callbacks for compiled model storage
 
+> **Disclaimer:** The sample's cache callbacks use XOR-based logic for demonstration only and do not provide confidentiality. Replace them with real cryptographic primitives or a vetted cryptography library before using this approach for sensitive data.
 **Run Command:**
 ```bash
 ./encrypted_stable_diffusion <MODEL_DIR> "<PROMPT>" [<DEVICE>]
