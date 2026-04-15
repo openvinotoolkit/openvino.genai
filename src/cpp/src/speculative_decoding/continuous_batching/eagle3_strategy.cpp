@@ -118,7 +118,8 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_em
 
     size_t original_length = shape[1];
 
-    OPENVINO_ASSERT(original_length >= 1u, "At least input length >= 1");
+    OPENVINO_ASSERT(original_length > 1u,
+                    "Input embedding tensor sequence length must be greater than 1 for creating eagle3 draft input embeddings.");
     size_t new_length = original_length - 1;
 
     ov::Tensor draft_input_embeddings(ov::element::f32, {1, new_length, shape[2]});
@@ -154,6 +155,8 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     draft_sampling_params.stop_strings = {};
     // remove first token from input_ids to create draft_input_ids
     ov::Tensor draft_input_ids = create_draft_input(input_ids);
+    // Draft Eagle3 inference only uses the language model path. Multimodal auxiliary inputs such as
+    // deepstack visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params, token_type_ids, prompt_ids)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
 }

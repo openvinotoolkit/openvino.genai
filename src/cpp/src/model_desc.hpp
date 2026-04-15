@@ -1,16 +1,22 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
+
+#include <memory>
 #include <string>
+
+#include <openvino/runtime/properties.hpp>
 
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/generation_config.hpp"
-
-#include "visual_language/inputs_embedder.hpp"
+#include "openvino/genai/tokenizer.hpp"
 
 namespace ov {
+class Model;
+
 namespace genai {
+class InputsEmbedder;
 
 struct ModelDesc {
     std::string device;

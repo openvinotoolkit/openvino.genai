@@ -456,17 +456,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         candidates_timer.end();
     }
 
-    auto append_embedding = [&] () -> bool {
-        if (!m_is_validation_mode_enabled) { // always for draft mode
-            return true;
-        }
-        //if ( step_counter == 0 )
-            //return true;
-        return false;
-    };
-
-    // append embeddings for generated tokens
-    if (append_embedding()) {
+    // append embeddings for generated tokens for draft model
+    if (!m_is_validation_mode_enabled) {
         if (m_model_input_type == ModelInputType::EMBEDDINGS)
             m_model_runner->append_embeddings(m_requests, scheduler_output);
     }
@@ -487,7 +478,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         _free_non_running_requests();
         clean_up_requests_timer.end();
     }
-    step_counter++;
     step_timer.end();
 }
 
