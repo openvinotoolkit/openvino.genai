@@ -13,6 +13,12 @@ def install_av_stub_module_for_windows():
     if sys.platform != "win32":
         return
 
+    try:
+        import av  # noqa: F401
+        return
+    except (ImportError, OSError):
+        pass
+
     from types import ModuleType
 
     sys.modules["av"] = ModuleType("av")
