@@ -1,52 +1,76 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
+//
+
+/**
+ * @brief This is a header file for OpenVINO GenAI C API, which is a C wrapper for ov::genai::Text2VideoPipeline class.
+ *
+ * @file text2video_pipeline.h
+ */
+
 #pragma once
 
-#include <stddef.h>
+#include "openvino/c/ov_common.h"
+#include "openvino/c/ov_tensor.h"
+#include "openvino/genai/c/visibility.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#ifndef OV_GENAI_C_API
-#    ifdef _WIN32
-#        define OV_GENAI_C_API __declspec(dllexport)
-#    else
-#        define OV_GENAI_C_API __attribute__((visibility("default")))
-#    endif
-#endif
-
+/**
+ * @struct ov_genai_video_generation_config
+ * @brief Configuration parameters for video generation.
+ */
 typedef struct {
-    int width;
-    int height;
-    int num_frames;
-    int frame_rate;
+    size_t width;       //!< Width of the generated video frames
+    size_t height;      //!< Height of the generated video frames
+    size_t num_frames;  //!< Total number of frames to generate
+    float frame_rate;   //!< Frame rate of the generated video
 } ov_genai_video_generation_config;
 
-typedef struct {
-    void* data;
-    size_t size;
-    size_t height;
-    size_t width;
-} text2video_custom_tensor;
+/**
+ * @struct ov_genai_text2video_pipeline
+ * @brief type define ov_genai_text2video_pipeline from ov_genai_text2video_pipeline_opaque
+ */
+typedef struct ov_genai_text2video_pipeline_opaque ov_genai_text2video_pipeline;
 
-typedef struct ov_genai_text2video_pipeline ov_genai_text2video_pipeline;
+/**
+ * @brief Construct ov_genai_text2video_pipeline.
+ *
+ * Initializes a ov_genai_text2video_pipeline instance from the specified model directory and device.
+ *
+ * @param models_path Path to the directory containing the model files.
+ * @param device Name of a device to load a model to.
+ * @param pipeline A pointer to the newly created ov_genai_text2video_pipeline.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_text2video_pipeline_create(const char* models_path,
+                                                                         const char* device,
+                                                                         ov_genai_text2video_pipeline** pipeline);
 
-OV_GENAI_C_API int ov_genai_text2video_pipeline_create(
-    const char* model_path,
-    const char* device,
-    ov_genai_text2video_pipeline** pipeline);
+/**
+ * @brief Release the memory allocated by ov_genai_text2video_pipeline.
+ * @param pipeline A pointer to the ov_genai_text2video_pipeline to free memory.
+ */
+OPENVINO_GENAI_C_EXPORTS void ov_genai_text2video_pipeline_free(ov_genai_text2video_pipeline* pipeline);
 
-OV_GENAI_C_API void ov_genai_text2video_pipeline_destroy(ov_genai_text2video_pipeline* pipeline);
-
-OV_GENAI_C_API void ov_genai_text2video_pipeline_generate(
-    ov_genai_text2video_pipeline* pipeline,
-    const char* prompt,
-    const char* negative_prompt,
-    const ov_genai_video_generation_config* config,
-    text2video_custom_tensor* output_tensor);
-
-OV_GENAI_C_API void ov_genai_text2video_free_tensor(text2video_custom_tensor* tensor);
+/**
+ * @brief Generate a video based on text inputs.
+ *
+ * @param pipeline A pointer to the ov_genai_text2video_pipeline instance.
+ * @param prompt A pointer to the input text string (positive prompt).
+ * @param negative_prompt A pointer to the negative input text string.
+ * @param config A pointer to the ov_genai_video_generation_config, the pointer can be NULL.
+ * @param output_tensor A pointer to the ov_tensor_t pointer to retrieve the generated video tensor.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_text2video_pipeline_generate(ov_genai_text2video_pipeline* pipeline,
+                                      const char* prompt,
+                                      const char* negative_prompt,
+                                      const ov_genai_video_generation_config* config,
+                                      ov_tensor_t** output_tensor);
 
 #ifdef __cplusplus
 }
