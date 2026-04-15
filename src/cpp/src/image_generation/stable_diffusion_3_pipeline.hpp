@@ -505,8 +505,6 @@ public:
                 adapters = updated_adapters;
             }
             // TODO: Add LoRA Adapter support for text encoders
-            // currently not done due to lack of demand
-            // but can be implemented in the future if needed.
             m_transformer->set_adapters(adapters);
         }
     }
