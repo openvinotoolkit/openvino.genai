@@ -3,7 +3,12 @@
 
 import util from "node:util";
 import { VLMPipeline as VLMPipelineWrapper, type ChatHistory } from "../addon.js";
-import { GenerationConfig, VLMPipelineProperties, StreamingStatus } from "../utils.js";
+import {
+  GenerationConfig,
+  GenerationFinishReason,
+  VLMPipelineProperties,
+  StreamingStatus,
+} from "../utils.js";
 import { VLMDecodedResults } from "../decodedResults.js";
 import { Tokenizer } from "../tokenizer.js";
 import type { Tensor } from "openvino-node";
@@ -110,6 +115,7 @@ export class VLMPipeline {
         scores: number[];
         perfMetrics: VLMPerfMetrics;
         parsed: Record<string, unknown>[];
+        finish_reasons: GenerationFinishReason[];
       },
     ) => {
       if (error) {
@@ -127,6 +133,7 @@ export class VLMPipeline {
           result.scores,
           result.perfMetrics,
           result.parsed,
+          result.finish_reasons,
         );
         const fullText = decodedResult.toString();
         if (resolvePromise) {
@@ -202,7 +209,13 @@ export class VLMPipeline {
     const innerGenerate = util.promisify(this.pipeline.generate.bind(this.pipeline));
     const result = await innerGenerate(inputs, images, videos, streamer, generationConfig);
 
-    return new VLMDecodedResults(result.texts, result.scores, result.perfMetrics, result.parsed);
+    return new VLMDecodedResults(
+      result.texts,
+      result.scores,
+      result.perfMetrics,
+      result.parsed,
+      result.finish_reasons,
+    );
   }
 
   /**

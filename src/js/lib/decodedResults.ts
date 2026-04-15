@@ -9,6 +9,7 @@ import {
   WhisperPerfMetrics,
   Text2SpeechPerfMetrics,
 } from "./perfMetrics.js";
+import { GenerationFinishReason } from "./utils.js";
 
 /**
  * Structure to store resulting batched text outputs and scores for each batch.
@@ -20,17 +21,20 @@ export class DecodedResults {
    * @param {number[]} scores - Scores for each sequence.
    * @param {PerfMetrics} perfMetrics - Performance metrics (tpot, ttft, etc.).
    * @param {Record<string, unknown>[]} parsed - The results of parsers processing for each sequence.
+   * @param {GenerationFinishReason[]} finishReasons - Finish reasons for each sequence.
    */
   constructor(
     texts: string[],
     scores: number[],
     perfMetrics: PerfMetrics,
     parsed: Record<string, unknown>[],
+    finishReasons: GenerationFinishReason[] = [],
   ) {
     this.texts = texts;
     this.scores = scores;
     this.perfMetrics = perfMetrics;
     this.parsed = parsed;
+    this.finish_reasons = finishReasons;
   }
   toString() {
     if (this.scores.length !== this.texts.length) {
@@ -49,6 +53,7 @@ export class DecodedResults {
   scores: number[];
   perfMetrics: PerfMetrics;
   parsed: Record<string, unknown>[];
+  finish_reasons: GenerationFinishReason[];
 }
 
 /**
@@ -61,14 +66,16 @@ export class VLMDecodedResults extends DecodedResults {
    * @param {number[]} scores - Scores for each sequence.
    * @param {VLMPerfMetrics} perfMetrics - VLM-specific performance metrics.
    * @param {Record<string, unknown>[]} parsed - The results of parsers processing for each sequence.
+   * @param {GenerationFinishReason[]} finishReasons - Finish reasons for each sequence.
    */
   constructor(
     texts: string[],
     scores: number[],
     perfMetrics: VLMPerfMetrics,
     parsed: Record<string, unknown>[],
+    finishReasons: GenerationFinishReason[] = [],
   ) {
-    super(texts, scores, perfMetrics, parsed);
+    super(texts, scores, perfMetrics, parsed, finishReasons);
     this.perfMetrics = perfMetrics;
   }
 
