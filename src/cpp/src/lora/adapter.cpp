@@ -960,6 +960,8 @@ public:
 
         NodeVector lora_variables{lora_weight.A, lora_weight.alpha, lora_weight.B};
 
+        // transpose_input is only set for MatMul nodes; transpose_in_end is only set for Conv nodes.
+        // A node cannot be both, so these two paths are mutually exclusive.
         replacement = tensors_multiplication(activations.get_node_shared_ptr(),
                                              lora_variables,
                                              target,
