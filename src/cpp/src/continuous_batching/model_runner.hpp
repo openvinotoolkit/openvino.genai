@@ -294,12 +294,13 @@ public:
         // Discover linear attention paging groups from model inputs.
         // Each group has {prefix}block_indices, {prefix}block_indices_begins,
         // {prefix}past_lens, {prefix}cache_interval.
+        // A paging group is identified by any input whose name ends with "block_indices_begins"
+        // but is not exactly "block_indices_begins" (which belongs to the KV cache).
         auto compiled_model = m_request.get_compiled_model();
         for (const auto& input : compiled_model.inputs()) {
             for (const auto& name : input.get_names()) {
                 const std::string marker = "block_indices_begins";
                 if (name.size() > marker.size() &&
-                    name.compare(0, 6, "paged_") == 0 &&
                     name.compare(name.size() - marker.size(), marker.size(), marker) == 0) {
                     std::string prefix = name.substr(0, name.size() - marker.size());
                     m_linear_attention_paging_groups.push_back({prefix, {}, {}, {}, {}});
