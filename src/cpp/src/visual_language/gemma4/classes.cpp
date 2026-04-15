@@ -215,22 +215,21 @@ NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(const std::string& promp
     const auto& boi = m_vlm_config.boi_token;
     const auto& eoi = m_vlm_config.eoi_token;
     const auto& img = m_vlm_config.image_token;
-
-    auto [unified_prompt, images_sequence] = normalize(prompt, boi, boi, base_id, images.size());
+    auto [unified_prompt, images_sequence] = normalize(prompt, img, img, base_id, images.size());
 
     for (size_t new_image_id : images_sequence) {
         const ov::Tensor& image_embed = images.at(new_image_id - base_id).resized_source;
         size_t num_image_tokens = image_embed.get_shape().at(1);
 
-        std::string expanded_tag = "\n\n" + boi;
+        std::string expanded_tag = boi;
         for (size_t i = 0; i < num_image_tokens; i++) {
             expanded_tag += img;
         }
-        expanded_tag += eoi + "\n\n";
+        expanded_tag += eoi;
 
-        size_t pos = unified_prompt.find(boi);
-        OPENVINO_ASSERT(pos != std::string::npos, "Failed to find BOI token in prompt during normalization");
-        unified_prompt.replace(pos, boi.length(), expanded_tag);
+        size_t pos = unified_prompt.find(img);
+        OPENVINO_ASSERT(pos != std::string::npos, "Failed to find image token in prompt during normalization");
+        unified_prompt.replace(pos, img.length(), expanded_tag);
     }
     return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
@@ -247,45 +246,6 @@ ov::Tensor InputsEmbedderGemma4::get_per_layer_embeddings(const ov::Tensor& inpu
     ov::Tensor result(output.get_element_type(), output.get_shape());
     std::memcpy(result.data(), output.data(), output.get_byte_size());
     return result;
-}
-
-// Gemma4 Jinja chat template applies "| trim" to string content, stripping the
-// leading "\n\n" that normalize_prompt places before the BOI token.
-// Restore the "\n\n" padding in the templated string to match the HF prompt format.
-ov::Tensor InputsEmbedderGemma4::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
-    if (!m_is_chat_conversation && m_apply_chat_template) {
-        // Non-chat path: apply template, then re-insert "\n\n" before BOI, then tokenize.
-        bool add_special_tokens_val = m_add_special_tokens_is_set ? m_add_special_tokens : false;
-        auto start_tokenizer_time = std::chrono::steady_clock::now();
-
-        ChatHistory history({{{"role", "user"}, {"content", prompt}}});
-        std::string templated_prompt = m_tokenizer.apply_chat_template(history, true);
-
-        const auto& boi = m_vlm_config.boi_token;
-        size_t boi_pos = templated_prompt.find(boi);
-        if (boi_pos != std::string::npos && (boi_pos < 2 || templated_prompt.substr(boi_pos - 2, 2) != "\n\n")) {
-            templated_prompt.insert(boi_pos, "\n\n");
-        }
-
-        ov::Tensor encoded =
-            m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(add_special_tokens_val)).input_ids;
-        auto end_tokenizer_time = std::chrono::steady_clock::now();
-        metrics.raw_metrics.tokenization_durations.emplace_back(
-            PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-        return encoded;
-    }
-
-    // Chat path: template already applied before get_inputs_embeds, "\n\n" may be stripped.
-    // No-template path: no stripping occurs.
-    // In both cases, re-insert "\n\n" before BOI if missing, then delegate to base.
-    std::string adjusted_prompt = prompt;
-    const auto& boi = m_vlm_config.boi_token;
-    size_t boi_pos = adjusted_prompt.find(boi);
-    if (boi_pos != std::string::npos && (boi_pos < 2 || adjusted_prompt.substr(boi_pos - 2, 2) != "\n\n")) {
-        adjusted_prompt.insert(boi_pos, "\n\n");
-    }
-
-    return IInputsEmbedder::apply_chat_template_tokenize(adjusted_prompt, metrics);
 }
 
 ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,

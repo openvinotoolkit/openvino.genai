@@ -38,8 +38,6 @@ public:
                                  bool recalculate_merged_embeddings = true,
                                  const std::vector<size_t>& image_sequence = {}) override;
 
-    ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) override;
-
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
     NormalizedPrompt normalize_prompt(const std::string& prompt,
