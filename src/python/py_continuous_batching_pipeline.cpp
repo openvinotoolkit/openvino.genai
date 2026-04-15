@@ -254,6 +254,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readonly("m_request_id", &EncodedGenerationResult::m_request_id)
         .def_readwrite("m_generation_ids", &EncodedGenerationResult::m_generation_ids)
         .def_readwrite("m_scores", &EncodedGenerationResult::m_scores)
+        .def_readonly("finish_reasons", &EncodedGenerationResult::m_finish_reasons)
         .def_readonly("perf_metrics", &EncodedGenerationResult::perf_metrics)
         .def_readonly("extended_perf_metrics", &EncodedGenerationResult::extended_perf_metrics);
 
@@ -266,7 +267,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
     auto generation_handle = py::class_<GenerationHandleImpl, std::shared_ptr<GenerationHandleImpl>>(m, "GenerationHandle")
         .def("get_status", &GenerationHandleImpl::get_status)
         .def("can_read", &GenerationHandleImpl::can_read)
-        .def("stop", &GenerationHandleImpl::stop, py::arg("finish_reason") = GenerationFinishReason::STOP)
+        .def("stop", &GenerationHandleImpl::stop, py::arg_v("finish_reason", GenerationFinishReason::STOP, "GenerationFinishReason.STOP"))
         .def("cancel", &GenerationHandleImpl::cancel)
         .def("read", &GenerationHandleImpl::read)
         .def("read_all", &GenerationHandleImpl::read_all);
