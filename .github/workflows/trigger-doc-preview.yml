@@ -10,8 +10,6 @@ jobs:
   trigger-preview:
     if: github.event.label.name == 'deploy-doc-preview'
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write # maybe we do not need it
     environment:
       name: preview-doc
       deployment: false
@@ -46,14 +44,5 @@ jobs:
             echo "Error: Failed to trigger deployment in Doc Central Hub"
             exit 1
           fi
-
           echo "Preview deployment triggered successfully"
           echo "Commit SHA: ${{ github.event.pull_request.head.sha }}"
-
-      - name: Post confirmation comment
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh pr comment ${{ github.event.pull_request.number }} \
-            --repo ${{ github.repository }} \
-            --body "Documentation preview deployment triggered for commit \`${{ github.event.pull_request.head.sha }}\`"
