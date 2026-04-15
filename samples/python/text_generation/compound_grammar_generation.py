@@ -108,7 +108,7 @@ class CustomToolCallIncrementalParser(IncrementalParser):
         self._content = ""
 
 
-class ToolCallStreamer(TextParserStreamer):
+class ContentStreamer(TextParserStreamer):
     def write(self, message):
         print(message.get("content", ""), end="", flush=True)
         return StreamingStatus.RUNNING
@@ -182,7 +182,7 @@ def main():
     generation_config.structured_output_config.structural_tags_config = tool_call_grammar
 
     tool_call_parser = CustomToolCallIncrementalParser()
-    tool_call_streamer = ToolCallStreamer(pipe.get_tokenizer(), parsers=[tool_call_parser])
+    tool_call_streamer = ContentStreamer(pipe.get_tokenizer(), parsers=[tool_call_parser])
 
     print("Assistant: ", end="")
     answer = pipe.generate(chat_history, generation_config, streamer=tool_call_streamer)

@@ -69,6 +69,11 @@ def ov_model(llm_model: OVConvertedModelSchema) -> LLMPipeline:
 
 
 @pytest.fixture(scope="module")
+def tokenizer(llm_model: OVConvertedModelSchema) -> Tokenizer:
+    return Tokenizer(llm_model.models_path)
+
+
+@pytest.fixture(scope="module")
 def npu_config(request: pytest.FixtureRequest) -> LLMPipeline:
     return request.param
 
@@ -313,14 +318,12 @@ def test_unsupported_sampling_raise_error(
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_terminate_by_max_number_of_tokens(
-    llm_model: OVConvertedModelSchema,
     npu_model: LLMPipeline, 
+    tokenizer: Tokenizer,
 ):
-    model_path = llm_model.models_path
     prompt = "The Sun is yellow because"
     num_tokens = 128
 
-    tokenizer = Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
     # ignore_eos=True to ensure model will generate exactly num_tokens
     encoded_results = npu_model.generate(tokenized_input, max_new_tokens=num_tokens, ignore_eos=True)
@@ -330,8 +333,9 @@ def test_terminate_by_max_number_of_tokens(
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_terminate_by_out_of_memory(
-    llm_model: OVConvertedModelSchema, 
-    npu_config: dict
+    llm_model: OVConvertedModelSchema,
+    npu_config: dict,
+    tokenizer: Tokenizer,
 ):
     model_path = llm_model.models_path
     prompt = "The Sun is yellow because"
@@ -339,7 +343,6 @@ def test_terminate_by_out_of_memory(
     pipeline_config |= npu_config
     kv_cache_size = pipeline_config['MAX_PROMPT_LEN'] + pipeline_config['MIN_RESPONSE_LEN']
 
-    tokenizer = Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
     input_len = tokenized_input.input_ids.get_shape()[1]
 
@@ -352,10 +355,9 @@ def test_terminate_by_out_of_memory(
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_terminate_by_sampler(
-    llm_model: OVConvertedModelSchema, 
     npu_model: LLMPipeline,
+    tokenizer: Tokenizer,
 ):
-    model_path = llm_model.models_path
     prompt = "The Sun is yellow because"
 
     current_iter = 0
@@ -372,7 +374,6 @@ def test_terminate_by_sampler(
         def end(self):
             pass
 
-    tokenizer = Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
 
     encoded_results = npu_model.generate(
@@ -397,6 +398,7 @@ def test_terminate_finish_reason_by_sampler(
     llm_model: OVConvertedModelSchema,
     streaming_status: StreamingStatus,
     expected_finish_reason: GenerationFinishReason,
+    tokenizer: Tokenizer,
 ):
     model_path = llm_model.models_path
     prompt = "The Sun is yellow because"
@@ -416,7 +418,6 @@ def test_terminate_finish_reason_by_sampler(
         def end(self):
             pass
 
-    tokenizer = Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
     static_cpu_model = LLMPipeline(
         model_path,
