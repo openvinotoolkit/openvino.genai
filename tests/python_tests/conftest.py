@@ -75,6 +75,7 @@ def pytest_configure(config: pytest.Config):
 IMAGE_GEN_MODELS = {
     "tiny-random-latent-consistency": "echarlaix/tiny-random-latent-consistency",
     "tiny-random-flux": "optimum-intel-internal-testing/tiny-random-flux",
+    "tiny-random-sdxl": "echarlaix/tiny-random-stable-diffusion-xl",
 }
 
 DEFAULT_IMAGE_GEN_MODEL_ID = "tiny-random-latent-consistency"

@@ -224,7 +224,8 @@ def parse_args():
         default=None,
         help="Path to a JSON file/string with TaylorSeer configuration for GenAI text-to-image/video pipelines. "
         "Supported keys: 'cache_interval', 'disable_cache_before_step', 'disable_cache_after_step'. "
-        "All keys are optional; defaults are used if not provided.",
+        "All keys are optional; defaults are used if not provided. "
+        "If the pipeline enables caching by default, pass '{\"disable_cache_after_step\": 0}' to disable it.",
     )
     parser.add_argument(
         "--from-onnx",

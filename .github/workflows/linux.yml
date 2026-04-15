@@ -218,7 +218,7 @@ jobs:
 
       - name: Upload Archive Distribution Package
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_archive_${{ matrix.build-type }}
           path: ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
@@ -226,7 +226,7 @@ jobs:
 
       - name: Upload Tools
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_tools_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TOOLS_DIR }}
@@ -234,7 +234,7 @@ jobs:
 
       - name: Upload Tests
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_tests_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TESTS_DIR }}
@@ -242,7 +242,7 @@ jobs:
 
       - name: Upload manifest
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: manifest_${{ matrix.build-type }}
           path: ${{ env.MANIFEST_PATH }}
@@ -299,7 +299,7 @@ jobs:
 
       - name: Upload Wheels
         if: ${{ always() }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_wheels
           path: ${{ env.INSTALL_DIR }}
@@ -372,7 +372,7 @@ jobs:
 
       - name: Upload GenAI Wheel
         if: ${{ always() }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_wheel_python_${{ matrix.python-version }}
           path: ${{ env.INSTALL_DIR }}
@@ -499,7 +499,7 @@ jobs:
 
       - name: Upload Samples Build Package
         if: ${{ always() }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_samples_${{ matrix.build-type }}
           path: ${{ env.INSTALL_DIR }}/*.tar.gz
@@ -558,7 +558,7 @@ jobs:
 
       - name: Upload Node.js bindings Build Package
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_nodejs_bindings
           path: ${{ env.INSTALL_DIR }}
@@ -566,7 +566,7 @@ jobs:
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
-    needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
@@ -659,6 +659,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
 
     steps:
       - name: Clone openvino.genai
@@ -672,7 +673,7 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*,genai_tests_Release}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -799,7 +800,7 @@ jobs:
 
       - name: Setup Node
         if: ${{ matrix.test.run_condition }}
-        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: 21
 
@@ -813,9 +814,10 @@ jobs:
 
       - name: Install NPM dependencies for samples
         if: ${{ matrix.test.run_condition }}
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+        working-directory: ${{ env.SRC_DIR }}/samples/js
         run: |
-          npm install ${{ env.SRC_DIR }}/src/js
+          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* ${{ env.SRC_DIR }}/src/js --ignore-scripts
+          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Test Samples (Python and C++)
@@ -965,7 +967,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -1004,7 +1006,7 @@ jobs:
 
   genai_xgrammar_off_tests:
     name: Build & Test when ENABLE_XGRAMMAR=OFF
-    needs: [smart_ci, openvino_download, genai_build_wheels]
+    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheels]
     timeout-minutes: 45
     defaults:
       run:
@@ -1021,6 +1023,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build_xgrammar
+      EXTENSION_LIB_PATH: ${{ github.workspace }}/ov/tests
 
     steps:
       - name: Clone openvino.genai
@@ -1032,7 +1035,7 @@ jobs:
       - name: Download Build Artifacts
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_tests_Release}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
