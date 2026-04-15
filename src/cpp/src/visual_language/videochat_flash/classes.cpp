@@ -15,6 +15,7 @@
 #include <numeric>
 #include <cmath>
 #include <sstream>
+#include <mutex>
 
 namespace ov::genai {
 
@@ -876,7 +877,10 @@ ov::Tensor InputsEmbedderVideoChatFlashQwen::get_inputs_embeds(
     const std::vector<size_t>& videos_sequence,
     const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     if (!videos_sequence.empty()) {
-        GENAI_WARN("VideoChat-Flash ignores separate video sequence in this path. videos_sequence size=%zu.", videos_sequence.size());
+         static std::once_flag videos_sequence_warning_once;
+         std::call_once(videos_sequence_warning_once, [&videos_sequence]() {
+             GENAI_WARN("VideoChat-Flash ignores separate video sequence in this path. videos_sequence size=%zu.", videos_sequence.size());
+         });
     }
 
     std::vector<ov::genai::EncodedImage> combined_images = images;

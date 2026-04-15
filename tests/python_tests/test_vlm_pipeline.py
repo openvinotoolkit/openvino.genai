@@ -32,6 +32,7 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import collections
+import inspect
 from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
@@ -116,8 +117,15 @@ class _VlmPipelineUnsupportedImageInputGuard:
         self._model_id = model_id
 
     def generate(self, *args: Any, **kwargs: Any):
-        has_single_image = kwargs.get("image") is not None
-        has_multi_images = bool(kwargs.get("images"))
+        normalized_arguments = kwargs
+        try:
+            bound_arguments = inspect.signature(self._pipeline.generate).bind_partial(*args, **kwargs)
+            normalized_arguments = bound_arguments.arguments
+        except (TypeError, ValueError):
+            # Fall back to the original kwargs-only behavior if signature introspection is unavailable.
+            pass
+        has_single_image = normalized_arguments.get("image") is not None
+        has_multi_images = bool(normalized_arguments.get("images"))
         if _has_unsupported_image_inputs(self._model_id) and (has_single_image or has_multi_images):
             pytest.skip(
                 f"{self._model_id} does not support image/images inputs in this suite. Please use video/videos input."
