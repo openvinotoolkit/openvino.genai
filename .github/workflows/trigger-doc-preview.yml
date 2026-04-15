@@ -10,6 +10,7 @@ jobs:
   trigger-preview:
     if: github.event.label.name == 'deploy-doc-preview'
     runs-on: ubuntu-latest
+    environment: preview-doc
 
     steps:
       - name: Generate GitHub App token
@@ -18,6 +19,8 @@ jobs:
         with:
           app-id: ${{ secrets.DOC_HUB_APP_ID }}
           private-key: ${{ secrets.DOC_HUB_APP_PRIVATE_KEY }}
+          owner: AlexanderBarabanov
+          repositories: edge-manage-docs
 
       - name: Send repository dispatch to Doc Central Hub
         env:
