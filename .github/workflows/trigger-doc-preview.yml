@@ -10,8 +10,9 @@ jobs:
   trigger-preview:
     if: github.event.label.name == 'deploy-doc-preview'
     runs-on: ubuntu-latest
-    environment: preview-doc
-
+    environment:
+      name: preview-doc
+      deployment: false
     steps:
       - name: Generate GitHub App token
         id: generate-token
@@ -52,4 +53,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh pr comment ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
             --body "Documentation preview deployment triggered for commit \`${{ github.event.pull_request.head.sha }}\`"
