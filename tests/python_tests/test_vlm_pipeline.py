@@ -36,7 +36,7 @@ import inspect
 from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Generator
+from typing import Any, Callable, Generator, cast
 import openvino_tokenizers
 import openvino
 import PIL
@@ -405,7 +405,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
         if vision_preprocess_env_set:
             os.environ.pop(key, None)
 
-    pipeline = _VlmPipelineUnsupportedImageInputGuard(pipeline, ov_model)
+    pipeline = cast(VLMPipeline, _VlmPipelineUnsupportedImageInputGuard(pipeline, ov_model))
 
     return VlmModelInfo(
         ov_model,
