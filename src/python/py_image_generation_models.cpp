@@ -57,8 +57,17 @@ void init_clip_text_model(py::module_& m) {
         R"(
             CLIPTextModel class
             model (CLIPTextModel): CLIPText model
-        )")
-        .def(py::init([](
+        )");
+
+    py::class_<ov::genai::CLIPTextModel::Config>(clip_text_model, "Config", "This class is used for storing CLIPTextModel config.")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::CLIPTextModel::Config>(config_path);
+        }),
+        py::arg("config_path"))
+        .def_readwrite("max_position_embeddings", &ov::genai::CLIPTextModel::Config::max_position_embeddings)
+        .def_readwrite("num_hidden_layers", &ov::genai::CLIPTextModel::Config::num_hidden_layers);
+
+    clip_text_model.def(py::init([](
             const std::string& model,
             const ov::Tensor& weights,
             const ov::genai::CLIPTextModel::Config& config,
@@ -102,17 +111,8 @@ void init_clip_text_model(py::module_& m) {
             clip_tokenizer (Tokenizer): Tokenizer for text encoding.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
-        )");
-
-    py::class_<ov::genai::CLIPTextModel::Config>(clip_text_model, "Config", "This class is used for storing CLIPTextModel config.")
-        .def(py::init([](const std::filesystem::path& config_path) {
-            return std::make_unique<ov::genai::CLIPTextModel::Config>(config_path);
-        }),
-        py::arg("config_path"))
-        .def_readwrite("max_position_embeddings", &ov::genai::CLIPTextModel::Config::max_position_embeddings)
-        .def_readwrite("num_hidden_layers", &ov::genai::CLIPTextModel::Config::num_hidden_layers);
-
-    clip_text_model.def("get_config", &ov::genai::CLIPTextModel::get_config)
+        )")
+        .def("get_config", &ov::genai::CLIPTextModel::get_config)
         .def("reshape", &ov::genai::CLIPTextModel::reshape, py::arg("batch_size"))
         .def("set_adapters", &ov::genai::CLIPTextModel::set_adapters, py::arg("adapters"))
         .def("infer", 
@@ -385,8 +385,18 @@ void init_unet2d_condition_model(py::module_& m) {
         R"(
             UNet2DConditionModel class
             model (UNet2DConditionModel): UNet2DConditionModel model
-        )")
-        .def(py::init([](
+        )");
+
+    py::class_<ov::genai::UNet2DConditionModel::Config>(unet2d_condition_model, "Config", "This class is used for storing UNet2DConditionModel config.")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::UNet2DConditionModel::Config>(config_path);
+        }),
+        py::arg("config_path"))
+        .def_readwrite("in_channels", &ov::genai::UNet2DConditionModel::Config::in_channels)
+        .def_readwrite("sample_size", &ov::genai::UNet2DConditionModel::Config::sample_size)
+        .def_readwrite("time_cond_proj_dim", &ov::genai::UNet2DConditionModel::Config::time_cond_proj_dim);
+
+    unet2d_condition_model.def(py::init([](
             const std::string& model,
             const ov::Tensor& weights,
             const ov::genai::UNet2DConditionModel::Config& config,
@@ -428,18 +438,8 @@ void init_unet2d_condition_model(py::module_& m) {
             vae_scale_factor (int): VAE scale factor.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
-        )");
-
-    py::class_<ov::genai::UNet2DConditionModel::Config>(unet2d_condition_model, "Config", "This class is used for storing UNet2DConditionModel config.")
-        .def(py::init([](const std::filesystem::path& config_path) {
-            return std::make_unique<ov::genai::UNet2DConditionModel::Config>(config_path);
-        }),
-        py::arg("config_path"))
-        .def_readwrite("in_channels", &ov::genai::UNet2DConditionModel::Config::in_channels)
-        .def_readwrite("sample_size", &ov::genai::UNet2DConditionModel::Config::sample_size)
-        .def_readwrite("time_cond_proj_dim", &ov::genai::UNet2DConditionModel::Config::time_cond_proj_dim);
-
-    unet2d_condition_model.def("get_config", &ov::genai::UNet2DConditionModel::get_config)
+        )")
+        .def("get_config", &ov::genai::UNet2DConditionModel::get_config)
         .def("reshape", &ov::genai::UNet2DConditionModel::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"))
         .def("set_adapters", &ov::genai::UNet2DConditionModel::set_adapters, py::arg("adapters"))
         .def("infer", 
@@ -507,8 +507,19 @@ void init_sd3_transformer_2d_model(py::module_& m) {
         R"(
             SD3Transformer2DModel class
             model (SD3Transformer2DModel): SD3Transformer2DModel model
-        )")
-        .def(py::init([](
+        )");
+
+    py::class_<ov::genai::SD3Transformer2DModel::Config>(sd3_transformer_2d_model, "Config", "This class is used for storing SD3Transformer2DModel config.")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::SD3Transformer2DModel::Config>(config_path);
+        }),
+        py::arg("config_path"))
+        .def_readwrite("in_channels", &ov::genai::SD3Transformer2DModel::Config::in_channels)
+        .def_readwrite("sample_size", &ov::genai::SD3Transformer2DModel::Config::sample_size)
+        .def_readwrite("patch_size", &ov::genai::SD3Transformer2DModel::Config::patch_size)
+        .def_readwrite("joint_attention_dim", &ov::genai::SD3Transformer2DModel::Config::joint_attention_dim);
+
+    sd3_transformer_2d_model.def(py::init([](
             const std::string& model,
             const ov::Tensor& weights,
             const ov::genai::SD3Transformer2DModel::Config& config,
@@ -550,19 +561,8 @@ void init_sd3_transformer_2d_model(py::module_& m) {
             vae_scale_factor (int): VAE scale factor.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
-        )");
-
-    py::class_<ov::genai::SD3Transformer2DModel::Config>(sd3_transformer_2d_model, "Config", "This class is used for storing SD3Transformer2DModel config.")
-        .def(py::init([](const std::filesystem::path& config_path) {
-            return std::make_unique<ov::genai::SD3Transformer2DModel::Config>(config_path);
-        }),
-        py::arg("config_path"))
-        .def_readwrite("in_channels", &ov::genai::SD3Transformer2DModel::Config::in_channels)
-        .def_readwrite("sample_size", &ov::genai::SD3Transformer2DModel::Config::sample_size)
-        .def_readwrite("patch_size", &ov::genai::SD3Transformer2DModel::Config::patch_size)
-        .def_readwrite("joint_attention_dim", &ov::genai::SD3Transformer2DModel::Config::joint_attention_dim);
-
-    sd3_transformer_2d_model.def("get_config", &ov::genai::SD3Transformer2DModel::get_config)
+        )")
+        .def("get_config", &ov::genai::SD3Transformer2DModel::get_config)
         .def("reshape", &ov::genai::SD3Transformer2DModel::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"))
         .def("infer", 
             &ov::genai::SD3Transformer2DModel::infer, 
@@ -622,8 +622,17 @@ void init_flux_transformer_2d_model(py::module_& m) {
         R"(
             FluxTransformer2DModel class
             model (FluxTransformer2DModel): FluxTransformer2DModel model
-        )")
-        .def(py::init([](
+        )");
+
+    py::class_<ov::genai::FluxTransformer2DModel::Config>(flux_transformer_2d_model, "Config", "This class is used for storing FluxTransformer2DModel config.")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::FluxTransformer2DModel::Config>(config_path);
+        }),
+        py::arg("config_path"))
+        .def_readwrite("in_channels", &ov::genai::FluxTransformer2DModel::Config::in_channels)
+        .def_readwrite("default_sample_size", &ov::genai::FluxTransformer2DModel::Config::m_default_sample_size);
+
+    flux_transformer_2d_model.def(py::init([](
             const std::string& model,
             const ov::Tensor& weights,
             const ov::genai::FluxTransformer2DModel::Config& config,
@@ -665,17 +674,8 @@ void init_flux_transformer_2d_model(py::module_& m) {
             vae_scale_factor (int): VAE scale factor.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
-        )");
-
-    py::class_<ov::genai::FluxTransformer2DModel::Config>(flux_transformer_2d_model, "Config", "This class is used for storing FluxTransformer2DModel config.")
-        .def(py::init([](const std::filesystem::path& config_path) {
-            return std::make_unique<ov::genai::FluxTransformer2DModel::Config>(config_path);
-        }),
-        py::arg("config_path"))
-        .def_readwrite("in_channels", &ov::genai::FluxTransformer2DModel::Config::in_channels)
-        .def_readwrite("default_sample_size", &ov::genai::FluxTransformer2DModel::Config::m_default_sample_size);
-
-    flux_transformer_2d_model.def("get_config", &ov::genai::FluxTransformer2DModel::get_config)
+        )")
+        .def("get_config", &ov::genai::FluxTransformer2DModel::get_config)
         .def("reshape", &ov::genai::FluxTransformer2DModel::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"))
         .def("infer", 
             &ov::genai::FluxTransformer2DModel::infer, 
@@ -766,8 +766,20 @@ void init_autoencoder_kl(py::module_& m) {
         R"(
             AutoencoderKL class.
             model (AutoencoderKL): AutoencoderKL model.
-        )")
-        .def(py::init([](
+        )");
+
+    py::class_<ov::genai::AutoencoderKL::Config>(autoencoder_kl, "Config", "This class is used for storing AutoencoderKL config.")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::AutoencoderKL::Config>(config_path);
+        }),
+        py::arg("config_path"))
+        .def_readwrite("in_channels", &ov::genai::AutoencoderKL::Config::in_channels)
+        .def_readwrite("latent_channels", &ov::genai::AutoencoderKL::Config::latent_channels)
+        .def_readwrite("out_channels", &ov::genai::AutoencoderKL::Config::out_channels)
+        .def_readwrite("scaling_factor", &ov::genai::AutoencoderKL::Config::scaling_factor)
+        .def_readwrite("block_out_channels", &ov::genai::AutoencoderKL::Config::block_out_channels);
+
+    autoencoder_kl.def(py::init([](
             const std::string& vae_decoder_model,
             const ov::Tensor& vae_decoder_weights,
             const ov::genai::AutoencoderKL::Config& vae_decoder_config
@@ -852,20 +864,8 @@ void init_autoencoder_kl(py::module_& m) {
             vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
-        )");
-
-    py::class_<ov::genai::AutoencoderKL::Config>(autoencoder_kl, "Config", "This class is used for storing AutoencoderKL config.")
-        .def(py::init([](const std::filesystem::path& config_path) {
-            return std::make_unique<ov::genai::AutoencoderKL::Config>(config_path);
-        }),
-        py::arg("config_path"))
-        .def_readwrite("in_channels", &ov::genai::AutoencoderKL::Config::in_channels)
-        .def_readwrite("latent_channels", &ov::genai::AutoencoderKL::Config::latent_channels)
-        .def_readwrite("out_channels", &ov::genai::AutoencoderKL::Config::out_channels)
-        .def_readwrite("scaling_factor", &ov::genai::AutoencoderKL::Config::scaling_factor)
-        .def_readwrite("block_out_channels", &ov::genai::AutoencoderKL::Config::block_out_channels);
-
-    autoencoder_kl.def("reshape", &ov::genai::AutoencoderKL::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"))
+        )")
+        .def("reshape", &ov::genai::AutoencoderKL::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"))
         .def(
             "compile",
             [](ov::genai::AutoencoderKL& self,
