@@ -3,7 +3,7 @@
 
 #include "vision_encoder.hpp"
 #include "utils.hpp"
-
+#include "logger.hpp"
 
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen2_5_vl/classes.hpp"
@@ -29,8 +29,7 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::
         [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
-    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
-    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(model_dir, "video_preprocessor_config.json");
+    resolve_processor_configs(model_dir);
 }
 
 VisionEncoder::VisionEncoder(
@@ -47,8 +46,35 @@ VisionEncoder::VisionEncoder(
         [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
-    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "preprocessor_config.json");
-    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, "video_preprocessor_config.json");
+    resolve_processor_configs(config_dir_path);
+}
+
+void VisionEncoder::resolve_processor_configs(const std::filesystem::path& config_dir_path) {
+    // TODO Consider using separate class or struct for combined processor_config.json
+    const std::string processor_config_filename = "processor_config.json";
+    const std::string preprocessor_config_filename = "preprocessor_config.json";
+    const std::string video_preprocessor_config_filename = "video_preprocessor_config.json";
+
+    const auto processor_config_path = config_dir_path / processor_config_filename;
+    if (std::filesystem::exists(processor_config_path)) {
+        std::ifstream stream(processor_config_path);
+        OPENVINO_ASSERT(stream.is_open(), "Failed to open '", processor_config_path, "' with video processor config");
+        nlohmann::json parsed = nlohmann::json::parse(stream);
+
+        m_processor_config = ProcessorConfig(parsed.at("image_processor"));
+        m_video_processor_config = VideoProcessorConfig(parsed.at("video_processor"));
+    } else {
+        GENAI_INFO(processor_config_filename + " is not found in '" + config_dir_path.string() + "'. "
+            "Falling back to " + preprocessor_config_filename + " and " + video_preprocessor_config_filename + ".");
+        m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, preprocessor_config_filename.c_str());
+        m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, video_preprocessor_config_filename.c_str());
+
+        if (!std::filesystem::exists(config_dir_path / video_preprocessor_config_filename)) {
+            GENAI_INFO(video_preprocessor_config_filename + " not found in '" + config_dir_path.string() + "'. "
+                "Falling back to " + preprocessor_config_filename + " for video processing configuration.");
+            m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, preprocessor_config_filename.c_str());
+        }
+    }
 }
 
 ProcessorConfig VisionEncoder::get_processor_config() const {

@@ -156,6 +156,8 @@ protected:
     /// Used by models with separate video processor (e.g. Qwen3-VL).
     VideoProcessorConfig m_video_processor_config;
 
+    void resolve_processor_configs(const std::filesystem::path& config_dir_path);
+
 public:
     VisionEncoder(
         const std::filesystem::path& model_dir,
