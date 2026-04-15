@@ -1929,7 +1929,7 @@ OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(100, 77), (350, 350), (480, 512)],
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(100, 77), (350, 350), (480, 512)],
     # (999, 666) resolution fails, resop is reasonable and very close to optimum-intel output.
-    # There is know image resize incompatibility so different images sizes used to test gemma4 model.
+    # There is a known image resize incompatibility, so different image sizes are used to test the Gemma 4 model.
     "google/gemma-4-E2B-it": [(100, 77), (1000, 666), (997, 666), (999, 665), (1920, 1080)],
 }
 
