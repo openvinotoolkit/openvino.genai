@@ -1048,6 +1048,9 @@ ov::Tensor concat_weights_f16_vlm_only(const std::vector<ov::Tensor>& tensors) {
     return out;
 }
 
+// VLM-only fused QKV helper.
+// Keep the fused MatMul itself under q_proj (matching the common PyTorch execution-graph pattern),
+// but give the split outputs q/k/v-specific names so later branches preserve layer provenance.
 std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>, ov::Output<ov::Node>>
 make_qkv_fused_fc_vlm_only(
     const std::string& layer_prefix,
@@ -1102,7 +1105,7 @@ make_qkv_fused_fc_vlm_only(
         std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{q_out + k_out}),
         step,
         axis);
-    set_name(k_slice, to_op_name(q_key) + "/aten::linear/MatMul_split.out1");
+    set_name(k_slice, to_op_name(k_key) + "/aten::linear/MatMul_split.out1");
 
     auto v_slice = std::make_shared<ov::opset13::Slice>(
         fused,
@@ -1110,9 +1113,54 @@ make_qkv_fused_fc_vlm_only(
         std::make_shared<ov::op::v0::Constant>(element::i64, Shape{1}, std::vector<int64_t>{q_out + k_out + v_out}),
         step,
         axis);
-    set_name(v_slice, to_op_name(q_key) + "/aten::linear/MatMul_split.out2");
+    set_name(v_slice, to_op_name(v_key) + "/aten::linear/MatMul_split.out2");
 
     return {q_slice, k_slice, v_slice};
+}
+
+
+// VLM-only fallback for q/k/v projections:
+// keep canonical q_proj / k_proj / v_proj source-graph names for LoRA matching,
+// but avoid the problematic GGUF quant-dequant source subgraphs on GPU by
+// eagerly materializing ONLY these three projection weights to FP16.
+// This keeps the rest of the model quantized.
+ov::Output<ov::Node> make_fc_materialized_vlm_qkv_only(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    gguf_tensor_type qtype,
+    bool reorder = false,
+    int head_size = -1) {
+
+    size_t group_size = GGML_QUANTIZATION_GROUP_SIZE;
+    if (qtype == gguf_tensor_type::GGUF_TYPE_Q6_K) {
+        group_size = 16;
+    }
+
+    auto w_f16 = materialize_weight_to_f16_vlm_only(
+        key, consts, qtype, reorder, head_size, group_size);
+
+    auto weights_node = std::make_shared<v0::Constant>(w_f16);
+    set_name(weights_node, to_weight_name(key) + ".weight");
+
+    auto weights_f32 = std::make_shared<ov::op::v0::Convert>(weights_node, ov::element::f32);
+    set_name(weights_f32, to_weight_name(key) + ".weight/fq_weights_1/convert");
+
+    std::shared_ptr<ov::Node> output = std::make_shared<ov::op::v0::MatMul>(input, weights_f32, false, true);
+    set_name(output, to_op_name(key) + "/aten::linear/MatMul");
+
+    if (consts.count(key + ".bias")) {
+        auto add_tensor = get_tensor(consts, key + ".bias");
+        auto add_const = std::make_shared<v0::Constant>(add_tensor);
+        set_name(add_const, to_weight_name(key) + ".bias");
+
+        auto add_convert = std::make_shared<ov::op::v0::Convert>(add_const, ov::element::f32);
+        output = std::make_shared<ov::op::v1::Add>(
+            output, add_convert, ov::op::AutoBroadcastType::NUMPY);
+        set_name(output, to_op_name(key) + "/aten::add/Add");
+    }
+
+    return output;
 }
 
 ov::Output<ov::Node> make_int8_weights(
@@ -1491,15 +1539,29 @@ std::tuple<ov::Output<ov::Node>,
     ov::Output<ov::Node> k;
     ov::Output<ov::Node> v;
     if (is_vlm) {
-        std::tie(q, k, v) = make_qkv_fused_fc_vlm_only(
-            layer_prefix,
+        // Keep independent q/k/v layer names for LoRA, but use the more stable
+        // materialized path only for VLM attention projections.
+        q = make_fc_materialized_vlm_qkv_only(
+            layer_prefix + ".self_attn.q_proj",
             input_layernorm,
             consts,
-            qtypes,
+            qtypes.at(layer_prefix + ".self_attn.q_proj.qtype"),
             reorder,
-            reorder,
-            false,
             std::get<int>(configs.at("head_size")));
+
+        k = make_fc_materialized_vlm_qkv_only(
+            layer_prefix + ".self_attn.k_proj",
+            input_layernorm,
+            consts,
+            qtypes.at(layer_prefix + ".self_attn.k_proj.qtype"),
+            reorder,
+            std::get<int>(configs.at("head_size")));
+
+        v = make_fc_materialized_vlm_qkv_only(
+            layer_prefix + ".self_attn.v_proj",
+            input_layernorm,
+            consts,
+            qtypes.at(layer_prefix + ".self_attn.v_proj.qtype"));
     } else {
         q = make_fc(
             layer_prefix + ".self_attn.q_proj",
