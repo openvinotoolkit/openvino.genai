@@ -275,7 +275,7 @@ def test_invalid_length_properties_raise_error(
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_batch_one_no_exception(npu_model: LLMPipeline):
-    prompt = 'The Sun is yellow because'
+    prompt = "The Sun is yellow because"
     # Check it doesn't throw any exception when batch of size 1 is provided
     npu_model.generate([prompt], max_new_tokens=20)
 
@@ -284,7 +284,7 @@ def test_batch_one_no_exception(npu_model: LLMPipeline):
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_batch_raise_error(npu_model: LLMPipeline):
-    prompt = 'The Sun is yellow because'
+    prompt = "The Sun is yellow because"
     with pytest.raises(RuntimeError):
         npu_model.generate([prompt] * 3, max_new_tokens=100)
 
@@ -317,7 +317,7 @@ def test_terminate_by_max_number_of_tokens(
     npu_model: LLMPipeline, 
 ):
     model_path = llm_model.models_path
-    prompt = 'The Sun is yellow because'
+    prompt = "The Sun is yellow because"
     num_tokens = 128
 
     tokenizer = Tokenizer(model_path)
@@ -334,7 +334,7 @@ def test_terminate_by_out_of_memory(
     npu_config: dict
 ):
     model_path = llm_model.models_path
-    prompt = 'The Sun is yellow because'
+    prompt = "The Sun is yellow because"
     pipeline_config = { "MAX_PROMPT_LEN": 256, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= npu_config
     kv_cache_size = pipeline_config['MAX_PROMPT_LEN'] + pipeline_config['MIN_RESPONSE_LEN']
@@ -356,7 +356,7 @@ def test_terminate_by_sampler(
     npu_model: LLMPipeline,
 ):
     model_path = llm_model.models_path
-    prompt = 'The Sun is yellow because'
+    prompt = "The Sun is yellow because"
 
     current_iter = 0
     num_iters = 10
@@ -391,15 +391,15 @@ def test_terminate_by_sampler(
     [
         pytest.param(StreamingStatus.STOP, GenerationFinishReason.STOP, id="stop"),
         pytest.param(StreamingStatus.TOOL_CALL_STOP, GenerationFinishReason.TOOL_CALL, id="tool_call_stop"),
-    ]
+    ],
 )
 def test_terminate_finish_reason_by_sampler(
-    llm_model: OVConvertedModelSchema, 
+    llm_model: OVConvertedModelSchema,
     streaming_status: StreamingStatus,
     expected_finish_reason: GenerationFinishReason,
 ):
     model_path = llm_model.models_path
-    prompt = 'The Sun is yellow because'
+    prompt = "The Sun is yellow because"
 
     current_iter = 0
     num_iters = 10
@@ -412,6 +412,7 @@ def test_terminate_finish_reason_by_sampler(
             nonlocal current_iter
             current_iter += 1
             return StreamingStatus.RUNNING if current_iter != num_iters else streaming_status
+
         def end(self):
             pass
 
@@ -425,9 +426,9 @@ def test_terminate_finish_reason_by_sampler(
     )
 
     encoded_results = static_cpu_model.generate(
-        tokenized_input, 
-        max_new_tokens=1000, 
-        ignore_eos=True, 
+        tokenized_input,
+        max_new_tokens=1000,
+        ignore_eos=True,
         streamer=TestStreamer(),
     )
 

@@ -78,8 +78,11 @@ def test_several_incremental_parsers(hf_ov_genai_models):
 
     class IncrementalToolParser(IncrementalParser):
         started_tool_call: bool = False
-        accumulated_tool_call: StringIO = StringIO()
         deactivated: bool = False
+
+        def __init__(self):
+            super().__init__()
+            self.accumulated_tool_call = StringIO()
 
         def parse(self, delta_msg: dict, delta_text: str, delta_tokens=None) -> str:
             if self.deactivated:
@@ -157,8 +160,11 @@ def test_stop_invoked_by_tool_call(hf_ov_genai_models):
 
     class IncrementalToolParser(IncrementalParser):
         started_tool_call: bool = False
-        accumulated_tool_call: StringIO = StringIO()
         deactivated: bool = False
+
+        def __init__(self):
+            super().__init__()
+            self.accumulated_tool_call = StringIO()
 
         def parse(self, delta_msg: dict, delta_text: str, delta_tokens=None) -> str:
             if self.deactivated:
