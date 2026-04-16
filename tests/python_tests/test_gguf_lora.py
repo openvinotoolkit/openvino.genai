@@ -5,7 +5,7 @@ import pytest
 import sys
 import gc
 import openvino_genai as ov_genai
-from utils.hugging_face import download_gguf_model
+from utils.hugging_face import download_hf_model
 
 # Constants
 # Use OpenVINO IR model (pre-converted) to test GGUF adapter support
@@ -53,7 +53,7 @@ def test_gguf_lora_generation():
     model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
 
     # Download GGUF adapter
-    adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
+    adapter_path = download_hf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
     device = "CPU"
 
@@ -123,7 +123,7 @@ class TestGGUFLoRANameConversion:
         This test is faster than full generation tests because it only loads
         the adapter without downloading or running the full model.
         """
-        adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
+        adapter_path = download_hf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         # Load adapter - this will fail if:
         # 1. GGUF format is not recognized
@@ -152,7 +152,7 @@ class TestGGUFLoRANameConversion:
         from pathlib import Path
 
         model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
-        adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
+        adapter_path = download_hf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         device = "CPU"
         config = ov_genai.GenerationConfig()
@@ -202,7 +202,7 @@ class TestGGUFLoRAAlphaScaling:
 
         # Download model and adapter
         model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
-        adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
+        adapter_path = download_hf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         device = "CPU"
         config = ov_genai.GenerationConfig()
@@ -246,7 +246,7 @@ class TestGGUFLoRAAdapterEquality:
         from the same file, which is important for scenarios where multiple pipelines
         need to use the same adapter.
         """
-        adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
+        adapter_path = download_hf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         # Load adapter twice
         adapter1 = ov_genai.Adapter(str(adapter_path))
@@ -305,7 +305,7 @@ class TestGGUFLoRAIntegration:
         from pathlib import Path
 
         model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
-        adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
+        adapter_path = download_hf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         device = "CPU"
         config = ov_genai.GenerationConfig()
@@ -346,7 +346,7 @@ class TestGGUFLoRAIntegration:
         from pathlib import Path
 
         model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
-        adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
+        adapter_path = download_hf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         device = "CPU"
         config = ov_genai.GenerationConfig()
