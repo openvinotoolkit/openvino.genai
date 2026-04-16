@@ -5,7 +5,7 @@ Examples in this folder showcase inference of text to image models like Stable D
 There are several sample files:
  - [`text2image.py`](./text2image.py) demonstrates basic usage of the text to image pipeline
  - [`lora_text2image.py`](./lora_text2image.py) shows how to apply LoRA adapters to the pipeline
- - [`taylorseer_text2image.py`](./taylorseer_text2image.py) demonstrates text to image generation with TaylorSeer caching optimization for improved performance. Only the Flux model is supported.
+ - [`taylorseer_text2image.py`](./taylorseer_text2image.py) demonstrates text to image generation with TaylorSeer caching optimization for improved performance. Flux and StableDiffusion3 models are supported.
  - [`heterogeneous_stable_diffusion.py`](./heterogeneous_stable_diffusion.py) shows how to assemble a heterogeneous text2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.py`](./image2image.py) demonstrates basic usage of the image to image pipeline
  - [`inpainting.py`](./inpainting.py) demonstrates basic usage of the inpainting pipeline
@@ -160,7 +160,7 @@ The sample will create a stable diffusion pipeline such that the text encoder is
 ## Run image to image pipeline
 
 The `image2mage.py` sample demonstrates basic image to image generation pipeline. The difference with text to image pipeline is that final image is denoised from initial image converted to latent space and noised with image noise according to `strength` parameter. `strength` should be in range of `[0., 1.]` where `1.` means initial image is fully noised and it is an equivalent to text to image generation.
-Also, `strength` parameter linearly affects a number of inferenece steps, because lower `strength` values means initial latent already has some structure and it requires less steps to denoise it.
+Also, `strength` parameter linearly affects a number of inference steps, because lower `strength` values means initial latent already has some structure and it requires less steps to denoise it.
 
 To run the sample, download initial image first:
 

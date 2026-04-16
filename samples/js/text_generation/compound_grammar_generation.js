@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import { z } from 'zod';
 import { ChatHistory, LLMPipeline, StructuredOutputConfig as SOC, StreamingStatus } from 'openvino-genai-node';
 import { serialize_json, toJSONSchema } from './helper.js';
@@ -119,7 +122,7 @@ async function main() {
     const generationConfig = {
         return_decoded_results: true,
         max_new_tokens: 300,
-        do_sample: true,
+        do_sample: false,
     };
 
     const userText1 = "Do dolphins have fingers?";

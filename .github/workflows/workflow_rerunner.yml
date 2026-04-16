@@ -1,0 +1,117 @@
+name: Rerun Workflow with Known Errors
+
+on:
+  workflow_run:
+    workflows:
+      - "Coverity (Ubuntu 22.04, Python 3.11)"
+      - "Linux (Ubuntu 22.04, Python 3.11)"
+      - "macOS (14, Python 3.11)"
+      - "Manylinux 2_28"
+      - "Windows (VS 2022, Python 3.11)"
+    types:
+      - completed
+  pull_request:
+    paths:
+      - '.github/workflows/workflow_rerunner.yml'
+      - '.github/scripts/workflow_rerun/**'
+
+env:
+  PYTHON_VERSION: '3.11'
+
+permissions: read-all
+
+jobs:
+  rerun:
+    name: Rerun Workflow
+    # Run only for the failed workflows in openvinotoolkit org
+    if: ${{ github.event.workflow_run.conclusion == 'failure' && github.repository_owner == 'openvinotoolkit' }}
+    runs-on: aks-linux-small
+    permissions:
+      actions: write
+      contents: read
+      statuses: read
+      checks: read
+    steps:
+      - name: Checkout
+        uses: ababushk/checkout@dd591a6a2ac25618db4eda86e7e0d938f88cf01b # cherry_pick_retries
+        timeout-minutes: 15
+        with:
+          sparse-checkout: '.github/scripts/workflow_rerun'
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install deps
+        working-directory: ${{ github.workspace }}/.github/scripts/workflow_rerun
+        run: |
+          python -m pip install -r requirements.txt
+
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
+
+      - name: Rerun
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PGHOST: ${{ secrets.METRICS_DATABASE_HOST }}
+          PGUSER: ${{ secrets.METRICS_DATABASE_USERNAME }}
+          PGPASSWORD: ${{ secrets.METRICS_DATABASE_PASSWORD }}
+          PGDATABASE: ${{ secrets.METRICS_DATABASE_NAME }}
+          PGPORT: 5432
+        run: |
+          export PYTHONPATH=${{ github.workspace }}/.github/scripts/workflow_rerun:${{ github.workspace }}/.github/scripts:$PYTHONPATH
+          python3 ${{ github.workspace }}/.github/scripts/workflow_rerun/rerunner.py \
+          --run-id ${{ github.event.workflow_run.id }} \
+          --rerunner-run-id ${{ github.run_id }} \
+          --repository-name ${GITHUB_REPOSITORY}
+
+  rerunner_tests:
+    name: Rerunner Tests
+    if: ${{ github.event_name == 'pull_request' && github.repository_owner == 'openvinotoolkit' }}
+    runs-on: aks-linux-small
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: ababushk/checkout@dd591a6a2ac25618db4eda86e7e0d938f88cf01b # cherry_pick_retries
+        timeout-minutes: 15
+        with:
+          sparse-checkout: '.github/scripts/workflow_rerun'
+          lfs: false
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install deps
+        working-directory: ${{ github.workspace }}/.github/scripts/workflow_rerun
+        run: |
+          python -m pip install -r requirements.txt
+
+      - name: Test Rerunner (Tests)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: ${{ github.workspace }}/.github/scripts/workflow_rerun
+        run: |
+          export PYTHONPATH=${{ github.workspace }}/.github/scripts/workflow_rerun:${{ github.workspace }}/.github/scripts:$PYTHONPATH
+          python3 -m unittest tests/*_test.py
+
+      - name: Test Rerunner (CLI)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: ${{ github.workspace }}/.github/scripts/workflow_rerun
+        run: |
+          export PYTHONPATH=${{ github.workspace }}/.github/scripts/workflow_rerun:${{ github.workspace }}/.github/scripts:$PYTHONPATH
+
+          # Need to get a run id with successful status for log analyzing
+          # cannot lock a run id as logs get deleted after some time
+          run_id=$(python3 -c "from github import Github, Auth; import os; from datetime import datetime, timedelta, timezone; github=Github(auth=Auth.Token(token=os.environ.get('GITHUB_TOKEN'))); repo = github.get_repo('${GITHUB_REPOSITORY}'); cutoff_date=(datetime.now(timezone.utc)-timedelta(days=14)).date().isoformat(); runs=repo.get_workflow_runs(status='success', created=f'>={cutoff_date}'); print(runs[0].id)")
+
+          python3 rerunner.py --repository-name ${GITHUB_REPOSITORY} --run-id $run_id --rerunner-run-id ${{ github.run_id }} --dry-run

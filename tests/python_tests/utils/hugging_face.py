@@ -4,12 +4,13 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Type
+import subprocess  # nosec B404
 
 from optimum.modeling_base import OptimizedModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
 
-from optimum.intel import OVModelForCausalLM, OVModelForSequenceClassification
+from optimum.intel import OVModelForCausalLM
 from optimum.intel.openvino.modeling import OVModel
 
 from huggingface_hub import hf_hub_download, snapshot_download
@@ -46,69 +47,66 @@ def generation_config_to_hf(
         return
 
     kwargs = {}
-    kwargs['return_dict_in_generate'] = True
+    kwargs["return_dict_in_generate"] = True
 
     # generic parameters
-    kwargs['max_length'] = generation_config.max_length
+    kwargs["max_length"] = generation_config.max_length
     # has higher priority than 'max_length'
     SIZE_MAX = 2**64 - 1
     if generation_config.max_new_tokens != SIZE_MAX:
-        kwargs['max_new_tokens'] = generation_config.max_new_tokens
-    kwargs['min_new_tokens'] = generation_config.min_new_tokens
+        kwargs["max_new_tokens"] = generation_config.max_new_tokens
+    kwargs["min_new_tokens"] = generation_config.min_new_tokens
     if generation_config.stop_strings:
-        kwargs['stop_strings'] = generation_config.stop_strings
+        kwargs["stop_strings"] = generation_config.stop_strings
 
     # copy default parameters
-    kwargs['bos_token_id'] = default_generation_config.bos_token_id
-    kwargs['pad_token_id'] = default_generation_config.pad_token_id
+    kwargs["bos_token_id"] = default_generation_config.bos_token_id
+    kwargs["pad_token_id"] = default_generation_config.pad_token_id
 
-    if (generation_config.ignore_eos):
-        kwargs['eos_token_id'] = []
+    if generation_config.ignore_eos:
+        kwargs["eos_token_id"] = []
     else:
         if len(generation_config.stop_token_ids) > 0:
-            kwargs['eos_token_id'] = list(generation_config.stop_token_ids)
+            kwargs["eos_token_id"] = list(generation_config.stop_token_ids)
         elif generation_config.eos_token_id != -1:
-            kwargs['eos_token_id'] = generation_config.eos_token_id
+            kwargs["eos_token_id"] = generation_config.eos_token_id
         else:
-            kwargs['eos_token_id'] = default_generation_config.eos_token_id
+            kwargs["eos_token_id"] = default_generation_config.eos_token_id
 
     # copy penalties
-    kwargs['repetition_penalty'] = generation_config.repetition_penalty
+    kwargs["repetition_penalty"] = generation_config.repetition_penalty
 
     if generation_config.is_beam_search():
         # beam search case
-        kwargs['num_beam_groups'] = generation_config.num_beam_groups
-        kwargs['num_beams'] = generation_config.num_beams
-        kwargs['length_penalty'] = generation_config.length_penalty
-        kwargs['no_repeat_ngram_size'] = generation_config.no_repeat_ngram_size
-        kwargs['num_return_sequences'] = generation_config.num_return_sequences
-        kwargs['output_scores'] = True
+        kwargs["num_beam_groups"] = generation_config.num_beam_groups
+        kwargs["num_beams"] = generation_config.num_beams
+        kwargs["length_penalty"] = generation_config.length_penalty
+        kwargs["no_repeat_ngram_size"] = generation_config.no_repeat_ngram_size
+        kwargs["num_return_sequences"] = generation_config.num_return_sequences
+        kwargs["output_scores"] = True
 
         if generation_config.num_beam_groups > 1:
-            kwargs['diversity_penalty'] = generation_config.diversity_penalty
+            kwargs["diversity_penalty"] = generation_config.diversity_penalty
 
         # in OpenVINO GenAI this parameter is called stop_criteria,
         # while in HF it's called early_stopping.
         # HF values True, False and "never" correspond to OV GenAI values "EARLY", "HEURISTIC" and "NEVER"
-        STOP_CRITERIA_MAP = {
-            StopCriteria.NEVER: "never",
-            StopCriteria.EARLY: True,
-            StopCriteria.HEURISTIC: False
-        }
+        STOP_CRITERIA_MAP = {StopCriteria.NEVER: "never", StopCriteria.EARLY: True, StopCriteria.HEURISTIC: False}
 
-        kwargs['early_stopping'] = STOP_CRITERIA_MAP[generation_config.stop_criteria]
+        kwargs["early_stopping"] = STOP_CRITERIA_MAP[generation_config.stop_criteria]
     elif generation_config.is_multinomial():
         # mulitinomial
-        kwargs['temperature'] = generation_config.temperature
-        kwargs['top_k'] = generation_config.top_k
-        kwargs['top_p'] = generation_config.top_p
-        kwargs['do_sample'] = generation_config.do_sample
+        kwargs["temperature"] = generation_config.temperature
+        kwargs["top_k"] = generation_config.top_k
+        kwargs["top_p"] = generation_config.top_p
+        kwargs["do_sample"] = generation_config.do_sample
     else:
         # greedy
         pass
 
     hf_generation_config = HFGenerationConfig(**kwargs)
     return hf_generation_config
+
 
 def run_hugging_face(
     opt_model: OptimizedModel,
@@ -124,15 +122,25 @@ def run_hugging_face(
             hf_generation_config = generation_config_to_hf(opt_model.generation_config, generation_config)
             inputs = {}
             if hf_tokenizer.chat_template and generation_config.apply_chat_template:
-                prompt = hf_tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True)
+                prompt = hf_tokenizer.apply_chat_template(
+                    [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True
+                )
                 inputs = hf_tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
             else:
                 inputs = hf_tokenizer(prompt, return_tensors="pt")
-            input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
+            input_ids, attention_mask = inputs["input_ids"], inputs["attention_mask"]
             prompt_len = 0 if generation_config.echo else input_ids.numel()
 
-            generate_outputs = opt_model.generate(input_ids=input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer, **extra_generate_kwargs())
-            all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
+            generate_outputs = opt_model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                generation_config=hf_generation_config,
+                tokenizer=hf_tokenizer,
+                **extra_generate_kwargs(),
+            )
+            all_text_batch = hf_tokenizer.batch_decode(
+                [generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True
+            )
 
             generation_result = GenerationResult()
             generation_result.m_generation_ids = all_text_batch
@@ -145,14 +153,31 @@ def run_hugging_face(
         if hf_tokenizer.chat_template and generation_configs.apply_chat_template:
             processed_prompts = []
             for prompt in prompts:
-                processed_prompts.append(hf_tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True))
+                processed_prompts.append(
+                    hf_tokenizer.apply_chat_template(
+                        [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True
+                    )
+                )
             # process all prompts as a single batch as we have a single generation config for all prompts
-            inputs = hf_tokenizer(processed_prompts, return_tensors='pt', padding=True, truncation=True, add_special_tokens=False, padding_side='left')
+            inputs = hf_tokenizer(
+                processed_prompts,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                add_special_tokens=False,
+                padding_side="left",
+            )
         else:
-            inputs = hf_tokenizer(prompts, return_tensors='pt', padding=True, truncation=True, padding_side='left')
-        input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
+            inputs = hf_tokenizer(prompts, return_tensors="pt", padding=True, truncation=True, padding_side="left")
+        input_ids, attention_mask = inputs["input_ids"], inputs["attention_mask"]
         hf_generation_config = generation_config_to_hf(opt_model.generation_config, generation_configs)
-        hf_encoded_outputs = opt_model.generate(input_ids, attention_mask=attention_mask, generation_config=hf_generation_config, tokenizer=hf_tokenizer, **extra_generate_kwargs())
+        hf_encoded_outputs = opt_model.generate(
+            input_ids,
+            attention_mask=attention_mask,
+            generation_config=hf_generation_config,
+            tokenizer=hf_tokenizer,
+            **extra_generate_kwargs(),
+        )
 
         generation_ids = []
         scores = []
@@ -183,13 +208,14 @@ def get_huggingface_models(
     model_class: Type[OVModel],
     local_files_only=False,
     trust_remote_code=False,
+    **model_kwargs,
 ) -> tuple[OptimizedModel, AutoTokenizer]:
     if not local_files_only and isinstance(model_id, str):
         model_id = snapshot_download(model_id)  # required to avoid HF rate limits
 
     def auto_tokenizer_from_pretrained() -> AutoTokenizer:
         return AutoTokenizer.from_pretrained(
-            model_id, 
+            model_id,
             local_files_only=local_files_only,
             trust_remote_code=trust_remote_code,
         )
@@ -204,6 +230,7 @@ def get_huggingface_models(
             "ov_config": get_default_llm_properties(),
             "local_files_only": local_files_only,
             "trust_remote_code": trust_remote_code,
+            **model_kwargs,
         }
         return model_class.from_pretrained(model_id, **params)
 
@@ -215,23 +242,23 @@ def get_huggingface_models(
         hf_tokenizer = retry_request(auto_tokenizer_from_pretrained)
         return opt_model, hf_tokenizer
 
+
 def convert_and_save_tokenizer(
-    hf_tokenizer : AutoTokenizer,
+    hf_tokenizer: AutoTokenizer,
     models_path: Path,
     **convert_args,
 ):
-    tokenizer, detokenizer = convert_tokenizer(
-        hf_tokenizer, with_detokenizer=True, **convert_args
-    )
+    tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True, **convert_args)
 
     from utils.constants import OV_DETOKENIZER_FILENAME, OV_TOKENIZER_FILENAME
+
     save_model(tokenizer, models_path / OV_TOKENIZER_FILENAME)
     save_model(detokenizer, models_path / OV_DETOKENIZER_FILENAME)
 
 
 def convert_models(
-    opt_model : OVModelForCausalLM,
-    hf_tokenizer : AutoTokenizer,
+    opt_model: OVModelForCausalLM,
+    hf_tokenizer: AutoTokenizer,
     models_path: Path,
 ) -> None:
     opt_model.save_pretrained(str(models_path))
@@ -257,10 +284,36 @@ def sanitize_model_id(model_id: str) -> str:
 
 TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
 
+# Some linear-attention models are exported incorrectly via OVModelForCausalLM.from_pretrained(..., export=True)
+# in the Python API path. Use optimum-cli export for these models to match stable CLI behavior - CVS-183496
+FORCE_OPTIMUM_CLI_EXPORT_MODELS = (
+    "optimum-intel-internal-testing/tiny-random-lfm2",
+    "optimum-intel-internal-testing/tiny-random-qwen3-next",
+)
+
+
+def export_with_optimum_cli(model_id: str, output_dir: Path, trust_remote_code: bool) -> None:
+    command = [
+        "optimum-cli",
+        "export",
+        "openvino",
+        "-m",
+        model_id,
+        "--task",
+        "text-generation-with-past",
+        str(output_dir),
+    ]
+
+    if trust_remote_code:
+        command.append("--trust-remote-code")
+
+    retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True))
+
 
 def download_and_convert_model_class(
-    model_id: str, 
+    model_id: str,
     model_class: Type[OVModel],
+    model_kwargs: dict | None = None,
     **tokenizer_kwargs,
 ) -> OVConvertedModelSchema:
     trust_remote_code = model_id in TRUST_REMOTE_CODE_MODELS
@@ -272,29 +325,42 @@ def download_and_convert_model_class(
 
     manager = AtomicDownloadManager(models_path)
 
+    if model_kwargs is None:
+        model_kwargs = {}
+
     if manager.is_complete() or (models_path / OV_MODEL_FILENAME).exists():
         opt_model, hf_tokenizer = get_huggingface_models(
-            models_path, model_class, local_files_only=True, trust_remote_code=trust_remote_code
+            models_path, model_class, local_files_only=True, trust_remote_code=trust_remote_code, **model_kwargs
         )
     else:
-        opt_model, hf_tokenizer = get_huggingface_models(
-            model_id, model_class, local_files_only=False, trust_remote_code=trust_remote_code
-        )
-        if "padding_side" in tokenizer_kwargs:
-            hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
+        if model_id in FORCE_OPTIMUM_CLI_EXPORT_MODELS:
 
-        def convert_to_temp(temp_path: Path) -> None:
-            convert_models(opt_model, hf_tokenizer, temp_path)
+            def convert_to_temp(temp_path: Path) -> None:
+                export_with_optimum_cli(model_id, temp_path, trust_remote_code=trust_remote_code)
 
-        manager.execute(convert_to_temp)
+            manager.execute(convert_to_temp)
+            opt_model, hf_tokenizer = get_huggingface_models(
+                models_path, model_class, local_files_only=True, trust_remote_code=trust_remote_code, **model_kwargs
+            )
+        else:
+            opt_model, hf_tokenizer = get_huggingface_models(
+                model_id, model_class, local_files_only=False, trust_remote_code=trust_remote_code, **model_kwargs
+            )
+            if "padding_side" in tokenizer_kwargs:
+                hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
+
+            def convert_to_temp(temp_path: Path) -> None:
+                convert_models(opt_model, hf_tokenizer, temp_path)
+
+            manager.execute(convert_to_temp)
 
     if "padding_side" in tokenizer_kwargs:
         hf_tokenizer.padding_side = tokenizer_kwargs["padding_side"]
 
     return OVConvertedModelSchema(
-        model_id, 
-        opt_model, 
-        hf_tokenizer, 
+        model_id,
+        opt_model,
+        hf_tokenizer,
         models_path,
     )
 
@@ -310,13 +376,7 @@ def download_gguf_model(
     manager = AtomicDownloadManager(models_path_gguf)
 
     def download_to_temp(temp_path: Path) -> None:
-        retry_request(
-            lambda: hf_hub_download(
-                repo_id=gguf_model_id,
-                filename=gguf_filename,
-                local_dir=temp_path
-            )
-        )
+        retry_request(lambda: hf_hub_download(repo_id=gguf_model_id, filename=gguf_filename, local_dir=temp_path))
 
     manager.execute(download_to_temp)
 

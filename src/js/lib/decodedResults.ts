@@ -1,7 +1,14 @@
-// Copyright (C) 2018-2026 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { PerfMetrics, VLMPerfMetrics } from "./perfMetrics.js";
+import { Tensor } from "openvino-node";
+
+import {
+  PerfMetrics,
+  VLMPerfMetrics,
+  WhisperPerfMetrics,
+  Text2SpeechPerfMetrics,
+} from "./perfMetrics.js";
 
 /**
  * Structure to store resulting batched text outputs and scores for each batch.
@@ -67,4 +74,53 @@ export class VLMDecodedResults extends DecodedResults {
 
   /** VLM specific performance metrics. */
   perfMetrics: VLMPerfMetrics;
+}
+
+/** Whisper decoded result chunk (when return_timestamps or word_timestamps is enabled). */
+export type WhisperDecodedResultChunk = {
+  text: string;
+  startTs: number;
+  endTs: number;
+};
+
+/** Word-level timing (when word_timestamps is enabled). */
+export type WhisperWordTiming = {
+  word: string;
+  startTs: number;
+  endTs: number;
+  /** Word token identifiers as `BigInt64Array`. */
+  tokenIds?: BigInt64Array;
+};
+
+/**
+ * Result of WhisperPipeline.generate() with texts, scores, perf metrics, and optional timestamps.
+ */
+export class WhisperDecodedResults extends DecodedResults {
+  constructor(
+    texts: string[],
+    scores: number[],
+    perfMetrics: WhisperPerfMetrics,
+    public chunks?: WhisperDecodedResultChunk[],
+    public words?: WhisperWordTiming[],
+  ) {
+    super(texts, scores, perfMetrics, []);
+    this.perfMetrics = perfMetrics;
+  }
+
+  /** Whisper-specific performance metrics. */
+  override perfMetrics: WhisperPerfMetrics;
+}
+
+/**
+ * Result of Text2SpeechPipeline.generate() with audio tensors and perf metrics.
+ * Each element in `speeches` is an audio waveform tensor sampled at 16 kHz.
+ */
+export class Text2SpeechDecodedResults {
+  constructor(speeches: Tensor[], perfMetrics: Text2SpeechPerfMetrics) {
+    this.speeches = speeches;
+    this.perfMetrics = perfMetrics;
+  }
+
+  speeches: Tensor[];
+  perfMetrics: Text2SpeechPerfMetrics;
 }

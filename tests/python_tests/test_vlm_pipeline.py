@@ -64,6 +64,8 @@ from utils.generation_config import (
 )
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
+from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
+from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 import logging
 logger = logging.getLogger(__name__)
@@ -99,6 +101,7 @@ VIDEO_MODEL_IDS = [
     "optimum-intel-internal-testing/tiny-random-llava-next-video",
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl",
 ]
 
 
@@ -127,6 +130,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next": lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
@@ -140,6 +144,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
 }
 
 
@@ -150,6 +155,7 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
     "optimum-intel-internal-testing/tiny-random-qwen2vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl": 256,
 }
 
 
@@ -226,6 +232,10 @@ def _get_ov_model(model_id: str) -> str:
     ):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
+        )
+    if "optimum-intel-internal-testing/tiny-random-qwen3-vl" == model_id and is_transformers_version("<", "4.57.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
         )
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
@@ -1005,10 +1015,7 @@ def iteration_images_npu(request):
 
 @parametrize_all_models_npu
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_pipeline_chat_npu(ov_npu_pipe_model: VlmModelInfo, system_message, iteration_images_npu):
     def run_chat(ov_pipe, system_message, iteration_images):
         result_from_streamer = []
@@ -1183,10 +1190,7 @@ def test_perf_metrics(
 
 
 @parametrize_all_models_npu
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_no_exception(ov_npu_pipe_model: VlmModelInfo, cat_tensor):
     ov_pipe = ov_npu_pipe_model.pipeline
 
@@ -1207,10 +1211,7 @@ def image_sequence(request):
 
 
 @parametrize_one_model_npu
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
     ov_pipe = ov_npu_pipe_model.pipeline
 
@@ -1221,10 +1222,7 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
     )
 
 
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_auto_config(cat_tensor):
     models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
     properties = {
@@ -1242,10 +1240,7 @@ def test_vlm_npu_auto_config(cat_tensor):
 
 
 @parametrize_one_model_npu
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_multiple_images(
     ov_npu_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, handwritten_tensor: openvino.Tensor
 ):
@@ -1498,6 +1493,7 @@ TAG_INSERTED_BY_TEMPLATE = [
     ("optimum-intel-internal-testing/tiny-random-llava-next", "PA"),
     ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"),
     ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-qwen3-vl", "PA"),
     ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
     ("qnguyen3/nanoLLaVA", "PA"),
     ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
@@ -1893,7 +1889,9 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         assert tokenizer is not None, "Tokenizer should be set for llava-qwen2 models."
         optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
     else:
-        optimum_output = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+        optimum_output = processor.batch_decode(
+            generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
         optimum_text = optimum_output[0]
 
     params = {}
@@ -1921,11 +1919,13 @@ OPTIMUM_VS_GENAI_DEFAULT_VIDEO_RESOLUTIONS = [(32, 32), (176, 132), (640, 480)]
 OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS = {
     "optimum-intel-internal-testing/tiny-random-qwen2vl": [(100, 77), (350, 350), (480, 512)],
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(100, 77), (350, 350), (480, 512)],
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(100, 77), (350, 350), (480, 512)],
 }
 
 OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
     "optimum-intel-internal-testing/tiny-random-qwen2vl": [(32, 32), (70, 70)],
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(32, 32), (70, 70)],
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(32, 32), (70, 70)],
 }
 
 # test-id glob pattern -> xfail reason
@@ -1939,6 +1939,14 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # qwen2.5-vl cases that use 350x350 image, or 70x70 video resolutions
     "*tiny-random-qwen2.5-vl/*/image-350x350*": "CVS-180070",
     "*tiny-random-qwen2.5-vl/*/video-70x70": "CVS-180070",
+    # qwen3-vl cases that use 350x350 image with CPP preprocessing
+    "*tiny-random-qwen3-vl/*/CPP/image-350x350": "CVS-180070",
+    # qwen3-vl cases that use 32x32 video and preresized-video (uses the same 32x32 resolution)
+    "*tiny-random-qwen3-vl/*/video-32x32": "CVS-180070",
+    "*tiny-random-qwen3-vl/*/preresized-image+video": "CVS-180070",
+    # qwen3-vl cases that use 70x70 video with GRAPH preprocessing
+    "*tiny-random-qwen3-vl/*/GRAPH/video-70x70": "CVS-180070",
+    "*tiny-random-qwen3-vl/*/GRAPH/image-100x77/video-70x70": "CVS-180070",
     # llava-next-video graph pre-processing 'real' resize cases that include video
     "*tiny-random-llava-next-video/*/GRAPH/video*": "CVS-180070",
     "*tiny-random-llava-next-video/*/GRAPH/image*/video*": "CVS-180070",
@@ -1959,6 +1967,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl",
 ]
 
 # For these models, we will only add GRAPH pre-processing tests.
@@ -2448,4 +2457,40 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
 
     assert results.texts[0].strip() == results_pld.texts[0].strip(), (
         "Result should be the same when prompt_lookup is enabled and disabled."
+    )
+
+
+def test_vlm_pipeline_add_extension(cat_tensor, tmp_path: Path) -> None:
+    models_path = _get_ov_model(MODEL_IDS[0])
+    myadd_model_path = get_extension_model(models_path, tmp_path, "MyAdd")
+    assert_ir_contains_op_type(myadd_model_path, "MyAdd")
+
+    generation_config = GenerationConfig(max_new_tokens=20)
+
+    # The custom op "MyAdd" is provided by a compiled extension library and is intended to behave like OpenVINO "Add".
+    properties_path = {"extensions": [str(get_extension_lib_path())]}
+    pipe_extension_path = VLMPipeline(myadd_model_path, "CPU", config=properties_path)
+    result_extension_path = pipe_extension_path.generate(
+        PROMPTS[0], images=[cat_tensor], generation_config=generation_config
+    )
+    # The Python custom op "CustomAdd" is intended to behave like OpenVINO "Add", but it exercises Python ov.Op registration and callback-based evaluation.
+    customadd_model_path = get_extension_model(models_path, tmp_path, "CustomAdd")
+    assert_ir_contains_op_type(customadd_model_path, "CustomAdd")
+    CustomAdd.evaluate_calls = 0
+    properties_obj = {"extensions": [openvino.OpExtension(CustomAdd)]}
+    pipe_extension_obj = VLMPipeline(customadd_model_path, "CPU", config=properties_obj)
+    result_extension_obj = pipe_extension_obj.generate(
+        PROMPTS[0], images=[cat_tensor], generation_config=generation_config
+    )
+    assert CustomAdd.evaluate_calls > 0, "Python custom op 'CustomAdd' was not called"
+
+    # Reference result with the original model and without custom extensions.
+    pipe_ref = VLMPipeline(models_path, "CPU")
+    result_ref = pipe_ref.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
+    assert result_extension_path.texts[0].strip() == result_ref.texts[0].strip(), (
+        "Result should be the same for model with extension 'MyAdd' and reference model."
+    )
+    assert result_extension_obj.texts[0].strip() == result_ref.texts[0].strip(), (
+        "Result should be the same for model with extension 'CustomAdd' and reference model."
     )

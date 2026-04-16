@@ -7,6 +7,7 @@ The following are sample files:
  - [`visual_language_chat.cpp`](./visual_language_chat.cpp) demonstrates basic usage of the VLM pipeline which supports accelerated inference using prompt lookup decoding.
  - [`video_to_text_chat.cpp`](./video_to_text_chat.cpp) demonstrates video to text usage of the VLM pipeline.
  - [`benchmark_vlm.cpp`](./benchmark_vlm.cpp) shows how to benchmark a VLM in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text and calculating various performance metrics.
+ - [`visual_language_lora.cpp`](./visual_language_lora.cpp) demonstrates how to apply one or more LoRA adapters to a VLM at runtime.
 
 
 ## Download and convert the model and tokenizers
@@ -20,7 +21,7 @@ pip install --upgrade-strategy eager -r ../../requirements.txt
 optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code MiniCPM-V-2_6
 ```
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run samples.
+Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run samples.
 
 ## Run image-to-text chat sample:
 
@@ -32,6 +33,37 @@ Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#visual-language-models-vlms) for more details.
 
+## Run image-to-text sample with LoRA adapters:
+
+This sample runs generation twice for the same prompt and image: first with LoRA adapter applied, then without any adapters (base model).
+
+Export `Qwen/Qwen2.5-VL-7B-Instruct` to OpenVINO as [described above for MiniCPM-V](#download-and-convert-the-model-and-tokenizers), then download LoRA `Mouad2004/qwen2.5-vl-lora-diagrams`:
+
+```sh
+wget -O adapter_model.safetensors \
+	https://huggingface.co/Mouad2004/qwen2.5-vl-lora-diagrams/resolve/main/adapter_model.safetensors
+```
+
+This OpenVINO overview diagram can be used as a convenient image input:
+
+```sh
+wget -O openvino-overview-diagram.jpg \
+	https://docs.openvino.ai/2026/_images/openvino-overview-diagram.jpg
+```
+
+`visual_language_lora ./Qwen2.5-VL-7B-Instruct ./openvino-overview-diagram.jpg "What is shown in this diagram?" ./adapter_model.safetensors 4.0`
+
+> You can run with multiple LoRA adapters by providing multiple `<LORA_SAFETENSORS> <ALPHA>` pairs.
+
+> [!NOTE]
+> ### LoRA `alpha` interpretation in OpenVINO GenAI
+> The OpenVINO GenAI implementation merges the traditional LoRA parameters into a **single effective scaling factor** used during inference.
+>
+> In this context, the `alpha` value already includes:
+> - normalization by LoRA rank (`alpha / rank`)
+> - any user-defined scaling factor (`weight`)
+>
+> This means `alpha` in GenAI should be treated as the **final scaling weight** applied to the LoRA update — not the raw `alpha` parameter from training.
 
 ## Run video-to-text chat sample:
 
@@ -79,7 +111,7 @@ TPOT: 135.45 ± 4.73 ms/token
 Throughput: 7.38 ± 0.26 tokens/s
 ```
 
-For more information how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).
+For more information on how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).
 
 ### Troubleshooting
 

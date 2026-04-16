@@ -3,6 +3,9 @@
 These samples showcase the use of OpenVINO's inference capabilities for video generation tasks. The sample features `openvino_genai.Text2VideoPipeline` for generating videos from text prompts using models like LTX-Video.
 The applications don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU.
 
+ - [`text2video.py`](./text2video.py) demonstrates basic text to video generation.
+ - [`taylorseer_text2video.py`](./taylorseer_text2video.py) demonstrates text to video generation with TaylorSeer caching optimization for improved performance. LTX-Video model is supported only.
+
 ## Table of Contents
 1. [Download and Convert the Model](#download-and-convert-the-model)
 2. [Sample Descriptions](#sample-descriptions)
@@ -21,25 +24,25 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 Then, run the export with Optimum CLI:
 
 ```sh
-optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --weight-format int8 ltx_video_ov/INT8
+optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --weight-format fp32 ltx_video_ov/FP32
 ```
 
-Alternatively, do it in Python code. If NNCF is installed, the model will be compressed to INT8 automatically.
+> **Note:** For basic video generation without LoRA, `--weight-format int8` produces a smaller model.
+
+Alternatively, do it in Python code:
 
 ```python
 from optimum.intel.openvino import OVLTXPipeline
 
-output_dir = "ltx_video_ov/INT8"
-
-pipeline = OVLTXPipeline.from_pretrained("Lightricks/LTX-Video", export=True, compile=False, load_in_8bit=True)
-pipeline.save_pretrained(output_dir)
+pipeline = OVLTXPipeline.from_pretrained("Lightricks/LTX-Video", export=True, compile=False)
+pipeline.save_pretrained("ltx_video_ov/FP32")
 ```
 
 ## Sample Descriptions
 
 ### Common Information
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
+Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
 Follow [build instruction](../../../src/docs/BUILD.md) to build GenAI samples.
 
 GPUs usually provide better performance compared to CPUs. Modify the source code to change the device for inference to the GPU.
@@ -65,10 +68,34 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 
   Example:
   ```bash
-  python text2video.py ./ltx_video_ov/INT8 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
+  python text2video.py ./ltx_video_ov/FP32 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
   ```
 
-The sample will generate a video file `genai_video.avi` in the current directory.
+### LoRA Text to Video Sample (`lora_text2video.py`)
+
+- **Description:**
+  Video generation with LoRA adapters using a text-to-video model. This sample demonstrates how to generate videos from text prompts while applying a LoRA adapter.
+
+  Recommended models: Lightricks/LTX-Video
+
+  To download the LoRA adapter used in the example below:
+  ```sh
+  huggingface-cli download svjack/ltx_video_pixel_early_lora ltx_pixel_pytorch_lora_weights.safetensors
+  ```
+
+- **Main Feature:** Apply a LoRA adapter to a text-to-video pipeline for customized generation.
+
+- **Run Command:**
+  ```bash
+  python lora_text2video.py model_dir prompt [lora_adapter_path alpha] ...
+  ```
+
+  Example:
+  ```bash
+  python lora_text2video.py ./ltx_video_ov/FP32 "In the style of Pixel, the video shifts to a majestic castle under a starry sky." ltx_pixel_pytorch_lora_weights.safetensors 3.0
+  ```
+
+The sample will generate two video files, `lora_video.avi` and `baseline_video.avi`, in the current directory.
 
 Users can modify the source code to experiment with different generation parameters:
 - Change width or height of generated video
@@ -99,6 +126,32 @@ video = pipe.generate(
    callback=callback
 ).video
 ```
+
+### TaylorSeer Text to Video Sample (`taylorseer_text2video.py`)
+
+- **Description:**
+  Generate videos with TaylorSeer caching optimization. This sample runs two generations: one baseline without caching and one with TaylorSeer caching enabled, then compares their performance.
+
+- **Run Command:**
+  ```bash
+  python taylorseer_text2video.py model_dir prompt
+  ```
+
+  Example:
+  ```bash
+  python taylorseer_text2video.py ./ltx_video_ov/INT8 "a robot dancing in the rain"
+  ```
+
+The sample will generate two video files: `taylorseer_baseline.avi` (without caching) and `taylorseer.avi` (with caching), and display a performance comparison showing the speedup achieved.
+
+TaylorSeer caching is **enabled by default** for the LTX-Video pipeline. To customize caching parameters, pass a `TaylorSeerCacheConfig` directly to `generate()` or apply it persistently via `set_generation_config()`. To disable caching, set `taylorseer_config = None`.
+
+The TaylorSeer configuration parameters can be adjusted in the source code:
+- `cache_interval`: Number of steps between cache updates (default: 3)
+- `disable_cache_before_step`: Disable caching before this step for warmup (default: 6)
+- `disable_cache_after_step`: Disable caching after this step (default: -2, meaning 2 steps before the end)
+
+For more details about TaylorSeer, see the [diffusion caching documentation](../../../site/docs/concepts/optimization-techniques/diffusion-caching.md).
 
 ## Troubleshooting
 

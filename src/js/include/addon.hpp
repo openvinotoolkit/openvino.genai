@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2026 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -11,9 +11,13 @@ struct AddonData {
     Napi::FunctionReference core;
     Napi::FunctionReference vlm_pipeline;
     Napi::FunctionReference text_rerank_pipeline;
+    Napi::FunctionReference whisper_pipeline;
     Napi::FunctionReference tokenizer;
     Napi::FunctionReference perf_metrics;
     Napi::FunctionReference vlm_perf_metrics;
+    Napi::FunctionReference whisper_perf_metrics;
+    Napi::FunctionReference text2speech_pipeline;
+    Napi::FunctionReference text2speech_perf_metrics;
     Napi::FunctionReference chat_history;
     Napi::FunctionReference reasoning_parser;
     Napi::FunctionReference deepseek_r1_reasoning_parser;

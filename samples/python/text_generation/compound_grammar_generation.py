@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
@@ -144,7 +144,7 @@ def main():
 
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 300
-    generation_config.do_sample = True
+    generation_config.do_sample = False
 
     user_text_1 = "Do dolphins have fingers?"
     print("User: ", user_text_1)

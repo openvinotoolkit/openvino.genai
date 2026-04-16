@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <regex>
+#include <utility>
 
 #include "openvino/runtime/intel_npu/properties.hpp"
 #include "utils.hpp"
@@ -75,14 +76,6 @@ ov::Tensor encode(ov::InferRequest& request,
     return request.get_tensor("last_hidden_state");
 }
 
-// FIXME: Duplicate from llm_pipeline_static.cpp - need to reuse instead of copy-paste
-ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
-    ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
-    start_shape[dim] = start_pos;
-    ov::Shape end_shape = tensor.get_shape();
-    end_shape[dim] = end_pos;
-    return ov::Tensor(tensor, start_shape, end_shape);
-}
 
 void set_cross_attn_key_value(ov::InferRequest& source, ov::InferRequest& dest) {
     // NB: Source outputs:
@@ -123,7 +116,7 @@ void update_past_key_value(ov::InferRequest& source, ov::InferRequest& dest, con
         auto src_kv_tensor = source.get_tensor(source_output_name);
         auto dst_kv_tensor = dest.get_tensor(with_past_input_name);
         auto kv_size = src_kv_tensor.get_shape()[2];
-        auto dst_kv_tensor_slice = make_tensor_slice(dst_kv_tensor, 2u, kv_pos, kv_pos + kv_size);
+        auto dst_kv_tensor_slice = ov::genai::utils::make_tensor_slice(dst_kv_tensor, 2u, kv_pos, kv_pos + kv_size);
         src_kv_tensor.copy_to(dst_kv_tensor_slice);
     }
 }
@@ -175,7 +168,7 @@ ov::Tensor decode(ov::Tensor& encoder_hidden_state,
     set_decoder_input_ids(decoder, init_ids);
     ov::genai::utils::infer_with_perf_metrics(decoder, raw_metrics);
     // NB: Processing here only non-empty tokens
-    return make_tensor_slice(decoder.get_tensor("logits"), 1, 0, init_ids.size());
+    return ov::genai::utils::make_tensor_slice(decoder.get_tensor("logits"), 1, 0, init_ids.size());
 }
 
 ov::Tensor decode_with_past(ov::InferRequest& decoder_with_past,
@@ -1038,7 +1031,7 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     
     ov::Core core = utils::singleton_core();
 
-    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties_copy);
+    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, std::as_const(properties_copy));
     reshape_to_static_encoder(encoder_model, m_feature_extractor.feature_size);
     auto last_hidden_state_shape = get_encoder_hidden_state_shape(encoder_model);
 
@@ -1046,10 +1039,10 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     std::shared_ptr<ov::Model> decoder_with_past_model;
 
     if (std::filesystem::exists(models_path / "openvino_decoder_with_past_model.xml") ) {
-        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties_copy);
-        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, properties_copy);
+        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(properties_copy));
+        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, std::as_const(properties_copy));
     } else {
-        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties_copy);
+        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(properties_copy));
         ov::pass::StatefulToStateless().run_on_model(model);
 
         decoder_model = prepare_decoder_model(model);
