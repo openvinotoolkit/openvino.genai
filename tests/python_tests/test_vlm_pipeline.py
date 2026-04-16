@@ -2109,6 +2109,7 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
 
 
 @parametrize_optimum_vs_genai()
+@pytest.mark.xfail(condition=(sys.platform == "win32"), reason="Ticket - 185156")
 def test_vlm_pipeline_match_optimum_with_resolutions(
     request: pytest.FixtureRequest,
     ov_pipe_model: VlmModelInfo,
