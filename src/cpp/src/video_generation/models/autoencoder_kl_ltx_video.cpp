@@ -185,6 +185,7 @@ const AutoencoderKLLTXVideo::Config& AutoencoderKLLTXVideo::get_config() const {
 }
 
 size_t AutoencoderKLLTXVideo::get_vae_scale_factor() const {
+    OPENVINO_ASSERT(m_config.patch_size > 0, "AutoencoderKLLTXVideo config patch_size must be greater than 0");
     return utils::get_spatial_compression_ratio(m_config.patch_size, m_config.spatio_temporal_scaling);
 }
 
