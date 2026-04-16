@@ -1102,7 +1102,7 @@ public:
                     new_blocks_for_all_layers.reserve(effective_num_layers);
                     if (m_enable_prefix_caching) {
                         auto hash = sequence->get_hash();
-                        auto content = sequence->get_block_content(sequence->get_generated_len() + seq_group->get_prompt_len());
+                        auto content = sequence->get_block_content();
                         new_blocks_for_all_layers = m_allocator.allocate_block(hash, m_prefix_hash_to_occupied_block_map, std::move(content));
                     } else {
                         for (size_t i = 0; i < effective_num_layers; i++) {
