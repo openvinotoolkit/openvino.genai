@@ -102,11 +102,11 @@ public:
             size_t la_start = total_num_layers - la_manager->get_num_layers();
             std::iota(la_layer_ids.begin(), la_layer_ids.end(), la_start);
 
-            // Derive num_linear_attention_blocks from config; fall back to num_kv_blocks if unset
-            size_t num_la_blocks = config.num_linear_attention_blocks;
-            if (num_la_blocks == 0) {
-                num_la_blocks = config.num_kv_blocks > 0 ? config.num_kv_blocks : config.max_num_seqs;
-            }
+            // Each LA block holds one full sequence state (block_size = 1 token = 1 sequence).
+            // The pool only needs to be as large as the maximum number of concurrent sequences.
+            const size_t num_la_blocks = config.num_linear_attention_blocks > 0
+                                             ? config.num_linear_attention_blocks
+                                             : config.max_num_seqs;
 
             auto la_block_manager = std::make_shared<BlockManager>(
                 num_la_blocks,
