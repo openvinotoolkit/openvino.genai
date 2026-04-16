@@ -144,10 +144,20 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
     // TODO: for img2video
     // if (m_encoder_model) {...}
 
+    const auto& config = get_config();
+    OPENVINO_ASSERT(config.patch_size > 0, "patch_size must be positive but got ", config.patch_size);
+    OPENVINO_ASSERT(config.patch_size_t > 0, "patch_size_t must be positive but got ", config.patch_size_t);
+
     const std::pair<size_t, size_t> compression_ratios = utils::get_spatial_temporal_compression_ratios(
-        get_config().patch_size,
-        get_config().patch_size_t,
-        get_config().spatio_temporal_scaling);
+        config.patch_size,
+        config.patch_size_t,
+        config.spatio_temporal_scaling);
+    OPENVINO_ASSERT(compression_ratios.first > 0,
+                    "Spatial compression ratio must be positive but got ",
+                    compression_ratios.first);
+    OPENVINO_ASSERT(compression_ratios.second > 0,
+                    "Temporal compression ratio must be positive but got ",
+                    compression_ratios.second);
     const int64_t spatial_compression_ratio = static_cast<int64_t>(compression_ratios.first);
     const int64_t temporal_compression_ratio = static_cast<int64_t>(compression_ratios.second);
 
