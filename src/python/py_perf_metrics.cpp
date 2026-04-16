@@ -30,37 +30,37 @@ namespace {
 auto raw_perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
 
-    :param generate_durations: Durations for each generate call in milliseconds.
+    :param generate_durations: Durations for each generate call in microseconds.
     :type generate_durations: list[float]
 
-    :param tokenization_durations: Durations for the tokenization process in milliseconds.
+    :param tokenization_durations: Durations for the tokenization process in microseconds.
     :type tokenization_durations: list[float]
 
-    :param detokenization_durations: Durations for the detokenization process in milliseconds.
+    :param detokenization_durations: Durations for the detokenization process in microseconds.
     :type detokenization_durations: list[float]
 
-    :param chat_template_durations: Durations for the chat template application in milliseconds.
+    :param chat_template_durations: Durations for the chat template application in microseconds.
     :type chat_template_durations: list[float]
 
-    :param m_times_to_first_token: Times to the first token for each call in milliseconds.
+    :param m_times_to_first_token: Times to the first token for each call in microseconds.
     :type m_times_to_first_token: list[float]
 
-    :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
+    :param m_new_token_times: Timestamps of generation every token or batch of tokens in microseconds.
     :type m_new_token_times: list[double]
 
-    :param token_infer_durations : Inference time for each token in milliseconds.
+    :param token_infer_durations : Inference time for each token in microseconds.
     :type batch_sizes: list[float]
 
     :param m_batch_sizes: Batch sizes for each generate call.
     :type m_batch_sizes: list[int]
 
-    :param m_durations: Total durations for each generate call in milliseconds.
+    :param m_durations: Total durations for each generate call in microseconds.
     :type m_durations: list[float]
 
-    :param inference_durations : Total inference duration for each generate call in milliseconds.
+    :param inference_durations : Total inference duration for each generate call in microseconds.
     :type batch_sizes: list[float]
 
-    :param grammar_compile_times: Time to compile the grammar in milliseconds.
+    :param grammar_compile_times: Time to compile the grammar in microseconds.
     :type grammar_compile_times: list[float]
 )";
 

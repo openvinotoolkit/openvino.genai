@@ -202,6 +202,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     std::vector<MicroSeconds> tokenization_durations;
     std::vector<MicroSeconds> template_durations;
+    tokenization_durations.reserve(histories.size());
+    template_durations.reserve(histories.size());
+
     static ManualTimer timer("tokenize");
     timer.start();
 
@@ -213,8 +216,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         
         const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(histories[i], add_generation_prompt);
-        const auto template_end = std::chrono::steady_clock::now();
-        
+
         const auto encode_start = std::chrono::steady_clock::now();
         input_ids.push_back(
             m_tokenizer.encode(templated_history, add_special_tokens(false)).input_ids
@@ -223,7 +225,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         
         tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_end - encode_start));
         // Store chat template duration for metrics tracking
-        template_durations.emplace_back(PerfMetrics::get_microsec(template_end - template_start));
+        template_durations.emplace_back(PerfMetrics::get_microsec(encode_start - template_start));
     }
     
     timer.end();
