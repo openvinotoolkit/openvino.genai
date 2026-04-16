@@ -27,7 +27,11 @@ int main(int argc, char* argv[]) try {
 
     if (argc == 4) {
         char* end = nullptr;
-        const unsigned long long seed = std::strtoull(argv[3], &end, 10);
+        const char* seed_str = argv[3];
+        if (seed_str[0] == '-') {
+            throw std::runtime_error("RNG_SEED must be a non-negative integer.");
+        }
+        const unsigned long long seed = std::strtoull(seed_str, &end, 10);
         if (*end != '\0' || seed > std::numeric_limits<size_t>::max()) {
             throw std::runtime_error("RNG_SEED must be a non-negative integer.");
         }

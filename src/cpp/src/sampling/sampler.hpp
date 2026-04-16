@@ -92,7 +92,7 @@ class Sampler {
                                                  const std::pair<size_t, std::set<std::string>>& stop_strings);
 
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
-                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probolities,
+                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probabilities,
                             std::mt19937& rng_engine);
 
     SequenceGroupSamplingInfo sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits,

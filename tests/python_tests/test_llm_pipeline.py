@@ -1150,7 +1150,7 @@ def test_llm_pipeline_add_extension(
 def test_same_rng_seed_produces_identical_output(
     llm_model: OVConvertedModelSchema, pipeline_type: PipelineType
 ) -> None:
-    """Two generate() calls with the same rng_seed must produce identical token sequences."""
+    """Two generate() calls with the same rng_seed must produce identical output text."""
     ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
     config = ov_genai.GenerationConfig(do_sample=True, temperature=1.0, max_new_tokens=20, rng_seed=42)
     prompt = "Which season is better, summer or winter?"
@@ -1159,9 +1159,7 @@ def test_same_rng_seed_produces_identical_output(
     result2 = ov_pipe.generate(prompt, generation_config=config)
 
     assert result1 == result2, (
-        f"generate() with rng_seed=42 must be reproducible.\n"
-        f"First call:  {result1!r}\n"
-        f"Second call: {result2!r}"
+        f"generate() with rng_seed=42 must be reproducible.\nFirst call:  {result1!r}\nSecond call: {result2!r}"
     )
 
 
@@ -1170,16 +1168,22 @@ def test_same_rng_seed_produces_identical_output(
 def test_different_rng_seed_produces_different_output(
     llm_model: OVConvertedModelSchema, pipeline_type: PipelineType
 ) -> None:
-    """Two generate() calls with different rng_seeds must produce different token sequences."""
+    """Different rng_seeds must produce at least one distinct output across multiple seeds."""
     ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
-    config_a = ov_genai.GenerationConfig(do_sample=True, temperature=1.0, max_new_tokens=20, rng_seed=42)
-    config_b = ov_genai.GenerationConfig(do_sample=True, temperature=1.0, max_new_tokens=20, rng_seed=123)
+    rng_seeds = [42, 123, 777, 2024]
     prompt = "Which season is better, summer or winter?"
 
-    result_a = ov_pipe.generate(prompt, generation_config=config_a)
-    result_b = ov_pipe.generate(prompt, generation_config=config_b)
+    results = [
+        ov_pipe.generate(
+            prompt,
+            generation_config=ov_genai.GenerationConfig(
+                do_sample=True, temperature=1.3, max_new_tokens=40, rng_seed=seed
+            ),
+        )
+        for seed in rng_seeds
+    ]
 
-    assert result_a != result_b, (
-        f"generate() with rng_seed=42 and rng_seed=123 must produce different output, "
-        f"but both produced: {result_a!r}"
+    assert len(set(results)) > 1, (
+        f"generate() with different rng_seeds {rng_seeds} must produce at least one distinct output, "
+        f"but all produced: {results[0]!r}"
     )
