@@ -365,10 +365,10 @@ def download_and_convert_model_class(
     )
 
 
-def download_hf_model(
+def download_hf_file(
     repo_id: str,
     filename: str,
-):
+) -> Path:
     dir_name = sanitize_model_id(repo_id)
     ov_cache_downloaded_dir = get_ov_cache_downloaded_models_dir()
     dest_dir = ov_cache_downloaded_dir / dir_name

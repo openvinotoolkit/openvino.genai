@@ -8,7 +8,7 @@ from pathlib import Path
 
 from test_utils import run_sample
 from data.models import GGUF_MODEL_LIST
-from utils.hugging_face import download_hf_model
+from utils.hugging_face import download_hf_file
 from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
 
 convert_draft_model = convert_model
@@ -358,7 +358,7 @@ class TestBenchmarkLLM:
     def test_python_tool_llm_benchmark_gguf_format(self, sample_args):
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         gguf_model = GGUF_MODEL_LIST[0]
-        gguf_full_path = download_hf_model(gguf_model["gguf_model_id"], gguf_model["gguf_filename"])
+        gguf_full_path = download_hf_file(gguf_model["gguf_model_id"], gguf_model["gguf_filename"])
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
