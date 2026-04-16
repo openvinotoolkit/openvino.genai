@@ -1,10 +1,9 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "processor_config.hpp"
-#include "json_utils.hpp"
-
 #include <fstream>
+
+#include "processor_config.hpp"
 
 ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     using ov::genai::utils::read_json_param;
