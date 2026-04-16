@@ -1145,8 +1145,24 @@ def test_llm_pipeline_add_extension(
     )
 
 
+# Speculative decoding and prompt lookup require extra GenerationConfig params;
+# exclude them from generic RNG-seed tests.
+_NON_ASSISTANT_PIPELINE_TYPES = tuple(
+    pt for pt in ALL_PIPELINE_TYPES
+    if pt not in (PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING)
+)
+
+
+def _extract_texts(result) -> list[str]:
+    """Return a flat list of generated strings from either DecodedResults or list[GenerationResult]."""
+    if isinstance(result, list):
+        # ContinuousBatchingPipeline.generate() returns list[GenerationResult]
+        return [gen_id for r in result for gen_id in r.m_generation_ids]
+    return list(result.texts)
+
+
 @pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
-@pytest.mark.parametrize("pipeline_type", ALL_PIPELINE_TYPES)
+@pytest.mark.parametrize("pipeline_type", _NON_ASSISTANT_PIPELINE_TYPES)
 def test_same_rng_seed_produces_identical_output(
     llm_model: OVConvertedModelSchema, pipeline_type: PipelineType
 ) -> None:
@@ -1155,16 +1171,16 @@ def test_same_rng_seed_produces_identical_output(
     config = ov_genai.GenerationConfig(do_sample=True, temperature=1.0, max_new_tokens=20, rng_seed=42)
     prompt = "Which season is better, summer or winter?"
 
-    result1 = ov_pipe.generate(prompt, generation_config=config)
-    result2 = ov_pipe.generate(prompt, generation_config=config)
+    texts1 = _extract_texts(ov_pipe.generate(prompt, generation_config=config))
+    texts2 = _extract_texts(ov_pipe.generate(prompt, generation_config=config))
 
-    assert result1 == result2, (
-        f"generate() with rng_seed=42 must be reproducible.\nFirst call:  {result1!r}\nSecond call: {result2!r}"
+    assert texts1 == texts2, (
+        f"generate() with rng_seed=42 must be reproducible.\nFirst call:  {texts1}\nSecond call: {texts2}"
     )
 
 
 @pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
-@pytest.mark.parametrize("pipeline_type", ALL_PIPELINE_TYPES)
+@pytest.mark.parametrize("pipeline_type", _NON_ASSISTANT_PIPELINE_TYPES)
 def test_different_rng_seed_produces_different_output(
     llm_model: OVConvertedModelSchema, pipeline_type: PipelineType
 ) -> None:
@@ -1173,17 +1189,17 @@ def test_different_rng_seed_produces_different_output(
     rng_seeds = [42, 123, 777, 2024]
     prompt = "Which season is better, summer or winter?"
 
-    results = [
-        ov_pipe.generate(
+    text_tuples = [
+        tuple(_extract_texts(ov_pipe.generate(
             prompt,
             generation_config=ov_genai.GenerationConfig(
                 do_sample=True, temperature=1.3, max_new_tokens=40, rng_seed=seed
             ),
-        )
+        )))
         for seed in rng_seeds
     ]
 
-    assert len(set(results)) > 1, (
+    assert len(set(text_tuples)) > 1, (
         f"generate() with different rng_seeds {rng_seeds} must produce at least one distinct output, "
-        f"but all produced: {results[0]!r}"
+        f"but all produced: {text_tuples[0]!r}"
     )
