@@ -290,6 +290,8 @@ public:
 
     std::vector<int64_t> get_block_content(size_t content_length = 0);
 
+    std::pair<size_t, std::vector<int64_t>> get_hash_and_content(size_t content_length = 0);
+
     static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(const ov::Shape& position_ids_elem_shape, size_t idx, bool need_batch_dimention) {
 
         ov::Coordinate begin;

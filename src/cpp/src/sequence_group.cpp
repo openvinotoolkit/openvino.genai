@@ -83,6 +83,27 @@ std::vector<int64_t> Sequence::get_block_content(size_t content_length) {
         return _get_block_content(content_len);
 }
 
+std::pair<size_t, std::vector<int64_t>> Sequence::get_hash_and_content(size_t content_length) {
+    auto sequence_group = get_sequence_group_ptr();
+    OPENVINO_ASSERT(sequence_group, "Hash computation requires setting of sequence_group ptr.");
+    auto content_len = content_length == 0 ? sequence_group->get_context_len() : content_length;
+    auto block_size = sequence_group->get_block_size();
+    size_t cur_content = block_size * (m_prefix_hashes.size() + 1);
+    while (cur_content <= content_len) {
+        m_prefix_hashes.push_back(_make_hash(cur_content));
+        cur_content += block_size;
+    }
+    auto content = _get_block_content(content_len);
+    size_t hash;
+    if (content_len % block_size == 0) {
+        hash = m_prefix_hashes[content_len / block_size - 1];
+    } else {
+        const char* data = reinterpret_cast<const char*>(content.data());
+        hash = std::hash<std::string_view>{}(std::string_view(data, content.size() * sizeof(int64_t)));
+    }
+    return {hash, std::move(content)};
+}
+
 std::vector<int64_t> Sequence::_reduce_embedding(const std::vector<float>& embedding) {
     size_t res_size = std::min((size_t)ceil(float(embedding.size()) / m_embeddings_hash_calculation_stride), m_embeddings_hash_max_num_values);
     std::vector<int64_t> res(res_size, 0);
