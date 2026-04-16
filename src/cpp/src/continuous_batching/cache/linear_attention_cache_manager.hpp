@@ -12,6 +12,8 @@
 #include <list>
 
 #include "openvino/runtime/tensor.hpp"
+#include "openvino/runtime/remote_context.hpp"
+#include "openvino/runtime/remote_tensor.hpp"
 #include "continuous_batching/cache/i_cache_manager.hpp"
 
 namespace ov::genai {
@@ -47,6 +49,7 @@ class LinearAttentionCacheManager : public ICacheManager {
     };
 
     std::string m_device;
+    ov::RemoteContext m_context;  ///< Valid only on GPU; empty on CPU.
     std::vector<StateTableGroup> m_groups;
     size_t m_total_num_layers = 0;
     size_t m_num_allocated_blocks = 0;
@@ -100,6 +103,12 @@ public:
         std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
         OPENVINO_ASSERT(!execution_devices.empty(), "Continuous batching: no execution devices found");
         m_device = execution_devices[0];
+
+        const bool all_gpu = std::all_of(execution_devices.begin(), execution_devices.end(),
+            [](const std::string& d) { return d.find("GPU") != std::string::npos; });
+        if (all_gpu) {
+            m_context = compiled_model.get_context();
+        }
 
         // Discover state table inputs and group by prefix.
         std::map<std::string, StateTableGroup> groups_map;
@@ -170,17 +179,42 @@ public:
             for (size_t layer_idx : group.sorted_indices) {
                 auto& info = group.layers.at(layer_idx);
                 ov::Shape shape = make_shape(info.partial_shape, num_blocks);
-                ov::Tensor new_tensor(info.precision, shape);
 
-                // Zero-initialize: new blocks must start with zero state.
-                std::memset(new_tensor.data(), 0, new_tensor.get_byte_size());
+                if (m_context) {
+                    ov::Tensor new_tensor = m_context.create_tensor(info.precision, shape);
+                    const size_t rank = shape.size();
+                    ov::Coordinate full_start(rank, 0);
 
-                // Preserve existing data when growing.
-                if (info.tensor) {
-                    std::memcpy(new_tensor.data(), info.tensor.data(), info.tensor.get_byte_size());
+                    // Zero-initialize all blocks via a CPU staging tensor.
+                    // Unlike KV cache, linear attention state is read unconditionally on every
+                    // step, so new blocks must contain zeros before first use.
+                    ov::Tensor zeros(info.precision, shape);
+                    std::memset(zeros.data(), 0, zeros.get_byte_size());
+                    ov::RemoteTensor dst_full(new_tensor, full_start, shape);
+                    dst_full.copy_from(zeros);
+
+                    // Preserve existing (old) blocks by overwriting their range.
+                    if (info.tensor) {
+                        const ov::Shape& old_shape = info.tensor.get_shape();
+                        ov::RemoteTensor dst_old(new_tensor, full_start, old_shape);
+                        dst_old.copy_from(info.tensor);
+                    }
+
+                    info.tensor = new_tensor;
+                } else {
+                    ov::Tensor new_tensor(info.precision, shape);
+
+                    // Zero-initialize: new blocks must start with zero state.
+                    std::memset(new_tensor.data(), 0, new_tensor.get_byte_size());
+
+                    // Preserve existing data when growing.
+                    if (info.tensor) {
+                        std::memcpy(new_tensor.data(), info.tensor.data(), info.tensor.get_byte_size());
+                    }
+
+                    info.tensor = new_tensor;
                 }
 
-                info.tensor = new_tensor;
                 m_request.set_tensor(info.full_name, info.tensor);
             }
         }
@@ -189,16 +223,23 @@ public:
     void copy_blocks(const std::map<size_t, std::list<size_t>>& block_copy_map) override {
         for (const auto& [src_block, dst_blocks] : block_copy_map) {
             for (size_t dst_block : dst_blocks) {
-                for (auto& group : m_groups) {
+                for (const auto& group : m_groups) {
                     for (size_t layer_idx : group.sorted_indices) {
-                        auto& info = group.layers.at(layer_idx);
-                        size_t byte_stride = layer_bytes_per_block(info.partial_shape, info.precision);
+                        const auto& info = group.layers.at(layer_idx);
+                        const ov::Shape& shape = info.tensor.get_shape();
+                        const size_t rank = shape.size();
 
-                        const uint8_t* src = static_cast<const uint8_t*>(info.tensor.data())
-                                             + src_block * byte_stride;
-                        uint8_t* dst = static_cast<uint8_t*>(info.tensor.data())
-                                       + dst_block * byte_stride;
-                        std::memcpy(dst, src, byte_stride);
+                        ov::Coordinate src_start(rank, 0), src_end = shape;
+                        src_start[0] = src_block;
+                        src_end[0]   = src_block + 1;
+
+                        ov::Coordinate dst_start(rank, 0), dst_end = shape;
+                        dst_start[0] = dst_block;
+                        dst_end[0]   = dst_block + 1;
+
+                        ov::Tensor src_roi(info.tensor, src_start, src_end);
+                        ov::Tensor dst_roi(info.tensor, dst_start, dst_end);
+                        src_roi.copy_to(dst_roi);
                     }
                 }
             }
