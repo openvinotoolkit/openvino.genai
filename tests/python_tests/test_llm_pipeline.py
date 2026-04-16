@@ -1148,7 +1148,8 @@ def test_llm_pipeline_add_extension(
 # Speculative decoding and prompt lookup require extra GenerationConfig params;
 # exclude them from generic RNG-seed tests.
 _NON_ASSISTANT_PIPELINE_TYPES = tuple(
-    pt for pt in ALL_PIPELINE_TYPES
+    pt
+    for pt in ALL_PIPELINE_TYPES
     if pt not in (PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING)
 )
 
@@ -1190,12 +1191,16 @@ def test_different_rng_seed_produces_different_output(
     prompt = "Which season is better, summer or winter?"
 
     text_tuples = [
-        tuple(_extract_texts(ov_pipe.generate(
-            prompt,
-            generation_config=ov_genai.GenerationConfig(
-                do_sample=True, temperature=1.3, max_new_tokens=40, rng_seed=seed
-            ),
-        )))
+        tuple(
+            _extract_texts(
+                ov_pipe.generate(
+                    prompt,
+                    generation_config=ov_genai.GenerationConfig(
+                        do_sample=True, temperature=1.3, max_new_tokens=40, rng_seed=seed
+                    ),
+                )
+            )
+        )
         for seed in rng_seeds
     ]
 

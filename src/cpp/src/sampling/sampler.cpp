@@ -1055,19 +1055,21 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
                 structured_output_controller = m_tokenizer.m_pimpl->get_structured_output_controller(vocab_size);
             }
             LogitProcessor lp(sampling_params, sequence_group->get_prompt_ids(), structured_output_controller);
-            auto [it, _] = m_request_contexts.emplace(
+            m_request_contexts.emplace(
                 std::piecewise_construct,
                 std::forward_as_tuple(request_id),
                 std::forward_as_tuple(sampling_params.rng_seed, std::move(lp)));
-            auto& ctx = it->second;
-            if (!sampling_params.stop_strings.empty()) {
-                OPENVINO_ASSERT(m_tokenizer.m_pimpl != nullptr, "Stop strings require a valid tokenizer");
-                auto processed_stop_string = process_stop_strings(sampling_params.stop_strings, m_tokenizer);
-                ctx.stop_strings = std::move(processed_stop_string);
-                sequence_group->set_stream_window_size(ctx.stop_strings.first);
-            }
         }
         auto& ctx = m_request_contexts.at(request_id);
+        // Process stop strings if not yet done. The context may have been pre-created via
+        // create_logit_processor() (e.g. speculative/prompt-lookup CB paths), which cannot
+        // call set_stream_window_size() without the sequence_group. Check ctx.stop_strings
+        // to avoid re-processing on subsequent sample() calls for the same request.
+        if (!sampling_params.stop_strings.empty() && ctx.stop_strings.second.empty()) {
+            OPENVINO_ASSERT(m_tokenizer.m_pimpl != nullptr, "Stop strings require a valid tokenizer");
+            ctx.stop_strings = process_stop_strings(sampling_params.stop_strings, m_tokenizer);
+            sequence_group->set_stream_window_size(ctx.stop_strings.first);
+        }
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, output_seq_len, vocab_size}, (void *)sequence_group_logits_data);
         if (sequence_group->requires_sampling()) {
