@@ -57,7 +57,7 @@ std::vector<int64_t> Sequence::_get_block_content(size_t content_length) {
             }
         }
         else {
-            OPENVINO_THROW("Hash calculation is not supported for this sequence type.");
+            OPENVINO_THROW("Hash and block content calculation is not supported for this sequence type.");
         }
         return content;
 }

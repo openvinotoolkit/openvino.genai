@@ -301,6 +301,30 @@ TEST_F(PrefixCachingBlockAllocatorTest, GetCachedBlockAcceptsMatchingContent) {
     alloc.free(result, cached);
 }
 
+TEST_F(PrefixCachingBlockAllocatorTest, GetCachedBlockRejectsHashCollisionInOverwritableStore) {
+    auto alloc = ov::genai::BlockAllocator(4, true, 1);
+    std::map<uint64_t, ov::genai::BlocksPerLayer> cached;
+
+    const uint64_t H = 55;
+    const std::vector<int64_t> content_A = {4, 5, 6};
+    const std::vector<int64_t> content_B = {7, 8, 9};  // simulated collision: same hash, different content
+
+    auto blkA = alloc.allocate_block(H, cached, content_A);
+    alloc.free(blkA, cached);
+    ASSERT_EQ(alloc.num_overwriteable_blocks(), 1);
+
+    // collision from overwritable store: block stays in store, returns miss
+    auto result = alloc.get_cached_block(H, cached, content_B);
+    EXPECT_TRUE(result.empty());
+    EXPECT_EQ(alloc.num_overwriteable_blocks(), 1);
+
+    // correct content still retrieves the block
+    auto result2 = alloc.get_cached_block(H, cached, content_A);
+    EXPECT_FALSE(result2.empty());
+
+    alloc.free(result2, cached);
+}
+
 TEST(TestBlockAllocator, CalculatesUsagePercentageCorrectly) {
     size_t num_layers = 10;
     size_t initial_num_free_blocks = 10;

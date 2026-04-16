@@ -140,6 +140,12 @@ class OverwritableBlocksHashStore {
         return blocks_for_all_layers;
     }
 
+    const std::vector<int64_t>* peek_content(size_t hash) const {
+        auto it = m_blocks.find(hash);
+        if (it == m_blocks.end()) return nullptr;
+        return &it->second[0]->get_content();
+    }
+
     /**
      * Pops the least recently used blocks from the store to be used and overwritten by another sequence.
      * Returned blocks will have reference counters equal to 1.
@@ -453,7 +459,7 @@ public:
                 KVCacheBlock::Ptr allocated_block = m_free_blocks[i].front();
                 allocated_block->increment();
                 allocated_block->set_hash(hash);
-                allocated_block->set_content(content);
+                if (i == 0) allocated_block->set_content(content);
                 allocated_blocks.push_back(allocated_block);
                 m_free_blocks[i].pop_front();
                 --m_free_blocks_num[i];
@@ -467,9 +473,9 @@ public:
             cached_blocks.erase(blocks_for_all_layers[0]->get_hash());
 
             // update block with new hash and content
+            blocks_for_all_layers[0]->set_content(content);
             for (auto& block : blocks_for_all_layers) {
                 block->set_hash(hash);
-                block->set_content(content);
             }
             cached_blocks[hash] = blocks_for_all_layers;
             return blocks_for_all_layers;
@@ -487,16 +493,22 @@ public:
      * @return A vector of blocks (one for each layer) corresponding to this hash, or an empty vector if the hash is not found in the map.
      */
     BlocksPerLayer get_cached_block(size_t hash, std::map<uint64_t, BlocksPerLayer>& cached_blocks, const std::vector<int64_t>& expected_content = {}) {
+        if (!expected_content.empty()) {
+            // Validate content to detect hash collisions; report miss on mismatch.
+            auto* stored_content = m_overwriteable_blocks.peek_content(hash);
+            if (stored_content && expected_content != *stored_content) {
+                return {};
+            }
+        }
         auto blocks_for_all_layers = m_overwriteable_blocks.get_block_to_restore(hash);
         if (!blocks_for_all_layers.empty()) {
-            // use cached block from internal store
             return blocks_for_all_layers;
         }
         auto it = cached_blocks.find(hash);
         if (it != cached_blocks.end()) {
             // Validate content to detect hash collisions; evict stale entry on mismatch.
             const auto& stored_content = it->second[0]->get_content();
-            if (!expected_content.empty() && !stored_content.empty() && expected_content != stored_content) {
+            if (!expected_content.empty() && expected_content != stored_content) {
                 cached_blocks.erase(it);
                 return {};
             }
@@ -765,7 +777,7 @@ public:
                     for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
                         auto& lst_blk = m_block_table[sequence_id][layer_idx].back();
                         lst_blk->set_hash(hash);
-                        lst_blk->set_content(content);
+                        if (layer_idx == 0) lst_blk->set_content(content);
                         m_prefix_hash_to_occupied_block_map.erase(prev_hash);
                         last_blocks_vec.push_back(lst_blk);
                     }
@@ -1113,10 +1125,9 @@ public:
                         auto prev_hash = last_blocks[0]->get_hash();
                         auto hash = sequence->get_hash();
                         auto content = sequence->get_block_content();
+                        last_blocks[0]->set_content(content);
                         for (size_t i = 0; i < effective_num_layers; i++) {
-                            auto& last_block = last_blocks[i];
-                            last_block->set_hash(hash);
-                            last_block->set_content(content);
+                            last_blocks[i]->set_hash(hash);
                         }
                         m_prefix_hash_to_occupied_block_map.erase(prev_hash);
                         m_prefix_hash_to_occupied_block_map[hash] = last_blocks;
