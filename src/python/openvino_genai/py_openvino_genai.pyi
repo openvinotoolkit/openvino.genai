@@ -254,7 +254,7 @@ class AutoencoderKL:
                     model (AutoencoderKL): AutoencoderKL model.
         """
     @typing.overload
-    def __init__(self, vae_decoder_model: str, vae_decoder_weights: openvino._pyopenvino.Tensor, vae_decoder_config: openvino_genai.py_openvino_genai.AutoencoderKL.Config) -> None:
+    def __init__(self, vae_decoder_model: str, vae_decoder_weights: openvino._pyopenvino.Tensor, vae_decoder_config: AutoencoderKL.Config) -> None:
         """
                     AutoencoderKL class initialized only with decoder model from string and weights tensor.
                     vae_decoder_model (str): Serialized VAE decoder model in OpenVINO IR format.
@@ -262,7 +262,7 @@ class AutoencoderKL:
                     vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
         """
     @typing.overload
-    def __init__(self, vae_encoder_model: str, vae_encoder_weights: openvino._pyopenvino.Tensor, vae_decoder_model: str, vae_decoder_weights: openvino._pyopenvino.Tensor, vae_decoder_config: openvino_genai.py_openvino_genai.AutoencoderKL.Config) -> None:
+    def __init__(self, vae_encoder_model: str, vae_encoder_weights: openvino._pyopenvino.Tensor, vae_decoder_model: str, vae_decoder_weights: openvino._pyopenvino.Tensor, vae_decoder_config: AutoencoderKL.Config) -> None:
         """
                     AutoencoderKL class initialized with both encoder and decoder models from string and weights tensors.
                     vae_encoder_model (str): Serialized VAE encoder model in OpenVINO IR format.
@@ -272,7 +272,7 @@ class AutoencoderKL:
                     vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
         """
     @typing.overload
-    def __init__(self, vae_decoder_model: str, vae_decoder_weights: openvino._pyopenvino.Tensor, vae_decoder_config: openvino_genai.py_openvino_genai.AutoencoderKL.Config, device: str, **kwargs) -> None:
+    def __init__(self, vae_decoder_model: str, vae_decoder_weights: openvino._pyopenvino.Tensor, vae_decoder_config: AutoencoderKL.Config, device: str, **kwargs) -> None:
         """
                     AutoencoderKL class initialized only with decoder model from string and weights tensor with device and properties.
                     vae_decoder_model (str): Serialized VAE decoder model in OpenVINO IR format.
@@ -282,7 +282,7 @@ class AutoencoderKL:
                     kwargs: Device properties.
         """
     @typing.overload
-    def __init__(self, vae_encoder_model: str, vae_encoder_weights: openvino._pyopenvino.Tensor, vae_decoder_model: str, vae_decoder_weights: openvino._pyopenvino.Tensor, vae_decoder_config: openvino_genai.py_openvino_genai.AutoencoderKL.Config, device: str, **kwargs) -> None:
+    def __init__(self, vae_encoder_model: str, vae_encoder_weights: openvino._pyopenvino.Tensor, vae_decoder_model: str, vae_decoder_weights: openvino._pyopenvino.Tensor, vae_decoder_config: AutoencoderKL.Config, device: str, **kwargs) -> None:
         """
                     AutoencoderKL class initialized with both encoder and decoder models from string and weights tensors with device and properties.
                     vae_encoder_model (str): Serialized VAE encoder model in OpenVINO IR format.
@@ -445,7 +445,7 @@ class CLIPTextModel:
                     model (CLIPTextModel): CLIPText model
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: openvino_genai.py_openvino_genai.CLIPTextModel.Config, clip_tokenizer: Tokenizer) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: CLIPTextModel.Config, clip_tokenizer: Tokenizer) -> None:
         """
                     CLIPTextModel class constructor.
                     model (str): Pre-read model.
@@ -454,7 +454,7 @@ class CLIPTextModel:
                     clip_tokenizer (Tokenizer): Tokenizer for text encoding.
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: openvino_genai.py_openvino_genai.CLIPTextModel.Config, clip_tokenizer: Tokenizer, device: str, **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: CLIPTextModel.Config, clip_tokenizer: Tokenizer, device: str, **kwargs) -> None:
         """
                     CLIPTextModel class constructor.
                     model (str): Pre-read model.
@@ -513,7 +513,7 @@ class CLIPTextModelWithProjection(CLIPTextModel):
                     model (CLIPTextModelWithProjection): CLIPText model with projection
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: openvino_genai.py_openvino_genai.CLIPTextModelWithProjection.Config, clip_tokenizer: Tokenizer) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: CLIPTextModel.Config, clip_tokenizer: Tokenizer) -> None:
         """
                     CLIPTextModelWithProjection class constructor.
                     model (str): Pre-read model.
@@ -522,7 +522,7 @@ class CLIPTextModelWithProjection(CLIPTextModel):
                     clip_tokenizer (Tokenizer): Tokenizer for text encoding.
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: openvino_genai.py_openvino_genai.CLIPTextModelWithProjection.Config, clip_tokenizer: Tokenizer, device: str, **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: CLIPTextModel.Config, clip_tokenizer: Tokenizer, device: str, **kwargs) -> None:
         """
                     CLIPTextModelWithProjection class constructor.
                     model (str): Pre-read model.
@@ -982,7 +982,7 @@ class FluxTransformer2DModel:
                     model (FluxTransformer2DModel): FluxTransformer2DModel model
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: openvino_genai.py_openvino_genai.FluxTransformer2DModel.Config, vae_scale_factor: typing.SupportsInt) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: FluxTransformer2DModel.Config, vae_scale_factor: typing.SupportsInt) -> None:
         """
                     FluxTransformer2DModel class constructor.
                     model (str): Pre-read model.
@@ -991,7 +991,7 @@ class FluxTransformer2DModel:
                     vae_scale_factor (int): VAE scale factor.
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: openvino_genai.py_openvino_genai.FluxTransformer2DModel.Config, vae_scale_factor: typing.SupportsInt, device: str, **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: FluxTransformer2DModel.Config, vae_scale_factor: typing.SupportsInt, device: str, **kwargs) -> None:
         """
                     FluxTransformer2DModel class constructor.
                     model (str): Pre-read model.
@@ -2454,7 +2454,7 @@ class SD3Transformer2DModel:
                     model (SD3Transformer2DModel): SD3Transformer2DModel model
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: openvino_genai.py_openvino_genai.SD3Transformer2DModel.Config, vae_scale_factor: typing.SupportsInt) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: SD3Transformer2DModel.Config, vae_scale_factor: typing.SupportsInt) -> None:
         """
                     SD3Transformer2DModel class constructor.
                     model (str): Pre-read model.
@@ -2463,7 +2463,7 @@ class SD3Transformer2DModel:
                     vae_scale_factor (int): VAE scale factor.
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: openvino_genai.py_openvino_genai.SD3Transformer2DModel.Config, vae_scale_factor: typing.SupportsInt, device: str, **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: SD3Transformer2DModel.Config, vae_scale_factor: typing.SupportsInt, device: str, **kwargs) -> None:
         """
                     SD3Transformer2DModel class constructor.
                     model (str): Pre-read model.
@@ -4086,7 +4086,7 @@ class UNet2DConditionModel:
                     model (UNet2DConditionModel): UNet2DConditionModel model
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: openvino_genai.py_openvino_genai.UNet2DConditionModel.Config, vae_scale_factor: typing.SupportsInt) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: UNet2DConditionModel.Config, vae_scale_factor: typing.SupportsInt) -> None:
         """
                     UNet2DConditionModel class constructor.
                     model (str): Pre-read model.
@@ -4095,7 +4095,7 @@ class UNet2DConditionModel:
                     vae_scale_factor (int): VAE scale factor.
         """
     @typing.overload
-    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: openvino_genai.py_openvino_genai.UNet2DConditionModel.Config, vae_scale_factor: typing.SupportsInt, device: str, **kwargs) -> None:
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: UNet2DConditionModel.Config, vae_scale_factor: typing.SupportsInt, device: str, **kwargs) -> None:
         """
                     UNet2DConditionModel class constructor.
                     model (str): Pre-read model.
