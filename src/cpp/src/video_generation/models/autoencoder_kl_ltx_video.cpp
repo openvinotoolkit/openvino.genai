@@ -5,7 +5,6 @@
 
 #include <fstream>
 #include <memory>
-#include <numeric>
 
 #include "openvino/runtime/core.hpp"
 #include "openvino/core/preprocess/pre_post_process.hpp"
@@ -16,6 +15,7 @@
 #include "openvino/op/constant.hpp"
 
 #include "utils.hpp"
+#include "video_generation/compression_utils.hpp"
 #include "json_utils.hpp"
 #include "lora/helper.hpp"
 
@@ -144,16 +144,12 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
     // TODO: for img2video
     // if (m_encoder_model) {...}
 
-    int64_t spatial_compression_ratio =
-        get_config().patch_size *
-        std::pow(
-            2,
-            std::accumulate(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
-    int64_t temporal_compression_ratio =
-        get_config().patch_size_t *
-        std::pow(
-            2,
-            std::accumulate(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
+    const std::pair<size_t, size_t> compression_ratios = utils::get_spatial_temporal_compression_ratios(
+        get_config().patch_size,
+        get_config().patch_size_t,
+        get_config().spatio_temporal_scaling);
+    const int64_t spatial_compression_ratio = static_cast<int64_t>(compression_ratios.first);
+    const int64_t temporal_compression_ratio = static_cast<int64_t>(compression_ratios.second);
 
     num_frames = ((num_frames - 1) / temporal_compression_ratio + 1) / m_transformer_patch_size_t;
     height /= (spatial_compression_ratio * m_transformer_patch_size);
@@ -179,10 +175,7 @@ const AutoencoderKLLTXVideo::Config& AutoencoderKLLTXVideo::get_config() const {
 }
 
 size_t AutoencoderKLLTXVideo::get_vae_scale_factor() const {
-    const auto exponent = std::accumulate(m_config.spatio_temporal_scaling.begin(),
-                                          m_config.spatio_temporal_scaling.end(),
-                                          0);
-    return m_config.patch_size * (size_t{1} << exponent);
+    return utils::get_spatial_compression_ratio(m_config.patch_size, m_config.spatio_temporal_scaling);
 }
 
 void AutoencoderKLLTXVideo::merge_vae_video_post_processing() const {
