@@ -26,14 +26,6 @@ void copy_with_offset(const ov::Tensor& orig, const std::size_t offset, ov::Tens
     std::copy(orig_data, orig_data + orig.get_size(), padded_data + offset);
 }
 
-ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
-    ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
-    start_shape[dim] = start_pos;
-    ov::Shape end_shape = tensor.get_shape();
-    end_shape[dim] = end_pos;
-    return ov::Tensor(tensor, start_shape, end_shape);
-}
-
 void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
     const auto src_shape = src.get_shape();
 
@@ -297,7 +289,7 @@ EncodedResults StatefulLLMPipeline::generate(
     auto padded_sequence_len = padded_logits.get_shape()[1];
     if (padded_sequence_len > 1) {
         // If SliceOut is not applied:
-        logits = make_tensor_slice(padded_logits, 1, padded_sequence_len - prompt_len, padded_sequence_len);
+        logits = ov::genai::utils::make_tensor_slice(padded_logits, 1, padded_sequence_len - prompt_len, padded_sequence_len);
     }
     int64_t output_sequence_len = logits.get_shape().at(1);
 
