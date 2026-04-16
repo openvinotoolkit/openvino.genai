@@ -112,6 +112,7 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_id
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_embeddings(const ov::Tensor& original_input_embeddings) {
     auto shape = original_input_embeddings.get_shape();
+    auto element_type = original_input_embeddings.get_element_type();
 
     OPENVINO_ASSERT(shape.size() == 3u, "Input embedding tensor shape size should be 3.");
     OPENVINO_ASSERT(shape[0] == 1u, "Input embedding tensor only support batch == 1.");
@@ -122,12 +123,14 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_em
                     "Input embedding tensor sequence length must be greater than 1 for creating eagle3 draft input embeddings.");
     size_t new_length = original_length - 1;
 
-    ov::Tensor draft_input_embeddings(ov::element::f32, {1, new_length, shape[2]});
+    ov::Tensor draft_input_embeddings(element_type, {1, new_length, shape[2]});
 
-    const float* src_data = original_input_embeddings.data<float>();
-    float* dst_data = draft_input_embeddings.data<float>();
+    // Copy data using byte-wise copy to handle any element type
+    size_t embedding_row_bytes = shape[2] * element_type.size() ;
+    const uint8_t* src_data = static_cast<const uint8_t*>(original_input_embeddings.data());
+    uint8_t* dst_data = static_cast<uint8_t*>(draft_input_embeddings.data());
 
-    std::copy(src_data + shape[2], src_data + (original_length * shape[2]), dst_data);
+    std::copy(src_data + embedding_row_bytes, src_data + (original_length * embedding_row_bytes), dst_data);
 
     return draft_input_embeddings;
 }

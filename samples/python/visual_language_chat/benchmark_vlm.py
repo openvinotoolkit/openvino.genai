@@ -109,8 +109,6 @@ def main():
         scheduler_config.enable_prefix_caching = False
         scheduler_config.max_num_batched_tokens = sys.maxsize
 
-        print("draft_model_path=", draft_model_path)
-        print("device=", device)
         if draft_model_path:
             draft_model = ov_genai.draft_model(draft_model_path, device)
             pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config, draft_model=draft_model)

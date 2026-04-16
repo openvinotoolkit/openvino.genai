@@ -389,6 +389,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     }
     ov::Tensor logits;
 
+    // Ensure embeddings exist before forward() for EMBEDDINGS mode (VLM).
+    // Critical for: 1) validation mode - draft candidates need embeddings
+    //               2) draft mode after rewinding - repairs embedding/token mismatch
     if (m_model_input_type == ModelInputType::EMBEDDINGS)
         m_model_runner->append_embeddings(m_requests, scheduler_output);
 

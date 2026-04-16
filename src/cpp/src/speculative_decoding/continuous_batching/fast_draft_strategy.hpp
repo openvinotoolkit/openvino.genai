@@ -97,7 +97,6 @@ std::vector<EncodedGenerationResult> generate_common(
 
     self->perf_metrics().draft_model_metrics.raw_metrics = self->draft_pipeline()->raw_perf_metrics;
     uint64_t generate_duration_us = strategy.stop_timer(t_start);
-    const auto sd_metrics = self->get_speculative_decoding_metrics();
 
     std::vector<EncodedGenerationResult> results;
     results.reserve(all_requests.size());

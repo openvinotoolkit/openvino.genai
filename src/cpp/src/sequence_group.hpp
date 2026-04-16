@@ -155,6 +155,7 @@ public:
     // removes n last tokens and updates cumulative log prob
     // used to remove stop_string from the output
     void remove_last_tokens(int n) {
+        OPENVINO_ASSERT(n >= 0, "Number of tokens to remove must be greater than or equal to 0");
         OPENVINO_ASSERT(m_generated_ids.size() >= n, "Cannot remove more tokens than has been generated");
         for (int i = 0; i < n; i++) {
             m_cumulative_log_prob -= m_generated_log_probs.back();
@@ -258,7 +259,7 @@ public:
     void update_position_ids(size_t num_tokens) {
         OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
         OPENVINO_ASSERT(num_tokens <= m_position_ids_list.size());
-        // remove the first num_tokens position ids
+        // remove the last num_tokens position ids
         if (num_tokens > 0)
             m_position_ids_list.erase(m_position_ids_list.begin() + m_position_ids_list.size() - num_tokens, m_position_ids_list.end());
     }

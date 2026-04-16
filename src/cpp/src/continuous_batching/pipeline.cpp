@@ -17,7 +17,6 @@
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "utils.hpp"
 #include "model_desc.hpp"
-#include "visual_language/chat_history_state.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "json_utils.hpp"
 
@@ -78,7 +77,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
-        }else {
+        } else {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         }
         m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_desr, eagle_rt_info.hidden_layers_list);
