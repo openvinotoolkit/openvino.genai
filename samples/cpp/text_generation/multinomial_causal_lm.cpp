@@ -1,11 +1,16 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstdlib>
+#include <iostream>
+#include <limits>
+#include <stdexcept>
+#include <string>
 #include "openvino/genai/llm_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    if (3 != argc) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'");
+    if (argc < 3 || argc > 4) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>' [RNG_SEED]");
     }
 
     std::string models_path = argv[1];
@@ -19,6 +24,16 @@ int main(int argc, char* argv[]) try {
     config.do_sample = true;
     config.top_p = 0.9;
     config.top_k = 30;
+
+    if (argc == 4) {
+        char* end = nullptr;
+        const unsigned long long seed = std::strtoull(argv[3], &end, 10);
+        if (*end != '\0' || seed > std::numeric_limits<size_t>::max()) {
+            throw std::runtime_error("RNG_SEED must be a non-negative integer.");
+        }
+        config.rng_seed = static_cast<size_t>(seed);
+    }
+
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;
         return ov::genai::StreamingStatus::RUNNING;

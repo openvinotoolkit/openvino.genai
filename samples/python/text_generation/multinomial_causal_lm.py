@@ -175,7 +175,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir")
     parser.add_argument("prompt")
+    parser.add_argument(
+        "--rng_seed",
+        type=int,
+        default=None,
+        help="Optional random seed for reproducible sampling (non-negative integer).",
+    )
     args = parser.parse_args()
+
+    if args.rng_seed is not None and args.rng_seed < 0:
+        parser.error("--rng_seed must be a non-negative integer.")
 
     device = "CPU"  # GPU can be used as well
     tokens_len = 10  # chunk size
@@ -196,6 +205,8 @@ def main():
     config.do_sample = True
     config.top_p = 0.9
     config.top_k = 30
+    if args.rng_seed is not None:
+        config.rng_seed = args.rng_seed
 
     # Since the streamer is set, the results will be printed
     # every time a new token is generated and put into the streamer queue.

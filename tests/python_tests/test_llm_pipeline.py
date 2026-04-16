@@ -25,6 +25,7 @@ from utils.tokenizers import (
     model_tmp_path,  # noqa: F401
 )
 from utils.ov_genai_pipelines import (
+    ALL_PIPELINE_TYPES,
     LINEAR_ATTENTION_PIPELINE_TYPES,
     create_ov_pipeline,
     generate_and_compare,
@@ -1141,4 +1142,44 @@ def test_llm_pipeline_add_extension(
     )
     assert result_extension_obj.texts[0].strip() == result_ref.texts[0].strip(), (
         "Result should be the same for model with extension 'CustomAdd' and reference model."
+    )
+
+
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+@pytest.mark.parametrize("pipeline_type", ALL_PIPELINE_TYPES)
+def test_same_rng_seed_produces_identical_output(
+    llm_model: OVConvertedModelSchema, pipeline_type: PipelineType
+) -> None:
+    """Two generate() calls with the same rng_seed must produce identical token sequences."""
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
+    config = ov_genai.GenerationConfig(do_sample=True, temperature=1.0, max_new_tokens=20, rng_seed=42)
+    prompt = "Which season is better, summer or winter?"
+
+    result1 = ov_pipe.generate(prompt, generation_config=config)
+    result2 = ov_pipe.generate(prompt, generation_config=config)
+
+    assert result1 == result2, (
+        f"generate() with rng_seed=42 must be reproducible.\n"
+        f"First call:  {result1!r}\n"
+        f"Second call: {result2!r}"
+    )
+
+
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+@pytest.mark.parametrize("pipeline_type", ALL_PIPELINE_TYPES)
+def test_different_rng_seed_produces_different_output(
+    llm_model: OVConvertedModelSchema, pipeline_type: PipelineType
+) -> None:
+    """Two generate() calls with different rng_seeds must produce different token sequences."""
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
+    config_a = ov_genai.GenerationConfig(do_sample=True, temperature=1.0, max_new_tokens=20, rng_seed=42)
+    config_b = ov_genai.GenerationConfig(do_sample=True, temperature=1.0, max_new_tokens=20, rng_seed=123)
+    prompt = "Which season is better, summer or winter?"
+
+    result_a = ov_pipe.generate(prompt, generation_config=config_a)
+    result_b = ov_pipe.generate(prompt, generation_config=config_b)
+
+    assert result_a != result_b, (
+        f"generate() with rng_seed=42 and rng_seed=123 must produce different output, "
+        f"but both produced: {result_a!r}"
     )
