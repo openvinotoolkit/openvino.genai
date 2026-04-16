@@ -31,7 +31,7 @@ from data.models import GGUF_MODEL_LIST
 class ModelInfo:
     gguf_model_id: str
     gguf_filename: str
-    gguf_full_path: str
+    gguf_full_path: Path
     dynamic_quantization_group_size: str | None
     opt_model: Any | None
     hf_tokenizer: Any | None
@@ -177,7 +177,6 @@ def test_full_gguf_pipeline(
     gc.collect()
 
     if enable_save_ov_model:
-        gguf_full_path = Path(gguf_full_path)
         ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
         res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
         del ov_pipe_native
