@@ -15,7 +15,7 @@ import openvino_genai as ov_genai
 
 from utils.hugging_face import (
     generation_config_to_hf,
-    download_hf_model,
+    download_hf_file,
     load_hf_model_from_gguf,
     load_hf_tokenizer_from_gguf,
 )
@@ -44,7 +44,7 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
     gguf_filename = meta_info["gguf_filename"]
     opt_model = load_hf_model_from_gguf(gguf_model_id, gguf_filename)
     hf_tokenizer = load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename)
-    gguf_full_path = download_hf_model(gguf_model_id, gguf_filename)
+    gguf_full_path = download_hf_file(gguf_model_id, gguf_filename)
     return ModelInfo(
         gguf_model_id=gguf_model_id,
         gguf_filename=gguf_filename,
@@ -217,7 +217,7 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # TODO: Investigate output difference for GGUF models. Ticket: TBD
     res_string_input_1 = "\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color. I remember"
 
-    gguf_full_path = download_hf_model(gguf_model_id, gguf_filename)
+    gguf_full_path = download_hf_file(gguf_model_id, gguf_filename)
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
