@@ -7,6 +7,7 @@
 #include <vector>
 #include <filesystem>
 #include <regex>
+#include <functional>
 
 #include "utils.hpp"
 #include "lm_encoding.hpp"

@@ -4,6 +4,9 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
+#include <memory>
+#include <unordered_map>
 
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/vision_encoder.hpp"
