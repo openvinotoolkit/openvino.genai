@@ -3,6 +3,7 @@
 
 #include "openvino/genai/c/whisper_pipeline.h"
 
+#include <cstring>
 #include <stdarg.h>
 
 #include <filesystem>
@@ -347,8 +348,7 @@ ov_status_e ov_genai_whisper_decoded_results_get_word_timing_at(const ov_genai_w
             return ov_status_e::OUT_OF_BOUNDS;
         }
         std::unique_ptr<ov_genai_whisper_word_timing> _word_timing = std::make_unique<ov_genai_whisper_word_timing>();
-        _word_timing->object =
-            std::shared_ptr<ov::genai::WhisperWordTiming>(results->object, &words[index]);
+        _word_timing->object = std::shared_ptr<const ov::genai::WhisperWordTiming>(results->object, &words[index]);
         *word_timing = _word_timing.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
@@ -419,25 +419,15 @@ ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
         ov::AnyMap property = {};
         va_list args_ptr;
         va_start(args_ptr, pipeline);
-
-        for (size_t i = 0; i < property_args_size / 2; ++i) {
-            const char* key = va_arg(args_ptr, char*);
-            const char* val = va_arg(args_ptr, char*);
-
-            if (!key || !val) {
-                va_end(args_ptr);
-                return ov_status_e::INVALID_C_PARAM;
-            }
-
-            std::string s_key(key);
-            std::string s_val(val);
-            if (s_key == "word_timestamps") {
-                property[s_key] = (s_val == "true" || s_val == "1");
-            } else {
-                property[s_key] = s_val;
+        size_t property_size = property_args_size / 2;
+        for (size_t i = 0; i < property_size; i++) {
+            GET_PROPERTY_FROM_ARGS_LIST;
+            if (property.find("word_timestamps") != property.end() &&
+                property["word_timestamps"].is<std::string>()) {
+                std::string word_timestamps = property["word_timestamps"].as<std::string>();
+                property["word_timestamps"] = (word_timestamps == "true" || word_timestamps == "1");
             }
         }
-
         va_end(args_ptr);
 
         std::unique_ptr<ov_genai_whisper_pipeline> _pipeline = std::make_unique<ov_genai_whisper_pipeline>();
@@ -512,14 +502,4 @@ ov_status_e ov_genai_whisper_pipeline_set_generation_config(ov_genai_whisper_pip
         return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
-}
-
-ov_status_e ov_genai_whisper_generation_config_set_word_timestamps(ov_genai_whisper_generation_config* config, bool word_timestamps) {
-    if (!config || !config->object) return ov_status_e::INVALID_C_PARAM;
-    try {
-        config->object->word_timestamps = word_timestamps;
-        return ov_status_e::OK;
-    } catch (...) {
-        return ov_status_e::UNKNOW_EXCEPTION;
-    }
 }

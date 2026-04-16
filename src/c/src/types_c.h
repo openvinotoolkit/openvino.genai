@@ -96,7 +96,7 @@ struct ov_genai_whisper_decoded_result_chunk_opaque {
  * @brief This is an interface of ov::genai::WhisperWordTiming
  */
 struct ov_genai_whisper_word_timing_opaque {
-    std::shared_ptr<ov::genai::WhisperWordTiming> object;
+    std::shared_ptr<const ov::genai::WhisperWordTiming> object;
 };
 
 /**
