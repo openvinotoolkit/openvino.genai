@@ -424,8 +424,15 @@ ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
             GET_PROPERTY_FROM_ARGS_LIST;
             if (property.find("word_timestamps") != property.end() &&
                 property["word_timestamps"].is<std::string>()) {
-                std::string word_timestamps = property["word_timestamps"].as<std::string>();
-                property["word_timestamps"] = (word_timestamps == "true" || word_timestamps == "1");
+                std::string word_timestamps_str = property["word_timestamps"].as<std::string>();
+                if (word_timestamps_str == "true" || word_timestamps_str == "1") {
+                    property["word_timestamps"] = true;
+                } else if (word_timestamps_str == "false" || word_timestamps_str == "0") {
+                    property["word_timestamps"] = false;
+                } else {
+                    va_end(args_ptr);
+                    return ov_status_e::INVALID_C_PARAM;
+                }
             }
         }
         va_end(args_ptr);
