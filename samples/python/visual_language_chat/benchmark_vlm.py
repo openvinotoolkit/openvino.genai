@@ -13,7 +13,7 @@ from openvino import get_version
 
 
 def read_image(path: str, resize: tuple[int, int] = None) -> Tensor:
-    '''
+    """
 
     Args:
         path: The path to the image.
@@ -21,7 +21,7 @@ def read_image(path: str, resize: tuple[int, int] = None) -> Tensor:
 
     Returns: the ov.Tensor containing the image.
 
-    '''
+    """
     pic = Image.open(path).convert("RGB")
     if resize is not None:
         pic = pic.resize(resize)
@@ -55,7 +55,9 @@ def main():
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-pf", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image")
-    parser.add_argument("-ih", "--image_height", type=int, default=0, help="Target image height (if resizing is needed)")
+    parser.add_argument(
+        "-ih", "--image_height", type=int, default=0, help="Target image height (if resizing is needed)"
+    )
     parser.add_argument("-iw", "--image_width", type=int, default=0, help="Target image width (if resizing is needed)")
     parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
@@ -95,7 +97,7 @@ def main():
     image_width = args.image_width
     image_height = args.image_height
     if image_width < 0 or image_height < 0:
-        raise RuntimeError(f'Image width and height should be non-negative!')
+        raise RuntimeError(f"Image width and height should be non-negative!")
     resize = (image_width, image_height) if image_width > 0 and image_height > 0 else None
     images = read_images(args.image, resize)
     device = args.device
