@@ -11,7 +11,6 @@
 #include "openvino/genai/scheduler_config.hpp"
 #include "continuous_batching/cache/cache_orchestrator.hpp"
 #include "sequence_group.hpp"
-#include "continuous_batching/timer.hpp"
 #include "continuous_batching/sparse_attention.hpp"
 #include "utils.hpp"
 #include "continuous_batching/cache/cache_eviction.hpp"
@@ -117,10 +116,7 @@ public:
         scheduler_output.m_cache_usage = m_cache_orchestrator->get_used_percentage();
         scheduler_output.m_cache_size_in_bytes = m_cache_orchestrator->get_total_cache_size_in_bytes();
 
-        static ManualTimer copy_blocks_timer("copy block");
-        copy_blocks_timer.start();
         m_cache_orchestrator->copy_blocks(typed_block_copy_map);
-        copy_blocks_timer.end();
 
         return scheduler_output;
     }
@@ -370,7 +366,7 @@ private:
                 size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
-                while (!m_cache_orchestrator->can_append_slots(sequence_group)){
+                while (!m_cache_orchestrator->can_append_slots(sequence_group)) {
                     if (!_try_increase_cache()) {
                         break;
                     }
@@ -385,7 +381,7 @@ private:
                 }
 
                 // allocate new slots
-                auto per_type_copy_map = m_cache_orchestrator->append_slots(sequence_group);
+                std::map<CacheType, std::map<size_t, std::list<size_t>>> per_type_copy_map = m_cache_orchestrator->append_slots(sequence_group);
 
                 // add information to scheduler_output
                 {

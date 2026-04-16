@@ -323,19 +323,23 @@ public:
     //  Token-level API  (cache-type-agnostic interface for the Scheduler)
     // -----------------------------------------------------------------------
 
-    /// @return Approximate aggregate memory cost per token across all cache types.
+    /// @return Approximate aggregate memory cost per token across all variable-size cache types.
     size_t get_bytes_per_token() const {
         size_t total = 0;
         for (const auto& [type, cache_mgr] : m_cache_managers) {
+            if (m_block_managers.at(type)->is_fixed_size_per_sequence())
+                continue;
             total += cache_mgr->get_block_size_in_bytes() / m_block_managers.at(type)->get_block_size();
         }
         return total;
     }
 
-    /// @return Exact memory needed to grow all caches by num_tokens tokens (accounting for block rounding).
+    /// @return Exact memory needed to grow all variable-size caches by num_tokens tokens (accounting for block rounding).
     size_t memory_cost_for_additional_tokens(size_t num_tokens) const {
         size_t total = 0;
         for (const auto& [type, block_mgr] : m_block_managers) {
+            if (block_mgr->is_fixed_size_per_sequence())
+                continue;
             const size_t bs = block_mgr->get_block_size();
             const size_t blocks = (num_tokens + bs - 1) / bs;
             total += blocks * m_cache_managers.at(type)->get_block_size_in_bytes();
@@ -426,24 +430,28 @@ public:
     }
 
     /**
-     * @brief Grows each cache type's block pool to accommodate the given number of additional tokens.
-     * Each type converts tokens to blocks using its own block size.
+     * @brief Grows each variable-size cache type's block pool to accommodate the given number of additional tokens.
+     * Fixed-size-per-sequence managers (e.g. linear attention state) are skipped: their capacity
+     * is sequence-count-driven, not token-count-driven.
      * @param num_tokens Number of additional tokens to accommodate.
      */
     void grow_capacity_by_tokens(size_t num_tokens) {
         for (auto& [type, block_mgr] : m_block_managers) {
-            block_mgr->grow_capacity_by_tokens(num_tokens);
+            if (!block_mgr->is_fixed_size_per_sequence())
+                block_mgr->grow_capacity_by_tokens(num_tokens);
         }
     }
 
     /**
-     * @brief Ensures each cache type's block pool has capacity for at least the given total number of tokens.
-     * Each type converts tokens to blocks using its own block size.
+     * @brief Ensures each variable-size cache type's block pool has capacity for at least the given total number of tokens.
+     * Fixed-size-per-sequence managers (e.g. linear attention state) are skipped: their block count
+     * is determined at construction time by the expected number of concurrent sequences.
      * @param num_tokens Total number of tokens the pools should accommodate.
      */
     void ensure_token_capacity(size_t num_tokens) {
         for (auto& [type, block_mgr] : m_block_managers) {
-            block_mgr->ensure_token_capacity(num_tokens);
+            if (!block_mgr->is_fixed_size_per_sequence())
+                block_mgr->ensure_token_capacity(num_tokens);
         }
     }
 

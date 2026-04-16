@@ -204,13 +204,13 @@ public:
                 } else {
                     ov::Tensor new_tensor(info.precision, shape);
 
-                    // Zero-initialize: new blocks must start with zero state.
-                    std::memset(new_tensor.data(), 0, new_tensor.get_byte_size());
-
-                    // Preserve existing data when growing.
+                    // Preserve existing data first, then zero only the newly added blocks.
+                    const size_t old_bytes = info.tensor ? info.tensor.get_byte_size() : 0;
                     if (info.tensor) {
-                        std::memcpy(new_tensor.data(), info.tensor.data(), info.tensor.get_byte_size());
+                        std::memcpy(new_tensor.data(), info.tensor.data(), old_bytes);
                     }
+                    std::memset(static_cast<uint8_t*>(new_tensor.data()) + old_bytes, 0,
+                                new_tensor.get_byte_size() - old_bytes);
 
                     info.tensor = new_tensor;
                 }

@@ -758,6 +758,14 @@ public:
     }
 
     /**
+     * @return Whether this manager uses a fixed block count per sequence (e.g. linear attention state).
+     *         When true, token-count-based capacity growth is not meaningful and should be skipped.
+     */
+    bool is_fixed_size_per_sequence() const {
+        return m_fixed_blocks_per_sequence > 0;
+    }
+
+    /**
      * Grows the block pool to accommodate at least the given number of additional tokens.
      * @param num_tokens Number of additional tokens to accommodate.
      */
