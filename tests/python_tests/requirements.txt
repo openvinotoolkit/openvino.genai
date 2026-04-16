@@ -2,7 +2,7 @@
 diffusers==0.37.1
 git+https://github.com/huggingface/optimum-intel.git@refs/pull/1675/head#egg=optimum-intel
 pytest==9.0.3
-transformers==4.55.4
+transformers==5.1.0
 hf_transfer==0.1.9
 gguf==0.18.0
 
