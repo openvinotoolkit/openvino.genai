@@ -365,23 +365,22 @@ def download_and_convert_model_class(
     )
 
 
-def download_gguf_model(
-    gguf_model_id: str,
-    gguf_filename: str,
+def download_hf_model(
+    repo_id: str,
+    filename: str,
 ):
-    gguf_dir_name = sanitize_model_id(gguf_model_id)
+    dir_name = sanitize_model_id(repo_id)
     ov_cache_downloaded_dir = get_ov_cache_downloaded_models_dir()
-    models_path_gguf = ov_cache_downloaded_dir / gguf_dir_name
+    dest_dir = ov_cache_downloaded_dir / dir_name
 
-    manager = AtomicDownloadManager(models_path_gguf)
+    manager = AtomicDownloadManager(dest_dir)
 
     def download_to_temp(temp_path: Path) -> None:
-        retry_request(lambda: hf_hub_download(repo_id=gguf_model_id, filename=gguf_filename, local_dir=temp_path))
+        retry_request(lambda: hf_hub_download(repo_id=repo_id, filename=filename, local_dir=temp_path))
 
     manager.execute(download_to_temp)
 
-    gguf_path = models_path_gguf / gguf_filename
-    return gguf_path
+    return dest_dir / filename
 
 
 def load_hf_model_from_gguf(gguf_model_id, gguf_filename):
