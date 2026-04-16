@@ -33,16 +33,6 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    ov::Tensor get_inputs_embeds(
-        const std::string& prompt,
-        const std::vector<ov::genai::EncodedImage>& images,
-        const std::vector<ov::genai::EncodedVideo>& videos,
-        ov::genai::VLMPerfMetrics& metrics,
-        bool recalculate_merged_embeddings = true,
-        const std::vector<size_t>& image_sequence = {},
-        const std::vector<size_t>& videos_sequence = {},
-        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
-
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(
@@ -56,15 +46,9 @@ public:
     void finish_chat() override;
 
 protected:
-    /**
-     * @brief Run vision embeddings merger with position interpolation.
-     */
-    std::pair<ov::Tensor, ov::Tensor> run_video_image_embeddings_merger(
-        const std::vector<EncodedImage>& images,
-        const std::vector<size_t>& images_sequence,
-        const std::vector<EncodedVideo>& videos,
-        const std::vector<size_t>& videos_sequence) override;
-    
+    // Override parent Qwen3VL lm extra inputs as Qwen3.5 LM has no additional vision-related inputs.
+    std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs = {};
+
     std::pair<ov::Tensor, int64_t> create_position_ids(
         const ov::Tensor& input_ids_tensor,
         const std::vector<std::array<size_t, 3>>& images_grid_thw,
