@@ -421,8 +421,8 @@ ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
         va_start(args_ptr, pipeline);
 
         for (size_t i = 0; i < property_args_size / 2; ++i) {
-            const char* key = va_arg(args_ptr, const char*);
-            const char* val = va_arg(args_ptr, const char*);
+            const char* key = va_arg(args_ptr, char*);
+            const char* val = va_arg(args_ptr, char*);
 
             if (!key || !val) {
                 va_end(args_ptr);
