@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <fstream>
+
 #include "vision_encoder.hpp"
 #include "utils.hpp"
 #include "logger.hpp"
@@ -55,14 +57,20 @@ void VisionEncoder::resolve_processor_configs(const std::filesystem::path& confi
     const std::string preprocessor_config_filename = "preprocessor_config.json";
     const std::string video_preprocessor_config_filename = "video_preprocessor_config.json";
 
+    std::optional<nlohmann::json> parsed_processor_config;
     const auto processor_config_path = config_dir_path / processor_config_filename;
     if (std::filesystem::exists(processor_config_path)) {
         std::ifstream stream(processor_config_path);
         OPENVINO_ASSERT(stream.is_open(), "Failed to open '", processor_config_path, "' with video processor config");
-        nlohmann::json parsed = nlohmann::json::parse(stream);
+        parsed_processor_config = nlohmann::json::parse(stream);
+    }
 
-        m_processor_config = ProcessorConfig(parsed.at("image_processor"));
-        m_video_processor_config = VideoProcessorConfig(parsed.at("video_processor"));
+    if (parsed_processor_config.has_value()
+        && parsed_processor_config->contains("image_processor")
+        && parsed_processor_config->contains("video_processor")
+    ) {
+        m_processor_config = ProcessorConfig(parsed_processor_config->at("image_processor"));
+        m_video_processor_config = VideoProcessorConfig(parsed_processor_config->at("video_processor"));
     } else {
         GENAI_INFO(processor_config_filename + " is not found in '" + config_dir_path.string() + "'. "
             "Falling back to " + preprocessor_config_filename + " and " + video_preprocessor_config_filename + ".");
