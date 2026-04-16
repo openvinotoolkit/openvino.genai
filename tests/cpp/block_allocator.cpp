@@ -258,6 +258,49 @@ TEST_F(PrefixCachingBlockAllocatorTest, HandlesPrefixHashMapAtHashCollisionCorre
     alloc.free(r2_a, cached);
 }
 
+TEST_F(PrefixCachingBlockAllocatorTest, GetCachedBlockRejectsHashCollision) {
+    auto alloc = ov::genai::BlockAllocator(4, true, 1);
+    std::map<uint64_t, ov::genai::BlocksPerLayer> cached;
+
+    const uint64_t H = 42;
+    const std::vector<int64_t> content_A = {1, 2, 3};
+    const std::vector<int64_t> content_B = {9, 9, 9};  // simulated collision: same hash, different content
+
+    auto blkA = alloc.allocate_block(H, cached, content_A);
+    ASSERT_FALSE(blkA.empty());
+    ASSERT_EQ(blkA[0]->get_content(), content_A);
+
+    auto result = alloc.get_cached_block(H, cached, content_B);
+    EXPECT_TRUE(result.empty());
+    EXPECT_TRUE(cached.find(H) == cached.end());
+
+    auto result2 = alloc.get_cached_block(H, cached, content_A);
+    EXPECT_TRUE(result2.empty());
+
+    auto result3 = alloc.get_cached_block(H, cached);
+    EXPECT_TRUE(result3.empty());
+
+    alloc.free(blkA, cached);
+}
+
+TEST_F(PrefixCachingBlockAllocatorTest, GetCachedBlockAcceptsMatchingContent) {
+    auto alloc = ov::genai::BlockAllocator(4, true, 1);
+    std::map<uint64_t, ov::genai::BlocksPerLayer> cached;
+
+    const uint64_t H = 7;
+    const std::vector<int64_t> content = {10, 20, 30};
+
+    auto blkA = alloc.allocate_block(H, cached, content);
+    ASSERT_FALSE(blkA.empty());
+
+    alloc.free(blkA, cached);
+
+    auto result = alloc.get_cached_block(H, cached, content);
+    EXPECT_FALSE(result.empty());
+
+    alloc.free(result, cached);
+}
+
 TEST(TestBlockAllocator, CalculatesUsagePercentageCorrectly) {
     size_t num_layers = 10;
     size_t initial_num_free_blocks = 10;

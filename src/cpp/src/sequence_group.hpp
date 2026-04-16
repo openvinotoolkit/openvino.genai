@@ -63,6 +63,8 @@ class Sequence {
 
     size_t _make_hash(size_t content_length);
 
+    std::vector<int64_t> _get_block_content(size_t content_length);
+
     static std::vector<int64_t> _reduce_embedding(const std::vector<float>& embedding);
 
     explicit Sequence(const uint64_t id, const SequenceGroupType type, const size_t hidden_size) : m_grouped_id(id), m_type(type), m_hidden_size(hidden_size) {}
@@ -285,6 +287,8 @@ public:
     // the tokens within the block and the tokens in the prefix before the block.
     // hash(prefix tokens + block tokens) <--> KV Block
     size_t get_hash(size_t content_length = 0);
+
+    std::vector<int64_t> get_block_content(size_t content_length = 0);
 
     static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(const ov::Shape& position_ids_elem_shape, size_t idx, bool need_batch_dimention) {
 

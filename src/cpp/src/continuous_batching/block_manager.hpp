@@ -18,6 +18,7 @@ class KVCacheBlock {
     int m_ref_count;
     int m_index;
     size_t m_hash;
+    std::vector<int64_t> m_content;
     std::chrono::time_point<std::chrono::steady_clock> m_timestamp;
 public:
     using Ptr = std::shared_ptr<KVCacheBlock>;
@@ -60,6 +61,14 @@ public:
 
     void set_hash(size_t hash) {
         m_hash = hash;
+    }
+
+    void set_content(std::vector<int64_t> content) {
+        m_content = std::move(content);
+    }
+
+    const std::vector<int64_t>& get_content() const {
+        return m_content;
     }
 
     void set_timestamp(const std::chrono::time_point<std::chrono::steady_clock>& timestamp) {
@@ -432,7 +441,7 @@ public:
      * @return A vector of blocks (one for each layer), either freshly allocated or reused for overwriting,
      * or an empty vector if cache is exhausted.
      */
-    BlocksPerLayer allocate_block(size_t hash, std::map<uint64_t, BlocksPerLayer>& cached_blocks) {
+    BlocksPerLayer allocate_block(size_t hash, std::map<uint64_t, BlocksPerLayer>& cached_blocks, std::vector<int64_t> content = {}) {
         OPENVINO_ASSERT(m_enable_prefix_caching);
         OPENVINO_ASSERT(can_allocate_blocks(1));
 
@@ -444,6 +453,7 @@ public:
                 KVCacheBlock::Ptr allocated_block = m_free_blocks[i].front();
                 allocated_block->increment();
                 allocated_block->set_hash(hash);
+                allocated_block->set_content(content);
                 allocated_blocks.push_back(allocated_block);
                 m_free_blocks[i].pop_front();
                 --m_free_blocks_num[i];
@@ -456,9 +466,10 @@ public:
             BlocksPerLayer blocks_for_all_layers = m_overwriteable_blocks.get_lru_block_to_overwrite();
             cached_blocks.erase(blocks_for_all_layers[0]->get_hash());
 
-            // update block with new hash
+            // update block with new hash and content
             for (auto& block : blocks_for_all_layers) {
                 block->set_hash(hash);
+                block->set_content(content);
             }
             cached_blocks[hash] = blocks_for_all_layers;
             return blocks_for_all_layers;
@@ -475,7 +486,7 @@ public:
      * @param cached_blocks The map of known hashes to already allocated and filled blocks.
      * @return A vector of blocks (one for each layer) corresponding to this hash, or an empty vector if the hash is not found in the map.
      */
-    BlocksPerLayer get_cached_block(size_t hash, std::map<uint64_t, BlocksPerLayer>& cached_blocks) {
+    BlocksPerLayer get_cached_block(size_t hash, std::map<uint64_t, BlocksPerLayer>& cached_blocks, const std::vector<int64_t>& expected_content = {}) {
         auto blocks_for_all_layers = m_overwriteable_blocks.get_block_to_restore(hash);
         if (!blocks_for_all_layers.empty()) {
             // use cached block from internal store
@@ -483,8 +494,12 @@ public:
         }
         auto it = cached_blocks.find(hash);
         if (it != cached_blocks.end()) {
-            // use cached block from cached_blocks
-            // TODO: add tokens validation in case of hash collision
+            // Validate content to detect hash collisions; evict stale entry on mismatch.
+            const auto& stored_content = it->second[0]->get_content();
+            if (!expected_content.empty() && !stored_content.empty() && expected_content != stored_content) {
+                cached_blocks.erase(it);
+                return {};
+            }
             blocks_for_all_layers = it->second;
             for (auto& block_ptr : cached_blocks[hash]) {
                 block_ptr->increment();
@@ -744,11 +759,13 @@ public:
                 auto hash = sequence->get_hash(block_table.size() * m_block_size);
                 auto prev_hash = last_block->get_hash();
                 if (prev_hash != hash) {
+                    auto content = sequence->get_block_content(block_table.size() * m_block_size);
                     BlocksPerLayer last_blocks_vec;
                     last_blocks_vec.reserve(m_num_layers);
                     for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
                         auto& lst_blk = m_block_table[sequence_id][layer_idx].back();
                         lst_blk->set_hash(hash);
+                        lst_blk->set_content(content);
                         m_prefix_hash_to_occupied_block_map.erase(prev_hash);
                         last_blocks_vec.push_back(lst_blk);
                     }
@@ -761,7 +778,8 @@ public:
                     num_hashed_tokens = content_length;
                 }
                 auto hash = sequence->get_hash(num_hashed_tokens);
-                auto blocks_for_all_layers = m_allocator.allocate_block(hash, m_prefix_hash_to_occupied_block_map);
+                auto content = sequence->get_block_content(num_hashed_tokens);
+                auto blocks_for_all_layers = m_allocator.allocate_block(hash, m_prefix_hash_to_occupied_block_map, std::move(content));
                 for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); layer_idx++) {
                     m_block_table[sequence_id][layer_idx].push_back(blocks_for_all_layers[layer_idx]);
                 }
@@ -1072,7 +1090,8 @@ public:
                     new_blocks_for_all_layers.reserve(effective_num_layers);
                     if (m_enable_prefix_caching) {
                         auto hash = sequence->get_hash();
-                        new_blocks_for_all_layers = m_allocator.allocate_block(hash, m_prefix_hash_to_occupied_block_map);
+                        auto content = sequence->get_block_content(sequence->get_generated_len() + seq_group->get_prompt_len());
+                        new_blocks_for_all_layers = m_allocator.allocate_block(hash, m_prefix_hash_to_occupied_block_map, std::move(content));
                     } else {
                         for (size_t i = 0; i < effective_num_layers; i++) {
                             new_blocks_for_all_layers.push_back(m_allocator.allocate_block(i));
@@ -1090,12 +1109,14 @@ public:
                 } else {
                     // we are the only users of this block
                     if (m_enable_prefix_caching) {
-                        // update hash of block
+                        // update hash and content of block
                         auto prev_hash = last_blocks[0]->get_hash();
                         auto hash = sequence->get_hash();
+                        auto content = sequence->get_block_content();
                         for (size_t i = 0; i < effective_num_layers; i++) {
                             auto& last_block = last_blocks[i];
                             last_block->set_hash(hash);
+                            last_block->set_content(content);
                         }
                         m_prefix_hash_to_occupied_block_map.erase(prev_hash);
                         m_prefix_hash_to_occupied_block_map[hash] = last_blocks;
@@ -1132,7 +1153,8 @@ public:
             }
             // restore fully filled blocks
             auto full_block_hash = sequence->get_hash(content_len);
-            auto blocks = m_allocator.get_cached_block(full_block_hash, m_prefix_hash_to_occupied_block_map);
+            auto full_block_content = sequence->get_block_content(content_len);
+            auto blocks = m_allocator.get_cached_block(full_block_hash, m_prefix_hash_to_occupied_block_map, full_block_content);
             auto timestamp = std::chrono::steady_clock::now();
             if (!blocks.empty()) {
                 for (size_t layer_idx = 0; layer_idx < block_table.size(); layer_idx++) {
@@ -1147,8 +1169,10 @@ public:
                     if (prev_iteration_content_len + i > prompt_len) {
                         break;
                     }
-                    auto hash = sequence->get_hash(prev_iteration_content_len + i);
-                    auto blocks = m_allocator.get_cached_block(hash, m_prefix_hash_to_occupied_block_map);
+                    auto partial_content_len = prev_iteration_content_len + i;
+                    auto hash = sequence->get_hash(partial_content_len);
+                    auto content = sequence->get_block_content(partial_content_len);
+                    auto blocks = m_allocator.get_cached_block(hash, m_prefix_hash_to_occupied_block_map, content);
                     if (!blocks.empty()) {
                         auto timestamp = std::chrono::steady_clock::now();
 

@@ -9,7 +9,7 @@ namespace genai {
 
 std::mutex Sequence::m_counter_mutex;
 
-size_t Sequence::_make_hash(size_t content_length) {
+std::vector<int64_t> Sequence::_get_block_content(size_t content_length) {
         auto sequence_group = get_sequence_group_ptr();
         auto block_size = sequence_group->get_block_size();
         size_t block_start_idx = content_length - (content_length % block_size);
@@ -17,7 +17,6 @@ size_t Sequence::_make_hash(size_t content_length) {
             block_start_idx -= block_size;
         }
 
-        // hash of current block depends on prefix hashes
         std::vector<int64_t> content;
         size_t filled_blocks_count = block_start_idx / block_size;
         OPENVINO_ASSERT(filled_blocks_count <= m_prefix_hashes.size());
@@ -25,7 +24,6 @@ size_t Sequence::_make_hash(size_t content_length) {
             content.emplace_back(m_prefix_hashes[filled_blocks_count - 1]);
         }
 
-        // get tokens corresponding to current block
         if (sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS) {
             const auto& prompt_ids = sequence_group->get_prompt_ids();
             OPENVINO_ASSERT(content_length <= prompt_ids.size() + m_generated_ids.size());
@@ -43,7 +41,6 @@ size_t Sequence::_make_hash(size_t content_length) {
             const auto& generated_embeds = m_generated_ids_embeds;
             OPENVINO_ASSERT(content_length <= input_embeds.size() + generated_embeds.size());
 
-            // get inputs embeddings
             if (block_start_idx < input_embeds.size()) {
                 for (size_t idx = block_start_idx; idx < std::min(input_embeds.size(), content_length); idx++) {
                     auto embed = _reduce_embedding(input_embeds[idx]);
@@ -51,7 +48,6 @@ size_t Sequence::_make_hash(size_t content_length) {
                 }
             }
 
-            // get generated ids embeddings
             if (content_length > input_embeds.size()) {
                 size_t start = block_start_idx < input_embeds.size() ? 0 : block_start_idx - input_embeds.size();
                 for (size_t idx = start; idx < content_length - input_embeds.size(); idx++) {
@@ -63,9 +59,28 @@ size_t Sequence::_make_hash(size_t content_length) {
         else {
             OPENVINO_THROW("Hash calculation is not supported for this sequence type.");
         }
+        return content;
+}
+
+size_t Sequence::_make_hash(size_t content_length) {
+        auto content = _get_block_content(content_length);
         const char* data = reinterpret_cast<const char*>(content.data());
         std::size_t size = content.size() * sizeof(content[0]);
         return std::hash<std::string_view>{}(std::string_view(data, size));
+}
+
+std::vector<int64_t> Sequence::get_block_content(size_t content_length) {
+        auto sequence_group = get_sequence_group_ptr();
+        OPENVINO_ASSERT(sequence_group, "Block content computation requires setting of sequence_group ptr.");
+        auto content_len = content_length == 0 ? sequence_group->get_context_len() : content_length;
+        // Ensure prefix hashes are up to date for chaining (mirrors get_hash logic)
+        auto block_size = sequence_group->get_block_size();
+        size_t cur_content = block_size * (m_prefix_hashes.size() + 1);
+        while (cur_content < content_len) {
+            m_prefix_hashes.push_back(_make_hash(cur_content));
+            cur_content += block_size;
+        }
+        return _get_block_content(content_len);
 }
 
 std::vector<int64_t> Sequence::_reduce_embedding(const std::vector<float>& embedding) {
