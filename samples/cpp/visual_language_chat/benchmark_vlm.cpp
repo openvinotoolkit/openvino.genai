@@ -16,6 +16,8 @@ int main(int argc, char* argv[]) try {
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
     ("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
     ("i,image", "Image", cxxopts::value<std::string>()->default_value("image.jpg"))
+    ("H,image_height", "Target image height (if resizing is needed)", cxxopts::value<int>()->default_value("0"))
+    ("W,image_width", "Target image width (if resizing is needed)", cxxopts::value<int>()->default_value("0"))
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
@@ -59,7 +61,9 @@ int main(int argc, char* argv[]) try {
     std::string device = result["device"].as<std::string>();
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
-    std::vector<ov::Tensor> images = utils::load_images(image_path);
+    int image_height = result["image_height"].as<int>();
+    int image_width = result["image_width"].as<int>();
+    std::vector<ov::Tensor> images = utils::load_images(image_path, image_height, image_width);
 
     ov::genai::GenerationConfig config;
     if (result.count("pruning_ratio")) {
@@ -86,7 +90,7 @@ int main(int argc, char* argv[]) try {
 
     auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
-    std::cout << "Number of images:" << images.size() << ", prompt token size:" << prompt_token_size << std::endl;
+    std::cout << "Number of images: " << images.size() << ", prompt token size: " << prompt_token_size << std::endl;
 
     for (size_t i = 0; i < num_warmup; i++)
         pipe->generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
@@ -99,6 +103,7 @@ int main(int argc, char* argv[]) try {
     }
 
     std::cout << std::fixed << std::setprecision(2);
+    std::cout << "Input token size:" << res.perf_metrics.get_num_input_tokens() << std::endl;
     std::cout << "Output token size:" << res.perf_metrics.get_num_generated_tokens() << std::endl;
     std::cout << "Load time: " << metrics.get_load_time() << " ms" << std::endl;
     std::cout << "Generate time: " << metrics.get_generate_duration().mean << " ± " << metrics.get_generate_duration().std << " ms" << std::endl;

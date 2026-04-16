@@ -12,24 +12,27 @@ import numpy as np
 from openvino import get_version
 
 
-def read_image(path: str) -> Tensor:
+def read_image(path: str, resize: tuple[int, int] = None) -> Tensor:
     '''
 
     Args:
         path: The path to the image.
+        resize: Optional tuple (width, height) to resize the image.
 
     Returns: the ov.Tensor containing the image.
 
     '''
     pic = Image.open(path).convert("RGB")
+    if resize is not None:
+        pic = pic.resize(resize)
     image_data = np.array(pic)
     return Tensor(image_data)
 
-def read_images(path: str) -> list[Tensor]:
+def read_images(path: str, resize: tuple[int, int] = None) -> list[Tensor]:
     entry = Path(path)
     if entry.is_dir():
-        return [read_image(str(file)) for file in sorted(entry.iterdir())]
-    return [read_image(path)]
+        return [read_image(str(file), resize) for file in sorted(entry.iterdir())]
+    return [read_image(path, resize)]
 
 
 def ratio_type(value):
@@ -52,6 +55,8 @@ def main():
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-pf", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image")
+    parser.add_argument("-ih", "--image_height", type=int, default=0, help="Target image height (if resizing is needed)")
+    parser.add_argument("-iw", "--image_width", type=int, default=0, help="Target image width (if resizing is needed)")
     parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
@@ -87,7 +92,12 @@ def main():
     # Perf metrics is stored in VLMDecodedResults.
     # In order to get VLMDecodedResults instead of a string input should be a list.
     models_path = args.model
-    images = read_images(args.image)
+    image_width = args.image_width
+    image_height = args.image_height
+    if image_width < 0 or image_height < 0:
+        raise RuntimeError(f'Image width and height should be non-negative!')
+    resize = (image_width, image_height) if image_width > 0 and image_height > 0 else None
+    images = read_images(args.image, resize)
     device = args.device
     num_warmup = args.num_warmup
     num_iter = args.num_iter
@@ -110,7 +120,7 @@ def main():
 
     input_data = pipe.get_tokenizer().encode(prompt)
     prompt_token_size = input_data.input_ids.get_shape()[1]
-    print(f"Number of images:{len(images)}, Prompt token size: {prompt_token_size}")
+    print(f"Number of images: {len(images)}, Prompt token size: {prompt_token_size}")
 
     for _ in range(num_warmup):
         pipe.generate(prompt, images=images, generation_config=config)
@@ -121,6 +131,7 @@ def main():
         res = pipe.generate(prompt, images=images, generation_config=config)
         perf_metrics += res.perf_metrics
 
+    print(f"Input token size: {res.perf_metrics.get_num_input_tokens()}")
     print(f"Output token size: {res.perf_metrics.get_num_generated_tokens()}")
     print(f"Load time: {perf_metrics.get_load_time():.2f} ms")
     print(

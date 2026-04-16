@@ -8,6 +8,6 @@
 #include <filesystem>
 
 namespace utils {
-ov::Tensor load_image(const std::filesystem::path& image_path);
-std::vector<ov::Tensor> load_images(const std::filesystem::path& image_path);
+ov::Tensor load_image(const std::filesystem::path& image_path, int target_height = 0, int target_width = 0);
+std::vector<ov::Tensor> load_images(const std::filesystem::path& image_path, int target_height = 0, int target_width = 0);
 }
