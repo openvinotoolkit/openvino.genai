@@ -4,6 +4,7 @@
 #include <fstream>
 
 #include "processor_config.hpp"
+#include "json_utils.hpp"
 
 ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     using ov::genai::utils::read_json_param;

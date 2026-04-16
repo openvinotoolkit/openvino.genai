@@ -5,9 +5,7 @@
 
 #include <array>
 #include <filesystem>
-#include <openvino/runtime/properties.hpp>
-#include "openvino/genai/visibility.hpp"
-#include "json_utils.hpp"
+#include <nlohmann/json_fwd.hpp>
 
 namespace ov::genai {
 /// @brief A Configuration class passed to VisionEncoder and used to
