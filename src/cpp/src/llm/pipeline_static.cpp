@@ -128,20 +128,29 @@ DecodedResults StatefulLLMPipeline::generate(
     }
 
     ov::genai::TokenizedInputs tokenized_input;
+    auto tokenization_start_time = start_time;
+    std::optional<float> chat_template_duration_us;
     if (m_is_chat_conversation) {
         m_history.push_back({{"role", "user"}, {"content", prompt}});
         constexpr bool add_generation_prompt = true;
+        const auto template_start_time = std::chrono::steady_clock::now();
         prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+        tokenization_start_time = std::chrono::steady_clock::now();
         // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
         tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
     } else {
         if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
+            const auto template_start_time = std::chrono::steady_clock::now();
             auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+            tokenization_start_time = std::chrono::steady_clock::now();
             tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
         } else {
             // in case when chat_template was not found in tokenizer_config.json or set
+            tokenization_start_time = std::chrono::steady_clock::now();
             tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
         }
     }
@@ -168,7 +177,10 @@ DecodedResults StatefulLLMPipeline::generate(
     auto stop_time = std::chrono::steady_clock::now();
     raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - tokenization_start_time));
+    if (chat_template_duration_us.has_value()) {
+        raw_counters.chat_template_durations.emplace_back(*chat_template_duration_us);
+    }
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
     decoded_results.perf_metrics.m_evaluated = false;
     decoded_results.perf_metrics.evaluate_statistics(start_time);
@@ -189,7 +201,9 @@ DecodedResults StatefulLLMPipeline::generate(
     OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
     
     constexpr bool add_generation_prompt = true;
+    const auto template_start_time = std::chrono::steady_clock::now();
     auto templated_chat_history = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+    const auto tokenization_start_time = std::chrono::steady_clock::now();
     // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
     auto tokenized_inputs = m_tokenizer.encode(templated_chat_history, ov::genai::add_special_tokens(false));
 
@@ -206,7 +220,8 @@ DecodedResults StatefulLLMPipeline::generate(
     auto stop_time = std::chrono::steady_clock::now();
     raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - tokenization_start_time));
+    raw_counters.chat_template_durations.emplace_back(PerfMetrics::get_microsec(tokenization_start_time - template_start_time));
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
     decoded_results.perf_metrics.m_evaluated = false;
     decoded_results.perf_metrics.evaluate_statistics(start_time);

@@ -21,6 +21,7 @@
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
 
+#include "continuous_batching/timer.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -106,28 +107,42 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
+    ManualTimer encode_timer("Encode");
+    encode_timer.start();
+
     if (m_is_chat_conversation) {
         std::string prompt_to_encode = prompt;
-        auto start_tokenizer_time = std::chrono::steady_clock::now();
         ov::Tensor new_chat_tokens = m_tokenizer.encode(prompt_to_encode, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
-        auto end_tokenizer_time = std::chrono::steady_clock::now();
-        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        encode_timer.end();
+        metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
         return new_chat_tokens;
     } else {
         ov::Tensor encoded_input_ids;
-        auto start_tokenizer_time = std::chrono::steady_clock::now();
+        bool apply_template = false;
+        TimePoint template_end_time;
         if (m_apply_chat_template) {
             std::string templated_prompt;
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
 
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            template_end_time = std::chrono::steady_clock::now();
+            apply_template = true;
             encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
         } else {
             encoded_input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
         }
-        auto end_tokenizer_time = std::chrono::steady_clock::now();
-        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        encode_timer.end();
+        if (apply_template) {
+            metrics.raw_metrics.chat_template_durations.emplace_back(
+                PerfMetrics::get_microsec(template_end_time - encode_timer.get_start_time())
+            );
+            metrics.raw_metrics.tokenization_durations.emplace_back(
+                PerfMetrics::get_microsec(encode_timer.get_end_time() - template_end_time)
+            );
+        } else {
+            metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
+        }
         return encoded_input_ids;
     }
 }
