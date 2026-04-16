@@ -34,7 +34,7 @@ export class DecodedResults {
     this.scores = scores;
     this.perfMetrics = perfMetrics;
     this.parsed = parsed;
-    this.finish_reasons = finishReasons;
+    this.finishReasons = finishReasons;
   }
   toString() {
     if (this.scores.length !== this.texts.length) {
@@ -53,7 +53,7 @@ export class DecodedResults {
   scores: number[];
   perfMetrics: PerfMetrics;
   parsed: Record<string, unknown>[];
-  finish_reasons: GenerationFinishReason[];
+  finishReasons: GenerationFinishReason[];
 }
 
 /**

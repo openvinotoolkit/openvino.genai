@@ -1555,7 +1555,7 @@ Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedRes
     obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
     obj.Set("perfMetrics", PerfMetricsWrapper::wrap(env, results.perf_metrics));
     obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
-    obj.Set("finish_reasons",
+    obj.Set("finishReasons",
             cpp_to_js<std::vector<ov::genai::GenerationFinishReason>, Napi::Value>(env, results.finish_reasons));
     return obj;
 }
@@ -1566,7 +1566,7 @@ Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDec
     obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
     obj.Set("perfMetrics", VLMPerfMetricsWrapper::wrap(env, results.perf_metrics));
     obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
-    obj.Set("finish_reasons",
+    obj.Set("finishReasons",
             cpp_to_js<std::vector<ov::genai::GenerationFinishReason>, Napi::Value>(env, results.finish_reasons));
     return obj;
 }

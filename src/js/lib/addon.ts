@@ -141,7 +141,7 @@ export interface LLMPipeline {
         scores: number[];
         perfMetrics: PerfMetrics;
         parsed: Record<string, unknown>[];
-        finish_reasons: GenerationFinishReason[];
+        finishReasons: GenerationFinishReason[];
       },
     ) => void,
   ): void;
@@ -201,7 +201,7 @@ export interface VLMPipeline {
         scores: number[];
         perfMetrics: VLMPerfMetrics;
         parsed: Record<string, unknown>[];
-        finish_reasons: GenerationFinishReason[];
+        finishReasons: GenerationFinishReason[];
       },
     ) => void,
   ): void;

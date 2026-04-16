@@ -206,7 +206,7 @@ async function main() {
     process.stdout.write("Assistant: ");
     const answer2 = await pipe.generate(chatHistory, generationConfig, (subword) => toolCallStreamer.write(subword));
     console.log();
-    console.log(`Finish reason: ${formatFinishReason(answer2.finish_reasons[0])}`);
+    console.log(`Finish reason: ${formatFinishReason(answer2.finishReasons[0])}`);
 
     console.log("\n\nThe following tool calls were generated:")
     printToolCall(answer2);

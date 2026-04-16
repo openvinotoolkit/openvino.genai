@@ -134,7 +134,7 @@ export class LLMPipeline {
         scores: number[];
         perfMetrics: any;
         parsed: Record<string, unknown>[];
-        finish_reasons: GenerationFinishReason[];
+        finishReasons: GenerationFinishReason[];
       },
     ) => {
       if (error) {
@@ -152,7 +152,7 @@ export class LLMPipeline {
           result.scores,
           result.perfMetrics,
           result.parsed,
-          result.finish_reasons,
+          result.finishReasons,
         );
         const fullText = decodedResult.toString();
         if (resolvePromise) {
@@ -235,7 +235,7 @@ export class LLMPipeline {
       result.scores,
       result.perfMetrics,
       result.parsed,
-      result.finish_reasons,
+      result.finishReasons,
     );
   }
 
