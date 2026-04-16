@@ -13,11 +13,7 @@ import types
 from llm_bench_utils.hook_common import get_bench_hook
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
 from llm_bench_utils.model_utils import get_version_in_format_to_pars
-from llm_bench_utils.config_class import (
-    UseCaseSpeech2Text,
-    UseCaseTextGen,
-    PA_ATTENTION_BACKEND
-)
+from llm_bench_utils.config_class import UseCaseSpeech2Text, UseCaseTextGen, UseCaseTextReranker, PA_ATTENTION_BACKEND
 from transformers import pipeline
 import queue
 from transformers.generation.streamers import BaseStreamer
@@ -166,6 +162,29 @@ def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
     if kwargs.get("convert_tokenizer", False):
         tokenizer = build_ov_tokenizer(tokenizer)
     return ov_model, tokenizer, from_pretrained_time, bench_hook, False
+
+
+def apply_taylorseer_config_genai(pipe, config_data=None):
+    import openvino_genai
+
+    if config_data is not None:
+        if not isinstance(config_data, dict):
+            raise ValueError(f"--taylorseer_config must be a JSON object, got {type(config_data).__name__}")
+
+        taylorseer_config = openvino_genai.TaylorSeerCacheConfig()
+
+        if config_data.get("cache_interval") is not None:
+            taylorseer_config.cache_interval = config_data["cache_interval"]
+        if config_data.get("disable_cache_before_step") is not None:
+            taylorseer_config.disable_cache_before_step = config_data["disable_cache_before_step"]
+        if config_data.get("disable_cache_after_step") is not None:
+            taylorseer_config.disable_cache_after_step = config_data["disable_cache_after_step"]
+
+        gen_config = pipe.get_generation_config()
+        gen_config.taylorseer_config = taylorseer_config
+        pipe.set_generation_config(gen_config)
+
+    log.info(f"TaylorSeer config: {pipe.get_generation_config().taylorseer_config}")
 
 
 def get_scheduler_config_genai(config_data, config_name="CB config"):
@@ -530,6 +549,9 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation=True)
+
+    apply_taylorseer_config_genai(image_gen_pipe, kwargs.get("taylorseer_config"))
+
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     return image_gen_pipe, end - start, True, callback
 
@@ -1184,13 +1206,17 @@ class OptimumChunkStreamer(BaseStreamer):
         return False
 
 
-def create_genai_text_reranker_model(model_path: Path, device: str, memory_monitor, tokenizer: AutoTokenizer, **kwargs):
+def create_genai_text_reranker_model(
+    model_path: Path, device: str, memory_monitor, tokenizer: AutoTokenizer, model_config: AutoConfig, **kwargs
+):
     import openvino_genai
 
     config = openvino_genai.TextRerankPipeline.Config()
     if kwargs.get("rerank_top_n") is not None:
         config.top_n = kwargs.get("rerank_top_n")
-    if kwargs.get("rerank_max_length") is not None:
+    if kwargs.get("rerank_max_length") is None:
+        config.max_length = UseCaseTextReranker.get_default_max_length(model_config)
+    else:
         config.max_length = kwargs.get("rerank_max_length")
 
     ov_config = kwargs['config']
@@ -1226,17 +1252,19 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor, **
     except Exception:
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         trust_remote_code = True
+    model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
     if kwargs.get("genai", True):
         if not is_genai_available(log_msg=True):
             raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
         try:
-            return create_genai_text_reranker_model(model_path, device, memory_monitor, tokenizer, **kwargs)
+            return create_genai_text_reranker_model(
+                model_path, device, memory_monitor, tokenizer, model_config, **kwargs
+            )
         except Exception as exp:
             raise RuntimeError(
                 f"Model is not supported by OpenVINO GenAI. "
                 f"GenAI pipeline loading failed with following error: {exp}"
             )
-    model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
     kwargs['use_case'].adjust_model_class_by_config(model_config)
     log.info("Selected Optimum Intel for benchmarking")
     if kwargs.get("mem_consumption"):
@@ -1292,6 +1320,9 @@ def create_genai_video_gen_model(model_path, device, ov_config, memory_data_coll
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation=True)
+
+    apply_taylorseer_config_genai(video_gen_pipe, kwargs.get("taylorseer_config"))
+
     log.info(f"Pipeline initialization time: {end - start:.2f}s")
     return video_gen_pipe, orig_tokenizer, end - start, None, True
 

@@ -27,12 +27,9 @@ TaylorSeer Lite is configured through `ov::genai::TaylorSeerCacheConfig` and exp
 * **`disable_cache_after_step`** (`int`, defaults to `-2`) - Step index from which caching is disabled (inclusive) to ensure quality in the final denoising stages. Negative values are interpreted relative to the end of the schedule: `num_inference_steps + disable_cache_after_step`.
 
 ## Sample Usage (Python)
-[samples/python/image_generation/taylorseer_text2image.py](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/image_generation/taylorseer_text2image.py) demonstrates TaylorSeer Lite usage with performance comparison.
+[samples/python/image_generation/taylorseer_text2image.py](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/image_generation/taylorseer_text2image.py) demonstrates TaylorSeer Lite usage with performance comparison for image generation.
 
-Basic usage:
-```bash
-python taylorseer_text2image.py ./flux.1-dev/FP16 "a beautiful sunset over mountains"
-```
+[samples/python/video_generation/taylorseer_text2video.py](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/video_generation/taylorseer_text2video.py) demonstrates TaylorSeer Lite usage with performance comparison for video generation.
 
 Configuration in code:
 ```python
@@ -54,14 +51,26 @@ res = pipe.generate(prompt, num_inference_steps=28)
 ```
 
 ### Video Generation (LTX-Video)
+TaylorSeer caching is **enabled by default** for the LTX-Video pipeline. No configuration is required to benefit from it.
+
 ```python
 pipe = openvino_genai.Text2VideoPipeline(models_path, device)
-# Pass TaylorSeerCacheConfig directly as a keyword argument
-result = pipe.generate(
-    prompt,
-    num_inference_steps=50,
-    taylorseer_config=taylorseer_config,
-)
+# TaylorSeer is active out of the box
+result = pipe.generate(prompt, num_inference_steps=25)
+```
+
+To customize caching parameters, use `set_generation_config()`:
+```python
+generation_config = pipe.get_generation_config()
+generation_config.taylorseer_config = taylorseer_config
+pipe.set_generation_config(generation_config)
+```
+
+To disable caching entirely:
+```python
+generation_config = pipe.get_generation_config()
+generation_config.taylorseer_config = None  # disable caching
+pipe.set_generation_config(generation_config)
 ```
 
 ## Benefits

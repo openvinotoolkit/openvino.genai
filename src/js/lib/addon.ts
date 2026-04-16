@@ -22,8 +22,15 @@ import {
   LLMPipelineProperties,
   WhisperGenerationConfig,
   WhisperPipelineProperties,
+  SpeechGenerationConfig,
+  Text2SpeechPipelineProperties,
 } from "./utils.js";
-import { VLMPerfMetrics, PerfMetrics, WhisperPerfMetrics } from "./perfMetrics.js";
+import {
+  VLMPerfMetrics,
+  PerfMetrics,
+  WhisperPerfMetrics,
+  Text2SpeechPerfMetrics,
+} from "./perfMetrics.js";
 import type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
@@ -203,12 +210,37 @@ export interface VLMPipeline {
   getGenerationConfig(): GenerationConfig;
 }
 
+export interface Text2SpeechPipeline {
+  new (): Text2SpeechPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: Text2SpeechPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    inputs: string | string[],
+    speakerEmbedding: Tensor | undefined,
+    properties: SpeechGenerationConfig,
+    callback: (
+      err: Error | null,
+      result: {
+        speeches: Tensor[];
+        perfMetrics: Text2SpeechPerfMetrics;
+      },
+    ) => void,
+  ): void;
+  getGenerationConfig(): SpeechGenerationConfig;
+  setGenerationConfig(config: SpeechGenerationConfig): void;
+}
+
 interface OpenVINOGenAIAddon {
   TextRerankPipeline: TextRerankPipeline;
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
   WhisperPipeline: WhisperPipeline;
+  Text2SpeechPipeline: Text2SpeechPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
   ReasoningParser: IReasoningParser;
@@ -243,6 +275,7 @@ export const {
   LLMPipeline,
   VLMPipeline,
   WhisperPipeline,
+  Text2SpeechPipeline,
   ChatHistory,
   Tokenizer,
   ReasoningParser,
