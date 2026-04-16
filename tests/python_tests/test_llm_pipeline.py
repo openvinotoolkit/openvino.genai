@@ -1155,7 +1155,10 @@ _NON_ASSISTANT_PIPELINE_TYPES = tuple(
 
 
 def _extract_texts(result) -> list[str]:
-    """Return a flat list of generated strings from either DecodedResults or list[GenerationResult]."""
+    """Return a flat list of generated strings from either str, DecodedResults, or list[GenerationResult]."""
+    if isinstance(result, str):
+        # LLMPipeline.generate(str, ...) returns a plain str for STATEFUL/PA/AUTO pipelines
+        return [result]
     if isinstance(result, list):
         # ContinuousBatchingPipeline.generate() returns list[GenerationResult]
         return [gen_id for r in result for gen_id in r.m_generation_ids]

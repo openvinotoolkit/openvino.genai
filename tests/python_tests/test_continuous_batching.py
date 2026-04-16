@@ -787,11 +787,11 @@ def test_continuous_batching_add_extension(
 
 
 def _run_cb_requests(pipe: ContinuousBatchingPipeline, prompt: str, configs: list) -> list[list[int]]:
-    """Submit requests via add_request/step and return the token ID list for each."""
+    """Submit requests via add_request/step and return generated token IDs for each."""
     handles = [pipe.add_request(idx, prompt, generation_config=cfg) for idx, cfg in enumerate(configs)]
     while pipe.has_non_finished_requests():
         pipe.step()
-    return [handle.read_all()[0].m_token_ids for handle in handles]
+    return [handle.read_all()[0].generated_ids for handle in handles]
 
 
 def test_cb_same_seed_produces_identical_output(model_facebook_opt_125m: OVConvertedModelSchema):

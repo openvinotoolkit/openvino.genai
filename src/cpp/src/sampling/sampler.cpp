@@ -1062,9 +1062,9 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         }
         auto& ctx = m_request_contexts.at(request_id);
         // Process stop strings if not yet done. The context may have been pre-created via
-        // create_logit_processor() (e.g. speculative/prompt-lookup CB paths), which cannot
-        // call set_stream_window_size() without the sequence_group. Check ctx.stop_strings
-        // to avoid re-processing on subsequent sample() calls for the same request.
+        // create_logit_processor() (speculative decoding CB path), which does not have
+        // access to sequence_group and cannot call set_stream_window_size(). Check
+        // ctx.stop_strings to avoid re-processing on subsequent sample() calls.
         if (!sampling_params.stop_strings.empty() && ctx.stop_strings.second.empty()) {
             OPENVINO_ASSERT(m_tokenizer.m_pimpl != nullptr, "Stop strings require a valid tokenizer");
             ctx.stop_strings = process_stop_strings(sampling_params.stop_strings, m_tokenizer);
