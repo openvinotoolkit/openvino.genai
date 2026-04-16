@@ -574,6 +574,7 @@ def align_words_by_text(ref_words, test_words):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
+@pytest.mark.xfail(condition=(sys.platform == "win32"), reason="Ticket - 185132")
 def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_reference):
     ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
     samples = [i["audio"]["array"] for i in ds]
