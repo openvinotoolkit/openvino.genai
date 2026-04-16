@@ -21,11 +21,15 @@ std::pair<int64_t, int64_t> get_compression_ratio(const std::filesystem::path& c
     nlohmann::json data = nlohmann::json::parse(file);
 
     std::vector<bool> spatio_temporal_scaling;
-    size_t patch_size, patch_size_t;
+    size_t patch_size = 0, patch_size_t = 0;
 
     utils::read_json_param(data, "spatio_temporal_scaling", spatio_temporal_scaling);
     utils::read_json_param(data, "patch_size", patch_size);
     utils::read_json_param(data, "patch_size_t", patch_size_t);
+    OPENVINO_ASSERT(patch_size > 0 && patch_size_t > 0,
+                    "Invalid VAE decoder config at ",
+                    config_path,
+                    ": 'patch_size' and 'patch_size_t' must be present and greater than 0");
 
     const std::pair<size_t, size_t> compression_ratios = utils::get_spatial_temporal_compression_ratios(
         patch_size,
