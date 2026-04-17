@@ -150,7 +150,7 @@ enum class ModelType { Default, Whisper, TextEmbedding };
 
 Tensor init_attention_mask(const Tensor& input_ids) {
     auto shape = input_ids.get_shape();
-    auto attention_mask = ov::Tensor{input_ids.get_element_type(), shape};
+    auto attention_mask = ov::Tensor{ov::element::i64, shape};
     std::fill_n(attention_mask.data<int64_t>(), shape[0] * shape[1], 1);
     return attention_mask;
 }
@@ -1144,6 +1144,14 @@ std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& sh
         }
     }
     return std::make_pair(start, end);
+}
+
+ov::Tensor make_tensor_slice(const ov::Tensor& tensor, size_t dim, size_t start_pos, size_t end_pos) {
+    ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
+    start_shape[dim] = start_pos;
+    ov::Shape end_shape = tensor.get_shape();
+    end_shape[dim] = end_pos;
+    return ov::Tensor(tensor, start_shape, end_shape);
 }
 
 ov::genai::GenerationConfig get_beam_search_config() {
