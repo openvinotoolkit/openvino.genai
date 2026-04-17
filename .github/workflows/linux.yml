@@ -1039,13 +1039,14 @@ jobs:
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
-      - name: CMake Build without XGrammar
+      - name: CMake Build without XGrammar & Enable_LTO=On
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           cmake -DOpenVINODeveloperPackage_DIR=${{ env.INSTALL_DIR }}/developer_package/cmake \
                 -DENABLE_PYTHON=ON \
                 -DENABLE_XGRAMMAR=OFF \
                 -BUILD_TOKENIZERS=OFF \
+                -DENABLE_LTO=ON \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
                 -DCMAKE_C_COMPILER_LAUNCHER=sccache \
