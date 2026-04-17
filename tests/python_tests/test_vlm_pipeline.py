@@ -2109,7 +2109,6 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
 
 
 @parametrize_optimum_vs_genai()
-@pytest.mark.xfail(condition=(sys.platform == "win32"), reason="Ticket - 185156")
 def test_vlm_pipeline_match_optimum_with_resolutions(
     request: pytest.FixtureRequest,
     ov_pipe_model: VlmModelInfo,
@@ -2118,7 +2117,7 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
     image_input_resolution: tuple[int, int],
     video_input_resolution: tuple[int, int],
 ):
-    if sys.platform == "win32":
+    if sys.platform == "win32" and sys.platform == "linux":
         pytest.xfail("Memory error. Ticket - 185156")
     resized_image = None
     resized_video = None
