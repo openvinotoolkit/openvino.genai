@@ -50,12 +50,12 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     read_json_param(parsed, "size.width", size_width);
 }
 
-ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path) {
-    std::ifstream stream(json_path);
-    OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
-    nlohmann::json parsed = nlohmann::json::parse(stream);
-    *this = ProcessorConfig(parsed);
-}
+ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path)
+    : ProcessorConfig([&json_path] {
+        std::ifstream stream(json_path);
+        OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
+        return nlohmann::json::parse(stream);
+    }()) {}
 
 ov::genai::ProcessorConfig ov::genai::ProcessorConfig::from_any_map(
     const ov::AnyMap& config_map,

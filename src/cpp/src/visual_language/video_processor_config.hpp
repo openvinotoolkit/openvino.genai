@@ -36,11 +36,11 @@ public:
         read_json_param(parsed_json, "fps", fps);
     }
 
-    explicit VideoProcessorConfig(const std::filesystem::path& json_path) {
-        std::ifstream stream(json_path);
-        OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with video processor config");
-        nlohmann::json parsed = nlohmann::json::parse(stream);
-        *this = VideoProcessorConfig(parsed);
-    }
+    explicit VideoProcessorConfig(const std::filesystem::path& json_path)
+        : VideoProcessorConfig([&json_path] {
+            std::ifstream stream(json_path);
+            OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with video processor config");
+            return nlohmann::json::parse(stream);
+        }()) {}
 };
 }  // namespace ov::genai
