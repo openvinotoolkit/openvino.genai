@@ -64,12 +64,14 @@ def main():
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
     parser.add_argument(
+        "-pr",
         "--pruning_ratio",
         type=ratio_type,
         default=0,
         help="(optional): Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.",
     )
     parser.add_argument(
+        "-rw",
         "--relevance_weight",
         type=weight_0_1,
         help="(optional): Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
