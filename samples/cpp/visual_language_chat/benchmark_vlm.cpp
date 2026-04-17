@@ -103,8 +103,8 @@ int main(int argc, char* argv[]) try {
     }
 
     std::cout << std::fixed << std::setprecision(2);
-    std::cout << "Input token size:" << res.perf_metrics.get_num_input_tokens() << std::endl;
-    std::cout << "Output token size:" << res.perf_metrics.get_num_generated_tokens() << std::endl;
+    std::cout << "Input token size: " << res.perf_metrics.get_num_input_tokens() << std::endl;
+    std::cout << "Output token size: " << res.perf_metrics.get_num_generated_tokens() << std::endl;
     std::cout << "Load time: " << metrics.get_load_time() << " ms" << std::endl;
     std::cout << "Generate time: " << metrics.get_generate_duration().mean << " ± " << metrics.get_generate_duration().std << " ms" << std::endl;
     std::cout << "Tokenization time: " << metrics.get_tokenization_duration().mean << " ± " << metrics.get_tokenization_duration().std << " ms" << std::endl;

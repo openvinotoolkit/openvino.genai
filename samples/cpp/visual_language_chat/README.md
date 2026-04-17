@@ -104,8 +104,8 @@ benchmark_vlm -m miniCPM-V-2_6 -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11
 
 ```
 Number of images: 1, prompt token size: 6
-Input token size:360
-Output token size:20
+Input token size: 360
+Output token size: 20
 Load time: 17498.00 ms
 Generate time: 1149.09 ± 2.97 ms
 Tokenization time: 1.89 ± 0.13 ms
@@ -124,8 +124,8 @@ Throughput: 25.37 ± 0.27 tokens/s
 
 	```
 	Number of images: 1, prompt token size: 6
-	Input token size:95
-	Output token size:20
+	Input token size: 95
+	Output token size: 20
 	Load time: 6061.00 ms
 	Generate time: 883.83 ± 21.24 ms
 	Tokenization time: 1.65 ± 0.05 ms
