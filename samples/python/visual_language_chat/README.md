@@ -120,7 +120,7 @@ python benchmark_vlm.py [OPTIONS]
 ### Output:
 
 ```
-benchmark_vlm -m miniCPM-V-2_6 -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3 -d GPU
+python benchmark_vlm.py -m miniCPM-V-2_6 -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3 -d GPU
 ```
 
 ```
@@ -140,7 +140,7 @@ Throughput: 25.37 ± 0.27 tokens/s
 * With different image size
 
 	```
-	benchmark_vlm -m miniCPM-V-2_6 -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3 -d GPU -ih 224 -iw 224
+	python benchmark_vlm.py -m miniCPM-V-2_6 -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3 -d GPU -ih 224 -iw 224
 	```
 
 	```
