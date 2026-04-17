@@ -85,16 +85,16 @@ benchmark_vlm [OPTIONS]
 
 - `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: ''): The prompt to generate text. If without `-p` and `--pf`, the default prompt is `"What is on the image?"`
-- `--pf, --prompt_file` Read prompt from file.
+- `--prompt_file` Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to the image.
 - `-H, --image_height` (default: `0`): Target image height (if resizing is needed).
 - `-W, --image_width` (default: `0`): Target image width (if resizing is needed).
-- `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
-- `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
+- `--num_warmup` (default: `1`): Number of warmup iterations.
+- `--max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
-- `-pr, --pruning_ratio`: (optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.
-- `-rw, --relevance_weight` (optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.
+- `--pruning_ratio`: (optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.
+- `--relevance_weight` (optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.
 
 ### Output:
 
