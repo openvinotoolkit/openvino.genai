@@ -64,11 +64,9 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             "features_extraction_ms": perf_metrics.get_features_extraction_duration().mean,
             "encode_first_ms": enc_ms[0] if enc_ms else -1,
             "decode_first_ms": dec_ms[0] if dec_ms else -1,
-            "sampling_first_ms": smp_ms[0] if smp_ms else -1,
             "decode_second_ms": dec_ms[1] if len(dec_ms) > 1 else -1,
-            "sampling_second_ms": smp_ms[1] if len(smp_ms) > 1 else -1,
             "decode_other_avg_ms": (sum(dec_ms[2:]) / len(dec_ms[2:])) if len(dec_ms) > 2 else -1,
-            "sampling_other_avg_ms": (sum(smp_ms[2:]) / len(smp_ms[2:])) if len(smp_ms) > 2 else -1,
+            "sampling_avg_ms": (sum(smp_ms) / len(smp_ms)) if smp_ms else -1,
             "detokenization_ms": perf_metrics.get_detokenization_duration().mean,
         }
         result_text = result_text.texts[0]
