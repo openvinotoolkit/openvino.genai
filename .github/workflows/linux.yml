@@ -609,6 +609,10 @@ jobs:
             cmd: 'python -m pytest -v ./tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
             timeout: 60
+          - name: 'Tokenizer chat template validation'
+            cmd: 'python ./temp/temp.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
+            timeout: 60
           - name: 'API tests'
             cmd: 'python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
