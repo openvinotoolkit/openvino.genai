@@ -100,6 +100,8 @@ def main():
     image_height = args.image_height
     if image_width < 0 or image_height < 0:
         raise RuntimeError(f"Image width and height should be non-negative!")
+    if (image_width > 0) != (image_height > 0):
+        raise RuntimeError("Image width and height should be set together: both > 0 to enable resizing or both == 0 to disable resizing.")
     resize = (image_width, image_height) if image_width > 0 and image_height > 0 else None
     images = read_images(args.image, resize)
     device = args.device
