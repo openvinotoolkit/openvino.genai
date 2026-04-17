@@ -52,7 +52,7 @@ class WhisperHook:
             if "dec_token_time" in data:
                 dec_token_count = len(data["dec_token_time"])
                 dec_infer_count = len(data["dec_infer_time"])
-                dec_sample_times = [t - i for t, i in zip(data["dec_token_time"], data["dec_infer_time"])]
+                dec_sample_times = data.get("dec_sample_time", [])
                 latency_data["dec_token_count"] = dec_token_count
                 latency_data["dec_infer_count"] = dec_infer_count
                 latency_data["dec_1st_token_time"] = (
@@ -119,6 +119,7 @@ class WhisperHook:
         if self.greedy_hook is not None:
             self.greedy_hook.clear_time_list()
             self.greedy_hook.clear_time_infer_list()
+            self.greedy_hook.clear_time_sample_list()
 
     def new_text_encoder(self, pipe):
         old_text_encoder = pipe.model.encoder.forward
@@ -165,8 +166,12 @@ class WhisperHook:
     def set_decoder_time_data(self):
         if self.enc_infer_count > 0:
             prev_loop_data = self.time_data[self.enc_infer_count - 1]
-            if self.greedy_hook is not None and (self.greedy_hook.get_time_list() or self.greedy_hook.get_time_infer_list()):
-                prev_loop_data['dec_token_time'] = copy.deepcopy(self.greedy_hook.get_time_list())
-                prev_loop_data['dec_infer_time'] = copy.deepcopy(self.greedy_hook.get_time_infer_list())
+            if self.greedy_hook is not None and (
+                self.greedy_hook.get_time_list() or self.greedy_hook.get_time_infer_list()
+            ):
+                prev_loop_data["dec_token_time"] = copy.deepcopy(self.greedy_hook.get_time_list())
+                prev_loop_data["dec_infer_time"] = copy.deepcopy(self.greedy_hook.get_time_infer_list())
+                prev_loop_data["dec_sample_time"] = copy.deepcopy(self.greedy_hook.get_time_sample_list())
                 self.greedy_hook.clear_time_list()
                 self.greedy_hook.clear_time_infer_list()
+                self.greedy_hook.clear_time_sample_list()
