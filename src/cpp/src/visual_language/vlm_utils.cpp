@@ -15,9 +15,12 @@ std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& 
     std::vector<std::variant<ov::Tensor, size_t>> tokenized;
     auto prefix_begin = text.begin();
     bool is_submatch = false;
-    for (std::sregex_token_iterator iter{prefix_begin, text.end(), native_pattern, {0, 1}};
-         iter != std::sregex_token_iterator{};
-         ++iter) {
+    for (std::sregex_token_iterator iter{
+        prefix_begin,
+        text.end(),
+        native_pattern,
+        {0, 1}  // Every match emits two values: whole match and submatch
+    }; iter != std::sregex_token_iterator{}; ++iter) {
         if (is_submatch) {
             size_t idx = std::stoul(iter->str());
             OPENVINO_ASSERT(idx != 0);
