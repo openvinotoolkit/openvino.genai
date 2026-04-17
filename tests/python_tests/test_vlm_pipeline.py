@@ -2117,7 +2117,7 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
     image_input_resolution: tuple[int, int],
     video_input_resolution: tuple[int, int],
 ):
-    if sys.platform == "win32" and sys.platform == "linux":
+    if sys.platform == "win32" or sys.platform == "linux":
         pytest.xfail("Memory error. Ticket - 185156")
     resized_image = None
     resized_video = None
