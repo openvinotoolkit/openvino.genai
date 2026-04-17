@@ -66,7 +66,7 @@ ov::Tensor insert_image_placeholders(const std::vector<std::variant<ov::Tensor, 
                                                                             const int64_t fill_value = -(static_cast<int64_t>(image_id)) - 1;
                                                                             std::fill_n(merged.data<int64_t>() + offset,
                                                                                         tokens_per_images.at(image_id),
-                                                                                        fill_value);
+                                                                                        fill_value);  // -1 to distinguish 0 token and 0 image id.
                                                                             return tokens_per_images.at(image_id);
                                                                         }},
                                          chunk);
