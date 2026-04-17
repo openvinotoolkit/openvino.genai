@@ -84,7 +84,7 @@ benchmark_vlm [OPTIONS]
 ### Options
 
 - `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
-- `-p, --prompt` (default: ''): The prompt to generate text. If without `-p` and `--pf`, the default prompt is `"What is on the image?"`
+- `-p, --prompt` (default: ''): The prompt to generate text. If neither `-p` nor `--prompt_file` is provided, the default prompt is `"What is on the image?"`
 - `--prompt_file` Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to the image.
 - `-H, --image_height` (default: `0`): Target image height (if resizing is needed).
