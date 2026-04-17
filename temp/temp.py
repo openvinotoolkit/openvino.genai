@@ -11,7 +11,7 @@ from openvino_tokenizers import convert_tokenizer
 from transformers import AutoTokenizer
 
 
-DEFAULT_CHECKPOINT = "google/gemma-3-1b-it"
+DEFAULT_CHECKPOINT = "KeeganCarey/gemma-3-1b-it-thinking-20k-sft-rl"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROMPTS_FILE = REPO_ROOT / "tools" / "who_what_benchmark" / "whowhatbench" / "prompts" / "text_long_prompts.yaml"
 DEFAULT_CONVERTED_TOKENIZER_DIR = Path(__file__).resolve().parent / "gemma-3-1b-it"
