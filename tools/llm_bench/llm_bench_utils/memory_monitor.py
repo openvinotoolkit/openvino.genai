@@ -916,7 +916,17 @@ class MemoryMarkerMonitor(list):
                 print("Memory worker: Received stop signal")
                 break
 
-            if before_marker != "cooldown" and self.marker == "cooldown":
+            if self.marker == "model":
+                # sample entire model phase
+                try:
+                    self.collect_samples(self.marker)
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    print("Memory worker: Target process no longer accessible")
+                    break
+                except Exception as e:
+                    print(f"Error collecting samples: {e}")
+                    count_error += 1
+            elif before_marker != "cooldown" and self.marker == "cooldown":
                 try:
                     self.collect_samples(before_marker)
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
