@@ -63,6 +63,8 @@ int main(int argc, char* argv[]) try {
     size_t num_iter = result["num_iter"].as<size_t>();
     int image_height = result["image_height"].as<int>();
     int image_width = result["image_width"].as<int>();
+    OPENVINO_ASSERT((image_height == 0 && image_width == 0) || (image_height > 0 && image_width > 0),
+                    "image_height and image_width must be provided together as positive values, or both must be 0.");
     std::vector<ov::Tensor> images = utils::load_images(image_path, image_height, image_width);
 
     ov::genai::GenerationConfig config;
