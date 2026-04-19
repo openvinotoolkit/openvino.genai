@@ -71,10 +71,13 @@ def main():
     audio_duration_sec = len(raw_speech) / 16000.0
     print(f"  Duration: {audio_duration_sec:.2f}s ({len(raw_speech)} samples at 16kHz)")
 
-    # Load pipeline
+    # Load pipeline with optional cache dir for GPU/NPU
     print(f"\nLoading model: {args.model_dir} on {args.device}")
-    pipe = ov_genai.WhisperPipeline(args.model_dir, args.device)
-    load_time = pipe.get_generation_config()  # triggers lazy load if needed
+    ov_config = {}
+    if args.device != "CPU":
+        # Cache compiled models on disk for GPU/NPU to save time on subsequent runs
+        ov_config["CACHE_DIR"] = "qwen3_asr_cache"
+    pipe = ov_genai.WhisperPipeline(args.model_dir, args.device, **ov_config)
 
     config = pipe.get_generation_config()
     config.max_new_tokens = args.max_tokens
