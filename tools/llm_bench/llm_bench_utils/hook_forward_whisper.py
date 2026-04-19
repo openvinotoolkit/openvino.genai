@@ -71,11 +71,14 @@ class WhisperHook:
                     if dec_infer_count > 1
                     else "NA"
                 )
+                dec_sample_count = len(dec_sample_times)
                 latency_data["dec_1st_sample_time"] = (
-                    round(dec_sample_times[0] * 1000, 2) if dec_token_count > 0 else "NA"
+                    round(dec_sample_times[0] * 1000, 2) if dec_sample_count > 0 else "NA"
                 )
                 latency_data["dec_2nd_samples_time"] = (
-                    round(sum(dec_sample_times[1:]) * 1000 / (dec_token_count - 1), 2) if dec_token_count > 1 else "NA"
+                    round(sum(dec_sample_times[1:]) * 1000 / (dec_sample_count - 1), 2)
+                    if dec_sample_count > 1
+                    else "NA"
                 )
             self.latency_list.append(latency_data)
 
