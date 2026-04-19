@@ -5,7 +5,6 @@
 
 #include <openvino/openvino.hpp>
 
-#include "context_tokens.hpp"
 #include "models/decoder.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
@@ -13,11 +12,12 @@
 #include "sampling/sampler.hpp"
 #include "whisper/config.hpp"
 #include "whisper/feature_extractor.hpp"
+#include "whisper/whisper.hpp"
 
 namespace ov {
 namespace genai {
 
-// Qwen3-ASR generate result reuses WhisperGenerateResult for compatibility
+// Qwen3-ASR generate reuses WhisperGenerateResult for pipeline compatibility
 WhisperGenerateResult qwen3_asr_generate(const ov::genai::WhisperGenerationConfig& config,
                                           const ov::genai::WhisperConfig& model_config,
                                           const RawSpeechInput& raw_speech,
