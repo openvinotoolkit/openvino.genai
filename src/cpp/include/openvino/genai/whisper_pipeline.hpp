@@ -107,6 +107,7 @@ class OPENVINO_GENAI_EXPORTS WhisperPipeline {
 
     class StaticWhisperPipeline;
     class WhisperPipelineStatefulImpl;
+    class Qwen3ASRPipelineStatefulImpl;
 
 public:
     /**

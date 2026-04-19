@@ -18,6 +18,7 @@
 #include "whisper/models/decoder.hpp"
 #include "whisper/pipeline_base.hpp"
 #include "whisper/pipeline_static.hpp"
+#include "whisper/qwen3_asr.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/word_level_timestamps.hpp"
 
@@ -182,6 +183,103 @@ private:
     Sampler m_sampler;
 };
 
+// Qwen3-ASR pipeline implementation using the same encoder-decoder interface
+class WhisperPipeline::Qwen3ASRPipelineStatefulImpl : public WhisperPipeline::WhisperPipelineImplBase {
+public:
+    Qwen3ASRPipelineStatefulImpl(const std::filesystem::path& models_path,
+                                  const std::string& device,
+                                  const ov::AnyMap& properties)
+        : WhisperPipelineImplBase{models_path},
+          m_sampler(m_tokenizer) {
+        ov::AnyMap properties_copy = properties;
+        m_generation_config.update_generation_config(properties_copy);
+        erase_whisper_generation_config_keys(properties_copy);
+
+        ov::Core core = utils::singleton_core();
+
+        // Compile encoder model
+        auto compiled_model =
+            core.compile_model(models_path / "openvino_encoder_model.xml", device, properties_copy);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr encoder model");
+        m_encoder = init_model(compiled_model);
+
+        // Compile decoder model (reuses Whisper stateful decoder infrastructure)
+        m_decoder =
+            WhisperDecoder::from_path(models_path,
+                                      device,
+                                      properties_copy,
+                                      m_encoder.get_compiled_model().output("last_hidden_state").get_partial_shape(),
+                                      false);  // no cross-attention decomposition for Qwen3-ASR
+
+        // Set eos_token_id from tokenizer if not provided
+        if (m_generation_config.eos_token_id == -1) {
+            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+        }
+
+        m_sampler.set_seed(m_generation_config.rng_seed);
+    }
+
+    WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input,
+                                   OptionalWhisperGenerationConfig generation_config,
+                                   const std::shared_ptr<StreamerBase> streamer) override {
+        auto start_time = std::chrono::steady_clock::now();
+        WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+
+        // Inherit defaults from stored config
+        if (config.stop_token_ids.empty())
+            config.stop_token_ids = m_generation_config.stop_token_ids;
+        if (config.eos_token_id == -1)
+            config.set_eos_token_id(m_generation_config.eos_token_id);
+
+        // Qwen3-ASR does not use timestamps or multilingual SOT tokens
+        config.return_timestamps = false;
+        config.word_timestamps = false;
+        config.is_multilingual = false;
+        config.validate();
+
+        // Run the Qwen3-ASR specific generate path
+        auto generate_result = ov::genai::qwen3_asr_generate(config,
+                                                              m_model_config,
+                                                              raw_speech_input,
+                                                              m_encoder,
+                                                              m_decoder,
+                                                              m_feature_extractor,
+                                                              streamer,
+                                                              m_sampler,
+                                                              m_tokenizer);
+
+        // Decode output tokens to text
+        auto decode_start_time = std::chrono::steady_clock::now();
+        std::string decoded_text = m_tokenizer.decode(generate_result.output_tokens);
+
+        // Strip the "language X<asr_text>" prefix from Qwen3-ASR output format
+        const std::string asr_tag = "<asr_text>";
+        auto tag_pos = decoded_text.find(asr_tag);
+        if (tag_pos != std::string::npos) {
+            decoded_text = decoded_text.substr(tag_pos + asr_tag.length());
+        }
+
+        WhisperDecodedResults result{std::vector{decoded_text}, std::vector{1.f}};
+        generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
+
+        result.perf_metrics = generate_result.perf_metrics;
+
+        auto& metrics = result.perf_metrics;
+        metrics.load_time = this->m_load_time_ms;
+        auto stop_time = std::chrono::steady_clock::now();
+        metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+        metrics.evaluate_statistics(start_time);
+
+        return result;
+    }
+
+private:
+    ov::InferRequest m_encoder;
+    std::shared_ptr<ov::genai::WhisperDecoder> m_decoder;
+    Sampler m_sampler;
+};
+
 std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<WhisperGenerationConfig>(config)};
 }
@@ -193,7 +291,14 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::filesystem::path& models_
                                             const std::string& device,
                                             const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
-    if (device == "NPU") {
+
+    // Detect model type from config.json to select the appropriate implementation
+    WhisperConfig model_config(models_path / "config.json");
+
+    if (model_config.is_qwen3_asr()) {
+        // Qwen3-ASR uses a different encoder-decoder architecture
+        m_impl = std::make_unique<Qwen3ASRPipelineStatefulImpl>(models_path, device, properties);
+    } else if (device == "NPU") {
         auto properties_copy = properties;
         const bool use_static_pipeline = utils::pop_or_default(properties_copy, "STATIC_PIPELINE", false);
         if (!use_static_pipeline) {
