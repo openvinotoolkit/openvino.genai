@@ -3,10 +3,12 @@
 
 #include "utils.hpp"
 
+#include <array>
 #include <variant>
 #include <fstream>
 #include <memory>
 
+#include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/gather.hpp"
