@@ -11,6 +11,7 @@
 #include "openvino/op/clamp.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/multiply.hpp"
+#include "openvino/op/round.hpp"
 #include "openvino/op/subtract.hpp"
 #include "openvino/op/constant.hpp"
 
@@ -195,7 +196,7 @@ void AutoencoderKLLTXVideo::merge_vae_video_post_processing() const {
     if (m_config.scaling_factor != 1.0f)
         ppp.input().preprocess().scale(m_config.scaling_factor);
 
-    // (x / 2 + 0.5) -> clamp(0..1) -> *255 -> u8
+    // (x / 2 + 0.5) -> clamp(0..1) -> *255 -> round() -> u8
     ppp.output().postprocess().custom([](const ov::Output<ov::Node>& port) {
         auto c_0_5  = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 0.5f);
         auto c_255  = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1}, 255.0f);
@@ -204,7 +205,8 @@ void AutoencoderKLLTXVideo::merge_vae_video_post_processing() const {
         auto shifted = std::make_shared<ov::op::v1::Add>(scaled, c_0_5);
         auto clamped = std::make_shared<ov::op::v0::Clamp>(shifted, 0.0f, 1.0f);
 
-        return std::make_shared<ov::op::v1::Multiply>(clamped, c_255);
+        auto scaled_255 = std::make_shared<ov::op::v1::Multiply>(clamped, c_255);
+        return std::make_shared<ov::op::v5::Round>(scaled_255, ov::op::v5::Round::RoundMode::HALF_TO_EVEN);
     });
 
     ppp.output().postprocess().convert_element_type(ov::element::u8);
