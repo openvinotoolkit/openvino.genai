@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-std::vector<ov::Tensor> utils::load_images(const std::filesystem::path& input_path, int target_height, int target_width) {
+std::vector<ov::Tensor> utils::load_images(const std::filesystem::path& input_path, std::optional<int32_t> target_height, std::optional<int32_t> target_width) {
     if (input_path.empty() || !fs::exists(input_path)) {
         throw std::runtime_error{"Path to images is empty or does not exist."};
     }
@@ -27,9 +27,12 @@ std::vector<ov::Tensor> utils::load_images(const std::filesystem::path& input_pa
     return {utils::load_image(input_path, target_height, target_width)};
 }
 
-ov::Tensor utils::load_image(const std::filesystem::path& image_path, int target_height, int target_width) {
-    if (target_height < 0 || target_width < 0) {
-        throw std::runtime_error{"Target height and width should be non-negative value."};
+ov::Tensor utils::load_image(const std::filesystem::path& image_path, std::optional<int32_t> target_height, std::optional<int32_t> target_width) {
+    OPENVINO_ASSERT(target_height.has_value() == target_width.has_value(),
+                    "target_height and target_width must be provided together.");
+    if (target_height.has_value()) {
+        OPENVINO_ASSERT(*target_height > 0 && *target_width > 0,
+                        "target_height and target_width must be positive values.");
     }
     int x = 0, y = 0, channels_in_file = 0;
     constexpr int desired_channels = 3;
@@ -41,21 +44,21 @@ ov::Tensor utils::load_image(const std::filesystem::path& image_path, int target
         error_message << "Failed to load the image '" << image_path << "'";
         throw std::runtime_error{error_message.str()};
     }
-    if (target_height > 0 && target_width > 0) {
+    if (target_height.has_value()) {
         unsigned char* resized = static_cast<unsigned char*>(
-            malloc(size_t(target_width) * size_t(target_height) * desired_channels));
+            malloc(size_t(*target_width) * size_t(*target_height) * desired_channels));
         if (!resized) {
             stbi_image_free(image);
             throw std::runtime_error{"Failed to allocate memory for resized image."};
         }
         stbir_resize_uint8_linear(
             image, x, y, 0,
-            resized, target_width, target_height, 0,
+            resized, *target_width, *target_height, 0,
             static_cast<stbir_pixel_layout>(desired_channels));
         stbi_image_free(image);
         image = resized;
-        x = target_width;
-        y = target_height;
+        x = *target_width;
+        y = *target_height;
     }
     struct SharedImageAllocator {
         unsigned char* image;

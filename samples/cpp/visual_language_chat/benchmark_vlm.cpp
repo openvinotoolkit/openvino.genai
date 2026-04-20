@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cxxopts.hpp>
+#include <cstdint>
+#include <optional>
 #include <filesystem>
 
 #include "load_image.hpp"
@@ -16,8 +18,8 @@ int main(int argc, char* argv[]) try {
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
     ("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
     ("i,image", "Image", cxxopts::value<std::string>()->default_value("image.jpg"))
-    ("H,image_height", "Target image height (if resizing is needed)", cxxopts::value<int>()->default_value("0"))
-    ("W,image_width", "Target image width (if resizing is needed)", cxxopts::value<int>()->default_value("0"))
+    ("H,image_height", "Target image height (if resizing is needed)", cxxopts::value<int32_t>())
+    ("W,image_width", "Target image width (if resizing is needed)", cxxopts::value<int32_t>())
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
@@ -61,10 +63,11 @@ int main(int argc, char* argv[]) try {
     std::string device = result["device"].as<std::string>();
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
-    int image_height = result["image_height"].as<int>();
-    int image_width = result["image_width"].as<int>();
-    OPENVINO_ASSERT((image_height == 0 && image_width == 0) || (image_height > 0 && image_width > 0),
-                    "image_height and image_width must be provided together as positive values, or both must be 0.");
+
+    const std::optional<int32_t> image_height = result.count("image_height") ? std::optional<int32_t>(result["image_height"].as<int32_t>()) : std::nullopt;
+    const std::optional<int32_t> image_width = result.count("image_width") ? std::optional<int32_t>(result["image_width"].as<int32_t>()) : std::nullopt;
+    OPENVINO_ASSERT(image_height.has_value() == image_width.has_value(),
+                    "image_height and image_width must be provided together.");
     std::vector<ov::Tensor> images = utils::load_images(image_path, image_height, image_width);
 
     ov::genai::GenerationConfig config;

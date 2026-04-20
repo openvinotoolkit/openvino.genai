@@ -87,8 +87,8 @@ benchmark_vlm [OPTIONS]
 - `-p, --prompt` (default: ''): The prompt to generate text. If neither `-p` nor `--prompt_file` is provided, the default prompt is `"What is on the image?"`
 - `--prompt_file` Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to the image.
-- `-H, --image_height` (default: `0`): Target image height (if resizing is needed).
-- `-W, --image_width` (default: `0`): Target image width (if resizing is needed).
+- `-H, --image_height`: Target image height (if resizing is needed).
+- `-W, --image_width`: Target image width (if resizing is needed).
 - `--num_warmup` (default: `1`): Number of warmup iterations.
 - `--max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
