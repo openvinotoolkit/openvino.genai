@@ -4,6 +4,7 @@
 import os
 import time
 import datetime
+import torch
 import logging as log
 import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
@@ -12,7 +13,8 @@ import numpy as np
 import hashlib
 import threading
 import llm_bench_utils.metrics_print as metrics_print
-from transformers import set_seed
+from llm_bench_utils.memory_monitor import MemoryMonitorHandler
+from transformers import set_seed, DynamicCache
 from llm_bench_utils.ov_utils import get_genai_chunk_streamer, OptimumChunkStreamer
 import llm_bench_utils.output_file
 import llm_bench_utils.gen_output_data as gen_output_data
@@ -23,33 +25,171 @@ FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
 
-def run_text_generation(
-    input_text,
-    num,
-    model,
-    tokenizer,
-    args,
-    iter_data_list,
-    md5_list,
-    prompt_index,
-    bench_hook,
-    tokens_len,
-    streaming,
-    model_precision,
-    proc_id,
-    mem_consumption,
-    prefix,
+# ===== Common Utils =====
+def save_input_data_to_file(
+    input_text_list: list,
+    args: dict,
+    model_precision: str,
+    prompt_index: int,
+    iter_num: int,
+    proc_id: int,
+    is_chat: bool = False,
+):
+    if args["output_dir"] is not None and iter_num == 0:
+        for bs_index, in_text in enumerate(input_text_list):
+            llm_bench_utils.output_file.output_input_text(
+                in_text, args, model_precision, prompt_index, bs_index, proc_id, is_chat
+            )
+
+
+def print_generated_output(
+    prompt_index: int,
+    iter_num: int,
+    result_md5_list: list,
+    md5_list: list,
+    generated_text: list,
+    enable_prompt_permutations: bool = False,
+    chat_prompts_num: int = None,
+    chat_idx: int = None,
+):
+    if iter_num > 0 and not enable_prompt_permutations:
+        if chat_idx is not None:
+            prev_md5 = md5_list[iter_num - 1][chat_idx][prompt_index]
+        else:
+            prev_md5 = md5_list[iter_num - 1][prompt_index]
+        if result_md5_list != prev_md5:
+            log.warning(
+                f"[{iter_num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
+                f"is different from md5 of the {iter_num - 1} iteration {prev_md5}"
+            )
+            metrics_print.print_generated(
+                iter_num,
+                warm_up=(iter_num == 0),
+                generated=generated_text[0],
+                prompt_idx=prompt_index,
+                chat_idx=chat_idx,
+            )
+    else:
+        if chat_prompts_num is None or chat_prompts_num - 1 == prompt_index:
+            metrics_print.print_generated(
+                iter_num,
+                warm_up=(iter_num == 0),
+                generated=generated_text[0],
+                prompt_idx=prompt_index,
+                chat_idx=chat_idx,
+            )
+
+
+def print_input_info(args: dict, iter_num: int, input_token_size: int):
+    if args["batch_size"] <= 1:
+        return
+
+    out_str = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
+    out_str += " Batch_size={}, ".format(args["batch_size"])
+    out_str += "all input token size after padding: {} * {}, ".format(input_token_size, args["batch_size"])
+    if args["infer_count"] is not None:
+        out_str += "all max_output_token_size: {} * {}".format(args["infer_count"], args["batch_size"])
+    log.info(out_str)
+
+
+def update_md5_list(md5_list: dict, iter_num: int, result_md5_list: list, prompt_index: int, chat_index: int = None):
+    if len(md5_list[iter_num]) == 0:
+        md5_list[iter_num] = {}
+
+    if chat_index is not None:
+        if chat_index not in md5_list[iter_num]:
+            md5_list[iter_num][chat_index] = {}
+        md5_list[iter_num][chat_index][prompt_index] = result_md5_list
+    else:
+        md5_list[iter_num][prompt_index] = result_md5_list
+
+
+def update_chat_iteration_with_memory_info(chat_iter_data_list: list, memory_metrics: dict):
+    for chat_iter_data in chat_iter_data_list:
+        mem_vals = {
+            key: val
+            for key, val in gen_output_data.gen_iterate_data(**memory_metrics).items()
+            if (val != "" and val != -1)
+        }
+        chat_iter_data.update(**mem_vals)
+
+
+# ===== Optimum Utils =====
+def setup_additional_args_optimum(args: dict, model: object, tokenizer: object, streaming, tokens_len: int):
+    additional_args = model_utils.setup_gen_config_use_custom_args()
+
+    # llama-3-8b-instruct's generation_config.json has 4096 max_length.
+    # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
+    # Override it to preserve max_new_tokens.
+    additional_args["max_length"] = 2**64 - 1
+    if streaming:
+        additional_args["streamer"] = OptimumChunkStreamer(tokenizer, tokens_len=tokens_len)
+
+    if args["infer_count"] is not None and args["end_token_stopping"] is False:
+        model.generation_config.eos_token_id = None
+        model.config.eos_token_id = None
+        additional_args["eos_token_id"] = None
+
+    return additional_args
+
+
+def calc_generated_token_size_optimum(
+    result: list, batch_idx: int, model: object, input_tokens: list, input_token_size: int, model_name: str
+):
+    if "sum" not in model_name and result[batch_idx][:input_token_size].equal(input_tokens[batch_idx]):
+        generated_token_size = len(result[batch_idx]) - input_tokens[batch_idx].numel()
+    else:
+        generated_token_size = len(result[batch_idx])
+    # Encoder-decoder models expect the `decoder_input_ids` to start with a special token
+    # When counting the output length, subtract 1. The last token does not participate in inference.
+    if model.config.is_encoder_decoder and result[batch_idx][0] == model.config.decoder_start_token_id:
+        generated_token_size = generated_token_size - 1
+
+    return generated_token_size
+
+
+def get_chat_input_data(input_text: str | list, args: dict):
+    # if prompts are set as list, let's use it
+    # if prompt is set as single string, let's create chat where prompt will repeat chat_iter times
+    input_data = input_text
+    if not isinstance(input_text, list):
+        if args.get("chat_iter"):
+            input_data = [input_text] * args["chat_iter"]
+        else:
+            log.error("Chat mode can't be started due to incompatible input prompts")
+    return input_data
+
+
+# ===== GENERATION FUNCTIONS FOR OPTIMUM =====
+def run_text_generation_optimum(
+    input_text: str,
+    num: int,
+    model: object,
+    tokenizer: object,
+    args: dict,
+    iter_data_list: list,
+    md5_list: list,
+    prompt_index: int,
+    bench_hook: object,
+    tokens_len: int,
+    streaming: bool,
+    model_precision: str,
+    proc_id: int,
+    mem_consumption: MemoryMonitorHandler,
+    prefix: str,
 ):
     set_seed(args["seed"])
+
+    # ===== Prepare Input Data =====
     input_text_list = [input_text] * args["batch_size"]
-    if args["output_dir"] is not None and num == 0:
-        for bs_index, in_text in enumerate(input_text_list):
-            llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
+    save_input_data_to_file(input_text_list, args, model_precision, prompt_index, num, proc_id)
+
     if args["apply_chat_template"]:
         input_text_hist = [{'role': 'user', 'content': input_text}]
         templated_input_text = tokenizer.apply_chat_template(input_text_hist, tokenize=False, add_generation_prompt=True)
         input_text_list = [templated_input_text] * args['batch_size']
 
+    # ===== Tokenization =====
     tok_encode_start = time.perf_counter()
     input_data = tokenizer(input_text_list, return_tensors='pt')
     tok_encode_end = time.perf_counter()
@@ -58,94 +198,44 @@ def run_text_generation(
     # Remove `token_type_ids` from inputs
     input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
     input_token_size = input_tokens[0].numel()
-    if args['batch_size'] > 1:
-        out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
-        out_str += " Batch_size={}, ".format(args['batch_size'])
-        out_str += 'all input token size after padding: {} * {}, '.format(input_token_size, args['batch_size'])
-        if args['infer_count'] is not None:
-            out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
-        log.info(out_str)
-    additional_args = model_utils.setup_gen_config_use_custom_args()
-    mem_consumption.start(num)
 
-    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
-    # llama-3-8b-instruct's generation_config.json has 4096 max_length.
-    # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
-    # Override it to preserve max_new_tokens.
-    max_length = 2**64 - 1
+    print_input_info(args, num, input_token_size)
+
+    # ===== Prepare Additional Args =====
+    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args["infer_count"] is None else args["infer_count"]
+    additional_args = setup_additional_args_optimum(args, model, tokenizer, streaming, tokens_len)
+
+    # === Generate ===
+    mem_consumption.start(num)
     log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
     start = time.perf_counter()
-    if streaming:
-        if args['infer_count'] is not None and args['end_token_stopping'] is False:
-            model.generation_config.eos_token_id = None
-            model.config.eos_token_id = None
-            result = model.generate(
-                **input_data,
-                max_new_tokens=int(max_gen_tokens),
-                max_length=max_length,
-                num_beams=args['num_beams'],
-                use_cache=True,
-                eos_token_id=None,
-                do_sample=False,
-                streamer=OptimumChunkStreamer(tokenizer, tokens_len=tokens_len),
-                **additional_args
-            )
-        else:
-            result = model.generate(
-                **input_data,
-                max_new_tokens=int(max_gen_tokens),
-                max_length=max_length,
-                num_beams=args['num_beams'],
-                use_cache=True,
-                do_sample=False,
-                streamer=OptimumChunkStreamer(tokenizer, tokens_len=tokens_len),
-                **additional_args
-            )
-    else:
-        if args['infer_count'] is not None and args['end_token_stopping'] is False:
-            model.generation_config.eos_token_id = None
-            model.config.eos_token_id = None
-            result = model.generate(
-                **input_data,
-                max_new_tokens=int(max_gen_tokens),
-                max_length=max_length,
-                num_beams=args['num_beams'],
-                use_cache=True,
-                eos_token_id=None,
-                do_sample=False,
-                **additional_args
-            )
-        else:
-            result = model.generate(
-                **input_data,
-                max_new_tokens=int(max_gen_tokens),
-                max_length=max_length,
-                num_beams=args['num_beams'],
-                use_cache=True,
-                do_sample=False,
-                **additional_args
-            )
+    result = model.generate(
+        **input_data,
+        max_new_tokens=int(max_gen_tokens),
+        num_beams=args["num_beams"],
+        use_cache=True,
+        do_sample=False,
+        **additional_args,
+    )
     end = time.perf_counter()
     log.info("%s Text generation end: %s", prefix, datetime.datetime.now().isoformat())
     generation_time = end - start
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
+    # === Detokenization ===
     tok_decode_start = time.perf_counter()
     generated_text = tokenizer.batch_decode(result)
     tok_decode_end = time.perf_counter()
     tok_decode_time = (tok_decode_end - tok_decode_start) * 1000
+
+    # ===== Performance Data Collection and Print Results =====
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
     for bs_idx in range(args['batch_size']):
-        if 'sum' not in args['model_name'] and result[bs_idx][:input_token_size].equal(input_tokens[bs_idx]):
-            generated_token_size = len(result[bs_idx]) - input_tokens[bs_idx].numel()
-        else:
-            generated_token_size = len(result[bs_idx])
-        # Encoder-decoder models expect the `decoder_input_ids` to start with a special token
-        # When counting the output length, subtract 1. The last token does not participate in inference.
-        if model.config.is_encoder_decoder and result[bs_idx][0] == model.config.decoder_start_token_id:
-            generated_token_size = generated_token_size - 1
+        generated_token_size = calc_generated_token_size_optimum(
+            result, bs_idx, model, input_tokens, input_token_size, args["model_name"]
+        )
         num_tokens += generated_token_size
         if generated_token_size > max_gen_tokens:
             log.error('Output token size is over max output token size!')
@@ -153,10 +243,8 @@ def run_text_generation(
         if args["output_dir"] is not None:
             llm_bench_utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
         result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
-    if len(md5_list[num]) == 0:
-        md5_list[num] = {prompt_index : result_md5_list}
-    else:
-        md5_list[num][prompt_index] = result_md5_list
+    update_md5_list(md5_list, num, result_md5_list, prompt_index)
+
     per_token_time = ""
     if num_tokens > 0:
         per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
@@ -193,23 +281,333 @@ def run_text_generation(
         tm_infer_list,
         warm_up=(num == 0),
         tokenization_time=(tok_encode_time, tok_decode_time),
-        batch_size=args['batch_size'],
-        prompt_idx=prompt_index
+        batch_size=args["batch_size"],
+        prompt_idx=prompt_index,
     )
-    if num > 0:
-        prev_md5 = md5_list[num - 1][prompt_index]
-        if result_md5_list != prev_md5:
-            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
-                        f"is different from md5 of the {num - 1} iteration {prev_md5}")
-            metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-    else:
-        metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
+    print_generated_output(
+        prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations=False
+    )
     if bench_hook is not None:
         bench_hook.clear_time_list()
         bench_hook.clear_time_infer_list()
 
 
-def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_data, batch_size, prefix):
+def align_kv_cache_and_tokenized_history(
+    model, full_chat_input_data, tokenized_chat_history, past_key_values, full_chat: bool = False
+):
+    if full_chat:
+        return tokenized_chat_history.shape[-1] - 1, past_key_values
+
+    # kv_cache doesn't include last generated token, len(past_key_values) == len(output tokens) - 1
+    kv_cache_len = tokenized_chat_history.shape[-1] - 1
+    # full_chat_input_data includes currently tokenized all history and input tokens
+    # tokenized_chat_history includes all tokens from previous generations
+    diff = full_chat_input_data[0][..., :kv_cache_len] != tokenized_chat_history[..., :kv_cache_len]
+    first_diff_idx = kv_cache_len
+    if diff.any():
+        first_diff_idx = diff.nonzero(as_tuple=True)[0][0].item()
+        if "transformers" in str(type(model)):
+            past_key_values.crop(max_length=first_diff_idx)
+            first_diff_idx = 0
+        else:
+            import openvino as ov
+
+            states = model.request.query_state()
+            for state in states:
+                old_tensor = state.state
+                # [BATCH_SIZE, num_kv_heads, seq_len, head_size]
+                data = np.array(old_tensor.data)
+                trimmed_tensor = data[:, :, :first_diff_idx, :]
+                new_tensor = ov.Tensor(trimmed_tensor)
+                state.state = new_tensor
+
+    if "transformers" not in str(type(model)) and past_key_values is None:
+        past_key_values = [past_key_values]
+
+    return first_diff_idx, past_key_values
+
+
+def align_input_data_with_kv_cache(model, tokenized_input_data: dict, first_diff_idx: int, full_chat: bool = False):
+    # if "transformers" in str(type(model)) or full_chat:
+    #     return tokenized_input_data
+
+    aligned_input_data = {}
+    aligned_input_data["input_ids"] = tokenized_input_data[..., first_diff_idx:]
+    aligned_input_data["attention_mask"] = torch.ones_like(tokenized_input_data, dtype=torch.long)
+    return aligned_input_data
+
+
+def update_tokenized_chat_history(
+    model, result: torch.tensor, input_tokens_num: int, full_tokenized_chat: torch.tensor, full_chat: bool = False
+):
+    if "transformers" in str(type(model)) or full_chat:
+        tokenized_chat_history = result.clone()
+    else:
+        answer_result = result[input_tokens_num:]
+        tokenized_chat_history = torch.cat([full_tokenized_chat[0], answer_result])
+
+    return tokenized_chat_history
+
+
+def run_text_generation_chat_optimum(
+    input_text: str,
+    num: int,
+    model: object,
+    tokenizer: object,
+    args: dict,
+    iter_data_list: list,
+    md5_list: list,
+    chat_index: int,
+    bench_hook: object,
+    tokens_len: int,
+    streaming: bool,
+    model_precision: str,
+    proc_id: int,
+    mem_consumption: MemoryMonitorHandler,
+    prefix: str,
+):
+    set_seed(args["seed"])
+
+    if args["batch_size"] != 1:
+        log.warning("Only batch size 1 available for benchmarking")
+        args["batch_size"] = 1
+
+    # ===== Prepare Input Data =====
+    input_data = get_chat_input_data(input_text, args)
+    save_input_data_to_file(["; ".join(input_data)], args, model_precision, chat_index, num, proc_id, is_chat=True)
+
+    # ===== Prepare Additional Args =====
+    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args["infer_count"] is None else args["infer_count"]
+    additional_args = setup_additional_args_optimum(args, model, tokenizer, streaming, tokens_len)
+
+    mem_consumption.start(num)
+
+    # ===== Chat Conversation ======
+    chat_history = []
+    chat_iter_data_list = []
+    # For chat generation, we need to keep track of past_key_values for each turn to utilize the cache and speed up generation.
+    # However, not all models support past_key_values. For those models, we will set past_key_values
+
+    past_key_values = None
+    if "transformers" in str(type(model)):
+        past_key_values = DynamicCache()
+    additional_args["use_cache"] = not args.get("full_chat_hist")
+    tokenized_chat_history = torch.tensor([], dtype=torch.long)
+    for prompt_index, prompt in enumerate(input_data):
+        chat_history.append({"role": "user", "content": prompt})
+        templated_input_text = tokenizer.apply_chat_template(chat_history, tokenize=False, add_generation_prompt=True)
+
+        # ===== Tokenization =====
+        tok_encode_start = time.perf_counter()
+        tokenized_chat = tokenizer(templated_input_text, return_tensors="pt")
+        tok_encode_end = time.perf_counter()
+        tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
+        tokenized_chat.pop("token_type_ids", None)
+        full_tokenized_chat_input_ids = tokenized_chat["input_ids"] if "input_ids" in tokenized_chat else tokenized_chat
+
+        # === Align KV Cache and Tokenized History for models supporting past_key_values ===
+        num_new_token_input_size = full_tokenized_chat_input_ids.shape[-1]
+        if tokenized_chat_history.numel() != 0:
+            first_diff_idx, past_key_values = align_kv_cache_and_tokenized_history(
+                model,
+                full_tokenized_chat_input_ids,
+                tokenized_chat_history,
+                past_key_values,
+                args.get("full_chat_hist"),
+            )
+            if not args.get("full_chat_hist"):
+                num_new_token_input_size = full_tokenized_chat_input_ids[..., first_diff_idx:].shape[-1]
+            tokenized_input_data = align_input_data_with_kv_cache(
+                model, full_tokenized_chat_input_ids, first_diff_idx, args.get("full_chat_hist")
+            )
+        else:
+            tokenized_input_data = tokenized_chat
+
+        # Remove `token_type_ids` from inputs
+        input_tokens = (
+            tokenized_input_data["input_ids"] if "input_ids" in tokenized_input_data else tokenized_input_data
+        )
+        input_token_size = input_tokens[0].numel()
+
+        if not args.get("full_chat_hist"):
+            additional_args["past_key_values"] = past_key_values
+
+        # ===== Generation =====
+        log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
+        start = time.perf_counter()
+        result = model.generate(
+            **tokenized_input_data,
+            max_new_tokens=int(max_gen_tokens),
+            num_beams=args["num_beams"],
+            do_sample=False,
+            return_dict_in_generate=True,
+            **additional_args,
+        )
+        end = time.perf_counter()
+        log.info("%s Text generation end: %s", prefix, datetime.datetime.now().isoformat())
+        generation_time = end - start
+        answer_result = result.sequences[0][input_token_size:]
+        tokenized_chat_history = update_tokenized_chat_history(
+            model, result.sequences[0], input_token_size, full_tokenized_chat_input_ids, args.get("full_chat_hist")
+        )
+
+        # ===== Detokenization =====
+        tok_decode_start = time.perf_counter()
+        generated_text = tokenizer.batch_decode([answer_result])
+        tok_decode_end = time.perf_counter()
+        tok_decode_time = (tok_decode_end - tok_decode_start) * 1000
+        chat_history.append({"role": "assistant", "content": generated_text[0]})
+
+        # ===== Performance Data Collection and Print Results =====
+        batch_idx = 0
+        generated_token_size = calc_generated_token_size_optimum(
+            result.sequences, batch_idx, model, input_tokens, input_token_size, args["model_name"]
+        )
+        if generated_token_size > max_gen_tokens:
+            log.error("Output token size is over max output token size!")
+
+        result_md5_list = []
+        generated_text = "; ".join(str(replica) for replica in chat_history)
+        result_md5_list.append(hashlib.new("md5", generated_text.encode(), usedforsecurity=False).hexdigest())
+        update_md5_list(md5_list, num, result_md5_list, prompt_index, chat_index=chat_index)
+        print_generated_output(
+            prompt_index,
+            num,
+            result_md5_list,
+            md5_list,
+            [generated_text],
+            enable_prompt_permutations=False,
+            chat_prompts_num=len(input_data),
+            chat_idx=chat_index,
+        )
+
+        per_token_time = ""
+        if generated_token_size > 0:
+            per_token_time = generation_time * 1000 / generated_token_size
+        else:
+            log.warning("No generated tokens")
+
+        tm_list = []
+        tm_infer_list = []
+        if bench_hook is not None:
+            tm_list = bench_hook.get_time_list()
+            log.debug("latency of all tokens:")
+            [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_list)]
+            tm_infer_list = bench_hook.get_time_infer_list()
+            log.debug("latency of all infers:")
+            [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
+            if args["num_beams"] == 1 and generated_token_size != len(tm_infer_list):
+                log.warning(
+                    f"Output token size({generated_token_size}) is not equal to infer count({len(tm_infer_list)})"
+                )
+        iter_data = gen_output_data.gen_iterate_data(
+            iter_idx=num,
+            in_size=num_new_token_input_size,
+            infer_count=len(tm_infer_list),
+            out_size=generated_token_size,
+            gen_time=generation_time,
+            latency=per_token_time,
+            res_md5=result_md5_list,
+            prompt_idx=prompt_index,
+            tokenization_time=(tok_encode_time, tok_decode_time),
+            chat_idx=chat_index,
+        )
+        chat_iter_data_list.append(iter_data)
+        metrics_print.print_metrics(
+            num,
+            iter_data,
+            tm_list,
+            tm_infer_list,
+            warm_up=(num == 0),
+            tokenization_time=(tok_encode_time, tok_decode_time),
+            batch_size=args["batch_size"],
+            prompt_idx=prompt_index,
+            chat_idx=chat_index,
+        )
+
+        if bench_hook is not None:
+            bench_hook.clear_time_list()
+            bench_hook.clear_time_infer_list()
+
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
+    update_chat_iteration_with_memory_info(chat_iter_data_list, memory_metrics)
+
+    metrics_print.print_memory_info(num, iter_data, chat_index)
+
+    # === Save perf data ===
+    iter_data_list.extend(chat_iter_data_list)
+
+    if args["output_dir"] is not None:
+        llm_bench_utils.output_file.output_gen_text(
+            chat_history, args, model_precision, chat_index, num, batchsize_idx=0, proc_id=proc_id, is_chat=True
+        )
+
+
+# ===== GenAI Utils =====
+def apply_chat_template_genai(args: dict, input_text: str, tokenizer: object):
+    input_text_hist = [{"role": "user", "content": input_text}]
+    templated_input_text = tokenizer.apply_chat_template(input_text_hist, add_generation_prompt=True)
+    input_text_list = [templated_input_text] * args["batch_size"]
+    if not args["disable_prompt_permutation"]:
+        log.warning(
+            "Enabled chat template applying and permutation of input prompt. "
+            "It means that after applying the chat template prompt will be tokenized and mixed, so the structure of chat template will not be kept. "
+            "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
+        )
+
+    return input_text_list
+
+
+def genai_generation_config_setup(model: object, max_gen_tokens: int, args: dict):
+    from openvino_genai import GenerationConfig
+
+    gen_config = model.get_generation_config() if hasattr(model, "get_generation_config") else GenerationConfig()
+    gen_config.max_new_tokens = max_gen_tokens
+    # llama-3-8b-instruct's generation_config.json has 4096 max_length.
+    # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
+    # Override it to preserve max_new_tokens.
+    gen_config.max_length = 2**64 - 1
+    gen_config.ignore_eos = True
+    gen_config.rng_seed = args["seed"]
+    gen_config.num_beams = args["num_beams"]
+    gen_config.do_sample = False
+    if gen_config.num_beams > 1:
+        gen_config.frequency_penalty = 0
+        gen_config.presence_penalty = 0
+        gen_config.repetition_penalty = 1
+    if hasattr(gen_config, "apply_chat_template"):
+        gen_config.apply_chat_template = False
+    if args.get("draft_model", ""):
+        config_info = "Speculative decoding config: "
+        if args.get("num_assistant_tokens", None):
+            gen_config.num_assistant_tokens = int(args["num_assistant_tokens"])
+            config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
+        if args.get("assistant_confidence_threshold", None):
+            gen_config.assistant_confidence_threshold = float(args["assistant_confidence_threshold"])
+            config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
+        log.info(config_info)
+    if args.get("max_ngram_size") and args.get("num_assistant_tokens"):
+        config_info = "Prompt Lookup decoding config: "
+        gen_config.max_ngram_size = int(args["max_ngram_size"])
+        gen_config.num_assistant_tokens = int(args["num_assistant_tokens"])
+        config_info += (
+            f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
+        )
+        log.info(config_info)
+
+    return gen_config
+
+
+def genai_generate(
+    streaming: bool,
+    model: object,
+    tokens_len: int,
+    gen_config: object,
+    empty_lora: bool,
+    input_data: list,
+    batch_size: int,
+    prefix: str,
+):
     import openvino_genai
     import openvino as ov
     cb_pipeline = isinstance(model, openvino_genai.ContinuousBatchingPipeline)
@@ -217,6 +615,9 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         input_data = [ov.Tensor([input]) for input in input_data.input_ids.data]
         gen_config = [gen_config] * batch_size
 
+    additional_args = (
+        {"adapters": openvino_genai.AdapterConfig()} if (empty_lora and (gen_config.adapters is not None)) else {}
+    )
     log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
     start = time.perf_counter()
     if streaming:
@@ -225,28 +626,14 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         def token_printer():
             # Getting next elements from iterable will be blocked until a new token is available.
             for word in text_print_streamer:
-                print(word, end='', flush=True)
+                print(word, end="", flush=True)
+
         printer_thread = threading.Thread(target=token_printer, daemon=True)
         printer_thread.start()
-        if (empty_lora and (gen_config.adapters is not None)):
-            generation_result = model.generate(
-                input_data,
-                gen_config,
-                streamer=text_print_streamer,
-                adapters=openvino_genai.AdapterConfig()
-            )
-        else:
-            generation_result = model.generate(
-                input_data,
-                gen_config,
-                streamer=text_print_streamer
-            )
+        generation_result = model.generate(input_data, gen_config, streamer=text_print_streamer, **additional_args)
         printer_thread.join()
     else:
-        if (empty_lora and (gen_config.adapters is not None)):
-            generation_result = model.generate(input_data, gen_config, adapters=openvino_genai.AdapterConfig())
-        else:
-            generation_result = model.generate(input_data, gen_config)
+        generation_result = model.generate(input_data, gen_config, **additional_args)
     end = time.perf_counter()
     log.info("%s Text generation end: %s", prefix, datetime.datetime.now().isoformat())
     generated_tokens = []
@@ -262,46 +649,37 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
 
 
 def run_text_generation_genai(
-    input_text,
-    num,
-    model,
-    tokenizer,
-    args,
-    iter_data_list,
-    md5_list,
-    prompt_index,
-    streamer,
-    tokens_len,
-    streaming,
-    model_precision,
-    proc_id,
-    mem_consumption,
-    prefix,
+    input_text: str,
+    num: int,
+    model: object,
+    tokenizer: object,
+    args: dict,
+    iter_data_list: list,
+    md5_list: list,
+    prompt_index: int,
+    streamer: object,
+    tokens_len: int,
+    streaming: bool,
+    model_precision: str,
+    proc_id: int,
+    mem_consumption: MemoryMonitorHandler,
+    prefix: str,
 ):
+    # ===== Prepare Input Data =====
     input_text_list = [input_text] * args["batch_size"]
-    if args["output_dir"] is not None and num == 0:
-        for bs_index, in_text in enumerate(input_text_list):
-            llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
+    save_input_data_to_file(input_text_list, args, model_precision, prompt_index, num, proc_id)
 
-    mem_consumption.start(num)
-    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     tokenizer = model.get_tokenizer()
-    if args['apply_chat_template']:
-        input_text_hist = [{'role': 'user', 'content': input_text}]
-        templated_input_text = tokenizer.apply_chat_template(input_text_hist, add_generation_prompt=True)
-        input_text_list = [templated_input_text] * args['batch_size']
-        if not args["disable_prompt_permutation"]:
-            log.warning(
-                "Enabled chat template applying and permutation of input prompt. "
-                "It means that after applying the chat template prompt will be tokenized and mixed, so the structure of chat template will not be kept. "
-                "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
-            )
+    if args["apply_chat_template"]:
+        input_text_list = apply_chat_template_genai(args, input_text, tokenizer)
 
+    # ===== Tokenization =====
     tokenization_start = time.perf_counter()
     input_data = tokenizer.encode(input_text_list)
     tokenization_end = time.perf_counter()
     tokenization_time = [(tokenization_end - tokenization_start) * 1000]
 
+    # ===== Prompt permutation and config setup =====
     enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
     if enable_prompt_permutations:
         log.warning(
@@ -322,48 +700,18 @@ def run_text_generation_genai(
         attention_mask = input_data.attention_mask
         input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
     num_input_tokens = input_data.input_ids.shape[1]
-    if args['batch_size'] > 1:
-        out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
-        out_str += " Batch_size={}, ".format(args['batch_size'])
-        out_str += 'all input token size after padding: {} * {}, '.format(num_input_tokens, args['batch_size'])
-        if args['infer_count'] is not None:
-            out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
-        log.info(out_str)
-    from openvino_genai import GenerationConfig
-    gen_config = model.get_generation_config() if hasattr(model, 'get_generation_config') else GenerationConfig()
-    gen_config.max_new_tokens = max_gen_tokens
-    # llama-3-8b-instruct's generation_config.json has 4096 max_length.
-    # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
-    # Override it to preserve max_new_tokens.
-    gen_config.max_length = 2**64 - 1
-    gen_config.ignore_eos = True
-    gen_config.rng_seed = args["seed"]
-    gen_config.num_beams = args["num_beams"]
-    gen_config.do_sample = False
-    if gen_config.num_beams > 1:
-        gen_config.frequency_penalty = 0
-        gen_config.presence_penalty = 0
-        gen_config.repetition_penalty = 1
-    if hasattr(gen_config, 'apply_chat_template'):
-        gen_config.apply_chat_template = False
-    if args.get('draft_model', ''):
-        config_info = "Speculative decoding config: "
-        if args.get('num_assistant_tokens', None):
-            gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
-            config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
-        if args.get('assistant_confidence_threshold', None):
-            gen_config.assistant_confidence_threshold = float(args['assistant_confidence_threshold'])
-            config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
-        log.info(config_info)
-    if args.get('max_ngram_size') and args.get('num_assistant_tokens'):
-        config_info = "Prompt Lookup decoding config: "
-        gen_config.max_ngram_size = int(args['max_ngram_size'])
-        gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
-        config_info += f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
-        log.info(config_info)
+    print_input_info(args, num, num_input_tokens)
+    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args["infer_count"] is None else args["infer_count"]
+    gen_config = genai_generation_config_setup(model, max_gen_tokens, args)
+
+    # ===== Generate =====
+    mem_consumption.start(num)
     generated_tokens, perf_metrics, generation_time = genai_generate(
         streaming, model, tokens_len, gen_config, args["empty_lora"], input_data, args["batch_size"], prefix
     )
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
+
+    # ===== Detokenization =====
     if streaming:
         tokenization_time.append(np.mean(perf_metrics.raw_metrics.detokenization_durations) / 1000)
         generated_text = tokenizer.decode(generated_tokens)
@@ -372,24 +720,22 @@ def run_text_generation_genai(
         generated_text = tokenizer.decode(generated_tokens)
         detokenization_end = time.perf_counter()
         tokenization_time.append((detokenization_end - detokenization_start) * 1000)
-    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
+    # ===== Performance Data Collection and Print Results =====
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
-    for bs_idx in range(args['batch_size']):
+    for bs_idx in range(args["batch_size"]):
         generated_text_len = generated_tokens[bs_idx].shape[-1]
         num_tokens += generated_text_len
         if generated_text_len > max_gen_tokens:
-            log.error('Output token size is over max output token size!')
+            log.error("Output token size is over max output token size!")
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
             llm_bench_utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
         result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
-    if len(md5_list[num]) == 0:
-        md5_list[num] = {prompt_index : result_md5_list}
-    else:
-        md5_list[num][prompt_index] = result_md5_list
+    update_md5_list(md5_list, num, result_md5_list, prompt_index)
+
     per_token_time = ""
     if num_tokens > 0:
         per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
@@ -399,16 +745,18 @@ def run_text_generation_genai(
     second_tokens_durations = (np.array(perf_metrics.raw_metrics.m_durations) / 1000).tolist()
     tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
     inference_durations = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
-    log.debug('latency of all tokens:')
-    [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
+    log.debug("latency of all tokens:")
+    [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_list)]
+
     cache_usage = None
-    if hasattr(model, 'get_metrics'):
+    if hasattr(model, "get_metrics"):
         pipeline_metrics = model.get_metrics()
-        if hasattr(pipeline_metrics, 'avg_cache_usage') and hasattr(pipeline_metrics, 'max_cache_usage'):
+        if hasattr(pipeline_metrics, "avg_cache_usage") and hasattr(pipeline_metrics, "max_cache_usage"):
             cache_usage = {"avg_cache_usage": pipeline_metrics.avg_cache_usage, "max_cache_usage": pipeline_metrics.max_cache_usage}
+
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
-        in_size=num_input_tokens * args['batch_size'],
+        in_size=num_input_tokens * args["batch_size"],
         infer_count=len(tm_list),
         out_size=num_tokens,
         gen_time=generation_time,
@@ -419,6 +767,7 @@ def run_text_generation_genai(
         **memory_metrics,
     )
     iter_data_list.append(iter_data)
+
     metrics_print.print_metrics(
         num,
         iter_data,
@@ -426,81 +775,52 @@ def run_text_generation_genai(
         inference_durations,
         warm_up=(num == 0),
         tokenization_time=tokenization_time,
-        batch_size=args['batch_size'],
+        batch_size=args["batch_size"],
         prompt_idx=prompt_index,
-        cb_metric=cache_usage
+        cb_metric=cache_usage,
     )
-    if num > 0 and not enable_prompt_permutations:
-        prev_md5 = md5_list[num - 1][prompt_index]
-        if result_md5_list != prev_md5:
-            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
-                        f"is different from md5 of the {num - 1} iteration {prev_md5}")
-            metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-    else:
-        metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
+
+    print_generated_output(prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations)
 
 
 def run_text_generation_genai_with_stream(
-    input_text,
-    num,
-    model,
-    tokenizer,
-    args,
-    iter_data_list,
-    md5_list,
-    prompt_index,
-    streamer,
-    tokens_len,
-    streaming,
-    model_precision,
-    proc_id,
-    mem_consumption,
-    prefix,
+    input_text: str,
+    num: int,
+    model: object,
+    tokenizer: object,
+    args: dict,
+    iter_data_list: list,
+    md5_list: list,
+    prompt_index: int,
+    streamer: object,
+    tokens_len: int,
+    streaming: bool,
+    model_precision: str,
+    proc_id: int,
+    mem_consumption: MemoryMonitorHandler,
+    prefix: str,
 ):
+    # ===== Prepare Input Data =====
     input_text_list = [input_text] * args["batch_size"]
-    if args["output_dir"] is not None and num == 0:
-        for bs_index, in_text in enumerate(input_text_list):
-            llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
+    save_input_data_to_file(input_text_list, args, model_precision, prompt_index, num, proc_id)
+
     pipe_tokenizer = model.get_tokenizer()
-    if args['apply_chat_template']:
-        input_text_hist = [{'role': 'user', 'content': input_text}]
-        templated_input_text = pipe_tokenizer.apply_chat_template(input_text_hist, add_generation_prompt=True)
-        input_text_list = [templated_input_text] * args['batch_size']
-        if not args["disable_prompt_permutation"]:
-            log.warning(
-                "Enabled chat template applying and permutation of input prompt. "
-                "It means that after applying the chat template prompt will be tokenized and mixed, so the structure of chat template will not be kept. "
-                "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
-            )
+    if args["apply_chat_template"]:
+        input_text_list = apply_chat_template_genai(args, input_text, pipe_tokenizer)
+
+    # ===== Tokenization =====
     tok_encode_start = time.perf_counter()
     input_data = pipe_tokenizer.encode(input_text_list)
     tok_encode_end = time.perf_counter()
     input_token_size = input_data.input_ids.shape[1]
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
-    if args['batch_size'] > 1:
-        out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
-        out_str += " Batch_size={}, ".format(args['batch_size'])
-        out_str += 'all input token size after padding: {} * {}, '.format(input_token_size, args['batch_size'])
-        if args['infer_count'] is not None:
-            out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
-        log.info(out_str)
 
-    mem_consumption.start(num)
+    print_input_info(args, num, input_token_size)
+
+    # === Prepare Generation Config and Streamer ===
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     streamer.reset()
-    gen_config = model.get_generation_config()
-    gen_config.rng_seed = args["seed"]
-    gen_config.max_new_tokens = max_gen_tokens
-    gen_config.max_length = 2**64 - 1
-    gen_config.num_beams = args["num_beams"]
-    gen_config.do_sample = False
-    if gen_config.num_beams > 1:
-        gen_config.frequency_penalty = 0
-        gen_config.presence_penalty = 0
-        gen_config.repetition_penalty = 1
-    gen_config.ignore_eos = True
-    if hasattr(gen_config, 'apply_chat_template'):
-        gen_config.apply_chat_template = False
+    gen_config = genai_generation_config_setup(model, max_gen_tokens, args)
     enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
     if enable_prompt_permutations:
         log.warning(
@@ -514,22 +834,10 @@ def run_text_generation_genai_with_stream(
         input_ids[:, 0] = num + 1
         attention_mask = input_data.attention_mask
         input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
-    if args.get('draft_model', ''):
-        config_info = "Speculative decoding config: "
-        if args.get("num_assistant_tokens", None):
-            gen_config.num_assistant_tokens = int(args["num_assistant_tokens"])
-            config_info += f'num_assistant_tokens {args["num_assistant_tokens"]}'
-        if args.get("assistant_confidence_threshold", None):
-            gen_config.assistant_confidence_threshold = float(args["assistant_confidence_threshold"])
-            config_info += f'assistant_confidence_threshold {args["assistant_confidence_threshold"]}'
-        log.info(config_info)
-    if args.get('max_ngram_size') and args.get('num_assistant_tokens'):
-        config_info = "Prompt Lookup decoding config: "
-        gen_config.max_ngram_size = int(args['max_ngram_size'])
-        gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
-        config_info += f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
-        log.info(config_info)
 
+    mem_consumption.start(num)
+
+    # === Generate ===
     log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
     start = time.perf_counter()
     generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens
@@ -538,37 +846,39 @@ def run_text_generation_genai_with_stream(
     generation_time = end - start
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
+    # ===== Detokenization =====
     tok_decode_start = time.perf_counter()
     generated_text = pipe_tokenizer.decode(generated_tokens)
     tok_decode_end = time.perf_counter()
     tok_decode_time = (tok_decode_end - tok_decode_start) * 1000
+
+    # ===== Performance Data Collection and Print Results =====
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
-    for bs_idx in range(args['batch_size']):
+    for bs_idx in range(args["batch_size"]):
         generated_text_len = len(generated_tokens[bs_idx])
         num_tokens += generated_text_len
         if generated_text_len > max_gen_tokens:
-            log.error('Output token size is over max output token size!')
+            log.error("Output token size is over max output token size!")
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
             llm_bench_utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
         result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
-    if len(md5_list[num]) == 0:
-        md5_list[num] = {prompt_index : result_md5_list}
-    else:
-        md5_list[num][prompt_index] = result_md5_list
+    update_md5_list(md5_list, num, result_md5_list, prompt_index)
+
     per_token_time = ""
     if num_tokens > 0:
         per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
     else:
         log.warning("No generated tokens")
     tm_list = streamer.get_time_list()
-    log.debug('latency of all tokens:')
-    [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
+    log.debug("latency of all tokens:")
+    [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_list)]
+
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
-        in_size=input_token_size * args['batch_size'],
+        in_size=input_token_size * args["batch_size"],
         infer_count=len(tm_list),
         out_size=num_tokens,
         gen_time=generation_time,
@@ -579,6 +889,7 @@ def run_text_generation_genai_with_stream(
         **memory_metrics,
     )
     iter_data_list.append(iter_data)
+
     metrics_print.print_metrics(
         iter_num=num,
         iter_data=iter_data,
@@ -586,18 +897,192 @@ def run_text_generation_genai_with_stream(
         tms_infer=None,
         warm_up=(num == 0),
         tokenization_time=(tok_encode_time, tok_decode_time),
-        batch_size=args['batch_size'],
-        prompt_idx=prompt_index
+        batch_size=args["batch_size"],
+        prompt_idx=prompt_index,
     )
-    if num > 0 and not enable_prompt_permutations:
-        prev_md5 = md5_list[num - 1][prompt_index]
-        if result_md5_list != prev_md5:
-            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
-                        f"is different from md5 of the {num - 1} iteration {prev_md5}")
-            metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
-    else:
-        metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
+
+    print_generated_output(prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations)
     streamer.reset()
+
+
+def calc_token_size_for_chat(tokenizer, chat_history, chat_token_size, full_chat_hist=False):
+    templ_chat = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True)
+    tokenized_input = tokenizer.encode(templ_chat)
+
+    # openvino_genai.TokenizedInputs includes input_ids, attention_mask and token_type_ids
+    new_chat_token_size = tokenized_input.input_ids.get_shape()[1]
+
+    # full_chat_hist is for models, which doesn't have query state
+    # and required full chat history each iteration
+    if chat_token_size == 0 or full_chat_hist:
+        input_size = new_chat_token_size
+    else:
+        input_size = new_chat_token_size - chat_token_size
+
+    chat_token_size = new_chat_token_size
+    return input_size, chat_token_size
+
+
+def run_text_generation_genai_chat_mode(
+    input_text: str | list,
+    iter_num: int,
+    model: object,
+    tokenizer: object,
+    args: dict,
+    iter_data_list: list,
+    md5_list: list,
+    chat_index: int,
+    streamer: object,
+    tokens_len: int,
+    streaming: bool,
+    model_precision: str,
+    proc_id: int,
+    mem_consumption: MemoryMonitorHandler,
+    prefix: str,
+):
+    import openvino_genai
+
+    if args["batch_size"] != 1:
+        log.warning("Only batch size 1 available for benchmarking")
+        args["batch_size"] = 1
+
+    # ===== Prepare Input Data =====
+    input_data = get_chat_input_data(input_text, args)
+    save_input_data_to_file(["; ".join(input_data)], args, model_precision, chat_index, iter_num, proc_id, is_chat=True)
+
+    # ===== Setup Generation Config and Additional Args =====
+    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args["infer_count"] is None else args["infer_count"]
+    gen_config = genai_generation_config_setup(model, max_gen_tokens, args)
+    gen_config.ignore_eos = False
+    if hasattr(gen_config, "apply_chat_template"):
+        gen_config.apply_chat_template = True
+    additional_args = (
+        {"adapters": openvino_genai.AdapterConfig()}
+        if (args["empty_lora"] and (gen_config.adapters is not None))
+        else {}
+    )
+
+    tokenizer = model.get_tokenizer()
+
+    mem_consumption.start(iter_num)
+
+    # ===== Chat Conversation =====
+    chat_history = openvino_genai.ChatHistory()
+    chat_iter_data_list = []
+    chat_token_size = 0
+    num_input_size = 0
+    for prompt_index, prompt in enumerate(input_data):
+        chat_history.append({"role": "user", "content": prompt})
+        num_input_size, chat_token_size = calc_token_size_for_chat(
+            tokenizer, chat_history, chat_token_size, args.get("full_chat_hist")
+        )
+
+        # ===== Generation =====
+        log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
+        start = time.perf_counter()
+        decoded_results = model.generate(
+            chat_history,
+            generation_config=gen_config,
+            streamer=streamer,
+            **additional_args,
+        )
+        end = time.perf_counter()
+        log.info("%s Text generation end: %s", prefix, datetime.datetime.now().isoformat())
+        generation_time = end - start
+        chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})
+
+        # update chat token size
+        chat_token_size += tokenizer.encode(decoded_results.texts[0]).input_ids.get_shape()[1]
+
+        # ===== Performance Data Collection and Print Results =====
+        perf_metrics = decoded_results.perf_metrics
+        per_token_time = ""
+        num_tokens = perf_metrics.get_num_generated_tokens()
+        if num_tokens > max_gen_tokens:
+            log.error("Output token size is over max output token size!")
+        if num_tokens > 0:
+            per_token_time = generation_time * 1000 / num_tokens
+        else:
+            log.warning("No generated tokens")
+        first_token_time = perf_metrics.get_ttft().mean - perf_metrics.raw_metrics.tokenization_durations[-1] / 1000
+        second_tokens_durations = (np.array(perf_metrics.raw_metrics.m_durations) / 1000).tolist()
+        tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
+        inference_durations = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
+        log.debug("latency of all tokens:")
+        [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_list)]
+
+        tokenization_time = []
+        tokenization_time.append(np.mean(perf_metrics.raw_metrics.tokenization_durations) / 1000)
+        tokenization_time.append(np.mean(perf_metrics.raw_metrics.detokenization_durations) / 1000)
+
+        result_md5_list = []
+        generated_text = "; ".join(str(replica) for replica in chat_history.get_messages())
+        result_md5_list.append(hashlib.new("md5", generated_text.encode(), usedforsecurity=False).hexdigest())
+        update_md5_list(md5_list, iter_num, result_md5_list, prompt_index, chat_index=chat_index)
+        print_generated_output(
+            prompt_index,
+            iter_num,
+            result_md5_list,
+            md5_list,
+            [generated_text],
+            enable_prompt_permutations=False,
+            chat_prompts_num=len(input_data),
+            chat_idx=chat_index,
+        )
+
+        cache_usage = None
+        if hasattr(model, "get_metrics"):
+            pipeline_metrics = model.get_metrics()
+            if hasattr(pipeline_metrics, "avg_cache_usage") and hasattr(pipeline_metrics, "max_cache_usage"):
+                cache_usage = {
+                    "avg_cache_usage": pipeline_metrics.avg_cache_usage,
+                    "max_cache_usage": pipeline_metrics.max_cache_usage,
+                }
+        iter_data = gen_output_data.gen_iterate_data(
+            iter_idx=iter_num,
+            in_size=num_input_size,
+            infer_count=len(tm_list),
+            out_size=num_tokens,
+            gen_time=generation_time,
+            latency=per_token_time,
+            res_md5=result_md5_list,
+            prompt_idx=prompt_index,
+            tokenization_time=tokenization_time,
+            chat_idx=chat_index,
+        )
+        chat_iter_data_list.append(iter_data)
+
+        metrics_print.print_metrics(
+            iter_num,
+            iter_data,
+            tm_list,
+            inference_durations,
+            warm_up=(iter_num == 0),
+            tokenization_time=tokenization_time,
+            batch_size=args["batch_size"],
+            prompt_idx=prompt_index,
+            cb_metric=cache_usage,
+            chat_idx=chat_index,
+        )
+
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(iter_num)
+    update_chat_iteration_with_memory_info(chat_iter_data_list, memory_metrics)
+    metrics_print.print_memory_info(iter_num, iter_data, chat_index)
+
+    # === Save perf data ===
+    iter_data_list.extend(chat_iter_data_list)
+
+    if args["output_dir"] is not None:
+        llm_bench_utils.output_file.output_gen_text(
+            chat_history.get_messages(),
+            args,
+            model_precision,
+            chat_index,
+            iter_num,
+            batchsize_idx=0,
+            proc_id=proc_id,
+            is_chat=True,
+        )
 
 
 def run_text_generation_benchmark(model_path, framework, device, tokens_len, streaming, args, num_iters, mem_consumption):
@@ -607,43 +1092,55 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
     iter_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}
     input_text_list = get_text_prompt(args)
-    if args['prompt_index'] is None:
-        prompt_idx_list = [prompt_idx for prompt_idx, input_text in enumerate(input_text_list)]
+    if args["prompt_index"] is None:
+        inputs_idx_list = [prompt_idx for prompt_idx, input_text in enumerate(input_text_list)]
         text_list = input_text_list
     else:
-        prompt_idx_list = []
+        inputs_idx_list = []
         text_list = []
-        for i in args['prompt_index']:
+        for i in args["prompt_index"]:
             if 0 <= i < len(input_text_list):
                 text_list.append(input_text_list[i])
-                prompt_idx_list.append(i)
+                inputs_idx_list.append(i)
     if len(input_text_list) == 0:
-        raise RuntimeError('==Failure prompts is empty ==')
-    log.info(f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
-             f'prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}')
+        raise RuntimeError("==Failure prompts is empty ==")
+    chat_info = f", chat iteration {args['chat_iter']}" if args.get("chat_iter") else ""
+    log.info(
+        f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
+        f"input nums: {len(text_list)}, input idx: {inputs_idx_list}{chat_info}"
+    )
 
     # if num_iters == 0, just output warm-up data
-    if not use_genai:
-        text_gen_fn = run_text_generation
-    elif bench_hook is not None:
-        text_gen_fn = run_text_generation_genai_with_stream
+    is_chat_mode = isinstance(input_text_list[0], list) or args["chat_iter"]
+    if use_genai:
+        if is_chat_mode:
+            text_gen_fn = run_text_generation_genai_chat_mode
+        else:
+            if bench_hook is not None:
+                text_gen_fn = run_text_generation_genai_with_stream
+            else:
+                text_gen_fn = run_text_generation_genai
     else:
-        text_gen_fn = run_text_generation_genai
+        if is_chat_mode:
+            text_gen_fn = run_text_generation_chat_optimum
+        else:
+            text_gen_fn = run_text_generation_optimum
 
     proc_id = os.getpid()
+    iter_alias = "C" if is_chat_mode else "P"
     mem_consumption.activate_cooldown("after model compilation")
-    iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
-    if args['subsequent'] is False:
+    iter_timestamp = model_utils.init_timestamp(num_iters, text_list, inputs_idx_list)
+    if args["subsequent"] is False:
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
-                p_idx = prompt_idx_list[idx]
+                p_idx = inputs_idx_list[idx]
                 # Set the logger prefix for current iteration and prompt index
-                prefix = f"[warm-up][P{p_idx}]" if num == 0 else f"[{num}][P{p_idx}]"
+                prefix = f"[warm-up][{iter_alias}{p_idx}]" if num == 0 else f"[{num}][{iter_alias}{p_idx}]"
                 mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 if num == 0:
                     metrics_print.print_unicode(
-                        f"{prefix} Input text: {input_text}",
-                        f"{prefix} Unable print input text",
+                        f"[warm-up][{iter_alias}{p_idx}] Input text: {input_text}",
+                        f"[warm-up][{iter_alias}{p_idx}] Unable print input text",
                         max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
                     )
                 iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
@@ -670,15 +1167,15 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
                 )
     else:
         for idx, input_text in enumerate(text_list):
-            p_idx = prompt_idx_list[idx]
+            p_idx = inputs_idx_list[idx]
             for num in range(num_iters + 1):
                 mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 # Set the logger prefix for current iteration and prompt index
-                prefix = f"[warm-up][P{p_idx}]" if num == 0 else f"[{num}][P{p_idx}]"
+                prefix = f"[warm-up][{iter_alias}{p_idx}]" if num == 0 else f"[{num}][{iter_alias}{p_idx}]"
                 if num == 0:
                     metrics_print.print_unicode(
-                        f"{prefix} Input text: {input_text}",
-                        f"{prefix} Unable print input text",
+                        f"[warm-up][{iter_alias}{p_idx}] Input text: {input_text}",
+                        f"[warm-up][{iter_alias}{p_idx}] Unable print input text",
                         max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
                     )
                 iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
@@ -690,8 +1187,10 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
                     args,
                     iter_data_list,
                     md5_list,
-                    prompt_idx_list[idx],
+                    p_idx,
                     bench_hook,
+                    tokens_len,
+                    streaming,
                     model_precision,
                     proc_id,
                     mem_consumption,
@@ -702,5 +1201,5 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
                     f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
                 )
 
-    metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
+    metrics_print.print_average(iter_data_list, inputs_idx_list, args["batch_size"], True, chat_mode=is_chat_mode)
     return iter_data_list, pretrain_time, iter_timestamp

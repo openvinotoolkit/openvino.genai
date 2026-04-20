@@ -14,11 +14,12 @@ from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
 from transformers.generation.configuration_utils import GenerationConfig
 import llm_bench_utils.hook_greedy_search as hook_greedy
-
+from dataclasses import dataclass
 
 logger = log.getLogger(__name__)
 
 
+@dataclass
 class GenerateDecoderOnlyOutput(ModelOutput):
     sequences: torch.LongTensor = None
     scores: Optional[tuple[torch.FloatTensor]] = None
@@ -28,6 +29,7 @@ class GenerateDecoderOnlyOutput(ModelOutput):
     past_key_values: Optional[tuple[tuple[tuple[torch.FloatTensor]]]] = None
 
 
+@dataclass
 class GenerateEncoderDecoderOutput(ModelOutput):
     sequences: torch.LongTensor = None
     scores: Optional[tuple[torch.FloatTensor]] = None

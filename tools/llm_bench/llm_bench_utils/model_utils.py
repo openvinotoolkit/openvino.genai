@@ -241,6 +241,15 @@ def analyze_args(args):
     model_args['vocoder_path'] = args.vocoder_path
     if model_args['vocoder_path'] and not Path(model_args['vocoder_path']).exists():
         raise RuntimeError(f'==Failure FOUND==: Incorrect vocoder path:{model_args["vocoder_path"]}')
+    if args.chat_iter is not None and args.prompt_file is not None:
+        log.warning(
+            "`--chat_iter` can't be combined with `--prompt_file`, llm_bench will ignore `--chat_iter` and take prompts form prompt_file for generation"
+        )
+        model_args["chat_iter"] = None
+    else:
+        model_args["chat_iter"] = args.chat_iter
+    model_args["full_chat_hist"] = model_args["devices"] == "NPU"
+
     return model_path, model_framework, model_args
 
 

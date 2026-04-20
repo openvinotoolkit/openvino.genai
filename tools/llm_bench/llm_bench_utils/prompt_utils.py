@@ -98,29 +98,87 @@ def load_image_genai(image_path):
 
 
 def extract_prompt_data(inputs, required_frames, genai_flag):
+    """
+    Extracts textual prompts and associated visual inputs (images/videos) from
+    a unified JSON-like structure used for VLM pipeline.
+
+    Parameters
+    ----------
+    inputs : dict | list[dict] | tuple[dict] | set[dict]
+        Single mapping or collection of mappings describing one or more
+        input entries. Each mapping may contain:
+          - "prompt": str | list[str], required
+          - "video": str | pathlib.Path | list[str | pathlib.Path] | None, optional
+              Path or list of paths to video files or directories with videos.
+              If a directory is provided, all files in the directory will be processed.
+          - "media": str | pathlib.Path | list[str | pathlib.Path] | None, optional
+              Path or list of paths to image files or directories with images.
+              If a directory is provided, all files in the directory will be processed.
+
+    required_frames : int | None
+        Number of frames to keep from each video, or decimation factor, passed
+        to `make_video_tensor`. If None, all frames are kept.
+
+    genai_flag : bool
+        If true videos and images are converted to `openvino.Tensor`.
+
+    Returns
+    -------
+    prompts : list[str | list[str]]
+        List of textual prompts, one entry per element in `inputs`, in the same
+        order as processed.
+
+    images : list[openvino.Tensor | np.ndarray | PIL.Image] | list[list[openvino.Tensor | np.ndarray | PIL.Image]]
+        list of image tensors in question mode or list of lists of image tensors in chat mode.
+
+    videos : list[openvino.Tensor | np.ndarray] | list[list[openvino.Tensor | np.ndarray]]
+        list of video tensors in question mode or list of lists of video tensors in chat mode.
+    """
     prompts, images, videos = [], [], []
     if not isinstance(inputs, (list, tuple, set)):
         inputs = [inputs]
     for input_data in inputs:
         if input_data.get("video") is not None:
-            entry = Path(input_data["video"])
-            if entry.is_dir():
-                for filename in sorted(entry.iterdir()):
-                    video_tensor = make_video_tensor(filename, required_frames, genai_flag)
-                    videos.append(video_tensor)
-            else:
-                video_tensor = make_video_tensor(entry, required_frames, genai_flag)
-                videos.append(video_tensor)
+            input_videos = input_data["video"]
+            is_chat_mode = isinstance(input_data["video"], (list, tuple, set))
+            if not is_chat_mode:
+                input_videos = [input_data["video"]]
+            for video in input_videos:
+                input_videos_tensors = []
+                if video:
+                    entry = Path(video)
+                    if entry.is_dir():
+                        for filename in sorted(entry.iterdir()):
+                            video_tensor = make_video_tensor(filename, required_frames, genai_flag)
+                            input_videos_tensors.append(video_tensor)
+                    else:
+                        video_tensor = make_video_tensor(entry, required_frames, genai_flag)
+                        input_videos_tensors.append(video_tensor)
+                if is_chat_mode:
+                    videos.append(input_videos_tensors)
+                else:
+                    videos.extend(input_videos_tensors)
         if input_data.get("media") is not None:
+            input_medias = input_data["media"]
+            is_chat_mode = isinstance(input_data["media"], (list, tuple, set))
+            if not is_chat_mode:
+                input_medias = [input_data["media"]]
             func_load_image = load_image_genai if genai_flag else load_image
-            entry = Path(input_data["media"])
-            if entry.is_dir():
-                for file in sorted(entry.iterdir()):
-                    img = func_load_image(str(file))
-                    images.append(img)
-            else:
-                img = func_load_image(input_data["media"])
-                images.append(img)
+            for media in input_medias:
+                input_medias_tensors = []
+                if media:
+                    entry = Path(media)
+                    if entry.is_dir():
+                        for file in sorted(entry.iterdir()):
+                            img = func_load_image(str(file))
+                            input_medias_tensors.append(img)
+                    else:
+                        img = func_load_image(media)
+                        input_medias_tensors.append(img)
+                if is_chat_mode:
+                    images.append(input_medias_tensors)
+                else:
+                    images.extend(input_medias_tensors)
         prompts.append(input_data["prompt"])
     return prompts, images, videos
 
@@ -132,13 +190,24 @@ def get_vlm_prompt(args):
         vlm_param_list = parse_vlm_json_data(output_data_list)
         if len(vlm_param_list) > 0:
             for vlm_file in vlm_param_list:
-                if args['prompt_file'] is not None and len(args['prompt_file']) > 0 and 'media' in vlm_file:
-                    vlm_file['media'] = resolve_media_file_path(vlm_file.get('media'), args['prompt_file'][0])
-                if args['prompt_file'] is not None and len(args['prompt_file']) > 0 and 'video' in vlm_file:
-                    vlm_file['video'] = resolve_media_file_path(vlm_file.get('video'), args['prompt_file'][0])
+                if args["prompt_file"] is None or len(args["prompt_file"]) == 0:
+                    continue
+                # media/video content can be set as string for the question mode
+                # and as list of string for the chat mode.
+                # String can contains web path, local file path or directory path.
+                # In case of directory path, all files in directory will be processed.
+                for visual_input in ["video", "media"]:
+                    if visual_input in vlm_file:
+                        input_data = vlm_file.get(visual_input)
+                        if isinstance(input_data, list):
+                            vlm_file[visual_input] = [
+                                resolve_media_file_path(data, args["prompt_file"][0]) for data in input_data
+                            ]
+                        else:
+                            vlm_file[visual_input] = resolve_media_file_path(input_data, args["prompt_file"][0])
                 vlm_file_list.append(vlm_file)
     else:
-        vlm_file_list.append(output_data_list)
+        vlm_file_list = output_data_list
     return vlm_file_list
 
 

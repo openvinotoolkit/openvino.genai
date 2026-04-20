@@ -9,6 +9,8 @@ Supported parameters that can be set are:
 Prompt file example：
 {"prompt": "what is openvino?"}
 {"prompt": "A chat between a curious user and an artificial intelligence assistant."}
+Prompt file example for chat mode:
+{"prompt": ["what is openvino?", "show examples of use?"]}
 
 ## 2.Stable-diffusion
 Supported parameters that can be set are:
@@ -42,6 +44,8 @@ Prompt file example：
 Supported parameters that can be set are:
 * `media` - image file path or url
 * `prompt`- input text prompt
+Prompt file example for chat mode:
+{"prompt": ["what is on the picture?", "What color is the background?"], "media": ["./image.png", ""]}
 
 ## 6. Image to Image Generation
 Supported parameters that can be set are:

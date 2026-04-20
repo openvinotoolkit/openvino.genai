@@ -15,6 +15,31 @@ def estimate_throughput(latency, bs, ms=True):
     return None
 
 
+KEY_MAPPING = {
+    "iteration": "iteration",
+    "input_size": "input_size",
+    "infer_count": "infer_count",
+    "output_size": "output_size",
+    "generation_time": "generation_time",
+    "latency": "latency",
+    "result_md5": "result_md5",
+    "first_token_latency": "first_latency",
+    "other_tokens_avg_latency": "second_avg_latency",
+    "first_token_infer_latency": "first_infer_latency",
+    "other_tokens_infer_avg_latency": "second_infer_avg_latency",
+    "max_rss_mem_consumption": "max_rss_mem",
+    "max_rss_mem_increase": "max_increase_rss_mem",
+    "max_rss_mem_share": "max_share_rss_mem",
+    "max_sys_mem_consumption": "max_sys_mem",
+    "max_sys_mem_increase": "max_increase_sys_mem",
+    "max_sys_mem_share": "max_share_sys_mem",
+    "tokenization_time": "tokenization_time",
+    "detokenization_time": "detokenization_time",
+    "chat_idx": "chat_idx",
+    "prompt_idx": "prompt_idx",
+}
+
+
 def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, iter_timestamp, memory_data_collector):
     metadata = {'model': model, 'framework': framework, 'device': device, 'precision': model_precision,
                 'num_beams': model_args['num_beams'], 'batch_size': model_args['batch_size']}
@@ -22,71 +47,60 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
     total_iters = len(iter_data_list)
     for i in range(total_iters):
         iter_data = iter_data_list[i]
-        latency = iter_data["latency"]
-        generation_time = iter_data["generation_time"]
-        first_latency = iter_data["first_token_latency"]
-        other_latency = iter_data["other_tokens_avg_latency"]
-        first_token_infer_latency = iter_data["first_token_infer_latency"]
-        other_token_infer_latency = iter_data["other_tokens_infer_avg_latency"]
-
-        # optional metrics
-        tokenization_time = iter_data.get("tokenization_time")
-        detokenization_time = iter_data.get("detokenization_time")
-        max_rss_mem = iter_data.get("max_rss_mem_consumption")
-        max_sys_mem = iter_data.get("max_sys_mem_consumption")
-        rss_mem_increase = iter_data.get("max_rss_mem_increase")
-        sys_mem_increase = iter_data.get("max_sys_mem_increase")
-        rss_mem_share = iter_data.get("max_rss_mem_share")
-        sys_mem_share = iter_data.get("max_sys_mem_share")
 
         result_md5 = []
         for idx_md5 in range(len(iter_data['result_md5'])):
             result_md5.append(iter_data['result_md5'][idx_md5])
 
-        timestamp_start, timestamp_end = get_timestamp(iter_data['iteration'], iter_data['prompt_idx'], iter_timestamp)
-
-        if first_token_infer_latency:
-            first_token_infer_latency = round(first_token_infer_latency, 5)
-        if other_token_infer_latency:
-            other_token_infer_latency = round(other_token_infer_latency, 5)
-        if tokenization_time:
-            tokenization_time = round(tokenization_time, 5)
-        if detokenization_time:
-            detokenization_time = round(detokenization_time, 5)
-        if generation_time:
-            generation_time = round(generation_time, 5)
-
+        input_idx = iter_data["chat_idx"] if iter_data["chat_idx"] != "" else iter_data["prompt_idx"]
+        timestamp_start, timestamp_end = get_timestamp(iter_data["iteration"], input_idx, iter_timestamp)
+        other_latency = iter_data["other_tokens_avg_latency"]
         res_data = {
             "iteration": iter_data["iteration"],
             "input_size": iter_data["input_size"],
             "infer_count": iter_data["infer_count"],
             "output_size": iter_data["output_size"],
-            "generation_time": generation_time,
-            "latency": round(latency, 5) if latency != "" else latency,
-            "first_latency": round(first_latency, 5) if first_latency != "" else first_latency,
             "second_avg_latency": round(other_latency, 5) if other_latency != "" else other_latency,
-            "first_infer_latency": first_token_infer_latency,
-            "second_infer_avg_latency": other_token_infer_latency,
-            "tokenization_time": tokenization_time,
-            "detokenization_time": detokenization_time,
             "prompt_idx": iter_data["prompt_idx"],
+            "chat_idx": iter_data["chat_idx"],
             "result_md5": result_md5,
             "start": timestamp_start,
             "end": timestamp_end,
         }
 
-        if max_rss_mem:
-            res_data["max_rss_mem"] = round(max_rss_mem, 5)
-        if max_sys_mem:
-            res_data["max_sys_mem"] = round(max_sys_mem, 5)
-        if rss_mem_increase:
-            res_data["max_increase_rss_mem"] = round(rss_mem_increase, 5)
-        if sys_mem_increase:
-            res_data["max_increase_sys_mem"] = round(sys_mem_increase, 5)
-        if rss_mem_share:
-            res_data["max_share_rss_mem"] = round(rss_mem_share, 3)
-        if sys_mem_share:
-            res_data["max_share_sys_mem"] = round(sys_mem_share, 3)
+        for key in [
+            "latency",
+            "generation_time",
+            "first_token_latency",
+            "first_token_infer_latency",
+            "other_tokens_infer_avg_latency",
+            "tokenization_time",
+            "detokenization_time",
+        ]:
+            value = (
+                round(iter_data[key], 5)
+                if iter_data[key] != "" and iter_data[key] is not None and isinstance(iter_data[key], (int, float))
+                else iter_data[key]
+            )
+            json_key = KEY_MAPPING[key]
+            res_data[json_key] = value
+
+        # optional metrics
+        for key in [
+            "max_rss_mem_consumption",
+            "max_sys_mem_consumption",
+            "max_rss_mem_increase",
+            "max_sys_mem_increase",
+            "max_rss_mem_share",
+            "max_sys_mem_share",
+        ]:
+            if key in iter_data:
+                value = iter_data[key]
+                if value is None or value == "":
+                    continue
+
+                json_key = KEY_MAPPING[key]
+                res_data[json_key] = round(value, 5)
 
         second_token_throughput = estimate_throughput(other_latency, model_args["batch_size"])
         if second_token_throughput:
