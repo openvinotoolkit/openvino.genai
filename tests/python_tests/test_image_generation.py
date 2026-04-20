@@ -8,6 +8,7 @@ import openvino as ov
 import openvino_genai as ov_genai
 
 from utils.constants import NPUW_CPU_PROPERTIES
+from utils.hugging_face import download_hf_file
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 FLUX_MODEL_ID = "tiny-random-flux"
@@ -197,15 +198,19 @@ class TestTaylorSeerImageGeneration:
 class TestLoRAFluxImageGeneration:
     @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
     def test_lora_adapters_constructor(self, image_generation_model):
-        """Test that LoRA adapters can be passed to the Flux pipeline constructor without error"""
-        adapter_config = ov_genai.AdapterConfig()
+        """Test that a real LoRA adapter can be passed to the Flux pipeline constructor"""
+        lora_path = download_hf_file("goyaladitya05/openvino-genai-test-files", "flux_tiny_dummy_lora.safetensors")
+        adapter = ov_genai.Adapter(lora_path)
+        adapter_config = ov_genai.AdapterConfig(adapter)
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
         assert pipe is not None
 
     @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
     def test_lora_adapters_generate(self, image_generation_model):
-        """Test that LoRA adapters can be passed to Flux generate() without error"""
-        adapter_config = ov_genai.AdapterConfig()
+        """Test that a real LoRA adapter can be passed to Flux generate()"""
+        lora_path = download_hf_file("goyaladitya05/openvino-genai-test-files", "flux_tiny_dummy_lora.safetensors")
+        adapter = ov_genai.Adapter(lora_path)
+        adapter_config = ov_genai.AdapterConfig(adapter)
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
         image = pipe.generate(
             "test prompt", width=64, height=64, num_inference_steps=1, adapters=adapter_config
@@ -214,8 +219,10 @@ class TestLoRAFluxImageGeneration:
 
     @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
     def test_lora_adapters_default_from_constructor(self, image_generation_model):
-        """Test that LoRA adapters passed to the Flux constructor are used by default in generate()"""
-        adapter_config = ov_genai.AdapterConfig()
+        """Test that a LoRA adapter passed to the Flux constructor is used by default in generate()"""
+        lora_path = download_hf_file("goyaladitya05/openvino-genai-test-files", "flux_tiny_dummy_lora.safetensors")
+        adapter = ov_genai.Adapter(lora_path)
+        adapter_config = ov_genai.AdapterConfig(adapter)
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
         image = pipe.generate("test prompt", width=64, height=64, num_inference_steps=1)
         assert image is not None
@@ -235,15 +242,19 @@ class TestLoRAFluxImageGeneration:
 class TestLoRASD3ImageGeneration:
     @pytest.mark.parametrize("image_generation_model", [SD3_MODEL_ID], indirect=True)
     def test_lora_adapters_constructor(self, image_generation_model):
-        """Test that LoRA adapters can be passed to the SD3 pipeline constructor without error"""
-        adapter_config = ov_genai.AdapterConfig()
+        """Test that a real LoRA adapter can be passed to the SD3 pipeline constructor"""
+        lora_path = download_hf_file("goyaladitya05/openvino-genai-test-files", "sd3_tiny_dummy_lora.safetensors")
+        adapter = ov_genai.Adapter(lora_path)
+        adapter_config = ov_genai.AdapterConfig(adapter)
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
         assert pipe is not None
 
     @pytest.mark.parametrize("image_generation_model", [SD3_MODEL_ID], indirect=True)
     def test_lora_adapters_generate(self, image_generation_model):
-        """Test that LoRA adapters can be passed to SD3 generate() without error"""
-        adapter_config = ov_genai.AdapterConfig()
+        """Test that a real LoRA adapter can be passed to SD3 generate()"""
+        lora_path = download_hf_file("goyaladitya05/openvino-genai-test-files", "sd3_tiny_dummy_lora.safetensors")
+        adapter = ov_genai.Adapter(lora_path)
+        adapter_config = ov_genai.AdapterConfig(adapter)
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
         image = pipe.generate(
             "test prompt", width=64, height=64, num_inference_steps=1, adapters=adapter_config
@@ -252,8 +263,10 @@ class TestLoRASD3ImageGeneration:
 
     @pytest.mark.parametrize("image_generation_model", [SD3_MODEL_ID], indirect=True)
     def test_lora_adapters_default_from_constructor(self, image_generation_model):
-        """Test that LoRA adapters passed to the SD3 constructor are used by default in generate()"""
-        adapter_config = ov_genai.AdapterConfig()
+        """Test that a LoRA adapter passed to the SD3 constructor is used by default in generate()"""
+        lora_path = download_hf_file("goyaladitya05/openvino-genai-test-files", "sd3_tiny_dummy_lora.safetensors")
+        adapter = ov_genai.Adapter(lora_path)
+        adapter_config = ov_genai.AdapterConfig(adapter)
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
         image = pipe.generate("test prompt", width=64, height=64, num_inference_steps=1)
         assert image is not None
@@ -268,6 +281,37 @@ class TestLoRASD3ImageGeneration:
         model.compile("CPU")
         assert hasattr(model, "set_adapters")
         model.set_adapters(None)
+
+
+class TestLoRASDXLImageGeneration:
+    @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
+    def test_lora_adapters_constructor(self, image_generation_model):
+        """Test that a real LoRA adapter can be passed to the SDXL pipeline constructor"""
+        lora_path = download_hf_file("goyaladitya05/openvino-genai-test-files", "sdxl_tiny_dummy_lora.safetensors")
+        adapter = ov_genai.Adapter(lora_path)
+        adapter_config = ov_genai.AdapterConfig(adapter)
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
+        assert pipe is not None
+
+    @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
+    def test_lora_adapters_generate(self, image_generation_model):
+        """Test that a real LoRA adapter can be passed to SDXL generate()"""
+        lora_path = download_hf_file("goyaladitya05/openvino-genai-test-files", "sdxl_tiny_dummy_lora.safetensors")
+        adapter = ov_genai.Adapter(lora_path)
+        adapter_config = ov_genai.AdapterConfig(adapter)
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
+        image = pipe.generate("test prompt", width=64, height=64, num_inference_steps=1, adapters=adapter_config)
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
+    def test_lora_adapters_default_from_constructor(self, image_generation_model):
+        """Test that a LoRA adapter passed to the SDXL constructor is used by default in generate()"""
+        lora_path = download_hf_file("goyaladitya05/openvino-genai-test-files", "sdxl_tiny_dummy_lora.safetensors")
+        adapter = ov_genai.Adapter(lora_path)
+        adapter_config = ov_genai.AdapterConfig(adapter)
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU", adapters=adapter_config)
+        image = pipe.generate("test prompt", width=64, height=64, num_inference_steps=1)
+        assert image is not None
 
 
 class TestImageGenerationOnNpuByNpuwCpu:

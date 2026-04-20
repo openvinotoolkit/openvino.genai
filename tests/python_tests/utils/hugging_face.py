@@ -380,7 +380,13 @@ def download_hf_file(
 
     manager.execute(download_to_temp)
 
-    return dest_dir / filename
+    # If the manager skipped (dir already existed from a prior file in the same repo)
+    # but this specific file is missing, download it directly.
+    dest_file = dest_dir / filename
+    if not dest_file.exists():
+        retry_request(lambda: hf_hub_download(repo_id=repo_id, filename=filename, local_dir=dest_dir))
+
+    return dest_file
 
 
 def load_hf_model_from_gguf(gguf_model_id, gguf_filename):
