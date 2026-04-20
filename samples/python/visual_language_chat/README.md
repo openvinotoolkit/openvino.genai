@@ -108,8 +108,8 @@ python benchmark_vlm.py [OPTIONS]
 - `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p` and `-pf`, the default prompt is `"What is on the image?"`
 - `-pf, --prompt_file` Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to the image.
-- `-ih, --image_height` (default: `None`): Target image height (if resizing is needed).
-- `-iw, --image_width` (default: `None`): Target image width (if resizing is needed).
+- `-ih, --image_height` (default: `None`): Target image height  for resizing. Must be a positive value and provided together with `-iw, --image_width`.
+- `-iw, --image_width` (default: `None`): Target image width  for resizing. Must be a positive value and provided together with `-ih, --image_height`.
 - `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
 - `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `2`): Number of iterations.
