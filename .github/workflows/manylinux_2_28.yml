@@ -35,6 +35,9 @@ env:
   BASE_PRODUCT_TYPE: public_manylinux_2_28_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
+  # To switch to the primary HF token, change the filename suffix to remove `-secondary`:
+  #   HF_TOKEN_PATH: /home/runner/secrets/huggingface/hf-token
+  HF_TOKEN_PATH: /home/runner/secrets/huggingface/hf-token-secondary
 
 jobs:
   smart_ci:
@@ -575,8 +578,8 @@ jobs:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/huggingface:/home/runner/secrets/huggingface:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -599,6 +602,10 @@ jobs:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*,genai_tests_Release}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
+
+      - name: Setup HF Token
+        if: ${{ matrix.test.run_condition }}
+        run: echo "HF_TOKEN=$(cat ${{ env.HF_TOKEN_PATH }})" >> "$GITHUB_ENV"
 
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}
@@ -626,8 +633,8 @@ jobs:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/huggingface:/home/runner/secrets/huggingface:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -667,6 +674,9 @@ jobs:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
           path: ${{ env.PY_INSTALL_DIR }}
           merge-multiple: true
+
+      - name: Setup HF Token
+        run: echo "HF_TOKEN=$(cat ${{ env.HF_TOKEN_PATH }})" >> "$GITHUB_ENV"
 
       - name: Install OpenVINO GenAI Python packages (from wheels)
         uses: ./src/.github/actions/install_wheel
