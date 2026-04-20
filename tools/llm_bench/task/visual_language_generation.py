@@ -66,7 +66,7 @@ def run_visual_language_generation_optimum(
     mem_consumption.start(num)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     additional_args = model_utils.setup_gen_config_use_custom_args()
-    log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
+    log.info("%s[P%s] Text generation start: %s", prefix, prompt_index, datetime.datetime.now().isoformat())
     start = time.perf_counter()
     if args['infer_count'] is not None and args['end_token_stopping'] is False:
         model.generation_config.eos_token_id = None
@@ -90,7 +90,7 @@ def run_visual_language_generation_optimum(
             **additional_args
         )
     end = time.perf_counter()
-    log.info("%s Text generation end: %s", prefix, datetime.datetime.now().isoformat())
+    log.info("%s[P%s] Text generation end: %s", prefix, prompt_index, datetime.datetime.now().isoformat())
     generation_time = end - start
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
@@ -206,11 +206,11 @@ def run_visual_language_generation_genai(
     if videos:
         kwargs["videos"] = videos
 
-    log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
+    log.info("%s[P%s] Text generation start: %s", prefix, prompt_index, datetime.datetime.now().isoformat())
     start = time.perf_counter()
     generation_result = model.generate(prompts[0], generation_config=gen_config, **kwargs)
     end = time.perf_counter()
-    log.info("%s Text generation end: %s", prefix, datetime.datetime.now().isoformat())
+    log.info("%s[P%s] Text generation end: %s", prefix, prompt_index, datetime.datetime.now().isoformat())
     generation_time = end - start
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics
