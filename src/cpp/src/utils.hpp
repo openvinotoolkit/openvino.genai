@@ -142,14 +142,27 @@ ov::Core& singleton_core();
 
 std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties);
 
-/// @brief Inherit cache-related properties from main properties into a sub-model
-/// property map when they are not explicitly set.
-///
-/// Copies ov::cache_dir, ov::cache_mode, and ov::cache_encryption_callbacks from
-/// @p main_properties into @p sub_properties only if the sub map does not already
-/// define them, so explicit sub-model overrides are preserved.
-ov::AnyMap inherit_cache_properties(const ov::AnyMap& sub_properties,
-                                    const ov::AnyMap& main_properties);
+/// @brief Key used in the main properties map to carry per-model property sub-maps.
+/// Value shape: ov::AnyMap keyed by model role (e.g. "vision_embeddings").
+extern const std::string PER_MODEL_PROPERTIES;
+
+/// @brief Key used in the main properties map to carry per-device property sub-maps.
+/// Value shape: ov::AnyMap keyed by device name (e.g. "GPU", "NPU").
+extern const std::string DEVICE_PROPERTIES;
+
+/// @brief Resolve properties for @p model_role on @p device by merging three
+///        layers (priority low to high):
+///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES and DEVICE_PROPERTIES)
+///        2. DEVICE_PROPERTIES[device]
+///        3. PER_MODEL_PROPERTIES[model_role]
+/// @param properties The main properties map. Not modified.
+/// @param model_role Sub-model role (e.g. "vision_embeddings"). Matched
+///        case-insensitively against PER_MODEL_PROPERTIES keys.
+/// @param device Device for the sub-model (e.g. "GPU"). Matched
+///        case-insensitively against DEVICE_PROPERTIES keys.
+/// @return A new ov::AnyMap with the merged result. The input map is left
+///         untouched so callers may continue using the meta keys.
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device);
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 

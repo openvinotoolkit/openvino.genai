@@ -3,7 +3,9 @@
 
 #include "utils.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <variant>
 #include <fstream>
 #include <memory>
@@ -375,23 +377,72 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 } // namespace
 
-ov::AnyMap inherit_cache_properties(const ov::AnyMap& sub_properties,
-                                    const ov::AnyMap& main_properties) {
-    const std::array<std::string, 3> inheritable_keys = {
-        ov::cache_dir.name(),
-        ov::cache_mode.name(),
-        ov::cache_encryption_callbacks.name(),
-    };
-    ov::AnyMap result = sub_properties;
-    for (const auto& key : inheritable_keys) {
-        if (result.find(key) != result.end()) {
-            continue;
-        }
-        auto it = main_properties.find(key);
-        if (it != main_properties.end()) {
-            result[key] = it->second;
+const std::string PER_MODEL_PROPERTIES = "PER_MODEL_PROPERTIES";
+const std::string DEVICE_PROPERTIES    = "DEVICE_PROPERTIES";
+
+namespace {
+std::string to_lower(const std::string& s) {
+    std::string result(s.size(), '\0');
+    std::transform(s.begin(), s.end(), result.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return result;
+}
+
+// Case-insensitive lookup of @p key in @p map. Returns end() iterator when
+// no matching key exists.
+ov::AnyMap::const_iterator find_case_insensitive(const ov::AnyMap& map, const std::string& key) {
+    const auto lowered = to_lower(key);
+    for (auto it = map.begin(); it != map.end(); ++it) {
+        if (to_lower(it->first) == lowered) {
+            return it;
         }
     }
+    return map.end();
+}
+} // namespace
+
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
+    ov::AnyMap result;
+
+    // Layer 1 (lowest priority): global properties, excluding meta keys.
+    // Meta key exclusion is case-insensitive (e.g. "per_model_properties"
+    // is also treated as a meta key).
+    const auto per_model_lowered = to_lower(PER_MODEL_PROPERTIES);
+    const auto device_props_lowered = to_lower(DEVICE_PROPERTIES);
+    for (const auto& kv : properties) {
+        const auto key_lowered = to_lower(kv.first);
+        if (key_lowered == per_model_lowered || key_lowered == device_props_lowered) {
+            continue;
+        }
+        result.insert_or_assign(kv.first, kv.second);
+    }
+
+    // Layer 2: DEVICE_PROPERTIES[device] overrides globals for this device.
+    // Both the meta key and the device name are matched case-insensitively.
+    auto dev_it = find_case_insensitive(properties, DEVICE_PROPERTIES);
+    if (dev_it != properties.end()) {
+        const auto& by_device = dev_it->second.as<ov::AnyMap>();
+        auto role_dev_it = find_case_insensitive(by_device, device);
+        if (role_dev_it != by_device.end()) {
+            for (const auto& kv : role_dev_it->second.as<ov::AnyMap>()) {
+                result.insert_or_assign(kv.first, kv.second);
+            }
+        }
+    }
+
+    // Layer 3 (highest priority): PER_MODEL_PROPERTIES[model_role].
+    // Both the meta key and the model role are matched case-insensitively.
+    auto pm_it = find_case_insensitive(properties, PER_MODEL_PROPERTIES);
+    if (pm_it != properties.end()) {
+        const auto& per_model = pm_it->second.as<ov::AnyMap>();
+        auto role_it = find_case_insensitive(per_model, model_role);
+        if (role_it != per_model.end()) {
+            for (const auto& kv : role_it->second.as<ov::AnyMap>()) {
+                result.insert_or_assign(kv.first, kv.second);
+            }
+        }
+    }
+
     return result;
 }
 
