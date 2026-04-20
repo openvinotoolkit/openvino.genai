@@ -84,16 +84,16 @@ class CustomToolCallIncrementalParser(IncrementalParser):
     def __init__(self):
         super().__init__()
         self._content = ""
+        self._start_tag = "functools"
 
     def parse(self, msg: dict, delta_text: str, delta_tokens=None) -> str:
         self._content += delta_text
 
-        start_tag = "functools"
-        start_index = self._content.find(start_tag)
+        start_index = self._content.find(self._start_tag)
         if start_index == -1:
             return delta_text
 
-        json_part = self._content[start_index + len(start_tag) :]
+        json_part = self._content[start_index + len(self._start_tag) :]
         try:
             tool_calls = json.loads(json_part)
             msg["tool_calls"] = tool_calls

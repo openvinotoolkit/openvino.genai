@@ -193,9 +193,7 @@ CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
         // If there is any stop status from parser we will stop streaming and this signal
         // has priority over streaming status from write method of TextStreamer.
         if (parser_last_status != StreamingStatus::RUNNING) {
-            // Reset parser status to RUNNING for next streaming sessions so that 
-            // user doesn't need to reset parsers manually when using the same TextParserStreamer for multiple generations.
-            parser->set_status(StreamingStatus::RUNNING);
+            // Reset parser status to RUNNING should be done in reset() method implementation.
             break;
         }
         // Message can be modified inside parser, if parser for example extracted tool calling from message content

@@ -77,12 +77,12 @@ def test_several_incremental_parsers(hf_ov_genai_models):
             return delta_text
 
     class IncrementalToolParser(IncrementalParser):
-        started_tool_call: bool = False
-        deactivated: bool = False
 
         def __init__(self):
             super().__init__()
             self.accumulated_tool_call = StringIO()
+            self.started_tool_call: bool = False
+            self.deactivated: bool = False
 
         def parse(self, delta_msg: dict, delta_text: str, delta_tokens=None) -> str:
             if self.deactivated:
@@ -159,12 +159,12 @@ def test_stop_invoked_by_tool_call(hf_ov_genai_models):
             return delta_text
 
     class IncrementalToolParser(IncrementalParser):
-        started_tool_call: bool = False
-        deactivated: bool = False
 
         def __init__(self):
             super().__init__()
             self.accumulated_tool_call = StringIO()
+            self.started_tool_call: bool = False
+            self.deactivated: bool = False
 
         def parse(self, delta_msg: dict, delta_text: str, delta_tokens=None) -> str:
             if self.deactivated:
@@ -776,6 +776,7 @@ def test_generate_stop_reason_tool_call_from_incremental_parser(tmp_path, model_
             return delta_text
 
         def reset(self):
+            self.set_status(StreamingStatus.RUNNING)
             self.words_seen = 0
 
     class CustomStreamer(TextParserStreamer):
