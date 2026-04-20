@@ -3,8 +3,8 @@ transformers[sentencepiece]>=4.35.2,<5.4.0
 sentence-transformers>=2.2.2,<=5.3.0
 openvino-genai
 optimum-intel[nncf]>=1.19.0,<=1.27.0
-pandas>=2.0.3,<=2.3.1
-numpy>=1.23.5,<=2.4.2
+pandas>=2.0.3,<=3.0.2
+numpy>=1.23.5,<=2.4.4
 tqdm>=4.66.1,<=4.67.3
 diffusers>=0.22.0,<=0.37.1
 datasets>=3.6.0,<=4.8.4
@@ -21,8 +21,8 @@ soundfile==0.13.1
 librosa==0.11.0
 torchcodec<=0.11.0; sys_platform == "linux"
 vocos==0.1.0
-vector-quantize-pytorch==1.27.20
+vector-quantize-pytorch==1.28.1
 torchaudio>=2.1.0,<=2.11.0
 torchvision>=0.16,<=0.26.0
 # For LoRA adapters
-peft==0.18.1
+peft==0.19.0

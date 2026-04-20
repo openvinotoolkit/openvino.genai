@@ -11,4 +11,4 @@ torchvision==0.26.0
 transformers==4.55.4 # For Whisper
 hf_transfer==0.1.9  # for faster models download, should used with env var HF_HUB_ENABLE_HF_TRANSFER=1
 backoff==2.2.1  # for microsoft/Phi-3.5-vision-instruct
-peft==0.18.1  # For microsoft/Phi-4-multimodal-instruct
+peft==0.19.0  # For microsoft/Phi-4-multimodal-instruct
