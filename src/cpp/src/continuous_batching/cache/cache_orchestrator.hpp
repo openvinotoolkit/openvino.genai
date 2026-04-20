@@ -31,7 +31,7 @@ namespace ov::genai {
  * are registered.  The orchestrator routes every operation to the appropriate per-type
  * manager(s) internally.
  *
- * Currently only KV_CACHE is registered.  Adding a new cache type requires:
+ * Adding a new cache type requires:
  *   1. Implementing ICacheManager for the new type.
  *   2. Calling register_cache_type() with the new type, its manager, block manager, and layer IDs.
  */

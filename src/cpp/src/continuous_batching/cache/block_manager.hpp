@@ -550,8 +550,6 @@ public:
      * @param block_size The size of an individual KV cache block in tokens.
      * @param num_layers The number of separate attention layers with KV caches in the LLM associated with the pipeline.
      * In current implementation each layer must have the same number of logical blocks allocated at all times.
-     */
-    /**
      * @param fixed_blocks_per_sequence When > 0, each sequence is allocated exactly this many blocks
      *        regardless of context length. Used for fixed-size caches (e.g. CausalConv1D state).
      *        When 0 (default), blocks grow with context length.
@@ -818,18 +816,21 @@ public:
         if (m_fixed_blocks_per_sequence > 0) {
             // Fixed block count: once allocated, unlimited tokens can be served.
             // If not yet allocated, capacity depends on available blocks.
-            bool all_allocated = true;
+            size_t required_additional_blocks = 0;
             for (auto seq : seq_group->get_running_sequences()) {
                 auto it = m_block_table.find(seq->get_id());
-                if (it == m_block_table.end() || it->second[0].size() < m_fixed_blocks_per_sequence) {
-                    all_allocated = false;
-                    break;
+                size_t current_blocks = 0;
+                if (it != m_block_table.end()) {
+                    current_blocks = it->second[0].size();
+                }
+                if (current_blocks < m_fixed_blocks_per_sequence) {
+                    required_additional_blocks += (m_fixed_blocks_per_sequence - current_blocks);
                 }
             }
-            if (all_allocated) {
+            if (required_additional_blocks == 0) {
                 return std::numeric_limits<size_t>::max();
             }
-            return num_free_blocks() >= m_fixed_blocks_per_sequence ? std::numeric_limits<size_t>::max() : 0;
+            return can_allocate_blocks(required_additional_blocks) ? std::numeric_limits<size_t>::max() : 0;
         }
         return get_num_unused_tokens(seq_group) + num_free_blocks() * m_block_size;
     }
@@ -845,15 +846,18 @@ public:
         if (m_fixed_blocks_per_sequence > 0) {
             // Fixed block count: check if we can allocate the fixed number of blocks
             // for each running sequence that does not yet have them.
+            size_t required_additional_blocks = 0;
             for (auto seq : seq_group->get_running_sequences()) {
                 auto it = m_block_table.find(seq->get_id());
-                if (it == m_block_table.end() || it->second[0].size() < m_fixed_blocks_per_sequence) {
-                    if (!can_allocate_blocks(m_fixed_blocks_per_sequence)) {
-                        return false;
-                    }
+                size_t current_blocks = 0;
+                if (it != m_block_table.end()) {
+                    current_blocks = it->second[0].size();
+                }
+                if (current_blocks < m_fixed_blocks_per_sequence) {
+                    required_additional_blocks += (m_fixed_blocks_per_sequence - current_blocks);
                 }
             }
-            return true;
+            return can_allocate_blocks(required_additional_blocks);
         }
         const size_t tokens_needing_new_blocks = num_tokens > get_num_unused_tokens(seq_group) ? num_tokens - get_num_unused_tokens(seq_group) : 0;
         size_t blocks_needed = (tokens_needing_new_blocks + m_block_size - 1) / m_block_size;

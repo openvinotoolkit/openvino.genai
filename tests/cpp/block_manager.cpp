@@ -4,11 +4,31 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include "continuous_batching/scheduler.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/runtime/core.hpp"
 #include "sequence_group.hpp"
 #include "utils.hpp"
+
+namespace {
+
+ov::genai::SequenceGroup::Ptr create_sequence_group(uint64_t request_id = 0) {
+    std::vector<int64_t> tokens = {0, 1, 2, 3};
+    return std::make_shared<ov::genai::SequenceGroup>(
+        request_id,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        ov::genai::utils::get_beam_search_config());
+}
+
+void ensure_two_running_sequences(const ov::genai::SequenceGroup::Ptr& sequence_group) {
+    auto parent = sequence_group->get_running_sequences().at(0);
+    sequence_group->fork_sequence(parent);
+    ASSERT_EQ(sequence_group->num_running_seqs(), 2);
+}
+
+}  // namespace
 
 TEST(TestBlockManager, general_test) {
     ov::genai::BlockManager bm = ov::genai::BlockManager(6, false, 4);
@@ -107,4 +127,142 @@ TEST(TestBlockManager, CanFreeBlocksFromSequence) {
     for (auto& sequence : sequence_group->get_sequences()) {
         bm.free_sequence(sequence->get_id());
     }
+}
+
+// Linear Attention with fixed-size blocks tests
+
+TEST(TestBlockManager, FixedSizeCanAllocateCumulativeDeficitFails) {
+    const size_t fixed_blocks_per_sequence = 2;
+    ov::genai::BlockManager bm = ov::genai::BlockManager(
+        /*num_blocks=*/2,
+        /*enable_prefix_caching=*/false,
+        /*block_size=*/1,
+        /*num_layers=*/1,
+        fixed_blocks_per_sequence);
+
+    auto sequence_group = create_sequence_group(10);
+    ensure_two_running_sequences(sequence_group);
+
+    // Two running sequences each need 2 blocks, while pool has only 2 in total.
+    EXPECT_FALSE(bm.can_allocate_tokens(sequence_group, /*num_tokens=*/1));
+}
+
+TEST(TestBlockManager, FixedSizeCanAllocateExactCumulativeFitPasses) {
+    const size_t fixed_blocks_per_sequence = 1;
+    ov::genai::BlockManager bm = ov::genai::BlockManager(
+        /*num_blocks=*/2,
+        /*enable_prefix_caching=*/false,
+        /*block_size=*/1,
+        /*num_layers=*/1,
+        fixed_blocks_per_sequence);
+
+    auto sequence_group = create_sequence_group(11);
+    ensure_two_running_sequences(sequence_group);
+
+    // Two running sequences each need 1 block, and pool has exactly 2.
+    EXPECT_TRUE(bm.can_allocate_tokens(sequence_group, /*num_tokens=*/1));
+}
+
+TEST(TestBlockManager, FixedSizeAllocateTokensOnlyForMissingSequence) {
+    const size_t fixed_blocks_per_sequence = 2;
+    ov::genai::BlockManager bm = ov::genai::BlockManager(
+        /*num_blocks=*/4,
+        /*enable_prefix_caching=*/false,
+        /*block_size=*/1,
+        /*num_layers=*/1,
+        fixed_blocks_per_sequence);
+
+    auto sequence_group = create_sequence_group(12);
+    ensure_two_running_sequences(sequence_group);
+
+    auto running = sequence_group->get_running_sequences();
+    auto parent = running.at(0);
+    auto child = running.at(1);
+
+    bm.allocate_tokens(parent, sequence_group, /*num_tokens=*/1, sequence_group->get_prompt_len());
+    ASSERT_TRUE(bm.has_block_table(parent->get_id()));
+    EXPECT_EQ(bm.get_block_table(parent->get_id(), 0).size(), fixed_blocks_per_sequence);
+    EXPECT_EQ(bm.num_free_blocks(), 2);
+
+    bm.allocate_tokens(child, sequence_group, /*num_tokens=*/1, sequence_group->get_prompt_len());
+    ASSERT_TRUE(bm.has_block_table(child->get_id()));
+    EXPECT_EQ(bm.get_block_table(child->get_id(), 0).size(), fixed_blocks_per_sequence);
+    // Parent must remain unchanged and no extra blocks should be consumed for it.
+    EXPECT_EQ(bm.get_block_table(parent->get_id(), 0).size(), fixed_blocks_per_sequence);
+    EXPECT_EQ(bm.num_free_blocks(), 0);
+
+    bm.free_sequence(parent->get_id());
+    bm.free_sequence(child->get_id());
+}
+
+TEST(TestBlockManager, FixedSizeAvailableTokenSlotsBeforeAndAfterAllocation) {
+    const size_t fixed_blocks_per_sequence = 2;
+
+    // Before allocation: one sequence already has fixed blocks, one does not, and
+    // there are not enough blocks left to satisfy the missing sequence.
+    ov::genai::BlockManager bm_before = ov::genai::BlockManager(
+        /*num_blocks=*/3,
+        /*enable_prefix_caching=*/false,
+        /*block_size=*/1,
+        /*num_layers=*/1,
+        fixed_blocks_per_sequence);
+
+    auto sequence_group_before = create_sequence_group(13);
+    ensure_two_running_sequences(sequence_group_before);
+
+    auto running_before = sequence_group_before->get_running_sequences();
+    bm_before.allocate_tokens(running_before.at(0), sequence_group_before, /*num_tokens=*/1, sequence_group_before->get_prompt_len());
+    EXPECT_EQ(bm_before.num_free_blocks(), 1);
+    EXPECT_EQ(bm_before.available_token_slots(sequence_group_before), 0);
+
+    bm_before.free_sequence(running_before.at(0)->get_id());
+
+    // After allocation: all running sequences have fixed blocks, so slots are effectively unlimited.
+    ov::genai::BlockManager bm_after = ov::genai::BlockManager(
+        /*num_blocks=*/4,
+        /*enable_prefix_caching=*/false,
+        /*block_size=*/1,
+        /*num_layers=*/1,
+        fixed_blocks_per_sequence);
+
+    auto sequence_group_after = create_sequence_group(14);
+    ensure_two_running_sequences(sequence_group_after);
+    auto running_after = sequence_group_after->get_running_sequences();
+
+    bm_after.allocate_tokens(running_after.at(0), sequence_group_after, /*num_tokens=*/1, sequence_group_after->get_prompt_len());
+    bm_after.allocate_tokens(running_after.at(1), sequence_group_after, /*num_tokens=*/1, sequence_group_after->get_prompt_len());
+
+    EXPECT_EQ(bm_after.available_token_slots(sequence_group_after), std::numeric_limits<size_t>::max());
+
+    bm_after.free_sequence(running_after.at(0)->get_id());
+    bm_after.free_sequence(running_after.at(1)->get_id());
+}
+
+TEST(TestBlockManager, FixedSizeFreeSequenceReleasesCapacityForNextSequence) {
+    const size_t fixed_blocks_per_sequence = 2;
+    ov::genai::BlockManager bm = ov::genai::BlockManager(
+        /*num_blocks=*/2,
+        /*enable_prefix_caching=*/false,
+        /*block_size=*/1,
+        /*num_layers=*/1,
+        fixed_blocks_per_sequence);
+
+    auto first_group = create_sequence_group(15);
+    auto first_seq = first_group->get_running_sequences().at(0);
+
+    bm.allocate_tokens(first_seq, first_group, /*num_tokens=*/1, first_group->get_prompt_len());
+    EXPECT_EQ(bm.num_free_blocks(), 0);
+
+    bm.free_sequence(first_seq->get_id());
+    EXPECT_EQ(bm.num_free_blocks(), 2);
+
+    auto second_group = create_sequence_group(16);
+    auto second_seq = second_group->get_running_sequences().at(0);
+    EXPECT_TRUE(bm.can_allocate_tokens(second_group, /*num_tokens=*/1));
+
+    bm.allocate_tokens(second_seq, second_group, /*num_tokens=*/1, second_group->get_prompt_len());
+    EXPECT_TRUE(bm.has_block_table(second_seq->get_id()));
+    EXPECT_EQ(bm.get_block_table(second_seq->get_id(), 0).size(), fixed_blocks_per_sequence);
+
+    bm.free_sequence(second_seq->get_id());
 }
