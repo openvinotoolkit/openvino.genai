@@ -103,10 +103,12 @@ public:
             std::iota(la_layer_ids.begin(), la_layer_ids.end(), la_start);
 
             // Each LA block holds one full sequence state (block_size = 1 token = 1 sequence).
-            // The pool only needs to be as large as the maximum number of concurrent sequences.
+            // For dynamic allocation (num_kv_blocks == 0), start with an empty pool and grow
+            // on demand via grow_fixed_size_capacity() — one block per incoming sequence.
+            // For static allocation (num_kv_blocks > 0), pre-allocate for all concurrent sequences.
             const size_t num_la_blocks = config.num_linear_attention_blocks > 0
                                              ? config.num_linear_attention_blocks
-                                             : config.max_num_seqs;
+                                             : (config.num_kv_blocks > 0 ? config.max_num_seqs : 0);
 
             auto la_block_manager = std::make_shared<BlockManager>(
                 num_la_blocks,
@@ -411,11 +413,15 @@ public:
     }
 
     /**
-     * @return Whether any token capacity has been allocated (at least one block in every type).
+     * @return Whether any token capacity has been allocated in every variable-size cache type.
+     *         Fixed-size-per-sequence managers (e.g. linear attention) are skipped: their pool
+     *         starts empty and grows on demand, so a zero-block pool is not a "no capacity" signal.
      */
     bool has_token_capacity() const {
         return std::all_of(m_block_managers.begin(), m_block_managers.end(),
-            [](const auto& pair) { return pair.second->has_token_capacity(); });
+            [](const auto& pair) {
+                return pair.second->is_fixed_size_per_sequence() || pair.second->has_token_capacity();
+            });
     }
 
     /**
@@ -444,14 +450,29 @@ public:
 
     /**
      * @brief Ensures each variable-size cache type's block pool has capacity for at least the given total number of tokens.
-     * Fixed-size-per-sequence managers (e.g. linear attention state) are skipped: their block count
-     * is determined at construction time by the expected number of concurrent sequences.
+     * Fixed-size-per-sequence managers (e.g. linear attention state) are skipped: their pool
+     * grows on demand via grow_fixed_size_capacity(), not by token count.
      * @param num_tokens Total number of tokens the pools should accommodate.
      */
     void ensure_token_capacity(size_t num_tokens) {
         for (auto& [type, block_mgr] : m_block_managers) {
             if (!block_mgr->is_fixed_size_per_sequence())
                 block_mgr->ensure_token_capacity(num_tokens);
+        }
+    }
+
+    /**
+     * @brief Grows each fixed-size-per-sequence cache type's block pool by the given number of
+     *        additional sequences worth of blocks.  Variable-size managers are skipped.
+     * @param num_seqs Number of additional concurrent sequences to accommodate.
+     */
+    void grow_fixed_size_capacity(size_t num_seqs) {
+        for (auto& [type, block_mgr] : m_block_managers) {
+            if (block_mgr->is_fixed_size_per_sequence()) {
+                const size_t additional_blocks = num_seqs * block_mgr->get_fixed_blocks_per_sequence();
+                block_mgr->increase_kv_blocks_number(
+                    block_mgr->get_total_number_of_kv_blocks() + additional_blocks);
+            }
         }
     }
 

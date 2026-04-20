@@ -528,18 +528,27 @@ private:
 
     void _initialize_cache(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         size_t total_tokens = 0;
+        size_t total_concurrent_seqs = 0;
         for (size_t idx = 0; idx < sequence_groups.size(); idx++) {
             auto seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
             const auto& gen_config = sequence_groups[idx]->get_sampling_parameters();
             seq_length = std::min(seq_length, sequence_groups[idx]->get_prompt_len() + sequence_groups[idx]->get_max_new_tokens());
             if (gen_config.is_beam_search()) {
                 seq_length *= gen_config.num_beams;
+                total_concurrent_seqs += gen_config.num_beams;
             } else if (gen_config.is_multinomial()) {
                 seq_length *= gen_config.num_return_sequences;
+                total_concurrent_seqs += gen_config.num_return_sequences;
+            } else {
+                total_concurrent_seqs += 1;
             }
             total_tokens += seq_length;
         }
         m_cache_orchestrator->ensure_token_capacity(total_tokens);
+        // Fixed-size-per-sequence managers (e.g. linear attention) are not covered by
+        // ensure_token_capacity.  Pre-grow their pool to the number of arriving sequences
+        // so the prompt phase can allocate without triggering _try_increase_cache.
+        m_cache_orchestrator->grow_fixed_size_capacity(total_concurrent_seqs);
         m_dynamic_memory_allocation = true;
     }
 

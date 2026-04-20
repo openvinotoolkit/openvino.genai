@@ -766,6 +766,13 @@ public:
     }
 
     /**
+     * @return Number of blocks allocated per sequence for fixed-size managers; 0 for variable-size.
+     */
+    size_t get_fixed_blocks_per_sequence() const {
+        return m_fixed_blocks_per_sequence;
+    }
+
+    /**
      * Grows the block pool to accommodate at least the given number of additional tokens.
      * @param num_tokens Number of additional tokens to accommodate.
      */
