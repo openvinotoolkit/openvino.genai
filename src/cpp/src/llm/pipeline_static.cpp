@@ -107,7 +107,6 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     m_max_prompt_len = kv_desc.max_prompt_len;
     m_kvcache_total = kv_desc.max_prompt_len + kv_desc.min_response_len;
     m_request = compiled.create_infer_request();
-    m_sampler.set_seed(m_generation_config.rng_seed);
 }
 
 DecodedResults StatefulLLMPipeline::generate(

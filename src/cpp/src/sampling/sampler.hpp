@@ -6,7 +6,6 @@
 
 #include <list>
 #include <cassert>
-#include <chrono>
 #include <cstdlib>
 #include <limits>
 #include <map>
@@ -105,7 +104,6 @@ class Sampler {
     std::mutex m_beam_search_info_mutex;
 
     std::map<uint64_t, RequestSamplerContext> m_request_contexts;
-    size_t m_default_seed = std::mt19937::default_seed;  // kept for set_seed/get_seed API compat
 
     Tokenizer m_tokenizer;
 
@@ -118,19 +116,6 @@ public:
     explicit Sampler(const Tokenizer & tokenizer, size_t num_threads = 1) : m_tokenizer(tokenizer), m_thread_pool(num_threads) {};
 
     SamplerOutput sample(const std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
-
-    // Non-CB pipelines required API for seed. The CB path uses per-request engines from m_request_contexts.
-    void set_seed(size_t new_seed) {
-        if (new_seed == GenerationConfig::RANDOM_SEED) {
-            static const bool is_rd_prng = std::random_device{}.entropy() == 0;
-            m_default_seed = is_rd_prng
-                ? static_cast<size_t>(std::chrono::steady_clock::now().time_since_epoch().count())
-                : std::random_device{}();
-        } else {
-            m_default_seed = new_seed;
-        }
-    }
-    size_t get_seed() const { return m_default_seed; }
 
     void set_tokenizer(const Tokenizer& tokenizer) {
         m_tokenizer = tokenizer;
