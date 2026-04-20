@@ -8,31 +8,23 @@ import openvino_genai as ov_genai
 from PIL import Image
 from openvino import Tensor
 from pathlib import Path
+from typing import Optional
 import numpy as np
 from openvino import get_version
 
 
-def read_image(path: str, resize: tuple[int, int] = None) -> Tensor:
-    """
-
-    Args:
-        path: The path to the image.
-        resize: Optional tuple (width, height) to resize the image.
-
-    Returns: the ov.Tensor containing the image.
-
-    """
+def read_image(path: str, target_height: Optional[int] = None, target_width: Optional[int] = None) -> Tensor:
     pic = Image.open(path).convert("RGB")
-    if resize is not None:
-        pic = pic.resize(resize)
+    if target_height is not None:
+        pic = pic.resize((target_width, target_height))
     image_data = np.array(pic)
     return Tensor(image_data)
 
-def read_images(path: str, resize: tuple[int, int] = None) -> list[Tensor]:
+def read_images(path: str, target_height: Optional[int] = None, target_width: Optional[int] = None) -> list[Tensor]:
     entry = Path(path)
     if entry.is_dir():
-        return [read_image(str(file), resize) for file in sorted(entry.iterdir())]
-    return [read_image(path, resize)]
+        return [read_image(str(file), target_height, target_width) for file in sorted(entry.iterdir())]
+    return [read_image(path, target_height, target_width)]
 
 
 def ratio_type(value):
@@ -56,9 +48,11 @@ def main():
     parser.add_argument("-pf", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image")
     parser.add_argument(
-        "-ih", "--image_height", type=int, default=0, help="Target image height (if resizing is needed)"
+        "-ih", "--image_height", type=int, default=None, help="Target image height (if resizing is needed)"
     )
-    parser.add_argument("-iw", "--image_width", type=int, default=0, help="Target image width (if resizing is needed)")
+    parser.add_argument(
+        "-iw", "--image_width", type=int, default=None, help="Target image width (if resizing is needed)"
+    )
     parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
@@ -98,12 +92,10 @@ def main():
     models_path = args.model
     image_width = args.image_width
     image_height = args.image_height
-    if image_width < 0 or image_height < 0:
-        raise RuntimeError(f"Image width and height should be non-negative!")
-    if (image_width > 0) != (image_height > 0):
-        raise RuntimeError("Image width and height should be set together: both > 0 to enable resizing or both == 0 to disable resizing.")
-    resize = (image_width, image_height) if image_width > 0 and image_height > 0 else None
-    images = read_images(args.image, resize)
+    assert (image_height is None) == (image_width is None), "image_height and image_width must be provided together."
+    if image_height is not None:
+        assert image_height > 0 and image_width > 0, "image_height and image_width must be positive values."
+    images = read_images(args.image, image_height, image_width)
     device = args.device
     num_warmup = args.num_warmup
     num_iter = args.num_iter
