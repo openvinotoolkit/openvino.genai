@@ -962,8 +962,11 @@ class GenerationConfig:
         top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
         top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
         do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
+        rng_seed:           seed for the random number generator. Defaults to GenerationConfig.RANDOM_SEED which draws a
+                            non-deterministic seed on each request. Set to any other value for reproducible results.
         num_return_sequences: the number of sequences to generate from a single prompt.
     """
+    RANDOM_SEED: typing.ClassVar[int]
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
     apply_chat_template: bool
     do_sample: bool
