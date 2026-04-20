@@ -694,7 +694,6 @@ protected:
         return ov::genai::derived_adapters(adapters, flux_adapter_normalization);
     }
 
-
     std::shared_ptr<FluxTransformer2DModel> m_transformer = nullptr;
     std::shared_ptr<CLIPTextModel> m_clip_text_encoder = nullptr;
     std::shared_ptr<T5EncoderModel> m_t5_text_encoder = nullptr;

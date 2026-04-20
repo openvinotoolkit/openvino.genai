@@ -792,7 +792,6 @@ private:
         }
     }
 
-
     friend class Text2ImagePipeline;
     friend class Image2ImagePipeline;
 
