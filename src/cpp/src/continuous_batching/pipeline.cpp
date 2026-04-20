@@ -60,8 +60,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        auto vision_encoder_properties_for_embedder = utils::inherit_cache_properties(vision_encoder_properties, properties);
-        embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_encoder_properties_for_embedder);
+        embedder = std::make_shared<InputsEmbedder>(models_path, device,
+            utils::inherit_cache_properties(vision_encoder_properties, properties));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -112,8 +112,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        auto vision_encoder_properties_for_embedder = utils::inherit_cache_properties(vision_encoder_properties, properties);
-        embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_encoder_properties_for_embedder);
+        embedder = std::make_shared<InputsEmbedder>(models_path, device,
+            utils::inherit_cache_properties(vision_encoder_properties, properties));
     }
 
     utils::print_scheduler_config_info(scheduler_config);
