@@ -92,6 +92,7 @@ async function main() {
 
             config.do_sample = true;
             config.temperature = 0.8;
+            config.rng_seed = 42;
 
             chatHistory.clear();
             chatHistory.push({ role: "system", content: sysMessageForItems });
