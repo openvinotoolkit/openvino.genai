@@ -15,19 +15,6 @@ namespace ov::genai {
 
 class VisionEncoderVideoChatFlashQwen : public VisionEncoder {
 public:
-    struct StaticConfig {
-        // Can not obtain this from config for now.
-        static constexpr size_t image_size = 224;
-        static constexpr size_t patch_size = 14;
-        static constexpr size_t num_attention_heads = 16;
-        static constexpr std::array<float, 3> image_mean = {0.485f, 0.456f, 0.406f};
-        static constexpr std::array<float, 3> image_std = {0.229f, 0.224f, 0.225f};
-
-        static constexpr size_t get_grid_size() {
-            return image_size / patch_size;
-        }
-    };
-
     VisionEncoderVideoChatFlashQwen(
         const std::filesystem::path& model_dir,
         const std::string& device,
@@ -57,12 +44,19 @@ protected:
     ov::Tensor m_pos_emb;
 
 private:
+    size_t m_mm_local_num_frames = 4;
+    size_t m_mm_hidden_size = 1408;
+    size_t m_num_attention_heads = 16;
+    size_t m_target_num_token = 64;
+
     /// @brief Pads frames if frame count is not divisible by mm_local_num_frames.
     ov::Tensor sample_video_if_needed(const ov::Tensor& video) const;
     /// @brief Initializes 3D sin-cos positional embedding tensor for vision encoder input.
     void initialize_positional_embedding();
     /// @brief Builds and prepares infer request queue for token merge model.
     void initialize_merge_model_queue();
+    /// @brief Loads VideoChat-Flash private runtime config from model config.json.
+    void initialize_runtime_config(const std::filesystem::path& config_path);
 };
 
 class InputsEmbedderVideoChatFlashQwen : public InputsEmbedder::IInputsEmbedder {

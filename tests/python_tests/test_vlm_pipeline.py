@@ -302,7 +302,7 @@ def _get_ov_model(model_id: str) -> str:
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip(
-            "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported version is 1.27.0.dev0+f20c59a."
+            "ValueError: The current version of optimum-intel does not allow for the export of the model. Supported version is 1.27.0.dev0+cba3f31."
         )
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()

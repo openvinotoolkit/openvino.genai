@@ -8,6 +8,7 @@
 #include "logger.hpp"
 #include "visual_language/clip.hpp"
 #include "visual_language/vlm_utils.hpp"
+#include "json_utils.hpp"
 #include "utils.hpp"
 
 #include <algorithm>
@@ -22,6 +23,32 @@ namespace ov::genai {
 namespace {
 
 const std::regex NATIVE_PATTERN{R"(<\|image_(\d+)\|>)"};
+
+// VideoChat-Flash still shares the top-level model config.json with the rest of the
+// VLM stack, but these fields are intentionally parsed through a model-private schema.
+// They are consumed only inside this implementation and are not part of the shared
+// VLMConfig contract. Keeping them local avoids leaking VideoChat-Flash execution
+// details into the generic VLM abstraction.
+struct VideoChatFlashRuntimeConfig {
+    size_t mm_local_num_frames = 4;
+    size_t mm_hidden_size = 1408;
+    size_t mm_num_attention_heads = 16;
+    size_t mm_projector_num_tome_tokens = 64;
+};
+
+VideoChatFlashRuntimeConfig read_videochat_flash_runtime_config(const std::filesystem::path& config_path) {
+    std::ifstream stream(config_path);
+    OPENVINO_ASSERT(stream.is_open(), "Failed to open '", config_path, "' with VideoChat-Flash config");
+    nlohmann::json parsed = nlohmann::json::parse(stream);
+
+    VideoChatFlashRuntimeConfig config;
+    using ov::genai::utils::read_json_param;
+    read_json_param(parsed, "mm_local_num_frames", config.mm_local_num_frames);
+    read_json_param(parsed, "mm_hidden_size", config.mm_hidden_size);
+    read_json_param(parsed, "mm_num_attention_heads", config.mm_num_attention_heads);
+    read_json_param(parsed, "mm_projector_num_tome_tokens", config.mm_projector_num_tome_tokens);
+    return config;
+}
 
 void write_native(std::ostream& os, size_t idx) {
     os << "<|image_" << idx + 1 << "|>\n";
@@ -585,9 +612,19 @@ ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferReque
 } // namespace
 
 void VisionEncoderVideoChatFlashQwen::initialize_positional_embedding() {
-    const size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
-    const size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
-    const size_t grid_size = StaticConfig::get_grid_size();
+    const size_t mm_hidden_size = m_mm_hidden_size;
+    const size_t mm_local_num_frames = m_mm_local_num_frames;
+    OPENVINO_ASSERT(m_processor_config.image_size > 0, "image_size must be greater than 0.");
+    OPENVINO_ASSERT(m_processor_config.patch_size > 0, "patch_size must be greater than 0.");
+    OPENVINO_ASSERT(
+        m_processor_config.image_size % m_processor_config.patch_size == 0,
+        "image_size must be divisible by patch_size. Got image_size=",
+        m_processor_config.image_size,
+        ", patch_size=",
+        m_processor_config.patch_size,
+        "."
+    );
+    const size_t grid_size = m_processor_config.image_size / m_processor_config.patch_size;
     m_pos_emb = get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
     OPENVINO_ASSERT(
         m_pos_emb.get_size() > 0,
@@ -595,15 +632,28 @@ void VisionEncoderVideoChatFlashQwen::initialize_positional_embedding() {
     );
 }
 
+void VisionEncoderVideoChatFlashQwen::initialize_runtime_config(const std::filesystem::path& config_path) {
+    const auto runtime_config = read_videochat_flash_runtime_config(config_path);
+    OPENVINO_ASSERT(runtime_config.mm_local_num_frames > 0, "mm_local_num_frames must be greater than 0.");
+    OPENVINO_ASSERT(runtime_config.mm_hidden_size > 0, "mm_hidden_size must be greater than 0.");
+    OPENVINO_ASSERT(runtime_config.mm_num_attention_heads > 0, "mm_num_attention_heads must be greater than 0.");
+    OPENVINO_ASSERT(runtime_config.mm_projector_num_tome_tokens > 0, "mm_projector_num_tome_tokens must be greater than 0.");
+
+    m_mm_local_num_frames = runtime_config.mm_local_num_frames;
+    m_mm_hidden_size = runtime_config.mm_hidden_size;
+    m_num_attention_heads = runtime_config.mm_num_attention_heads;
+    m_target_num_token = runtime_config.mm_projector_num_tome_tokens;
+}
+
 void VisionEncoderVideoChatFlashQwen::initialize_merge_model_queue() {
-    const size_t num_attention_heads = StaticConfig::num_attention_heads;
+    const size_t num_attention_heads = m_num_attention_heads;
     OPENVINO_ASSERT(
-        m_vlm_config.mm_hidden_size % num_attention_heads == 0,
+        m_mm_hidden_size % num_attention_heads == 0,
         "mm_hidden_size must be divisible by num_attention_heads for VideoChat-Flash merge model. Got mm_hidden_size=",
-        m_vlm_config.mm_hidden_size, ", num_attention_heads=", num_attention_heads, "."
+        m_mm_hidden_size, ", num_attention_heads=", num_attention_heads, "."
     );
 
-    const size_t merge_dim = m_vlm_config.mm_hidden_size / num_attention_heads;
+    const size_t merge_dim = m_mm_hidden_size / num_attention_heads;
     auto merge_model = build_bipartite_soft_matching_merge_opt_model(merge_dim);
     // TODO: CVS-183390 This pipeline is typically used with a GPU;
     // however, when this model runs on the GPU as well,
@@ -620,9 +670,13 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap properties) {
-    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
+    // VideoChat-Flash exports do not provide preprocessor_config.json.
+    // The required preprocessing parameters for this model live in config.json,
+    // so ProcessorConfig is initialized from that file explicitly.
+    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "config.json");
     m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(model_dir, "video_preprocessor_config.json");
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
+    initialize_runtime_config(model_dir / "config.json");
 
     initialize_positional_embedding();
     const ov::Shape pos_emb_shape = m_pos_emb.get_shape();
@@ -665,7 +719,13 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap properties) : VisionEncoder(models_map, config_dir_path, device, properties) {
+    // VideoChat-Flash exports do not provide preprocessor_config.json.
+    // The required preprocessing parameters for this model live in config.json,
+    // so ProcessorConfig is initialized from that file explicitly.
+    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "config.json");
+    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, "video_preprocessor_config.json");
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
+    initialize_runtime_config(config_dir_path / "config.json");
     const auto& vision_encoder_model = utils::get_model_weights_pair(models_map, "vision_projection").first;
     const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_projection").second;
     auto compiled_model = utils::singleton_core().compile_model(vision_encoder_model, vision_encoder_weights, device, properties);
@@ -687,7 +747,7 @@ EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, co
 }
 
 ov::Tensor VisionEncoderVideoChatFlashQwen::sample_video_if_needed(const ov::Tensor& video) const {
-    const size_t frames_group_size = m_vlm_config.mm_local_num_frames;
+    const size_t frames_group_size = m_mm_local_num_frames;
     OPENVINO_ASSERT(frames_group_size > 0, "mm_local_num_frames must be greater than 0.");
     const ov::Shape& video_shape = video.get_shape();
     OPENVINO_ASSERT(video_shape.size() == 4, "Input video tensor must be 4D [N, H, W, C].");
@@ -737,12 +797,13 @@ ov::Tensor VisionEncoderVideoChatFlashQwen::sample_video_if_needed(const ov::Ten
 
 EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& video) {
     EncodedVideo encoded_video;
-    ImageSize target_size{StaticConfig::image_size, StaticConfig::image_size};
+    OPENVINO_ASSERT(m_processor_config.image_size > 0, "image_size must be greater than 0.");
+    ImageSize target_size{m_processor_config.image_size, m_processor_config.image_size};
     ov::Tensor sampled_video = sample_video_if_needed(video);
-    auto preprocessed_video = preprocess(sampled_video, target_size, StaticConfig::image_mean, StaticConfig::image_std);
+    auto preprocessed_video = preprocess(sampled_video, target_size, m_processor_config.image_mean, m_processor_config.image_std);
     encoded_video.resized_source_size = target_size;
     encoded_video.frame_num = preprocessed_video.get_shape()[0];
-    const size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
+    const size_t mm_local_num_frames = m_mm_local_num_frames;
     auto transpose_features = transpose_video_features(preprocessed_video, mm_local_num_frames);
 
     CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(m_ireq_queue_vision_encoder.get());
@@ -751,7 +812,7 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
 
     ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get(), m_pos_emb);
     ov::Tensor clipped_vision_embeds = remove_second_dim_first_element(processed_vision_embeds);
-    ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_guard.get());
+    ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_guard.get(), m_target_num_token);
     projection_guard.get().set_input_tensor(merged_vision_features);
     projection_guard.get().infer();
     ov::Tensor proj_features = projection_guard.get().get_output_tensor();

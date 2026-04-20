@@ -75,10 +75,6 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // Qwen3-VL
     read_json_param(parsed, "vision_config.num_position_embeddings", vision_config_num_position_embeddings);
     read_json_param(parsed, "vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
-
-    // VideoChat_Flash_Qwen specific config params
-    read_json_param(parsed, "mm_local_num_frames", mm_local_num_frames);
-    read_json_param(parsed, "mm_hidden_size", mm_hidden_size);
 }
 
 } // namespace ov::genai
