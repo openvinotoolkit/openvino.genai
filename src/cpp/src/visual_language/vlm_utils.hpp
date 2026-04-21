@@ -24,6 +24,7 @@ std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& 
 ov::Tensor insert_image_placeholders(const std::vector<std::variant<ov::Tensor, size_t>>& chunks,
                                      const std::vector<size_t>& tokens_per_images);
 
+// Splits a [1, N] i64 token tensor into text chunks and image ids encoded as -(image_id + 1).
 std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::Tensor& tokens);
 
 // Build final inputs_embeds by interleaving inferred text embeddings and precomputed visual embeddings.
