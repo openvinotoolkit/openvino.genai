@@ -29,6 +29,8 @@ TEST(TestGetModelProperties, returns_globals_when_no_meta_keys) {
     };
     auto result = get_model_properties(main_props, "vision_embeddings", "GPU");
     EXPECT_EQ(result.size(), 2u);
+    ASSERT_EQ(result.count("CACHE_DIR"), 1u);
+    ASSERT_EQ(result.count("NUM_STREAMS"), 1u);
     EXPECT_EQ(result.at("CACHE_DIR").as<std::string>(), "/tmp");
     EXPECT_EQ(result.at("NUM_STREAMS").as<std::string>(), "2");
 }
@@ -42,6 +44,7 @@ TEST(TestGetModelProperties, excludes_meta_keys_from_globals) {
     auto result = get_model_properties(main_props, "vision_embeddings", "GPU");
     EXPECT_EQ(result.count(PER_MODEL_PROPERTIES), 0u);
     EXPECT_EQ(result.count(DEVICE_PROPERTIES), 0u);
+    ASSERT_EQ(result.count("CACHE_DIR"), 1u);
     EXPECT_EQ(result.at("CACHE_DIR").as<std::string>(), "/tmp");
 }
 
@@ -53,6 +56,7 @@ TEST(TestGetModelProperties, device_overrides_global) {
         }},
     };
     auto result = get_model_properties(main_props, "vision_embeddings", "GPU");
+    ASSERT_EQ(result.count("NUM_STREAMS"), 1u);
     EXPECT_EQ(result.at("NUM_STREAMS").as<std::string>(), "8");
 }
 
@@ -64,6 +68,7 @@ TEST(TestGetModelProperties, device_layer_skipped_when_device_not_listed) {
         }},
     };
     auto result = get_model_properties(main_props, "vision_embeddings", "GPU");
+    ASSERT_EQ(result.count("NUM_STREAMS"), 1u);
     EXPECT_EQ(result.at("NUM_STREAMS").as<std::string>(), "2");
 }
 
@@ -78,6 +83,7 @@ TEST(TestGetModelProperties, per_model_overrides_device_and_global) {
         }},
     };
     auto result = get_model_properties(main_props, "vision_embeddings", "GPU");
+    ASSERT_EQ(result.count("NUM_STREAMS"), 1u);
     EXPECT_EQ(result.at("NUM_STREAMS").as<std::string>(), "8");
 }
 
@@ -89,6 +95,7 @@ TEST(TestGetModelProperties, per_model_missing_role_leaves_lower_layers) {
         }},
     };
     auto result = get_model_properties(main_props, "vision_embeddings", "GPU");
+    ASSERT_EQ(result.count("NUM_STREAMS"), 1u);
     EXPECT_EQ(result.at("NUM_STREAMS").as<std::string>(), "2");
 }
 
@@ -107,6 +114,7 @@ TEST(TestGetModelProperties, does_not_mutate_input_map) {
     EXPECT_EQ(main_props.size(), snapshot.size());
     EXPECT_EQ(main_props.count(PER_MODEL_PROPERTIES), 1u);
     EXPECT_EQ(main_props.count(DEVICE_PROPERTIES), 1u);
+    ASSERT_EQ(main_props.count("CACHE_DIR"), 1u);
     EXPECT_EQ(main_props.at("CACHE_DIR").as<std::string>(), "/tmp");
 }
 
@@ -116,10 +124,13 @@ TEST(TestGetModelProperties, device_lookup_is_case_insensitive) {
             {"GPU", ov::AnyMap{{"NUM_STREAMS", std::string("8")}}},
         }},
     };
-    EXPECT_EQ(get_model_properties(main_props, "vision_embeddings", "gpu")
-                  .at("NUM_STREAMS").as<std::string>(), "8");
-    EXPECT_EQ(get_model_properties(main_props, "vision_embeddings", "Gpu")
-                  .at("NUM_STREAMS").as<std::string>(), "8");
+    auto result_lower = get_model_properties(main_props, "vision_embeddings", "gpu");
+    ASSERT_EQ(result_lower.count("NUM_STREAMS"), 1u);
+    EXPECT_EQ(result_lower.at("NUM_STREAMS").as<std::string>(), "8");
+
+    auto result_mixed = get_model_properties(main_props, "vision_embeddings", "Gpu");
+    ASSERT_EQ(result_mixed.count("NUM_STREAMS"), 1u);
+    EXPECT_EQ(result_mixed.at("NUM_STREAMS").as<std::string>(), "8");
 }
 
 TEST(TestGetModelProperties, role_lookup_is_case_insensitive) {
@@ -128,10 +139,13 @@ TEST(TestGetModelProperties, role_lookup_is_case_insensitive) {
             {"vision_embeddings", ov::AnyMap{{"NUM_STREAMS", std::string("8")}}},
         }},
     };
-    EXPECT_EQ(get_model_properties(main_props, "VISION_EMBEDDINGS", "GPU")
-                  .at("NUM_STREAMS").as<std::string>(), "8");
-    EXPECT_EQ(get_model_properties(main_props, "Vision_Embeddings", "GPU")
-                  .at("NUM_STREAMS").as<std::string>(), "8");
+    auto result_upper = get_model_properties(main_props, "VISION_EMBEDDINGS", "GPU");
+    ASSERT_EQ(result_upper.count("NUM_STREAMS"), 1u);
+    EXPECT_EQ(result_upper.at("NUM_STREAMS").as<std::string>(), "8");
+
+    auto result_mixed = get_model_properties(main_props, "Vision_Embeddings", "GPU");
+    ASSERT_EQ(result_mixed.count("NUM_STREAMS"), 1u);
+    EXPECT_EQ(result_mixed.at("NUM_STREAMS").as<std::string>(), "8");
 }
 
 TEST(TestGetModelProperties, merges_disjoint_keys_across_layers) {
@@ -145,6 +159,9 @@ TEST(TestGetModelProperties, merges_disjoint_keys_across_layers) {
         }},
     };
     auto result = get_model_properties(main_props, "vision_embeddings", "GPU");
+    ASSERT_EQ(result.count("CACHE_DIR"), 1u);
+    ASSERT_EQ(result.count("GPU_QUEUE_PRIORITY"), 1u);
+    ASSERT_EQ(result.count("NUM_STREAMS"), 1u);
     EXPECT_EQ(result.at("CACHE_DIR").as<std::string>(), "/tmp");
     EXPECT_EQ(result.at("GPU_QUEUE_PRIORITY").as<std::string>(), "HIGH");
     EXPECT_EQ(result.at("NUM_STREAMS").as<std::string>(), "8");

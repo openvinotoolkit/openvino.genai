@@ -377,7 +377,7 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 } // namespace
 
-const std::string PER_MODEL_PROPERTIES = "PER_MODEL_PROPERTIES";
+const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
 const std::string DEVICE_PROPERTIES    = "DEVICE_PROPERTIES";
 
 namespace {
