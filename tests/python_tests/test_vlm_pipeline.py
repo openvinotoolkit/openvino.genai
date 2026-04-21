@@ -583,6 +583,7 @@ def synthetic_video(pytestconfig):
     car_url = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg"
     image = from_cache_or_download(pytestconfig, car_url, "car.jpg")
 
+    # make 10 frames
     total_frames = 10
     frames = []
     frames.append(np.array(image))
@@ -714,7 +715,6 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         synthetic_video_32x32_tensor = request.getfixturevalue("synthetic_video_32x32_tensor")
         images_list = [[], [cat_tensor], [cat_tensor]]
         videos_list = [[synthetic_video_32x32_tensor], [synthetic_video_32x32_tensor], []]
-
     else:
         images_list = [[], [cat_tensor]]
         videos_list = [[], []]
