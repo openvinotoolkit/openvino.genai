@@ -631,6 +631,42 @@ jobs:
           huggingface-cli login --token "$HF_TOKEN"
           huggingface-cli whoami
 
+      - name: HF cache probe
+        if: ${{ matrix.test.run_condition }}
+        # Debug: show how much of the HF cache is already warm and whether the
+        # authenticated API call goes out over the network at all.
+        run: |
+          python -c "
+          from huggingface_hub import constants
+          print('HF_HOME=', constants.HF_HOME)
+          print('HF_HUB_CACHE=', constants.HF_HUB_CACHE)
+          "
+          echo "--- HF_HOME size ---"
+          du -sh "$HF_HOME" 2>/dev/null || true
+          echo "--- Top-level HF hub cache entries ---"
+          ls -1 "$HF_HOME/hub" 2>/dev/null | head -50 || true
+          echo "--- Authenticated whoami via API (forces network call) ---"
+          HF_HUB_VERBOSITY=debug python -c "
+          from huggingface_hub import HfApi
+          print(HfApi().whoami())
+          "
+
+      - name: Force fresh HF download (debug only)
+        if: ${{ matrix.test.run_condition }}
+        # Use a throwaway cache dir so the request bypasses the warm shared cache
+        # and every GET/HEAD + rate-limit header is visible in the job log.
+        env:
+          HF_HUB_VERBOSITY: debug
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: |
+          tmp=$(mktemp -d)
+          HF_HOME="$tmp" python -c "
+          from huggingface_hub import snapshot_download
+          path = snapshot_download('katuni4ka/tiny-random-phi3', cache_dir='$tmp')
+          print('Downloaded to:', path)
+          "
+          rm -rf "$tmp"
+
       - name: Tests
         if: ${{ matrix.test.run_condition }}
         run: ${{ matrix.test.cmd }}
