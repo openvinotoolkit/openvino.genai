@@ -331,6 +331,9 @@ Make this decision **after** the investigation is complete, based on the root ca
    - **Yes** → Use `create-issue`, even if the run was PR-triggered.
 3. Is there an existing open issue already tracking the same failure?
    - **Yes** (opened recently) → Use `add-comment` on that issue instead of creating a duplicate.
+4. Is no action needed?
+   - The investigated workflow **succeeded** → Use `noop`.
+   - A **very recent duplicate issue** (opened within the last hour) was already commented on → Use `noop`.
 
 Examples:
 
