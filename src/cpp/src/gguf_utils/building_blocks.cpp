@@ -19,18 +19,6 @@ using namespace ov;
 using namespace ov::op::v13;
 using namespace ov::op;
 
-std::pair<Output<ov::Node>, Output<ov::Node>> rope_emb(
-    const Output<ov::Node>& x,
-    const Output<ov::Node>& rope_const,
-    const Output<ov::Node>& position_ids,
-    const Output<ov::Node>& batch_dim,
-    bool is_vlm = false,
-    const std::vector<int64_t>& mrope_section = {});
-
-static Output<Node> apply_interleaved_mrope_graph(
-    const Output<Node>& freqs,
-    const std::vector<int64_t>& mrope_section);
-
 static const size_t GGML_QUANTIZATION_GROUP_SIZE = 32;
 
 namespace {
@@ -1025,50 +1013,6 @@ ov::Tensor materialize_weight_to_f16_vlm_only(
     OPENVINO_THROW("Unsupported quantization type for eager materialization: ", static_cast<int>(qtype));
 }
 
-// VLM-only fallback for q/k/v projections:
-// keep canonical q_proj / k_proj / v_proj source-graph names for LoRA matching,
-// but avoid the problematic GGUF quant-dequant source subgraphs on GPU by
-// eagerly materializing ONLY these three projection weights to FP16.
-// This keeps the rest of the model quantized.
-ov::Output<ov::Node> make_fc_materialized_vlm_qkv_only(
-    const std::string& key,
-    const ov::Output<ov::Node>& input,
-    const std::unordered_map<std::string, ov::Tensor>& consts,
-    gguf_tensor_type qtype,
-    bool reorder = false,
-    int head_size = -1) {
-
-    size_t group_size = GGML_QUANTIZATION_GROUP_SIZE;
-    if (qtype == gguf_tensor_type::GGUF_TYPE_Q6_K) {
-        group_size = 16;
-    }
-
-    auto w_f16 = materialize_weight_to_f16_vlm_only(
-        key, consts, qtype, reorder, head_size, group_size);
-
-    auto weights_node = std::make_shared<v0::Constant>(w_f16);
-    set_name(weights_node, to_weight_name(key) + ".weight");
-
-    auto weights_f32 = std::make_shared<ov::op::v0::Convert>(weights_node, ov::element::f32);
-    set_name(weights_f32, to_weight_name(key) + ".weight/fq_weights_1/convert");
-
-    std::shared_ptr<ov::Node> output = std::make_shared<ov::op::v0::MatMul>(input, weights_f32, false, true);
-    set_name(output, to_op_name(key) + "/aten::linear/MatMul");
-
-    if (consts.count(key + ".bias")) {
-        auto add_tensor = get_tensor(consts, key + ".bias");
-        auto add_const = std::make_shared<v0::Constant>(add_tensor);
-        set_name(add_const, to_weight_name(key) + ".bias");
-
-        auto add_convert = std::make_shared<ov::op::v0::Convert>(add_const, ov::element::f32);
-        output = std::make_shared<ov::op::v1::Add>(
-            output, add_convert, ov::op::AutoBroadcastType::NUMPY);
-        set_name(output, to_op_name(key) + "/aten::add/Add");
-    }
-
-    return output;
-}
-
 ov::Output<ov::Node> make_int8_weights(
     const std::string& key,
     const std::unordered_map<std::string, ov::Tensor>& consts,
@@ -1444,54 +1388,29 @@ std::tuple<ov::Output<ov::Node>,
     ov::Output<ov::Node> q;
     ov::Output<ov::Node> k;
     ov::Output<ov::Node> v;
-    if (is_vlm) {
-        // Keep independent q/k/v layer names for LoRA, but use the more stable
-        // materialized path only for VLM attention projections.
-        q = make_fc_materialized_vlm_qkv_only(
-            layer_prefix + ".self_attn.q_proj",
-            input_layernorm,
-            consts,
-            qtypes.at(layer_prefix + ".self_attn.q_proj.qtype"),
-            reorder,
-            std::get<int>(configs.at("head_size")));
 
-        k = make_fc_materialized_vlm_qkv_only(
-            layer_prefix + ".self_attn.k_proj",
-            input_layernorm,
-            consts,
-            qtypes.at(layer_prefix + ".self_attn.k_proj.qtype"),
-            reorder,
-            std::get<int>(configs.at("head_size")));
+    q = make_fc(
+        layer_prefix + ".self_attn.q_proj",
+        input_layernorm,
+        consts,
+        qtypes.at(layer_prefix + ".self_attn.q_proj.qtype"),
+        reorder,
+        std::get<int>(configs.at("head_size")));
 
-        v = make_fc_materialized_vlm_qkv_only(
-            layer_prefix + ".self_attn.v_proj",
-            input_layernorm,
-            consts,
-            qtypes.at(layer_prefix + ".self_attn.v_proj.qtype"));
-    } else {
-        q = make_fc(
-            layer_prefix + ".self_attn.q_proj",
-            input_layernorm,
-            consts,
-            qtypes.at(layer_prefix + ".self_attn.q_proj.qtype"),
-            reorder,
-            std::get<int>(configs.at("head_size")));
+    k = make_fc(
+        layer_prefix + ".self_attn.k_proj",
+        input_layernorm,
+        consts,
+        qtypes.at(layer_prefix + ".self_attn.k_proj.qtype"),
+        reorder,
+        std::get<int>(configs.at("head_size")));
 
-        k = make_fc(
-            layer_prefix + ".self_attn.k_proj",
-            input_layernorm,
-            consts,
-            qtypes.at(layer_prefix + ".self_attn.k_proj.qtype"),
-            reorder,
-            std::get<int>(configs.at("head_size")));
-
-        v = make_fc(
-            layer_prefix + ".self_attn.v_proj",
-            input_layernorm,
-            consts,
-            qtypes.at(layer_prefix + ".self_attn.v_proj.qtype"));
-    }
-
+    v = make_fc(
+        layer_prefix + ".self_attn.v_proj",
+        input_layernorm,
+        consts,
+        qtypes.at(layer_prefix + ".self_attn.v_proj.qtype"));
+    
     // Handle output shape
     std::shared_ptr<ov::Node> final_output_shape = output_shape;
     if (!output_shape) {

@@ -24,6 +24,37 @@ using namespace ov::op::v13;
 using namespace ov::op;
 
 namespace {
+size_t get_weight_scale_group_size(gguf_tensor_type qtype) {
+    switch (qtype) {
+    case gguf_tensor_type::GGUF_TYPE_Q6_K:  return 16;
+    case gguf_tensor_type::GGUF_TYPE_Q4_0:
+    case gguf_tensor_type::GGUF_TYPE_Q4_1:
+    case gguf_tensor_type::GGUF_TYPE_Q4_K:
+    case gguf_tensor_type::GGUF_TYPE_Q8_0:  return 32;
+    default:                                return 0;
+    }
+}
+
+size_t get_dominant_weight_scale_group_size(const std::unordered_map<std::string, gguf_tensor_type>& qtypes) {
+    std::unordered_map<size_t, size_t> gs_count;
+    for (const auto& [key, qtype] : qtypes) {
+        size_t gs = get_weight_scale_group_size(qtype);
+        if (gs > 0)
+            gs_count[gs]++;
+    }
+    if (gs_count.empty())
+        return UINT64_MAX;
+
+    size_t dominant_gs = 0;
+    size_t max_count = 0;
+    for (const auto& [gs, count] : gs_count) {
+        if (count > max_count) {
+            max_count = count;
+            dominant_gs = gs;
+        }
+    }
+    return dominant_gs;
+}
 
 auto set_name = [](auto node, const std::string& name) {
     node->output(0).set_names({name});
@@ -347,6 +378,10 @@ std::shared_ptr<ov::Model> create_vlm_language_model(
         model->set_rt_info(ov::element::f16, {"runtime_options", ov::hint::kv_cache_precision.name()});
     }
     model->set_rt_info(8.0f, {"runtime_options", ov::hint::activations_scale_factor.name()});
+    size_t dq_group_size = get_dominant_weight_scale_group_size(qtypes);
+    if (dq_group_size != UINT64_MAX) {
+        model->set_rt_info(uint64_t(dq_group_size), {"runtime_options", ov::hint::dynamic_quantization_group_size.name()});
+    }
     return model;
 }
 
