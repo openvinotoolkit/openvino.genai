@@ -77,7 +77,6 @@ def test_several_incremental_parsers(hf_ov_genai_models):
             return delta_text
 
     class IncrementalToolParser(IncrementalParser):
-
         def __init__(self):
             super().__init__()
             self.accumulated_tool_call = StringIO()
@@ -159,7 +158,6 @@ def test_stop_invoked_by_tool_call(hf_ov_genai_models):
             return delta_text
 
     class IncrementalToolParser(IncrementalParser):
-
         def __init__(self):
             super().__init__()
             self.accumulated_tool_call = StringIO()
@@ -790,3 +788,18 @@ def test_generate_stop_reason_tool_call_from_incremental_parser(tmp_path, model_
 
     assert parser.words_seen > 3
     assert res.finish_reasons == [GenerationFinishReason.TOOL_CALL]
+
+
+@pytest.mark.parametrize("model_id", ["microsoft/Phi-4-mini-instruct"])
+def test_batched_generate_returns_finish_reason_for_each_sequence(tmp_path, model_id):
+    models_path = download_and_convert_model(model_id).models_path
+    pipe = create_ov_pipeline(models_path)
+
+    prompts = [
+        "What is the capital of France? Just answer without explanation.",
+        "Why the Sun is Yellow",
+    ]
+    res = pipe.generate(prompts, max_new_tokens=50)
+
+    assert len(res.texts) == len(prompts)
+    assert res.finish_reasons == [GenerationFinishReason.STOP, GenerationFinishReason.LENGTH]
