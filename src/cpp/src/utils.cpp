@@ -379,7 +379,6 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
 
-namespace {
 std::string to_lower(const std::string& s) {
     std::string result(s.size(), '\0');
     std::transform(s.begin(), s.end(), result.begin(),
@@ -398,7 +397,6 @@ ov::AnyMap::const_iterator find_case_insensitive(const ov::AnyMap& map, const st
     }
     return map.end();
 }
-} // namespace
 
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
     ov::AnyMap result;
@@ -421,9 +419,9 @@ ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string&
     auto dev_it = find_case_insensitive(properties, ov::device::properties.name());
     if (dev_it != properties.end()) {
         const auto& by_device = dev_it->second.as<ov::AnyMap>();
-        auto role_dev_it = find_case_insensitive(by_device, device);
-        if (role_dev_it != by_device.end()) {
-            for (const auto& kv : role_dev_it->second.as<ov::AnyMap>()) {
+        auto device_it = find_case_insensitive(by_device, device);
+        if (device_it != by_device.end()) {
+            for (const auto& kv : device_it->second.as<ov::AnyMap>()) {
                 result.insert_or_assign(kv.first, kv.second);
             }
         }
