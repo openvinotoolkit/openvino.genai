@@ -347,6 +347,7 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     static ManualTimer step_timer("step()");
     step_timer.start();
+
     _pull_awaiting_requests();
 
     Scheduler::Output scheduler_output;
@@ -481,6 +482,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         _free_non_running_requests();
         clean_up_requests_timer.end();
     }
+
     step_timer.end();
 }
 

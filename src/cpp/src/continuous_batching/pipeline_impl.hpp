@@ -51,6 +51,7 @@ protected:
 
     std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
 
+
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;
 #endif
