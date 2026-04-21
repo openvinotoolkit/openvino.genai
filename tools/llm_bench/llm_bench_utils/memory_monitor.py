@@ -41,6 +41,7 @@ class MonitorLevel(Enum):
     DISABLED = 0
     WARMUP = 1
     FULL = 2
+    IDLE = 3
 
 
 class MonitorType(Enum):
@@ -54,6 +55,7 @@ class MonitorMode(Enum):
     THREAD_FULL = (MonitorLevel.FULL, MonitorType.THREAD)
     PROCESS_WARMUP = (MonitorLevel.WARMUP, MonitorType.PROCESS)
     PROCESS_FULL = (MonitorLevel.FULL, MonitorType.PROCESS)
+    PROCESS_IDLE = (MonitorLevel.IDLE, MonitorType.PROCESS)
 
     def __init__(self, monitor_level, monitor_type):
         self.monitor_level = monitor_level
@@ -61,16 +63,17 @@ class MonitorMode(Enum):
 
     @classmethod
     def from_code(cls, code: int):
-        """Create MonitorMode from integer code 0-4"""
+        """Create MonitorMode from integer code 0-5"""
         modes = [
             cls.NO_MONITORING,
             cls.THREAD_WARMUP,
             cls.THREAD_FULL,
             cls.PROCESS_WARMUP,
             cls.PROCESS_FULL,
+            cls.PROCESS_IDLE,
         ]
-        if not 0 <= code <= 4:
-            raise ValueError(f"Invalid memory monitor mode: {code}. Must be 0-4")
+        if not 0 <= code <= 5:
+            raise ValueError(f"Invalid memory monitor mode: {code}. Must be 0-5")
         return modes[code]
 
     @property
@@ -93,12 +96,18 @@ class MonitorMode(Enum):
     def is_enabled(self) -> bool:
         return self.monitor_level != MonitorLevel.DISABLED
 
+    @property
+    def is_idle(self) -> bool:
+        return self.monitor_level == MonitorLevel.IDLE
+
 
 class MemoryMonitorHandler:
     def __init__(self, args):
         self.mode = MonitorMode.from_code(args.memory_consumption)
         self.mth = MemThreadHandler(args) if self.mode.is_thread else None
-        self.mmh = MemoryMarkerHandler(args) if self.mode.is_process else None
+        self.mmh = None
+        if self.mode.is_process:
+            self.mmh = MemoryMarkerHandler(args, self.mode.is_idle)
         self.cooldown = args.memory_consumption_cooldown
         self.last_iter_number = None
 
@@ -899,6 +908,30 @@ class MemoryMarkerMonitor(list):
             print(f"Error checking markers: {e}")
         return False
 
+    def idle_loop(self, metadata):
+        count_error = 0
+        while not self.should_stop:
+            before_marker = self.marker
+            if self.check_for_markers():
+                print("Memory worker: Received stop signal")
+                break
+
+            if before_marker != "cooldown" and self.marker == "cooldown":
+                try:
+                    self.collect_samples(before_marker)
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    print("Memory worker: Target process no longer accessible")
+                    break
+                except Exception as e:
+                    print(f"Error collecting samples: {e}")
+                    count_error += 1
+
+            self.sampling_sleep()
+            if count_error > 3:
+                print("Memory worker: too many errors: stop!")
+                break
+        self.write_final_results(metadata)
+
     def loop(self, metadata):
         count_error = 0
         while not self.should_stop:
@@ -912,10 +945,7 @@ class MemoryMarkerMonitor(list):
                 break
 
             if len(self) >= self.sampler.chunk_size:
-                try:
-                    self.write_chunk()
-                except Exception as e:
-                    print(f"Error writing chunk: {e}")
+                self.write_chunk()
             try:
                 self.collect_samples()
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -925,16 +955,22 @@ class MemoryMarkerMonitor(list):
                 print(f"Error collecting samples: {e}")
                 count_error += 1
 
-            elapsed = time.perf_counter() - self.last_ts
-            sleep_time = self.sampling_interval - elapsed
-            if sleep_time > 0:
-                time.sleep(min(sleep_time, 0.001))
+            self.sampling_sleep()
             if count_error > 32:
                 print("Memory worker: too many errors: stop!")
                 break
+        self.write_final_results(metadata)
+
+    def sampling_sleep(self):
+        elapsed = time.perf_counter() - self.last_ts
+        sleep_time = self.sampling_interval - elapsed
+        if sleep_time > 0:
+            time.sleep(min(sleep_time, 0.001))
+
+    def write_final_results(self, metadata):
+        self.write_chunk()
         try:
             self.write_report(metadata)
-            self.write_chunk()
         except Exception as e:
             print(f"Error during cleanup: {e}")
 
@@ -949,34 +985,37 @@ class MemoryMarkerMonitor(list):
     def write_chunk(self):
         if not self:
             return
-
-        counter = len(self)
-        fname = self.deduce_filename()
-        with open(fname, "w", encoding="utf-8") as fd:
-            fd.write(f"#ts marker {self.sampler.header}\n")
-            lines = []
-            while self:
-                row = self.pop(0)
-                lines.append(" ".join(map(str, row)))
-            fd.write("\n".join(lines))
-            fd.write(f"\n#number of samples: {counter}\n")
-
-    def collect_samples(self):
         try:
-            vals = self.sampler.collect(self.marker)
+            counter = len(self)
+            fname = self.deduce_filename()
+            with open(fname, "w", encoding="utf-8") as fd:
+                fd.write(f"#ts marker {self.sampler.header}\n")
+                lines = []
+                while self:
+                    row = self.pop(0)
+                    lines.append(" ".join(map(str, row)))
+                fd.write("\n".join(lines))
+                fd.write(f"\n#number of samples: {counter}\n")
+        except Exception as e:
+            print(f"Error writing chunk: {e}")
+
+    def collect_samples(self, forced_marker=None):
+        marker = self.marker if forced_marker is None else forced_marker
+        try:
+            vals = self.sampler.collect(marker)
             self.last_ts = time.perf_counter()
-            self.sampler.timing(self.last_ts, self.marker)
+            self.sampler.timing(self.last_ts, marker)
 
             elapsed_seconds = self.last_ts - self.start_perf
             elapsed_ns = int(elapsed_seconds * 1_000_000_000)
             ts = self.start_time_ns + elapsed_ns
-            self.append((ts, self.marker, *vals))
+            self.append((ts, marker, *vals))
         except Exception as err:
             raise Exception(err)
 
 
 class MemoryMarkerHandler:
-    def __init__(self, args):
+    def __init__(self, args, is_idle=False):
         mode = args.memory_consumption
         cooldown = args.memory_consumption_cooldown
         interval = args.memory_consumption_interval
@@ -987,7 +1026,7 @@ class MemoryMarkerHandler:
         self.s_event = multiprocessing.Event()
 
         time.sleep(max(cooldown, 1))  # needed for some machines
-        pargs = self.marker_queue, parent_pid, interval, report_path, mode, cooldown, self.s_event
+        pargs = self.marker_queue, parent_pid, interval, report_path, mode, cooldown, self.s_event, is_idle
         self.background_process = mProcess(target=self.background_worker, args=pargs, daemon=True)
         self.background_process.start()
         self.update_marker("start")
@@ -1044,7 +1083,7 @@ class MemoryMarkerHandler:
                 time.sleep(0.1)
 
     @staticmethod
-    def background_worker(conn, pid, interval, path, mode, cooldown, s_event):
+    def background_worker(conn, pid, interval, path, mode, cooldown, s_event, is_idle):
         try:
             mmm = MemoryMarkerMonitor(conn, pid, interval, path)
         except Exception:
@@ -1067,7 +1106,10 @@ class MemoryMarkerHandler:
             print("Could not set event: %s", exc)
 
         try:
-            mmm.loop(metadata)
+            if is_idle:
+                mmm.idle_loop(metadata)
+            else:
+                mmm.loop(metadata)
             conn.close()
             log.info("Memory monitor background worker stopped")
         except Exception as e:

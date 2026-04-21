@@ -86,12 +86,15 @@ void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attenti
 template <typename T> struct OmitOptional { using value = T; };
 template <typename T> struct OmitOptional<std::optional<T>> { using value = T; };
 
+template <typename T> constexpr bool is_optional = false;
+template <typename T> constexpr bool is_optional<std::optional<T>> = true;
+
 template <typename T>
 void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T& param) {
     auto it = config_map.find(name);
     if (it != config_map.end()) {
         if (it->second.empty()) {
-            if (ov::genai::utils::is_container<T>)
+            if (ov::genai::utils::is_container<T> || ov::genai::utils::is_optional<T>)
                 param = T{};
             else {
                 OPENVINO_THROW("Got empty ov::Any for parameter name: " + name);

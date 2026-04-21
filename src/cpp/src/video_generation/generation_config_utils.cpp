@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "generation_config_utils.hpp"
+#include "logger.hpp"
 #include "utils.hpp"
 
 namespace ov::genai::utils {
 
 void validate_generation_config(const VideoGenerationConfig& config) {
-    OPENVINO_ASSERT(config.guidance_scale > 1.0f || config.negative_prompt == std::nullopt,
-                    "Guidance scale <= 1.0 ignores negative prompt");
+    if (config.guidance_scale <= 1.0f && config.negative_prompt != std::nullopt) {
+        GENAI_WARN("Guidance scale <= 1.0 ignores negative prompt");
+    }
 }
 
 void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& properties) {
@@ -46,6 +48,9 @@ void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& p
     }
 
     validate_generation_config(config);
+    if (config.guidance_scale <= 1.0f) {
+        config.negative_prompt = std::nullopt;
+    }
 }
 
 std::pair<std::string, ov::Any> generation_config(const VideoGenerationConfig& generation_config) {

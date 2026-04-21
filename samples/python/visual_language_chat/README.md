@@ -132,7 +132,7 @@ TPOT: 135.45 ± 4.73 ms/token
 Throughput: 7.38 ± 0.26 tokens/s
 ```
 
-For more information how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).
+For more information on how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).
 
 ### Troubleshooting
 
