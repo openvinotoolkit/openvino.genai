@@ -26,10 +26,10 @@ output_ids = model.generate(**inputs)
 text = processor.batch_decode(output_ids)
 ```
 
-The main flow: the Processor produces a structured input; the model consumes it. The Processor can also be used standalone (e.g., get_image_features()).
+The main flow: the Processor produces a structured input; the model consumes it.
 
 ## Proposed API (C++ Headers)
-### 1. VLMInputs — The structured intermediate
+### 1. Embeddings — The structured intermediate
 ```cpp
 // openvino/genai/visual_language/vlm_inputs.hpp
 
@@ -42,7 +42,7 @@ namespace ov::genai {
 
 /// @brief Structured inputs for VLM generation, produced by VLMProcessor.
 /// Analogous to HuggingFace's BatchFeature returned by a Processor.
-struct VLMInputs {
+struct Embeddings {
     /// @brief Merged embeddings of text tokens and vision features.
     /// Shape: [1, sequence_length, hidden_size].
     /// The vision encoder outputs have already been projected into
@@ -144,11 +144,11 @@ public:
     ///        {{"vision_embeddings", "NPU"}, {"text_embeddings", "CPU"}}.
     ///        By default all models run on CPU.
     /// @param properties Per model device configuration properties, e.g.:
-    ///        {"PER_MODEL_PROPERTIES":
+    ///        {"MODEL_PROPERTIES":
     ///          {"vision_embeddings", {{"NUM_STREAMS", "8"}}},  # Causing InferReq queue size = 8
     ///          {"text_embeddings",   {{"NUM_STREAMS", "4"}}}}}.# Causing InferReq queue size = 4
     ///        Properties from top-level are also applied to all models
-    ///        unless overridden in PER_MODEL_PROPERTIES.
+    ///        unless overridden in MODEL_PROPERTIES.
     ///        DEVICE_PROPERTIES can be used to specify device-specific properties, e.g.:
     ///        {"DEVICE_PROPERTIES": {"NPU", {{"NPUW_SPECIFIC_PROPERTY", "XXX"}}}}}.
     ///
@@ -162,7 +162,7 @@ public:
     ///     {"text_embeddings", "CPU"}
     ///   };
     ///   ov::AnyMap properties = {
-    ///     {"PER_MODEL_PROPERTIES", {
+    ///     {"MODEL_PROPERTIES", {
     ///         {"vision_embeddings", {{"NUM_STREAMS", "8"}}},  # Causing InferReq queue size = 8
     ///         {"text_embeddings",   {{"NUM_STREAMS", "4"}}}}. # Causing InferReq queue size = 4
     ///     }},
@@ -212,9 +212,9 @@ public:
     /// @param videos Video frame tensors with [NHWC] layout.
     /// @param videos_metadata Optional per-video metadata controlling
     ///        frame sampling.
-    /// @return VLMInputs ready to pass to VLMPipeline::generate()
+    /// @return Embeddings ready to pass to VLMPipeline::generate()
     ///         or ContinuousBatchingPipeline::add_request().
-    VLMInputs embed(
+    Embeddings embed(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images = {},
         const std::vector<ov::Tensor>& videos = {},
@@ -231,40 +231,14 @@ public:
     /// @param images Optional image tensors.
     /// @param videos Optional video tensors.
     /// @param videos_metadata Optional per-video metadata.
-    /// @return VLMInputs with the chat template applied to the history
+    /// @return Embeddings with the chat template applied to the history
     ///         and vision features merged in.
-    VLMInputs embed(
+    Embeddings embed(
         const ChatHistory& history,
         const std::vector<ov::Tensor>& images = {},
         const std::vector<ov::Tensor>& videos = {},
         const std::vector<VideoMetadata>& videos_metadata = {}
     );
-
-    /// @brief Extract image embeddings without merging with text.
-    /// Useful for embedding-only workflows (retrieval, caching,
-    /// analysis) without invoking the LLM.
-    ///
-    /// Analogous to HuggingFace's model.get_image_features().
-    ///
-    /// @param image A single image as a 4D tensor with [NHWC] layout,
-    ///        where N=1. Shape: [1, H, W, C].
-    /// @return Embedding tensor. Shape: [num_patches, hidden_size].
-    ov::Tensor get_image_embeddings(const ov::Tensor& image);
-
-    /// @brief Extract video embeddings without merging with text.
-    /// Useful for embedding-only workflows (retrieval, caching,
-    /// analysis) without invoking the LLM.
-    ///
-    /// @param video Video frames as a 4D tensor with [NHWC] layout,
-    ///        where N is the number of frames. Shape: [N, H, W, C].
-    /// @param video_metadata Optional metadata for frame sampling.
-    /// @return Embedding tensor. Shape: [num_tokens, hidden_size].
-    ov::Tensor get_video_embeddings(
-        const ov::Tensor& video,
-        const VideoMetadata& video_metadata = {}
-    );
-
-    // get_text_embeddings()?
 
     /// @brief Get the underlying tokenizer.
     /// Also provides access to set_chat_template() for overriding
@@ -292,7 +266,7 @@ public:
 namespace ov::genai {
 
 /// @brief A Visual Language Model pipeline that performs text generation
-/// given pre-processed VLMInputs from a VLMProcessor.
+/// given pre-processed Embeddings from a VLMProcessor.
 ///
 /// This class owns only the LLM (language model). Vision encoding and
 /// embedding preparation are handled by VLMProcessor.
@@ -339,7 +313,7 @@ public:
 
     ~VLMPipeline();
 
-    /// @brief Generate text from pre-processed VLMInputs.
+    /// @brief Generate text from pre-processed Embeddings.
     /// @param inputs Structured inputs from VLMProcessor::embed().
     /// @param generation_config Text generation parameters.
     /// @param streamer Optional streamer for token-by-token output.
@@ -348,24 +322,24 @@ public:
     ///         both VLMProcessor::embed() (via inputs.raw_perf_metrics)
     ///         and the LLM generation phase.
     VLMDecodedResults generate(
-        const VLMInputs& inputs,
+        const Embeddings& inputs,
         const GenerationConfig& generation_config,
         const StreamerVariant& streamer = std::monostate{}
     );
 
     /// @brief Generate with config as property map (for Python bindings convenience).
     VLMDecodedResults generate(
-        const VLMInputs& inputs,
+        const Embeddings& inputs,
         const ov::AnyMap& config_map
     );
 
     /// ---- Legacy convenience overloads (delegate to internal processor) ----
     /// These use VLMProcessor passed in constructor for backward compatibility.
-    /// New code should prefer the VLMProcessor + generate(VLMInputs) pattern.
+    /// New code should prefer the VLMProcessor + generate(Embeddings) pattern.
     /// Marked [[deprecated]] and scheduled for removal in the next major release.
 
-    /// @deprecated Use VLMProcessor::embed() + generate(VLMInputs) instead.
-    [[deprecated("Use VLMProcessor::embed() + generate(VLMInputs) instead.")]]
+    /// @deprecated Use VLMProcessor::embed() + generate(Embeddings) instead.
+    [[deprecated("Use VLMProcessor::embed() + generate(Embeddings) instead.")]]
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
@@ -373,8 +347,8 @@ public:
         const StreamerVariant& streamer = std::monostate{}
     );
 
-    /// @deprecated Use VLMProcessor::embed() + generate(VLMInputs) instead.
-    [[deprecated("Use VLMProcessor::embed() + generate(VLMInputs) instead.")]]
+    /// @deprecated Use VLMProcessor::embed() + generate(Embeddings) instead.
+    [[deprecated("Use VLMProcessor::embed() + generate(Embeddings) instead.")]]
     VLMDecodedResults generate(
         const std::string& prompt,
         const ov::AnyMap& config_map
@@ -417,24 +391,24 @@ public:
 // In continuous_batching_pipeline.hpp — additions to existing class.
 // All existing VLM overloads (accepting raw images/videos) remain unchanged.
 
-// New add_request overload accepting VLMInputs:
+// New add_request overload accepting Embeddings:
 
 /// @brief Add a VLM request with pre-processed inputs from VLMProcessor.
 /// @param request_id Unique request identifier.
-/// @param inputs Pre-processed VLMInputs containing merged embeddings.
+/// @param inputs Pre-processed Embeddings containing merged embeddings.
 /// @param sampling_params Generation configuration.
 /// @return Handle to monitor and read generation results.
 GenerationHandle add_request(
     uint64_t request_id,
-    const VLMInputs& inputs,
+    const Embeddings& inputs,
     const ov::genai::GenerationConfig& sampling_params
 );
 
 // New generate overload for batch VLM:
 
-/// @brief Batch generate from pre-processed VLMInputs.
+/// @brief Batch generate from pre-processed Embeddings.
 std::vector<VLMDecodedResults> generate(
-    const std::vector<VLMInputs>& inputs,
+    const std::vector<Embeddings>& inputs,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer = std::monostate{}
 );
@@ -494,7 +468,7 @@ ov::genai::DeviceMapping device_mapping = {
 // Properties: per-model, per-device, and global
 ov::AnyMap properties = {
     // Per-model properties override global ones for the specified model
-    {"PER_MODEL_PROPERTIES", ov::AnyMap{
+    {"MODEL_PROPERTIES", ov::AnyMap{
         {"vision_embeddings", ov::AnyMap{{"NUM_STREAMS", "8"}}},// Makes InferReq queue size = 8
         {"text_embeddings",   ov::AnyMap{{"NUM_STREAMS", "4"}}} // Makes InferReq queue size = 4
     }},
@@ -546,28 +520,7 @@ auto inputs = processor.embed(history, {image1, image2});
 auto result = llm.generate(inputs, config);
 ```
 
-### Example 4: Embedding extraction (no LLM)
-```cpp
-auto processor = ov::genai::VLMProcessor("path/to/models", "GPU");
-
-// Extract image embeddings — each image is a 4D tensor [1, H, W, C]
-auto img_emb1 = processor.get_image_embeddings(image1);  // [num_patches, hidden_size]
-auto img_emb2 = processor.get_image_embeddings(image2);
-
-// Extract video embeddings — video is a 4D tensor [N_frames, H, W, C]
-auto vid_emb = processor.get_video_embeddings(video1);    // [num_tokens, hidden_size]
-
-// Extract video embeddings with metadata-driven sampling
-ov::genai::VideoMetadata meta;
-meta.total_num_frames = 120;
-meta.fps = 24.0f;
-meta.frames_indices = {0, 15, 30, 45, 60, 75, 90, 105};
-auto vid_emb_sampled = processor.get_video_embeddings(video1, meta);
-
-// Use for retrieval, similarity, caching, etc.
-```
-
-### Example 5: ContinuousBatchingPipeline — concurrent VLM requests
+### Example 4: ContinuousBatchingPipeline — concurrent VLM requests
 ```cpp
 auto processor = ov::genai::VLMProcessor("path/to/models", "GPU");
 auto llm = ov::genai::ContinuousBatchingPipeline("path/to/models", scheduler_config, processor, "GPU");
@@ -595,7 +548,7 @@ auto results1 = handle1->read_all();
 auto results2 = handle2->read_all();
 ```
 
-### Example 6: Video with metadata — VLMPipeline
+### Example 5: Video with metadata — VLMPipeline
 ```cpp
 auto processor = ov::genai::VLMProcessor("path/to/models", "GPU");
 auto llm = ov::genai::VLMPipeline("path/to/models", processor, "GPU");
@@ -620,7 +573,7 @@ auto result = llm.generate(inputs, config);
 std::cout << result.texts.at(0) << std::endl;
 ```
 
-### Example 8: Inspecting / modifying embeddings between processor and LLM
+### Example 6: Inspecting / modifying embeddings between processor and LLM
 ```cpp
 auto processor = ov::genai::VLMProcessor("path/to/models", "GPU");
 auto llm = ov::genai::VLMPipeline("path/to/models", processor, "GPU");
@@ -643,28 +596,13 @@ auto result = llm.generate(inputs, config);
 
 ## Design Decisions
 
-### Naming: `embed()`, `get_image_embeddings()`, `get_video_embeddings()`
-
-While `embed()` performs more than embedding (tag normalization, vision encoding, tokenization, merging, position computation), the name communicates the purpose to the caller: "produce embeddings for the LLM." The term mimics the transformers pattern where the processor callable returns `BatchFeature`:
-
-GenAI proposal:
-```
-inputs = processor.embed(prompt, images)  # VLMInputs { inputs_embeds, attention_mask, position_ids }
-```
-Transformers library:
-```
-inputs = processor(images=images, text=prompt, return_tensors="pt") # BatchFeature { input_ids, attention_mask, pixel_values }
-```
-
-Vision embedding extraction is split into `get_image_embeddings()` and `get_video_embeddings()` rather than a single `get_vision_embeddings()` that accepts a batch vector. Both methods take a single 4D `ov::Tensor` with `[N, H, W, C]` layout — `N=1` for images, `N>1` (number of frames) for videos. This avoids batch-vector ambiguity (the caller would otherwise need to ensure correct image/video ordering and the encoder would need to guess which inputs are images vs videos). Separate make the intent explicit, and also extensible for future modalities such as audio.
-
 ### Multi-Turn Chat via ChatHistory
 
 Drop `start_chat()` / `finish_chat()` from `VLMPipeline`. `LLMPipeline` has already deprecated both methods ([PR #3217](https://github.com/openvinotoolkit/openvino.genai/pull/3217)); `VLMPipeline` still has them un-deprecated. The new design removes them entirely. Multi-turn chat is handled exclusively through `ChatHistory`:
 
 - The caller manages the conversation via `ChatHistory` (appending messages, passing images).
-- `VLMProcessor::embed(ChatHistory, ...)` applies the chat template and produces `VLMInputs`.
-- The pipeline receives `VLMInputs` and manages KV cache internally.
+- `VLMProcessor::embed(ChatHistory, ...)` applies the chat template and produces `Embeddings`.
+- The pipeline receives `Embeddings` and manages KV cache internally.
 
 ### Chat template modifications
 
@@ -697,7 +635,7 @@ The 11 model-specific subclasses (at the moment of writing this document) (`Inpu
 
 All three internal components of `VLMProcessor` support concurrent access:
 
-- **`VisionEncoder`** — uses `CircularBufferQueue<ov::InferRequest>` (queue size depending on `ov::optimal_number_of_infer_requests` which is affected by `NUM_STREAMS` from plugin config). NUM_STREAMS can be set globally for the entire processor via top-level properties, or individually per model via `PER_MODEL_PROPERTIES` in the constructor.
+- **`VisionEncoder`** — uses `CircularBufferQueue<ov::InferRequest>` (queue size depending on `ov::optimal_number_of_infer_requests` which is affected by `NUM_STREAMS` from plugin config). NUM_STREAMS can be set globally for the entire processor via top-level properties, or individually per model via `MODEL_PROPERTIES` in the constructor.
 
 - **`EmbeddingsModel`** — uses `CircularBufferQueue<EmbeddingsRequest>` with the same pattern.
 
@@ -719,7 +657,7 @@ NPU requires static input shapes at compile time. Vision encoder support depends
 1. **Fixed-crop models** (LLaVA, InternVL, Gemma3, NanoLLaVA): image input is always resized to `config.crop_size_height × config.crop_size_width` (e.g., 384×384), producing a deterministic `pixel_values` shape. These can run on NPU by reshaping the model to the known fixed dimensions at compile time. For that reason, NPU could consume plugin config property:
 ```cpp
 ov::AnyMap properties = {
-    {"PER_MODEL_PROPERTIES", ov::AnyMap{
+    {"MODEL_PROPERTIES", ov::AnyMap{
         {"vision_encoder", ov::AnyMap{
             {"WIDTH", "336"},
             {"HEIGHT", "224"},
@@ -735,12 +673,12 @@ ov::AnyMap properties = {
 
 The same as above, but with MAX_PROMPT_LEN and padding.
 
-### PER_MODEL_PROPERTIES extraction
+### MODEL_PROPERTIES extraction
 
 The design describes three ways to define property (priority order from lowest to highest):
 - global (top-level) as usual
 - DEVICE_PROPERTIES (**it exists now**) -> applies to all models on that device, overrides global properties for those models
-- PER_MODEL_PROPERTIES (**new**) -> applies to a specific model, overrides both global and device properties
+- MODEL_PROPERTIES (**new**) -> applies to a specific model, overrides both global and device properties
 
 ## Backward Compatibility
 
@@ -748,37 +686,37 @@ The design describes three ways to define property (priority order from lowest t
 
 **Constructors:** Both existing `VLMPipeline` constructors are kept as non-deprecated convenience overloads that create a `VLMProcessor` internally. They construct a `VLMProcessor` and delegate to `VLMPipeline(models_path, processor, device, properties)`. Existing user code continues to work without changes.
 
-**Legacy `generate()` overloads:** Overloads that accept raw prompts/images (without `VLMInputs`) carry `[[deprecated]]` attributes directing users to the `VLMProcessor::embed()` + `generate(VLMInputs)` pattern. Scheduled for removal in the next major release.
+**Legacy `generate()` overloads:** Overloads that accept raw prompts/images (without `Embeddings`) carry `[[deprecated]]` attributes directing users to the `VLMProcessor::embed()` + `generate(Embeddings)` pattern. Scheduled for removal in the next major release.
 
 ### ContinuousBatchingPipeline
 
-`ContinuousBatchingPipeline` serves both text-only and VLM workloads. For text-only overloads, no changes are needed - internal InputsEmbedder will be created automatically. To work with VLM inputs, construction should provide a `VLMProcessor` instance, and users should call the new `add_request(request_id, VLMInputs, GenerationConfig)` overload that accepts pre-processed inputs. Existing `add_request()` overloads remain unchanged and non-deprecated for backward compatibility.
+`ContinuousBatchingPipeline` serves both text-only and VLM workloads. For text-only overloads, no changes are needed - internal InputsEmbedder will be created automatically. To work with VLM inputs, construction should provide a `VLMProcessor` instance, and users should call the new `add_request(request_id, Embeddings, GenerationConfig)` overload that accepts pre-processed inputs. Existing `add_request()` overloads remain unchanged and non-deprecated for backward compatibility.
 
 ## Implementation Steps
 
-### Phase 1: Add VLMProcessor and VLMInputs (new public classes, possible duplicated code)
+### Phase 1: Add VLMProcessor and Embeddings (new public classes, possible duplicated code)
 
-Classes `VLMProcessor`, `VLMInputs`, `DeviceMapping` as new public API. No changes to existing classes.
+Classes `VLMProcessor`, `Embeddings`, `DeviceMapping` as new public API. No changes to existing classes.
 
-- Add `VLMInputs` struct (new headers under `visual_language/`).
+- Add `Embeddings` struct (new headers under `visual_language/`).
 - Add `DeviceMapping` typedef in `common_types.hpp`.
 - Implement `VLMProcessor` — internally takes ownership of `VisionEncoder`, `EmbeddingsModel`, `VisionRegistry`, and `IInputsEmbedder` (moved from `VLMPipelineImpl`; source files stay in place).
-- Implement `PER_MODEL_PROPERTIES` resolution (global → `DEVICE_PROPERTIES` → `PER_MODEL_PROPERTIES`).
+- Implement `MODEL_PROPERTIES` resolution (global → `DEVICE_PROPERTIES` → `MODEL_PROPERTIES`).
 - Add Python bindings, unit tests, docs.
 
 **Deliverable:** `VLMProcessor` works standalone. `VLMPipeline` unchanged.
 
-### Phase 2: Use VLMProcessor/VLMInputs in VLMPipeline and ContinuousBatchingPipeline (breaking change with deprecation)
+### Phase 2: Use VLMProcessor/Embeddings in VLMPipeline and ContinuousBatchingPipeline (breaking change with deprecation)
 
-`VLMPipeline` and `ContinuousBatchingPipeline` consumes `VLMInputs` as primary input; old API deprecated.
+`VLMPipeline` and `ContinuousBatchingPipeline` consumes `Embeddings` as primary input; old API deprecated.
 
 - Add `VLMPipeline(path, processor, device)` constructors — pipeline loads only the LLM, shares `VisionRegistry` with the processor.
-- Add `generate(VLMInputs, ...)` overloads.
+- Add `generate(Embeddings, ...)` overloads.
 - Deprecate `generate(prompt, images, ...)`, `start_chat()`, `finish_chat()` with `[[deprecated]]`.
 - Legacy constructors (`VLMPipeline(path, device)`) create a `VLMProcessor` internally — not deprecated.
 - Add `ContinuousBatchingPipeline` constructor accepting `VLMProcessor`.
-- Add `add_request(request_id, VLMInputs, config)` and batch `generate(vector<VLMInputs>, ...)` overloads.
+- Add `add_request(request_id, Embeddings, config)` and batch `generate(vector<Embeddings>, ...)` overloads.
 - Existing `add_request(prompt, images, ...)` overloads unchanged.
 - Update Python bindings, samples, tests.
 
-**Deliverable:** Recommended flow is `processor.embed()` → `pipeline.generate(VLMInputs)`.
+**Deliverable:** Recommended flow is `processor.embed()` → `pipeline.generate(Embeddings)`.
