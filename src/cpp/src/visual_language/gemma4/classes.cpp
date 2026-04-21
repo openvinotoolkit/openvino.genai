@@ -89,9 +89,6 @@ void extract_patches(const clip_image_f32& float_image,
 namespace ov::genai {
 
 EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
-    ov::InferRequest& encoder = infer_request_guard.get();
-
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     // 1. Convert input tensor (NHWC uint8) to clip_image_u8 (HWC uint8)
@@ -143,6 +140,8 @@ EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyM
     }
 
     // 7. Run vision encoder
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
+    ov::InferRequest& encoder = infer_request_guard.get();
     encoder.set_tensor("pixel_values", pixel_values);
     encoder.set_tensor("image_position_ids", image_position_ids);
     encoder.infer();
@@ -217,19 +216,21 @@ NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(const std::string& promp
     const auto& img = m_vlm_config.image_token;
     auto [unified_prompt, images_sequence] = normalize(prompt, img, img, base_id, images.size());
 
+    size_t search_offset = 0;
     for (size_t new_image_id : images_sequence) {
-        const ov::Tensor& image_embed = images.at(new_image_id - base_id).resized_source;
-        size_t num_image_tokens = image_embed.get_shape().at(1);
-
-        std::string expanded_tag = boi;
+        const size_t num_image_tokens = images.at(new_image_id - base_id).resized_source.get_shape().at(1);
+        std::string expanded_tag;
+        expanded_tag.reserve(boi.size() + num_image_tokens * img.size() + eoi.size());
+        expanded_tag = boi;
         for (size_t i = 0; i < num_image_tokens; i++) {
             expanded_tag += img;
         }
         expanded_tag += eoi;
 
-        size_t pos = unified_prompt.find(img);
+        size_t pos = unified_prompt.find(img, search_offset);
         OPENVINO_ASSERT(pos != std::string::npos, "Failed to find image token in prompt during normalization");
         unified_prompt.replace(pos, img.length(), expanded_tag);
+        search_offset = pos + expanded_tag.size();
     }
     return {std::move(unified_prompt), std::move(images_sequence), {}};
 }

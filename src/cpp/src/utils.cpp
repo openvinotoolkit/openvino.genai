@@ -237,6 +237,8 @@ ProcessorConfig from_any_map(
     read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
     read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
     read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
+    read_anymap_param(config_map, "pooling_kernel_size", extracted_config.pooling_kernel_size);
+    read_anymap_param(config_map, "max_soft_tokens", extracted_config.max_soft_tokens);
     return extracted_config;
 }
 
