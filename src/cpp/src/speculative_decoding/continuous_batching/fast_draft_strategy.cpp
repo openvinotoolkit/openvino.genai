@@ -289,7 +289,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
     };
 
-    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, prompt_ids, lm_extra_inputs_list, strategy);
+    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
 }
 
 SpeculativeDecodingMetrics
