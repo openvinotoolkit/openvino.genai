@@ -22,6 +22,10 @@ int main(int argc, char* argv[]) try {
     ov::genai::Text2VideoPipeline pipe(models_path, device);
     const size_t frame_rate = pipe.get_generation_config().frame_rate.value();
     std::cout << "Generating baseline video without caching...\n";
+    auto generation_config = pipe.get_generation_config();
+    generation_config.taylorseer_config = std::nullopt;  // explicitly disable caching
+    pipe.set_generation_config(generation_config);
+
     auto start_time = std::chrono::high_resolution_clock::now();
 
     auto baseline_output = pipe.generate(
@@ -46,7 +50,7 @@ int main(int argc, char* argv[]) try {
     const int disable_after = -2;
     ov::genai::TaylorSeerCacheConfig taylorseer_config{cache_interval, disable_before, disable_after};
     std::cout << taylorseer_config.to_string() << "\n";
-    auto generation_config = pipe.get_generation_config();
+    generation_config = pipe.get_generation_config();
     generation_config.taylorseer_config = taylorseer_config;
     pipe.set_generation_config(generation_config);
 
