@@ -30,8 +30,6 @@ updates:
   - package-ecosystem: "npm"
     directories:
       - "/site"
-      - "/src/js"
-      - "/samples/js"
       - "/.github/actions/install_wheel"
     schedule:
       interval: "daily"
@@ -39,6 +37,24 @@ updates:
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     versioning-strategy: increase-if-necessary
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+
+  #
+  # Enable version updates for npm
+  #
+  - package-ecosystem: "npm"
+    directories:
+      - "/src/js"
+      - "/samples/js"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+      timezone: "Europe/Dublin"
+    open-pull-requests-limit: 3
+    versioning-strategy: lockfile-only
     groups:
       npm-dependencies:
         patterns:
