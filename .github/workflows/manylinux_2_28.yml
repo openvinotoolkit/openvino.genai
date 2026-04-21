@@ -605,7 +605,15 @@ jobs:
 
       - name: Setup HF Token
         if: ${{ matrix.test.run_condition }}
-        run: echo "HF_TOKEN=$(cat ${{ env.HF_TOKEN_PATH }})" >> "$GITHUB_ENV"
+        run: |
+          hf_token_path="${{ env.HF_TOKEN_PATH }}"
+          if [ ! -r "$hf_token_path" ]; then
+            echo "Missing or unreadable HF token secret file: $hf_token_path. Check that the HF token secret is available and correctly mounted." >&2
+            exit 1
+          fi
+          hf_token="$(tr -d '\r\n' < "$hf_token_path")"
+          echo "::add-mask::$hf_token"
+          printf 'HF_TOKEN=%s\n' "$hf_token" >> "$GITHUB_ENV"
 
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}
@@ -684,7 +692,15 @@ jobs:
           merge-multiple: true
 
       - name: Setup HF Token
-        run: echo "HF_TOKEN=$(cat ${{ env.HF_TOKEN_PATH }})" >> "$GITHUB_ENV"
+        run: |
+          hf_token_path="${{ env.HF_TOKEN_PATH }}"
+          if [ ! -r "$hf_token_path" ]; then
+            echo "Missing or unreadable HF token secret file: $hf_token_path. Check that the HF token secret is available and correctly mounted." >&2
+            exit 1
+          fi
+          hf_token="$(tr -d '\r\n' < "$hf_token_path")"
+          echo "::add-mask::$hf_token"
+          printf 'HF_TOKEN=%s\n' "$hf_token" >> "$GITHUB_ENV"
 
       - name: Install OpenVINO GenAI Python packages (from wheels)
         uses: ./src/.github/actions/install_wheel
