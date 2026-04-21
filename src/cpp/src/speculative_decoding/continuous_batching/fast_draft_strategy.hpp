@@ -33,6 +33,7 @@ std::vector<EncodedGenerationResult> generate_common(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
     std::optional<std::vector<ov::Tensor>> token_type_ids,
+    std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>> position_ids,
     std::optional<std::vector<ov::Tensor>> prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list,
     GenerateStrategy& strategy) {
@@ -67,6 +68,14 @@ std::vector<EncodedGenerationResult> generate_common(
         const bool has_valid_token_type_ids = token_type_ids.has_value() && rid < token_type_ids->size();
         const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
         const bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && rid < lm_extra_inputs_list->size();
+
+        if (position_ids.has_value() && self->m_inputs_embedder) {
+            const auto [position_ids_tensor, rope_delta] = (*position_ids)[rid];
+            self->m_inputs_embedder->set_position_ids(position_ids_tensor);
+            if (rope_delta.has_value()) {
+                self->m_inputs_embedder->set_rope_delta(*rope_delta);
+            }
+        }
 
         main_generations.push_back(self->add_request(
             rid,
@@ -171,6 +180,7 @@ public:
             const std::vector<GenerationConfig>& sampling_params,
             const StreamerVariant& streamer,
             std::optional<std::vector<ov::Tensor>> token_type_ids,
+            std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>> position_ids,
             std::optional<std::vector<ov::Tensor>> prompt_ids,
             const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list,
             GenerateStrategy& strategy);

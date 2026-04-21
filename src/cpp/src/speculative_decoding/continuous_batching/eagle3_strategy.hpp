@@ -16,6 +16,7 @@ public:
         const std::vector<GenerationConfig>&,
         const StreamerVariant&,
         std::optional<std::vector<ov::Tensor>>,
+        std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>,
         std::optional<std::vector<ov::Tensor>>,
         const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>&,
         GenerateStrategy&);
