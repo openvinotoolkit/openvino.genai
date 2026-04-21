@@ -6,6 +6,7 @@
 // without requiring a live model or KV-cache, making them fast and hermetic.
 
 #include <gtest/gtest.h>
+#include "openvino/genai/generation_config.hpp"
 #include "sampling/sampler.hpp"
 
 using ov::genai::CandidateGraph;
@@ -528,4 +529,202 @@ TEST(CandidateGraphTest, RetrieveIndicesSharedPrefix) {
             EXPECT_NE(node_to_index.find(n.get()), node_to_index.end())
                 << "Path node not in selected set";
     }
+}
+
+// ---------------------------------------------------------------------------
+// End-to-end Sampler flow with tree_params enabled
+//
+// These tests exercise the full Sampler::sample() path when tree search is
+// active (tree_params.tree_depth > 0).  Synthetic logit tensors stand in for
+// the draft and target models so no live model or KV cache is required.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Depth-2 config: 2 draft steps → 4-node tree (root + 3 candidates at layers 1/2).
+//
+// Tree shape after two draft steps (branching_factor=2, num_assistant_tokens=3):
+//
+//   root (layer 0)
+//   ├─ c1 (layer 1, higher score)        ← index 1 in final_nodes
+//   │   └─ gc1 (layer 2)                 ← index 3 in final_nodes
+//   └─ c2 (layer 1, lower score)         ← index 2 in final_nodes
+//
+// position_ids  = [0, 1, 1, 2]
+// retrieve_indices (one path per leaf in score order):
+//   leaf c2  → [0, 2]
+//   leaf gc1 → [0, 1, 3]
+ov::genai::GenerationConfig make_tree_config_depth2() {
+    ov::genai::GenerationConfig cfg;
+    cfg.max_new_tokens = 10;
+    cfg.tree_params.branching_factor = 2;
+    cfg.tree_params.tree_depth = 2;
+    cfg.num_assistant_tokens = 3;
+    return cfg;
+}
+
+// Builds a SequenceGroup with a single-token prompt [7].
+// Simulates target-model prefill by appending `prefill_token` as the first
+// generated token and marking the prompt as processed.
+ov::genai::SequenceGroup::Ptr make_prefilled_group(int64_t prefill_token,
+                                                   const ov::genai::GenerationConfig& cfg) {
+    std::vector<int64_t> prompt = {7};
+    ov::Tensor input_ids(ov::element::i64, {1, 1}, prompt.data());
+    auto sg = std::make_shared<ov::genai::SequenceGroup>(
+        /*request_id=*/0, input_ids, cfg, /*block_size=*/32);
+    sg->get_sequences().front()->append_token(prefill_token, 0.0f);
+    sg->update_processed_tokens_num(/*prompt_len=*/1);
+    return sg;
+}
+
+// Packs per-position logit rows into a 3-D [batch, seq_len, vocab_size] tensor.
+ov::Tensor pack_logits(size_t batch,
+                       size_t seq_len,
+                       size_t vocab_size,
+                       const std::vector<std::vector<float>>& rows) {
+    std::vector<float> flat;
+    flat.reserve(batch * seq_len * vocab_size);
+    for (const auto& row : rows)
+        flat.insert(flat.end(), row.begin(), row.end());
+    ov::Tensor t(ov::element::f32, {batch, seq_len, vocab_size});
+    std::copy(flat.begin(), flat.end(), t.data<float>());
+    return t;
+}
+
+// Runs the two draft steps shared by all depth-2 validation tests and returns the
+// ready-to-validate SequenceGroup.
+//
+// After step 1 (batch=1): c1(token2, high score) and c2(token3, low score) are created.
+// get_running_sequences() returns [c2(anchor), c1(fork)], so pack_logits row ordering is:
+//   row 0 → c2;  row 1 → c1 (higher layer-1 score carries gc1=token4 into the budget).
+// Final tree: root(0)→{c1(1), c2(2)}, gc1(3,token4) under c1.
+//   generated_ids    = [1, 2, 3, 4]
+//   position_ids     = [0, 1, 1, 2]
+//   retrieve_indices = [[0,2](c2-leaf), [0,1,3](gc1-leaf)]
+ov::genai::SequenceGroup::Ptr run_depth2_draft(ov::genai::Sampler& sampler) {
+    constexpr size_t vocab = 6;
+    auto sg = make_prefilled_group(/*prefill_token=*/1, make_tree_config_depth2());
+    sg->schedule_tokens(1);
+    sampler.sample({sg},
+                   pack_logits(1, 1, vocab, {{-10.f, -10.f, 10.f, 5.f, -10.f, -10.f}}),
+                   /*is_validation_mode_enabled=*/false);
+    sg->schedule_tokens(sg->get_num_available_tokens_for_batching());
+    sampler.sample({sg},
+                   pack_logits(2, 1, vocab, {
+                       {-10.f, -10.f, -10.f,  3.f,  1.f, 0.f},   // row 0 → c2 (low cumulative score)
+                       {-10.f, -10.f, -10.f, -10.f, 10.f, 5.f},  // row 1 → c1 (gc1=token4 survives budget)
+                   }),
+                   /*is_validation_mode_enabled=*/false);
+    return sg;
+}
+
+}  // namespace
+
+// After two draft steps the anchor sequence must encode the 4-node tree:
+//   root(idx=0)→{c1(token2,idx=1), c2(token3,idx=2)}, gc1(token4,idx=3) under c1.
+//   position_ids     = [0, 1, 1, 2]
+//   retrieve_indices = [[0,2](c2-leaf), [0,1,3](gc1-leaf)]
+TEST(SamplerTreeSearchTest, DraftStepsBuildsCorrectTreeMetadata) {
+    ov::genai::Sampler sampler;
+    const auto sg = run_depth2_draft(sampler);
+
+    const auto& seq = sg->get_sequences().front();
+    const auto& ids = seq->get_generated_ids();
+    ASSERT_EQ(ids.size(), 4u);
+    EXPECT_EQ(ids[0], 1);  // prefill anchor
+    EXPECT_EQ(ids[1], 2);  // c1 (higher score at layer 1)
+    EXPECT_EQ(ids[2], 3);  // c2 (lower score at layer 1)
+    EXPECT_EQ(ids[3], 4);  // gc1 (under c1, layer 2)
+
+    const auto& meta = seq->get_tree_metadata();
+    ASSERT_EQ(meta.tree_position_ids.size(), 4u);
+    EXPECT_EQ(meta.tree_position_ids[0], 0);  // root
+    EXPECT_EQ(meta.tree_position_ids[1], 1);  // c1
+    EXPECT_EQ(meta.tree_position_ids[2], 1);  // c2
+    EXPECT_EQ(meta.tree_position_ids[3], 2);  // gc1
+
+    ASSERT_EQ(meta.retrieve_indices.size(), 2u);
+    EXPECT_EQ(meta.retrieve_indices[0], (std::vector<int64_t>{0, 2}));    // c2-leaf path
+    EXPECT_EQ(meta.retrieve_indices[1], (std::vector<int64_t>{0, 1, 3})); // gc1-leaf path
+}
+
+// Full flow — target accepts the deep path (root→c1→gc1); bonus=5.
+TEST(SamplerTreeSearchTest, Depth2ValidationAcceptsDeepestPath) {
+    constexpr size_t vocab = 6;
+    ov::genai::Sampler sampler;
+    auto sg = run_depth2_draft(sampler);
+
+    // Validation: target picks c1(token2) at pos 0, gc1(token4) at pos 1; bonus=5 at pos 3.
+    sg->set_num_validated_tokens(3);
+    const size_t val_slots = sg->get_num_available_tokens_for_batching();
+    ASSERT_EQ(val_slots, 4u);
+    sg->schedule_tokens(val_slots);
+    sampler.sample({sg},
+                   pack_logits(1, val_slots, vocab, {
+                       {-10.f, -10.f, 10.f, -10.f, -10.f, -10.f},  // pos 0: picks token 2 → accept c1
+                       {-10.f, -10.f, -10.f, -10.f, 10.f, -10.f},  // pos 1: picks token 4 → accept gc1
+                       {10.f, -10.f, -10.f, -10.f, -10.f, -10.f},  // pos 2: picks token 0 -> reject
+                       {-10.f, -10.f, -10.f, -10.f, -10.f, 10.f},  // pos 3: bonus = token 5
+                   }),
+                   /*is_validation_mode_enabled=*/true);
+
+    const auto& ids = sg->get_sequences().front()->get_generated_ids();
+    ASSERT_EQ(ids.size(), 4u);
+    EXPECT_EQ(ids[0], 1);  // prefill anchor
+    EXPECT_EQ(ids[1], 2);  // c1 accepted
+    EXPECT_EQ(ids[2], 4);  // gc1 accepted
+    EXPECT_EQ(ids[3], 5);  // bonus token
+}
+
+// Full flow — target accepts only the shallow branch (root→c2); bonus=1.
+TEST(SamplerTreeSearchTest, Depth2ValidationAcceptsShallowBranch) {
+    constexpr size_t vocab = 6;
+    ov::genai::Sampler sampler;
+    auto sg = run_depth2_draft(sampler);
+
+    // Validation: target picks c2(token3) at pos 0, then bonus.
+    sg->set_num_validated_tokens(3);
+    const size_t val_slots = sg->get_num_available_tokens_for_batching();
+    ASSERT_EQ(val_slots, 4u);
+    sg->schedule_tokens(val_slots);
+    sampler.sample({sg},
+                   pack_logits(1, val_slots, vocab, {
+                       {-10.f, -10.f, -10.f, 10.f, -10.f, -10.f},  // pos 0: picks token 3 → accept c2
+                       {10.f, -10.f, -10.f, -10.f, -10.f, -10.f},  // pos 1: picks token 0 → reject
+                       {-10.f, 10.f, -10.f, -10.f, -10.f, -10.f},  // pos 2: bonus = token 1
+                       {-10.f, -10.f, -10.f, -10.f, -10.f, 10.f},  // pos 3: picks token 5 → reject
+                   }),
+                   /*is_validation_mode_enabled=*/true);
+
+    const auto& ids = sg->get_sequences().front()->get_generated_ids();
+    ASSERT_EQ(ids.size(), 3u);
+    EXPECT_EQ(ids[0], 1);  // prefill anchor
+    EXPECT_EQ(ids[1], 3);  // c2 accepted
+    EXPECT_EQ(ids[2], 1);  // bonus token
+}
+
+// Full flow — target rejects all draft candidates; bonus=0.
+TEST(SamplerTreeSearchTest, Depth2ValidationRejectsAll) {
+    constexpr size_t vocab = 6;
+    ov::genai::Sampler sampler;
+    auto sg = run_depth2_draft(sampler);
+
+    // Validation: token 0 at pos 0 matches neither c1 (token 2) nor c2 (token 3).
+    sg->set_num_validated_tokens(3);
+    const size_t val_slots = sg->get_num_available_tokens_for_batching();
+    ASSERT_EQ(val_slots, 4u);
+    sg->schedule_tokens(val_slots);
+    sampler.sample({sg},
+                   pack_logits(1, val_slots, vocab, {
+                       {10.f, -10.f, -10.f, -10.f, -10.f, -10.f},   // pos 0: picks token 0 (no match)
+                       {-10.f, 10.f, -10.f, -10.f, -10.f, -10.f},   // pos 1: picks token 1 → reject
+                       {-10.f, -10.f, -10.f, 10.f, -10.f, -10.f},   // pos 2: picks token 3 → reject
+                       {-10.f, 10.f, -10.f, -10.f, -10.f, -10.f},   // pos 3: picks token 1 → reject
+                   }),
+                   /*is_validation_mode_enabled=*/true);
+
+    const auto& ids = sg->get_sequences().front()->get_generated_ids();
+    ASSERT_EQ(ids.size(), 2u);
+    EXPECT_EQ(ids[0], 1);  // prefill anchor
+    EXPECT_EQ(ids[1], 0);  // bonus token (all drafts rejected)
 }
