@@ -378,7 +378,6 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 } // namespace
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
-const std::string DEVICE_PROPERTIES    = "DEVICE_PROPERTIES";
 
 namespace {
 std::string to_lower(const std::string& s) {
@@ -408,7 +407,7 @@ ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string&
     // Meta key exclusion is case-insensitive (e.g. "per_model_properties"
     // is also treated as a meta key).
     const auto per_model_lowered = to_lower(PER_MODEL_PROPERTIES);
-    const auto device_props_lowered = to_lower(DEVICE_PROPERTIES);
+    const auto device_props_lowered = to_lower(ov::device::properties.name());
     for (const auto& kv : properties) {
         const auto key_lowered = to_lower(kv.first);
         if (key_lowered == per_model_lowered || key_lowered == device_props_lowered) {
@@ -417,9 +416,9 @@ ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string&
         result.insert_or_assign(kv.first, kv.second);
     }
 
-    // Layer 2: DEVICE_PROPERTIES[device] overrides globals for this device.
+    // Layer 2: ov::device::properties[device] overrides globals for this device.
     // Both the meta key and the device name are matched case-insensitively.
-    auto dev_it = find_case_insensitive(properties, DEVICE_PROPERTIES);
+    auto dev_it = find_case_insensitive(properties, ov::device::properties.name());
     if (dev_it != properties.end()) {
         const auto& by_device = dev_it->second.as<ov::AnyMap>();
         auto role_dev_it = find_case_insensitive(by_device, device);

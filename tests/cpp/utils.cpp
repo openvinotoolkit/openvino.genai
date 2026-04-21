@@ -39,11 +39,11 @@ TEST(TestGetModelProperties, excludes_meta_keys_from_globals) {
     ov::AnyMap main_props = {
         {"CACHE_DIR", std::string("/tmp")},
         {PER_MODEL_PROPERTIES, ov::AnyMap{}},
-        {DEVICE_PROPERTIES, ov::AnyMap{}},
+        {ov::device::properties.name(), ov::AnyMap{}},
     };
     auto result = get_model_properties(main_props, "vision_embeddings", "GPU");
     EXPECT_EQ(result.count(PER_MODEL_PROPERTIES), 0u);
-    EXPECT_EQ(result.count(DEVICE_PROPERTIES), 0u);
+    EXPECT_EQ(result.count(ov::device::properties.name()), 0u);
     ASSERT_EQ(result.count("CACHE_DIR"), 1u);
     EXPECT_EQ(result.at("CACHE_DIR").as<std::string>(), "/tmp");
 }
@@ -51,7 +51,7 @@ TEST(TestGetModelProperties, excludes_meta_keys_from_globals) {
 TEST(TestGetModelProperties, device_overrides_global) {
     ov::AnyMap main_props = {
         {"NUM_STREAMS", std::string("2")},
-        {DEVICE_PROPERTIES, ov::AnyMap{
+        {ov::device::properties.name(), ov::AnyMap{
             {"GPU", ov::AnyMap{{"NUM_STREAMS", std::string("8")}}},
         }},
     };
@@ -63,7 +63,7 @@ TEST(TestGetModelProperties, device_overrides_global) {
 TEST(TestGetModelProperties, device_layer_skipped_when_device_not_listed) {
     ov::AnyMap main_props = {
         {"NUM_STREAMS", std::string("2")},
-        {DEVICE_PROPERTIES, ov::AnyMap{
+        {ov::device::properties.name(), ov::AnyMap{
             {"NPU", ov::AnyMap{{"NUM_STREAMS", std::string("8")}}},
         }},
     };
@@ -75,7 +75,7 @@ TEST(TestGetModelProperties, device_layer_skipped_when_device_not_listed) {
 TEST(TestGetModelProperties, per_model_overrides_device_and_global) {
     ov::AnyMap main_props = {
         {"NUM_STREAMS", std::string("2")},
-        {DEVICE_PROPERTIES, ov::AnyMap{
+        {ov::device::properties.name(), ov::AnyMap{
             {"GPU", ov::AnyMap{{"NUM_STREAMS", std::string("4")}}},
         }},
         {PER_MODEL_PROPERTIES, ov::AnyMap{
@@ -105,7 +105,7 @@ TEST(TestGetModelProperties, does_not_mutate_input_map) {
         {PER_MODEL_PROPERTIES, ov::AnyMap{
             {"vision_embeddings", ov::AnyMap{{"NUM_STREAMS", std::string("8")}}},
         }},
-        {DEVICE_PROPERTIES, ov::AnyMap{
+        {ov::device::properties.name(), ov::AnyMap{
             {"GPU", ov::AnyMap{{"NUM_STREAMS", std::string("4")}}},
         }},
     };
@@ -113,14 +113,14 @@ TEST(TestGetModelProperties, does_not_mutate_input_map) {
     (void)get_model_properties(main_props, "vision_embeddings", "GPU");
     EXPECT_EQ(main_props.size(), snapshot.size());
     EXPECT_EQ(main_props.count(PER_MODEL_PROPERTIES), 1u);
-    EXPECT_EQ(main_props.count(DEVICE_PROPERTIES), 1u);
+    EXPECT_EQ(main_props.count(ov::device::properties.name()), 1u);
     ASSERT_EQ(main_props.count("CACHE_DIR"), 1u);
     EXPECT_EQ(main_props.at("CACHE_DIR").as<std::string>(), "/tmp");
 }
 
 TEST(TestGetModelProperties, device_lookup_is_case_insensitive) {
     ov::AnyMap main_props = {
-        {DEVICE_PROPERTIES, ov::AnyMap{
+        {ov::device::properties.name(), ov::AnyMap{
             {"GPU", ov::AnyMap{{"NUM_STREAMS", std::string("8")}}},
         }},
     };
@@ -151,7 +151,7 @@ TEST(TestGetModelProperties, role_lookup_is_case_insensitive) {
 TEST(TestGetModelProperties, merges_disjoint_keys_across_layers) {
     ov::AnyMap main_props = {
         {"CACHE_DIR", std::string("/tmp")},
-        {DEVICE_PROPERTIES, ov::AnyMap{
+        {ov::device::properties.name(), ov::AnyMap{
             {"GPU", ov::AnyMap{{"GPU_QUEUE_PRIORITY", std::string("HIGH")}}},
         }},
         {PER_MODEL_PROPERTIES, ov::AnyMap{
