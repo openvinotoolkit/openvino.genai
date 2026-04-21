@@ -41,7 +41,7 @@ class MonitorLevel(Enum):
     DISABLED = 0
     WARMUP = 1
     FULL = 2
-    IDLE = 3
+    HYBRID = 3
 
 
 class MonitorType(Enum):
@@ -55,7 +55,7 @@ class MonitorMode(Enum):
     THREAD_FULL = (MonitorLevel.FULL, MonitorType.THREAD)
     PROCESS_WARMUP = (MonitorLevel.WARMUP, MonitorType.PROCESS)
     PROCESS_FULL = (MonitorLevel.FULL, MonitorType.PROCESS)
-    PROCESS_IDLE = (MonitorLevel.IDLE, MonitorType.PROCESS)
+    PROCESS_HYBRID = (MonitorLevel.HYBRID, MonitorType.PROCESS)
 
     def __init__(self, monitor_level, monitor_type):
         self.monitor_level = monitor_level
@@ -70,7 +70,7 @@ class MonitorMode(Enum):
             cls.THREAD_FULL,
             cls.PROCESS_WARMUP,
             cls.PROCESS_FULL,
-            cls.PROCESS_IDLE,
+            cls.PROCESS_HYBRID,
         ]
         if not 0 <= code <= 5:
             raise ValueError(f"Invalid memory monitor mode: {code}. Must be 0-5")
@@ -97,8 +97,8 @@ class MonitorMode(Enum):
         return self.monitor_level != MonitorLevel.DISABLED
 
     @property
-    def is_idle(self) -> bool:
-        return self.monitor_level == MonitorLevel.IDLE
+    def is_hybrid(self) -> bool:
+        return self.monitor_level == MonitorLevel.HYBRID
 
 
 class MemoryMonitorHandler:
@@ -107,7 +107,7 @@ class MemoryMonitorHandler:
         self.mth = MemThreadHandler(args) if self.mode.is_thread else None
         self.mmh = None
         if self.mode.is_process:
-            self.mmh = MemoryMarkerHandler(args, self.mode.is_idle)
+            self.mmh = MemoryMarkerHandler(args, self.mode.is_hybrid)
         self.cooldown = args.memory_consumption_cooldown
         self.last_iter_number = None
 
@@ -168,7 +168,10 @@ class MemoryMonitorHandler:
         if self.cooldown is None:
             return
         if self.mmh:
-            self.mmh.update_marker("cooldown")
+            if self.mmh.last_marker == "model":
+                self.mmh.update_marker("model_cooldown")
+            else:
+                self.mmh.update_marker("cooldown")
             log.info(f"MemoryMonitor: {label}: {self.cooldown}")
         time.sleep(self.cooldown)
 
@@ -908,7 +911,7 @@ class MemoryMarkerMonitor(list):
             print(f"Error checking markers: {e}")
         return False
 
-    def idle_loop(self, metadata):
+    def hybrid_loop(self, metadata):
         count_error = 0
         while not self.should_stop:
             before_marker = self.marker
@@ -916,8 +919,8 @@ class MemoryMarkerMonitor(list):
                 print("Memory worker: Received stop signal")
                 break
 
-            if self.marker == "model":
-                # sample entire model phase
+            if self.marker == "model" or str(self.marker).startswith("step-0"):
+                # sample entire model phase and warmup
                 try:
                     self.collect_samples(self.marker)
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -1025,18 +1028,19 @@ class MemoryMarkerMonitor(list):
 
 
 class MemoryMarkerHandler:
-    def __init__(self, args, is_idle=False):
+    def __init__(self, args, is_hybrid=False):
         mode = args.memory_consumption
         cooldown = args.memory_consumption_cooldown
         interval = args.memory_consumption_interval
         report_path = args.memory_consumption_dir
+        self.last_marker = None
 
         parent_pid = os.getpid()
         self.marker_queue = multiprocessing.Queue(maxsize=1000)
         self.s_event = multiprocessing.Event()
 
         time.sleep(max(cooldown, 1))  # needed for some machines
-        pargs = self.marker_queue, parent_pid, interval, report_path, mode, cooldown, self.s_event, is_idle
+        pargs = self.marker_queue, parent_pid, interval, report_path, mode, cooldown, self.s_event, is_hybrid
         self.background_process = mProcess(target=self.background_worker, args=pargs, daemon=True)
         self.background_process.start()
         self.update_marker("start")
@@ -1093,7 +1097,7 @@ class MemoryMarkerHandler:
                 time.sleep(0.1)
 
     @staticmethod
-    def background_worker(conn, pid, interval, path, mode, cooldown, s_event, is_idle):
+    def background_worker(conn, pid, interval, path, mode, cooldown, s_event, is_hybrid):
         try:
             mmm = MemoryMarkerMonitor(conn, pid, interval, path)
         except Exception:
@@ -1116,8 +1120,8 @@ class MemoryMarkerHandler:
             print("Could not set event: %s", exc)
 
         try:
-            if is_idle:
-                mmm.idle_loop(metadata)
+            if is_hybrid:
+                mmm.hybrid_loop(metadata)
             else:
                 mmm.loop(metadata)
             conn.close()
@@ -1140,6 +1144,7 @@ class MemoryMarkerHandler:
             # Non-blocking put with timeout
             log.info(f"MemoryMonitor: try to send new marker: {marker}")
             self.marker_queue.put(marker, timeout=0.1)
+            self.last_marker = marker
             return True
 
         except queue.Full:
