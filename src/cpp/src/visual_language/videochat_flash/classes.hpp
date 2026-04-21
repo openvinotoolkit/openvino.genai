@@ -49,6 +49,12 @@ private:
     size_t m_num_attention_heads = 16;
     size_t m_target_num_token = 64;
 
+    /// @brief Loads shared VideoChat-Flash configs from the model config directory.
+    void initialize_shared_config(const std::filesystem::path& config_dir_path);
+    /// @brief Reshapes and compiles the vision embeddings model with static rotary positional embedding shape.
+    void initialize_vision_encoder_queue(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties);
+    /// @brief Initializes infer request queue for the vision projection model.
+    void initialize_vision_projection_queue(ov::CompiledModel& compiled_model);
     /// @brief Pads frames if frame count is not divisible by mm_local_num_frames.
     ov::Tensor sample_video_if_needed(const ov::Tensor& video) const;
     /// @brief Initializes 3D sin-cos positional embedding tensor for vision encoder input.

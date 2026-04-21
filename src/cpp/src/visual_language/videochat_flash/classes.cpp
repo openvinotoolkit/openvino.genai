@@ -666,18 +666,20 @@ void VisionEncoderVideoChatFlashQwen::initialize_merge_model_queue() {
         });
 }
 
-VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
-    const std::filesystem::path& model_dir,
-    const std::string& device,
-    const ov::AnyMap properties) {
+void VisionEncoderVideoChatFlashQwen::initialize_shared_config(const std::filesystem::path& config_dir_path) {
     // VideoChat-Flash exports do not provide preprocessor_config.json.
     // The required preprocessing parameters for this model live in config.json,
     // so ProcessorConfig is initialized from that file explicitly.
-    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "config.json");
-    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(model_dir, "video_preprocessor_config.json");
-    m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
-    initialize_runtime_config(model_dir / "config.json");
+    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "config.json");
+    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, "video_preprocessor_config.json");
+    m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
+    initialize_runtime_config(config_dir_path / "config.json");
+}
 
+void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
+    std::shared_ptr<ov::Model> model,
+    const std::string& device,
+    const ov::AnyMap& properties) {
     initialize_positional_embedding();
     const ov::Shape pos_emb_shape = m_pos_emb.get_shape();
 
@@ -687,8 +689,6 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
         pos_emb_shape.to_string(),
         "."
     );
-
-    auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
 
     // Accelerate model by using static rope shape.
     std::map<std::string, ov::PartialShape> input_shapes;
@@ -702,14 +702,28 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
         [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
+}
+
+void VisionEncoderVideoChatFlashQwen::initialize_vision_projection_queue(ov::CompiledModel& compiled_model) {
+    m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+}
+
+VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
+    const std::filesystem::path& model_dir,
+    const std::string& device,
+    const ov::AnyMap properties) {
+    initialize_shared_config(model_dir);
+
+    auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
+    initialize_vision_encoder_queue(model, device, properties);
 
     auto compiled_model_vision =
         utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, properties);
-    m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model_vision.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model_vision]() -> ov::InferRequest {
-            return compiled_model_vision.create_infer_request();
-        });
+    initialize_vision_projection_queue(compiled_model_vision);
 
     initialize_merge_model_queue();
 }
@@ -718,26 +732,20 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     const ModelsMap& models_map,
     const std::filesystem::path& config_dir_path,
     const std::string& device,
-    const ov::AnyMap properties) : VisionEncoder(models_map, config_dir_path, device, properties) {
-    // VideoChat-Flash exports do not provide preprocessor_config.json.
-    // The required preprocessing parameters for this model live in config.json,
-    // so ProcessorConfig is initialized from that file explicitly.
-    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "config.json");
-    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, "video_preprocessor_config.json");
-    m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
-    initialize_runtime_config(config_dir_path / "config.json");
-    const auto& vision_encoder_model = utils::get_model_weights_pair(models_map, "vision_projection").first;
-    const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_projection").second;
-    auto compiled_model = utils::singleton_core().compile_model(vision_encoder_model, vision_encoder_weights, device, properties);
-    m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
-        });
+    const ov::AnyMap properties) {
+    initialize_shared_config(config_dir_path);
+
+    const auto& [vision_embeddings_model, vision_embeddings_weights] =
+        utils::get_model_weights_pair(models_map, "vision_embeddings");
+    auto model = utils::singleton_core().read_model(vision_embeddings_model, vision_embeddings_weights);
+    initialize_vision_encoder_queue(model, device, properties);
+
+    const auto& [vision_projection_model, vision_projection_weights] =
+        utils::get_model_weights_pair(models_map, "vision_projection");
+    auto compiled_model = utils::singleton_core().compile_model(vision_projection_model, vision_projection_weights, device, properties);
+    initialize_vision_projection_queue(compiled_model);
 
     initialize_merge_model_queue();
-    initialize_positional_embedding();
-
 }
 
 EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
