@@ -17,7 +17,7 @@
 #include <cmath>
 #include <sstream>
 #include <mutex>
-
+#include <fstream>
 namespace ov::genai {
 
 namespace {
