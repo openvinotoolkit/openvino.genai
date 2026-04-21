@@ -57,9 +57,7 @@ TEST_MODELS = {
     "IMAGE_GENERATION_MODEL": {
         "model_id": "optimum-intel-internal-testing/tiny-random-flux",
         "model_class": OVFluxPipeline,
-        "model_kwargs": {
-            "has_tokenizer": False
-        },
+        "model_kwargs": {"has_tokenizer": False},
     },
 }
 

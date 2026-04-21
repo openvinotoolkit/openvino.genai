@@ -327,7 +327,7 @@ def download_and_convert_model_class(
 
     if model_kwargs is None:
         model_kwargs = {}
-    
+
     if "has_tokenizer" not in model_kwargs and "eagle3" in str(model_id).lower():
         model_kwargs["has_tokenizer"] = False
 
