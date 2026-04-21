@@ -208,6 +208,7 @@ def get_huggingface_models(
     model_class: Type[OVModel],
     local_files_only=False,
     trust_remote_code=False,
+    has_tokenizer=True,
     **model_kwargs,
 ) -> tuple[OptimizedModel, AutoTokenizer]:
     if not local_files_only and isinstance(model_id, str):
@@ -219,8 +220,6 @@ def get_huggingface_models(
             local_files_only=local_files_only,
             trust_remote_code=trust_remote_code,
         )
-
-    is_eagle_model = "eagle3" in str(model_id).lower()
 
     def auto_model_from_pretrained() -> OptimizedModel:
         params = {
@@ -236,11 +235,11 @@ def get_huggingface_models(
 
     opt_model = retry_request(auto_model_from_pretrained)
 
-    if is_eagle_model:
-        return opt_model, None
-    else:
+    if has_tokenizer:
         hf_tokenizer = retry_request(auto_tokenizer_from_pretrained)
         return opt_model, hf_tokenizer
+    else:
+        return opt_model, None
 
 
 def convert_and_save_tokenizer(
@@ -286,13 +285,14 @@ TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
 
 # Some linear-attention models are exported incorrectly via OVModelForCausalLM.from_pretrained(..., export=True)
 # in the Python API path. Use optimum-cli export for these models to match stable CLI behavior - CVS-183496
-FORCE_OPTIMUM_CLI_EXPORT_MODELS = (
-    "optimum-intel-internal-testing/tiny-random-lfm2",
-    "optimum-intel-internal-testing/tiny-random-qwen3-next",
-)
+FORCE_OPTIMUM_CLI_EXPORT_MODELS = {
+    "optimum-intel-internal-testing/tiny-random-flux": "text-to-image",
+    "optimum-intel-internal-testing/tiny-random-lfm2": "text-generation-with-past",
+    "optimum-intel-internal-testing/tiny-random-qwen3-next": "text-generation-with-past",
+}
 
 
-def export_with_optimum_cli(model_id: str, output_dir: Path, trust_remote_code: bool) -> None:
+def export_with_optimum_cli(model_id: str, model_task: str, output_dir: Path, trust_remote_code: bool) -> None:
     command = [
         "optimum-cli",
         "export",
@@ -300,7 +300,7 @@ def export_with_optimum_cli(model_id: str, output_dir: Path, trust_remote_code: 
         "-m",
         model_id,
         "--task",
-        "text-generation-with-past",
+        model_task,
         str(output_dir),
     ]
 
@@ -327,6 +327,9 @@ def download_and_convert_model_class(
 
     if model_kwargs is None:
         model_kwargs = {}
+    
+    if "has_tokenizer" not in model_kwargs and "eagle3" in str(model_id).lower():
+        model_kwargs["has_tokenizer"] = False
 
     if manager.is_complete() or (models_path / OV_MODEL_FILENAME).exists():
         opt_model, hf_tokenizer = get_huggingface_models(
@@ -334,9 +337,10 @@ def download_and_convert_model_class(
         )
     else:
         if model_id in FORCE_OPTIMUM_CLI_EXPORT_MODELS:
+            model_task = FORCE_OPTIMUM_CLI_EXPORT_MODELS[model_id]
 
             def convert_to_temp(temp_path: Path) -> None:
-                export_with_optimum_cli(model_id, temp_path, trust_remote_code=trust_remote_code)
+                export_with_optimum_cli(model_id, model_task, temp_path, trust_remote_code=trust_remote_code)
 
             manager.execute(convert_to_temp)
             opt_model, hf_tokenizer = get_huggingface_models(

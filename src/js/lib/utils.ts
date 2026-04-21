@@ -499,4 +499,44 @@ export type WhisperPipelineProperties = {
   schedulerConfig?: SchedulerConfig;
 } & Record<string, unknown>;
 
+export type ImageGenerationConfig = {
+  /** Additional prompt for the second text encoder. */
+  prompt_2?: string;
+  /** Additional prompt for the third text encoder. */
+  prompt_3?: string;
+  /** Negative prompt for the primary text encoder. */
+  negative_prompt?: string;
+  /** Negative prompt for the second text encoder. */
+  negative_prompt_2?: string;
+  /** Negative prompt for the third text encoder. */
+  negative_prompt_3?: string;
+  /** Number of images to generate for a single prompt. */
+  num_images_per_prompt?: Uint;
+  /** Seed for the default random generator. */
+  rng_seed?: Uint;
+  /** Guidance scale used during denoising. */
+  guidance_scale?: number;
+  /** Output image height in pixels. */
+  height?: number;
+  /** Output image width in pixels. */
+  width?: number;
+  /** Number of denoising steps. */
+  num_inference_steps?: Uint;
+  /** Maximum sequence length for T5-based text encoders. */
+  max_sequence_length?: number;
+  /** Strength parameter for img2img/inpainting-compatible configs. */
+  strength?: number;
+};
+
+export type Text2ImagePipelineProperties = Record<string, unknown>;
+
+/**
+ * Callback for Text2Image generation, called once per denoising step.
+ *
+ * @param step       Current step index (0-based).
+ * @param numSteps   Total number of denoising steps.
+ * @returns `true` to stop generation early, `false` to continue.
+ */
+export type Text2ImageCallback = (step: number, numSteps: number) => boolean;
+
 export type Text2SpeechPipelineProperties = Record<string, unknown>;
