@@ -15,7 +15,9 @@ from openvino import get_version
 
 def read_image(path: str, target_height: Optional[int] = None, target_width: Optional[int] = None) -> Tensor:
     pic = Image.open(path).convert("RGB")
-    if target_height is not None:
+    if (target_height is None) != (target_width is None):
+        raise ValueError("target_height and target_width must be provided together")
+    if target_height is not None and target_width is not None:
         pic = pic.resize((target_width, target_height))
     image_data = np.array(pic)
     return Tensor(image_data)
