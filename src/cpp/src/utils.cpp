@@ -378,8 +378,12 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
 
 ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model_role) {
-    ov::AnyMap result = properties;
-    result.erase(PER_MODEL_PROPERTIES);
+    ov::AnyMap result;
+    for (const auto& property : properties) {
+        if (property.first != PER_MODEL_PROPERTIES) {
+            result.insert(property);
+        }
+    }
 
     auto model_properties = properties.find(PER_MODEL_PROPERTIES);
     if (model_properties != properties.end()) {
