@@ -237,6 +237,7 @@ TEST_IMAGE_URLS = {
 NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-internvl2",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
+    "optimum-intel-internal-testing/tiny-random-gemma4",
 }
 
 DEFAULT_NPUW_PROPERTIES = {
