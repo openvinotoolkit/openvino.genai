@@ -93,11 +93,8 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "max_ngram_size", max_ngram_size);
 
     // tree search
-    if (data.contains("tree_params")) {
-        const auto& eagle = data["tree_params"];
-        read_json_param(eagle, "branching_factor", tree_params.branching_factor);
-        read_json_param(eagle, "tree_depth", tree_params.tree_depth);
-    }
+    read_json_param(data, "branching_factor", branching_factor);
+    read_json_param(data, "tree_depth", tree_depth);
 
     // append EOS to stop_token_ids
     if (eos_token_id != -1)
@@ -167,7 +164,8 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "relevance_weight", relevance_weight);
 
     // tree search
-    read_anymap_param(properties, "tree_params", tree_params);
+    read_anymap_param(properties, "branching_factor", branching_factor);
+    read_anymap_param(properties, "tree_depth", tree_depth);
 }
 
 
@@ -269,7 +267,7 @@ bool GenerationConfig::is_beam_search() const {
 }
 
 bool GenerationConfig::is_tree_search() const {
-    return tree_params.tree_depth > 0;
+    return tree_depth > 0;
 }
 
 bool GenerationConfig::is_multinomial() const {
@@ -363,22 +361,22 @@ void GenerationConfig::validate() const {
     if (is_tree_search()) {
         OPENVINO_ASSERT(!do_sample,
                         "Tree search (EAGLE) is incompatible with do_sample=true; "
-                        "set tree_params.tree_depth=0 or do_sample=false");
+                        "set tree_depth=0 or do_sample=false");
         OPENVINO_ASSERT(num_beams == 1,
                         "Tree search (EAGLE) is incompatible with beam search; "
-                        "set tree_params.tree_depth=0 or num_beams=1");
-        OPENVINO_ASSERT(tree_params.branching_factor > 0,
+                        "set tree_depth=0 or num_beams=1");
+        OPENVINO_ASSERT(branching_factor > 0,
                         "'branching_factor' must be > 0 when tree search is enabled, but got ",
-                        tree_params.branching_factor);
+                        branching_factor);
         OPENVINO_ASSERT(
             num_assistant_tokens > 0,
             "'num_assistant_tokens' must be > 0 when tree search is enabled, but got ",
             num_assistant_tokens);
-        OPENVINO_ASSERT(num_assistant_tokens >= tree_params.tree_depth,
+        OPENVINO_ASSERT(num_assistant_tokens >= tree_depth,
                         "'num_assistant_tokens' (",
                         num_assistant_tokens,
                         ") must be >= 'tree_depth' (",
-                        tree_params.tree_depth,
+                        tree_depth,
                         ") to allow at least one node per draft layer");
     }
 

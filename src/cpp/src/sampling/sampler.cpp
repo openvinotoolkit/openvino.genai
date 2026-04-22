@@ -491,11 +491,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
 }
 /* tree generator logic */
 
-// ------------------------------------------------------------------
-// CandidateGraph
-// ------------------------------------------------------------------
-
-CandidateGraph::CandidateGraph(int64_t root_token_id, float root_score, int max_tokens, int max_depth)
+CandidateGraph::CandidateGraph(int64_t root_token_id, float root_score, size_t max_tokens, size_t max_depth)
     : m_max_candidate_nodes(max_tokens),
       m_max_depth(max_depth) {
     m_root = std::make_shared<Node>();
@@ -542,7 +538,7 @@ std::vector<CandidateGraph::NodePtr> CandidateGraph::select_candidate_nodes() co
     while (!bfs.empty()) {
         NodePtr node = bfs.front();
         bfs.pop();
-        if (min_heap.size() < static_cast<size_t>(m_max_candidate_nodes)) {
+        if (min_heap.size() < m_max_candidate_nodes) {
             min_heap.push(node);
         } else if (is_better(node, min_heap.top())) {
             min_heap.pop();
@@ -635,7 +631,7 @@ void Sampler::TreeSearcher::tree_reset() {
     const size_t num_tree_nodes = m_parameters.num_assistant_tokens;
     OPENVINO_ASSERT(num_tree_nodes > 0,
                     "num_assistant_tokens must be greater than 0 for tree search, got ", num_tree_nodes);
-    m_candidate_graph.emplace(-1, 0.0f, static_cast<int>(num_tree_nodes), static_cast<int>(m_parameters.tree_params.tree_depth));
+    m_candidate_graph.emplace(-1, 0.0f, num_tree_nodes, m_parameters.tree_depth);
 
     const std::vector<Sequence::Ptr> running = m_sequence_group->get_running_sequences();
     OPENVINO_ASSERT(!running.empty(), "tree_reset: sequence group has no running sequences");
@@ -656,8 +652,8 @@ auto Sampler::TreeSearcher::build_top_k_frontier(const ov::Tensor& logits) -> st
     OPENVINO_ASSERT(seq_len > 0, "Logits tensor has zero sequence length");
     OPENVINO_ASSERT(vocab_size > 0, "Logits tensor has zero vocabulary size");
 
-    const size_t branching_factor = m_parameters.tree_params.branching_factor;
-    OPENVINO_ASSERT(branching_factor > 0, "tree_params.branching_factor must be positive");
+    const size_t branching_factor = m_parameters.branching_factor;
+    OPENVINO_ASSERT(branching_factor > 0, "branching_factor must be positive");
 
     // Build seq_id -> batch-index lookup for the current frontier.
     const std::vector<Sequence::Ptr> running_seqs = m_sequence_group->get_running_sequences();
@@ -806,7 +802,7 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitPr
 
     const std::vector<CandidateGraph::NodePtr> final_nodes = m_candidate_graph->select_candidate_nodes();
 
-    // Position (depth) of each node in final_nodes, forwarded to the verifier.
+    // Position (depth) of each node in final_nodes, forwarded to the pipeline.
     std::vector<int64_t> position_ids;
     position_ids.reserve(final_nodes.size());
     for (const CandidateGraph::NodePtr& n : final_nodes)
@@ -874,14 +870,14 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitPr
 
     // extra_processed_tokens: candidate tree nodes submitted to the verifier beyond the tree_depth
     // sequential draft steps already counted by finish_iteration().
-    OPENVINO_ASSERT(final_nodes.size() > static_cast<size_t>(m_parameters.tree_params.tree_depth),
+    OPENVINO_ASSERT(final_nodes.size() > m_parameters.tree_depth,
                     "finalize_tree: final_nodes.size() (",
                     final_nodes.size(),
                     ") must exceed tree_depth (",
-                    m_parameters.tree_params.tree_depth,
+                    m_parameters.tree_depth,
                     ")");
     const size_t extra_processed_tokens =
-        final_nodes.size() - static_cast<size_t>(m_parameters.tree_params.tree_depth);
+        final_nodes.size() - m_parameters.tree_depth;
     m_sequence_group->update_processed_tokens_num(m_sequence_group->get_num_processed_tokens() +
                                                   extra_processed_tokens);
 
@@ -911,7 +907,7 @@ void Sampler::TreeSearcher::advance_draft_step(const ov::Tensor& logits, Sampler
     m_current_draft_layer++;
     const std::vector<CandidateBeam> candidates = build_top_k_frontier(logits);
 
-    if (m_current_draft_layer < m_parameters.tree_params.tree_depth) {
+    if (m_current_draft_layer < m_parameters.tree_depth) {
         advance_draft_layer(candidates, sampler_output);
     } else {
         finalize_tree(sampler_output, logit_processor);

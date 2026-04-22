@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'TreeParams', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -965,9 +965,9 @@ class GenerationConfig:
         num_return_sequences: the number of sequences to generate from a single prompt.
     
         Tree search parameters:
-        tree_params.branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
-        tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
-        num_assistant_tokens (tree search): number of candidate (non-root) tokens submitted to the target model for
+        branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+        tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+        num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
                                             verification. Total tree nodes = num_assistant_tokens + 1 (including root).
     """
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
@@ -1009,6 +1009,14 @@ class GenerationConfig:
         ...
     @assistant_confidence_threshold.setter
     def assistant_confidence_threshold(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def branching_factor(self) -> int:
+        """
+        Number of branches (top-k) at each level of the candidate tree
+        """
+    @branching_factor.setter
+    def branching_factor(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def diversity_penalty(self) -> float:
@@ -1161,12 +1169,12 @@ class GenerationConfig:
     def top_p(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
-    def tree_params(self) -> TreeParams:
+    def tree_depth(self) -> int:
         """
-        Tree search parameters for speculative decoding
+        Lookahead depth of the candidate tree
         """
-    @tree_params.setter
-    def tree_params(self, arg0: TreeParams) -> None:
+    @tree_depth.setter
+    def tree_depth(self, arg0: typing.SupportsInt) -> None:
         ...
 class GenerationFinishReason:
     """
@@ -1859,9 +1867,9 @@ class LLMPipeline:
             num_return_sequences: the number of sequences to generate from a single prompt.
         
             Tree search parameters:
-            tree_params.branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
-            tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
-            num_assistant_tokens (tree search): number of candidate (non-root) tokens submitted to the target model for
+            branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+            tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+            num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
                                                 verification. Total tree nodes = num_assistant_tokens + 1 (including root).
         """
     @typing.overload
@@ -1962,9 +1970,9 @@ class LLMPipeline:
             num_return_sequences: the number of sequences to generate from a single prompt.
         
             Tree search parameters:
-            tree_params.branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
-            tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
-            num_assistant_tokens (tree search): number of candidate (non-root) tokens submitted to the target model for
+            branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+            tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+            num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
                                                 verification. Total tree nodes = num_assistant_tokens + 1 (including root).
         """
     def get_generation_config(self) -> GenerationConfig:
@@ -3926,30 +3934,6 @@ class TorchGenerator(CppStdGenerator):
     def randn_tensor(self, shape: openvino._pyopenvino.Shape) -> openvino._pyopenvino.Tensor:
         ...
     def seed(self, new_seed: typing.SupportsInt) -> None:
-        ...
-class TreeParams:
-    """
-    Speculative decoding tree search parameters
-    """
-    def __init__(self) -> None:
-        ...
-    def __repr__(self) -> str:
-        ...
-    @property
-    def branching_factor(self) -> int:
-        """
-        Number of branches (top-k) at each level of the candidate tree
-        """
-    @branching_factor.setter
-    def branching_factor(self, arg0: typing.SupportsInt) -> None:
-        ...
-    @property
-    def tree_depth(self) -> int:
-        """
-        Lookahead depth of the candidate tree
-        """
-    @tree_depth.setter
-    def tree_depth(self, arg0: typing.SupportsInt) -> None:
         ...
 class UNet2DConditionModel:
     """

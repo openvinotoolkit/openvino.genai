@@ -532,10 +532,10 @@ TEST(CandidateGraphTest, RetrieveIndicesSharedPrefix) {
 }
 
 // ---------------------------------------------------------------------------
-// End-to-end Sampler flow with tree_params enabled
+// End-to-end Sampler flow with tree search enabled
 //
 // These tests exercise the full Sampler::sample() path when tree search is
-// active (tree_params.tree_depth > 0).  Synthetic logit tensors stand in for
+// active (tree_depth > 0).  Synthetic logit tensors stand in for
 // the draft and target models so no live model or KV cache is required.
 // ---------------------------------------------------------------------------
 
@@ -557,8 +557,8 @@ namespace {
 ov::genai::GenerationConfig make_tree_config_depth2() {
     ov::genai::GenerationConfig cfg;
     cfg.max_new_tokens = 10;
-    cfg.tree_params.branching_factor = 2;
-    cfg.tree_params.tree_depth = 2;
+    cfg.branching_factor = 2;
+    cfg.tree_depth = 2;
     cfg.num_assistant_tokens = 3;
     return cfg;
 }
