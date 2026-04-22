@@ -12,6 +12,7 @@
 #include "continuous_batching/scheduler.hpp"
 #include "continuous_batching/cache/cache_orchestrator.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
+#include "continuous_batching/cache/linear_attention_cache_manager.hpp"
 #include "helper.hpp"
 #include "utils.hpp"
 
@@ -36,6 +37,43 @@ std::shared_ptr<CacheOrchestrator> init_cache_orchestrator(SchedulerConfig sched
     std::vector<size_t> all_layers(num_layers);
     std::iota(all_layers.begin(), all_layers.end(), 0);
     orchestrator->register_cache_type(CacheType::KV_CACHE, cache_manager, block_manager, all_layers);
+    return orchestrator;
+}
+
+std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfig scheduler_config,
+                                                                   size_t kv_block_size = TEST_BLOCK_SIZE,
+                                                                   size_t kv_num_layers = 1,
+                                                                   size_t la_num_layers = 1) {
+    ov::Core core = ov::Core();
+    ov::InferRequest request = core.compile_model(get_dummy_hybrid_model(core, kv_num_layers, la_num_layers)).create_infer_request();
+
+    auto kv_cache_manager = std::make_shared<KVCacheManager>(request);
+    auto kv_block_manager = std::make_shared<BlockManager>(scheduler_config.num_kv_blocks,
+                                                           scheduler_config.enable_prefix_caching,
+                                                           kv_block_size,
+                                                           kv_num_layers);
+
+    const size_t num_la_blocks = scheduler_config.num_linear_attention_blocks > 0
+                                     ? scheduler_config.num_linear_attention_blocks
+                                     : (scheduler_config.num_kv_blocks > 0 ? scheduler_config.max_num_seqs : 0);
+    auto la_cache_manager = std::make_shared<LinearAttentionCacheManager>(request);
+    auto la_block_manager = std::make_shared<BlockManager>(num_la_blocks,
+                                                           false,
+                                                           1,
+                                                           la_cache_manager->get_num_layers(),
+                                                           1);
+
+    auto orchestrator = std::make_shared<CacheOrchestrator>();
+    std::vector<size_t> kv_layer_ids(kv_num_layers);
+    std::iota(kv_layer_ids.begin(), kv_layer_ids.end(), 0);
+    orchestrator->register_cache_type(CacheType::KV_CACHE, kv_cache_manager, kv_block_manager, kv_layer_ids);
+
+    std::vector<size_t> la_layer_ids(la_cache_manager->get_num_layers());
+    std::iota(la_layer_ids.begin(), la_layer_ids.end(), kv_num_layers);
+    orchestrator->register_cache_type(CacheType::LINEAR_ATTENTION_CACHE,
+                                      la_cache_manager,
+                                      la_block_manager,
+                                      la_layer_ids);
     return orchestrator;
 }
 
@@ -144,6 +182,147 @@ TEST(TestScheduler, general_test) {
         }
     }
 
+}
+
+TEST(TestScheduler, hybrid_output_fills_linear_attention_block_table_in_prompt_and_generate) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 8;
+    scheduler_config.num_linear_attention_blocks = 8;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 8;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group1 = std::make_shared<SequenceGroup>(0,
+                                                                     ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                     utils::get_greedy_config());
+    SequenceGroup::Ptr seq_group2 = std::make_shared<SequenceGroup>(1,
+                                                                     ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                     utils::get_greedy_config());
+    auto seq_id1 = seq_group1->get_running_sequences()[0]->get_id();
+    auto seq_id2 = seq_group2->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {seq_group1, seq_group2};
+
+    Scheduler scheduler = Scheduler(init_hybrid_cache_orchestrator(scheduler_config), scheduler_config);
+    auto prompt_out = scheduler.schedule(requests);
+
+    EXPECT_TRUE(prompt_out.m_linear_attention_block_table.count(seq_id1));
+    EXPECT_TRUE(prompt_out.m_linear_attention_block_table.count(seq_id2));
+    EXPECT_EQ(prompt_out.m_linear_attention_block_table.at(seq_id1).size(), 1);
+    EXPECT_EQ(prompt_out.m_linear_attention_block_table.at(seq_id2).size(), 1);
+
+    for (auto& req : requests) {
+        auto running = req->get_running_sequences();
+        running[0]->append_token(42, 0.9f);
+        req->finish_iteration();
+    }
+
+    auto gen_out = scheduler.schedule(requests);
+    EXPECT_TRUE(gen_out.m_linear_attention_block_table.count(seq_id1));
+    EXPECT_TRUE(gen_out.m_linear_attention_block_table.count(seq_id2));
+    EXPECT_EQ(gen_out.m_linear_attention_block_table.at(seq_id1).size(), 1);
+    EXPECT_EQ(gen_out.m_linear_attention_block_table.at(seq_id2).size(), 1);
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
+TEST(TestScheduler, hybrid_admission_when_la_pool_is_bottleneck) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 8;
+    scheduler_config.num_linear_attention_blocks = 1;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 8;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group1 = std::make_shared<SequenceGroup>(0,
+                                                                     ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                     utils::get_greedy_config());
+    SequenceGroup::Ptr seq_group2 = std::make_shared<SequenceGroup>(1,
+                                                                     ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                     utils::get_greedy_config());
+    auto seq_id1 = seq_group1->get_running_sequences()[0]->get_id();
+    auto seq_id2 = seq_group2->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {seq_group1, seq_group2};
+
+    Scheduler scheduler = Scheduler(init_hybrid_cache_orchestrator(scheduler_config), scheduler_config);
+    auto out = scheduler.schedule(requests);
+
+    EXPECT_EQ(out.m_scheduled_sequence_groups_ids.size(), 1);
+    EXPECT_TRUE(out.m_linear_attention_block_table.count(seq_id1) || out.m_linear_attention_block_table.count(seq_id2));
+}
+
+TEST(TestScheduler, hybrid_initialize_cache_grows_fixed_size_by_total_concurrent_sequences) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 0;
+    scheduler_config.cache_size = 0;
+    scheduler_config.num_linear_attention_blocks = 0;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 8;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group1 = std::make_shared<SequenceGroup>(0,
+                                                                     ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                     utils::get_greedy_config());
+    SequenceGroup::Ptr seq_group2 = std::make_shared<SequenceGroup>(1,
+                                                                     ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                     utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {seq_group1, seq_group2};
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)->get_total_number_of_kv_blocks(), 0);
+    std::ignore = scheduler.schedule(requests);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)->get_total_number_of_kv_blocks(), 2);
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
+TEST(TestScheduler, DISABLED_hybrid_runtime_arrival_beyond_initial_fixed_capacity_schedules_after_growth) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 0;
+    scheduler_config.cache_size = 0;
+    scheduler_config.num_linear_attention_blocks = 0;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 8;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group1 = std::make_shared<SequenceGroup>(0,
+                                                                     ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                     utils::get_greedy_config());
+    auto seq_id1 = seq_group1->get_running_sequences()[0]->get_id();
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+
+    std::vector<SequenceGroup::Ptr> requests = {seq_group1};
+    std::ignore = scheduler.schedule(requests);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)->get_total_number_of_kv_blocks(), 1);
+
+    auto running = seq_group1->get_running_sequences();
+    running[0]->append_token(42, 0.9f);
+    seq_group1->finish_iteration();
+
+    SequenceGroup::Ptr seq_group2 = std::make_shared<SequenceGroup>(1,
+                                                                     ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                     utils::get_greedy_config());
+    auto seq_id2 = seq_group2->get_running_sequences()[0]->get_id();
+    requests.push_back(seq_group2);
+
+    auto out = scheduler.schedule(requests);
+    EXPECT_TRUE(out.m_linear_attention_block_table.count(seq_id1));
+    EXPECT_TRUE(out.m_linear_attention_block_table.count(seq_id2));
 }
 
 SchedulerConfig get_scheduler_config(size_t max_num_batched_tokens,
