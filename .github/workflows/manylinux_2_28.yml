@@ -603,18 +603,6 @@ jobs:
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
-      - name: Setup HF Token
-        if: ${{ matrix.test.run_condition }}
-        run: |
-          hf_token_path="${{ env.HF_TOKEN_PATH }}"
-          if [ ! -r "$hf_token_path" ]; then
-            echo "Missing or unreadable HF token secret file: $hf_token_path. Check that the HF token secret is available and correctly mounted." >&2
-            exit 1
-          fi
-          hf_token="$(tr -d '\r\n' < "$hf_token_path")"
-          echo "::add-mask::$hf_token"
-          printf 'HF_TOKEN=%s\n' "$hf_token" >> "$GITHUB_ENV"
-
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
@@ -622,50 +610,6 @@ jobs:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
-
-      - name: Verify HF Token
-        if: ${{ matrix.test.run_condition }}
-        # Persist the token to the HF cache so it's picked up by subprocesses and tools
-        # that read the on-disk token instead of the HF_TOKEN env var, then prove it works.
-        run: |
-          huggingface-cli login --token "$HF_TOKEN"
-          huggingface-cli whoami
-
-      - name: HF cache probe
-        if: ${{ matrix.test.run_condition }}
-        # Debug: show how much of the HF cache is already warm and whether the
-        # authenticated API call goes out over the network at all.
-        run: |
-          python -c "
-          from huggingface_hub import constants
-          print('HF_HOME=', constants.HF_HOME)
-          print('HF_HUB_CACHE=', constants.HF_HUB_CACHE)
-          "
-          echo "--- HF_HOME size ---"
-          du -sh "$HF_HOME" 2>/dev/null || true
-          echo "--- Top-level HF hub cache entries ---"
-          ls -1 "$HF_HOME/hub" 2>/dev/null | head -50 || true
-          echo "--- Authenticated whoami via API (forces network call) ---"
-          HF_HUB_VERBOSITY=debug python -c "
-          from huggingface_hub import HfApi
-          print(HfApi().whoami())
-          "
-
-      - name: Force fresh HF download (debug only)
-        if: ${{ matrix.test.run_condition }}
-        # Use a throwaway cache dir so the request bypasses the warm shared cache
-        # and every GET/HEAD + rate-limit header is visible in the job log.
-        env:
-          HF_HUB_VERBOSITY: debug
-          HF_HUB_DISABLE_TELEMETRY: '1'
-        run: |
-          tmp=$(mktemp -d)
-          HF_HOME="$tmp" python -c "
-          from huggingface_hub import snapshot_download
-          path = snapshot_download('katuni4ka/tiny-random-phi3', cache_dir='$tmp')
-          print('Downloaded to:', path)
-          "
-          rm -rf "$tmp"
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}
@@ -727,30 +671,12 @@ jobs:
           path: ${{ env.PY_INSTALL_DIR }}
           merge-multiple: true
 
-      - name: Setup HF Token
-        run: |
-          hf_token_path="${{ env.HF_TOKEN_PATH }}"
-          if [ ! -r "$hf_token_path" ]; then
-            echo "Missing or unreadable HF token secret file: $hf_token_path. Check that the HF token secret is available and correctly mounted." >&2
-            exit 1
-          fi
-          hf_token="$(tr -d '\r\n' < "$hf_token_path")"
-          echo "::add-mask::$hf_token"
-          printf 'HF_TOKEN=%s\n' "$hf_token" >> "$GITHUB_ENV"
-
       - name: Install OpenVINO GenAI Python packages (from wheels)
         uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai"
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.PY_INSTALL_DIR }}/wheels
-
-      - name: Verify HF Token
-        # Persist the token to the HF cache so it's picked up by subprocesses and tools
-        # that read the on-disk token instead of the HF_TOKEN env var, then prove it works.
-        run: |
-          huggingface-cli login --token "$HF_TOKEN"
-          huggingface-cli whoami
 
       # JS packages uses the OpenVINO and OpenVINO GenAI libraries from the bin directory.
       # Here we emulate the installation of the openvino-node package from NPM. The latest

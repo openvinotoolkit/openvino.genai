@@ -680,18 +680,6 @@ jobs:
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
-      - name: Setup HF Token
-        if: ${{ matrix.test.run_condition }}
-        run: |
-          hf_token_path="${{ env.HF_TOKEN_PATH }}"
-          if [ ! -r "$hf_token_path" ]; then
-            echo "Missing or unreadable HF token secret file: $hf_token_path. Check that the HF token secret is available and correctly mounted." >&2
-            exit 1
-          fi
-          hf_token="$(tr -d '\r\n' < "$hf_token_path")"
-          echo "::add-mask::$hf_token"
-          printf 'HF_TOKEN=%s\n' "$hf_token" >> "$GITHUB_ENV"
-
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
@@ -805,18 +793,6 @@ jobs:
           pigz -dc ${{ env.GENAI_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
 
-      - name: Setup HF Token
-        if: ${{ matrix.test.run_condition }}
-        run: |
-          hf_token_path="${{ env.HF_TOKEN_PATH }}"
-          if [ ! -r "$hf_token_path" ]; then
-            echo "Missing or unreadable HF token secret file: $hf_token_path. Check that the HF token secret is available and correctly mounted." >&2
-            exit 1
-          fi
-          hf_token="$(tr -d '\r\n' < "$hf_token_path")"
-          echo "::add-mask::$hf_token"
-          printf 'HF_TOKEN=%s\n' "$hf_token" >> "$GITHUB_ENV"
-
       - name: Install GenAI wheels
         if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
@@ -900,17 +876,6 @@ jobs:
         run: |
           pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
-
-      - name: Setup HF Token
-        run: |
-          hf_token_path="${{ env.HF_TOKEN_PATH }}"
-          if [ ! -r "$hf_token_path" ]; then
-            echo "Missing or unreadable HF token secret file: $hf_token_path. Check that the HF token secret is available and correctly mounted." >&2
-            exit 1
-          fi
-          hf_token="$(tr -d '\r\n' < "$hf_token_path")"
-          echo "::add-mask::$hf_token"
-          printf 'HF_TOKEN=%s\n' "$hf_token" >> "$GITHUB_ENV"
 
       - name: Fix C++ samples permissions
         run: chmod +x ${{ env.INSTALL_DIR }}/samples_bin/*
@@ -1015,17 +980,6 @@ jobs:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
           path: ${{ env.PY_INSTALL_DIR }}
           merge-multiple: true
-
-      - name: Setup HF Token
-        run: |
-          hf_token_path="${{ env.HF_TOKEN_PATH }}"
-          if [ ! -r "$hf_token_path" ]; then
-            echo "Missing or unreadable HF token secret file: $hf_token_path. Check that the HF token secret is available and correctly mounted." >&2
-            exit 1
-          fi
-          hf_token="$(tr -d '\r\n' < "$hf_token_path")"
-          echo "::add-mask::$hf_token"
-          printf 'HF_TOKEN=%s\n' "$hf_token" >> "$GITHUB_ENV"
 
       - name: Install OpenVINO GenAI Python packages (from wheels)
         uses: ./openvino.genai/.github/actions/install_wheel
