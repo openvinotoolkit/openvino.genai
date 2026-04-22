@@ -113,7 +113,7 @@ MODEL_IDS: list[str] = [
     "optimum-intel-internal-testing/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
-    "google/gemma-4-E2B-it",
+    "optimum-intel-internal-testing/tiny-random-gemma4",
     *VIDEO_MODEL_IDS,
 ]
 
@@ -136,7 +136,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
-    "google/gemma-4-E2B-it": lambda idx: "<|image|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
 }
 
@@ -1502,7 +1502,7 @@ TAG_INSERTED_BY_TEMPLATE = [
     ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
     ("optimum-intel-internal-testing/tiny-random-qwen3-vl", "PA"),
     ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
-    ("google/gemma-4-E2B-it", "SDPA"),
+    ("optimum-intel-internal-testing/tiny-random-gemma4", "SDPA"),
     ("qnguyen3/nanoLLaVA", "PA"),
     ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
 ]
@@ -1930,7 +1930,7 @@ OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS = {
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(100, 77), (350, 350), (480, 512)],
     # (999, 666) resolution fails, result is reasonable and close to optimum-intel output.
     # There is a known image resize incompatibility, so different image sizes are used to test the Gemma 4 model.
-    "google/gemma-4-E2B-it": [(100, 77), (1000, 666), (997, 666), (999, 665), (1920, 1080)],
+    "optimum-intel-internal-testing/tiny-random-gemma4": [(100, 77), (1000, 666), (997, 666), (999, 665), (1920, 1080)],
 }
 
 OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
