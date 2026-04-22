@@ -535,6 +535,8 @@ def test_longform_audio(model_descr, sample_from_dataset):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_shortform(model_descr):
+    if model_descr[0] == "openai/whisper-tiny":
+        pytest.xfail("Accuracy issue. Ticket CVS-185132")
     samples = []
     ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
 
@@ -575,6 +577,8 @@ def align_words_by_text(ref_words, test_words):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_reference):
+    if model_descr[0] == "openai/whisper-tiny":
+        pytest.xfail("Accuracy issue. Ticket CVS-185132")
     ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
     samples = [i["audio"]["array"] for i in ds]
 
