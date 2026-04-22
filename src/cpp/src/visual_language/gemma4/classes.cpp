@@ -245,7 +245,7 @@ ov::Tensor InputsEmbedderGemma4::get_per_layer_embeddings(const ov::Tensor& inpu
 
     const ov::Tensor& output = req.get_output_tensor();
     ov::Tensor result(output.get_element_type(), output.get_shape());
-    std::memcpy(result.data(), output.data(), output.get_byte_size());
+    output.copy_to(result);
     return result;
 }
 
@@ -274,18 +274,17 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
         return inputs_embeds;
     }
 
-    auto start_tokenizer_time = std::chrono::steady_clock::now();
-    ov::Tensor encoded_image_token =
-        m_tokenizer.encode(m_vlm_config.image_token, ov::genai::add_special_tokens(false)).input_ids;
-    auto end_tokenizer_time = std::chrono::steady_clock::now();
-    OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
-    metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] +=
-        ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-    int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+    encode_image_token_id();
 
-    auto merged = utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
+    return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, m_image_token_id);
+}
 
-    return merged;
+void InputsEmbedderGemma4::encode_image_token_id() {
+    std::call_once(m_image_token_id_once_flag, [this]() {
+        const auto encoded_image_token =
+            m_tokenizer.encode(m_vlm_config.image_token, ov::genai::add_special_tokens(false)).input_ids;
+        m_image_token_id = encoded_image_token.data<int64_t>()[0];
+    });
 }
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma4::get_lm_extra_inputs() const {

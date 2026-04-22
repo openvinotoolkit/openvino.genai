@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 #include "visual_language/inputs_embedder.hpp"
@@ -63,6 +64,11 @@ private:
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
 
     ov::Tensor get_per_layer_embeddings(const ov::Tensor& input_ids);
+
+    int64_t m_image_token_id = -1;
+    std::once_flag m_image_token_id_once_flag;
+
+    void encode_image_token_id();
 };
 
 }  // namespace ov::genai
