@@ -571,7 +571,7 @@ jobs:
             cmd: |
               python -m pip install git+https://github.com/huggingface/optimum-intel.git@refs/pull/1688/head#egg=optimum-intel
               python -m pip install transformers==5.5.0
-              python -m pip install --force-reinstall --no-index --find-links $INSTALL_DIR/wheels openvino openvino_tokenizers openvino_genai
+              python -m pip install --force-reinstall --no-deps --find-links $INSTALL_DIR/wheels openvino openvino_tokenizers openvino_genai
               pip show transformers optimum-intel openvino_genai
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
