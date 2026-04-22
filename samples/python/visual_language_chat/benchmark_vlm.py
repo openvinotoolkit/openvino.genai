@@ -92,9 +92,10 @@ def main():
     models_path = args.model
     image_width = args.image_width
     image_height = args.image_height
-    assert (image_height is None) == (image_width is None), "image_height and image_width must be provided together."
-    if image_height is not None:
-        assert image_height > 0 and image_width > 0, "image_height and image_width must be positive values."
+    if (image_height is None) != (image_width is None):
+        parser.error("image_height and image_width must be provided together.")
+    if image_height is not None and (image_height <= 0 or image_width <= 0):
+        parser.error("image_height and image_width must be positive values.")
     images = read_images(args.image, image_height, image_width)
     device = args.device
     num_warmup = args.num_warmup
