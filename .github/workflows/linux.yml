@@ -646,11 +646,8 @@ jobs:
             timeout: 60
           - name: 'VLM (gemma4)'
             cmd: |
-              python -m pip install git+https://github.com/huggingface/optimum-intel.git@refs/pull/1688/head#egg=optimum-intel
+              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@refs/pull/1688/head#egg=optimum-intel
               python -m pip install transformers==5.5.0
-              INPUT_PACKAGES="openvino;openvino_tokenizers[transformers];openvino_genai" \
-              INPUT_LOCAL_WHEEL_DIR="$INSTALL_DIR/wheels" \
-              node $SRC_DIR/.github/actions/install_wheel/dist/index.js
               pip show transformers optimum-intel openvino_tokenizers openvino_genai
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
