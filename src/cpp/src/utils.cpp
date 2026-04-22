@@ -379,25 +379,6 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
 
-std::string to_lower(const std::string& s) {
-    std::string result(s.size(), '\0');
-    std::transform(s.begin(), s.end(), result.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return result;
-}
-
-// Case-insensitive lookup of @p key in @p map. Returns end() iterator when
-// no matching key exists.
-ov::AnyMap::const_iterator find_case_insensitive(const ov::AnyMap& map, const std::string& key) {
-    const auto lowered = to_lower(key);
-    for (auto it = map.begin(); it != map.end(); ++it) {
-        if (to_lower(it->first) == lowered) {
-            return it;
-        }
-    }
-    return map.end();
-}
-
 ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model_role) {
     ov::AnyMap result;
     auto model_properties = properties.find(PER_MODEL_PROPERTIES);
