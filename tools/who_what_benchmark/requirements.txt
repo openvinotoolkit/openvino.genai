@@ -21,8 +21,8 @@ soundfile==0.13.1
 librosa==0.11.0
 torchcodec<=0.11.0; sys_platform == "linux"
 vocos==0.1.0
-vector-quantize-pytorch==1.28.1
+vector-quantize-pytorch==1.28.2
 torchaudio>=2.1.0,<=2.11.0
 torchvision>=0.16,<=0.26.0
 # For LoRA adapters
-peft==0.19.0
+peft==0.19.1
