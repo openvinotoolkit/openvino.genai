@@ -4,7 +4,6 @@
 #include "utils.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <variant>
 #include <fstream>
