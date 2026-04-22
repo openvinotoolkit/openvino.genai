@@ -354,7 +354,9 @@ class Phi4MMInputsPreprocessor(VLMInputsPreprocessor):
                         text_hist += assistant_prompt + msg["content"] + prompt_suffix
                 text_prompt = text_hist + assistant_prompt
             else:
-                if not text.startswith(user_prompt):
+                if text.startswith(user_prompt):
+                    text_prompt = text
+                else:
                     text_prompt = user_prompt + text + prompt_suffix + assistant_prompt
         else:
             if self.chat_mode:
@@ -734,9 +736,9 @@ class InternVLInputsPreprocessor(VLMInputsPreprocessor):
             pixel_values = torch.stack(pixel_values)
             return pixel_values
 
-        self.update_images(image)
         if image is not None and not isinstance(image, list):
             image = [image]
+        self.update_images(image)
 
         if image is not None and "<image>" not in text:
             text = "<image>\n" * len(image) + text

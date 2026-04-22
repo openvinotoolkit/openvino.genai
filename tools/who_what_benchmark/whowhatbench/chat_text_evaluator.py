@@ -12,7 +12,7 @@ from importlib.resources import files
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity
-from .utils import patch_awq_for_inference, get_ignore_parameters_flag
+from .utils.utils import patch_awq_for_inference, get_ignore_parameters_flag
 import inspect
 
 
