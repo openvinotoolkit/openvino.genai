@@ -387,9 +387,17 @@ ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model
 
     auto model_properties = properties.find(PER_MODEL_PROPERTIES);
     if (model_properties != properties.end()) {
+        OPENVINO_ASSERT(!model_properties->second.empty() && model_properties->second.is<ov::AnyMap>(),
+                        "Invalid '",
+                        PER_MODEL_PROPERTIES,
+                        "' property: expected non-empty ov::AnyMap.");
         const ov::AnyMap& model_map = model_properties->second.as<ov::AnyMap>();
         auto role = model_map.find(model_role);
         if (role != model_map.end()) {
+            OPENVINO_ASSERT(!role->second.empty() && role->second.is<ov::AnyMap>(),
+                            "Invalid model properties for role '",
+                            model_role,
+                            "': expected non-empty ov::AnyMap.");
             const ov::AnyMap& role_properties = role->second.as<ov::AnyMap>();
             for (const auto& property : role_properties) {
                 result.insert_or_assign(property.first, property.second);
