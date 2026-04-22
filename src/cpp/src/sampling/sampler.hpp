@@ -82,13 +82,13 @@ public:
     struct Node {
         int64_t token_id = -1;
         float score = -std::numeric_limits<float>::infinity();
-        int tree_layer = 0;
+        size_t tree_layer = 0;
         std::vector<std::shared_ptr<Node>> children;
         std::weak_ptr<Node> parent;
     };
     using NodePtr = std::shared_ptr<Node>;
 
-    CandidateGraph(int64_t root_token_id, float root_score, int max_tokens, int max_depth);
+    CandidateGraph(int64_t root_token_id, float root_score, size_t max_tokens, size_t max_depth);
 
     // Adds a child of parent. Returns the new node.
     // Precondition: the parent must not be at max_depth (check with can_expand first).
@@ -113,8 +113,8 @@ public:
 
 private:
     NodePtr m_root;
-    int m_max_candidate_nodes = 0;
-    int m_max_depth = 0;
+    size_t m_max_candidate_nodes = 0;
+    size_t m_max_depth = 0;
 };
 
 class Sampler {

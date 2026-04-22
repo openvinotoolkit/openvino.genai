@@ -195,9 +195,9 @@ char generation_config_docstring[] = R"(
     num_return_sequences: the number of sequences to generate from a single prompt.
 
     Tree search parameters:
-    tree_params.branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
-    tree_params.tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
-    num_assistant_tokens (tree search): number of candidate (non-root) tokens submitted to the target model for
+    branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+    tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+    num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
                                         verification. Total tree nodes = num_assistant_tokens + 1 (including root).
 )";
 
@@ -417,19 +417,6 @@ void init_generation_config(py::module_& m) {
             }
         );
 
-    // Binding for TreeParams
-    py::class_<GenerationConfig::TreeParams>(m, "TreeParams", "Speculative decoding tree search parameters")
-        .def(py::init<>())
-        .def_readwrite("branching_factor",
-                       &GenerationConfig::TreeParams::branching_factor,
-                       "Number of branches (top-k) at each level of the candidate tree")
-        .def_readwrite("tree_depth",
-                       &GenerationConfig::TreeParams::tree_depth,
-                       "Lookahead depth of the candidate tree")
-        .def("__repr__", [](const GenerationConfig::TreeParams& self) {
-            return "TreeParams(branching_factor=" + std::to_string(self.branching_factor) +
-                   ", tree_depth=" + std::to_string(self.tree_depth) + ")";
-        });
 
     // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
@@ -463,7 +450,8 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("assistant_confidence_threshold", &GenerationConfig::assistant_confidence_threshold)
         .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
         .def_readwrite("max_ngram_size", &GenerationConfig::max_ngram_size)
-        .def_readwrite("tree_params", &GenerationConfig::tree_params, "Tree search parameters for speculative decoding")
+        .def_readwrite("branching_factor", &GenerationConfig::branching_factor, "Number of branches (top-k) at each level of the candidate tree")
+        .def_readwrite("tree_depth", &GenerationConfig::tree_depth, "Lookahead depth of the candidate tree")
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def_readwrite("structured_output_config", &GenerationConfig::structured_output_config)
