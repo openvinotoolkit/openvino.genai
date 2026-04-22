@@ -28,7 +28,7 @@ from utils.constants import (
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
 
-from utils.constants import OV_MODEL_FILENAME
+from utils.constants import OV_MODEL_FILENAME, OV_MODEL_INDEX
 
 
 @dataclass(frozen=True)
@@ -210,7 +210,7 @@ def get_huggingface_models(
     trust_remote_code=False,
     has_tokenizer=True,
     **model_kwargs,
-) -> tuple[OptimizedModel, AutoTokenizer]:
+) -> tuple[OptimizedModel, AutoTokenizer | None]:
     if not local_files_only and isinstance(model_id, str):
         model_id = snapshot_download(model_id)  # required to avoid HF rate limits
 
@@ -283,8 +283,8 @@ def sanitize_model_id(model_id: str) -> str:
 
 TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
 
-# Some linear-attention models are exported incorrectly via OVModelForCausalLM.from_pretrained(..., export=True)
-# in the Python API path. Use optimum-cli export for these models to match stable CLI behavior - CVS-183496
+# Some models require optimum-cli export instead of the Python API path.
+# This maps model_id to the --task value used during export - CVS-183496
 FORCE_OPTIMUM_CLI_EXPORT_MODELS = {
     "optimum-intel-internal-testing/tiny-random-flux": "text-to-image",
     "optimum-intel-internal-testing/tiny-random-lfm2": "text-generation-with-past",
@@ -331,7 +331,7 @@ def download_and_convert_model_class(
     if "has_tokenizer" not in model_kwargs and "eagle3" in str(model_id).lower():
         model_kwargs["has_tokenizer"] = False
 
-    if manager.is_complete() or (models_path / OV_MODEL_FILENAME).exists():
+    if manager.is_complete() or (models_path / OV_MODEL_FILENAME).exists() or (models_path / OV_MODEL_INDEX).exists():
         opt_model, hf_tokenizer = get_huggingface_models(
             models_path, model_class, local_files_only=True, trust_remote_code=trust_remote_code, **model_kwargs
         )
@@ -351,6 +351,8 @@ def download_and_convert_model_class(
                 model_id, model_class, local_files_only=False, trust_remote_code=trust_remote_code, **model_kwargs
             )
             if "padding_side" in tokenizer_kwargs:
+                if hf_tokenizer is None:
+                    raise ValueError("padding_side cannot be set when has_tokenizer=False")
                 hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
             def convert_to_temp(temp_path: Path) -> None:
@@ -359,6 +361,8 @@ def download_and_convert_model_class(
             manager.execute(convert_to_temp)
 
     if "padding_side" in tokenizer_kwargs:
+        if hf_tokenizer is None:
+            raise ValueError("padding_side cannot be set when has_tokenizer=False")
         hf_tokenizer.padding_side = tokenizer_kwargs["padding_side"]
 
     return OVConvertedModelSchema(

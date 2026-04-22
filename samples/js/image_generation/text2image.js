@@ -1,15 +1,14 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+import { writeFile } from "node:fs/promises";
 import { basename } from "node:path";
-
-import { Jimp } from "jimp";
+import bmp from "bmp-js";
 import yargs from "yargs/yargs";
 import { hideBin } from "yargs/helpers";
 import { Text2ImagePipeline } from "openvino-genai-node";
 
-
-function toRgbaBuffer(tensor) {
+function toABGR(tensor) {
   const [_, height, width, channels] = tensor.getShape();
   if (channels !== 3) {
     throw new Error(`Expected RGB image tensor, got ${channels} channels.`);
@@ -19,10 +18,10 @@ function toRgbaBuffer(tensor) {
   const rgba = Buffer.allocUnsafe(width * height * 4);
 
   for (let src = 0, dst = 0; src < rgb.length; src += 3, dst += 4) {
-    rgba[dst] = rgb[src];
-    rgba[dst + 1] = rgb[src + 1];
-    rgba[dst + 2] = rgb[src + 2];
-    rgba[dst + 3] = 255;
+    rgba[dst] = 255;              // A
+    rgba[dst + 1] = rgb[src + 2]; // B
+    rgba[dst + 2] = rgb[src + 1]; // G
+    rgba[dst + 3] = rgb[src];     // R
   }
 
   return { height, width, rgba };
@@ -33,7 +32,7 @@ async function main() {
     .scriptName(basename(process.argv[1]))
     .command(
       "$0 <model_dir> <prompt>",
-      "Run Text2Image pipeline and save generated images as BMP files",
+      "Run Text2Image pipeline and save generated image as BMP file",
       (yargsBuilder) =>
         yargsBuilder
           .positional("model_dir", {
@@ -70,9 +69,12 @@ async function main() {
     },
   );
 
-  const { height, width, rgba } = toRgbaBuffer(imageTensor);
-  const image = new Jimp({ width, height, data: rgba });
-  await image.write("image.bmp");
+  const { height, width, rgba } = toABGR(imageTensor);
+  const bmpData = bmp.encode({ width, height, data: rgba });
+  await writeFile("image.bmp", bmpData.data);
 }
 
-main()
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

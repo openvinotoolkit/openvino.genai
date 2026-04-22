@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "devDependencies": {
-    "jimp": "^1.6.1",
+    "bmp-js": "^0.1.0",
     "node-wav": "^0.0.2",
     "openvino-genai-node": "^2026.1.0",
     "openvino-node": "^2026.1.0",
