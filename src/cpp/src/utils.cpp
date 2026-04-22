@@ -398,47 +398,18 @@ ov::AnyMap::const_iterator find_case_insensitive(const ov::AnyMap& map, const st
     return map.end();
 }
 
-ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
+ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model_role) {
     ov::AnyMap result;
-
-    // Layer 1 (lowest priority): global properties, excluding meta keys.
-    // Meta key exclusion is case-insensitive (e.g. "per_model_properties"
-    // is also treated as a meta key).
-    const auto per_model_lowered = to_lower(PER_MODEL_PROPERTIES);
-    const auto device_props_lowered = to_lower(ov::device::properties.name());
-    for (const auto& kv : properties) {
-        const auto key_lowered = to_lower(kv.first);
-        if (key_lowered == per_model_lowered || key_lowered == device_props_lowered) {
-            continue;
-        }
-        result.insert_or_assign(kv.first, kv.second);
-    }
-
-    // Layer 2: ov::device::properties[device] overrides globals for this device.
-    // Both the meta key and the device name are matched case-insensitively.
-    auto dev_it = find_case_insensitive(properties, ov::device::properties.name());
-    if (dev_it != properties.end()) {
-        const auto& by_device = dev_it->second.as<ov::AnyMap>();
-        auto device_it = find_case_insensitive(by_device, device);
-        if (device_it != by_device.end()) {
-            for (const auto& kv : device_it->second.as<ov::AnyMap>()) {
-                result.insert_or_assign(kv.first, kv.second);
-            }
+    auto model_properties = properties.find(PER_MODEL_PROPERTIES);
+    if (model_properties != properties.end()) {
+        const ov::AnyMap& model_map = model_properties->second.as<ov::AnyMap>();
+        auto role = model_map.find(model_role);
+        if (role != model_map.end()) {
+            result = role->second.as<ov::AnyMap>();
         }
     }
-
-    // Layer 3 (highest priority): PER_MODEL_PROPERTIES[model_role].
-    // Both the meta key and the model role are matched case-insensitively.
-    auto pm_it = find_case_insensitive(properties, PER_MODEL_PROPERTIES);
-    if (pm_it != properties.end()) {
-        const auto& per_model = pm_it->second.as<ov::AnyMap>();
-        auto role_it = find_case_insensitive(per_model, model_role);
-        if (role_it != per_model.end()) {
-            for (const auto& kv : role_it->second.as<ov::AnyMap>()) {
-                result.insert_or_assign(kv.first, kv.second);
-            }
-        }
-    }
+    result.merge(properties);
+    result.erase(PER_MODEL_PROPERTIES);
 
     return result;
 }
