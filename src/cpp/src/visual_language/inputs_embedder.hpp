@@ -372,6 +372,7 @@ private:
     friend class InputsEmbedderQwen3VL;
     friend class InputsEmbedderGemma3;
     friend class InputsEmbedderGemma4;
+    friend class InputsEmbedderVideoChatFlashQwen;
 };
 
 template <typename Func>

@@ -21,6 +21,7 @@
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
+#include "visual_language/videochat_flash/classes.hpp"
 
 #include "utils.hpp"
 
@@ -291,6 +292,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA4) {
         m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
+        m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, model_dir, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -339,6 +342,9 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
                                                         config_dir_path,
                                                         device,
                                                         device_config);
+        m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
+        m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config); 
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
