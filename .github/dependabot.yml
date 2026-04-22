@@ -37,6 +37,10 @@ updates:
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     versioning-strategy: increase-if-necessary
+    ignore:
+      # not supported by other deps, to be updated manually
+      - dependency-name: "@eslint/js"
+      - dependency-name: "eslint"
     groups:
       npm-dependencies:
         patterns:
