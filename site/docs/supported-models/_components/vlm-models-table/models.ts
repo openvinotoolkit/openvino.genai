@@ -80,6 +80,18 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'VideoChat-Flash',
+    models: [
+      {
+        name: 'videochat_flash_qwen',
+        links: [
+          'https://modelscope.cn/OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B',
+        ],
+        notesLink: '#videochat-flash-notes',
+      },
+    ],
+  },
+  {
     architecture: 'MiniCPMO',
     models: [
       {
