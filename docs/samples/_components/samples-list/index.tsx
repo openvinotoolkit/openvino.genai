@@ -11,17 +11,18 @@ type GenAISample = {
   name: string;
   hasReadme: boolean;
   githubLink: string;
+  docLink: string;
 };
 type GenAISamples = Record<string, GenAISample[]>;
 
 function SamplesListItem({
-  item: { language, name, githubLink },
+  item: { name, githubLink, docLink },
 }: {
   item: GenAISamples[string][number];
 }): React.JSX.Element {
   return (
     <li>
-      <Link href={`./${language}/${name}`}>{name}</Link> (<Link href={githubLink}>GitHub</Link>)
+      <Link to={docLink}>{name}</Link> (<Link href={githubLink}>GitHub</Link>)
     </li>
   );
 }
