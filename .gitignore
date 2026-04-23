@@ -47,3 +47,10 @@ _codeql_detected_source_root
 
 # agentic model enabler
 .model_enabler
+
+# Generated at hub build time by genai-samples-docs-plugin (see edge-manage-docs).
+# Source of truth is samples/<lang>/<name>/README.md in this repo.
+/docs/samples/c/
+/docs/samples/cpp/
+/docs/samples/js/
+/docs/samples/python/

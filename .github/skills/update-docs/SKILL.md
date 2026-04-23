@@ -6,7 +6,7 @@ argument-hint: "Description of what changed (e.g. 'added SpeculativeDecodingPipe
 
 # Update Docs
 
-Updates Docusaurus site pages under `/site/docs/` after a code change.
+Updates Docusaurus documentation pages under `/docs/` after a code change. Content in this repository is consumed by a centralized Docusaurus hub (multi-instance), so no Docusaurus app lives here.
 
 ## When to Use
 
@@ -34,12 +34,12 @@ To understand what changed in each relevant file, prefer using appropriate tool 
 
 Decide which site sections need updating based on what changed:
 
-| Change type                     | Section to update                          |
-| ------------------------------- | ------------------------------------------ |
-| New pipeline / use-case         | `site/docs/use-cases/<category>/index.mdx` |
-| New model type supported        | `site/docs/supported-models/_components/`  |
-| New public API or config option | Relevant guide in `site/docs/guides/`      |
-| New concept or algorithm        | `site/docs/concepts/`                      |
+| Change type                     | Section to update                     |
+| ------------------------------- | ------------------------------------- |
+| New pipeline / use-case         | `docs/use-cases/<category>/index.mdx` |
+| New model type supported        | `docs/supported-models/_components/`  |
+| New public API or config option | Relevant guide in `docs/guides/`      |
+| New concept or algorithm        | `docs/concepts/`                      |
 
 **Rules:**
 
@@ -47,7 +47,7 @@ Decide which site sections need updating based on what changed:
 - Code snippets must have both C++ and Python tabs (see existing `index.mdx` in use-cases for the tab component pattern).
 - Code snippets must have JavaScript tab if NodeJS API changed.
 - Do not invent model names, benchmark numbers, or unverified capabilities.
-- Cross-link to related pages using relative links (e.g., `[Supported Models](/docs/supported-models/)`).
+- Cross-link to related pages using relative links (e.g., `[Supported Models](../supported-models/)`).
 
 **Rules for `models.ts` entries:**
 
@@ -55,25 +55,24 @@ Decide which site sections need updating based on what changed:
 - **Name**: use the existing `models.ts` as the source of truth for naming style. The `name` is usually the marketing / family name grouping related versions under one entry (e.g. `name: 'Phi3'` covers Phi-3, Phi-3.5, Phi-4). Strip organisation prefixes and per-size suffixes (`-7B`, `-Instruct`), but preserve hyphens and version numbers when the existing table uses them (e.g. `Qwen2.5`, `Phi-3.5-MoE`).
 - **Order**: insert new entries in alphabetical order by `architecture`.
 
-### Step 3: Lint and Build
+### Step 3: Validate
 
-From the `site/` directory, run lint and then a production build to catch any errors:
+This repository no longer hosts a Docusaurus app; validation happens in the centralized hub build. Before committing, verify locally:
 
-```bash
-cd site
-npm run lint:fix
-npm run build
-```
+- MDX frontmatter is well-formed and matches surrounding files.
+- All relative imports (`./...` or `../...`) resolve to files that exist in this repository.
+- All image references use per-section relative paths (e.g. `![alt](./img/foo.png)`); images live under the nearest `docs/<section>/img/` folder.
+- No `@site/...` imports (those only work inside a full Docusaurus app).
 
-Fix any errors reported before proceeding. Do not skip this step — a passing build confirms MDX syntax, broken imports, and broken internal links are all resolved.
+If a hub checkout is available, running the hub's build against this branch is the authoritative check.
 
 ### Step 4: Verify Completeness
 
 Run the following checklist before declaring the documentation update done:
 
-- [ ] Site docs cover the new capability (use-case page, guide, or model table entry).
-- [ ] `npm run lint:fix` passes with no errors.
-- [ ] `npm run build` completes successfully.
+- [ ] Docs cover the new capability (use-case page, guide, or model table entry).
+- [ ] No `@site/...` imports introduced; relative imports resolve in this repository.
+- [ ] Images live under the nearest `docs/<section>/img/` folder and are referenced with relative paths.
 
 ### Step 5: Report
 
