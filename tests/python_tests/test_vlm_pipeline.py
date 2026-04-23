@@ -211,6 +211,7 @@ def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:
     ).models_path
     return Path(_get_ov_model(VLM_EAGLE3_MAIN_MODEL_ID)), draft_model_path
 
+
 def _setup_generation_config(
     pipeline: VLMPipeline,
     max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
