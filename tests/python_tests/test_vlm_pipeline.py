@@ -207,8 +207,6 @@ def _setup_generation_config(
     generation_config = pipeline.get_generation_config()
     generation_config.max_new_tokens = max_new_tokens
     generation_config.do_sample = do_sample
-    if do_sample:
-        generation_config.rng_seed = 0
     if prompt_lookup:
         # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates per iteration
         generation_config.num_assistant_tokens = 5

@@ -86,6 +86,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     // If eos_token_id was not provided, take value
     if (m_generation_config.eos_token_id == -1)
         m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+
+    m_sampler.set_seed(m_generation_config.rng_seed);
 }
 
 StatefulLLMPipeline::StatefulLLMPipeline(
@@ -440,6 +442,10 @@ EncodedResults StatefulLLMPipeline::generate(
         }
 
         requests.push_back(sequence_group);
+    }
+
+    if (m_sampler.get_seed() != config.rng_seed) {
+        m_sampler.set_seed(config.rng_seed);
     }
 
     ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr, m_sampler,

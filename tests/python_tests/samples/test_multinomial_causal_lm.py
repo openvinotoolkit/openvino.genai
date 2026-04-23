@@ -40,5 +40,6 @@ class TestMultinomialCausalLM:
         js_command =['node', js_sample, convert_model, sample_args]
         js_result = run_sample(js_command)
 
-        # Cross-comparison is skipped: without a fixed rng_seed each run produces
-        # non-deterministic output, so C++, Python, and JS results will differ.
+        # Compare results
+        assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match"
+        assert py_result.stdout == js_result.stdout, "Python and JS results should match"

@@ -121,6 +121,7 @@ private:
         }
 
         m_sampler.set_tokenizer(m_tokenizer);
+        m_sampler.set_seed(m_generation_config.rng_seed);
 
         m_vision_registry = std::make_shared<VisionRegistry>();
     }
@@ -746,6 +747,10 @@ private:
         std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
 
         const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
+
+        if (m_sampler.get_seed() != generation_config.rng_seed) {
+            m_sampler.set_seed(generation_config.rng_seed);
+        }
 
         return ov::genai::get_lm_encoded_results(
             m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),

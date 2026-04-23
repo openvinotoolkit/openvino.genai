@@ -607,9 +607,7 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param temperature the value used to modulate token probabilities for random sampling.
  * @param top_p - if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
  * @param top_k the number of highest probability vocabulary tokens to keep for top-k-filtering.
- * @param rng_seed initializes random generator. Set to GenerationConfig::RANDOM_SEED (default) to use a
- *        non-deterministic seed drawn from std::random_device on each request. Set to any other value for
- *        reproducible results.
+ * @param rng_seed initializes random generator.
  *
  * CDPruner configuration:
  * @param pruning_ratio the percentage of visual tokens to prune [0-100). Set to 0 to disable pruning.
@@ -629,9 +627,6 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:
-    /// Sentinel value for rng_seed: requests a non-deterministic seed drawn from std::random_device.
-    static constexpr size_t RANDOM_SEED = SIZE_MAX;
-
     GenerationConfig() = default;
     explicit GenerationConfig(const std::filesystem::path& json_path);
 
@@ -669,7 +664,7 @@ public:
     float top_p = 1.0f;
     size_t top_k = std::numeric_limits<size_t>::max();
     bool do_sample = false;
-    size_t rng_seed = RANDOM_SEED;
+    size_t rng_seed = 0;
 
     // CDPruner config
     size_t pruning_ratio = 0;  // 0 means disabled, and values from 1 to 100 represent the percentage to prune.

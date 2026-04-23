@@ -1100,6 +1100,8 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     if (m_generation_config.eos_token_id == -1) {
         m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
     }
+
+    m_sampler.set_seed(m_generation_config.rng_seed);
 }
 
 WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(

@@ -1,29 +1,12 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <chrono>
 #include <future>
-#include <random>
 
 #include "sampling/sampler.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
 
 namespace ov::genai {
-
-// Resolve rng_seed: if the value is the RANDOM_SEED sentinel, draw a non-deterministic
-// seed from std::random_device (falling back to system_clock when /dev/urandom is unavailable).
-static size_t resolve_rng_seed(size_t seed) {
-    if (seed != GenerationConfig::RANDOM_SEED) {
-        return seed;
-    }
-    // std::random_device::entropy() == 0 means it is a PRNG, not a true RNG.
-    static const bool is_rd_prng = std::random_device{}.entropy() == 0;
-    if (is_rd_prng) {
-        return static_cast<size_t>(std::chrono::steady_clock::now().time_since_epoch().count());
-    }
-    return std::random_device{}();
-}
-
 // Modified Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurrence in haystack
 std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std::vector<int64_t>& needle) {
     if (needle.empty()) {  // no_repeat_ngram_size == 1, ban every token
@@ -1075,7 +1058,7 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             m_request_contexts.emplace(
                 std::piecewise_construct,
                 std::forward_as_tuple(request_id),
-                std::forward_as_tuple(resolve_rng_seed(sampling_params.rng_seed), std::move(lp)));
+                std::forward_as_tuple(sampling_params.rng_seed, std::move(lp)));
         }
         auto& ctx = m_request_contexts.at(request_id);
         // Process stop strings if not yet done. The context may have been pre-created via
@@ -1159,7 +1142,7 @@ void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig
     m_request_contexts.emplace(
         std::piecewise_construct,
         std::forward_as_tuple(request_id),
-        std::forward_as_tuple(resolve_rng_seed(sampling_params.rng_seed), std::move(lp)));
+        std::forward_as_tuple(sampling_params.rng_seed, std::move(lp)));
 }
 
 void Sampler::clear_request_info(uint64_t request_id) {

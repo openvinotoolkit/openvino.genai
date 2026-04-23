@@ -138,7 +138,6 @@ def main():
                 )
             )
             config.do_sample = True
-            config.rng_seed = 42
 
         decoded_results = pipe.generate(history, config, streamer=streamer)
 
