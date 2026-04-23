@@ -42,7 +42,7 @@ import sys
 import os
 import numpy as np
 import transformers
-from optimum.intel.openvino import OVModelForVisualCausalLM
+from optimum.intel.openvino import OVModelForCausalLM, OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
 from huggingface_hub import snapshot_download
 from openvino_genai import (
@@ -54,6 +54,7 @@ from openvino_genai import (
     StreamingStatus,
     GenerationFinishReason,
     ChatHistory,
+    draft_model,
 )
 
 from utils.network import retry_request
@@ -65,6 +66,7 @@ from utils.generation_config import (
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
+from utils.hugging_face import download_and_convert_model_class
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 import logging
@@ -196,6 +198,19 @@ DEFAULT_NPUW_PROPERTIES = {
 
 NPU_SUPPORTED_MODELS = [id for id in MODEL_IDS if id not in NPU_UNSUPPORTED_MODELS and id not in VIDEO_MODEL_IDS]
 
+
+VLM_EAGLE3_MAIN_MODEL_ID = "xf2022/tiny-random-qwen3-vl-layer10"
+VLM_EAGLE3_DRAFT_MODEL_ID = "xf2022/tiny-random-qwen3-vl-eagle3"
+
+
+def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:
+    draft_model_path = download_and_convert_model_class(
+        VLM_EAGLE3_DRAFT_MODEL_ID,
+        OVModelForCausalLM,
+        model_kwargs={"task": "image-text-to-text"},
+    ).models_path
+    return Path(_get_ov_model(VLM_EAGLE3_MAIN_MODEL_ID)), draft_model_path
+
 def _setup_generation_config(
     pipeline: VLMPipeline,
     max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
@@ -233,7 +248,7 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
         )
-    if "optimum-intel-internal-testing/tiny-random-qwen3-vl" == model_id and is_transformers_version("<", "4.57.0"):
+    if "qwen3-vl" in model_id.lower() and is_transformers_version("<", "4.57.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
         )
@@ -2493,4 +2508,77 @@ def test_vlm_pipeline_add_extension(cat_tensor, tmp_path: Path) -> None:
     )
     assert result_extension_obj.texts[0].strip() == result_ref.texts[0].strip(), (
         "Result should be the same for model with extension 'CustomAdd' and reference model."
+    )
+
+
+def test_vlm_eagle3(cat_tensor):
+    model_path, draft_model_path = _get_vlm_eagle3_model_paths()
+
+    ov_pipe = VLMPipeline(model_path, "CPU")
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    result_without_draft = ov_pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
+
+    ov_draft = draft_model(draft_model_path, "CPU")
+    ov_pipe_with_draft = VLMPipeline(model_path, "CPU", draft_model=ov_draft)
+    generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
+    result_with_draft = ov_pipe_with_draft.generate(
+        PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_draft
+    )
+
+    assert result_without_draft.texts[0].strip() == result_with_draft.texts[0].strip(), (
+        "Result should be the same when Eagle3 draft model is enabled and disabled."
+    )
+
+
+def test_vlm_eagle3_chat_with_videos(
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    model_path, draft_model_path = _get_vlm_eagle3_model_paths()
+
+    first_prompt = "Describe the image and the video together."
+    second_prompt = "What did you see across both inputs?"
+
+    ov_pipe = VLMPipeline(model_path, "CPU")
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+
+    history_without_draft = ChatHistory()
+    history_without_draft.append({"role": "user", "content": first_prompt})
+    first_result_without_draft = ov_pipe.generate(
+        history_without_draft,
+        images=[cat_tensor],
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    history_without_draft.append({"role": "assistant", "content": first_result_without_draft.texts[0]})
+    history_without_draft.append({"role": "user", "content": second_prompt})
+    second_result_without_draft = ov_pipe.generate(
+        history_without_draft,
+        generation_config=generation_config,
+    )
+
+    ov_draft = draft_model(draft_model_path, "CPU")
+    ov_pipe_with_draft = VLMPipeline(model_path, "CPU", draft_model=ov_draft)
+    generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
+
+    history_with_draft = ChatHistory()
+    history_with_draft.append({"role": "user", "content": first_prompt})
+    first_result_with_draft = ov_pipe_with_draft.generate(
+        history_with_draft,
+        images=[cat_tensor],
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config_with_draft,
+    )
+    history_with_draft.append({"role": "assistant", "content": first_result_with_draft.texts[0]})
+    history_with_draft.append({"role": "user", "content": second_prompt})
+    second_result_with_draft = ov_pipe_with_draft.generate(
+        history_with_draft,
+        generation_config=generation_config_with_draft,
+    )
+
+    assert first_result_without_draft.texts[0].strip() == first_result_with_draft.texts[0].strip(), (
+        "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
+    )
+    assert second_result_without_draft.texts[0].strip() == second_result_with_draft.texts[0].strip(), (
+        "Second mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
     )
