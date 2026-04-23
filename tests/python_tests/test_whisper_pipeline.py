@@ -199,7 +199,7 @@ MAX_DATASET_LENGTH = 30
 
 @functools.lru_cache(16)
 def get_whisper_dataset(language: str, long_form: bool) -> list:
-    # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0" 
+    # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0"
     # https://github.com/huggingface/datasets/issues/7647 dataset is fixed for streaming mode
     # if not long_form:
     if False:
@@ -227,11 +227,13 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
 def get_multilingual_dataset(language: Literal["de", "fr", "es"]) -> list:
     mls_config = {"en": "english", "de": "german", "fr": "french", "es": "spanish"}
     # dataset is too big (450gb) for snapshot download
-    ds = datasets.load_dataset(
-        "facebook/multilingual_librispeech",
-        mls_config[language],
-        split="test",
-        streaming=True,
+    ds = retry_request(
+        lambda: datasets.load_dataset(
+            "facebook/multilingual_librispeech",
+            mls_config[language],
+            split="test",
+            streaming=True,
+        )
     )
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))

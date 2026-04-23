@@ -6,6 +6,7 @@
 #include <iostream>
 #include <openvino/openvino.hpp>
 #include <thread>
+#include <regex>
 
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"

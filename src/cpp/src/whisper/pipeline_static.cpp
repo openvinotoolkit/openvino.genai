@@ -1192,7 +1192,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
         if (sot_tokens.empty()) {
             auto sot_result = prepare_sot_tokens(hidden_state_tensor, m_models.decoder, config, raw_metrics);
             sot_tokens = std::move(sot_result.tokens);
-            result.language = sot_result.language.substr(2, sot_result.language.size() - 4);
+            result.language = sot_result.language;
         }
 
         std::vector<int64_t> chunk_sot_tokens = sot_tokens;
