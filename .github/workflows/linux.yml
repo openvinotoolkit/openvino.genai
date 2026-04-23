@@ -1045,7 +1045,7 @@ jobs:
           cmake -DOpenVINODeveloperPackage_DIR=${{ env.INSTALL_DIR }}/developer_package/cmake \
                 -DENABLE_PYTHON=ON \
                 -DENABLE_XGRAMMAR=OFF \
-                -BUILD_TOKENIZERS=OFF \
+                -DBUILD_TOKENIZERS=OFF \
                 -DENABLE_LTO=ON \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
