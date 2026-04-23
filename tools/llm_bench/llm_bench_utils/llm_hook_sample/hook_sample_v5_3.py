@@ -57,7 +57,7 @@ ALL_CACHE_NAMES = [
 
 
 # https://github.com/huggingface/transformers/blob/v5.3.0/src/transformers/generation/utils.py#L3727
-def _prefill(
+def new_prefill(
     self,
     input_ids: torch.LongTensor,
     generation_config: GenerationConfig,

@@ -384,7 +384,7 @@ class GreedySearchHook:
 
             type(model)._sample = hook_sample_v5_3.new_sample
             type(model)._prefill = hook_sample_v5_3.new_prefill
-        if trans_version >= version.parse("5.0"):
+        elif trans_version >= version.parse("5.0"):
             import llm_bench_utils.llm_hook_sample.hook_sample_v5 as hook_sample_v5
 
             type(model)._sample = hook_sample_v5.new_sample
