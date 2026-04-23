@@ -4560,15 +4560,19 @@ class WhisperDecodedResults:
         Structure to store resulting text outputs and scores.
     
         Parameters:
-        texts:      vector of resulting sequences.
-        scores:     scores for each sequence.
-        metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
-        shunks:     optional chunks of resulting sequences with timestamps
+        texts:              vector of resulting sequences.
+        scores:             scores for each sequence.
+        language:           detected language for the input audio, e.g. "en".
+        metrics:            performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+        shunks:             optional chunks of resulting sequences with timestamps
     """
     def __str__(self) -> str:
         ...
     @property
     def chunks(self) -> list[WhisperDecodedResultChunk] | None:
+        ...
+    @property
+    def language(self) -> str:
         ...
     @property
     def perf_metrics(self) -> WhisperPerfMetrics:

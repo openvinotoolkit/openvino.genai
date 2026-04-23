@@ -67,6 +67,7 @@ struct WhisperDecodedResultChunk {
 struct WhisperDecodedResults {
     std::vector<std::string> texts;
     std::vector<float> scores;
+    std::string language;
     std::optional<std::vector<WhisperDecodedResultChunk>> chunks = std::nullopt;
     std::optional<std::vector<WhisperWordTiming>> words = std::nullopt;
     WhisperPerfMetrics perf_metrics;

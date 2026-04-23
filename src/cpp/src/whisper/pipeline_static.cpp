@@ -245,22 +245,40 @@ int64_t detect_language(ov::Tensor& encoder_hidden_state,
     return output_token;
 }
 
-std::vector<int64_t> prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
+std::string find_language_by_token_id(const std::map<std::string, int64_t>& lang_to_id, int64_t token_id) {
+    for (const auto& [language, id] : lang_to_id) {
+        if (id == token_id) {
+            return language;
+        }
+    }
+
+    OPENVINO_THROW("Language token id ", token_id, " not found in lang_to_id map.");
+}
+
+std::string to_unescaped_language(const std::string& language) {
+    // "<|en|>" -> "en"
+    return std::regex_replace(language, std::regex("[|<>]+"), "");
+}
+
+ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
                                       ov::InferRequest& decoder,
                                       const ov::genai::WhisperGenerationConfig& config,
                                       ov::genai::RawPerfMetrics& raw_metrics) {
     if (!config.is_multilingual) {
-        return std::vector<int64_t>{config.decoder_start_token_id};
+        // non-multilingual whisper models are english-only
+        return {std::vector<int64_t>{config.decoder_start_token_id}, "en"};
     }
 
     int64_t language_token_id = 0;
+    std::string language;
     if (config.language.has_value()) {
-        std::string language = *config.language;
+        language = *config.language;
         if (config.lang_to_id.count(language)) {
             language_token_id = config.lang_to_id.at(language);
         }
     } else {
         language_token_id = detect_language(encoder_hidden_state, decoder, config, raw_metrics);
+        language = find_language_by_token_id(config.lang_to_id, language_token_id);
     }
 
     int64_t task_token_id = config.transcribe_token_id;
@@ -268,7 +286,7 @@ std::vector<int64_t> prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
         task_token_id = config.translate_token_id;
     }
 
-    return std::vector<int64_t>{config.decoder_start_token_id, language_token_id, task_token_id};
+    return {std::vector<int64_t>{config.decoder_start_token_id, language_token_id, task_token_id}, to_unescaped_language(language)};
 }
 
 void stream_generated_tokens(const std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
@@ -1172,7 +1190,9 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
 
         // prepare sot_tokens just once for whole input
         if (sot_tokens.empty()) {
-            sot_tokens = prepare_sot_tokens(hidden_state_tensor, m_models.decoder, config, raw_metrics);
+            auto sot_result = prepare_sot_tokens(hidden_state_tensor, m_models.decoder, config, raw_metrics);
+            sot_tokens = std::move(sot_result.tokens);
+            result.language = sot_result.language.substr(2, sot_result.language.size() - 4);
         }
 
         std::vector<int64_t> chunk_sot_tokens = sot_tokens;

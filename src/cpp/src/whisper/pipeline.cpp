@@ -146,6 +146,7 @@ public:
         generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
 
+        result.language = generate_result.language;
         result.words = generate_result.words;
 
         result.perf_metrics = generate_result.perf_metrics;
