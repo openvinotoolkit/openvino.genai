@@ -116,6 +116,7 @@ async function main() {
                 })
             };
             generation_config.do_sample = true;
+            generation_config.rng_seed = 42;
         };
 
         const decodedResults = await pipe.generate(chatHistory, generation_config, streamer);
