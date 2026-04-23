@@ -64,7 +64,7 @@ auto whisper_decoded_results_docstring = R"(
     texts:              vector of resulting sequences.
     scores:             scores for each sequence.
     language:           detected language for the input audio, e.g. "en".
-    perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+    perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::WhisperPerfMetrics.
     chunks:             optional chunks of resulting sequences with timestamps
 )";
 
