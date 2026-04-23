@@ -95,10 +95,10 @@ ALL_CACHE_NAMES = [
 
 
 # Transformers version: v5.0.0, v5.1.0, v5.2.0
-# Copied from https://github.com/huggingface/transformers/blob/v5.0.0/src/transformers/generation/utils.py#L2784
 # Add the function of collecting latency
 
 
+# Copied from https://github.com/huggingface/transformers/blob/v5.0.0/src/transformers/generation/utils.py#L3849
 def new_prefill(self, input_ids: torch.LongTensor, generation_config: GenerationConfig, model_kwargs):
     if generation_config.prefill_chunk_size is None:
         model_kwargs = self._get_initial_cache_position(input_ids.shape[1], input_ids.device, model_kwargs)
@@ -151,6 +151,7 @@ def new_prefill(self, input_ids: torch.LongTensor, generation_config: Generation
         return outputs
 
 
+# Copied from https://github.com/huggingface/transformers/blob/v5.0.0/src/transformers/generation/utils.py#L3201
 def new_beam_search(
     self,
     input_ids: torch.LongTensor,
@@ -293,15 +294,16 @@ def new_beam_search(
     beam_indices = running_beam_indices.detach().clone()
 
     flat_running_sequences = input_ids
-    prefill_consumed = False
-    tic = time.perf_counter()
-    model_outputs = self._prefill(
-        input_ids,
-        generation_config,
-        model_kwargs,
-        is_first_iteration=not generation_config.is_assistant,
-    )
-    hook_beam.tm_list.append(time.perf_counter() - tic)
+    # Assisted generation completes the prefill stage in candidate generator so that
+    # we don't have several `prefill` calls in one generation loop. Skip `_prefill` for assistants
+    if not generation_config.is_assistant:
+        tic = time.perf_counter()
+        model_outputs = self._prefill(input_ids, generation_config, model_kwargs)
+        hook_beam.tm_list.append(time.perf_counter() - tic)
+        prefill_consumed = False
+    else:
+        model_kwargs = self._get_initial_cache_position(input_ids.shape[1], input_ids.device, model_kwargs)
+        prefill_consumed = True
 
     # 4. run the generation loop
     while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
@@ -309,10 +311,7 @@ def new_beam_search(
         if prefill_consumed:
             # a. Forward current tokens, obtain the logits
             flat_running_sequences = self._flatten_beam_dim(running_sequences[:, :, :cur_len])
-            next_sequence_length = 1 if model_kwargs["use_cache"] else None
-            model_inputs = self.prepare_inputs_for_generation(
-                flat_running_sequences, next_sequence_length=next_sequence_length, **model_kwargs
-            )
+            model_inputs = self.prepare_inputs_for_generation(flat_running_sequences, **model_kwargs)
             tic_infer = time.perf_counter()
             model_outputs = self(**model_inputs, return_dict=True)
             hook_beam.tm_infer_list.append(time.perf_counter() - tic_infer)

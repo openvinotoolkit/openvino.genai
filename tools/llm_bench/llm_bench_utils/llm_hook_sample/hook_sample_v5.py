@@ -53,10 +53,10 @@ ALL_CACHE_NAMES = [
 
 
 # Transformers version: v5.0.0, v5.1.0, v5.2.0
-# https://github.com/huggingface/transformers/blob/v5.0.0/src/transformers/generation/utils.py#L3201
 # Add the function of collecting latency
 
 
+# https://github.com/huggingface/transformers/blob/v5.0.0/src/transformers/generation/utils.py#L3849
 def new_prefill(self, input_ids: torch.LongTensor, generation_config: GenerationConfig, model_kwargs):
     if generation_config.prefill_chunk_size is None:
         model_kwargs = self._get_initial_cache_position(input_ids.shape[1], input_ids.device, model_kwargs)
@@ -187,7 +187,7 @@ def new_sample(
     # Assisted generation completes the prefill stage in candidate generator so that
     # we don't have several `prefill` calls in one generation loop. Skip `_prefill` for assistants
     if not generation_config.is_assistant:
-        tic = time.perf_counter()
+        tic_infer = time.perf_counter()
         outputs = self._prefill(input_ids, generation_config, model_kwargs)
         hook_greedy.tm_list.append(time.perf_counter() - tic_infer)
         prefill_consumed = False

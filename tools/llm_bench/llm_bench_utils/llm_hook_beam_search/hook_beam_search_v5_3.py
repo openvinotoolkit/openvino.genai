@@ -96,6 +96,7 @@ ALL_CACHE_NAMES = [
 # Transformers version: v5.3.0, v5.4.0, v5.5.0, v5.5.1, v5.5.2, v5.5.3
 # Add the function of collecting latency
 
+
 # https://github.com/huggingface/transformers/blob/v5.3.0/src/transformers/generation/utils.py#L3727
 def new_prefill(
     self,
@@ -148,7 +149,7 @@ def new_prefill(
         )
         tic_infer = time.perf_counter()
         outputs = self(**model_inputs, return_dict=True)
-        hook_greedy.tm_infer_list.append(time.perf_counter() - tic_infer)
+        hook_beam.tm_infer_list.append(time.perf_counter() - tic_infer)
         return outputs
 
     # Chunked prefill (for very large contexts)
@@ -191,7 +192,7 @@ def new_prefill(
             model_kwargs["past_key_values"] = outputs.past_key_values
             past_length = current_length
 
-        hook_greedy.tm_infer_list.append(infer_time)
+        hook_beam.tm_infer_list.append(infer_time)
 
         # Recreate the kwargs based on the full length
         model_kwargs["attention_mask"] = attention_mask
@@ -202,7 +203,7 @@ def new_prefill(
         return outputs
 
 
-# Copied from https://github.com/huggingface/transformers/blob/v5.0.0/src/transformers/generation/utils.py#L2784
+# Copied from https://github.com/huggingface/transformers/blob/v5.3.0/src/transformers/generation/utils.py#L3068
 def new_beam_search(
     self,
     input_ids: torch.LongTensor,
@@ -353,7 +354,6 @@ def new_beam_search(
         model_kwargs,
         is_first_iteration=not generation_config.is_assistant,
     )
-    hook_beam.tm_infer_list.append(time.perf_counter() - tic)
     hook_beam.tm_list.append(time.perf_counter() - tic)
 
     # 4. run the generation loop
