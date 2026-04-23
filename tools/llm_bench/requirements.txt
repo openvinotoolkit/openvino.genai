@@ -10,7 +10,7 @@ torch>=2.1.0,<=2.11
 transformers[sentencepiece]>=4.40.0,<5.4.0
 diffusers>=0.22.0,<=0.37.1
 # optimum is in dependency list of optimum-intel
-optimum-intel@git+https://github.com/huggingface/optimum-intel.git[nncf]
+optimum-intel[nncf]>=1.25.0,<=1.27.0
 packaging>=20.0,<=26.1
 psutil
 timm<=1.0.26
