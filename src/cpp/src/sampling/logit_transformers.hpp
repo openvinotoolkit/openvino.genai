@@ -142,6 +142,46 @@ protected:
     double m_top_p = 0.f;
 };
 
+// Min-P sampling (Nguyen et al., arXiv 2407.01082, ICLR 2025): keep tokens whose probability is at least min_p * p_max,
+// where p_max is the probability of the most likely token after Temperature.
+//
+// This runs AFTER TemperatureLogitTransform (which normalises m_vector to probabilities)
+// and BEFORE TopPFilter (which applies nucleus truncation on the surviving set).
+//
+// m_vector must hold normalised probabilities when this runs — defer_expf must be false
+// whenever min_p is active (enforced in LogitProcessor).
+class MinPFilter : public ILogitTransformer {
+public:
+    MinPFilter(double min_p) : m_min_p(min_p) {}
+
+    void apply(Logits& logits) override {
+        if (!logits.is_vector_initialized()) {
+            // Fast path (logprobs == 0): Temperature ran directly on m_data; copy probs to m_vector now.
+            logits.initialize_vector();
+        }
+        // m_vector holds normalised probabilities (Temperature has run).
+        // Find p_max in a single O(N) pass.
+        float max_prob = 0.0f;
+        for (size_t i = 0; i < logits.m_size; ++i)
+            if (logits.m_vector[i].m_log_prob > max_prob)
+                max_prob = logits.m_vector[i].m_log_prob;
+
+        const float threshold = static_cast<float>(m_min_p) * max_prob;
+
+        // Partition in-place: compact passing tokens to the front without sorting.
+        // The top token always satisfies p_i == p_max >= threshold, so at least one token survives.
+        size_t new_size = 0;
+        for (size_t i = 0; i < logits.m_size; ++i) {
+            if (logits.m_vector[i].m_log_prob >= threshold)
+                logits.m_vector[new_size++] = logits.m_vector[i];
+        }
+        logits.resize(new_size);
+    }
+
+protected:
+    double m_min_p = 0.0;
+};
+
 class TopKFilter : public ILogitTransformer {
 public:
     TopKFilter(size_t top_k) : m_top_k(top_k) {}

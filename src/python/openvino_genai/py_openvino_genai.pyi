@@ -1251,6 +1251,12 @@ class GenerationConfig:
     @top_p.setter
     def top_p(self, arg0: typing.SupportsFloat) -> None:
         ...
+    @property
+    def min_p(self) -> float:
+        ...
+    @min_p.setter
+    def min_p(self, arg0: typing.SupportsFloat) -> None:
+        ...
 class GenerationFinishReason:
     """
     Members:
