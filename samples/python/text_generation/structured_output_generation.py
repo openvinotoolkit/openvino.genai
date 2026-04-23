@@ -88,7 +88,6 @@ def main():
 
         config.do_sample = True
         config.temperature = 0.8
-        config.rng_seed = 42
 
         history.clear()
         history.append({"role": "system", "content": sys_message_for_items})
