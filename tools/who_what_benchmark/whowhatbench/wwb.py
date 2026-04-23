@@ -470,6 +470,22 @@ def load_processor(args):
                 trust_remote_code=True)
             preprocessor = NanollavaProcessorWrapper(model.process_images, model.config, model.dtype, tokenizer)
             config = model.config
+        elif config.model_type == "videochat_flash_qwen":
+
+            class VideochatProcessorWrapper:
+                def __init__(self, processor, model_type):
+                    self.processor = processor
+                    self.model_dtype = model_type
+
+                def __call__(self, images, return_tensors):
+                    return self.processor(images, return_tensors="pt")["pixel_values"].to(dtype=self.model_dtype)
+
+            from transformers import AutoModelForCausalLM
+
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id, device_map=args.device.lower(), trust_remote_code=True
+            )
+            preprocessor = VideochatProcessorWrapper(model.get_vision_tower().image_processor.preprocess, model.dtype)
         else:
             preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
@@ -725,7 +741,11 @@ def genai_gen_reranking(model, tokenizer, query, documents):
 
 
 def is_model_with_automatic_crop(config):
-    return "internvl" in config.model_type or "minicpmv" in config.model_type
+    return (
+        "internvl" in config.model_type
+        or "minicpmv" in config.model_type
+        or "videochat_flash_qwen" in config.model_type
+    )
 
 
 def create_evaluator(base_model, args):

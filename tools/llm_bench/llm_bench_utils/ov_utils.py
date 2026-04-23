@@ -658,7 +658,7 @@ def get_vlm_processor(model_path):
         processor = AutoProcessor.from_pretrained(config.mm_vision_tower, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         preprocessors = {"processor": processor, "tokenizer": tokenizer, "config": config}
-    elif model_type == "internvl_chat":
+    elif model_type in ["internvl_chat", "videochat_flash_qwen"]:
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         preprocessors = {"processor": None, "tokenizer": tokenizer, "config": config}
     else:

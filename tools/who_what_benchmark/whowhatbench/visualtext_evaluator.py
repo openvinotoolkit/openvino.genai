@@ -126,6 +126,10 @@ class VisualTextEvaluator(TextEvaluator):
 
                 preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING_OPT[model.config.model_type].preprocess_inputs
             inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config, video=video)
+            # videochat_flash_qwen expects "inputs" instead of "input_ids" and requires "modalities" field to be set
+            if model.config.model_type == "videochat_flash_qwen":
+                inputs["inputs"] = inputs.pop("input_ids", None)
+                inputs["modalities"] = ["video"] if video is not None else ["image"] if image is not None else None
             tokens = model.generate(
                 **inputs,
                 **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
