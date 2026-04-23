@@ -55,6 +55,60 @@ ALL_CACHE_NAMES = [
 # Transformers version: v5.0.0, v5.1.0, v5.2.0
 # https://github.com/huggingface/transformers/blob/v5.0.0/src/transformers/generation/utils.py#L3201
 # Add the function of collecting latency
+
+
+def new_prefill(self, input_ids: torch.LongTensor, generation_config: GenerationConfig, model_kwargs):
+    if generation_config.prefill_chunk_size is None:
+        model_kwargs = self._get_initial_cache_position(input_ids.shape[1], input_ids.device, model_kwargs)
+        model_inputs = self.prepare_inputs_for_generation(input_ids, is_first_iteration=True, **model_kwargs)
+        tic_infer = time.perf_counter()
+        outputs = self(**model_inputs, return_dict=True)
+        hook_greedy.tm_infer_list.append(time.perf_counter() - tic_infer)
+        return outputs
+    else:  # Chunked prefill
+        # Even if we are not compiling the forward, flex is always compiled when used. With chunked prefill, we may
+        # end up needing just a bit more graphs than the default (which is 8). Doing this avoids very cryptic warnings
+        torch._dynamo.config.cache_size_limit = 64
+
+        chunk_size = generation_config.prefill_chunk_size
+        input_chunks = torch.split(input_ids, chunk_size, dim=-1)
+
+        if "past_key_values" not in model_kwargs:
+            raise ValueError("Cannot use prefill chunking without a cache")
+
+        model_forward = (
+            self.get_compiled_call(generation_config.compile_config)
+            if self._valid_auto_compile_criteria(model_kwargs, generation_config)
+            else self.__call__
+        )
+
+        attention_mask = model_kwargs.pop("attention_mask", None)
+        past_length = 0
+        tm_infer_time = 0
+        for input_chunk in input_chunks:
+            current_length = past_length + input_chunk.shape[-1]
+            if attention_mask is not None:
+                model_kwargs["attention_mask"] = attention_mask[:, :current_length]
+            model_kwargs["cache_position"] = torch.arange(
+                past_length, current_length, dtype=torch.long, device=input_chunk.device
+            )
+            model_inputs = self.prepare_inputs_for_generation(input_chunk, **model_kwargs)
+
+            tic_infer = time.perf_counter()
+            outputs = model_forward(**model_inputs, return_dict=True)
+            tm_infer_time += time.perf_counter() - tic_infer
+
+            model_kwargs["past_key_values"] = outputs.past_key_values
+            past_length = current_length
+        hook_greedy.tm_infer_list.append(tm_infer_time)
+
+        model_kwargs["attention_mask"] = attention_mask
+        model_kwargs["cache_position"] = model_kwargs["cache_position"][-1:] + 1
+        _ = model_kwargs.pop("position_ids", None)
+        # Latest outputs contain next token logits
+        return outputs
+
+
 def new_sample(
     self,
     input_ids: torch.LongTensor,
@@ -133,17 +187,22 @@ def new_sample(
     # Assisted generation completes the prefill stage in candidate generator so that
     # we don't have several `prefill` calls in one generation loop. Skip `_prefill` for assistants
     if not generation_config.is_assistant:
+        tic = time.perf_counter()
         outputs = self._prefill(input_ids, generation_config, model_kwargs)
+        hook_greedy.tm_list.append(time.perf_counter() - tic_infer)
         prefill_consumed = False
     else:
         model_kwargs = self._get_initial_cache_position(input_ids.shape[1], input_ids.device, model_kwargs)
         prefill_consumed = True
 
     while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
+        tic = time.perf_counter()
         if prefill_consumed:
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
             with self._optimize_model_for_decode():
+                tic_infer = time.perf_counter()
                 outputs = model_forward(**model_inputs, return_dict=True)
+                hook_greedy.tm_infer_list.append(time.perf_counter() - tic_infer)
         prefill_consumed = True
         model_kwargs = self._update_model_kwargs_for_generation(
             outputs,
@@ -198,7 +257,7 @@ def new_sample(
         unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)
         this_peer_finished = unfinished_sequences.max() == 0
         cur_len += 1
-
+        hook_greedy.tm_list.append(time.perf_counter() - tic)
         # This is needed to properly delete outputs.logits which may be very large for first iteration
         # Otherwise a reference to outputs is kept which keeps the logits alive in the next iteration
         del outputs

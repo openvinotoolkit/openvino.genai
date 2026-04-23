@@ -97,6 +97,60 @@ ALL_CACHE_NAMES = [
 # Transformers version: v5.0.0, v5.1.0, v5.2.0
 # Copied from https://github.com/huggingface/transformers/blob/v5.0.0/src/transformers/generation/utils.py#L2784
 # Add the function of collecting latency
+
+
+def new_prefill(self, input_ids: torch.LongTensor, generation_config: GenerationConfig, model_kwargs):
+    if generation_config.prefill_chunk_size is None:
+        model_kwargs = self._get_initial_cache_position(input_ids.shape[1], input_ids.device, model_kwargs)
+        model_inputs = self.prepare_inputs_for_generation(input_ids, is_first_iteration=True, **model_kwargs)
+        tic_infer = time.perf_counter()
+        outputs = self(**model_inputs, return_dict=True)
+        hook_beam.tm_infer_list.append(time.perf_counter() - tic_infer)
+        return outputs
+    else:  # Chunked prefill
+        # Even if we are not compiling the forward, flex is always compiled when used. With chunked prefill, we may
+        # end up needing just a bit more graphs than the default (which is 8). Doing this avoids very cryptic warnings
+        torch._dynamo.config.cache_size_limit = 64
+
+        chunk_size = generation_config.prefill_chunk_size
+        input_chunks = torch.split(input_ids, chunk_size, dim=-1)
+
+        if "past_key_values" not in model_kwargs:
+            raise ValueError("Cannot use prefill chunking without a cache")
+
+        model_forward = (
+            self.get_compiled_call(generation_config.compile_config)
+            if self._valid_auto_compile_criteria(model_kwargs, generation_config)
+            else self.__call__
+        )
+
+        attention_mask = model_kwargs.pop("attention_mask", None)
+        past_length = 0
+        tm_infer_time = 0
+        for input_chunk in input_chunks:
+            current_length = past_length + input_chunk.shape[-1]
+            if attention_mask is not None:
+                model_kwargs["attention_mask"] = attention_mask[:, :current_length]
+            model_kwargs["cache_position"] = torch.arange(
+                past_length, current_length, dtype=torch.long, device=input_chunk.device
+            )
+            model_inputs = self.prepare_inputs_for_generation(input_chunk, **model_kwargs)
+
+            tic_infer = time.perf_counter()
+            outputs = model_forward(**model_inputs, return_dict=True)
+            tm_infer_time += time.perf_counter() - tic_infer
+
+            model_kwargs["past_key_values"] = outputs.past_key_values
+            past_length = current_length
+        hook_beam.tm_infer_list.append(tm_infer_time)
+
+        model_kwargs["attention_mask"] = attention_mask
+        model_kwargs["cache_position"] = model_kwargs["cache_position"][-1:] + 1
+        _ = model_kwargs.pop("position_ids", None)
+        # Latest outputs contain next token logits
+        return outputs
+
+
 def new_beam_search(
     self,
     input_ids: torch.LongTensor,
@@ -240,15 +294,18 @@ def new_beam_search(
 
     flat_running_sequences = input_ids
     prefill_consumed = False
+    tic = time.perf_counter()
     model_outputs = self._prefill(
         input_ids,
         generation_config,
         model_kwargs,
         is_first_iteration=not generation_config.is_assistant,
     )
+    hook_beam.tm_list.append(time.perf_counter() - tic)
 
     # 4. run the generation loop
     while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
+        tic = time.perf_counter()
         if prefill_consumed:
             # a. Forward current tokens, obtain the logits
             flat_running_sequences = self._flatten_beam_dim(running_sequences[:, :, :cur_len])
@@ -256,7 +313,9 @@ def new_beam_search(
             model_inputs = self.prepare_inputs_for_generation(
                 flat_running_sequences, next_sequence_length=next_sequence_length, **model_kwargs
             )
+            tic_infer = time.perf_counter()
             model_outputs = self(**model_inputs, return_dict=True)
+            hook_beam.tm_infer_list.append(time.perf_counter() - tic_infer)
         prefill_consumed = True
 
         # synced_gpus: don't waste resources running the code we don't need; kwargs must be updated before skipping
@@ -371,6 +430,7 @@ def new_beam_search(
             else:
                 model_kwargs["past_key_values"].reorder_cache(beam_idx)
 
+        hook_beam.tm_list.append(time.perf_counter() - tic)
         cur_len = cur_len + 1
         is_early_stop_heuristic_unsatisfied = self._check_early_stop_heuristic(
             is_early_stop_heuristic_unsatisfied=is_early_stop_heuristic_unsatisfied,

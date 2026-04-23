@@ -11,33 +11,36 @@ import transformers
 tm_list = []
 tm_infer_list = []
 tm_mm_embeddings = []
+new_prefill = None
 
 if version.parse(transformers.__version__) >= version.parse("5.3.0"):
-    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v5_3 as hook_beam_search_v5_3
+    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v5_3 as hook_beam_search_v5_3
 
     new_beam_search = hook_beam_search_v5_3.new_beam_search
+    new_prefill = hook_beam_search_v5_3.new_prefill
 elif version.parse(transformers.__version__) >= version.parse("5.0"):
-    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v5 as hook_beam_search_v5
+    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v5 as hook_beam_search_v5
 
     new_beam_search = hook_beam_search_v5.new_beam_search
+    new_prefill = hook_beam_search_v5.new_prefill
 elif version.parse(transformers.__version__) >= version.parse("4.57.0"):
-    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_57 as hook_beam_search_v4_57
+    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_57 as hook_beam_search_v4_57
 
     new_beam_search = hook_beam_search_v4_57.new_beam_search_v57
 elif version.parse(transformers.__version__) >= version.parse("4.55.0"):
-    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_55 as hook_beam_search_v4_55
+    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_55 as hook_beam_search_v4_55
 
     new_beam_search = hook_beam_search_v4_55.new_beam_search_v55
 elif version.parse(transformers.__version__) >= version.parse("4.52.0"):
-    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_52 as hook_beam_search_v4_52
+    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_52 as hook_beam_search_v4_52
 
     new_beam_search = hook_beam_search_v4_52.new_beam_search_v52
 elif version.parse(transformers.__version__) >= version.parse("4.51.0"):
-    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_51 as hook_beam_search_v4_51
+    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_51 as hook_beam_search_v4_51
 
     new_beam_search = hook_beam_search_v4_51.new_beam_search_v51
 else:
-    import tools.llm_bench.llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_40 as hook_beam_search_v4_40
+    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v4_40 as hook_beam_search_v4_40
 
     new_beam_search = hook_beam_search_v4_40.new_beam_search_v40
 
@@ -91,6 +94,8 @@ class BeamSearchHook:
         """Define a new beam search function."""
         if version.parse(transformers.__version__) >= version.parse("4.57.0"):
             type(model)._beam_search = new_beam_search
+            if new_prefill:
+                type(model)._prefill = new_prefill
         else:
             model._beam_search = new_beam_search.__get__(model, model.__class__)
 
