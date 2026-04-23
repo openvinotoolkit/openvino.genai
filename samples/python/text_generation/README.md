@@ -130,7 +130,7 @@ Recommended models: meta-llama/Llama-2-7b-hf, etc
 
 ### 5. Prompt Lookup Decoding LM (`prompt_lookup_decoding_lm`)
 - **Description:**
-[Prompt Lookup decoding](https://github.com/apoorvumang/prompt-lookup-decoding) is [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) technique where the draft model is replaced with simple string matching the prompt to generate candidate token sequences. This method highly effective for input grounded generation (summarization, document QA, multi-turn chat, code editing), where there is high n-gram overlap between LLM input (prompt) and LLM output. This could be entity names, phrases, or code chunks that the LLM directly copies from the input while generating the output. Prompt lookup exploits this pattern to speed up autoregressive decoding in LLMs. This results in significant speedups with no effect on output quality.
+[Prompt Lookup decoding](https://github.com/apoorvumang/prompt-lookup-decoding) is an [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) technique where the draft model is replaced with simple string matching the prompt to generate candidate token sequences. This method is highly effective for input grounded generation (summarization, document QA, multi-turn chat, code editing), where there is high n-gram overlap between LLM input (prompt) and LLM output. This could be entity names, phrases, or code chunks that the LLM directly copies from the input while generating the output. Prompt lookup exploits this pattern to speed up autoregressive decoding in LLMs. This results in significant speedups with no effect on output quality.
 Recommended models: meta-llama/Llama-2-7b-hf, etc
 - **Main Feature:** Specialized prompt-based inference.
 - **Run Command:**
@@ -187,7 +187,7 @@ LLMPipeline and Tokenizer objects can be initialized directly from the memory bu
 - **Description:**
 This sample script demonstrates how to benchmark LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
 
-For more information how performance metrics are calculated, please follow the [performance-metrics tutorial](../../../src/README.md#performance-metrics).
+For more information on how performance metrics are calculated, please follow the [performance-metrics tutorial](../../../src/README.md#performance-metrics).
 - **Main Feature:** Benchmark model via GenAI
 - **Run Command:**
   ```bash

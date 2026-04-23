@@ -11,6 +11,7 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
     nlohmann::json parsed = nlohmann::json::parse(stream);
     using ov::genai::utils::read_json_param;
+    read_json_param(parsed, "image_size", image_size);
     read_json_param(parsed, "patch_size", patch_size); // For llava - stored in config.json vision_config
     read_json_param(parsed, "scale_resolution", scale_resolution);
     read_json_param(parsed, "max_slice_nums", max_slice_nums);

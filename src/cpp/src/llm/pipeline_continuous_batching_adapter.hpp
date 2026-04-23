@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
+
 #include "llm/pipeline_base.hpp"
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
