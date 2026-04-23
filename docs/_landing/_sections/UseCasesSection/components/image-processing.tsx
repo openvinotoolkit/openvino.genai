@@ -3,9 +3,9 @@ import { LanguageTabs, TabItemCpp, TabItemPython, TabItemJS } from '@site/src/co
 
 import UseCaseCard from './UseCaseCard';
 
-import CodeExampleCpp from '../../../../docs/use-cases/image-processing/_sections/_run_model/_code_example_cpp.mdx';
-import CodeExamplePython from '../../../../docs/use-cases/image-processing/_sections/_run_model/_code_example_python.mdx';
-import CodeExampleJS from '../../../../docs/use-cases/image-processing/_sections/_run_model/_code_example_js.mdx';
+import CodeExampleCpp from '../../../../use-cases/image-processing/_sections/_run_model/_code_example_cpp.mdx';
+import CodeExamplePython from '../../../../use-cases/image-processing/_sections/_run_model/_code_example_python.mdx';
+import CodeExampleJS from '../../../../use-cases/image-processing/_sections/_run_model/_code_example_js.mdx';
 
 export const ImageProcessing = () => (
   <UseCaseCard>
@@ -34,8 +34,8 @@ export const ImageProcessing = () => (
       </LanguageTabs>
     </UseCaseCard.Code>
     <UseCaseCard.Actions>
-      <Button label="Explore Use Case" link="./use-cases/image-processing" variant="primary" />
-      <Button label="View Code Samples" link="./samples" variant="primary" outline />
+      <Button label="Explore Use Case" link="use-cases/image-processing" variant="primary" />
+      <Button label="View Code Samples" link="samples" variant="primary" outline />
     </UseCaseCard.Actions>
   </UseCaseCard>
 );

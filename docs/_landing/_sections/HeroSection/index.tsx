@@ -20,7 +20,7 @@ export const HeroSection = () => (
       </p>
       <Button
         label="Get Started"
-        link="./getting-started/introduction"
+        link="getting-started/introduction"
         size="lg"
         variant="secondary"
         className={styles.getStartedButton}

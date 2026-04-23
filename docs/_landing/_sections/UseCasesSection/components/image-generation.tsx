@@ -3,8 +3,8 @@ import { LanguageTabs, TabItemCpp, TabItemPython } from '@site/src/components/La
 
 import UseCaseCard from './UseCaseCard';
 
-import CodeExampleCpp from '../../../../docs/use-cases/image-generation/_sections/_run_model/_text2image_cpp.mdx';
-import CodeExamplePython from '../../../../docs/use-cases/image-generation/_sections/_run_model/_text2image_python.mdx';
+import CodeExampleCpp from '../../../../use-cases/image-generation/_sections/_run_model/_text2image_cpp.mdx';
+import CodeExamplePython from '../../../../use-cases/image-generation/_sections/_run_model/_text2image_python.mdx';
 
 export const ImageGeneration = () => (
   <UseCaseCard>
@@ -33,8 +33,8 @@ export const ImageGeneration = () => (
       </LanguageTabs>
     </UseCaseCard.Code>
     <UseCaseCard.Actions>
-      <Button label="Explore Use Case" link="./use-cases/image-generation" variant="primary" />
-      <Button label="View Code Samples" link="./samples" variant="primary" outline />
+      <Button label="Explore Use Case" link="use-cases/image-generation" variant="primary" />
+      <Button label="View Code Samples" link="samples" variant="primary" outline />
     </UseCaseCard.Actions>
   </UseCaseCard>
 );

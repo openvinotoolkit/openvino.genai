@@ -2,9 +2,9 @@ import Button from '@site/src/components/Button';
 import { LanguageTabs, TabItemCpp, TabItemJS, TabItemPython } from '@site/src/components/LanguageTabs';
 import UseCaseCard from './UseCaseCard';
 
-import CodeExampleCpp from '../../../../docs/use-cases/text-rerank/_sections/_run_model/_code_example_cpp.mdx';
-import CodeExampleJS from '../../../../docs/use-cases/text-rerank/_sections/_run_model/_code_example_js.mdx';
-import CodeExamplePython from '../../../../docs/use-cases/text-rerank/_sections/_run_model/_code_example_python.mdx';
+import CodeExampleCpp from '../../../../use-cases/text-rerank/_sections/_run_model/_code_example_cpp.mdx';
+import CodeExampleJS from '../../../../use-cases/text-rerank/_sections/_run_model/_code_example_js.mdx';
+import CodeExamplePython from '../../../../use-cases/text-rerank/_sections/_run_model/_code_example_python.mdx';
 
 export const TextRerank = () => (
   <UseCaseCard>
@@ -30,8 +30,8 @@ export const TextRerank = () => (
       </LanguageTabs>
     </UseCaseCard.Code>
     <UseCaseCard.Actions>
-      <Button label="Explore Use Case" link="./use-cases/text-rerank" variant="primary" />
-      <Button label="View Code Samples" link="./samples" variant="primary" outline />
+      <Button label="Explore Use Case" link="use-cases/text-rerank" variant="primary" />
+      <Button label="View Code Samples" link="samples" variant="primary" outline />
     </UseCaseCard.Actions>
   </UseCaseCard>
 );

@@ -3,9 +3,9 @@ import { LanguageTabs, TabItemCpp, TabItemPython, TabItemJS } from '@site/src/co
 
 import UseCaseCard from './UseCaseCard';
 
-import CodeExampleCpp from '../../../../docs/use-cases/text-generation/_sections/_run_model/_code_example_cpp.mdx';
-import CodeExampleJS from '../../../../docs/use-cases/text-generation/_sections/_run_model/_code_example_js.mdx';
-import CodeExamplePython from '../../../../docs/use-cases/text-generation/_sections/_run_model/_code_example_python.mdx';
+import CodeExampleCpp from '../../../../use-cases/text-generation/_sections/_run_model/_code_example_cpp.mdx';
+import CodeExampleJS from '../../../../use-cases/text-generation/_sections/_run_model/_code_example_js.mdx';
+import CodeExamplePython from '../../../../use-cases/text-generation/_sections/_run_model/_code_example_python.mdx';
 
 export const TextGeneration = () => (
   <UseCaseCard>
@@ -34,8 +34,8 @@ export const TextGeneration = () => (
       </LanguageTabs>
     </UseCaseCard.Code>
     <UseCaseCard.Actions>
-      <Button label="Explore Use Case" link="./use-cases/text-generation" variant="primary" />
-      <Button label="View Code Samples" link="./samples" variant="primary" outline />
+      <Button label="Explore Use Case" link="use-cases/text-generation" variant="primary" />
+      <Button label="View Code Samples" link="samples" variant="primary" outline />
     </UseCaseCard.Actions>
   </UseCaseCard>
 );
