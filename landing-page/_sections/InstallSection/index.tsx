@@ -39,7 +39,7 @@ export const InstallSection = () => (
 
       <Button
         label="Install"
-        link="/docs/getting-started/installation"
+        link="./getting-started/installation"
         size="large"
         variant="primary"
       />
@@ -64,7 +64,7 @@ export const InstallSection = () => (
       </div>
 
       <Admonition type="info" title="Need more details?">
-        Refer to the <Link to="docs/getting-started/introduction">Getting Started Guide</Link> to
+        Refer to the <Link to="./getting-started/introduction">Getting Started Guide</Link> to
         learn more about OpenVINO GenAI.
       </Admonition>
     </div>

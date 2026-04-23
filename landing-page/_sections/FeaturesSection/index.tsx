@@ -27,7 +27,7 @@ export const FeaturesSection = () => (
         tokenization - everything works out of the box.
       </FeatureItem>
       <FeatureItem icon="🎨" title="Extensive Model Support">
-        Compatible with <Link to="/docs/supported-models">popular models</Link> including Llama,
+        Compatible with <Link to="./supported-models">popular models</Link> including Llama,
         Mistral, Phi, Qwen, Stable Diffusion, Flux, Whisper, etc. Easy model conversion from Hugging
         Face and ModelScope.
       </FeatureItem>

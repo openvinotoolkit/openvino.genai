@@ -35,8 +35,8 @@ export const SpeechRecognition = () => (
       </LanguageTabs>
     </UseCaseCard.Code>
     <UseCaseCard.Actions>
-      <Button label="Explore Use Case" link="docs/use-cases/speech-recognition" variant="primary" />
-      <Button label="View Code Samples" link="docs/samples" variant="primary" outline />
+      <Button label="Explore Use Case" link="./use-cases/speech-recognition" variant="primary" />
+      <Button label="View Code Samples" link="./samples" variant="primary" outline />
     </UseCaseCard.Actions>
   </UseCaseCard>
 );

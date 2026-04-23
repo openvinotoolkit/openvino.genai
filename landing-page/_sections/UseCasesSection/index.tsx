@@ -29,7 +29,7 @@ export const UseCasesSection = () => (
     </div>
     <div className={styles.useCasesFooter}>
       <strong>Looking for more?</strong>&nbsp;See all{' '}
-      <Link to="docs/category/use-cases">supported use cases</Link>.
+      <Link to="./category/use-cases">supported use cases</Link>.
     </div>
   </section>
 );
