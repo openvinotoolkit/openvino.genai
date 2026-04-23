@@ -32,7 +32,7 @@ vocos==0.1.0
 torchaudio==2.11.0
 vector-quantize-pytorch==1.28.2
 # - OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
-av==16.1.0
-imageio==2.37.2
+av==17.0.1
+imageio==2.37.3
 decord==0.6.0; platform_system != "Darwin"
-opencv-python==4.13.0.90
+opencv-python==4.13.0.92
