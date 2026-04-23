@@ -194,17 +194,14 @@ Whisper models can automatically detect the language of the input audio, or you 
 
         // Automatic language detection
         let result = await pipeline.generate(rawSpeech);
-        console.log(result.language);  // e.g. "en", "fr", "de"
 
         // Explicitly specify language (English)
         let generationConfig = { language: "<|en|>" };
         result = await pipeline.generate(rawSpeech, { generationConfig });
-        console.log(result.language);  // "en"
 
         // French speech sample
         generationConfig = { language: "<|fr|>" };
         result = await pipeline.generate(frenchRawSpeech, { generationConfig });
-        console.log(result.language);  // "fr"
         ```
     </TabItemJS>
 </LanguageTabs>
