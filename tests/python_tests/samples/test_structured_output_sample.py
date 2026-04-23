@@ -40,7 +40,7 @@ class Transaction(BaseModel):
     ("Generate 10000 horses.",  {"person": 0, "car": 0, "transaction": 0}),
 ])
 def test_python_structured_output_sample(convert_model, prompt, expected_quantities):
-    if sys.platform == 'darwin':
+    if sys.platform == "darwin":
         pytest.xfail("Ticket 173586")
     user_input = prompt + "\n"
     py_script = SAMPLES_PY_DIR / "text_generation/structured_output_generation.py"
