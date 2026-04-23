@@ -296,6 +296,17 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'Glm4MoeLiteForCausalLM',
+    models: [
+      {
+        name: 'GLM-4.7-Flash',
+        links: [
+          'https://huggingface.co/zai-org/GLM-4.7-Flash',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'GPT2LMHeadModel',
     models: [
       {
