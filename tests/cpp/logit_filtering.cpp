@@ -461,18 +461,18 @@ TEST(MinPFilteringTest, AlwaysKeepsAtLeastOneToken) {
     EXPECT_EQ(logits.m_vector[0].m_index, 0);
 }
 
-// Verify the two-stage MinP → TopP pipeline produces a subset of what TopP alone keeps.
-TEST(MinPFilteringTest, MinPThenTopPIsSubsetOfTopPAlone) {
+// Verify the subset relation for this specific distribution used by the test.
+TEST(MinPFilteringTest, MinPThenTopPIsSubsetOfTopPAloneForSpecificDistribution) {
     float probs[] = {0.032058f, 0.087144f, 0.643952f, 0.236846f};
 
-    // Reference: TopP alone (top_p=0.95).
+    // Reference for this distribution: TopP alone (top_p=0.95).
     auto logits_ref = Logits(probs, 4);
     TopPFilter(0.95f).apply(logits_ref);
     std::set<int64_t> ref_indices;
     for (size_t i = 0; i < logits_ref.m_size; ++i)
         ref_indices.insert(logits_ref.m_vector[i].m_index);
 
-    // With min_p=0.1 first: removes token 0, then top_p=0.95 acts on the remainder.
+    // For this distribution, min_p=0.1 removes token 0 before TopP is applied.
     auto logits_mp = Logits(probs, 4);
     MinPFilter(0.1f).apply(logits_mp);
     TopPFilter(0.95f).apply(logits_mp);

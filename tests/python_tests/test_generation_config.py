@@ -46,7 +46,7 @@ configs = [
     dict(max_new_tokens=1, do_sample=True, min_p=0.05),  # typical value
     dict(max_new_tokens=1, do_sample=True, min_p=0.1),
     dict(max_new_tokens=1, do_sample=True, top_k=40, top_p=0.95, min_p=0.05),  # combined
-    # parameters requiring multimonial are ignored when do_sample=False
+    # parameters requiring multinomial are ignored when do_sample=False
     dict(max_new_tokens=1, top_k=1), # requires do_sample=True
     dict(max_new_tokens=1, top_p=0.5), # requires do_sample=True
     dict(max_new_tokens=1, temperature=2.0), # requires do_sample=True
