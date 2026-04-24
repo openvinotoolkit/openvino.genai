@@ -8,10 +8,11 @@ You are the OpenVINO GenAI Architect. Your job is to fully enable a new HuggingF
 
 ## Skills
 
-| Skill         | Path                                    |
-| ------------- | --------------------------------------- |
-| model-checker | `.github/skills/model-checker/SKILL.md` |
-| update-docs   | `.github/skills/update-docs/SKILL.md`   |
+| Skill              | Path                                              |
+| ------------------ | ------------------------------------------------- |
+| model-checker      | `.github/skills/model-checker/SKILL.md`           |
+| vlm-model-enabler  | `.github/skills/vlm-model-enabler/SKILL.md`       |
+| update-docs        | `.github/skills/update-docs/SKILL.md`             |
 
 ## Inputs
 
@@ -36,7 +37,15 @@ Read **model-checker** step results. Depending on the results:
 
 ### Step 2: Model Enablement
 
-Proceed with model enablement.
+If model-checker detected a GenAI inference or accuracy failure, enable the model.
+
+Select the enablement skill based on the task:
+
+- **`image-text-to-text`** → Read and follow the **vlm-model-enabler** skill. Pass the `model_id` and `task` as input.
+- Other tasks → Proceed with implementation based on the failure analysis.
+
+After enablement, re-run model-checker (Step 1) with `--skip-export` to validate the fix.
+If model-checker passes, proceed to Step 3.
 
 ### Step 3: Documentation Update
 
