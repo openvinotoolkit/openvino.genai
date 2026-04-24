@@ -6,10 +6,19 @@
 #include "logger.hpp"
 
 namespace ov::genai {
+KVUpdateWrapper::KVUpdateWrapper(const ov::genai::ModelDesc& kv_model_desc) {
+    m_compiled_model =
+            utils::singleton_core().compile_model(kv_model_desc.model, kv_model_desc.device, kv_model_desc.properties);
+    m_request = m_compiled_model.create_infer_request();
+}
+
 ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::genai::ModelDesc& main_model_desc,
                                                                  const ov::genai::ModelDesc& draft_model_desc,
                                                                  const std::vector<int32_t>& hidden_layers) {
-    auto scheduler_configs = init_speculative_models(main_model_desc, draft_model_desc);
+    // Enable query-to-query bias for Eagle3 main model only
+    ov::genai::ModelDesc main_model_desc_with_qq_bias = main_model_desc;
+    main_model_desc_with_qq_bias.properties["query_to_query_bias"] = true;
+    auto scheduler_configs = init_speculative_models(main_model_desc_with_qq_bias, draft_model_desc);
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
     OPENVINO_ASSERT(main_model && draft_model);
@@ -33,6 +42,8 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     utils::eagle3::move_fc_from_draft_to_main(draft_model, main_model);
     utils::eagle3::transform_hidden_state(draft_model, {-1});
 
+    // to create kv cache update pipeline for main model post-validation
+    auto kv_model = utils::eagle3::modeling_eagle3_kv_update_model(main_model);
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(main_model,
                                                                                main_model_tokenizer,
@@ -48,6 +59,17 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
                                                                                 draft_device,
                                                                                 draft_properties,
                                                                                 false);
+    ov::genai::ModelDesc kv_model_desc;
+    kv_model_desc.model = kv_model;
+    kv_model_desc.device = main_device;
+    // only kv cache information is needed for kv update model
+    if (main_model_desc.properties.count(ov::hint::kv_cache_precision.name()) > 0) {
+        kv_model_desc.properties[ov::hint::kv_cache_precision.name()] = main_model_desc.properties.at(ov::hint::kv_cache_precision.name());
+    } else {
+        GENAI_INFO("kv cache precision not specified in main model properties. leave to plugin for default precision.");
+    }
+    m_kv_update_wrapper = std::make_shared<KVUpdateWrapper>(kv_model_desc);
+
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
     m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
@@ -152,8 +174,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
                                   const std::vector<GenerationConfig>& sampling_params) {
         OPENVINO_ASSERT(!streamer_ptr->has_callback() ||
                         (input_ids.size() == 1 &&
-                         (sampling_params[0].is_greedy_decoding())),
-                        "Eagle3 streaming only supports batch size=1 with greedy");
+                         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_tree_search())),
+                        "Eagle3 streaming only supports batch size=1 with greedy or tree search");
     };
     strategy.start_timer = [](){
         return std::chrono::steady_clock::now();
@@ -163,5 +185,56 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     };
 
     return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, prompt_ids, strategy);
+}
+
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::step() {
+    // general step for speculative decoding
+    ContinuousBatchingPipeline::SpeculativeDecodingImpl::step();
+    auto main_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
+    // specific step for eagle3 to update main model kv cache after validation
+    {
+        // Launch KV update asynchronously
+        m_sync_future = std::async(std::launch::async, [wrapper = m_kv_update_wrapper, main_pipeline]() mutable {
+            auto main_generated_requests = main_pipeline->get_generated_requests();
+            std::vector<int32_t> block_update_indices, block_update_begins;
+            main_pipeline->collect_block_update_info(main_generated_requests,
+                                                     block_update_indices,
+                                                     block_update_begins);
+
+            ov::Tensor block_indices_tensor = main_pipeline->get_tensor_by_name("block_indices");
+            ov::Tensor block_indices_begins_tensor = main_pipeline->get_tensor_by_name("block_indices_begins");
+            ov::Tensor block_update_indices_tensor(ov::element::i32,
+                                                   {block_update_indices.size()},
+                                                   block_update_indices.data());
+            ov::Tensor block_update_indices_begins_tensor(ov::element::i32,
+                                                          {block_update_begins.size()},
+                                                          block_update_begins.data());
+
+            // Collect KV caches directly from main model's infer request
+            // The infer request already has all KV cache tensors set by cache_manager
+            std::vector<ov::Tensor> key_caches, value_caches;
+            for (const auto& input : wrapper->get_compiled_model().inputs()) {
+                auto input_name = input.get_any_name();
+                if (input_name.find("key_cache.") == 0) {
+                    // Extract layer_id from "key_cache.N" format (note: uses dot, not underscore)
+                    size_t layer_id = std::stoul(input_name.substr(std::string("key_cache.").size()));
+                    if (layer_id >= key_caches.size()) {
+                        key_caches.resize(layer_id + 1);
+                        value_caches.resize(layer_id + 1);
+                    }
+                    // Get tensors directly from main model's infer request instead of going through scheduler
+                    key_caches[layer_id] = main_pipeline->get_tensor_by_name(input_name);
+                    value_caches[layer_id] = main_pipeline->get_tensor_by_name("value_cache." + std::to_string(layer_id));
+                }
+            }
+
+            wrapper->infer(block_indices_tensor,
+                          block_indices_begins_tensor,
+                          block_update_indices_tensor,
+                          block_update_indices_begins_tensor,
+                          key_caches,
+                          value_caches);
+        });
+    }
 }
 }  // namespace ov::genai

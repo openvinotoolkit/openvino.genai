@@ -122,5 +122,16 @@ public:
             m_model_runner->enable_hidden_state_internal(is_needed);
         }
     }
+
+    void collect_block_update_info(const GeneratedRequests& main_generated_requests,
+                                   std::vector<int32_t>& block_update_indices,
+                                   std::vector<int32_t>& block_update_begins) const;
+
+    ov::Tensor get_tensor_by_name(const std::string& name) {
+        if (m_model_runner) {
+            return m_model_runner->get_infer_request().get_tensor(name);
+        }
+        return {};
+    }
 };
 }

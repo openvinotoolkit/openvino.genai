@@ -825,6 +825,10 @@ public:
     }
 
     bool is_waiting() const {
+        // when in tree search advance step, depends on pause status only
+        if (m_sampling_params.is_tree_search() && m_num_validation_tokens == 0) {
+            return m_is_gen_paused;
+        }
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
                 return true;
@@ -897,7 +901,7 @@ public:
             if (has_finished()) {
                 push_outputs();
             }
-        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
+        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1) {
