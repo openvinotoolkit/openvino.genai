@@ -213,6 +213,7 @@ def test_vlm_nanollava(model_id, model_type, optimum_threshold, genai_threshold,
     [
         ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-video-text"),
         ("optimum-intel-internal-testing/tiny-random-llava-next-video", "visual-video-text"),
+        ("optimum-intel-internal-testing/tiny-videochat-flash-qwen", "visual-video-text"),
     ],
 )
 def test_vlm_video(model_id, model_type, tmp_path):

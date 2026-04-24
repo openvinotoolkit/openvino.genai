@@ -59,6 +59,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "tiny-random-flux": {"name": "optimum-intel-internal-testing/tiny-random-flux", "convert_args": []},
     "tiny-random-flux-fill": {"name": "optimum-intel-internal-testing/tiny-random-flux-fill", "convert_args": []},
     "tiny-random-ltx-video": {"name": "optimum-intel-internal-testing/tiny-random-ltx-video", "convert_args": []},
+    "tiny-videochat-flash-qwen": {
+        "name": "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
+    },
 }
 
 
