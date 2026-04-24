@@ -193,5 +193,4 @@ Before declaring the model enabled:
 - [ ] `.model_enabler/<model_type>_analysis.md` exists
 - [ ] All 4 test scripts exist and pass in `.model_enabler/`
 - [ ] WWB results in `.model_enabler/wwb/`
-- [ ] Docs updated: `site/docs/supported-models/_components/vlm-models-table/models.ts`
 - [ ] `tools/who_what_benchmark/whowhatbench/model_loaders.py` updated if needed
