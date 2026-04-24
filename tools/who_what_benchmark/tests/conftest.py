@@ -61,7 +61,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "tiny-random-ltx-video": {"name": "optimum-intel-internal-testing/tiny-random-ltx-video", "convert_args": []},
     "tiny-videochat-flash-qwen": {
         "name": "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
-        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
 }
 

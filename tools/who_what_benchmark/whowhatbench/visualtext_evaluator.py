@@ -126,7 +126,7 @@ class VisualTextEvaluator(TextEvaluator):
 
                 preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING_OPT[model.config.model_type].preprocess_inputs
             inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config, video=video)
-            input_ids_len= inputs["input_ids"].shape[-1]
+            input_ids_len = inputs["input_ids"].shape[-1]
             # videochat_flash_qwen expects "inputs" instead of "input_ids" and requires "modalities" field to be set
             if model.config.model_type == "videochat_flash_qwen":
                 inputs["inputs"] = inputs.pop("input_ids")
@@ -143,7 +143,7 @@ class VisualTextEvaluator(TextEvaluator):
                 # The output tuple has format (<list of decoded outputs without question/prompt>, <GenerateDecoderOnlyOutput>)
                 return tokens[0][0]
             if crop_question:
-                tokens = tokens[:, input_ids_len :]
+                tokens = tokens[:, input_ids_len:]
 
             answer = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
             return answer
