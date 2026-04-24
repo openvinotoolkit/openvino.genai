@@ -32,7 +32,7 @@ public:
     /**
      * @brief Extract FBANK features from raw audio with LFR stacking.
      * @param audio Raw audio samples (single channel, float)
-     * @param sample_rate Input sample rate (will resample if needed)
+     * @param sample_rate Input sample rate. Must match the extractor sample rate configuration.
      * @return Tensor of shape [1, num_lfr_frames, n_mels * lfr_m] (e.g., [1, ?, 560])
      */
     ov::Tensor extract(const std::vector<float>& audio, int sample_rate = 16000);

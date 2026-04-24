@@ -41,10 +41,18 @@ public:
         whisper_config.max_new_tokens = config.max_new_tokens;
         
         // Handle language field: empty string means unset (auto-detect)
+        // ASRGenerationConfig documents language as ISO 639-1 code (e.g., "en"),
+        // but WhisperGenerationConfig expects the special token form (e.g., "<|en|>").
+        // Convert automatically, but pass through values that are already tokenized.
         if (config.language.empty()) {
             whisper_config.language = std::nullopt;
-        } else {
+        } else if (config.language.size() >= 4 &&
+                   config.language.front() == '<' && config.language.back() == '>') {
+            // Already in Whisper token form (e.g., "<|en|>") — pass through
             whisper_config.language = config.language;
+        } else {
+            // Convert ISO 639-1 code to Whisper token form: "en" -> "<|en|>"
+            whisper_config.language = "<|" + config.language + "|>";
         }
         
         // Handle task field: empty string means unset (use default)

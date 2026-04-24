@@ -8,6 +8,9 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 
+// Portable pi constant (M_PI is not guaranteed on all platforms, e.g. MSVC without _USE_MATH_DEFINES)
+static constexpr float kPi = 3.14159265358979323846f;
+
 namespace ov {
 namespace genai {
 
@@ -77,7 +80,7 @@ void ParaformerFeatureExtractor::init_mel_filters() {
 std::vector<float> ParaformerFeatureExtractor::hann_window(int length) {
     std::vector<float> window(length);
     for (int i = 0; i < length; ++i) {
-        window[i] = 0.5f * (1.0f - std::cos(2.0f * M_PI * i / (length - 1)));
+        window[i] = 0.5f * (1.0f - std::cos(2.0f * kPi * i / (length - 1)));
     }
     return window;
 }
@@ -94,10 +97,17 @@ std::vector<float> ParaformerFeatureExtractor::apply_preemphasis(
 
 std::vector<std::vector<float>> ParaformerFeatureExtractor::compute_stft(
     const std::vector<float>& audio) {
-    // Simple DFT implementation (for small window sizes)
-    // In production, this should use FFT library
+    // DFT implementation — O(num_frames * fft_bins * win_length).
+    // TODO: Replace with an FFT library (e.g., pocketfft/kissfft) and
+    //       precompute twiddle factors / reuse buffers for better performance.
     auto window = hann_window(m_win_length);
     int num_frames = (static_cast<int>(audio.size()) - m_win_length) / m_hop_length + 1;
+
+    // Guard against audio shorter than one window
+    if (num_frames <= 0) {
+        return {};
+    }
+
     int fft_bins = m_n_fft / 2 + 1;
     
     std::vector<std::vector<float>> stft(num_frames, std::vector<float>(fft_bins, 0.0f));
@@ -110,7 +120,7 @@ std::vector<std::vector<float>> ParaformerFeatureExtractor::compute_stft(
             float real_sum = 0.0f, imag_sum = 0.0f;
             for (int n = 0; n < m_win_length && (start + n) < static_cast<int>(audio.size()); ++n) {
                 float windowed_sample = audio[start + n] * window[n];
-                float angle = -2.0f * M_PI * k * n / m_n_fft;
+                float angle = -2.0f * kPi * k * n / m_n_fft;
                 real_sum += windowed_sample * std::cos(angle);
                 imag_sum += windowed_sample * std::sin(angle);
             }
@@ -188,26 +198,49 @@ bool ParaformerDetokenizer::load(const std::filesystem::path& tokens_path) {
         nlohmann::json tokens_json;
         file >> tokens_json;
 
-        for (auto& [key, value] : tokens_json.items()) {
-            try {
-                int64_t id = std::stoll(key);
-                std::string token = value.get<std::string>();
-                m_vocab[id] = token;
-                
-                // Detect special tokens
-                if (token == "<blank>" || token == "<pad>") {
-                    m_blank_id = id;
-                } else if (token == "<s>" || token == "<sos>") {
-                    m_sos_id = id;
-                } else if (token == "</s>" || token == "<eos>") {
-                    m_eos_id = id;
-                }
-            } catch (...) {
-                continue;
+        m_vocab.clear();
+        m_loaded = false;
+        bool has_valid_tokens = false;
+
+        const auto register_token = [this, &has_valid_tokens](const int64_t id, const std::string& token) {
+            m_vocab[id] = token;
+            has_valid_tokens = true;
+            // Detect special tokens
+            if (token == "<blank>" || token == "<pad>") {
+                m_blank_id = id;
+            } else if (token == "<s>" || token == "<sos>") {
+                m_sos_id = id;
+            } else if (token == "</s>" || token == "<eos>") {
+                m_eos_id = id;
             }
+        };
+
+        // Support both JSON array (index = token ID) and object (key = token ID)
+        if (tokens_json.is_array()) {
+            for (size_t index = 0; index < tokens_json.size(); ++index) {
+                try {
+                    const std::string token = tokens_json.at(index).get<std::string>();
+                    register_token(static_cast<int64_t>(index), token);
+                } catch (...) {
+                    continue;
+                }
+            }
+        } else if (tokens_json.is_object()) {
+            for (auto& [key, value] : tokens_json.items()) {
+                try {
+                    const int64_t id = std::stoll(key);
+                    const std::string token = value.get<std::string>();
+                    register_token(id, token);
+                } catch (...) {
+                    continue;
+                }
+            }
+        } else {
+            return false;
         }
-        m_loaded = true;
-        return true;
+
+        m_loaded = has_valid_tokens;
+        return m_loaded;
     } catch (const std::exception&) {
         m_loaded = false;
         return false;
@@ -282,26 +315,41 @@ void ParaformerImpl::load_tokens(const std::filesystem::path& tokens_path) {
         nlohmann::json tokens_json;
         file >> tokens_json;
 
-        size_t max_id = 0;
-        for (auto& [key, value] : tokens_json.items()) {
-            try {
-                size_t id = std::stoul(key);
-                if (id > max_id) max_id = id;
-            } catch (...) {
-                continue;
+        // Support both JSON array (index = token ID) and object (key = token ID)
+        if (tokens_json.is_array()) {
+            m_tokens.resize(tokens_json.size());
+            for (size_t index = 0; index < tokens_json.size(); ++index) {
+                try {
+                    m_tokens[index] = tokens_json.at(index).get<std::string>();
+                } catch (...) {
+                    continue;
+                }
             }
-        }
+            m_has_tokens = true;
+        } else if (tokens_json.is_object()) {
+            size_t max_id = 0;
+            for (auto& [key, value] : tokens_json.items()) {
+                try {
+                    size_t id = std::stoul(key);
+                    if (id > max_id) max_id = id;
+                } catch (...) {
+                    continue;
+                }
+            }
 
-        m_tokens.resize(max_id + 1);
-        for (auto& [key, value] : tokens_json.items()) {
-            try {
-                size_t id = std::stoul(key);
-                m_tokens[id] = value.get<std::string>();
-            } catch (...) {
-                continue;
+            m_tokens.resize(max_id + 1);
+            for (auto& [key, value] : tokens_json.items()) {
+                try {
+                    size_t id = std::stoul(key);
+                    m_tokens[id] = value.get<std::string>();
+                } catch (...) {
+                    continue;
+                }
             }
+            m_has_tokens = true;
+        } else {
+            m_has_tokens = false;
         }
-        m_has_tokens = true;
     } catch (const std::exception&) {
         m_has_tokens = false;
     }

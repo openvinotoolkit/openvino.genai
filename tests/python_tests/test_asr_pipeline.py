@@ -1297,3 +1297,69 @@ class TestASRPerformance:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short", "-x"])
+
+
+# ============================================================================
+# NATIVE C++ ASRPipeline PARAFORMER TESTS
+# ============================================================================
+
+class TestNativeASRPipelineParaformer:
+    """
+    Tests that exercise the native C++ ov_genai.ASRPipeline directly with
+    Paraformer models, bypassing the Python ParaformerPipeline wrapper.
+    This ensures the C++ Paraformer backend is covered from Python.
+    """
+
+    @pytest.fixture(autouse=True)
+    def check_native_and_model(self):
+        if _NativeASRPipeline is None:
+            pytest.skip("Native ov_genai.ASRPipeline not available in this build")
+        if not paraformer_model_available():
+            pytest.skip(f"Paraformer model not found at {PARAFORMER_MODEL_PATH}")
+
+    def test_construct_native_paraformer(self):
+        """Native C++ ASRPipeline can load a Paraformer model directory."""
+        pipe = _NativeASRPipeline(str(PARAFORMER_MODEL_PATH), "CPU")
+        assert pipe is not None
+
+    def test_native_paraformer_model_type(self):
+        """Native ASRPipeline correctly identifies the model as Paraformer."""
+        pipe = _NativeASRPipeline(str(PARAFORMER_MODEL_PATH), "CPU")
+        assert pipe.get_model_type() is not None
+        # is_paraformer should be True
+        if hasattr(pipe, "is_paraformer"):
+            assert pipe.is_paraformer()
+        if hasattr(pipe, "is_whisper"):
+            assert not pipe.is_whisper()
+
+    def test_native_paraformer_generate(self):
+        """Native C++ ASRPipeline generates non-empty output for Paraformer."""
+        pipe = _NativeASRPipeline(str(PARAFORMER_MODEL_PATH), "CPU")
+        result = pipe.generate(generate_test_audio(3.0))
+        assert result is not None
+        assert hasattr(result, "texts")
+        assert len(result.texts) > 0
+
+    def test_native_paraformer_get_generation_config(self):
+        """Native ASRPipeline exposes generation config for Paraformer."""
+        pipe = _NativeASRPipeline(str(PARAFORMER_MODEL_PATH), "CPU")
+        config = pipe.get_generation_config()
+        assert config is not None
+        assert hasattr(config, "max_new_tokens")
+
+    def test_native_paraformer_set_generation_config(self):
+        """Native ASRPipeline allows setting generation config for Paraformer."""
+        pipe = _NativeASRPipeline(str(PARAFORMER_MODEL_PATH), "CPU")
+        config = pipe.get_generation_config()
+        config.max_new_tokens = 50
+        pipe.set_generation_config(config)
+        updated = pipe.get_generation_config()
+        assert updated.max_new_tokens == 50
+
+    def test_native_paraformer_consistency(self):
+        """Native C++ Paraformer produces deterministic output for same input."""
+        pipe = _NativeASRPipeline(str(PARAFORMER_MODEL_PATH), "CPU")
+        sample = generate_speech_like_audio(3.0)
+        r1 = pipe.generate(sample).texts[0]
+        r2 = pipe.generate(sample).texts[0]
+        assert r1 == r2, "Native Paraformer output must be deterministic"
