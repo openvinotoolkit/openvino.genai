@@ -5,8 +5,8 @@
 
 #include <iostream>
 #include <openvino/openvino.hpp>
-#include <thread>
 #include <regex>
+#include <thread>
 
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
@@ -241,7 +241,8 @@ std::string to_unescaped_language(const std::string& language) {
 ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
                                               std::shared_ptr<ov::genai::WhisperDecoder> decoder,
                                               const ov::genai::WhisperGenerationConfig& config,
-                                              ov::genai::RawPerfMetrics& raw_metrics) {
+                                              ov::genai::RawPerfMetrics& raw_metrics,
+                                              ov::genai::Tokenizer& tokenizer) {
     if (!config.is_multilingual) {
         // non-multilingual whisper models are english-only
         return {std::vector<int64_t>{config.decoder_start_token_id}, "en"};
@@ -257,7 +258,15 @@ ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
     } else {
         auto [language_token, infer_ms] = decoder->detect_language(encoder_hidden_state, config.decoder_start_token_id);
         language_token_id = language_token;
-        language = find_language_by_token_id(config.lang_to_id, language_token_id);
+
+        if (!config.lang_to_id.empty()) {
+            // first try to find in config map
+            language = find_language_by_token_id(config.lang_to_id, language_token_id);
+        } else {
+            // if no map provided, decode with tokenizer
+            language =
+                tokenizer.decode(std::vector<int64_t>{language_token_id}, {ov::genai::skip_special_tokens(false)});
+        }
         raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
     }
 
@@ -331,7 +340,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
 
         // prepare sot_tokens just once for whole input
         if (sot_tokens.empty()) {
-            auto sot_result = prepare_sot_tokens(hidden_state_tensor, decoder, config, raw_metrics);
+            auto sot_result = prepare_sot_tokens(hidden_state_tensor, decoder, config, raw_metrics, tokenizer);
             sot_tokens = std::move(sot_result.tokens);
             result.language = std::move(sot_result.language);
         }

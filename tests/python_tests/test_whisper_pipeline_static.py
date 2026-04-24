@@ -4,7 +4,7 @@
 from utils.constants import NPUW_CPU_PROPERTIES
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
-from test_whisper_pipeline import get_whisper_models_list, sample_from_dataset, get_fixture_params_for_n_whisper_dataset_samples
+from test_whisper_pipeline import get_whisper_models_list, sample_from_multilingual_dataset, sample_from_dataset, get_fixture_params_for_n_whisper_dataset_samples
 from transformers import WhisperProcessor, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 from huggingface_hub import snapshot_download
@@ -266,3 +266,22 @@ def test_static_whisper_stateful_word_timestamps(model_descr, sample_from_datase
 
     compare_results_with_assert(expected, actual_out)
     compare_word_timestamps_results_with_assert(expected, actual_out)
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "sample_from_multilingual_dataset,language",
+    [
+        ("de", "de"),
+        ("fr", "fr"),
+        ("es", "es"),
+    ],
+    indirect=["sample_from_multilingual_dataset"],
+)
+def test_language_detection(model_descr, sample_from_multilingual_dataset, language):
+    _, model_path = load_and_save_whisper_model(model_descr, stateful=True)
+
+    expected, actual_out = get_word_timestamps_results_cpu_npu(model_path, sample_from_multilingual_dataset)
+    compare_results_with_assert(expected, actual_out)
+    assert expected.language == actual_out.language == language
+

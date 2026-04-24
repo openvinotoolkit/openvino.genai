@@ -225,7 +225,7 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
 
 @functools.lru_cache(16)
 def get_multilingual_dataset(language: Literal["de", "fr", "es"]) -> list:
-    mls_config = {"en": "english", "de": "german", "fr": "french", "es": "spanish"}
+    mls_config = {"de": "german", "fr": "french", "es": "spanish"}
     # dataset is too big (450gb) for snapshot download
     ds = retry_request(
         lambda: datasets.load_dataset(
