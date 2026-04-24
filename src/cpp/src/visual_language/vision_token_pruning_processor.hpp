@@ -43,6 +43,9 @@ struct PruningContext {
 
     // Configuration
     size_t spatial_merge_size = 1;  // 1 means no merge (default)
+    
+    // Video support: secondary pad token for the other modality (default -1 = not applicable)
+    int64_t video_pad_token_id = -1;
 };
 
 /**
@@ -136,7 +139,8 @@ public:
                                      const ov::Tensor& input_ids,
                                      int64_t image_pad_token_id,
                                      int64_t vision_start_token_id,
-                                     int64_t vision_end_token_id) const;
+                                     int64_t vision_end_token_id,
+                                     int64_t video_pad_token_id = -1) const;
 
     /**
      * @brief Convert visual features to CDPruner batch format.
@@ -167,7 +171,8 @@ public:
                              int64_t image_pad_token_id,
                              int64_t vision_start_token_id,
                              size_t spatial_merge_size,
-                             std::vector<std::vector<bool>>& keep_flags_per_region_out) const;
+                             std::vector<std::vector<bool>>& keep_flags_per_region_out,
+                             int64_t video_pad_token_id = -1) const;
 
     /**
      * @brief Update 3D position IDs for Qwen2VL-style models (3D RoPE).
@@ -179,7 +184,8 @@ public:
                                       const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
                                       const std::vector<std::vector<size_t>>& kept_indices_per_image,
                                       size_t spatial_merge_size,
-                                      std::vector<std::vector<bool>>& keep_flags_out) const;
+                                      std::vector<std::vector<bool>>& keep_flags_out,
+                                      int64_t video_pad_token_id = -1) const;
 
     /**
      * @brief Update 1D position IDs for LLaVA-style models.
@@ -190,7 +196,8 @@ public:
                                       int64_t image_pad_token_id,
                                       const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
                                       const std::vector<std::vector<size_t>>& kept_indices_per_image,
-                                      std::vector<std::vector<bool>>& keep_flags_out) const;
+                                      std::vector<std::vector<bool>>& keep_flags_out,
+                                      int64_t video_pad_token_id = -1) const;
 
     /**
      * @brief Generate pruned input_ids based on keep_flags.
@@ -199,7 +206,8 @@ public:
                                          const std::vector<std::vector<bool>>& keep_flags_per_region,
                                          int64_t image_pad_token_id,
                                          int64_t vision_start_token_id,
-                                         int64_t vision_end_token_id) const;
+                                         int64_t vision_end_token_id,
+                                       int64_t video_pad_token_id = -1) const;
 
     /**
      * @brief Generate pruned text embeddings by removing filtered image_pad positions.
@@ -209,7 +217,8 @@ public:
                                            int64_t image_pad_token_id,
                                            int64_t vision_start_token_id,
                                            int64_t vision_end_token_id,
-                                           const std::vector<std::vector<bool>>& keep_flags_per_region) const;
+                                           const std::vector<std::vector<bool>>& keep_flags_per_region,
+                                           int64_t video_pad_token_id = -1) const;
 
     /**
      * @brief Execute the complete pruning pipeline.

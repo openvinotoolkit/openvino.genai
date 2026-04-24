@@ -2389,6 +2389,61 @@ def test_cdpruner_disable_after_enable(ov_pipe_model: VlmModelInfo, cat_tensor: 
     assert result_without_pruning.texts[0].strip() != "", "Result without pruning should not be empty"
 
 
+@parametrize_cdpruner_models
+@pytest.mark.parametrize("pruning_ratio", [0, 30, 50, 80])
+def test_cdpruner_with_video(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+    pruning_ratio: int,
+):
+    """Test CDPruner with video input at different pruning ratios."""
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    generation_config.pruning_ratio = pruning_ratio
+
+    result = ov_pipe.generate(
+        PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=generation_config
+    )
+
+    assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning on video should not be empty"
+    assert result.perf_metrics is not None, "Performance metrics should be available"
+
+
+CDPRUNER_VIDEO_PRUNING_SUPPORTED_MODELS = [
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl",
+]
+
+parametrize_cdpruner_video_pruning_models = pytest.mark.parametrize(
+    "ov_pipe_model",
+    [(m, b) for m in CDPRUNER_VIDEO_PRUNING_SUPPORTED_MODELS for b in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+
+
+@parametrize_cdpruner_video_pruning_models
+def test_cdpruner_with_video_and_images(
+    ov_pipe_model: VlmModelInfo,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """Test CDPruner with mixed video and image inputs."""
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=25, do_sample=False)
+
+    images = [cat_tensor, car_tensor]
+    videos = [synthetic_video_32x32_tensor]
+
+    generation_config.pruning_ratio = 30
+    result = ov_pipe.generate(
+        "Describe these.", images=images, videos=videos, generation_config=generation_config
+    )
+
+    assert result.texts[0].strip() != "", "Result with mixed video and images should not be empty"
+    assert result.perf_metrics is not None
+
+
 @pytest.fixture(scope="module")
 def ov_continuous_batching_pipe_qwen2vl() -> ContinuousBatchingPipeline:
     """Fixture for Qwen2VL continuous batching pipeline."""
