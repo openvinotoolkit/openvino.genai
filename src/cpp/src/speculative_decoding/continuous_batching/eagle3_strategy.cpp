@@ -43,7 +43,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     utils::eagle3::transform_hidden_state(draft_model, {-1});
 
     // to create kv cache update pipeline for main model post-validation
-    auto kv_model = utils::eagle3::modeling_eagle3_kv_update_model(main_model);
+    auto kv_model = utils::eagle3::create_eagle3_kv_update_model(main_model);
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(main_model,
                                                                                main_model_tokenizer,

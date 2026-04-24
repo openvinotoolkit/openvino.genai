@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "pipeline_impl.hpp"
+#include <numeric>
 
 namespace ov::genai {
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::ContinuousBatchingForSpeculativeDecodingImpl(
@@ -69,59 +70,49 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
     return result;
 }
 
-ov::Tensor truncate_hidden_state_from_end(const ov::Tensor& hidden_state, size_t tokens_to_remove) {
-    if (hidden_state.get_size() == 0 || tokens_to_remove == 0) {
-        return hidden_state;
-    }
+ov::Tensor select_rows_by_indices(const ov::Tensor& tensor, const std::vector<size_t>& indices) {
+    OPENVINO_ASSERT(!indices.empty(), "Indices vector is empty");
 
-    auto shape = hidden_state.get_shape();
-    if (shape.size() < 2) {
-        return hidden_state;
-    }
+    const auto& input_shape = tensor.get_shape();
+    OPENVINO_ASSERT(input_shape.size() >= 1, "Tensor must have at least 1 dimension");
 
-    size_t seq_len_dim = 0;
-    size_t current_seq_len = shape[seq_len_dim];
-
-    if (tokens_to_remove >= current_seq_len) {
-        ov::Shape new_shape = shape;
-        new_shape[seq_len_dim] = 0;
-        return ov::Tensor(hidden_state.get_element_type(), new_shape);
-    }
-
-    size_t new_seq_len = current_seq_len - tokens_to_remove;
-
-    auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, seq_len_dim, 0, new_seq_len);
-    return ov::Tensor(hidden_state, start_coord, end_coord);
-}
-
-ov::Tensor concat_tensors(const std::vector<ov::Tensor>& tensors, const size_t axis) {
-    OPENVINO_ASSERT(!tensors.empty(), "Tensors vector is empty");
-
-    ov::Shape result_shape = tensors[0].get_shape();
-    for (size_t i = 1; i < tensors.size(); ++i) {
-        OPENVINO_ASSERT(tensors[i].get_shape().size() == result_shape.size(),
-                        "All tensors must have the same rank for concatenation");
-        for (size_t d = 0; d < result_shape.size(); ++d) {
-            if (d == axis) {
-                result_shape[d] += tensors[i].get_shape()[d];
-            } else {
-                OPENVINO_ASSERT(tensors[i].get_shape()[d] == result_shape[d],
-                                "All tensors must have the same shape except for the concatenation axis");
-            }
+    // Optimization: Check if indices form a contiguous range [0, 1, 2, ..., n-1]
+    // This allows zero-copy slice for common truncation scenarios
+    bool is_contiguous = true;
+    for (size_t i = 0; i < indices.size(); ++i) {
+        if (indices[i] != i) {
+            is_contiguous = false;
+            break;
         }
     }
 
-    ov::Tensor result_tensor(tensors[0].get_element_type(), result_shape);
-    size_t offset = 0;
-    for (const auto& tensor : tensors) {
-        ov::Coordinate start, end;
-        std::tie(start, end) = ov::genai::utils::make_roi(result_shape, axis, offset, offset + tensor.get_shape()[axis]);
-        ov::Tensor sub_tensor(result_tensor, start, end);
-        tensor.copy_to(sub_tensor);
-        offset += tensor.get_shape()[axis];
+    // Fast path: contiguous indices - use zero-copy ROI slice
+    if (is_contiguous) {
+        OPENVINO_ASSERT(indices.size() <= input_shape[0],
+                       "Contiguous index range [0..", indices.size(),
+                       ") exceeds tensor dimension 0 size (", input_shape[0], ")");
+        auto [start, end] = ov::genai::utils::make_roi(input_shape, 0, 0, indices.size());
+        return ov::Tensor(tensor, start, end);
     }
 
-    return result_tensor;
+    ov::Shape output_shape = input_shape;
+    output_shape[0] = indices.size();
+    ov::Tensor result(tensor.get_element_type(), output_shape);
+
+    for (size_t i = 0; i < indices.size(); ++i) {
+        const size_t src_index = indices[i];
+        OPENVINO_ASSERT(src_index < input_shape[0],
+                       "Index ", src_index, " is out of bounds for tensor dimension 0 (size ", input_shape[0], ")");
+
+        auto [src_start, src_end] = ov::genai::utils::make_roi(input_shape, 0, src_index, src_index + 1);
+        auto [dst_start, dst_end] = ov::genai::utils::make_roi(output_shape, 0, i, i + 1);
+
+        ov::Tensor src_slice(tensor, src_start, src_end);
+        ov::Tensor dst_slice(result, dst_start, dst_end);
+        src_slice.copy_to(dst_slice);
+    }
+
+    return result;
 }
 // { min_len_of_prefix, min_length_of_candidate }
 std::pair<size_t, size_t>
@@ -156,7 +147,7 @@ get_prefix_len(
         // adjust the len of prefix in tree mode
         // handle situation of token match but position mismatch
         if (need_adjust) {
-            auto tree_metadata = running_sequence->get_tree_metadata();
+            auto& tree_metadata = running_sequence->get_tree_metadata();
             const auto& position_ids = tree_metadata.tree_position_ids;
             const auto prev_generated_len = running_sequence->get_generated_len() - position_ids.size();
             auto prefix_len_from_last_generated = sequence_prefix_len - prev_generated_len;
@@ -310,7 +301,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         } else {
             // update existing sequences by the candidates
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
-            auto need_prefix_adjustment = eagle_mode_enabled && request->get_sampling_parameters().is_tree_search() && !m_is_validation_mode_enabled; // always effective in draft model in eagle tree mode
+            // in tree search case, we only consider the prefix with the same token ids and same positions as valid prefix
+            auto need_prefix_adjustment = request->get_sampling_parameters().is_tree_search() && !m_is_validation_mode_enabled;
             std::tie(min_generated_tokens, min_candidate_len) = get_prefix_len(running_sequences, candidates, need_prefix_adjustment);
             OPENVINO_ASSERT(running_sequences.size() == 1);
             auto running_sequence = running_sequences[0];
@@ -329,40 +321,34 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                 result.inserted_tokens_cnt = insert_tokens_to_sequence(running_sequence, candidate_token_ids, candidate_token_log_probs, logit_processor, is_update_logit_processor);
                 // handle hidden states for eagle mode
                 if (eagle_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) { // update hidden states for draft model
-                    // at least there should be one bonus token from main
-                    if (!request->get_sampling_parameters().is_tree_search()) {
-                        auto& hidden_state = candidate_sequence.hidden_states;
-                        ov::Tensor pruned_hidden_state = truncate_hidden_state_from_end(hidden_state, result.removed_tokens_cnt);
-                        const auto& shape = pruned_hidden_state.get_shape();
-                        OPENVINO_ASSERT(shape[0] >= 1, "Unexpected hidden state shape from the main model.");
-                        m_model_runner->set_initial_hidden_state(request_id,
-                                                                pruned_hidden_state);
-                        // to calculate the number of tokens that needs to do kv cache re-generate in draft model
-                        num_tokens_needs_kv_update = shape[0] - 1; // remove the first dim, which is the reliable hidden state from main model
-                    } else {
-                        auto tree_indice = candidate_sequence.tree_metadata.validated_indices;
-                        // select the hidden state according to tree indice
-                        // for example, the hidden state shape is [10, hidden_size]
-                        // retrieve_indices is [0,2,4,6,8], then we need to select hidden states with indice [0,2,4,6,8]
-                        std::vector<ov::Tensor> selected_hidden_states;
-                        auto& hidden_state = candidate_sequence.hidden_states;
-                        const auto& shape = hidden_state.get_shape();
-                        OPENVINO_ASSERT(shape[0] >= 1, "Unexpected hidden state shape from the main model.");
-                        for (const auto& indice : tree_indice) {
-                            OPENVINO_ASSERT(indice < shape[0], "Tree indice is out of range of hidden state.");
-                            auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 0, indice, indice + 1);
-                            selected_hidden_states.push_back(ov::Tensor(hidden_state, start_coord, end_coord));
-                        }
-                        ov::Tensor concatenated_hidden_state = concat_tensors(selected_hidden_states, 0);
-                        m_model_runner->set_initial_hidden_state(request_id,
-                                                                 concatenated_hidden_state);
-                        // to calculate the number of tokens that needs to do kv cache re-generate in draft model
-                        num_tokens_needs_kv_update = tree_indice.size() - 1;
+                    const auto& hidden_state = candidate_sequence.hidden_states;
+                    const size_t current_len = hidden_state.get_shape()[0];
 
+                    std::vector<size_t> indices;
+                    if (!request->get_sampling_parameters().is_tree_search()) {
+                        OPENVINO_ASSERT(result.removed_tokens_cnt < current_len,
+                                       "Cannot remove ", result.removed_tokens_cnt,
+                                       " tokens from hidden state with length ", current_len);
+                        const size_t keep_len = current_len - result.removed_tokens_cnt;
+                        indices.resize(keep_len);
+                        std::iota(indices.begin(), indices.end(), 0);
+                    } else {
+                        indices = candidate_sequence.tree_metadata.validated_indices;
                         auto total_candidates_count = candidate_sequence.tree_metadata.tree_position_ids.size();
-                        // update the removed token count based on tree structure
-                        result.removed_tokens_cnt = total_candidates_count - tree_indice.size() + 1;
+                        result.removed_tokens_cnt = total_candidates_count - indices.size() + 1;
                     }
+
+                    OPENVINO_ASSERT(!indices.empty(), "indices cannot be empty for hidden state selection");
+
+                    // Select hidden states based on computed indices
+                    ov::Tensor selected_hidden_state = select_rows_by_indices(hidden_state, indices);
+                    OPENVINO_ASSERT(selected_hidden_state.get_shape()[0] >= 1,
+                                   "Unexpected hidden state shape from the main model.");
+                    m_model_runner->set_initial_hidden_state(request_id, selected_hidden_state);
+
+                    // Calculate the number of tokens that need KV cache re-generation in draft model
+                    // Safe cast: we know indices is not empty (asserted above)
+                    num_tokens_needs_kv_update = static_cast<int>(indices.size()) - 1;
                 }
                 // update hidden states for main model in validation mode
                 if (eagle_mode_enabled && m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
@@ -385,20 +371,25 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                      updated_context_len = min_candidate_len + prompt_len,
                      max_new_tokens = request->get_max_new_tokens();
         size_t generated_len = request->get_context_len() >= request->get_prompt_len() ? request->get_context_len() - request->get_prompt_len() + 1 : 0;
-        if (num_tokens_needs_kv_update > 0) {
-            if (generated_len > 0) {
-                // in eagle3 speculative mode, to rewind the processed tokens num to the stable kv position
+
+        // Update processed tokens count based on KV cache update requirements
+        if (generated_len > 0) {
+            if (num_tokens_needs_kv_update > 0) {
+                // rewind to stable KV position accounting for tree structure
                 request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1 - num_tokens_needs_kv_update);
-            }
-        } else { // fast draft or main model for eagle speculative
-            if (generated_len > 0 && result.removed_tokens_cnt > 0) {
+            } else if (result.removed_tokens_cnt > 0) {
+                // Fast draft or sequential EAGLE mode: rewind to last accepted token
                 request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1);
             }
         }
-        if (num_tokens_needs_kv_update < 0 && result.inserted_tokens_cnt > 0 && result.removed_tokens_cnt == 0) {
+
+        // Update validated token count for next generation phase
+        if (num_tokens_needs_kv_update >= 0) {
+            // Generation stage: use KV update count
+            request->set_num_validated_tokens(num_tokens_needs_kv_update);
+        } else if (result.inserted_tokens_cnt > 0 && result.removed_tokens_cnt == 0) {
+            // Validation stage or all inserted tokens were accepted
             request->set_num_validated_tokens(result.inserted_tokens_cnt);
-        } else if (num_tokens_needs_kv_update >= 0) {
-            request->set_num_validated_tokens(num_tokens_needs_kv_update);  // in generation stage
         }
         // to pause `draft_model` generation in case of `generated_len >= max_new_tokens - 1` to generate last token by `main_model`
         // Start `draft_model` generation after the first `main_model` generation is finished. There are two scenarios:
