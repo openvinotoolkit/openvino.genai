@@ -15,8 +15,7 @@ def verify_set_values(generation_config, kwargs):
             continue
         actual = getattr(generation_config, key)
         if isinstance(value, float):
-            assert math.isclose(actual, value, rel_tol=1e-5), \
-                f"{key}: {actual} != {value}"
+            assert math.isclose(actual, value, rel_tol=1e-5), f"{key}: {actual} != {value}"
         else:
             assert actual == value
     if "eos_token_id" in kwargs:
