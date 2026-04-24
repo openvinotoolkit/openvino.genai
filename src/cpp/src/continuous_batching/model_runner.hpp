@@ -570,13 +570,17 @@ public:
                         input_ids_data[token_id] = position_id < prompt_len ?
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
-                        auto tree_pos_ids = sequence->get_tree_metadata().tree_position_ids;
+                        // Tree position IDs represent the depth/layer of each candidate token in the speculative decoding tree.
                         // Example: [0, 1, 1, 2, 2, 2, 2] indicates:
                         //   - token[0] is the root at tree layer 0
                         //   - tokens[1-2] are direct children at tree layer 1 (branching from root)
                         //   - tokens[3-6] are grandchildren at tree layer 2 (branching from layer 1 nodes)
-                        // allowing parallel evaluation of multiple candidate paths in tree-based speculative decoding (e.g., EAGLE).
+                        // These IDs compute relative position offsets for parallel evaluation in tree-based speculative decoding (e.g., EAGLE).
+                        const auto& tree_pos_ids = sequence->get_tree_metadata().tree_position_ids;
                         if (!tree_pos_ids.empty()) {
+                            OPENVINO_ASSERT(position_ids_idx < tree_pos_ids.size(),
+                                           "position_ids_idx (", position_ids_idx,
+                                           ") is out of bounds for tree_position_ids.size() (", tree_pos_ids.size(), ")");
                             size_t tree_pos_id = tree_pos_ids[position_ids_idx];
                             position_ids_data[position_ids_idx] = group_position_id + static_cast<int64_t>(tree_pos_id);
                         } else {
@@ -887,10 +891,15 @@ private:
 
             // only count speculated tokens after the prompt for qq bias
             const size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
-            const bool is_tree_decoding = !sequence_group->get_running_sequences()[0]->get_tree_metadata().tree_mask.empty();
+            const auto& tree_mask = sequence_group->get_running_sequences()[0]->get_tree_metadata().tree_mask;
+            const bool is_tree_decoding = !tree_mask.empty();
             if (is_tree_decoding && num_processed_tokens >= sequence_group->get_prompt_len()) {
                 const size_t scheduled_tokens = sequence_group->get_num_scheduled_tokens();
-                cumulative_mask_length += scheduled_tokens * scheduled_tokens;
+                const size_t tree_mask_size = tree_mask.size();
+                OPENVINO_ASSERT(scheduled_tokens == tree_mask_size,
+                               "Scheduled tokens (", scheduled_tokens,
+                               ") must match tree_mask size (", tree_mask_size, ")");
+                cumulative_mask_length += tree_mask_size * tree_mask_size;
             }
             qq_bias_begin_data[i + 1] = static_cast<int32_t>(cumulative_mask_length);
         }
@@ -914,14 +923,30 @@ private:
                 continue;
             }
 
-            const size_t num_speculated_tokens = tree_mask.size();
-            OPENVINO_ASSERT(num_speculated_tokens == tree_mask[0].size(),
-                            "Eagle3 tree mask is expected to be a square matrix.");
+            const size_t tree_mask_rows = tree_mask.size();
+            OPENVINO_ASSERT(tree_mask_rows > 0 && tree_mask_rows == tree_mask[0].size(),
+                            "Eagle3 tree mask must be a non-empty square matrix. Got ",
+                            tree_mask_rows, "x", tree_mask.empty() ? 0 : tree_mask[0].size());
+
+            // Verify consistency with reservation phase
+            const size_t scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+            OPENVINO_ASSERT(scheduled_tokens == tree_mask_rows,
+                           "Scheduled tokens (", scheduled_tokens,
+                           ") must match tree_mask dimensions (", tree_mask_rows, "x", tree_mask_rows, ")");
 
             const size_t offset = static_cast<size_t>(qq_bias_begin_data[i]);
-            for (size_t row = 0; row < num_speculated_tokens; ++row) {
-                for (size_t col = 0; col < num_speculated_tokens; ++col) {
-                    tree_mask_data[offset + row * num_speculated_tokens + col] = tree_mask[row][col];
+            const size_t expected_end = offset + tree_mask_rows * tree_mask_rows;
+            OPENVINO_ASSERT(expected_end <= cumulative_mask_length,
+                           "Tree mask fill would overflow qq_bias tensor: offset=", offset,
+                           ", mask_size=", tree_mask_rows, "x", tree_mask_rows,
+                           ", cumulative_length=", cumulative_mask_length);
+
+            for (size_t row = 0; row < tree_mask_rows; ++row) {
+                OPENVINO_ASSERT(tree_mask[row].size() == tree_mask_rows,
+                               "Row ", row, " has size ", tree_mask[row].size(),
+                               " but expected ", tree_mask_rows);
+                for (size_t col = 0; col < tree_mask_rows; ++col) {
+                    tree_mask_data[offset + row * tree_mask_rows + col] = tree_mask[row][col];
                 }
             }
         }

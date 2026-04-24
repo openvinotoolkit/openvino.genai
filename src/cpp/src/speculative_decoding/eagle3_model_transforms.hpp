@@ -106,7 +106,7 @@ ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features);
 /// @brief constructs a model for updating KV cache in eagle3 pipeline based on the main model validation data
 /// @param main_model
 /// @return the constructed model for updating KV cache in eagle3 pipeline
-std::shared_ptr<ov::Model> modeling_eagle3_kv_update_model(const std::shared_ptr<ov::Model>& main_model);
+std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<ov::Model>& main_model);
 }  // namespace eagle3
 }  // namespace utils
 }  // namespace genai

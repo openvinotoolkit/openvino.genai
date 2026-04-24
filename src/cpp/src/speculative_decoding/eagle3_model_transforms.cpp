@@ -302,7 +302,7 @@ ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features) 
     return ov::Tensor(hidden_features, start_coord, end_coord);
 }
 
-std::shared_ptr<ov::Model> modeling_eagle3_kv_update_model(const std::shared_ptr<ov::Model>& main_model) {
+std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<ov::Model>& main_model) {
     // the kv update model acceptes all kv cache inputs from main_model
     // extra inputs for updating kv cache: block_indices, block_indices_begins, block_update_indices, block_update_indices_begins， all with element::i32, PartialShape{-1}
     auto kv_update_model = std::make_shared<ov::Model>(main_model->get_results(), main_model->get_parameters(), "eagle3_kv_update_model");
@@ -383,17 +383,17 @@ std::shared_ptr<ov::Model> modeling_eagle3_kv_update_model(const std::shared_ptr
     size_t pair_count = std::min(key_caches.size(), value_caches.size());
     for (size_t i = 0; i < pair_count; ++i) {
         auto key_gather = std::make_shared<op::v8::Gather>(
-            key_caches[i], block_update_indices, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, -1));
+            key_caches[i], block_update_indices, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
         key_gather->set_friendly_name("reordered_key_cache_" + std::to_string(i));
         auto key_scatter = std::make_shared<op::v3::ScatterUpdate>(
-            key_caches[i], block_indices, key_gather, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, -1));
+            key_caches[i], block_indices, key_gather, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
         key_scatter->set_friendly_name("updated_key_cache_" + std::to_string(i));
 
         auto value_gather = std::make_shared<op::v8::Gather>(
-            value_caches[i], block_update_indices, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, -2));
+            value_caches[i], block_update_indices, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
         value_gather->set_friendly_name("reordered_value_cache_" + std::to_string(i));
         auto value_scatter = std::make_shared<op::v3::ScatterUpdate>(
-            value_caches[i], block_indices, value_gather, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, -2));
+            value_caches[i], block_indices, value_gather, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
         value_scatter->set_friendly_name("updated_value_cache_" + std::to_string(i));
 
         // Concat key and value scatter outputs along last axis
