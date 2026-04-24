@@ -17,10 +17,12 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/extensions.hpp"
 #include "openvino/genai/taylorseer_config.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
+#include "openvino/core/extension.hpp"
 
 namespace py = pybind11;
 
@@ -194,6 +196,34 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 }
             }
             return parsers;
+        } else if (property_name == "extensions") {
+            auto property_list = py_obj.cast<py::list>();
+            ov::genai::ExtensionList extensions;
+            py::object pathlib_path = py::module_::import("pathlib").attr("Path");
+            py::object op_extension_ctor = py::module_::import("openvino").attr("OpExtension");
+            for (const auto& item : property_list) {
+                if (py::isinstance<py::str>(item) || py::isinstance<py::bytes>(item) || py::isinstance(item, pathlib_path)) {
+                    extensions.push_back(item.cast<std::filesystem::path>());
+                    continue;
+                }
+                if (py::isinstance<ov::Extension>(item)) {
+                    extensions.push_back(item.cast<std::shared_ptr<ov::Extension>>());
+                    continue;
+                }
+                if (py::isinstance<py::type>(item)) {
+                    try {
+                        auto py_ext = op_extension_ctor(item);
+                        extensions.push_back(py_ext.cast<std::shared_ptr<ov::Extension>>());
+                        continue;
+                    } catch (py::error_already_set& e) {
+                        e.clear();
+                    }
+                }
+                OPENVINO_THROW("Incorrect value in \"",
+                               property_name,
+                               "\". Expected extension path (str/bytes/pathlib.Path), ov::Extension object, or custom op type.");
+            }
+            return extensions;
         } else {
             auto _list = py_obj.cast<py::list>();
             enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR, DICT};
@@ -459,10 +489,10 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
             params.insert(map.begin(), map.end());
         } else if (py::isinstance<ov::genai::StructuredOutputConfig>(value)) {
             params[key] = py::cast<ov::genai::StructuredOutputConfig>(value);
+        } else if (value.is_none() && key == "taylorseer_config") {
+            params[key] = ov::Any{};
         } else {
-            if (py::isinstance<py::none>(value)) {
-                OPENVINO_ASSERT(!py::isinstance<py::none>(value), "Property \"", key, "\" can't be None.");
-            }
+            OPENVINO_ASSERT(!value.is_none(), "Property \"", key, "\" can't be None.");
             params[key] = utils::py_object_to_any(value, key);
         }
 

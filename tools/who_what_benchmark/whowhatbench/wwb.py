@@ -11,12 +11,14 @@ from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
 
 import pandas as pd
-from datasets import load_dataset
 from PIL import Image
+from datasets import load_dataset
+from typing import Any, Optional
 
 from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
+from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config
 
 # Configure logging
@@ -91,9 +93,11 @@ def parse_args():
         type=str,
         choices=[
             "text",
+            "text-chat",
             "text-to-image",
             "text-to-video",
             "visual-text",
+            "visual-text-chat",
             "visual-video-text",
             "image-to-image",
             "image-inpainting",
@@ -220,7 +224,8 @@ def parse_args():
         default=None,
         help="Path to a JSON file/string with TaylorSeer configuration for GenAI text-to-image/video pipelines. "
         "Supported keys: 'cache_interval', 'disable_cache_before_step', 'disable_cache_after_step'. "
-        "All keys are optional; defaults are used if not provided.",
+        "All keys are optional; defaults are used if not provided. "
+        "If the pipeline enables caching by default, pass '{\"disable_cache_after_step\": 0}' to disable it.",
     )
     parser.add_argument(
         "--from-onnx",
@@ -517,6 +522,39 @@ def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, us
     )
 
 
+def genai_gen_chat_text(
+    model,
+    _tokenizer,
+    prompts,
+    max_new_tokens,
+    empty_adapters=False,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+):
+    import openvino_genai
+
+    kwargs = {}
+    if empty_adapters:
+        kwargs["adapters"] = openvino_genai.AdapterConfig()
+
+    answers = []
+    chat_history = openvino_genai.ChatHistory()
+    for prompt in prompts:
+        chat_history.append({"role": "user", "content": prompt})
+        decode_res = model.generate(
+            chat_history,
+            do_sample=False,
+            max_new_tokens=max_new_tokens,
+            num_assistant_tokens=num_assistant_tokens,
+            assistant_confidence_threshold=assistant_confidence_threshold,
+            **kwargs,
+        )
+        answers.append(decode_res.texts[0])
+        chat_history.append({"role": "assistant", "content": decode_res.texts[0]})
+
+    return answers
+
+
 def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,
                       assistant_confidence_threshold=0.0):
     if use_chat_template:
@@ -582,8 +620,13 @@ def genai_gen_text2video(
     guidance_scale=3,
     guidance_rescale=0,
     generator=None,
+    empty_adapters=False,
 ):
     kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
+    if empty_adapters:
+        import openvino_genai
+
+        kwargs["adapters"] = openvino_genai.AdapterConfig()
     result = model.generate(
         prompt,
         num_inference_steps=num_inference_steps,
@@ -593,6 +636,7 @@ def genai_gen_text2video(
         frame_rate=frame_rate,
         guidance_scale=guidance_scale,
         guidance_rescale=guidance_rescale,
+        max_sequence_length=256,
         generator=generator,
         **kwargs,
     )
@@ -632,6 +676,43 @@ def genai_gen_visual_text(
     )
 
     return out.texts[0]
+
+
+def genai_gen_visual_text_chat(
+    model: Any,
+    inputs: list[VisualTextChatInput],
+    processor: Optional[Any],
+    tokenizer: Optional[Any],
+    max_new_tokens: int,
+    pruning_ratio: Optional[float],
+    relevance_weight: Optional[float],
+):
+    kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
+    if pruning_ratio is not None:
+        kwargs["pruning_ratio"] = pruning_ratio
+    if relevance_weight is not None:
+        kwargs["relevance_weight"] = relevance_weight
+
+    import openvino_genai
+
+    chat_history = openvino_genai.ChatHistory()
+    answers: list[str] = []
+    chat_input: VisualTextChatInput
+    for chat_input in inputs:
+        chat_history.append({"role": "user", "content": chat_input["prompt"]})
+        media_kwargs = {}
+        if chat_input["images"]:
+            media_kwargs["images"] = [ov.Tensor(np.array(image)) for image in chat_input["images"]]
+        if chat_input["videos"]:
+            media_kwargs["videos"] = [ov.Tensor(np.array(video)) for video in chat_input["videos"]]
+
+        decode_res = model.generate(
+            chat_history, **media_kwargs, **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer), **kwargs
+        )
+        answers.append(decode_res.texts[0])
+        chat_history.append({"role": "assistant", "content": decode_res.texts[0]})
+
+    return answers
 
 
 def genai_gen_embedding(model, tokenizer, passages, **kwargs):
@@ -715,6 +796,7 @@ def create_evaluator(base_model, args):
                 gen_video_fn=genai_gen_text2video if args.genai else None,
                 is_genai=args.genai,
                 seed=args.seed,
+                empty_adapters=args.empty_adapters,
             )
         elif task == "visual-text" or task == "visual-video-text":
             processor, config = load_processor(args)
@@ -782,6 +864,60 @@ def create_evaluator(base_model, args):
                 test_data=prompts,
                 num_samples=args.num_samples,
                 gen_rerank_fn=genai_gen_reranking if args.genai else None
+            )
+        elif task == "text-chat":
+            tokenizer = load_tokenizer(args)
+
+            if tokenizer is not None and tokenizer.chat_template is None:
+                raise ValueError(
+                    "Tokenizer for model type 'text-chat' has no 'chat_template' defined. "
+                    "WWB can't start an evaluation in text-chat mode, "
+                    "please, specify chat_template or use --model-type text. "
+                )
+
+            if args.genai:
+                gen_answer_fn = genai_gen_chat_text
+            else:
+                gen_answer_fn = None
+
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                tokenizer=tokenizer,
+                similarity_model_id=args.data_encoder,
+                num_samples=args.num_samples,
+                max_new_tokens=args.max_new_tokens,
+                empty_adapters=args.empty_adapters,
+                gen_answer_fn=gen_answer_fn,
+                num_assistant_tokens=(int(args.num_assistant_tokens) if args.num_assistant_tokens is not None else 0),
+                assistant_confidence_threshold=(
+                    float(args.assistant_confidence_threshold)
+                    if args.assistant_confidence_threshold is not None
+                    else 0.0
+                ),
+            )
+        elif task == "visual-text-chat":
+            processor, config = load_processor(args)
+            tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
+            if processor is not None and processor.chat_template is None:
+                raise ValueError(
+                    "Model has no 'chat_template' defined, but was run with model-type 'visual-text-chat'. "
+                    "WWB can't start an evaluation in visual-text-chat mode, "
+                    "please, specify chat_template or use --model-type visual-text. "
+                )
+
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                tokenizer=tokenizer,
+                num_samples=args.num_samples,
+                similarity_model_id=args.data_encoder,
+                max_new_tokens=args.max_new_tokens,
+                gen_answer_fn=genai_gen_visual_text_chat if args.genai else None,
+                processor=processor,
+                pruning_ratio=args.pruning_ratio,
+                relevance_weight=args.relevance_weight,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")
@@ -994,7 +1130,7 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type in ["text", "visual-text", "visual-video-text"]:
+        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
             print_text_results(evaluator)
         elif (
             "text-to-image" in args.model_type

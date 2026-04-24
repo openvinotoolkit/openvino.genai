@@ -145,3 +145,19 @@ export interface WhisperPerfMetrics extends PerfMetrics {
    */
   add(other: WhisperPerfMetrics): this;
 }
+
+/**
+ * Holds performance metrics for each Text2Speech generate call.
+ *
+ * Text2SpeechPerfMetrics extends PerfMetrics with speech-generation-specific metrics:
+ *  - Number of generated audio samples
+ */
+export interface Text2SpeechPerfMetrics extends PerfMetrics {
+  /** Returns the total number of generated audio samples. */
+  getNumGeneratedSamples(): number;
+
+  /** Adds the metrics from another Text2SpeechPerfMetrics object to this one.
+   * @returns The current Text2SpeechPerfMetrics instance.
+   */
+  add(other: Text2SpeechPerfMetrics): this;
+}

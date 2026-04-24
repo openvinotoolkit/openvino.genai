@@ -125,24 +125,24 @@ jobs:
 
       - name: Setup Python 3.10
         if: ${{ matrix.build-type != 'Debug' }}
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.10'
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.11'
 
       - name: Setup Python 3.12
         if: ${{ matrix.build-type != 'Debug' }}
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.12'
 
       - name: Setup Python 3.13
         if: ${{ matrix.build-type != 'Debug' }}
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.13'
 
@@ -173,7 +173,7 @@ jobs:
 
       - name: Setup ccache
         id: ccache-restore
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-cpack-${{ github.sha }}
           restore-keys: |
@@ -246,14 +246,14 @@ jobs:
 
       - name: Save ccache
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
           path: ${{ env.CCACHE_DIR }}
 
       - name: Upload cpack package
         if: ${{ always() }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_cpack_${{ matrix.build-type }}
           path: ${{ env.BUILD_DIR }}/*.zip
@@ -261,7 +261,7 @@ jobs:
 
       - name: Upload Tools
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_tools_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TOOLS_DIR }}
@@ -269,7 +269,7 @@ jobs:
 
       - name: Upload Tests
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_tests_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TESTS_DIR }}
@@ -277,7 +277,7 @@ jobs:
 
       - name: Upload manifest
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: manifest_${{ matrix.build-type }}
           path: ${{ env.MANIFEST_PATH }}
@@ -308,7 +308,7 @@ jobs:
           path: ${{ env.SRC_DIR }}
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -336,7 +336,7 @@ jobs:
 
       - name: Setup ccache
         id: ccache-restore
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-wheels-${{ github.sha }}
           restore-keys: |
@@ -369,14 +369,14 @@ jobs:
 
       - name: Save ccache
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
           path: ${{ env.CCACHE_DIR }}
 
       - name: Upload wheels
         if: ${{ always() }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_wheels
           path: ${{ env.INSTALL_DIR }}
@@ -412,7 +412,7 @@ jobs:
           path: ${{ env.SRC_DIR }}
 
       - name: Setup Python ${{ matrix.python-version }}
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
@@ -440,7 +440,7 @@ jobs:
 
       - name: Setup ccache
         id: ccache-restore
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-genai-wheel-${{ matrix.python-version }}-${{ github.sha }}
           restore-keys: |
@@ -483,14 +483,14 @@ jobs:
 
       - name: Save ccache
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
           path: ${{ env.CCACHE_DIR }}
 
       - name: Upload GenAI wheel
         if: ${{ always() }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_wheel_python_${{ matrix.python-version }}
           path: ${{ env.INSTALL_DIR }}
@@ -593,7 +593,7 @@ jobs:
 
       - name: Upload Samples Build Package
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_samples_${{ matrix.build-type }}
           path: ${{ env.INSTALL_DIR }}
@@ -629,7 +629,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -646,7 +646,7 @@ jobs:
 
       - name: Upload Node.js bindings Build Package
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: genai_nodejs_bindings
           path: ${{ env.INSTALL_DIR }}
@@ -654,7 +654,7 @@ jobs:
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
-    needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheels, genai_build_genai_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
@@ -673,10 +673,18 @@ jobs:
             cmd: 'python -m pytest -s -v tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 360
-          - name: 'LLM & VLM'
-            cmd: 'python -m pytest -s -v tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py --override-ini cache_dir=/mount/caches/pytest/'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
-            timeout: 180
+          - name: 'LLM'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py --override-ini cache_dir=/mount/caches/pytest/'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
+            timeout: 90
+          - name: 'VLM (match_optimum_with_resolutions)'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py -k "test_vlm_pipeline_match_optimum_with_resolutions" --override-ini cache_dir=/mount/caches/pytest/'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 90
+          - name: 'VLM'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions" --override-ini cache_dir=/mount/caches/pytest/'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 90
           - name: 'Video Generation'
             cmd: 'python -m pytest -s -v tests/python_tests/test_video_generation.py --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).video_generation.test }}
@@ -718,6 +726,14 @@ jobs:
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "MiniCPM-o-2_6"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 60
+          - name: 'VLM (videochat)'
+            cmd: |
+              # Temporary pin: depends on upstream PR #1637 (not merged yet).
+              # TODO: replace with official release once available.
+              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@cba3f3157d18f309f87e3f50f47741582ee645d3
+              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "videochat"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 90
           - name: 'VLM (qwen3-vl)'
             cmd: |
               python -m pip install transformers==4.57.0 git+https://github.com/huggingface/optimum-intel.git@0566b76f094d4c3084e06d29a248b39a1bff3fa4
@@ -732,6 +748,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests
 
     steps:
       - name: Clone openvino.genai
@@ -745,13 +762,13 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*,genai_tests_Release}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         if: ${{ matrix.test.run_condition }}
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -850,7 +867,7 @@ jobs:
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         if: ${{ matrix.test.run_condition }}
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -865,7 +882,7 @@ jobs:
 
       - name: Setup NodeJS
         if: ${{ matrix.test.run_condition }}
-        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 21
 
@@ -879,9 +896,10 @@ jobs:
 
       - name: Install NPM dependencies for samples
         if: ${{ matrix.test.run_condition }}
-        working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
+        working-directory: ${{ env.SRC_DIR }}/samples/js
         run: |
-          npm install ${{ env.SRC_DIR }}/src/js
+          npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") ${{ env.SRC_DIR }}/src/js --ignore-scripts
+          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Test Samples (Python and C++)
@@ -926,10 +944,10 @@ jobs:
           merge-multiple: true
 
       - name: Extract Artifacts
-        run: Expand-Archive -Path ${{ env.INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.INSTALL_DIR }}
+        run: Expand-Archive -Force -Path ${{ env.INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.INSTALL_DIR }}
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -941,10 +959,27 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
+      - name: Convert models for cache types gtests
+        run: |
+          $csvPath = "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
+          Get-Content $csvPath | ForEach-Object {
+            $line = $_.Trim()
+            if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith('#')) { return }
+            $model_id = ($line -split ',')[0].Trim()
+            $model_name = $model_id.Split('/')[-1]
+            $model_dir = "${{ env.HF_HOME }}/ov_test_models/$model_name"
+            if (-not (Test-Path "$model_dir/openvino_model.xml")) {
+              optimum-cli export openvino -m $model_id --task text-generation-with-past $model_dir
+            }
+          }
+
       - name: gtests unit tests
         run: |
           . "${{ env.INSTALL_DIR }}/setupvars.ps1"
           & "${{ env.INSTALL_DIR }}/tests/tests_continuous_batching.exe" --gtest_filter="-AddSecondInputTest.*"
+        env:
+          TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
+          CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
 
       - name: Test C++ Tools
         run: |
@@ -990,12 +1025,12 @@ jobs:
           merge-multiple: true
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Setup Python
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.11'
           cache: 'pip'
