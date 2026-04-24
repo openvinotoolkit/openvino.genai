@@ -607,6 +607,7 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param temperature the value used to modulate token probabilities for random sampling.
  * @param top_p - if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
  * @param top_k the number of highest probability vocabulary tokens to keep for top-k-filtering.
+ * @param min_p minimum probability threshold relative to the most likely token. Tokens whose probability is below min_p * p_max are removed from the candidate set. 0.0 (default) disables the filter. Typical values: 0.05–0.1. Valid range: [0.0, 1.0).
  * @param rng_seed initializes random generator.
  *
  * CDPruner configuration:
