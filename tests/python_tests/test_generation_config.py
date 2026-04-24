@@ -3,6 +3,7 @@
 
 from openvino_genai import GenerationConfig
 import json
+import math
 import os
 import pytest
 
@@ -12,7 +13,12 @@ def verify_set_values(generation_config, kwargs):
     for key, value in kwargs.items():
         if key == "stop_token_ids":
             continue
-        assert getattr(generation_config, key) == value
+        actual = getattr(generation_config, key)
+        if isinstance(value, float):
+            assert math.isclose(actual, value, rel_tol=1e-5), \
+                f"{key}: {actual} != {value}"
+        else:
+            assert actual == value
     if "eos_token_id" in kwargs:
         assert kwargs["eos_token_id"] in generation_config.stop_token_ids
         if "stop_token_ids" in kwargs:
