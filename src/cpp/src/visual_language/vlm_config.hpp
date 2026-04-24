@@ -22,6 +22,7 @@ enum class VLMModelType {
     QWEN2_5_VL,
     QWEN3_VL,
     GEMMA3,
+    GEMMA3N,
     VIDEOCHAT_FLASH_QWEN,
 };
 

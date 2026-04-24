@@ -86,7 +86,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     std::optional<int64_t> rope_delta,
     const size_t max_kv_cache_size,
     const bool use_intermediate_remote_tensor,
-    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs
+    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs,
+    PerLayerInferFn per_layer_infer_fn
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -258,6 +259,11 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                     std::fill_n(new_visual_pos_masks.data<bool>(), new_visual_pos_masks.get_size(), false);
                     m_llm.set_tensor(name, new_visual_pos_masks);
                 }
+            }
+            // Compute per_layer_inputs for the new token if per_layer infer function is available
+            if (per_layer_infer_fn) {
+                ov::Tensor per_layer_tensor = per_layer_infer_fn(new_input_ids);
+                m_llm.set_tensor("per_layer_inputs", per_layer_tensor);
             }
         } else {
             m_llm.set_tensor("input_ids", new_input_ids);
