@@ -7,6 +7,7 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <numeric>
+#include <algorithm>
 
 #include <openvino/op/convert.hpp>
 #include <openvino/op/maximum.hpp>
@@ -16,6 +17,7 @@
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/multiply.hpp"
+#include "openvino/core/parallel.hpp"
 
 #include "image_generation/numpy_utils.hpp"
 #include "image_generation/schedulers/ischeduler.hpp"
@@ -47,8 +49,7 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     TaylorSeerCacheConfig{}  // taylorseer_config
 };
 
-// Some defaults aren't special values so it's not possible to distinguish
-// whether user set them or not. Replace only special values.
+// Replaces unset optional parameters in the provided config with default values
 void replace_defaults(VideoGenerationConfig& config) {
     if (-1 == config.height) {
         config.height = LTX_VIDEO_DEFAULT_CONFIG.height;
@@ -530,8 +531,8 @@ public:
         }
         // Use maximum of all multipliers to ensure model can handle requested batch size
         size_t batch_size_multiplier = std::max({requested_batch_size_multiplier,
-                                                  m_reshape_batch_size_multiplier,
-                                                  m_compiled_batch_size_multiplier});
+                                                 m_reshape_batch_size_multiplier,
+                                                 m_compiled_batch_size_multiplier});
 
         // Before compilation: track and upgrade reshape multiplier if CFG is needed
         if (!m_is_compiled) {
@@ -566,13 +567,13 @@ public:
         size_t spatial_compression_ratio =
             m_vae->get_config().patch_size * std::pow(2,
                                                       std::accumulate(m_vae->get_config().spatio_temporal_scaling.begin(),
-                                                                  m_vae->get_config().spatio_temporal_scaling.end(),
-                                                                  0));
+                                                                      m_vae->get_config().spatio_temporal_scaling.end(),
+                                                                      0));
         size_t temporal_compression_ratio =
             m_vae->get_config().patch_size_t * std::pow(2,
                                                         std::accumulate(m_vae->get_config().spatio_temporal_scaling.begin(),
-                                                                    m_vae->get_config().spatio_temporal_scaling.end(),
-                                                                    0));
+                                                                        m_vae->get_config().spatio_temporal_scaling.end(),
+                                                                        0));
         size_t transformer_spatial_patch_size = transformer_config.patch_size;
         size_t transformer_temporal_patch_size = transformer_config.patch_size_t;
 
@@ -598,7 +599,6 @@ public:
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
         // Prepare micro-conditions
-        // TODO: move to compute_hidden_states
         ov::Tensor rope_interpolation_scale(ov::element::f32, {3});
         const float frame_rate =
             merged_generation_config.frame_rate.value_or(LTX_VIDEO_DEFAULT_CONFIG.frame_rate.value());
@@ -716,12 +716,17 @@ public:
 
         latent = postprocess_latents(latent);
 
-        // TODO: support timestep_conditioning for AutoencoderKLLTX
+        // support timestep_conditioning for AutoencoderKLLTX
         OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
                             "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, contact OpenVINO GenAI developers.");
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(latent);
+        
+        // Execute the memory safe Temporal VAE Slicer to prevent OOM on 8GB/16GB machines.
+        // Chunk configuration: 32 latent frames per chunk, 8 latent frames of temporal overlap.
+        // The temporal compression ratio must align with the VAE's innate spatio temporal scaling.
+        ov::Tensor video = decode_temporal_slices(latent, 32, 8, temporal_compression_ratio);
+        
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -736,7 +741,11 @@ public:
         ov::Tensor postprocessed = postprocess_latents(latent);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(postprocessed);
+        
+        // Execute the memory safe Temporal VAE Slicer (see implementation for alignment math).
+        // Uses the same defaults (32 chunk, 8 overlap, 8 compression) to prevent large buffer spikes.
+        ov::Tensor video = decode_temporal_slices(postprocessed, 32, 8, 8);
+        
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -800,6 +809,120 @@ private:
         OPENVINO_ASSERT(width % 32 == 0, "Width have to be divisible by 32 but got ", width);
     }
 
+    /**
+     * @brief Blends overlapping temporal frames using a linear cross-fade.
+     * * To prevent visual seams between VAE decoded slices, this function applies a linear 
+     * interpolation mask over the overlapping frames. It utilizes OpenVINO's parallel_for 
+     * to distribute the floating-point math across available CPU threads, avoiding bottlenecks.
+     */
+    void blend_temporal_overlap(ov::Tensor& dest, 
+                                const ov::Tensor& src, 
+                                size_t dest_start_frame, 
+                                size_t overlap_frames, 
+                                size_t bytes_per_frame) {
+        uint8_t* dest_data = dest.data<uint8_t>();
+        const uint8_t* src_data = src.data<uint8_t>();
+        
+        ov::parallel_for(overlap_frames, [&](size_t f) {
+            float alpha = static_cast<float>(f) / static_cast<float>(std::max<size_t>(1, overlap_frames - 1));
+            
+            size_t dest_offset = (dest_start_frame + f) * bytes_per_frame;
+            size_t src_offset = f * bytes_per_frame;
+            
+            for (size_t p = 0; p < bytes_per_frame; ++p) {
+                float dest_val = static_cast<float>(dest_data[dest_offset + p]);
+                float src_val = static_cast<float>(src_data[src_offset + p]);
+                
+                // Linear interpolation with clamp to strictly prevent uint8_t underflow/overflow artifacts
+                float blended = dest_val * (1.0f - alpha) + src_val * alpha;
+                dest_data[dest_offset + p] = static_cast<uint8_t>(std::clamp(std::round(blended), 0.0f, 255.0f));
+            }
+        });
+    }
+
+    /**
+     * @brief Slices the 5D latent tensor and decodes it in overlapping chunks to prevent OOM.
+     * * Decoding a full sequence (e.g., 161 frames) at once causes massive activation memory spikes in the 3D VAE.
+     * This method slices the input latent tensor into overlapping Regions of Interest (ROI) without copying data.
+     * It relies on the fixed translation math F_out = (F_in - 1) * C + 1 to align the decoded pixel frames perfectly.
+     */
+    ov::Tensor decode_temporal_slices(const ov::Tensor& full_latent, 
+                                      size_t latent_chunk_size, 
+                                      size_t latent_overlap, 
+                                      size_t temporal_compression) {
+        ov::Shape latent_shape = full_latent.get_shape(); 
+        size_t total_latent_frames = latent_shape[2];
+        
+        // If the sequence is short enough, bypass slicing entirely to eliminate overhead.
+        if (total_latent_frames <= latent_chunk_size) {
+            return m_vae->decode(full_latent);
+        }
+
+        size_t latent_stride = latent_chunk_size - latent_overlap;
+        size_t current_latent_start = 0;
+        
+        ov::Tensor final_video;
+        bool is_allocated = false;
+
+        while (current_latent_start < total_latent_frames) {
+            size_t current_latent_end = std::min(current_latent_start + latent_chunk_size, total_latent_frames);
+            size_t actual_chunk_size = current_latent_end - current_latent_start;
+            
+            // Zero-copy tensor slice creation
+            ov::Coordinate begin{0, 0, current_latent_start, 0, 0};
+            ov::Coordinate end{latent_shape[0], latent_shape[1], current_latent_end, latent_shape[3], latent_shape[4]};
+            ov::Tensor latent_slice(full_latent, begin, end);
+            
+            // Decode only the isolated temporal slice
+            ov::Tensor decoded_slice = m_vae->decode(latent_slice);
+            
+            // Exact frame alignment calculation: F_out = (F_in - 1) * compression + 1
+            size_t decoded_frames = (actual_chunk_size - 1) * temporal_compression + 1;
+            size_t dest_frame_start = current_latent_start * temporal_compression;
+            size_t bytes_per_frame = decoded_slice.get_byte_size() / decoded_frames;
+            
+            // Allocate the final destination buffer dynamically based on the first successfully decoded chunk
+            if (!is_allocated) {
+                size_t total_out_frames = (total_latent_frames - 1) * temporal_compression + 1;
+                ov::Shape out_shape = decoded_slice.get_shape();
+                
+                for (size_t i = 0; i < out_shape.size(); ++i) {
+                    if (out_shape[i] == decoded_frames) {
+                        out_shape[i] = total_out_frames;
+                        break;
+                    }
+                }
+                final_video = ov::Tensor(decoded_slice.get_element_type(), out_shape);
+                is_allocated = true;
+            }
+
+            // Write chunk payload to the contiguous buffer
+            if (current_latent_start == 0) {
+                // The first chunk has no predecessor, so it requires no cross-fading
+                std::memcpy(final_video.data<uint8_t>(), decoded_slice.data<uint8_t>(), decoded_slice.get_byte_size());
+            } else {
+                // Calculate exactly how many pixel frames overlap based on the latent overlap window
+                size_t overlap_pixel_frames = (latent_overlap - 1) * temporal_compression + 1;
+                size_t non_overlap_frames = decoded_frames - overlap_pixel_frames;
+                
+                blend_temporal_overlap(final_video, decoded_slice, dest_frame_start, overlap_pixel_frames, bytes_per_frame);
+                
+                // Directly copy the non-overlapping remainder to bypass floating-point iteration
+                size_t src_offset = overlap_pixel_frames * bytes_per_frame;
+                size_t dest_offset = (dest_frame_start + overlap_pixel_frames) * bytes_per_frame;
+                size_t bytes_to_copy = non_overlap_frames * bytes_per_frame;
+                
+                std::memcpy(final_video.data<uint8_t>() + dest_offset, 
+                            decoded_slice.data<uint8_t>() + src_offset, 
+                            bytes_to_copy);
+            }
+            
+            if (current_latent_end >= total_latent_frames) break;
+            current_latent_start += latent_stride;
+        }
+        
+        return final_video;
+    }
 };
 
 }  // namespace ov::genai
