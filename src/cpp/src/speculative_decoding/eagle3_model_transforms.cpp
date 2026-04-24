@@ -14,6 +14,7 @@
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/result.hpp"
+#include "openvino/op/scatter_update.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -301,6 +302,113 @@ ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features) 
     return ov::Tensor(hidden_features, start_coord, end_coord);
 }
 
+std::shared_ptr<ov::Model> modeling_eagle3_kv_update_model(const std::shared_ptr<ov::Model>& main_model) {
+    // the kv update model acceptes all kv cache inputs from main_model
+    // extra inputs for updating kv cache: block_indices, block_indices_begins, block_update_indices, block_update_indices_begins， all with element::i32, PartialShape{-1}
+    auto kv_update_model = std::make_shared<ov::Model>(main_model->get_results(), main_model->get_parameters(), "eagle3_kv_update_model");
+    using namespace ov;
+    ParameterVector inputs;
+    // clone the kv cache parameters from the main model
+    auto params = main_model->get_parameters();
+    std::vector<Output<Node>> key_caches;
+    std::vector<Output<Node>> value_caches;
+    for (const auto& param : params) {
+        const std::string& name = param->get_friendly_name();
+        // Find paged_attention op connected to this param
+        std::shared_ptr<ov::Node> paged_attention_op = nullptr;
+        for (const auto& node : main_model->get_ordered_ops()) {
+            // Typical paged_attention op is custom, so check op type and input
+            if (node->get_friendly_name().find("PagedAttentionExtension") != std::string::npos) {
+                for (size_t idx = 0; idx < node->get_input_size(); ++idx) {
+                    if (node->get_input_node_shared_ptr(idx).get() == param.get()) {
+                        paged_attention_op = node;
+                        break;
+                    }
+                }
+                if (paged_attention_op) break;
+            }
+        }
+        if (name.find("key_cache") != std::string::npos) {
+            auto cloned_param = std::make_shared<ov::op::v0::Parameter>(param->get_element_type(), param->get_partial_shape());
+            cloned_param->set_friendly_name(name);
+            cloned_param->output(0).set_names({name});
+            // Clone runtime info from paged_attention op if found
+            if (paged_attention_op) {
+                for (const auto& [key, value] : paged_attention_op->get_rt_info()) {
+                    cloned_param->get_rt_info()[key] = value;
+                }
+            }
+            inputs.push_back(cloned_param);
+            key_caches.push_back(cloned_param);
+        } else if (name.find("value_cache") != std::string::npos) {
+            auto cloned_param = std::make_shared<ov::op::v0::Parameter>(param->get_element_type(), param->get_partial_shape());
+            cloned_param->set_friendly_name(name);
+            cloned_param->output(0).set_names({name});
+            // Clone runtime info from paged_attention op if found
+            if (paged_attention_op) {
+                for (const auto& [key, value] : paged_attention_op->get_rt_info()) {
+                    cloned_param->get_rt_info()[key] = value;
+                }
+            }
+            inputs.push_back(cloned_param);
+            value_caches.push_back(cloned_param);
+        }
+    }
+
+    auto block_indices_begins = std::make_shared<op::v0::Parameter>(
+        element::i32, PartialShape{-1});
+    block_indices_begins->set_friendly_name("block_indices_begins");
+    block_indices_begins->output(0).set_names({"block_indices_begins"});
+    inputs.push_back(block_indices_begins);
+
+    auto block_indices = std::make_shared<op::v0::Parameter>(
+        element::i32, PartialShape{-1});
+    block_indices->set_friendly_name("block_indices");
+    block_indices->output(0).set_names({"block_indices"});
+    inputs.push_back(block_indices);
+
+    auto block_update_indices = std::make_shared<op::v0::Parameter>(
+        element::i32, PartialShape{-1});
+    block_update_indices->set_friendly_name("block_update_indices");
+    block_update_indices->output(0).set_names({"block_update_indices"});
+    inputs.push_back(block_update_indices);
+
+    auto block_update_indices_begins = std::make_shared<op::v0::Parameter>(
+        element::i32, PartialShape{-1});
+    block_update_indices_begins->set_friendly_name("block_update_indices_begins");
+    block_update_indices_begins->output(0).set_names({"block_update_indices_begins"});
+    inputs.push_back(block_update_indices_begins);
+
+    ResultVector results;
+    size_t pair_count = std::min(key_caches.size(), value_caches.size());
+    for (size_t i = 0; i < pair_count; ++i) {
+        auto key_gather = std::make_shared<op::v8::Gather>(
+            key_caches[i], block_update_indices, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, -1));
+        key_gather->set_friendly_name("reordered_key_cache_" + std::to_string(i));
+        auto key_scatter = std::make_shared<op::v3::ScatterUpdate>(
+            key_caches[i], block_indices, key_gather, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, -1));
+        key_scatter->set_friendly_name("updated_key_cache_" + std::to_string(i));
+
+        auto value_gather = std::make_shared<op::v8::Gather>(
+            value_caches[i], block_update_indices, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, -2));
+        value_gather->set_friendly_name("reordered_value_cache_" + std::to_string(i));
+        auto value_scatter = std::make_shared<op::v3::ScatterUpdate>(
+            value_caches[i], block_indices, value_gather, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, -2));
+        value_scatter->set_friendly_name("updated_value_cache_" + std::to_string(i));
+
+        // Concat key and value scatter outputs along last axis
+        auto concat = std::make_shared<ov::op::v0::Concat>(
+            ov::OutputVector{key_scatter->output(0), value_scatter->output(0)}, -1);
+        concat->set_friendly_name("kv_cache_pair_concat_" + std::to_string(i));
+        results.push_back(std::make_shared<op::v0::Result>(concat));
+    }
+
+    auto model = std::make_shared<Model>(results, inputs, "kv_cache_reorder_model");
+    // addition runtime info for identification
+    // in GPU, we need to sync kv precision with main model, which already been assigned default values based on PA ops
+    model->get_rt_info()["auxiliary_kv_update_model"] = true;
+    return model;
+}
 }  // namespace eagle3
 }  // namespace utils
 }  // namespace genai

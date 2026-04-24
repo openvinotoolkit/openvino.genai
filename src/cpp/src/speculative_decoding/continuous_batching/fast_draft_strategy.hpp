@@ -227,7 +227,8 @@ public:
 
     Tokenizer& tokenizer() { return m_tokenizer; }
     const Tokenizer& tokenizer() const { return m_tokenizer; }
-
+    // extra sync point for main and draft pipelines, if valid
+    std::future<void> m_sync_future;
 };
 
 }  // namespace ov::genai
