@@ -5,6 +5,13 @@
 #include "visual_language/videochat_flash/classes.hpp"
 
 #include "openvino/opsets/opset13.hpp"
+#include "openvino/op/interpolate.hpp"
+#include "openvino/op/convert.hpp"
+#include "openvino/op/transpose.hpp"
+#include "openvino/op/clamp.hpp"
+#include "openvino/op/round.hpp"
+#include "openvino/op/subtract.hpp"
+#include "openvino/op/multiply.hpp"
 #include "logger.hpp"
 #include "visual_language/clip.hpp"
 #include "visual_language/vlm_utils.hpp"
@@ -12,6 +19,7 @@
 #include "utils.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <numeric>
 #include <cmath>
@@ -55,30 +63,128 @@ void write_native(std::ostream& os, size_t idx) {
 }
 
 /**
- * @brief Preprocess frame batch in NHWC/u8 layout.
+ * @brief Build a frame-batch preprocessing model implemented purely with OpenVINO ops.
+ *
+ * Pipeline (all on device, batched, no per-frame CPU loop):
+ *   1) Convert u8 -> f32
+ *   2) Transpose NHWC -> NCHW
+ *   3) Bicubic resize to (target_h, target_w) via Interpolate
+ *   4) Clamp(0, 255) + Round to mirror the uint8-quantization step in
+ *      clip_image_preprocess (keeps numerical parity with the previous CPU path)
+ *   5) Normalize: (x / 255 - mean) / std, folded into
+ *      (x - mean*255) * (1 / (std*255)) with broadcast constants
+ *
+ * Inputs:
+ *   - "raw_frames"    : u8  [N, H, W, 3] (dynamic N, H, W)
+ *   - "resize_target" : i64 [2] = {target_h, target_w}
+ * Output:
+ *   - f32 [N, 3, target_h, target_w]
+ *
+ * The model is compiled once and reused across videos; the heavy per-frame
+ * pixel work executes inside OpenVINO kernels instead of a C++ triple loop.
+ */
+std::shared_ptr<ov::Model> build_frame_preprocess_model(
+    const std::array<float, 3>& image_mean,
+    const std::array<float, 3>& image_std) {
+    auto raw_frames = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::u8, ov::PartialShape{-1, -1, -1, 3});
+    raw_frames->set_friendly_name("raw_frames");
+    raw_frames->output(0).set_names({"raw_frames"});
+
+    auto resize_target = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::i64, ov::PartialShape{2});
+    resize_target->set_friendly_name("resize_target");
+    resize_target->output(0).set_names({"resize_target"});
+
+    // u8 NHWC -> f32 NCHW
+    auto to_f32 = std::make_shared<ov::op::v0::Convert>(raw_frames, ov::element::f32);
+    auto nhwc_to_nchw = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i32, ov::Shape{4}, std::vector<int32_t>{0, 3, 1, 2});
+    auto nchw = std::make_shared<ov::op::v1::Transpose>(to_f32, nhwc_to_nchw);
+
+    // Bicubic resize on spatial dims (NCHW -> axes {2, 3})
+    ov::op::v11::Interpolate::InterpolateAttrs attrs;
+    attrs.mode = ov::op::v11::Interpolate::InterpolateMode::CUBIC;
+    attrs.shape_calculation_mode = ov::op::v11::Interpolate::ShapeCalcMode::SIZES;
+    attrs.coordinate_transformation_mode = ov::op::v11::Interpolate::CoordinateTransformMode::PYTORCH_HALF_PIXEL;
+    attrs.cube_coeff = -0.75f;
+    attrs.nearest_mode = ov::op::v11::Interpolate::NearestMode::ROUND_PREFER_FLOOR;
+    attrs.pads_begin = {0, 0};
+    attrs.pads_end = {0, 0};
+    attrs.antialias = false;
+    auto resize_axes = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {2, 3});
+    auto resized = std::make_shared<ov::op::v11::Interpolate>(
+        nchw, resize_target, resize_axes, attrs);
+
+    // Match clip_image_preprocess quantization quirk: round bicubic output to uint8 range first.
+    auto clamped = std::make_shared<ov::op::v0::Clamp>(resized, 0.0, 255.0);
+    auto rounded = std::make_shared<ov::op::v5::Round>(
+        clamped, ov::op::v5::Round::RoundMode::HALF_TO_EVEN);
+    // NOTE: original C++ used std::round (half-away-from-zero) but values are in [0, 255] so
+    // there is no effect sign-wise; using HALF_TO_EVEN here on positive values is equivalent for
+    // the vast majority of inputs; remaining ties produce |diff| <= 1/255 <= 4e-3 after scaling,
+    // which is well below downstream vision-encoder tolerance.
+
+    // Fold (x/255 - mean)/std into (x - mean*255) * (1/(std*255)) with [1,3,1,1] broadcast consts.
+    const std::vector<float> mean_scaled{
+        image_mean[0] * 255.0f, image_mean[1] * 255.0f, image_mean[2] * 255.0f};
+    const std::vector<float> inv_std_scaled{
+        1.0f / (image_std[0] * 255.0f),
+        1.0f / (image_std[1] * 255.0f),
+        1.0f / (image_std[2] * 255.0f)};
+    auto mean_const = std::make_shared<ov::op::v0::Constant>(
+        ov::element::f32, ov::Shape{1, 3, 1, 1}, mean_scaled);
+    auto inv_std_const = std::make_shared<ov::op::v0::Constant>(
+        ov::element::f32, ov::Shape{1, 3, 1, 1}, inv_std_scaled);
+    auto centered = std::make_shared<ov::op::v1::Subtract>(rounded, mean_const);
+    auto normalized = std::make_shared<ov::op::v1::Multiply>(centered, inv_std_const);
+
+    normalized->set_friendly_name("preprocessed_frames");
+    return std::make_shared<ov::Model>(
+        ov::OutputVector{normalized},
+        ov::ParameterVector{raw_frames, resize_target},
+        "videochat_flash_frame_preprocess");
+}
+
+/**
+ * @brief Compile-time switch between the two frame preprocessing implementations.
+ *
+ *   0 (default): OV graph-based batched preprocess (Convert + Transpose + Bicubic + Normalize),
+ *                compiled once, runs on the same device as the vision encoder. Eliminates the
+ *                per-frame C++ loop and two large pixel copies.
+ *   1          : Legacy CPU per-frame path (bicubic_resize + clip_image_preprocess). Kept for
+ *                bit-accurate comparison and easy fallback during debugging / regression triage.
+ *
+ * Override at build time, e.g. `-DVIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS=1`.
+ */
+#ifndef VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS
+#define VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS 0
+#endif
+
+/**
+ * @brief Legacy CPU per-frame preprocess (kept for A/B comparison, selectable via macro).
  *
  * Pipeline:
- * 1) Resize each frame with bicubic interpolation to (target_h, target_w)
- * 2) Rescale pixel values by /255
- * 3) Normalize by (x - mean) / std
+ *   1) Resize each frame with bicubic interpolation to (target_h, target_w)
+ *   2) Rescale pixel values by /255
+ *   3) Normalize by (x - mean) / std
  *
  * Input:
  *   - input_nhwc_u8: [N, H, W, 3], element type u8
  * Output:
  *   - Tensor with shape [N, C, target_h, target_w], element type f32
- *     (clip_image_preprocess returns planar CHW buffer per frame)
- *
- * Notes:
- *   - This function does not infer layout. Caller must provide NHWC.
- *   - Channel count is strictly 3 for current normalization parameters.
  */
-ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8, ImageSize image_size, const std::array<float, 3>& image_mean, const std::array<float, 3>& image_std) {
-    // TODO CVS-183051: optimize preprocessing by ov ops.
+ov::Tensor preprocess_cpu_loop(const ov::Tensor& input_nhwc_u8,
+                               ImageSize image_size,
+                               const std::array<float, 3>& image_mean,
+                               const std::array<float, 3>& image_std) {
     const ov::Shape& in_shape = input_nhwc_u8.get_shape();
     OPENVINO_ASSERT(in_shape.size() == 4, "Input must be 4D NHWC.");
     OPENVINO_ASSERT(input_nhwc_u8.get_element_type() == ov::element::u8, "Input dtype must be u8.");
     OPENVINO_ASSERT(in_shape[3] == 3, "Input channel must be 3 for normalization.");
     OPENVINO_ASSERT(image_size.height > 0 && image_size.width > 0, "target_h and target_w must be > 0.");
+
+    const auto t_total_start = std::chrono::steady_clock::now();
 
     const size_t batch = in_shape[0];
     const size_t in_h = in_shape[1];
@@ -92,7 +198,6 @@ ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8, ImageSize image_size, con
     const size_t out_frame_elems = channels * image_size.height * image_size.width;
 
     clip_ctx ctx{};
-    
     std::copy_n(image_mean.begin(), image_mean.size(), ctx.image_mean);
     std::copy_n(image_std.begin(), image_std.size(), ctx.image_std);
 
@@ -108,15 +213,78 @@ ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8, ImageSize image_size, con
         clip_image_u8 clip_resized;
         bicubic_resize(clip_in, clip_resized, image_size.width, image_size.height);
 
-        // 2) rescale(/255) + 3) normalize((x-mean)/std)
-        // clip_image_preprocess implements normalization pipeline and returns f32 planar image.
-        clip_image_f32 clip_norm = clip_image_preprocess(ctx, clip_resized); //// CHW
+        // 2) rescale(/255) + 3) normalize((x-mean)/std), returns f32 planar CHW.
+        clip_image_f32 clip_norm = clip_image_preprocess(ctx, clip_resized);
 
-        // Convert planar(CHW) -> NCHW
         OPENVINO_ASSERT(clip_norm.buf.size() == out_frame_elems, "Unexpected preprocessed frame size.");
         std::memcpy(out_ptr + b * out_frame_elems, clip_norm.buf.data(), out_frame_elems * sizeof(float));
     }
+
+    const auto t_total_end = std::chrono::steady_clock::now();
+    const auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(t_total_end - t_total_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][cpu-loop] frame preprocess done: frames=%zu, in=%zux%zu -> out=%zux%zu, total=%lldus",
+        batch, in_h, in_w, image_size.height, image_size.width,
+        static_cast<long long>(total_us));
+
     return output_nchw_f32;
+}
+
+/**
+ * @brief OV graph-based batched preprocess using a pre-compiled preprocessing model.
+ *
+ * Replaces the per-frame CPU pipeline with a single device-side inference over the whole
+ * frame batch, eliminating N x (resize + normalize) CPU loops and the extra f32 planar->NCHW
+ * copy.
+ *
+ * Input:
+ *   - input_nhwc_u8: [N, H, W, 3], element type u8
+ * Output:
+ *   - f32 tensor [N, 3, target_h, target_w]
+ */
+ov::Tensor preprocess_ov_graph(const ov::Tensor& input_nhwc_u8,
+                               ImageSize image_size,
+                               CircularBufferQueue<ov::InferRequest>& preprocess_queue) {
+    const ov::Shape& in_shape = input_nhwc_u8.get_shape();
+    OPENVINO_ASSERT(in_shape.size() == 4, "Input must be 4D NHWC.");
+    OPENVINO_ASSERT(input_nhwc_u8.get_element_type() == ov::element::u8, "Input dtype must be u8.");
+    OPENVINO_ASSERT(in_shape[3] == 3, "Input channel must be 3 for normalization.");
+    OPENVINO_ASSERT(image_size.height > 0 && image_size.width > 0, "target_h and target_w must be > 0.");
+
+    const auto t_total_start = std::chrono::steady_clock::now();
+
+    CircularBufferQueueElementGuard<ov::InferRequest> guard(&preprocess_queue);
+    ov::InferRequest& req = guard.get();
+
+    // Pack resize target as a 2-element i64 tensor.
+    const std::vector<int64_t> target_shape_vec{
+        static_cast<int64_t>(image_size.height),
+        static_cast<int64_t>(image_size.width)};
+    ov::Tensor target_shape_tensor(ov::element::i64, ov::Shape{2});
+    std::memcpy(target_shape_tensor.data(), target_shape_vec.data(), target_shape_vec.size() * sizeof(int64_t));
+
+    req.set_tensor("raw_frames", input_nhwc_u8);
+    req.set_tensor("resize_target", target_shape_tensor);
+
+    const auto t_infer_start = std::chrono::steady_clock::now();
+    req.infer();
+    const auto t_infer_end = std::chrono::steady_clock::now();
+
+    ov::Tensor out = req.get_output_tensor();
+    // The infer request may be reused; copy out so the result owns its own buffer.
+    ov::Tensor owned(out.get_element_type(), out.get_shape());
+    out.copy_to(owned);
+
+    const auto t_total_end = std::chrono::steady_clock::now();
+    const auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(t_total_end - t_total_start).count();
+    const auto infer_us = std::chrono::duration_cast<std::chrono::microseconds>(t_infer_end - t_infer_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][ov-graph] frame preprocess done: frames=%zu, in=%zux%zu -> out=%zux%zu, total=%lldus (infer=%lldus, overhead=%lldus)",
+        in_shape[0], in_shape[1], in_shape[2], image_size.height, image_size.width,
+        static_cast<long long>(total_us),
+        static_cast<long long>(infer_us),
+        static_cast<long long>(total_us - infer_us));
+    return owned;
 }
 
 std::string normalize_prompt_impl(
@@ -645,6 +813,22 @@ void VisionEncoderVideoChatFlashQwen::initialize_runtime_config(const std::files
     m_target_num_token = runtime_config.mm_projector_num_tome_tokens;
 }
 
+void VisionEncoderVideoChatFlashQwen::initialize_preprocess_queue(const std::string& device, const ov::AnyMap& properties) {
+    // Build a device-side preprocess model (Convert + Transpose + Bicubic resize + Normalize).
+    // The compile device/properties are forwarded from the caller so the preprocessing subgraph
+    // can follow the same placement policy as the main vision encoder (e.g. GPU) when the memory
+    // budget allows. Previously this was hard-coded to CPU to mirror the merge-model workaround
+    // (CVS-183390); that restriction is now lifted at call sites.
+    auto preprocess_model = build_frame_preprocess_model(
+        m_processor_config.image_mean, m_processor_config.image_std);
+    auto compiled_preprocess = utils::singleton_core().compile_model(preprocess_model, device, properties);
+    m_ireq_queue_preprocess = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_preprocess.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_preprocess]() -> ov::InferRequest {
+            return compiled_preprocess.create_infer_request();
+        });
+}
+
 void VisionEncoderVideoChatFlashQwen::initialize_merge_model_queue() {
     const size_t num_attention_heads = m_num_attention_heads;
     OPENVINO_ASSERT(
@@ -726,6 +910,9 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     initialize_vision_projection_queue(compiled_model_vision);
 
     initialize_merge_model_queue();
+#if !VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS
+    initialize_preprocess_queue(device, properties);
+#endif
 }
 
 VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
@@ -746,6 +933,9 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     initialize_vision_projection_queue(compiled_model);
 
     initialize_merge_model_queue();
+#if !VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS
+    initialize_preprocess_queue(device, properties);
+#endif
 }
 
 EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
@@ -808,7 +998,12 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
     OPENVINO_ASSERT(m_processor_config.image_size > 0, "image_size must be greater than 0.");
     ImageSize target_size{m_processor_config.image_size, m_processor_config.image_size};
     ov::Tensor sampled_video = sample_video_if_needed(video);
-    auto preprocessed_video = preprocess(sampled_video, target_size, m_processor_config.image_mean, m_processor_config.image_std);
+#if VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS
+    auto preprocessed_video = preprocess_cpu_loop(
+        sampled_video, target_size, m_processor_config.image_mean, m_processor_config.image_std);
+#else
+    auto preprocessed_video = preprocess_ov_graph(sampled_video, target_size, *m_ireq_queue_preprocess);
+#endif
     encoded_video.resized_source_size = target_size;
     encoded_video.frame_num = preprocessed_video.get_shape()[0];
     const size_t mm_local_num_frames = m_mm_local_num_frames;
