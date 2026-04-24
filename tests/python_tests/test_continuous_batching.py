@@ -739,6 +739,98 @@ def test_dynamic_split_fuse_for_eagle3():
     compare_results_for_dynamic_split_fuse_config("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3")
 
 
+@pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
+@pytest.mark.parametrize("main_device,draft_device", devices)
+@pytest.mark.parametrize("branching_factor,tree_depth", [(4, 2), (8, 4), (6, 3), (1, 0), (1, 4)])
+def test_eagle3_tree_decode(main_model, main_device, draft_model, draft_device, prompt, branching_factor, tree_depth):
+    """Test EAGLE3 with tree-based speculative decoding using different tree configurations."""
+    # Download and convert model
+    main_model_schema = download_and_convert_model(main_model)
+    main_opt_model = main_model_schema.opt_model
+    main_hf_tokenizer = main_model_schema.hf_tokenizer
+    main_model_path = main_model_schema.models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    # Create pipeline
+    ov_pipe = create_ov_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        ov_config={"KV_CACHE_PRECISION": "f16"},
+    )
+
+    # Test with tree-based configuration
+    num_assistant_tokens = max(tree_depth, 10)  # Ensure num_assistant_tokens >= tree_depth
+    tree_gen_config = GenerationConfig(
+        max_new_tokens=20,
+        num_assistant_tokens=num_assistant_tokens,
+        branching_factor=branching_factor,
+        tree_depth=tree_depth,
+    )
+
+    # Run with tree configuration
+    tree_result = ov_pipe.generate([prompt], tree_gen_config)
+    tree_perf_metrics = tree_result.extended_perf_metrics
+
+    # Verify tree mode is working
+    assert tree_perf_metrics is not None
+    assert tree_perf_metrics.main_model_metrics is not None
+    assert tree_perf_metrics.draft_model_metrics is not None
+    assert tree_perf_metrics.get_num_accepted_tokens() > 0
+
+    # Run reference HF model for correctness check
+    ref_gen_config = GenerationConfig(max_new_tokens=20)
+    ref_gen_results = run_hugging_face(main_opt_model, main_hf_tokenizer, [prompt], ref_gen_config)
+    tree_gen_results = convert_decoded_results_to_generation_result(tree_result, 1, 1, False)
+
+    # Compare with reference (should produce same output with greedy decoding)
+    compare_generation_results([prompt], ref_gen_results, tree_gen_results, ref_gen_config)
+
+    del ov_pipe
+
+
+@pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
+@pytest.mark.parametrize("main_device,draft_device", devices)
+def test_eagle3_tree_vs_sequential(main_model, main_device, draft_model, draft_device, prompt):
+    """Compare EAGLE3 tree decode vs sequential decode performance and correctness."""
+    main_model_path = download_and_convert_model(main_model).models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    # Create pipeline
+    ov_pipe = create_ov_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        ov_config={"KV_CACHE_PRECISION": "f16"},
+    )
+
+    # Sequential configuration (tree_depth=0 or branching_factor=1)
+    seq_config = GenerationConfig(
+        max_new_tokens=20, num_assistant_tokens=10, branching_factor=1, tree_depth=0, do_sample=False
+    )
+    seq_result = ov_pipe.generate([prompt], seq_config)
+
+    # Tree configuration
+    tree_config = GenerationConfig(
+        max_new_tokens=20, num_assistant_tokens=10, branching_factor=8, tree_depth=4, do_sample=False
+    )
+    tree_result = ov_pipe.generate([prompt], tree_config)
+    print(seq_result.texts[0])
+    print(tree_result.texts[0])
+    # Both should produce the same output with greedy decoding
+    assert seq_result.texts[0] == tree_result.texts[0], "Tree and sequential decode should produce same output"
+
+    # Tree mode should generally have higher acceptance rate
+    seq_accepted = seq_result.extended_perf_metrics.get_num_accepted_tokens()
+    tree_accepted = tree_result.extended_perf_metrics.get_num_accepted_tokens()
+
+    # Both should have accepted at least some tokens
+    assert seq_accepted > 0
+    assert tree_accepted > 0
+
+    del ov_pipe
+
+
 @pytest.fixture(scope="module")
 def cb_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
     return download_and_convert_model(request.param)
