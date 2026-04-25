@@ -23,6 +23,7 @@
 #include <cstring>
 #include <numeric>
 #include <cmath>
+#include <optional>
 #include <sstream>
 #include <mutex>
 #include <fstream>
@@ -317,14 +318,21 @@ ov::Tensor preprocess_cpu_loop(const ov::Tensor& input_nhwc_u8,
  * frame batch, eliminating N x (resize + normalize) CPU loops and the extra f32 planar->NCHW
  * copy.
  *
+ * IMPORTANT lifetime contract (zero-copy optimization):
+ *   The returned tensor is a NON-OWNING alias of the InferRequest's output buffer. The caller
+ *   MUST keep the corresponding CircularBufferQueueElementGuard alive until the returned
+ *   tensor's data has been fully consumed (typically until the next downstream copy, e.g.
+ *   transpose_video_features). Reusing the same InferRequest before that point would corrupt
+ *   the data. This avoids a ~70MB f32 copy_to per video chunk on the host side.
+ *
  * Input:
  *   - input_nhwc_u8: [N, H, W, 3], element type u8
  * Output:
- *   - f32 tensor [N, 3, target_h, target_w]
+ *   - f32 tensor [N, 3, target_h, target_w] (alias to req.get_output_tensor())
  */
 ov::Tensor preprocess_ov_graph(const ov::Tensor& input_nhwc_u8,
                                ImageSize image_size,
-                               CircularBufferQueue<ov::InferRequest>& preprocess_queue) {
+                               ov::InferRequest& req) {
     const ov::Shape& in_shape = input_nhwc_u8.get_shape();
     OPENVINO_ASSERT(in_shape.size() == 4, "Input must be 4D NHWC.");
     OPENVINO_ASSERT(input_nhwc_u8.get_element_type() == ov::element::u8, "Input dtype must be u8.");
@@ -332,9 +340,6 @@ ov::Tensor preprocess_ov_graph(const ov::Tensor& input_nhwc_u8,
     OPENVINO_ASSERT(image_size.height > 0 && image_size.width > 0, "target_h and target_w must be > 0.");
 
     const auto t_total_start = std::chrono::steady_clock::now();
-
-    CircularBufferQueueElementGuard<ov::InferRequest> guard(&preprocess_queue);
-    ov::InferRequest& req = guard.get();
 
     // Pack resize target as a 2-element i64 tensor.
     const std::vector<int64_t> target_shape_vec{
@@ -350,10 +355,10 @@ ov::Tensor preprocess_ov_graph(const ov::Tensor& input_nhwc_u8,
     req.infer();
     const auto t_infer_end = std::chrono::steady_clock::now();
 
+    // Return a non-owning alias of the request's output. Caller's guard keeps it valid;
+    // the next downstream stage (transpose_video_features) memcpy's into its own buffer,
+    // after which the guard can be released and the request returned to the pool.
     ov::Tensor out = req.get_output_tensor();
-    // The infer request may be reused; copy out so the result owns its own buffer.
-    ov::Tensor owned(out.get_element_type(), out.get_shape());
-    out.copy_to(owned);
 
     const auto t_total_end = std::chrono::steady_clock::now();
     const auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(t_total_end - t_total_start).count();
@@ -364,7 +369,7 @@ ov::Tensor preprocess_ov_graph(const ov::Tensor& input_nhwc_u8,
         static_cast<long long>(total_us),
         static_cast<long long>(infer_us),
         static_cast<long long>(total_us - infer_us));
-    return owned;
+    return out;
 }
 
 std::string normalize_prompt_impl(
@@ -1078,31 +1083,44 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
     OPENVINO_ASSERT(m_processor_config.image_size > 0, "image_size must be greater than 0.");
     ImageSize target_size{m_processor_config.image_size, m_processor_config.image_size};
     ov::Tensor sampled_video = sample_video_if_needed(video);
+
+    // The OV-graph preprocess returns a non-owning alias of its InferRequest output buffer.
+    // The guard below keeps that buffer alive across transpose_video_features (which performs
+    // the only required copy into its own tensor), and is then released so the request can
+    // return to the pool. The legacy CPU path doesn't need the guard.
+    std::optional<CircularBufferQueueElementGuard<ov::InferRequest>> preprocess_guard;
+    ov::Tensor preprocessed_video;
 #if VIDEOCHAT_FLASH_PREPROCESS_COMPARE
     // Dual-run mode: execute both paths on identical input, log element-wise diff vs. the
     // CPU reference. The returned tensor is still governed by the primary-path macro so that
     // the rest of the pipeline behaves as production.
     ov::Tensor cpu_ref = preprocess_cpu_loop(
         sampled_video, target_size, m_processor_config.image_mean, m_processor_config.image_std);
-    ov::Tensor ov_out = preprocess_ov_graph(sampled_video, target_size, *m_ireq_queue_preprocess);
+    preprocess_guard.emplace(m_ireq_queue_preprocess.get());
+    ov::Tensor ov_out = preprocess_ov_graph(sampled_video, target_size, preprocess_guard->get());
     log_preprocess_diff(cpu_ref, ov_out);
 #if VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS
-    auto preprocessed_video = std::move(cpu_ref);
+    preprocessed_video = std::move(cpu_ref);
+    preprocess_guard.reset();  // ov_out unused downstream; release request immediately.
 #else
-    auto preprocessed_video = std::move(ov_out);
+    preprocessed_video = ov_out;  // non-owning alias; guard kept until transpose copy below.
 #endif
 #else // !VIDEOCHAT_FLASH_PREPROCESS_COMPARE
 #if VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS
-    auto preprocessed_video = preprocess_cpu_loop(
+    preprocessed_video = preprocess_cpu_loop(
         sampled_video, target_size, m_processor_config.image_mean, m_processor_config.image_std);
 #else
-    auto preprocessed_video = preprocess_ov_graph(sampled_video, target_size, *m_ireq_queue_preprocess);
+    preprocess_guard.emplace(m_ireq_queue_preprocess.get());
+    preprocessed_video = preprocess_ov_graph(sampled_video, target_size, preprocess_guard->get());
 #endif
 #endif // VIDEOCHAT_FLASH_PREPROCESS_COMPARE
     encoded_video.resized_source_size = target_size;
     encoded_video.frame_num = preprocessed_video.get_shape()[0];
     const size_t mm_local_num_frames = m_mm_local_num_frames;
     auto transpose_features = transpose_video_features(preprocessed_video, mm_local_num_frames);
+    // transpose_video_features has copied all preprocess output into its own buffer; the
+    // preprocess InferRequest can be safely returned to the pool now.
+    preprocess_guard.reset();
 
     CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(m_ireq_queue_vision_encoder.get());
     CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(m_ireq_queue_merge_model.get());
