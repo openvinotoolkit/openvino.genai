@@ -802,39 +802,30 @@ ov::Tensor get_3d_sincos_pos_embed(int embed_dim, int grid_size, int t_size, boo
 
     return pos_tensor;
 }
-ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
-    if (tensors.empty()) return ov::Tensor();
-
-    const ov::Shape single_shape = tensors[0].get_shape();
-    OPENVINO_ASSERT(!single_shape.empty(), "Input tensors must have rank >= 1.");
-    OPENVINO_ASSERT(single_shape[0] == 1, "Each tensor must have shape[0] == 1 for concatenation.");
-    auto type = tensors[0].get_element_type();
-    const size_t single_tensor_byte_size = tensors[0].get_byte_size();
-
-    ov::Shape final_shape = single_shape;
-    final_shape[0] = tensors.size();
-
-    ov::Tensor merged_tensor(type, final_shape);
-    uint8_t* dst_ptr = static_cast<uint8_t*>(merged_tensor.data());
-
-    for (const auto& t : tensors) {
-        OPENVINO_ASSERT(t.get_element_type() == type, "All tensors must have the same element type.");
-        const ov::Shape& shape = t.get_shape();
-        OPENVINO_ASSERT(shape.size() == single_shape.size(), "All tensors must have the same rank.");
-        OPENVINO_ASSERT(shape[0] == 1, "Each tensor must have shape[0] == 1 for concatenation.");
-        OPENVINO_ASSERT(std::equal(shape.begin() + 1, shape.end(), single_shape.begin() + 1),
-                        "All tensors must have identical dimensions except dim0.");
-        size_t byte_size = t.get_byte_size();
-        OPENVINO_ASSERT(byte_size == single_tensor_byte_size,
-                        "All tensors must have the same byte size for concatenation.");
-        std::memcpy(dst_ptr, t.data(), byte_size);
-        dst_ptr += byte_size;
-    }
-
-    return merged_tensor;
-}
-
-ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings, const ov::Tensor& pos_emb) {
+/**
+ * @brief Run the per-sample ViT in a loop and assemble outputs into a single contiguous tensor
+ *        with zero post-infer copies (zero-copy optimization).
+ *
+ * Strategy:
+ *   1) Dry-infer sample 0 to learn the per-sample output shape (the model's hidden_states input
+ *      is dynamic, so output shape is only known after first infer).
+ *   2) Allocate the final [N, ...] output tensor once.
+ *   3) Copy sample-0 result into slice 0 (single small memcpy ~ a few MB).
+ *   4) For samples 1..N-1, bind a non-owning view of the corresponding slice as the request's
+ *      output tensor via set_output_tensor() so the plugin writes directly into the final
+ *      buffer (no copy_to, no final concatenate_tensors).
+ *   5) Before returning, rebind the request's output to a throw-away scratch tensor. This
+ *      prevents a future caller (after the InferRequest is returned to the pool) from
+ *      accidentally writing into our just-returned buffer if they don't override the binding.
+ *
+ * Pre-conditions on the InferRequest (set up in initialize_vision_encoder_queue's factory):
+ *   - "rotary_pos_emb" is already bound to m_pos_emb on every request in the pool, so we do
+ *     NOT need to set it per-frame here.
+ *
+ * Eliminates: N x copy_to (per-sample) + 1 x concatenate_tensors memcpy. For VideoChat-Flash
+ * with N=4 and per-sample ~5.5MB f32 output, this saves ~50MB of host traffic per video chunk.
+ */
+ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings) {
     OPENVINO_ASSERT(
         transpose_features.get_element_type() == ov::element::f32,
         "vision_embeddings input pixel_values must be f32."
@@ -844,21 +835,67 @@ ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferReque
     OPENVINO_ASSERT(full_shape.size() == 5, "transpose_features must be 5D [N, C, T, H, W].");
     const size_t N = full_shape[0];
     OPENVINO_ASSERT(N > 0, "transpose_features batch size N must be greater than 0.");
+
+    const auto t_total_start = std::chrono::steady_clock::now();
+
     const size_t single_sample_size = transpose_features.get_size() / N;
     const float* src_ptr = transpose_features.data<const float>();
-    std::vector<ov::Tensor> results_list;
-    for (size_t i = 0; i < N; ++i) {
-        const ov::Shape single_shape = {1, full_shape[1], full_shape[2], full_shape[3], full_shape[4]};
-        ov::Tensor single_input(transpose_features.get_element_type(), single_shape, const_cast<float*>(src_ptr + (i * single_sample_size)));
-        vision_embeddings.set_tensor("hidden_states", single_input);
-        vision_embeddings.set_tensor("rotary_pos_emb", pos_emb);
+    const ov::Shape single_in_shape = {1, full_shape[1], full_shape[2], full_shape[3], full_shape[4]};
+
+    // (1) Dry-infer sample 0 to discover per-sample output shape.
+    ov::Tensor first_in(ov::element::f32, single_in_shape, const_cast<float*>(src_ptr));
+    vision_embeddings.set_tensor("hidden_states", first_in);
+    vision_embeddings.infer();
+    ov::Tensor first_out = vision_embeddings.get_output_tensor();
+    const ov::Shape per_out_shape = first_out.get_shape();
+    const ov::element::Type out_dtype = first_out.get_element_type();
+    OPENVINO_ASSERT(
+        !per_out_shape.empty() && per_out_shape[0] == 1,
+        "vision_embeddings output is expected to have batch dim == 1, got shape ",
+        per_out_shape.to_string(), "."
+    );
+
+    // (2) Allocate the final [N, ...] buffer.
+    ov::Shape final_shape = per_out_shape;
+    final_shape[0] = N;
+    ov::Tensor final_processed_embeds(out_dtype, final_shape);
+    const size_t per_sample_bytes = first_out.get_byte_size();
+    OPENVINO_ASSERT(
+        final_processed_embeds.get_byte_size() == per_sample_bytes * N,
+        "Final ViT output buffer size mismatch."
+    );
+    uint8_t* dst_base = static_cast<uint8_t*>(final_processed_embeds.data());
+
+    // (3) Copy sample-0 result into slice 0 (only unavoidable copy because we needed dry-infer
+    //     to learn the shape; size is per_sample_bytes only, not N * per_sample_bytes).
+    std::memcpy(dst_base, first_out.data(), per_sample_bytes);
+
+    // (4) For samples 1..N-1, bind output to slice in-place; plugin writes directly.
+    for (size_t i = 1; i < N; ++i) {
+        ov::Tensor view_in(
+            ov::element::f32, single_in_shape,
+            const_cast<float*>(src_ptr + i * single_sample_size));
+        ov::Tensor view_out(
+            out_dtype, per_out_shape,
+            dst_base + i * per_sample_bytes);
+        vision_embeddings.set_tensor("hidden_states", view_in);
+        vision_embeddings.set_output_tensor(view_out);
         vision_embeddings.infer();
-        ov::Tensor out_tensor = vision_embeddings.get_output_tensor();
-        ov::Tensor copy_tensor(out_tensor.get_element_type(), out_tensor.get_shape());
-        out_tensor.copy_to(copy_tensor);
-        results_list.push_back(copy_tensor);
     }
-    ov::Tensor final_processed_embeds = concatenate_tensors(results_list);
+
+    // (5) Rebind output to a fresh scratch tensor so the next reuser of this InferRequest
+    //     does NOT silently write into our just-returned final_processed_embeds buffer.
+    if (N > 1) {
+        ov::Tensor scratch(out_dtype, per_out_shape);
+        vision_embeddings.set_output_tensor(scratch);
+    }
+
+    const auto t_total_end = std::chrono::steady_clock::now();
+    const auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(t_total_end - t_total_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][cyclic-vit] N=%zu, per_sample_bytes=%zu, total=%lldus",
+        N, per_sample_bytes, static_cast<long long>(total_us));
+
     return final_processed_embeds;
 }
 
@@ -966,10 +1003,16 @@ void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
 
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
+    // rotary_pos_emb is constant across the entire pipeline lifetime (depends only on grid_size
+    // and mm_local_num_frames). Bind it once at request-construction time so cyclic_vit_infer
+    // does not re-set it on every per-sample call. m_pos_emb outlives the request queue (member
+    // ordering: queue is destroyed before m_pos_emb).
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
+        [&compiled_model, this]() -> ov::InferRequest {
+            auto req = compiled_model.create_infer_request();
+            req.set_tensor("rotary_pos_emb", m_pos_emb);
+            return req;
         });
 }
 
@@ -1126,7 +1169,7 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
     CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(m_ireq_queue_merge_model.get());
     CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(m_ireq_queue_vision_projection.get());
 
-    ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get(), m_pos_emb);
+    ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get());
     ov::Tensor clipped_vision_embeds = remove_second_dim_first_element(processed_vision_embeds);
     ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_guard.get(), m_target_num_token);
     projection_guard.get().set_input_tensor(merged_vision_features);
