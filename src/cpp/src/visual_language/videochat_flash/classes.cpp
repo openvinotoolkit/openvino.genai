@@ -162,6 +162,86 @@ std::shared_ptr<ov::Model> build_frame_preprocess_model(
 #endif
 
 /**
+ * @brief Dual-run comparison switch for validating the OV-graph preprocess against the legacy
+ *        CPU reference implementation. When enabled, BOTH paths run on every call, element-wise
+ *        diff statistics (max abs, mean abs, RMSE, mismatch ratio) are logged, and the tensor
+ *        returned to the caller is still controlled by VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS.
+ *
+ *   0 (default): only the selected path runs (normal production behavior).
+ *   1          : run both paths, log diff vs. the legacy CPU reference. Intended for debug builds
+ *                or one-off precision investigation on GPU / other devices.
+ *
+ * Override at build time, e.g. `-DVIDEOCHAT_FLASH_PREPROCESS_COMPARE=1`.
+ */
+#ifndef VIDEOCHAT_FLASH_PREPROCESS_COMPARE
+#define VIDEOCHAT_FLASH_PREPROCESS_COMPARE 0
+#endif
+
+#if VIDEOCHAT_FLASH_PREPROCESS_COMPARE
+/**
+ * @brief Compute and log element-wise diff statistics between two f32 tensors with identical
+ *        shape, using the CPU-loop result as the reference. Used only under the comparison
+ *        toggle to avoid adding cost to production runs.
+ */
+void log_preprocess_diff(const ov::Tensor& cpu_ref, const ov::Tensor& ov_graph_out) {
+    OPENVINO_ASSERT(cpu_ref.get_element_type() == ov::element::f32 &&
+                        ov_graph_out.get_element_type() == ov::element::f32,
+                    "preprocess compare: both tensors must be f32.");
+    OPENVINO_ASSERT(cpu_ref.get_shape() == ov_graph_out.get_shape(),
+                    "preprocess compare: shape mismatch. cpu=",
+                    cpu_ref.get_shape().to_string(),
+                    ", ov=", ov_graph_out.get_shape().to_string());
+
+    const size_t n = cpu_ref.get_size();
+    const float* a = cpu_ref.data<const float>();
+    const float* b = ov_graph_out.data<const float>();
+
+    double sum_abs = 0.0;
+    double sum_sq = 0.0;
+    float max_abs = 0.0f;
+    size_t argmax = 0;
+    size_t mismatch_1e3 = 0; // |diff| > 1e-3
+    size_t mismatch_1e2 = 0; // |diff| > 1e-2
+
+    for (size_t i = 0; i < n; ++i) {
+        const float d = a[i] - b[i];
+        const float ad = std::fabs(d);
+        sum_abs += ad;
+        sum_sq += static_cast<double>(d) * static_cast<double>(d);
+        if (ad > max_abs) {
+            max_abs = ad;
+            argmax = i;
+        }
+        if (ad > 1e-3f) ++mismatch_1e3;
+        if (ad > 1e-2f) ++mismatch_1e2;
+    }
+
+    const double mean_abs = n > 0 ? sum_abs / static_cast<double>(n) : 0.0;
+    const double rmse = n > 0 ? std::sqrt(sum_sq / static_cast<double>(n)) : 0.0;
+    const double ratio_1e3 = n > 0 ? static_cast<double>(mismatch_1e3) / static_cast<double>(n) : 0.0;
+    const double ratio_1e2 = n > 0 ? static_cast<double>(mismatch_1e2) / static_cast<double>(n) : 0.0;
+
+    const float ref_at_max = a[argmax];
+    const float act_at_max = b[argmax];
+
+    GENAI_INFO(
+        "[VideoChat-Flash][preprocess-compare] elems=%zu, max_abs=%.6g (ref=%.6g, ov=%.6g @idx=%zu), "
+        "mean_abs=%.6g, rmse=%.6g, |d|>1e-3: %.4f%% (%zu), |d|>1e-2: %.4f%% (%zu)",
+        n,
+        static_cast<double>(max_abs),
+        static_cast<double>(ref_at_max),
+        static_cast<double>(act_at_max),
+        argmax,
+        mean_abs,
+        rmse,
+        ratio_1e3 * 100.0,
+        mismatch_1e3,
+        ratio_1e2 * 100.0,
+        mismatch_1e2);
+}
+#endif // VIDEOCHAT_FLASH_PREPROCESS_COMPARE
+
+/**
  * @brief Legacy CPU per-frame preprocess (kept for A/B comparison, selectable via macro).
  *
  * Pipeline:
@@ -910,7 +990,7 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     initialize_vision_projection_queue(compiled_model_vision);
 
     initialize_merge_model_queue();
-#if !VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS
+#if !VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS || VIDEOCHAT_FLASH_PREPROCESS_COMPARE
     initialize_preprocess_queue(device, properties);
 #endif
 }
@@ -933,7 +1013,7 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     initialize_vision_projection_queue(compiled_model);
 
     initialize_merge_model_queue();
-#if !VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS
+#if !VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS || VIDEOCHAT_FLASH_PREPROCESS_COMPARE
     initialize_preprocess_queue(device, properties);
 #endif
 }
@@ -998,12 +1078,27 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
     OPENVINO_ASSERT(m_processor_config.image_size > 0, "image_size must be greater than 0.");
     ImageSize target_size{m_processor_config.image_size, m_processor_config.image_size};
     ov::Tensor sampled_video = sample_video_if_needed(video);
+#if VIDEOCHAT_FLASH_PREPROCESS_COMPARE
+    // Dual-run mode: execute both paths on identical input, log element-wise diff vs. the
+    // CPU reference. The returned tensor is still governed by the primary-path macro so that
+    // the rest of the pipeline behaves as production.
+    ov::Tensor cpu_ref = preprocess_cpu_loop(
+        sampled_video, target_size, m_processor_config.image_mean, m_processor_config.image_std);
+    ov::Tensor ov_out = preprocess_ov_graph(sampled_video, target_size, *m_ireq_queue_preprocess);
+    log_preprocess_diff(cpu_ref, ov_out);
+#if VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS
+    auto preprocessed_video = std::move(cpu_ref);
+#else
+    auto preprocessed_video = std::move(ov_out);
+#endif
+#else // !VIDEOCHAT_FLASH_PREPROCESS_COMPARE
 #if VIDEOCHAT_FLASH_USE_LEGACY_CPU_PREPROCESS
     auto preprocessed_video = preprocess_cpu_loop(
         sampled_video, target_size, m_processor_config.image_mean, m_processor_config.image_std);
 #else
     auto preprocessed_video = preprocess_ov_graph(sampled_video, target_size, *m_ireq_queue_preprocess);
 #endif
+#endif // VIDEOCHAT_FLASH_PREPROCESS_COMPARE
     encoded_video.resized_source_size = target_size;
     encoded_video.frame_num = preprocessed_video.get_shape()[0];
     const size_t mm_local_num_frames = m_mm_local_num_frames;
