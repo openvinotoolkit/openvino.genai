@@ -932,6 +932,16 @@ public:
 
     bool apply (NodePtr node, const LoRANode& lora_weight) override {
         auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
+
+        // tensors_multiplication receives activations as a raw NodePtr and passes it to
+        // MatMul/Multiply constructors which call get_default_output() on the producer.
+        // Nodes with multiple outputs (e.g., VariadicSplit feeding Flux to_add_out) will
+        // throw "Default output not supported". Skip them until tensors_multiplication is
+        // refactored to accept ov::Output<ov::Node> directly.
+        if (activations.get_node_shared_ptr()->get_output_size() != 1) {
+            return false;
+        }
+
         auto weights_input = node->input_value(1);
         auto weights_input_type = weights_input.get_element_type();
         NodePtr add_term = nullptr;
