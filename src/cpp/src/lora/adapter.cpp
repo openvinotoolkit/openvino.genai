@@ -422,6 +422,18 @@ struct LoRAWeightStateGetter {
           variable_ids(variable_ids) {}
 
     std::optional<LoRANode> operator() (NodePtr node) const {
+        // LoRASeparateTransform::apply() passes the activation node pointer to
+        // tensors_multiplication(), which constructs a MatMul with it as NodePtr.
+        // OpenVINO converts NodePtr→Output<Node> via get_default_output(), which
+        // throws for nodes with multiple outputs (e.g., VariadicSplit).
+        // Bail out here — before registering any ReadValue/Assign state variables —
+        // so no orphan state is left that would cause map::at failures at inference.
+        if (auto matmul = std::dynamic_pointer_cast<v0::MatMul>(node)) {
+            if (node->input_value(0).get_node_shared_ptr()->get_output_size() != 1) {
+                return std::nullopt;
+            }
+        }
+
         if(auto params = params_getter(node)) {
             ov::Dimension input_dim, output_dim;
             deduce_input_output_dims(node, input_dim, output_dim);
@@ -933,11 +945,10 @@ public:
     bool apply (NodePtr node, const LoRANode& lora_weight) override {
         auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
 
-        // tensors_multiplication receives activations as a raw NodePtr and passes it to
-        // MatMul/Multiply constructors which call get_default_output() on the producer.
-        // Nodes with multiple outputs (e.g., VariadicSplit feeding Flux to_add_out) will
-        // throw "Default output not supported". Skip them until tensors_multiplication is
-        // refactored to accept ov::Output<ov::Node> directly.
+        // Guard: LoRAWeightStateGetter already skips nodes with multi-output activation
+        // producers (e.g., VariadicSplit → to_add_out in Flux), so this path is only
+        // reached for safe nodes. Keep the check here as a belt-and-suspenders safety
+        // net for other callers (MODE_STATIC / MODE_FUSE) that bypass LoRAWeightStateGetter.
         if (activations.get_node_shared_ptr()->get_output_size() != 1) {
             return false;
         }
