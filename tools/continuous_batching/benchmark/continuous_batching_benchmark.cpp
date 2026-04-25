@@ -81,7 +81,12 @@ struct Dataset {
     }
 };
 
-Dataset filtered_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_input_len, const size_t max_output_len) {
+Dataset filtered_dataset(const std::string& models_path,
+                         const std::string& dataset_path,
+                         const size_t num_prompts,
+                         const size_t max_input_len,
+                         const size_t max_output_len,
+                         const size_t max_total_tokens) {
     std::ifstream json_file(dataset_path.c_str());
     OPENVINO_ASSERT(json_file.is_open(), "Cannot open dataset file");
 
@@ -117,7 +122,7 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
         if (input_len < 4 || output_len < 4)
             continue;
         // Prune too long sequences.
-        if (input_len > max_input_len || (input_len + output_len) > 2048)
+        if (input_len > max_input_len || (max_total_tokens > 0 && (input_len + output_len) > max_total_tokens))
             continue;
 
         ov::genai::GenerationConfig greedy_search;
@@ -127,6 +132,14 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
         dataset.push_data(human_question, greedy_search);
         dataset.push_lens(input_len, output_len);
     }
+
+    if (num_prompts == 0) {
+        return sampled_dataset;
+    }
+
+    OPENVINO_ASSERT(!dataset.empty(),
+                    "No valid prompts found in dataset after filtering. "
+                    "Adjust --max_input_len or --max_total_tokens, or provide a dataset with shorter prompt/answer pairs.");
 
     // sample dataset
     srand(42);
@@ -440,6 +453,7 @@ int main(int argc, char* argv[]) try {
     ("dataset", "Path to dataset .json file", cxxopts::value<std::string>()->default_value("./ShareGPT_V3_unfiltered_cleaned_split.json"))
     ("max_input_len", "Max input length take from dataset", cxxopts::value<size_t>()->default_value("1024"))
     ("max_output_len", "Max output length", cxxopts::value<size_t>()->default_value("2048"))
+    ("max_total_tokens", "Max total number of input and output tokens accepted from dataset entries. Use 0 to disable this filter.", cxxopts::value<size_t>()->default_value("2048"))
     ("request_rate", "Number of requests per second. If this is inf, then all the requests are sent at time 0. Otherwise, we use Poisson process to synthesize the request arrival times.", cxxopts::value<std::string>()->default_value("inf"))
     ("cache_size", "Size of memory used for KV cache in GB. Default: 16", cxxopts::value<size_t>()->default_value("16"))
     ("device", "Target device to run the model. Default: CPU", cxxopts::value<std::string>()->default_value("CPU"))
@@ -470,6 +484,7 @@ int main(int argc, char* argv[]) try {
     const std::string dataset_path = result["dataset"].as<std::string>();
     const size_t max_input_len = result["max_input_len"].as<size_t>();
     const size_t max_output_len = result["max_output_len"].as<size_t>();
+    const size_t max_total_tokens = result["max_total_tokens"].as<size_t>();
     const std::string request_rate = result["request_rate"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
     const std::string device_config = result["device_config"].as<std::string>();
@@ -480,7 +495,7 @@ int main(int argc, char* argv[]) try {
     bool is_speculative_decoding_enabled = !draft_model_path.empty();
 
     // Create requests for generation
-    Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
+    Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len, max_total_tokens);
 
     // Perform the first inference
     ov::genai::SchedulerConfig scheduler_config;
@@ -508,6 +523,12 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tNum prompts: " << num_prompts << std::endl;
     std::cout << "\tMax input length: " << max_input_len << std::endl;
     std::cout << "\tMax output length: " << max_output_len << std::endl;
+    std::cout << "\tMax total tokens: ";
+    if (max_total_tokens == 0) {
+        std::cout << "disabled" << std::endl;
+    } else {
+        std::cout << max_total_tokens << std::endl;
+    }
     std::cout << "\tTarget device: " << device << std::endl;
     std::cout << "\tPlugin configuration JSON: " << device_config << std::endl;
 
