@@ -4,7 +4,11 @@
 #include "openvino/genai/video_generation/autoencoder_kl_ltx_video.hpp"
 
 #include <fstream>
+#include <algorithm>
+#include <cstdint>
+#include <cmath>
 #include <memory>
+#include <map>
 #include <numeric>
 
 #include "openvino/runtime/core.hpp"
@@ -53,6 +57,135 @@ std::pair<int64_t, int64_t> get_transformer_patch_size(const std::filesystem::pa
     utils::read_json_param(data, "patch_size_t", patch_size_t);
 
     return {patch_size, patch_size_t};
+}
+
+std::string find_input_name_by_candidates(const ov::CompiledModel& compiled_model,
+                                          const std::vector<std::string>& candidates) {
+    // Resolve by candidate priority first (e.g. prefer `timestep` over fallback `temb`).
+    for (const auto& candidate : candidates) {
+        for (const auto& input : compiled_model.inputs()) {
+            const auto& names = input.get_names();
+            if (names.find(candidate) != names.end()) {
+                return candidate;
+            }
+            const std::string input_name = input.get_any_name();
+            if (input_name == candidate) {
+                return input_name;
+            }
+        }
+    }
+    return "";
+}
+
+std::string find_latent_input_name(const ov::CompiledModel& compiled_model) {
+    const std::vector<std::string> preferred_names{"sample", "latent", "latents", "hidden_states", "z"};
+    std::string name = find_input_name_by_candidates(compiled_model, preferred_names);
+    if (!name.empty()) {
+        return name;
+    }
+
+    for (const auto& input : compiled_model.inputs()) {
+        const ov::PartialShape shape = input.get_partial_shape();
+        if (shape.rank().is_dynamic()) {
+            continue;
+        }
+        if (shape.rank().get_length() == 5) {
+            return input.get_any_name();
+        }
+    }
+
+    OPENVINO_THROW("Failed to identify VAE latent input tensor name for LTX decoder IR");
+}
+
+ov::Tensor create_scalar_or_batch_tensor(ov::InferRequest& request,
+                                         const std::string& input_name,
+                                         float value,
+                                         size_t batch_size) {
+    const ov::Tensor input_tensor = request.get_tensor(input_name);
+    const ov::Shape input_shape = input_tensor.get_shape();
+    const ov::element::Type input_type = input_tensor.get_element_type();
+
+    auto get_integral_value = [&]() -> int64_t {
+        double integral_part = 0.0;
+        const double fractional_part = std::modf(static_cast<double>(value), &integral_part);
+        if (std::fabs(fractional_part) > 1e-6) {
+            OPENVINO_THROW("Conditioning input '", input_name,
+                           "' expects an integer value, but got non-integer value ", value);
+        }
+        return static_cast<int64_t>(integral_part);
+    };
+
+    auto write_scalar_value = [&](ov::Tensor& dst) {
+        if (input_type == ov::element::f32) {
+            dst.data<float>()[0] = value;
+        } else if (input_type == ov::element::f16) {
+            dst.data<ov::float16>()[0] = static_cast<ov::float16>(value);
+        } else if (input_type == ov::element::bf16) {
+            dst.data<ov::bfloat16>()[0] = static_cast<ov::bfloat16>(value);
+        } else if (input_type == ov::element::f64) {
+            dst.data<double>()[0] = static_cast<double>(value);
+        } else if (input_type == ov::element::i32) {
+            dst.data<int32_t>()[0] = static_cast<int32_t>(get_integral_value());
+        } else if (input_type == ov::element::i64) {
+            dst.data<int64_t>()[0] = get_integral_value();
+        } else if (input_type == ov::element::u32) {
+            dst.data<uint32_t>()[0] = static_cast<uint32_t>(get_integral_value());
+        } else if (input_type == ov::element::u64) {
+            dst.data<uint64_t>()[0] = static_cast<uint64_t>(get_integral_value());
+        } else {
+            OPENVINO_THROW("Unsupported input element type for conditioning scalar input '", input_name, "'");
+        }
+    };
+
+    ov::Tensor tensor;
+    if (input_shape.empty()) {
+        tensor = ov::Tensor(input_type, {});
+        write_scalar_value(tensor);
+        return tensor;
+    }
+
+    ov::Shape normalized_shape = input_shape;
+    size_t element_count = 1;
+    for (size_t idx = 0; idx < normalized_shape.size(); ++idx) {
+        size_t dim = normalized_shape[idx];
+        if (dim == 0) {
+            // Dynamic dimensions can be materialized as 0 in request tensor metadata.
+            // Use batch size for the leading dimension and 1 for trailing dimensions.
+            dim = (idx == 0) ? batch_size : 1;
+            normalized_shape[idx] = dim;
+        }
+        element_count *= dim;
+    }
+    OPENVINO_ASSERT(element_count > 0, "Conditioning input '", input_name, "' has zero element count");
+
+    tensor = ov::Tensor(input_type, normalized_shape);
+    if (input_type == ov::element::f32) {
+        std::fill_n(tensor.data<float>(), element_count, value);
+    } else if (input_type == ov::element::f16) {
+        std::fill_n(tensor.data<ov::float16>(), element_count, static_cast<ov::float16>(value));
+    } else if (input_type == ov::element::bf16) {
+        std::fill_n(tensor.data<ov::bfloat16>(), element_count, static_cast<ov::bfloat16>(value));
+    } else if (input_type == ov::element::f64) {
+        std::fill_n(tensor.data<double>(), element_count, static_cast<double>(value));
+    } else if (input_type == ov::element::i32) {
+        std::fill_n(tensor.data<int32_t>(), element_count, static_cast<int32_t>(get_integral_value()));
+    } else if (input_type == ov::element::i64) {
+        std::fill_n(tensor.data<int64_t>(), element_count, get_integral_value());
+    } else if (input_type == ov::element::u32) {
+        std::fill_n(tensor.data<uint32_t>(), element_count, static_cast<uint32_t>(get_integral_value()));
+    } else if (input_type == ov::element::u64) {
+        std::fill_n(tensor.data<uint64_t>(), element_count, static_cast<uint64_t>(get_integral_value()));
+    } else {
+        OPENVINO_THROW("Unsupported input element type for conditioning input '", input_name, "'");
+    }
+
+    const size_t first_dim = normalized_shape.front();
+    if (batch_size > 1 && first_dim != 1 && first_dim != batch_size) {
+        OPENVINO_THROW("Unexpected first dimension for conditioning input '", input_name,
+                       "': expected 1 or batch size ", batch_size, ", got ", first_dim);
+    }
+
+    return tensor;
 }
 
 } // namespace
@@ -125,6 +258,14 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::compile(const std::string& device,
 
     ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, handle_scale_factor(m_decoder_model, device, *filtered_properties));
     ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto encoder KL LTX video decoder model");
+    m_latent_input_name = find_latent_input_name(decoder_compiled_model);
+    if (m_config.timestep_conditioning) {
+        m_decode_timestep_input_name =
+            find_input_name_by_candidates(decoder_compiled_model, {"decode_timestep", "timestep", "temb"});
+        m_decode_noise_scale_input_name =
+            find_input_name_by_candidates(decoder_compiled_model, {"decode_noise_scale", "noise_scale"});
+    }
+
     m_decoder_request = decoder_compiled_model.create_infer_request();
     // release the original model
     m_decoder_model.reset();
@@ -160,17 +301,73 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
     height /= (spatial_compression_ratio * m_transformer_patch_size);
     width /= (spatial_compression_ratio * m_transformer_patch_size);
 
-    ov::PartialShape input_shape = m_decoder_model->input(0).get_partial_shape();
-    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], num_frames, height, width}}};
+    std::map<size_t, ov::PartialShape> idx_to_shape;
+    std::optional<size_t> latent_input_idx;
+    for (size_t input_idx = 0; input_idx < m_decoder_model->inputs().size(); ++input_idx) {
+        const ov::Output<const ov::Node>& input = m_decoder_model->input(input_idx);
+        ov::PartialShape input_shape = input.get_partial_shape();
+        if (input_shape.rank().is_dynamic() || input_shape.rank().get_length() == 0) {
+            continue;
+        }
+        input_shape[0] = batch_size;
+        idx_to_shape[input_idx] = input_shape;
+
+        if (!m_latent_input_name.empty() && input.get_names().count(m_latent_input_name) > 0) {
+            latent_input_idx = input_idx;
+        }
+    }
+    OPENVINO_ASSERT(!m_decoder_model->inputs().empty(), "Decoder model has no inputs");
+    const size_t resolved_latent_input_idx = latent_input_idx.value_or(0);
+    const ov::PartialShape latent_shape = m_decoder_model->input(resolved_latent_input_idx).get_partial_shape();
+    idx_to_shape[resolved_latent_input_idx] = {batch_size, latent_shape[1], num_frames, height, width};
     m_decoder_model->reshape(idx_to_shape);
 
     return *this;
 }
 
 ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent) {
+    return decode(latent, std::nullopt, std::nullopt);
+}
+
+ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent,
+                                         const std::optional<float>& decode_timestep,
+                                         const std::optional<float>& decode_noise_scale) {
     OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
 
-    m_decoder_request.set_input_tensor(latent);
+    const size_t batch_size = latent.get_shape().at(0);
+
+    OPENVINO_ASSERT(!m_latent_input_name.empty(),
+                    "VAE latent input name is not initialized. Decoder compile stage failed to cache input names.");
+
+    m_decoder_request.set_tensor(m_latent_input_name, latent);
+
+    if (!m_config.timestep_conditioning) {
+        m_decoder_request.infer();
+        return m_decoder_request.get_output_tensor();
+    }
+
+    OPENVINO_ASSERT(!m_decode_timestep_input_name.empty(),
+                    "VAE config enables 'timestep_conditioning', but 'decode timestep' input is missing in the IR.");
+
+    const float decode_timestep_value = decode_timestep.value_or(0.0f);
+    const float decode_noise_scale_value = decode_noise_scale.value_or(decode_timestep_value);
+
+    m_decoder_request.set_tensor(
+        m_decode_timestep_input_name,
+        create_scalar_or_batch_tensor(m_decoder_request, m_decode_timestep_input_name, decode_timestep_value, batch_size)
+    );
+
+    if (!m_decode_noise_scale_input_name.empty()) {
+        m_decoder_request.set_tensor(
+            m_decode_noise_scale_input_name,
+            create_scalar_or_batch_tensor(
+                m_decoder_request,
+                m_decode_noise_scale_input_name,
+                decode_noise_scale_value,
+                batch_size)
+        );
+    }
+
     m_decoder_request.infer();
     return m_decoder_request.get_output_tensor();
 }

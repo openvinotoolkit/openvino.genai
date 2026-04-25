@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <vector>
 #include <string>
+#include <optional>
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -52,6 +53,9 @@ public:
 
     ov::Tensor decode(const ov::Tensor& latent);
 
+    ov::Tensor decode(const ov::Tensor& latent,
+                      const std::optional<float>& decode_timestep,
+                      const std::optional<float>& decode_noise_scale);
     const Config& get_config() const;
 
     size_t get_vae_scale_factor() const;
@@ -66,6 +70,9 @@ private:
     std::shared_ptr<ov::Model> m_encoder_model = nullptr, m_decoder_model = nullptr;
 
     int64_t m_transformer_patch_size = -1, m_transformer_patch_size_t = -1;
+    std::string m_latent_input_name;
+    std::string m_decode_timestep_input_name;
+    std::string m_decode_noise_scale_input_name;
 };
 
 } // namespace ov::genai

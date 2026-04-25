@@ -6,6 +6,8 @@
 #include <pybind11/stl/filesystem.h>
 
 #include <filesystem>
+#include <memory>
+#include <optional>
 
 #include "openvino/genai/video_generation/autoencoder_kl_ltx_video.hpp"
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
@@ -223,12 +225,21 @@ void init_autoencoder_kl_ltx_video(py::module_& m) {
                 width (int): Video width.
             )")
         .def("decode",
-             &ov::genai::AutoencoderKLLTXVideo::decode,
+             [](ov::genai::AutoencoderKLLTXVideo& self,
+                const ov::Tensor& latent,
+                const std::optional<float>& decode_timestep,
+                const std::optional<float>& decode_noise_scale) {
+                 return self.decode(latent, decode_timestep, decode_noise_scale);
+             },
              py::call_guard<py::gil_scoped_release>(),
              py::arg("latent"),
+             py::arg("decode_timestep") = py::none(),
+             py::arg("decode_noise_scale") = py::none(),
              R"(
                 Decodes latent video to pixel space.
                 latent (ov.Tensor): Latent video tensor.
+                decode_timestep (float | None): Decode-time timestep for timestep-conditioned decoder exports.
+                decode_noise_scale (float | None): Optional decode-time conditioning noise scale for decoder exports that support it.
                 Returns: Decoded video tensor.
             )");
 }

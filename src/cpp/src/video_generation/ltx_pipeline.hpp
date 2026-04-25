@@ -33,17 +33,19 @@ using namespace ov::genai;
 namespace {
 
 const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
-    std::nullopt,            // negative_prompt
-    1,                       // num_videos_per_prompt
-    nullptr,                 // generator
-    7.5f,                    // guidance_scale
-    512,                     // height
-    704,                     // width
-    50,                      // num_inference_steps
-    128,                     // max_sequence_length
-    0.0,                     // guidance_rescale
-    161,                     // num_frames
-    25.0f,                   // frame_rate
+    std::nullopt,  // negative_prompt
+    1,             // num_videos_per_prompt
+    nullptr,       // generator
+    7.5f,          // guidance_scale
+    512,           // height
+    704,           // width
+    50,            // num_inference_steps
+    128,           // max_sequence_length
+    0.0,           // guidance_rescale
+    161,           // num_frames
+    25.0f,         // frame_rate
+    0.0f,          // decode_timestep
+    std::nullopt,          // decode_noise_scale
     TaylorSeerCacheConfig{}  // taylorseer_config
 };
 
@@ -71,6 +73,14 @@ void replace_defaults(VideoGenerationConfig& config) {
     if (!config.frame_rate.has_value()) {
         config.frame_rate = LTX_VIDEO_DEFAULT_CONFIG.frame_rate;
     }
+    if (!config.decode_timestep.has_value()) {
+        config.decode_timestep = LTX_VIDEO_DEFAULT_CONFIG.decode_timestep;
+    }
+}
+
+bool is_decode_timestep_conditioning_requested(const VideoGenerationConfig& config) {
+    return (config.decode_timestep.has_value() && config.decode_timestep != LTX_VIDEO_DEFAULT_CONFIG.decode_timestep) ||
+           (config.decode_noise_scale.has_value() && config.decode_noise_scale != LTX_VIDEO_DEFAULT_CONFIG.decode_noise_scale);
 }
 
 std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler>&& scheduler) {
@@ -79,7 +89,7 @@ std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler>&& schedule
     return casted;
 }
 
-void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_scale_factor) {
+void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_scale_factor, bool timestep_conditioning_supported) {
     utils::validate_generation_config(generation_config);
     OPENVINO_ASSERT(generation_config.height > 0, "Height must be positive");
     OPENVINO_ASSERT(generation_config.height % 32 == 0,
@@ -96,6 +106,11 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
                         (generation_config.width % vae_scale_factor == 0 || generation_config.width < 0),
                     "Both 'width' and 'height' must be divisible by ",
                     vae_scale_factor);
+    if (is_decode_timestep_conditioning_requested(generation_config)) {
+        OPENVINO_ASSERT(timestep_conditioning_supported,
+                        "decode_timestep and/or decode_noise_scale were provided, but the VAE config does not enable "
+                        "'timestep_conditioning'. Remove those decode conditioning options or use a timestep-conditioned VAE.");
+    }
 }
 
 // Rescales the CFG noise prediction to fix overexposure when using zero terminal SNR
@@ -550,7 +565,7 @@ public:
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
-        check_inputs(merged_generation_config, vae_scale_factor);
+        check_inputs(merged_generation_config, vae_scale_factor, m_vae->get_config().timestep_conditioning);
 
         m_transformer->set_adapters(merged_generation_config.adapters);
 
@@ -716,12 +731,15 @@ public:
 
         latent = postprocess_latents(latent);
 
-        // TODO: support timestep_conditioning for AutoencoderKLLTX
-        OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
-                            "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, contact OpenVINO GenAI developers.");
-
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(latent);
+        ov::Tensor video;
+        if (m_vae->get_config().timestep_conditioning) {
+            video = m_vae->decode(latent,
+                                  merged_generation_config.decode_timestep,
+                                  merged_generation_config.decode_noise_scale);
+        } else {
+            video = m_vae->decode(latent);
+        }
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
@@ -736,7 +754,22 @@ public:
         ov::Tensor postprocessed = postprocess_latents(latent);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        ov::Tensor video = m_vae->decode(postprocessed);
+        const std::optional<float> decode_timestep = m_generation_config.decode_timestep.has_value()
+                                                         ? m_generation_config.decode_timestep
+                                                         : LTX_VIDEO_DEFAULT_CONFIG.decode_timestep;
+        const std::optional<float> decode_noise_scale = m_generation_config.decode_noise_scale;
+        VideoGenerationConfig decode_config = m_generation_config;
+        decode_config.decode_timestep = decode_timestep;
+        decode_config.decode_noise_scale = decode_noise_scale;
+        OPENVINO_ASSERT(!is_decode_timestep_conditioning_requested(decode_config) || m_vae->get_config().timestep_conditioning,
+                        "decode_timestep and/or decode_noise_scale were provided, but the VAE config does not enable "
+                        "'timestep_conditioning'. Remove those decode conditioning options or use a timestep-conditioned VAE.");
+        ov::Tensor video;
+        if (m_vae->get_config().timestep_conditioning) {
+            video = m_vae->decode(postprocessed, decode_timestep, decode_noise_scale);
+        } else {
+            video = m_vae->decode(postprocessed);
+        }
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
