@@ -6,6 +6,7 @@
 #include <openvino/openvino.hpp>
 
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 
 namespace ov {
 namespace genai {
@@ -18,6 +19,10 @@ void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
                                 std::vector<std::pair<size_t, size_t>>& ranges);
 
 int64_t argmax(const ov::Tensor& logits, const size_t batch_idx);
+
+ov::genai::WhisperGenerationConfig prepare_per_generate_config(
+    const ov::genai::WhisperGenerationConfig& base_config,
+    const ov::genai::OptionalWhisperGenerationConfig& per_generate_config);
 
 }  // namespace utils
 }  // namespace genai

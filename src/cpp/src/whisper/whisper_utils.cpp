@@ -57,6 +57,34 @@ int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
     return out_token;
 }
 
+ov::genai::WhisperGenerationConfig prepare_per_generate_config(
+    const ov::genai::WhisperGenerationConfig& base_config,
+    const ov::genai::OptionalWhisperGenerationConfig& per_generate_config) {
+    if (!per_generate_config.has_value()) {
+        return base_config;
+    }
+
+    ov::genai::WhisperGenerationConfig result_config = *per_generate_config;
+
+    // If stop_token_ids were not provided, take value from base_config
+    if (result_config.stop_token_ids.empty()) {
+        result_config.stop_token_ids = base_config.stop_token_ids;
+    }
+
+    // If eos_token_id was not provided, take value from base_config
+    if (result_config.eos_token_id == -1) {
+        result_config.set_eos_token_id(base_config.eos_token_id);
+    }
+
+    // default constructed WhisperGenerationConfig has no lang_to_id map
+    if (result_config.lang_to_id.empty()) {
+        result_config.lang_to_id = base_config.lang_to_id;
+    }
+
+    result_config.validate();
+    return result_config;
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
