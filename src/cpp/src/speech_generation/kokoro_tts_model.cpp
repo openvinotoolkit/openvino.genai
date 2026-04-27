@@ -1185,12 +1185,10 @@ Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
                                                          speaker_shape[0] > 0 ? speaker_shape[0] - 1 : 0);
 
             // Each row in the [num_lengths, 1, 256] pack is 1*256 = 256 floats.
+            // Create ref_s_tensor as a zero-copy view into the speaker_embedding memory.
+            // speaker_embedding (and thus external_speaker_ptr) outlives the infer() call.
             constexpr size_t style_dim = 256;
-            std::vector<float> style_slice(style_dim);
             const size_t offset = length_index * style_dim;
-            std::copy(external_speaker_ptr + offset,
-                      external_speaker_ptr + offset + style_dim,
-                      style_slice.data());
 
             std::vector<int64_t> static_token_ids;
             ov::Tensor input_ids_tensor;
@@ -1210,7 +1208,7 @@ Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
             }
             ov::Tensor ref_s_tensor(ov::element::f32,
                                     ov::Shape{1, style_dim},
-                                    style_slice.data());
+                                    external_speaker_ptr + offset);
             ov::Tensor speed_tensor(ov::element::f32, ov::Shape{1}, &generation_config.speed);
 
             m_request.set_tensor(m_input_ids_name, input_ids_tensor);
