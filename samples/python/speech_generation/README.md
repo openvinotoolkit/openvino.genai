@@ -49,24 +49,24 @@ Create a speaker embedding file (SpeechT5-specific):
 
 optimum-cli export openvino -m hexgrad/Kokoro-82M ov_Kokoro-82M --trust-remote-code
 
-> **Note:**  
+> **Note:**
 > After export is complete. you will find the available speaker embedding `.bin` files in `ov_Kokoro-82M/voices`.
 
 ## Use of `espeak-ng` within the Kokoro Pipeline
 
 Within the Kokoro Text-to-Speech pipeline, `espeak-ng` is an external dependency used for the grapheme-to-phoneme (G2P) stage. Its role varies depending on the selected language:
 
-- **English (`en-us`, `en-gb`)**:  
-  `espeak-ng` is used as a fallback for words that are not found in the built-in dictionary.  
+- **English (`en-us`, `en-gb`)**:
+  `espeak-ng` is used as a fallback for words that are not found in the built-in dictionary.
   See the `kokoro_phonemize_fallback` sample for an example of using an OpenVINO-based fallback model to avoid relying on `espeak-ng` for English.
 
-- **Non-English (`es`, `fr-fr`, `hi`, `it`, `pt-br`)**:  
-  `espeak-ng` serves as the primary G2P (phonemization) engine. As such, it must be installed to enable end-to-end text-to-speech generation for these languages.  
+- **Non-English (`es`, `fr-fr`, `hi`, `it`, `pt-br`)**:
+  `espeak-ng` serves as the primary G2P (phonemization) engine. As such, it must be installed to enable end-to-end text-to-speech generation for these languages.
 
-> **Note:**  
+> **Note:**
 > `espeak-ng` is licensed under GPLv3 and must be installed separately. OpenVINO GenAI detects its presence automatically at runtime.
 
-To install `espeak-ng`, follow the official guide:  
+To install `espeak-ng`, follow the official guide:
 https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md
 
 ## Run samples
