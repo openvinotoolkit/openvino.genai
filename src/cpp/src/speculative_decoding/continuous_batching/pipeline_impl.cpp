@@ -516,15 +516,16 @@ void ContinuousBatchingPipeline::ContinuousBatchingForEagle3DecodingImpl::collec
 
     std::map<size_t, std::map<size_t, size_t>> remap_indices;
     size_t total_indices_to_remap = 0;
+    size_t i = 0;
     for (auto& request_entry : main_generated_requests) {
         const auto request_id = request_entry.first;
         const auto& sequences = request_entry.second;
-        size_t i = 0;
 
         auto seq_group_it = std::find_if(m_requests.begin(), m_requests.end(),
                                          [request_id](const SequenceGroup::Ptr& sg) { return sg->get_request_id() == request_id; });
         if (seq_group_it == m_requests.end()) {
             block_update_begins[i + 1] = static_cast<int32_t>(total_indices_to_remap);
+            i++;
             continue;
         }
 
@@ -554,9 +555,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingForEagle3DecodingImpl::collec
             if (remap_it != remap_indices.end() && !remap_it->second.empty()) {
                 total_indices_to_remap += remap_it->second.size();
             }
-            block_update_begins[i + 1] = static_cast<int32_t>(total_indices_to_remap);
-            i++;
         }
+        block_update_begins[i + 1] = static_cast<int32_t>(total_indices_to_remap);
+        i++;
     }
 
     if (!remap_indices.empty()) {

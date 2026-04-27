@@ -875,7 +875,7 @@ private:
         static constexpr const char* k_qq_bias_name = "qq_bias";
         static constexpr const char* k_qq_bias_begins_name = "qq_bias_begins";
 
-        const std::vector<size_t>& scheduled_ids = scheduler_output.m_scheduled_sequence_groups_ids;
+        const std::vector<uint64_t>& scheduled_ids = scheduler_output.m_scheduled_sequence_groups_ids;
         const size_t num_sequence_groups = scheduled_ids.size();
 
         size_t cumulative_mask_length = 0;
