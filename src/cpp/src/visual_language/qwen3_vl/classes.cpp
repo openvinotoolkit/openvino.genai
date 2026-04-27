@@ -590,23 +590,43 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
         }
 
         // Combined embeddings: [video_embeds, image_embeds]
-        const size_t video_token_count = m_merged_video_embeddings.get_shape()[0];
-        const size_t image_token_count = merged_image_embeddings_tensor.get_shape()[0];
+        const auto& video_shape = m_merged_video_embeddings.get_shape();
+        const auto& image_shape = merged_image_embeddings_tensor.get_shape();
+        const size_t video_token_count = video_shape[0];
+        const size_t image_token_count = image_shape[0];
         const size_t total_tokens = video_token_count + image_token_count;
-        const size_t hidden_dim = (video_token_count > 0)
-            ? m_merged_video_embeddings.get_shape()[1]
-            : merged_image_embeddings_tensor.get_shape()[1];
 
-        ov::Tensor combined_embeds(ov::element::f32, {total_tokens, hidden_dim});
         if (video_token_count > 0) {
-            std::memcpy(combined_embeds.data<float>(),
-                        m_merged_video_embeddings.data<const float>(),
-                        video_token_count * hidden_dim * sizeof(float));
+            OPENVINO_ASSERT(video_shape.size() >= 2,
+                            "Merged video embeddings must be at least 2D, got shape rank ",
+                            video_shape.size(), ".");
         }
         if (image_token_count > 0) {
-            std::memcpy(combined_embeds.data<float>() + video_token_count * hidden_dim,
-                        merged_image_embeddings_tensor.data<const float>(),
-                        image_token_count * hidden_dim * sizeof(float));
+            OPENVINO_ASSERT(image_shape.size() >= 2,
+                            "Merged image embeddings must be at least 2D, got shape rank ",
+                            image_shape.size(), ".");
+        }
+        if (video_token_count > 0 && image_token_count > 0) {
+            OPENVINO_ASSERT(video_shape[1] == image_shape[1],
+                            "Video and image embedding widths must match when both are present. Got video width ",
+                            video_shape[1], " and image width ", image_shape[1], ".");
+        }
+
+        const size_t hidden_dim = (video_token_count > 0) ? video_shape[1] : image_shape[1];
+        const auto embed_element_type = (video_token_count > 0)
+            ? m_merged_video_embeddings.get_element_type()
+            : merged_image_embeddings_tensor.get_element_type();
+
+        ov::Tensor combined_embeds(embed_element_type, {total_tokens, hidden_dim});
+        if (video_token_count > 0) {
+            std::memcpy(combined_embeds.data(),
+                        m_merged_video_embeddings.data(),
+                        m_merged_video_embeddings.get_byte_size());
+        }
+        if (image_token_count > 0) {
+            std::memcpy(static_cast<uint8_t*>(combined_embeds.data()) + m_merged_video_embeddings.get_byte_size(),
+                        merged_image_embeddings_tensor.data(),
+                        merged_image_embeddings_tensor.get_byte_size());
         }
 
         // Identity sequence (embeddings are already reordered)
@@ -643,22 +663,32 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
                 pruned_video_tokens += static_cast<size_t>(
                     std::count(keep_flags[i].begin(), keep_flags[i].end(), true));
             }
+            OPENVINO_ASSERT(pruning_result->pruned_visual_tokens >= pruned_video_tokens,
+                            "Pruned visual token count (",
+                            pruning_result->pruned_visual_tokens,
+                            ") must be >= pruned video token count (",
+                            pruned_video_tokens, ").");
             const size_t pruned_image_tokens = pruning_result->pruned_visual_tokens - pruned_video_tokens;
-            const size_t embed_dim = pruning_result->pruned_embeddings.get_shape()[1];
 
-            m_merged_video_embeddings = ov::Tensor(ov::element::f32, {pruned_video_tokens, embed_dim});
-            merged_image_embeddings_tensor = ov::Tensor(ov::element::f32, {pruned_image_tokens, embed_dim});
+            const auto& pruned_embeddings_shape = pruning_result->pruned_embeddings.get_shape();
+            OPENVINO_ASSERT(pruned_embeddings_shape.size() >= 2,
+                            "Pruned embeddings tensor must be at least 2D.");
+            const size_t embed_dim = pruned_embeddings_shape[1];
+            const auto pruned_elem_type = pruning_result->pruned_embeddings.get_element_type();
 
-            const float* pruned_data = pruning_result->pruned_embeddings.data<const float>();
+            m_merged_video_embeddings = ov::Tensor(pruned_elem_type, {pruned_video_tokens, embed_dim});
+            merged_image_embeddings_tensor = ov::Tensor(pruned_elem_type, {pruned_image_tokens, embed_dim});
+
             if (pruned_video_tokens > 0) {
-                std::memcpy(m_merged_video_embeddings.data<float>(),
-                            pruned_data,
-                            pruned_video_tokens * embed_dim * sizeof(float));
+                std::memcpy(m_merged_video_embeddings.data(),
+                            pruning_result->pruned_embeddings.data(),
+                            m_merged_video_embeddings.get_byte_size());
             }
             if (pruned_image_tokens > 0) {
-                std::memcpy(merged_image_embeddings_tensor.data<float>(),
-                            pruned_data + pruned_video_tokens * embed_dim,
-                            pruned_image_tokens * embed_dim * sizeof(float));
+                std::memcpy(merged_image_embeddings_tensor.data(),
+                            static_cast<const uint8_t*>(pruning_result->pruned_embeddings.data()) +
+                                m_merged_video_embeddings.get_byte_size(),
+                            merged_image_embeddings_tensor.get_byte_size());
             }
             m_merged_image_embeddings = merged_image_embeddings_tensor;
 
@@ -675,9 +705,8 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
                     const size_t original_tokens = deepstack_shape[1];
                     const size_t ds_hidden_size = deepstack_shape[2];
 
-                    OPENVINO_ASSERT(deepstack_embeds.get_element_type() == ov::element::f32,
-                                    "Expected f32 deepstack_visual_embeds, got ",
-                                    deepstack_embeds.get_element_type());
+                    const auto ds_elem_type = deepstack_embeds.get_element_type();
+                    const size_t ds_elem_size = ds_elem_type.size();
 
                     // Build kept token indices from all region keep_flags
                     std::vector<size_t> kept_indices;
@@ -701,19 +730,34 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
 
                     if (pruning_result->pruned_visual_tokens < original_tokens) {
                         const size_t kept_count = kept_indices.size();
-                        ov::Tensor pruned_deepstack(ov::element::f32,
+                        ov::Tensor pruned_deepstack(ds_elem_type,
                                                     {num_layers, kept_count, ds_hidden_size});
 
-                        const float* src = deepstack_embeds.data<const float>();
-                        float* dst = pruned_deepstack.data<float>();
+                        const size_t token_bytes = ds_hidden_size * ds_elem_size;
+                        const auto* src = static_cast<const uint8_t*>(deepstack_embeds.data());
+                        auto* dst = static_cast<uint8_t*>(pruned_deepstack.data());
 
                         for (size_t layer = 0; layer < num_layers; ++layer) {
-                            const size_t layer_src_offset = layer * original_tokens * ds_hidden_size;
-                            const size_t layer_dst_offset = layer * kept_count * ds_hidden_size;
-                            for (size_t dst_idx = 0; dst_idx < kept_count; ++dst_idx) {
-                                std::memcpy(dst + layer_dst_offset + dst_idx * ds_hidden_size,
-                                            src + layer_src_offset + kept_indices[dst_idx] * ds_hidden_size,
-                                            ds_hidden_size * sizeof(float));
+                            const size_t layer_src_offset = layer * original_tokens * token_bytes;
+                            const size_t layer_dst_offset = layer * kept_count * token_bytes;
+
+                            // Coalesce contiguous kept indices into single memcpy calls
+                            size_t dst_idx = 0;
+                            while (dst_idx < kept_count) {
+                                const size_t run_dst_start = dst_idx;
+                                const size_t run_src_start = kept_indices[dst_idx];
+                                size_t run_length = 1;
+
+                                while (dst_idx + run_length < kept_count &&
+                                       kept_indices[dst_idx + run_length] == run_src_start + run_length) {
+                                    ++run_length;
+                                }
+
+                                std::memcpy(dst + layer_dst_offset + run_dst_start * token_bytes,
+                                            src + layer_src_offset + run_src_start * token_bytes,
+                                            run_length * token_bytes);
+
+                                dst_idx += run_length;
                             }
                         }
 

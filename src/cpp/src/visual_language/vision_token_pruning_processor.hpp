@@ -43,7 +43,7 @@ struct PruningContext {
 
     // Configuration
     size_t spatial_merge_size = 1;  // 1 means no merge (default)
-    
+
     // Video support: secondary pad token for the other modality (default -1 = not applicable)
     int64_t video_pad_token_id = -1;
 };
