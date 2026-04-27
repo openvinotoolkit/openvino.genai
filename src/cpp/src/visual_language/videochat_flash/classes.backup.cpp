@@ -5,13 +5,6 @@
 #include "visual_language/videochat_flash/classes.hpp"
 
 #include "openvino/opsets/opset13.hpp"
-#include "openvino/op/interpolate.hpp"
-#include "openvino/op/convert.hpp"
-#include "openvino/op/transpose.hpp"
-#include "openvino/op/clamp.hpp"
-#include "openvino/op/round.hpp"
-#include "openvino/op/subtract.hpp"
-#include "openvino/op/multiply.hpp"
 #include "logger.hpp"
 #include "visual_language/clip.hpp"
 #include "visual_language/vlm_utils.hpp"
@@ -23,7 +16,6 @@
 #include <cstring>
 #include <numeric>
 #include <cmath>
-#include <optional>
 #include <sstream>
 #include <mutex>
 #include <fstream>
@@ -64,126 +56,32 @@ void write_native(std::ostream& os, size_t idx) {
 }
 
 /**
- * @brief Build a frame-batch preprocessing model implemented purely with OpenVINO ops.
- *
- * Pipeline (all on device, batched, no per-frame CPU loop):
- *   1) Convert u8 -> f32
- *   2) Transpose NHWC -> NCHW
- *   3) Bicubic resize to (target_h, target_w) via Interpolate
- *   4) Clamp(0, 255) + Round to mirror the uint8-quantization step in
- *      clip_image_preprocess (keeps numerical parity with the previous CPU path)
- *   5) Normalize: (x / 255 - mean) / std, folded into
- *      (x - mean*255) * (1 / (std*255)) with broadcast constants
- *
- * Inputs:
- *   - "raw_frames"    : u8  [N, H, W, 3] (dynamic N, H, W)
- *   - "resize_target" : i64 [2] = {target_h, target_w}
- * Output:
- *   - f32 [N, 3, target_h, target_w]
- *
- * The model is compiled once and reused across videos; the heavy per-frame
- * pixel work executes inside OpenVINO kernels instead of a C++ triple loop.
- */
-std::shared_ptr<ov::Model> build_frame_preprocess_model(
-    const std::array<float, 3>& image_mean,
-    const std::array<float, 3>& image_std) {
-    auto raw_frames = std::make_shared<ov::op::v0::Parameter>(
-        ov::element::u8, ov::PartialShape{-1, -1, -1, 3});
-    raw_frames->set_friendly_name("raw_frames");
-    raw_frames->output(0).set_names({"raw_frames"});
-
-    auto resize_target = std::make_shared<ov::op::v0::Parameter>(
-        ov::element::i64, ov::PartialShape{2});
-    resize_target->set_friendly_name("resize_target");
-    resize_target->output(0).set_names({"resize_target"});
-
-    // u8 NHWC -> f32 NCHW
-    auto to_f32 = std::make_shared<ov::op::v0::Convert>(raw_frames, ov::element::f32);
-    auto nhwc_to_nchw = std::make_shared<ov::op::v0::Constant>(
-        ov::element::i32, ov::Shape{4}, std::vector<int32_t>{0, 3, 1, 2});
-    auto nchw = std::make_shared<ov::op::v1::Transpose>(to_f32, nhwc_to_nchw);
-
-    // Bicubic resize on spatial dims (NCHW -> axes {2, 3})
-    ov::op::v11::Interpolate::InterpolateAttrs attrs;
-    attrs.mode = ov::op::v11::Interpolate::InterpolateMode::CUBIC;
-    attrs.shape_calculation_mode = ov::op::v11::Interpolate::ShapeCalcMode::SIZES;
-    attrs.coordinate_transformation_mode = ov::op::v11::Interpolate::CoordinateTransformMode::PYTORCH_HALF_PIXEL;
-    attrs.cube_coeff = -0.75f;
-    attrs.nearest_mode = ov::op::v11::Interpolate::NearestMode::ROUND_PREFER_FLOOR;
-    attrs.pads_begin = {0, 0};
-    attrs.pads_end = {0, 0};
-    attrs.antialias = false;
-    auto resize_axes = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {2, 3});
-    auto resized = std::make_shared<ov::op::v11::Interpolate>(
-        nchw, resize_target, resize_axes, attrs);
-
-    // Match clip_image_preprocess quantization quirk: round bicubic output to uint8 range first.
-    auto clamped = std::make_shared<ov::op::v0::Clamp>(resized, 0.0, 255.0);
-    auto rounded = std::make_shared<ov::op::v5::Round>(
-        clamped, ov::op::v5::Round::RoundMode::HALF_TO_EVEN);
-    // NOTE: original C++ used std::round (half-away-from-zero) but values are in [0, 255] so
-    // there is no effect sign-wise; using HALF_TO_EVEN here on positive values is equivalent for
-    // the vast majority of inputs; remaining ties produce |diff| <= 1/255 <= 4e-3 after scaling,
-    // which is well below downstream vision-encoder tolerance.
-
-    // Fold (x/255 - mean)/std into (x - mean*255) * (1/(std*255)) with [1,3,1,1] broadcast consts.
-    const std::vector<float> mean_scaled{
-        image_mean[0] * 255.0f, image_mean[1] * 255.0f, image_mean[2] * 255.0f};
-    const std::vector<float> inv_std_scaled{
-        1.0f / (image_std[0] * 255.0f),
-        1.0f / (image_std[1] * 255.0f),
-        1.0f / (image_std[2] * 255.0f)};
-    auto mean_const = std::make_shared<ov::op::v0::Constant>(
-        ov::element::f32, ov::Shape{1, 3, 1, 1}, mean_scaled);
-    auto inv_std_const = std::make_shared<ov::op::v0::Constant>(
-        ov::element::f32, ov::Shape{1, 3, 1, 1}, inv_std_scaled);
-    auto centered = std::make_shared<ov::op::v1::Subtract>(rounded, mean_const);
-    auto normalized = std::make_shared<ov::op::v1::Multiply>(centered, inv_std_const);
-
-    normalized->set_friendly_name("preprocessed_frames");
-    return std::make_shared<ov::Model>(
-        ov::OutputVector{normalized},
-        ov::ParameterVector{raw_frames, resize_target},
-        "videochat_flash_frame_preprocess");
-}
-
-/**
- * @brief Runtime selector for the frame preprocessing path.
- *
- *   default (env unset / != "CPP"): OV graph-based batched preprocess (Convert + Transpose +
- *                                   Bicubic + Normalize), compiled once and runs on the same
- *                                   device as the vision encoder.
- *   VISION_PREPROCESS=CPP         : Legacy CPU per-frame path (bicubic_resize +
- *                                   clip_image_preprocess). Kept for bit-accurate comparison
- *                                   and easy fallback during debugging / regression triage.
- */
-bool check_vision_preprocess_env() {
-    const char* env = std::getenv("VISION_PREPROCESS");
-    return !(env && std::string(env) == "CPP");
-}
-
-/**
- * @brief Legacy CPU per-frame preprocess (kept for A/B comparison, selectable via env var).
+ * @brief Preprocess frame batch in NHWC/u8 layout.
  *
  * Pipeline:
- *   1) Resize each frame with bicubic interpolation to (target_h, target_w)
- *   2) Rescale pixel values by /255
- *   3) Normalize by (x - mean) / std
+ * 1) Resize each frame with bicubic interpolation to (target_h, target_w)
+ * 2) Rescale pixel values by /255
+ * 3) Normalize by (x - mean) / std
  *
  * Input:
  *   - input_nhwc_u8: [N, H, W, 3], element type u8
  * Output:
  *   - Tensor with shape [N, C, target_h, target_w], element type f32
+ *     (clip_image_preprocess returns planar CHW buffer per frame)
+ *
+ * Notes:
+ *   - This function does not infer layout. Caller must provide NHWC.
+ *   - Channel count is strictly 3 for current normalization parameters.
  */
-ov::Tensor preprocess_cpu_loop(const ov::Tensor& input_nhwc_u8,
-                               ImageSize image_size,
-                               const std::array<float, 3>& image_mean,
-                               const std::array<float, 3>& image_std) {
+ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8, ImageSize image_size, const std::array<float, 3>& image_mean, const std::array<float, 3>& image_std) {
+    // TODO CVS-183051: optimize preprocessing by ov ops.
     const ov::Shape& in_shape = input_nhwc_u8.get_shape();
     OPENVINO_ASSERT(in_shape.size() == 4, "Input must be 4D NHWC.");
     OPENVINO_ASSERT(input_nhwc_u8.get_element_type() == ov::element::u8, "Input dtype must be u8.");
     OPENVINO_ASSERT(in_shape[3] == 3, "Input channel must be 3 for normalization.");
     OPENVINO_ASSERT(image_size.height > 0 && image_size.width > 0, "target_h and target_w must be > 0.");
+
+    const auto t_pre_start = std::chrono::steady_clock::now();
 
     const size_t batch = in_shape[0];
     const size_t in_h = in_shape[1];
@@ -197,6 +95,7 @@ ov::Tensor preprocess_cpu_loop(const ov::Tensor& input_nhwc_u8,
     const size_t out_frame_elems = channels * image_size.height * image_size.width;
 
     clip_ctx ctx{};
+    
     std::copy_n(image_mean.begin(), image_mean.size(), ctx.image_mean);
     std::copy_n(image_std.begin(), image_std.size(), ctx.image_std);
 
@@ -212,64 +111,37 @@ ov::Tensor preprocess_cpu_loop(const ov::Tensor& input_nhwc_u8,
         clip_image_u8 clip_resized;
         bicubic_resize(clip_in, clip_resized, image_size.width, image_size.height);
 
-        // 2) rescale(/255) + 3) normalize((x-mean)/std), returns f32 planar CHW.
-        clip_image_f32 clip_norm = clip_image_preprocess(ctx, clip_resized);
+        // 2) rescale(/255) + 3) normalize((x-mean)/std)
+        // clip_image_preprocess implements normalization pipeline and returns f32 planar image.
+        clip_image_f32 clip_norm = clip_image_preprocess(ctx, clip_resized); //// CHW
 
+        // Convert planar(CHW) -> NCHW
         OPENVINO_ASSERT(clip_norm.buf.size() == out_frame_elems, "Unexpected preprocessed frame size.");
         std::memcpy(out_ptr + b * out_frame_elems, clip_norm.buf.data(), out_frame_elems * sizeof(float));
     }
 
+    const auto t_pre_end = std::chrono::steady_clock::now();
+    const auto pre_us = std::chrono::duration_cast<std::chrono::microseconds>(t_pre_end - t_pre_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][baseline][preprocess] frames=%zu, in=%zux%zu -> out=%zux%zu, total=%lldus",
+        batch, in_h, in_w, image_size.height, image_size.width,
+        static_cast<long long>(pre_us));
+
     return output_nchw_f32;
-}
-
-/**
- * @brief OV graph-based batched preprocess using a pre-compiled preprocessing model.
- *
- * Replaces the per-frame CPU pipeline with a single device-side inference over the whole
- * frame batch, eliminating N x (resize + normalize) CPU loops and the extra f32 planar->NCHW
- * copy.
- *
- * IMPORTANT lifetime contract (zero-copy optimization):
- *   The returned tensor is a NON-OWNING alias of the InferRequest's output buffer. The caller
- *   MUST keep the corresponding CircularBufferQueueElementGuard alive until the returned
- *   tensor's data has been fully consumed (typically until the next downstream copy, e.g.
- *   transpose_video_features). Reusing the same InferRequest before that point would corrupt
- *   the data. This avoids a ~70MB f32 copy_to per video chunk on the host side.
- *
- * Input:
- *   - input_nhwc_u8: [N, H, W, 3], element type u8
- * Output:
- *   - f32 tensor [N, 3, target_h, target_w] (alias to req.get_output_tensor())
- */
-ov::Tensor preprocess_ov_graph(const ov::Tensor& input_nhwc_u8,
-                               ImageSize image_size,
-                               ov::InferRequest& req) {
-    const ov::Shape& in_shape = input_nhwc_u8.get_shape();
-    OPENVINO_ASSERT(in_shape.size() == 4, "Input must be 4D NHWC.");
-    OPENVINO_ASSERT(input_nhwc_u8.get_element_type() == ov::element::u8, "Input dtype must be u8.");
-    OPENVINO_ASSERT(in_shape[3] == 3, "Input channel must be 3 for normalization.");
-    OPENVINO_ASSERT(image_size.height > 0 && image_size.width > 0, "target_h and target_w must be > 0.");
-
-    // Pack resize target as a 2-element i64 tensor.
-    const std::vector<int64_t> target_shape_vec{
-        static_cast<int64_t>(image_size.height),
-        static_cast<int64_t>(image_size.width)};
-    ov::Tensor target_shape_tensor(ov::element::i64, ov::Shape{2});
-    std::memcpy(target_shape_tensor.data(), target_shape_vec.data(), target_shape_vec.size() * sizeof(int64_t));
-
-    req.set_tensor("raw_frames", input_nhwc_u8);
-    req.set_tensor("resize_target", target_shape_tensor);
-    req.infer();
-
-    // Return a non-owning alias of the request's output. Caller's guard keeps it valid;
-    // the next downstream stage (transpose_video_features) memcpy's into its own buffer,
-    // after which the guard can be released and the request returned to the pool.
-    return req.get_output_tensor();
 }
 
 std::string normalize_prompt_impl(
     const std::string& prompt, size_t base_id, size_t n_visuals, const std::regex& native_pattern, void(*write_native)(std::ostream& os, size_t idx)
 ) {
+    const auto t_start = std::chrono::steady_clock::now();
+    auto log_done = [&](const char* branch, const std::string& result) {
+        const auto t_end = std::chrono::steady_clock::now();
+        const auto us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
+        GENAI_INFO(
+            "[VideoChat-Flash][baseline][normalize_prompt_impl] branch=%s, prompt_len=%zu, n_visuals=%zu, out_len=%zu, total=%lldus",
+            branch, prompt.size(), n_visuals, result.size(), static_cast<long long>(us));
+    };
+
     // Reject unsupported universal image placeholders early to keep the text+video contract explicit.
     std::smatch universal_image_match;
     std::regex_search(prompt, universal_image_match, UNIVERSAL_IMAGE_PATTERN);
@@ -287,6 +159,7 @@ std::string normalize_prompt_impl(
             "Prompt cannot mix universal video tags (<ov_genai_video_i>) with native visual tags (<|image_i|>)."
         );
         verify_ids(visual_sequence, base_id, n_visuals);
+        log_done("universal", normalized_prompt);
         return normalized_prompt;
     }
 
@@ -300,6 +173,7 @@ std::string normalize_prompt_impl(
     }
     if (!visual_sequence.empty()) {
         verify_ids(visual_sequence, base_id, n_visuals);
+        log_done("native", prompt);
         return prompt;
     }
 
@@ -309,7 +183,9 @@ std::string normalize_prompt_impl(
         write_native(stream, base_id + relative_id);
     }
     stream << prompt;
-    return stream.str();
+    std::string out = stream.str();
+    log_done("prepend", out);
+    return out;
 }
 
 ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t mm_local_num_frames) {
@@ -318,6 +194,8 @@ ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t m
     const ov::Shape src_shape = src_tensor.get_shape();
     OPENVINO_ASSERT(src_shape.size() == 4, "Input tensor must be 4D [N, C, H, W].");
     OPENVINO_ASSERT(mm_local_num_frames > 0, "mm_local_num_frames must be greater than 0.");
+
+    const auto t_start = std::chrono::steady_clock::now();
 
     const size_t n = src_shape[0];
     const size_t c = src_shape[1];
@@ -351,6 +229,12 @@ ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t m
         }
     }
 
+    const auto t_end = std::chrono::steady_clock::now();
+    const auto us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][baseline][transpose_video_features] N=%zu, C=%zu, H=%zu, W=%zu, mm_local=%zu, total=%lldus",
+        n, c, h, w, mm_local_num_frames, static_cast<long long>(us));
+
     return dst_tensor;
 }
 
@@ -358,6 +242,8 @@ ov::Tensor remove_second_dim_first_element(const ov::Tensor& input) {
     const ov::Shape& input_shape = input.get_shape();
     OPENVINO_ASSERT(input_shape.size() == 3, "Input tensor must be 3D [batch, seq, hidden], got ", input_shape.size(), "D.");
     OPENVINO_ASSERT(input_shape[1] >= 1, "Second dimension of input tensor must be at least 1.");
+
+    const auto t_start = std::chrono::steady_clock::now();
 
     const auto element_type = input.get_element_type();
     OPENVINO_ASSERT(element_type == ov::element::f32, "Input tensor element type must be f32.");
@@ -382,10 +268,19 @@ ov::Tensor remove_second_dim_first_element(const ov::Tensor& input) {
         );
     }
 
+    const auto t_end = std::chrono::steady_clock::now();
+    const auto us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][baseline][remove_second_dim_first_element] in_shape=[%zu,%zu,%zu] -> out_shape=[%zu,%zu,%zu], total=%lldus",
+        input_shape[0], input_shape[1], input_shape[2],
+        output_shape[0], output_shape[1], output_shape[2],
+        static_cast<long long>(us));
+
     return output;
 }
 
 std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim, ov::element::Type dtype = ov::element::f32) {
+    const auto t_start = std::chrono::steady_clock::now();
     // Parameters: x: [B, P, C], size: [B, P, 1]
     auto x_p = std::make_shared<ov::op::v0::Parameter>(dtype, ov::PartialShape({-1, -1, -1}));
     x_p->set_friendly_name("hidden_states");
@@ -473,6 +368,11 @@ std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim
     size_m->set_friendly_name("size_out");
 
     auto model = std::make_shared<ov::Model>(ov::OutputVector{x_out, size_m}, ov::ParameterVector{x_p, size_p}, "bipartite_merge_opt");
+    const auto t_end = std::chrono::steady_clock::now();
+    const auto us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][baseline][build_bipartite_merge_model] dim=%d, total=%lldus",
+        dim, static_cast<long long>(us));
     return model;
 }
 
@@ -524,6 +424,12 @@ ov::Tensor merge_tokens(const ov::Tensor& input, ov::InferRequest& merge_embeddi
 
     ov::Tensor current_x = input;
 
+    const auto t_merge_start = std::chrono::steady_clock::now();
+    long long set_tensor_us = 0;
+    long long infer_us = 0;
+    long long get_output_us = 0;
+    size_t iter_count = 0;
+
     while (true) {
         const ov::Shape& current_shape = current_x.get_shape();
         OPENVINO_ASSERT(
@@ -553,12 +459,20 @@ ov::Tensor merge_tokens(const ov::Tensor& input, ov::InferRequest& merge_embeddi
             current_size_shape.to_string(), "."
         );
 
+        const auto t_iter_start = std::chrono::steady_clock::now();
         merge_embeddings.set_tensor("hidden_states", current_x);
         merge_embeddings.set_tensor("size", size_tensor);
+        const auto t1 = std::chrono::steady_clock::now();
         merge_embeddings.infer();
+        const auto t2 = std::chrono::steady_clock::now();
 
         ov::Tensor next_x = merge_embeddings.get_output_tensor(0);
         ov::Tensor next_size = merge_embeddings.get_output_tensor(1);
+        const auto t3 = std::chrono::steady_clock::now();
+        set_tensor_us += std::chrono::duration_cast<std::chrono::microseconds>(t1 - t_iter_start).count();
+        infer_us      += std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+        get_output_us += std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count();
+        ++iter_count;
 
         const ov::Shape& next_x_shape = next_x.get_shape();
         const ov::Shape& next_size_shape = next_size.get_shape();
@@ -592,6 +506,15 @@ ov::Tensor merge_tokens(const ov::Tensor& input, ov::InferRequest& merge_embeddi
         ", got ", current_x.get_shape().to_string()
     );
 
+    const auto t_merge_end = std::chrono::steady_clock::now();
+    const auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(t_merge_end - t_merge_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][baseline][merge_tokens] B=%zu, P=%zu->%zu, C=%zu, iters=%zu, total=%lldus, "
+        "sums: set_tensor=%lldus, infer=%lldus, get_output=%lldus",
+        b, p, target_num_token, c, iter_count,
+        static_cast<long long>(total_us),
+        set_tensor_us, infer_us, get_output_us);
+
     return current_x;
 }
 
@@ -604,6 +527,7 @@ ov::Tensor efficient_flatten(const ov::Tensor& original_tensor) {
         original_shape.size(),
         "D."
     );
+    const auto t_start = std::chrono::steady_clock::now();
     const ov::element::Type& dtype = original_tensor.get_element_type();
     const ov::Shape new_shape = {
         1,
@@ -618,10 +542,19 @@ ov::Tensor efficient_flatten(const ov::Tensor& original_tensor) {
     const void* src_data = original_tensor.data();
     void* dst_data = new_tensor.data();
     std::memcpy(dst_data, src_data, original_tensor.get_byte_size());
+    const auto t_end = std::chrono::steady_clock::now();
+    const auto us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][baseline][efficient_flatten] in=[%zu,%zu,%zu] -> out=[%zu,%zu,%zu], bytes=%zu, total=%lldus",
+        original_shape[0], original_shape[1], original_shape[2],
+        new_shape[0], new_shape[1], new_shape[2],
+        original_tensor.get_byte_size(),
+        static_cast<long long>(us));
     return new_tensor;
 }
 std::vector<float> get_1d_sincos_pos_embed_from_grid(int embed_dim, const std::vector<float>& pos) {
     OPENVINO_ASSERT(embed_dim % 2 == 0, "embed_dim must be divisible by 2 for 1D sin-cos positional embedding.");
+    const auto t_start = std::chrono::steady_clock::now();
     int M = pos.size();
     int half_dim = embed_dim / 2;
 
@@ -638,11 +571,17 @@ std::vector<float> get_1d_sincos_pos_embed_from_grid(int embed_dim, const std::v
             emb[m * embed_dim + d + half_dim] = std::cos(out); // Second half uses cosine
         }
     }
+    const auto t_end = std::chrono::steady_clock::now();
+    const auto us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][baseline][get_1d_sincos_pos_embed] embed_dim=%d, M=%d, total=%lldus",
+        embed_dim, M, static_cast<long long>(us));
     return emb;
 }
 
 std::vector<float> get_2d_sincos_pos_embed_from_grid(int embed_dim, const std::vector<std::vector<float>>& grid) {
     OPENVINO_ASSERT(embed_dim % 2 == 0, "embed_dim must be divisible by 2 for 2D sin-cos positional embedding.");
+    const auto t_start = std::chrono::steady_clock::now();
     int half_dim = embed_dim / 2;
     int num_points = grid[0].size();
 
@@ -654,11 +593,17 @@ std::vector<float> get_2d_sincos_pos_embed_from_grid(int embed_dim, const std::v
         std::copy(emb_h.begin() + i * half_dim, emb_h.begin() + (i + 1) * half_dim, emb.begin() + i * embed_dim);
         std::copy(emb_w.begin() + i * half_dim, emb_w.begin() + (i + 1) * half_dim, emb.begin() + i * embed_dim + half_dim);
     }
+    const auto t_end = std::chrono::steady_clock::now();
+    const auto us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][baseline][get_2d_sincos_pos_embed] embed_dim=%d, num_points=%d, total=%lldus",
+        embed_dim, num_points, static_cast<long long>(us));
     return emb;
 }
 
 ov::Tensor get_3d_sincos_pos_embed(int embed_dim, int grid_size, int t_size, bool cls_token = false) {
     OPENVINO_ASSERT(embed_dim % 4 == 0, "embed_dim must be divisible by 4 for 3D sin-cos positional embedding.");
+    const auto t_start = std::chrono::steady_clock::now();
     int embed_dim_spatial = (embed_dim / 4) * 3;
     int embed_dim_temporal = embed_dim / 4;
     int hw = grid_size * grid_size;
@@ -697,27 +642,55 @@ ov::Tensor get_3d_sincos_pos_embed(int embed_dim, int grid_size, int t_size, boo
         }
     }
 
+    const auto t_end = std::chrono::steady_clock::now();
+    const auto us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][baseline][get_3d_sincos_pos_embed] embed_dim=%d, grid_size=%d, t_size=%d, cls_token=%d, total=%lldus",
+        embed_dim, grid_size, t_size, static_cast<int>(cls_token), static_cast<long long>(us));
+
     return pos_tensor;
 }
-/**
- * @brief Run the ViT (vision_embeddings) on N temporally-grouped video samples and return a
- *        single contiguous [N, ...] tensor.
- *
- * Per-sample zero-copy loop. Dry-infer sample 0 to learn per-sample output shape, then
- * pre-allocate the [N, ...] result buffer and feed every subsequent sample's output slice
- * as the request's output tensor via set_output_tensor() so the plugin writes directly into
- * the final buffer (no per-sample memcpy). The output binding is reset to a scratch tensor
- * before returning so the request can be safely returned to the pool.
- *
- * Pre-conditions on the InferRequest (set up in initialize_vision_encoder_queue's factory):
- *   - "rotary_pos_emb" is already bound to m_pos_emb on every request in the pool.
- *
- * Note: a true-batch path (single infer with hidden_states = [N, C, T, H, W]) was evaluated
- * but regressed performance on Arc 140V iGPU at typical N — the per-sample loop hits better
- * GPU kernel tiles and stays within the device working set, so it is the only path kept.
- */
-ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features,
-                            ov::InferRequest& vision_embeddings) {
+ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
+    if (tensors.empty()) return ov::Tensor();
+
+    const auto t_start = std::chrono::steady_clock::now();
+    const ov::Shape single_shape = tensors[0].get_shape();
+    OPENVINO_ASSERT(!single_shape.empty(), "Input tensors must have rank >= 1.");
+    OPENVINO_ASSERT(single_shape[0] == 1, "Each tensor must have shape[0] == 1 for concatenation.");
+    auto type = tensors[0].get_element_type();
+    const size_t single_tensor_byte_size = tensors[0].get_byte_size();
+
+    ov::Shape final_shape = single_shape;
+    final_shape[0] = tensors.size();
+
+    ov::Tensor merged_tensor(type, final_shape);
+    uint8_t* dst_ptr = static_cast<uint8_t*>(merged_tensor.data());
+
+    for (const auto& t : tensors) {
+        OPENVINO_ASSERT(t.get_element_type() == type, "All tensors must have the same element type.");
+        const ov::Shape& shape = t.get_shape();
+        OPENVINO_ASSERT(shape.size() == single_shape.size(), "All tensors must have the same rank.");
+        OPENVINO_ASSERT(shape[0] == 1, "Each tensor must have shape[0] == 1 for concatenation.");
+        OPENVINO_ASSERT(std::equal(shape.begin() + 1, shape.end(), single_shape.begin() + 1),
+                        "All tensors must have identical dimensions except dim0.");
+        size_t byte_size = t.get_byte_size();
+        OPENVINO_ASSERT(byte_size == single_tensor_byte_size,
+                        "All tensors must have the same byte size for concatenation.");
+        std::memcpy(dst_ptr, t.data(), byte_size);
+        dst_ptr += byte_size;
+    }
+
+    const auto t_end = std::chrono::steady_clock::now();
+    const auto us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][baseline][concatenate_tensors] count=%zu, single_bytes=%zu, total_bytes=%zu, total=%lldus",
+        tensors.size(), single_tensor_byte_size, merged_tensor.get_byte_size(),
+        static_cast<long long>(us));
+
+    return merged_tensor;
+}
+
+ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings, const ov::Tensor& pos_emb) {
     OPENVINO_ASSERT(
         transpose_features.get_element_type() == ov::element::f32,
         "vision_embeddings input pixel_values must be f32."
@@ -727,55 +700,57 @@ ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features,
     OPENVINO_ASSERT(full_shape.size() == 5, "transpose_features must be 5D [N, C, T, H, W].");
     const size_t N = full_shape[0];
     OPENVINO_ASSERT(N > 0, "transpose_features batch size N must be greater than 0.");
-
     const size_t single_sample_size = transpose_features.get_size() / N;
     const float* src_ptr = transpose_features.data<const float>();
-    const ov::Shape single_in_shape = {1, full_shape[1], full_shape[2], full_shape[3], full_shape[4]};
+    std::vector<ov::Tensor> results_list;
 
-    // Dry-infer sample 0 to learn per-sample output shape.
-    ov::Tensor first_in(ov::element::f32, single_in_shape, const_cast<float*>(src_ptr));
-    vision_embeddings.set_tensor("hidden_states", first_in);
-    vision_embeddings.infer();
-    ov::Tensor first_out = vision_embeddings.get_output_tensor();
+    const auto t_vit_start = std::chrono::steady_clock::now();
+    long long set_tensor_us = 0;
+    long long infer_us = 0;
+    long long get_output_us = 0;
+    long long copy_to_us = 0;
+    long long push_back_us = 0;
 
-    const ov::Shape per_out_shape = first_out.get_shape();
-    const ov::element::Type out_dtype = first_out.get_element_type();
-    OPENVINO_ASSERT(
-        !per_out_shape.empty() && per_out_shape[0] == 1,
-        "vision_embeddings per-sample output is expected to have batch dim == 1, got shape ",
-        per_out_shape.to_string(), "."
-    );
+    for (size_t i = 0; i < N; ++i) {
+        const ov::Shape single_shape = {1, full_shape[1], full_shape[2], full_shape[3], full_shape[4]};
+        ov::Tensor single_input(transpose_features.get_element_type(), single_shape, const_cast<float*>(src_ptr + (i * single_sample_size)));
 
-    ov::Shape final_shape = per_out_shape;
-    final_shape[0] = N;
-    ov::Tensor final_processed_embeds(out_dtype, final_shape);
-    const size_t per_sample_bytes = first_out.get_byte_size();
-    OPENVINO_ASSERT(
-        final_processed_embeds.get_byte_size() == per_sample_bytes * N,
-        "Final ViT output buffer size mismatch."
-    );
-    uint8_t* dst_base = static_cast<uint8_t*>(final_processed_embeds.data());
-    std::memcpy(dst_base, first_out.data(), per_sample_bytes);
-
-    bool foreign_output_bound = false;
-    for (size_t i = 1; i < N; ++i) {
-        ov::Tensor view_in(
-            ov::element::f32, single_in_shape,
-            const_cast<float*>(src_ptr + i * single_sample_size));
-        ov::Tensor view_out(
-            out_dtype, per_out_shape,
-            dst_base + i * per_sample_bytes);
-        vision_embeddings.set_tensor("hidden_states", view_in);
-        vision_embeddings.set_output_tensor(view_out);
+        const auto t0 = std::chrono::steady_clock::now();
+        vision_embeddings.set_tensor("hidden_states", single_input);
+        vision_embeddings.set_tensor("rotary_pos_emb", pos_emb);
+        const auto t1 = std::chrono::steady_clock::now();
         vision_embeddings.infer();
-        foreign_output_bound = true;
+        const auto t2 = std::chrono::steady_clock::now();
+        ov::Tensor out_tensor = vision_embeddings.get_output_tensor();
+        const auto t3 = std::chrono::steady_clock::now();
+        ov::Tensor copy_tensor(out_tensor.get_element_type(), out_tensor.get_shape());
+        out_tensor.copy_to(copy_tensor);
+        const auto t4 = std::chrono::steady_clock::now();
+        results_list.push_back(copy_tensor);
+        const auto t5 = std::chrono::steady_clock::now();
+
+        set_tensor_us += std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+        infer_us      += std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+        get_output_us += std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count();
+        copy_to_us    += std::chrono::duration_cast<std::chrono::microseconds>(t4 - t3).count();
+        push_back_us  += std::chrono::duration_cast<std::chrono::microseconds>(t5 - t4).count();
     }
-    if (foreign_output_bound) {
-        // Rebind output to a scratch tensor so the InferRequest, once returned to the pool,
-        // does not write into our just-returned final_processed_embeds buffer.
-        ov::Tensor scratch(out_dtype, per_out_shape);
-        vision_embeddings.set_output_tensor(scratch);
-    }
+    const auto t_loop_end = std::chrono::steady_clock::now();
+
+    ov::Tensor final_processed_embeds = concatenate_tensors(results_list);
+    const auto t_concat_end = std::chrono::steady_clock::now();
+
+    const auto loop_us  = std::chrono::duration_cast<std::chrono::microseconds>(t_loop_end - t_vit_start).count();
+    const auto concat_us = std::chrono::duration_cast<std::chrono::microseconds>(t_concat_end - t_loop_end).count();
+    const auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(t_concat_end - t_vit_start).count();
+    GENAI_INFO(
+        "[VideoChat-Flash][baseline][cyclic-vit] N=%zu, total=%lldus (loop=%lldus, concat=%lldus); "
+        "per-sample sums: set_tensor=%lldus, infer=%lldus, get_output=%lldus, copy_to=%lldus, push_back=%lldus",
+        N,
+        static_cast<long long>(total_us),
+        static_cast<long long>(loop_us),
+        static_cast<long long>(concat_us),
+        set_tensor_us, infer_us, get_output_us, copy_to_us, push_back_us);
 
     return final_processed_embeds;
 }
@@ -814,22 +789,6 @@ void VisionEncoderVideoChatFlashQwen::initialize_runtime_config(const std::files
     m_mm_hidden_size = runtime_config.mm_hidden_size;
     m_num_attention_heads = runtime_config.mm_num_attention_heads;
     m_target_num_token = runtime_config.mm_projector_num_tome_tokens;
-}
-
-void VisionEncoderVideoChatFlashQwen::initialize_preprocess_queue(const std::string& device, const ov::AnyMap& properties) {
-    // Build a device-side preprocess model (Convert + Transpose + Bicubic resize + Normalize).
-    // The compile device/properties are forwarded from the caller so the preprocessing subgraph
-    // can follow the same placement policy as the main vision encoder (e.g. GPU) when the memory
-    // budget allows. Previously this was hard-coded to CPU to mirror the merge-model workaround
-    // (CVS-183390); that restriction is now lifted at call sites.
-    auto preprocess_model = build_frame_preprocess_model(
-        m_processor_config.image_mean, m_processor_config.image_std);
-    auto compiled_preprocess = utils::singleton_core().compile_model(preprocess_model, device, properties);
-    m_ireq_queue_preprocess = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_preprocess.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_preprocess]() -> ov::InferRequest {
-            return compiled_preprocess.create_infer_request();
-        });
 }
 
 void VisionEncoderVideoChatFlashQwen::initialize_merge_model_queue() {
@@ -884,16 +843,10 @@ void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
 
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
-    // rotary_pos_emb is constant across the entire pipeline lifetime (depends only on grid_size
-    // and mm_local_num_frames). Bind it once at request-construction time so cyclic_vit_infer
-    // does not re-set it on every per-sample call. m_pos_emb outlives the request queue (member
-    // ordering: queue is destroyed before m_pos_emb).
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model, this]() -> ov::InferRequest {
-            auto req = compiled_model.create_infer_request();
-            req.set_tensor("rotary_pos_emb", m_pos_emb);
-            return req;
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
         });
 }
 
@@ -910,7 +863,6 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     const std::string& device,
     const ov::AnyMap properties) {
     initialize_shared_config(model_dir);
-    m_use_ov_vision_preprocess = check_vision_preprocess_env();
 
     auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
     initialize_vision_encoder_queue(model, device, properties);
@@ -920,9 +872,6 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     initialize_vision_projection_queue(compiled_model_vision);
 
     initialize_merge_model_queue();
-    if (m_use_ov_vision_preprocess) {
-        initialize_preprocess_queue(device, properties);
-    }
 }
 
 VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
@@ -931,7 +880,6 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     const std::string& device,
     const ov::AnyMap properties) {
     initialize_shared_config(config_dir_path);
-    m_use_ov_vision_preprocess = check_vision_preprocess_env();
 
     const auto& [vision_embeddings_model, vision_embeddings_weights] =
         utils::get_model_weights_pair(models_map, "vision_embeddings");
@@ -944,38 +892,12 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     initialize_vision_projection_queue(compiled_model);
 
     initialize_merge_model_queue();
-    if (m_use_ov_vision_preprocess) {
-        initialize_preprocess_queue(device, properties);
-    }
 }
 
 EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     (void)image;
     (void)config_map;
     OPENVINO_THROW("VideoChat-Flash currently does not support image inference. Please use video input.");
-}
-
-VisionEncoderVideoChatFlashQwen::PreprocessFunc VisionEncoderVideoChatFlashQwen::get_preprocess_func() {
-    if (m_use_ov_vision_preprocess) {
-        return [this](const ov::Tensor& sampled_video,
-                      ImageSize target_size,
-                      std::optional<CircularBufferQueueElementGuard<ov::InferRequest>>& preprocess_guard) -> ov::Tensor {
-            // OV-graph preprocess returns a non-owning alias of the InferRequest output
-            // buffer; the caller must keep `preprocess_guard` alive until the next downstream
-            // copy (transpose_video_features) consumes it.
-            preprocess_guard.emplace(this->m_ireq_queue_preprocess.get());
-            return preprocess_ov_graph(sampled_video, target_size, preprocess_guard->get());
-        };
-    } else {
-        return [this](const ov::Tensor& sampled_video,
-                      ImageSize target_size,
-                      std::optional<CircularBufferQueueElementGuard<ov::InferRequest>>& /*preprocess_guard*/) -> ov::Tensor {
-            // Legacy CPU per-frame loop owns its output buffer; no guard required.
-            return preprocess_cpu_loop(
-                sampled_video, target_size,
-                this->m_processor_config.image_mean, this->m_processor_config.image_std);
-        };
-    }
 }
 
 ov::Tensor VisionEncoderVideoChatFlashQwen::sample_video_if_needed(const ov::Tensor& video) const {
@@ -1032,37 +954,58 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
     OPENVINO_ASSERT(m_processor_config.image_size > 0, "image_size must be greater than 0.");
     ImageSize target_size{m_processor_config.image_size, m_processor_config.image_size};
 
+    const auto t_total_start = std::chrono::steady_clock::now();
     ov::Tensor sampled_video = sample_video_if_needed(video);
+    const auto t_sample_end = std::chrono::steady_clock::now();
 
-    // The OV-graph preprocess returns a non-owning alias of its InferRequest output buffer.
-    // The guard below keeps that buffer alive across transpose_video_features (which performs
-    // the only required copy into its own tensor), and is then released so the request can
-    // return to the pool. The legacy CPU path doesn't need the guard.
-    std::optional<CircularBufferQueueElementGuard<ov::InferRequest>> preprocess_guard;
-    auto preprocess_func = get_preprocess_func();
-    ov::Tensor preprocessed_video = preprocess_func(sampled_video, target_size, preprocess_guard);
+    auto preprocessed_video = preprocess(sampled_video, target_size, m_processor_config.image_mean, m_processor_config.image_std);
+    const auto t_preprocess_end = std::chrono::steady_clock::now();
 
     encoded_video.resized_source_size = target_size;
     encoded_video.frame_num = preprocessed_video.get_shape()[0];
     const size_t mm_local_num_frames = m_mm_local_num_frames;
     auto transpose_features = transpose_video_features(preprocessed_video, mm_local_num_frames);
-    // transpose_video_features has copied all preprocess output into its own buffer; the
-    // preprocess InferRequest can be safely returned to the pool now.
-    preprocess_guard.reset();
+    const auto t_transpose_end = std::chrono::steady_clock::now();
 
     CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(m_ireq_queue_vision_encoder.get());
     CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(m_ireq_queue_merge_model.get());
     CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(m_ireq_queue_vision_projection.get());
+    const auto t_guards_end = std::chrono::steady_clock::now();
 
-    ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get());
+    ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get(), m_pos_emb);
+    const auto t_vit_end = std::chrono::steady_clock::now();
+
     ov::Tensor clipped_vision_embeds = remove_second_dim_first_element(processed_vision_embeds);
+    const auto t_clip_end = std::chrono::steady_clock::now();
+
     ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_guard.get(), m_target_num_token);
+    const auto t_merge_end = std::chrono::steady_clock::now();
 
     projection_guard.get().set_input_tensor(merged_vision_features);
     projection_guard.get().infer();
     ov::Tensor proj_features = projection_guard.get().get_output_tensor();
+    const auto t_proj_end = std::chrono::steady_clock::now();
 
     ov::Tensor final_features = efficient_flatten(proj_features);
+    const auto t_flatten_end = std::chrono::steady_clock::now();
+
+    auto us = [](auto a, auto b) {
+        return std::chrono::duration_cast<std::chrono::microseconds>(b - a).count();
+    };
+    const long long total_us = us(t_total_start, t_flatten_end);
+    GENAI_INFO(
+        "[VideoChat-Flash][baseline][encode_video] total=%lldus | sample=%lldus, preprocess=%lldus, "
+        "transpose=%lldus, guards=%lldus, vit=%lldus, clip=%lldus, merge=%lldus, projection=%lldus, flatten=%lldus",
+        total_us,
+        static_cast<long long>(us(t_total_start, t_sample_end)),
+        static_cast<long long>(us(t_sample_end, t_preprocess_end)),
+        static_cast<long long>(us(t_preprocess_end, t_transpose_end)),
+        static_cast<long long>(us(t_transpose_end, t_guards_end)),
+        static_cast<long long>(us(t_guards_end, t_vit_end)),
+        static_cast<long long>(us(t_vit_end, t_clip_end)),
+        static_cast<long long>(us(t_clip_end, t_merge_end)),
+        static_cast<long long>(us(t_merge_end, t_proj_end)),
+        static_cast<long long>(us(t_proj_end, t_flatten_end)));
 
     encoded_video.video_features = final_features;
     encoded_video.num_video_tokens = final_features.get_shape()[1];
