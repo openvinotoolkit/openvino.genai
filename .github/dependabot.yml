@@ -30,8 +30,6 @@ updates:
   - package-ecosystem: "npm"
     directories:
       - "/site"
-      - "/src/js"
-      - "/samples/js"
       - "/.github/actions/install_wheel"
     schedule:
       interval: "daily"
@@ -39,6 +37,24 @@ updates:
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     versioning-strategy: increase-if-necessary
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+
+  #
+  # Enable version updates for npm
+  #
+  - package-ecosystem: "npm"
+    directories:
+      - "/src/js"
+      - "/samples/js"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+      timezone: "Europe/Dublin"
+    open-pull-requests-limit: 3
+    versioning-strategy: lockfile-only
     groups:
       npm-dependencies:
         patterns:
@@ -69,6 +85,12 @@ updates:
       # cmake has two declarations with different environment markers per platform.
       # Dependabot cannot handle multiple declarations of the same package name.
       - dependency-name: "cmake"
+      # sentence-transformers, starting with version 5.4, requires torchcodec, torchcodec expects to have ffmpeg on machine
+      # have fixed version 5.3 for sentence-transformers to clarify all the details and setting consistent versions in tests and tools
+      - dependency-name: "sentence-transformers"
+      # huggingface-hub is installed for who_what_benchmark only if "llm-test-openvino" extras option is specified
+      # newest version of huggingface-hub cause conflict with transformers 4.57.6, which is also defined for this extras
+      - dependency-name: "huggingface-hub"
     groups:
       pip-dependencies:
         patterns:
