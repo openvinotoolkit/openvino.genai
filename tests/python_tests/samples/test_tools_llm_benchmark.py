@@ -265,11 +265,12 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
+    @pytest.mark.transformers_lower_v5
     @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1"], ["-d", "cpu", "-n", "1", "--optimum"]])
     @pytest.mark.parametrize("media_file", ["3283_1447_000000.flac"])
     @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
     @pytest.mark.parametrize("download_test_content", ["3283_1447_000.tar.gz"], indirect=True)
-    def test_python_tool_llm_benchmark_optimum(self, convert_model, download_test_content, media_file, sample_args):
+    def test_python_tool_llm_benchmark_optimum_asr(self, convert_model, download_test_content, media_file, sample_args):
         media_path = Path(download_test_content) / media_file
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
@@ -368,6 +369,7 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
+    @pytest.mark.transformers_lower_v5
     @pytest.mark.parametrize("download_test_content", ["video0.mp4"], indirect=True)
     @pytest.mark.parametrize("convert_model, sample_args", [
         pytest.param("tiny-random-llava-next-video", ["-d", "cpu", "-n", "1", "--genai", "-vf", "5"]),

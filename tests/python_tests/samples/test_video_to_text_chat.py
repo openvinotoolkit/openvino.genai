@@ -13,6 +13,7 @@ from test_utils import run_sample
 class TestVisualLanguageChat:
     @pytest.mark.vlm
     @pytest.mark.samples
+    @pytest.mark.transformers_lower_v5
     @pytest.mark.parametrize(
         "convert_model, download_test_content, questions",
         [pytest.param("tiny-random-llava-next-video", "video0.mp4", "What is unusual on this video?\nGo on.")],

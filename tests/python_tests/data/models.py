@@ -17,16 +17,17 @@ def get_models_list() -> tuple[str, ...]:
 
 CHAT_MODELS_LIST = ("Qwen/Qwen2-0.5B-Instruct",)
 
-
-LINEAR_ATTENTION_MODELS_LIST = (
-    "optimum-intel-internal-testing/tiny-random-lfm2",
-    # "optimum-intel-internal-testing/tiny-mamba",  # beam_idx is not connected
-    # "optimum-intel-internal-testing/tiny-random-zamba2",  # no chat template
-    "optimum-intel-internal-testing/tiny-random-granitemoehybrid",
-)
-
-if is_transformers_version(">=", "4.57"):
-    LINEAR_ATTENTION_MODELS_LIST += ("optimum-intel-internal-testing/tiny-random-qwen3-next",)
+LINEAR_ATTENTION_MODELS_LIST = []
+if is_transformers_version(">=", "5.0"):
+    LINEAR_ATTENTION_MODELS_LIST = (
+        # "optimum-intel-internal-testing/tiny-mamba",  # beam_idx is not connected
+        # "optimum-intel-internal-testing/tiny-random-zamba2",  # no chat template
+        "optimum-intel-internal-testing/tiny-random-granitemoehybrid",
+    )
+else:
+    LINEAR_ATTENTION_MODELS_LIST = ("optimum-intel-internal-testing/tiny-random-lfm2",)
+    if is_transformers_version(">=", "4.57"):
+        LINEAR_ATTENTION_MODELS_LIST += ("optimum-intel-internal-testing/tiny-random-qwen3-next",)
 
 
 GGUF_MODEL_LIST = (

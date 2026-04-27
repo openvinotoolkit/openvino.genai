@@ -121,7 +121,7 @@ def convert_model(model_name: str) -> str:
             str(temp_path),
         ]
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
+        retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
 
     try:
         manager.execute(convert)
