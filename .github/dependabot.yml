@@ -13,8 +13,6 @@ updates:
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     ignore:
-      # Cannot be updated for the moment, ticket: 184608
-      - dependency-name: "openvinotoolkit/openvino"
       # Cannot be updated for the moment, ticket: 184715
       - dependency-name: "actions/checkout"
       # Due to recent trivy security issues to be updated manually
@@ -37,6 +35,10 @@ updates:
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     versioning-strategy: increase-if-necessary
+    ignore:
+      # not supported by other deps, to be updated manually
+      - dependency-name: "@eslint/js"
+      - dependency-name: "eslint"
     groups:
       npm-dependencies:
         patterns:
