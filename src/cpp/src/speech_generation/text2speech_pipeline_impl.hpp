@@ -25,16 +25,6 @@ public:
                                                const ov::Tensor& speaker_embedding,
                                                const SpeechGenerationConfig& generation_config) = 0;
 
-    virtual Text2SpeechDecodedResults generate_from_phonemes(
-        const std::vector<std::vector<std::string>>& phoneme_chunks,
-        const ov::Tensor& speaker_embedding,
-        const SpeechGenerationConfig& generation_config) = 0;
-
-    virtual Text2SpeechDecodedResults generate_from_tokens(
-        const std::vector<std::vector<SpeechToken>>& token_batches,
-        const ov::Tensor& speaker_embedding,
-        const SpeechGenerationConfig& generation_config) = 0;
-
     virtual SpeechGenerationPerfMetrics get_performance_metrics();
 
     /// @brief Get the expected speaker embedding shape for this backend.

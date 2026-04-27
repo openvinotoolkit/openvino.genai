@@ -3,7 +3,6 @@
 This folder contains Python examples for `openvino_genai.Text2SpeechPipeline`:
 
 - `text2speech.py`: basic text → audio generation (SpeechT5 and Kokoro)
-- `kokoro_generate_from_phonemes.py`: Kokoro `generate_from_tokens` / `generate_from_phonemes` flow
 - `kokoro_phonemize_fallback.py`: Kokoro unknown-word fallback behavior
 
 ## Supported Models
@@ -23,7 +22,6 @@ This folder contains Python examples for `openvino_genai.Text2SpeechPipeline`:
         - `it` (Italian)
         - `pt-br` (Portuguese, Brazil)
     - Not yet supported for end-to-end text generation in this flow: `ja` (Japanese), `zh` (Chinese/Mandarin).
-    - For `ja` / `zh`, you can still generate speech by phonemizing with an external G2P and then using `generate_from_phonemes` (see `kokoro_generate_from_phonemes.py`).
 
 ## Install dependencies
 
@@ -51,25 +49,24 @@ Create a speaker embedding file (SpeechT5-specific):
 
 optimum-cli export openvino -m hexgrad/Kokoro-82M ov_Kokoro-82M --trust-remote-code
 
-> **Note:**
+> **Note:**  
 > After export is complete. you will find the available speaker embedding `.bin` files in `ov_Kokoro-82M/voices`.
 
 ## Use of `espeak-ng` within the Kokoro Pipeline
 
 Within the Kokoro Text-to-Speech pipeline, `espeak-ng` is an external dependency used for the grapheme-to-phoneme (G2P) stage. Its role varies depending on the selected language:
 
-- **English (`en-us`, `en-gb`)**:
-  `espeak-ng` is used as a fallback for words that are not found in the built-in dictionary.
+- **English (`en-us`, `en-gb`)**:  
+  `espeak-ng` is used as a fallback for words that are not found in the built-in dictionary.  
   See the `kokoro_phonemize_fallback` sample for an example of using an OpenVINO-based fallback model to avoid relying on `espeak-ng` for English.
 
-- **Non-English (`es`, `fr-fr`, `hi`, `it`, `pt-br`)**:
-  `espeak-ng` serves as the primary G2P (phonemization) engine. As such, it must be installed to enable end-to-end text-to-speech generation for these languages.
-  Applications may optionally replace the default G2P step with an alternative phonemizer. See the `kokoro_generate_from_phonemes` sample for more details.
+- **Non-English (`es`, `fr-fr`, `hi`, `it`, `pt-br`)**:  
+  `espeak-ng` serves as the primary G2P (phonemization) engine. As such, it must be installed to enable end-to-end text-to-speech generation for these languages.  
 
-> **Note:**
+> **Note:**  
 > `espeak-ng` is licensed under GPLv3 and must be installed separately. OpenVINO GenAI detects its presence automatically at runtime.
 
-To install `espeak-ng`, follow the official guide:
+To install `espeak-ng`, follow the official guide:  
 https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md
 
 ## Run samples
@@ -88,22 +85,7 @@ Kokoro (non-English):
 
 `python text2speech.py --speaker_embedding_file_path ov_Kokoro-82M/voices/ef_dora.bin --language es ov_Kokoro-82M "Hola y bienvenidos a la generación de voz utilizando OpenVINO GenAI."`
 
-### 2) `kokoro_generate_from_phonemes.py` (Kokoro only)
-
-This sample uses kokoro python module to perform G2P (phonemization) step, so install it into your environment:
-
-`pip install kokoro`
-
-Run:
-
-`python kokoro_generate_from_phonemes.py ov_Kokoro-82M --language en-us --speaker_embedding_file_path ov_Kokoro-82M/voices/am_michael.bin --api auto`
-
-This sample uses predefined texts per language and initializes Misaki for the selected `--language`.
-`--api auto` prefers `generate_from_tokens` when Misaki returns token objects, and falls back to
-`generate_from_phonemes` for languages where tokens are unavailable (for example, `ja`).
-Pass `--speaker_embedding_file_path` with a prepared Kokoro embedding. If you want a blended speaker, mix the source voice binaries in your application before running the sample.
-
-### 3) `kokoro_phonemize_fallback.py` (Kokoro only)
+### 2) `kokoro_phonemize_fallback.py` (Kokoro only)
 
 This sample demonstrates how to use an OpenVINO-based fallback model for phonemization, allowing you to avoid relying on `espeak-ng` when working with English languages.
 
@@ -111,7 +93,7 @@ This sample demonstrates how to use an OpenVINO-based fallback model for phonemi
 
 While `espeak-ng` provides robust phonemization, it is licensed under GPLv3, which can introduce complications for redistribution in certain applications. Using an OpenVINO-based fallback model avoids this dependency entirely, enabling a more self-contained and permissively licensed deployment.
 
-Prepare OV fallback models:
+#### Export OV fallback models:
 
 US:
 
@@ -121,7 +103,7 @@ GB:
 
 `optimum-cli export openvino --model PeterReid/graphemes_to_phonemes_en_gb --task text2text-generation graphemes_to_phonemes_en_gb-ov`
 
-Use OV fallback model:
+#### Run using fallback models:
 
 US model + `en-us`:
 
@@ -153,13 +135,6 @@ result = pipe.generate("Hello OpenVINO GenAI", speaker_embedding)
 
 # Kokoro generation with an application-prepared embedding tensor
 result = pipe.generate("Hello from Kokoro", speaker_embedding, language="en-us")
-
-# Kokoro generation from token (Kokoro backend only)
-tokens = [
-        openvino_genai.SpeechToken(phonemes="həlˈoʊ", whitespace=True, text="Hello"),
-        openvino_genai.SpeechToken(phonemes="wˈɝld", whitespace=False, text="world"),
-]
-result = pipe.generate_from_tokens(tokens, speaker_embedding, language="en-us")
 
 # Kokoro unknown-word fallback via config
 cfg = pipe.get_generation_config()

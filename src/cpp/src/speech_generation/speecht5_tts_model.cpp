@@ -206,26 +206,6 @@ Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::strin
     return gen_speech_res;
 }
 
-Text2SpeechDecodedResults SpeechT5TTSImpl::generate_from_phonemes(
-    const std::vector<std::vector<std::string>>& phoneme_chunks,
-    const ov::Tensor& speaker_embedding,
-    const SpeechGenerationConfig& generation_config) {
-    (void)phoneme_chunks;
-    (void)speaker_embedding;
-    (void)generation_config;
-    OPENVINO_THROW("Text2SpeechPipeline.generate_from_phonemes is only supported for Kokoro backend");
-}
-
-Text2SpeechDecodedResults SpeechT5TTSImpl::generate_from_tokens(
-    const std::vector<std::vector<SpeechToken>>& token_batches,
-    const ov::Tensor& speaker_embedding,
-    const SpeechGenerationConfig& generation_config) {
-    (void)token_batches;
-    (void)speaker_embedding;
-    (void)generation_config;
-    OPENVINO_THROW("Text2SpeechPipeline.generate_from_tokens is only supported for Kokoro backend");
-}
-
 SpeechGenerationPerfMetrics SpeechT5TTSImpl::get_performance_metrics() {
     return m_perf_metrics;
 }

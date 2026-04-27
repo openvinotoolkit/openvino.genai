@@ -19,7 +19,6 @@ This folder contains C++ examples for `ov::genai::Text2SpeechPipeline`.
 		- `it` (Italian)
 		- `pt-br` (Portuguese, Brazil)
 	- Not yet supported for end-to-end text generation in this flow: `ja` (Japanese), `zh` (Chinese/Mandarin).
-	- For `ja` / `zh`, you can still generate speech by phonemizing with an external G2P and then using `generate_from_phonemes` (see `kokoro_generate_from_phonemes.py` in Python samples for a reference flow).
 
 ## SpeechT5 setup
 
@@ -51,7 +50,6 @@ Within the Kokoro Text-to-Speech pipeline, `espeak-ng` is an external dependency
 
 - **Non-English (`es`, `fr-fr`, `hi`, `it`, `pt-br`)**:
 	`espeak-ng` serves as the primary G2P (phonemization) engine. As such, it must be installed to enable end-to-end text-to-speech generation for these languages.
-	Applications may optionally replace the default G2P step with an alternative phonemizer and call `generate_from_phonemes` directly.
 
 > **Note:**
 > `espeak-ng` is licensed under GPLv3 and must be installed separately. OpenVINO GenAI detects its presence automatically at runtime.
