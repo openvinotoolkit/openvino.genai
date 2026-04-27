@@ -815,8 +815,6 @@ def test_eagle3_tree_vs_sequential(main_model, main_device, draft_model, draft_d
         max_new_tokens=20, num_assistant_tokens=10, branching_factor=8, tree_depth=4, do_sample=False
     )
     tree_result = ov_pipe.generate([prompt], tree_config)
-    print(seq_result.texts[0])
-    print(tree_result.texts[0])
     # Both should produce the same output with greedy decoding
     assert seq_result.texts[0] == tree_result.texts[0], "Tree and sequential decode should produce same output"
 

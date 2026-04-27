@@ -302,7 +302,6 @@ ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features) 
 std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<ov::Model>& main_model) {
     // the kv update model acceptes all kv cache inputs from main_model
     // extra inputs for updating kv cache: block_indices, block_indices_begins, block_update_indices, block_update_indices_begins， all with element::i32, PartialShape{-1}
-    auto kv_update_model = std::make_shared<ov::Model>(main_model->get_results(), main_model->get_parameters(), "eagle3_kv_update_model");
     using namespace ov;
     ParameterVector inputs;
     // clone the kv cache parameters from the main model
