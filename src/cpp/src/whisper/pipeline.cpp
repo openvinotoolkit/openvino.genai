@@ -231,9 +231,9 @@ ov::genai::Tokenizer ov::genai::WhisperPipeline::get_tokenizer() {
 }
 
 void ov::genai::WhisperPipeline::set_generation_config(const WhisperGenerationConfig& config) {
-    WhisperGenerationConfig config = utils::prepare_per_generate_config(m_impl->m_generation_config, config);
+    WhisperGenerationConfig _config = utils::prepare_per_generate_config(m_impl->m_generation_config, config);
 
-    m_impl->m_generation_config = config;
+    m_impl->m_generation_config = _config;
 }
 
 ov::genai::WhisperPipeline::~WhisperPipeline() = default;
