@@ -153,7 +153,7 @@ extern const std::string PER_MODEL_PROPERTIES;
 /// @param model_role Sub-model role (e.g. "vision_embeddings").
 /// @return A new ov::AnyMap with the merged result. The input map is left
 ///         untouched so callers may continue using the meta keys.
-ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model_role);
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role);
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 
@@ -340,13 +340,6 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
 
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
 
-/// @brief Reserved top-level key in VLMPipeline's `properties` map that
-/// carries per-sub-model plugin configuration overrides. Value is an
-/// `ov::AnyMap` whose keys are sub-model role names (see
-/// `get_known_vlm_model_roles()`) and values are `ov::AnyMap` property
-/// sets.
-extern const std::string MODEL_PROPERTIES_KEY;
-
 /// @brief Returns the full set of sub-model role names recognised by
 /// VLMPipeline for `MODEL_PROPERTIES` entries.
 const std::vector<std::string>& get_known_vlm_model_roles();
@@ -355,21 +348,6 @@ const std::vector<std::string>& get_known_vlm_model_roles();
 /// not in `known_roles`. No-op if the key is absent.
 void validate_vlm_model_properties(const ov::AnyMap& properties,
                                    const std::vector<std::string>& known_roles);
-
-/// @brief Produce the per-role plugin-property map to hand to
-/// `ov::Core::compile_model`.
-///
-/// Resolution order (lower → higher priority):
-///   1. every top-level key in `properties` except the reserved
-///      `MODEL_PROPERTIES` key (which is always stripped before
-///      forwarding to the plugin);
-///   2. `properties[MODEL_PROPERTIES][role]` if present.
-///
-/// When `role` is empty the function only strips `MODEL_PROPERTIES`
-/// without applying any overlay (useful for compile sites that are
-/// not (yet) wired to a specific role).
-ov::AnyMap resolve_model_properties(const ov::AnyMap& properties,
-                                    const std::string& role = {});
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
 

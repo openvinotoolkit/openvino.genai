@@ -60,8 +60,9 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        auto vision_props = utils::get_model_properties(properties_without_draft_model, "vision_embeddings");
-        embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_props);
+        // Forward full properties (incl. MODEL_PROPERTIES) so each sub-model
+        // compile site routes its own role overlay at the OV core boundary.
+        embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_without_draft_model);
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -112,8 +113,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        auto vision_props = utils::get_model_properties(properties_without_draft_model, "vision_embeddings");
-        embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_props);
+        embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_without_draft_model);
     }
 
     utils::print_scheduler_config_info(scheduler_config);

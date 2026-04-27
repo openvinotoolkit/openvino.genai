@@ -380,7 +380,7 @@ const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
 // Merge global properties with per-role overrides. Type mismatches fall out
 // of .as<ov::AnyMap>() as a throw; empty or missing maps are treated as
 // "no overrides" rather than errors.
-ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model_role) {
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role) {
     ov::AnyMap result;
     for (const auto& property : properties) {
         if (property.first != PER_MODEL_PROPERTIES) {
@@ -806,14 +806,13 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
     OPENVINO_THROW("Model with key '", key, "' not found in models map.");
 }
 
-const std::string MODEL_PROPERTIES_KEY = "MODEL_PROPERTIES";
-
 const std::vector<std::string>& get_known_vlm_model_roles() {
     static const std::vector<std::string> roles{
         "vision_embeddings",
         "text_embeddings",
         "resampler",
         "vision_embeddings_merger",
+        "vision_embeddings_pos",
         "vision_projection",
         "multi_modal_projector",
         "language_model",
@@ -823,7 +822,7 @@ const std::vector<std::string>& get_known_vlm_model_roles() {
 
 void validate_vlm_model_properties(const ov::AnyMap& properties,
                                    const std::vector<std::string>& known_roles) {
-    const auto it = properties.find(MODEL_PROPERTIES_KEY);
+    const auto it = properties.find(PER_MODEL_PROPERTIES);
     if (it == properties.end()) {
         return;
     }
@@ -838,22 +837,6 @@ void validate_vlm_model_properties(const ov::AnyMap& properties,
                 return s;
             }());
     }
-}
-
-ov::AnyMap resolve_model_properties(const ov::AnyMap& properties,
-                                    const std::string& role) {
-    ov::AnyMap resolved = properties;
-    const auto mp_opt = pop_option(resolved, MODEL_PROPERTIES_KEY);
-    if (!role.empty() && mp_opt.has_value()) {
-        const auto per_role = mp_opt->as<ov::AnyMap>();
-        const auto role_it = per_role.find(role);
-        if (role_it != per_role.end()) {
-            for (const auto& [key, value] : role_it->second.as<ov::AnyMap>()) {
-                resolved[key] = value;  // overlay wins
-            }
-        }
-    }
-    return resolved;
 }
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config) {
