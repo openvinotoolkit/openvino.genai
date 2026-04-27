@@ -18,12 +18,12 @@ import {
 } from "./utils.js";
 
 class PipelineFactory {
-  static async LLMPipeline(modelPath: string, device?: string): Promise<any>;
+  static async LLMPipeline(modelPath: string, device?: string): Promise<LLM>;
   static async LLMPipeline(
     modelPath: string,
     device: string,
     properties?: LLMPipelineProperties,
-  ): Promise<any>;
+  ): Promise<LLM>;
   static async LLMPipeline(
     modelPath: string,
     device?: string,
