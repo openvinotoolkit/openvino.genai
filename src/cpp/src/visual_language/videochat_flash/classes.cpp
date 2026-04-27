@@ -696,7 +696,7 @@ void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
     model->reshape(input_shapes);
 
     auto compiled_model = utils::singleton_core().compile_model(
-        model, device, utils::get_model_properties(properties, "vision_embeddings"));
+        model, device, utils::get_model_properties(properties, "vision_embeddings", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -725,7 +725,7 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     auto compiled_model_vision =
         utils::singleton_core().compile_model(
             model_dir / "openvino_vision_projection_model.xml", device,
-            utils::get_model_properties(properties, "vision_projection"));
+            utils::get_model_properties(properties, "vision_projection", device));
     initialize_vision_projection_queue(compiled_model_vision);
 
     initialize_merge_model_queue();
@@ -747,7 +747,7 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
         utils::get_model_weights_pair(models_map, "vision_projection");
     auto compiled_model = utils::singleton_core().compile_model(
         vision_projection_model, vision_projection_weights, device,
-        utils::get_model_properties(properties, "vision_projection"));
+        utils::get_model_properties(properties, "vision_projection", device));
     initialize_vision_projection_queue(compiled_model);
 
     initialize_merge_model_queue();

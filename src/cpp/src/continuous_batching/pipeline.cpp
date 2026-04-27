@@ -113,6 +113,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
+        // Forward full properties (incl. MODEL_PROPERTIES) so each sub-model
+        // compile site routes its own role overlay at the OV core boundary.
         embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_without_draft_model);
     }
 

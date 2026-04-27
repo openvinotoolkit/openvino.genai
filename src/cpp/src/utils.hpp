@@ -147,13 +147,20 @@ std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_p
 extern const std::string PER_MODEL_PROPERTIES;
 
 /// @brief Resolve properties for @p model_role by merging two layers (priority low to high):
-///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES)
-///        2. PER_MODEL_PROPERTIES[model_role]
+///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES
+///           and DEVICE_PROPERTIES)
+///        2. DEVICE_PROPERTIES[device] (only when @p device is non-empty)
+///        3. PER_MODEL_PROPERTIES[model_role]
+///        MODEL_PROPERTIES wins over DEVICE_PROPERTIES wins
+///        over globals.
 /// @param properties The main properties map. Not modified.
 /// @param model_role Sub-model role (e.g. "vision_embeddings").
+/// @param device Target device for the compile site. When empty,
+///        DEVICE_PROPERTIES is forwarded as-is (used at read_model sites
+///        which are not bound to a specific device).
 /// @return A new ov::AnyMap with the merged result. The input map is left
 ///         untouched so callers may continue using the meta keys.
-ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role);
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device = "");
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 

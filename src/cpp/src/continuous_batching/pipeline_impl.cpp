@@ -130,7 +130,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     m_device = device;
     // Resolve per-role MODEL_PROPERTIES overlay for the language model and
     // strip the GenAI-only MODEL_PROPERTIES meta key before reaching the OV plugin.
-    const auto language_model_properties = utils::get_model_properties(properties, "language_model");
+    const auto language_model_properties = utils::get_model_properties(properties, "language_model", device);
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
@@ -146,6 +146,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     }
 
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
+    std::cerr << "[role=language_model] OPTIMAL_NUMBER_OF_INFER_REQUESTS="
+              << compiled_model.get_property(ov::optimal_number_of_infer_requests) << std::endl;
     std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
     const bool all_gpu_device =
         std::all_of(execution_devices.begin(), execution_devices.end(), [&](const std::string& device) {
