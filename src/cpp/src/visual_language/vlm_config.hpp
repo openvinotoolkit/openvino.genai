@@ -22,6 +22,7 @@ enum class VLMModelType {
     QWEN2_5_VL,
     QWEN3_VL,
     GEMMA3,
+    VIDEOCHAT_FLASH_QWEN,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
