@@ -61,6 +61,7 @@ ov::genai::WhisperGenerationConfig prepare_per_generate_config(
     const ov::genai::WhisperGenerationConfig& base_config,
     const ov::genai::OptionalWhisperGenerationConfig& per_generate_config) {
     if (!per_generate_config.has_value()) {
+        base_config.validate();
         return base_config;
     }
 
