@@ -77,8 +77,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(con
             }
             return total_hidden_size;
         };
-        std::cout << "Main model total hidden size: " << compute_total_hidden_size(main_model) << std::endl;
-        std::cout << "Draft model total hidden size: " << compute_total_hidden_size(draft_model) << std::endl;
+
         float main_model_hidden_size = compute_total_hidden_size(main_model),
               draft_model_hidden_size = compute_total_hidden_size(draft_model);
         auto k = draft_model_hidden_size / (main_model_hidden_size + draft_model_hidden_size);
