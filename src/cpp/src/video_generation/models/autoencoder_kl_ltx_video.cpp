@@ -153,12 +153,6 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
         config.patch_size,
         config.patch_size_t,
         config.spatio_temporal_scaling);
-    OPENVINO_ASSERT(compression_ratios.first > 0,
-                    "Spatial compression ratio must be positive but got ",
-                    compression_ratios.first);
-    OPENVINO_ASSERT(compression_ratios.second > 0,
-                    "Temporal compression ratio must be positive but got ",
-                    compression_ratios.second);
     const int64_t spatial_compression_ratio = static_cast<int64_t>(compression_ratios.first);
     const int64_t temporal_compression_ratio = static_cast<int64_t>(compression_ratios.second);
 
