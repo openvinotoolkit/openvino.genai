@@ -70,7 +70,8 @@ class TestVideoGenerationConfig:
         assert config.height == 32
         assert config.width == 64
 
-    def test_config_validate_invalid(self):
+    def test_config_validate_guidance_scale_with_negative_prompt(self):
+        """guidance_scale <= 1 with negative_prompt is accepted (warning only)."""
         pipe_path = get_ov_cache_converted_models_dir() / MODEL_ID / MODEL_NAME
         if not pipe_path.exists():
             pytest.skip("Model not available for validation test")
@@ -80,8 +81,10 @@ class TestVideoGenerationConfig:
         config.guidance_scale = 0.5
         config.negative_prompt = "bad quality"
 
-        with pytest.raises(Exception):
-            pipe.set_generation_config(config)
+        pipe.set_generation_config(config)
+        retrieved = pipe.get_generation_config()
+        assert retrieved.guidance_scale == pytest.approx(0.5)
+        assert retrieved.negative_prompt == "bad quality"
 
 
 class TestText2VideoPipelineConstructor:

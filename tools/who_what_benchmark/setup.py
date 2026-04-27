@@ -57,8 +57,8 @@ setup(
         "llm-test-openvino": [
             "torchaudio==2.8.0",
             "transformers[sentencepiece]==4.57.6",
-            "sentence_transformers==5.4.1",
-            "huggingface-hub==1.10.2",
+            "sentence_transformers==5.3.0",
+            "huggingface-hub==0.36.2",
             "tqdm==4.67.3",
             "optimum-intel[nncf,tests]==1.27.0",
         ],
