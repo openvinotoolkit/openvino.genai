@@ -16,7 +16,7 @@ GenAI implements Pillow-style bicubic and bilinear resize in C++ (`clip.cpp`). M
 - `select_best_resolution()` — optimal resolution from candidates
 - `clip_image_preprocess()` — normalize + convert to CHW
 - `normalize_and_convert_to_chw()` — double-precision normalization
-- `smart_resize()` — dynamic resolution with min/max pixel bounds (Qwen2VL-style)
+- `smart_resize()` — dynamic resolution with min/max pixel bounds (Qwen2VL-style). Implemented separately as `qwen2_vl_utils::smart_resize`.
 
 ## Test Script Templates
 

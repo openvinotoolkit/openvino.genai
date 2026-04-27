@@ -1,7 +1,7 @@
 ---
 name: vlm-model-enabler
 description: "Enables VLM models for GenAI VLM pipelines."
-argument-hint: "huggingface model_id and task (e.g. google/gemma-3n-E2B-it image-text-to-text). Alternatively directory to already converted OpenVINO IR model model_dir"
+argument-hint: "HuggingFace model_id and task (e.g. google/gemma-3n-E2B-it image-text-to-text), or a path to an already converted OpenVINO IR model directory (model_dir)."
 ---
 
 # VLM Model Enabler
