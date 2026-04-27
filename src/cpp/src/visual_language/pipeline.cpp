@@ -134,6 +134,8 @@ private:
     ) {
         m_is_npu = device.find("NPU") != std::string::npos;
 
+        utils::validate_vlm_model_properties(properties, utils::get_known_vlm_model_roles());
+
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
@@ -150,6 +152,12 @@ private:
         auto lm_properties = device_properties.empty()
             ? properties_copy
             : utils::pop_or_default<ov::AnyMap>(device_properties, device, {});
+
+        // Overlay per-model MODEL_PROPERTIES["language_model"] (highest
+        // priority) on top of the global + device-specific properties,
+        // and strip the reserved MODEL_PROPERTIES key so the plugin
+        // never sees it.
+        lm_properties = utils::resolve_model_properties(lm_properties, "language_model");
 
         if (m_generation_config.adapters) {
             m_generation_config.adapters->set_tensor_name_prefix(
@@ -184,6 +192,12 @@ private:
             ? properties_copy
             : utils::pop_or_default<ov::AnyMap>(device_properties, embedder_device, {});
 
+        // PR 1 wires MODEL_PROPERTIES only for the language model. Strip
+        // the reserved key from what we forward to the embedder sub-models
+        // so the plugin does not see it. Per-role overlays for
+        // text_embeddings / vision_embeddings / etc. are future work.
+        embedder_properties = utils::resolve_model_properties(embedder_properties);
+
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
         // NPU does not support history, so use full chat history on each chat iteration.
         m_use_full_chat_history = m_is_npu;
@@ -202,10 +216,16 @@ private:
         OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
 
+        utils::validate_vlm_model_properties(properties, utils::get_known_vlm_model_roles());
+
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
 
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
+        // Strip MODEL_PROPERTIES before forwarding to the embedder sub-models
+        // (PR 1 wires MODEL_PROPERTIES only for the language model).
+        auto embedder_properties = utils::resolve_model_properties(properties_copy);
+
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, embedder_properties);
 
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
@@ -223,7 +243,8 @@ private:
         // After this transformation, default path returns logits with seq_len == 1,
         // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
         utils::apply_slice_before_matmul_transformation(language_model);
-        m_language = utils::singleton_core().compile_model(language_model, device, properties_copy
+        const auto lm_properties = utils::resolve_model_properties(properties_copy, "language_model");
+        m_language = utils::singleton_core().compile_model(language_model, device, lm_properties
         ).create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
         finalize_initialization(language_model, kv_pos);
@@ -243,7 +264,12 @@ public:
         auto properties_copy = properties;
 
         utils::extract_extensions_to_core(properties_copy);
+        // Temporarily pop MODEL_PROPERTIES so read_model() does not see it
+        // (OV core treats it as an unknown plugin property otherwise);
+        // re-inject immediately so the rest of initialization can consume it.
+        auto mp = utils::pop_option(properties_copy, utils::MODEL_PROPERTIES_KEY);
         auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties_copy);
+        if (mp.has_value()) properties_copy[utils::MODEL_PROPERTIES_KEY] = *mp;
         initialize_from_model_and_dir(language_model, models_dir, device, properties_copy);
     }
 
@@ -775,9 +801,17 @@ VLMPipeline::VLMPipeline(
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     utils::clear_false_prompt_lookup_from_config(properties);
+    // MODEL_PROPERTIES is a GenAI-level key (AnyMap-of-AnyMap keyed by
+    // sub-model role). It must not reach OV Core in read_model or plugin
+    // properties in compile_model, otherwise PA transforms on the outer
+    // CB adapter path would run against an invalid plugin option and
+    // leave the language model in a partially-transformed state.
+    utils::validate_vlm_model_properties(properties, utils::get_known_vlm_model_roles());
+    auto model_properties = utils::pop_option(properties, utils::MODEL_PROPERTIES_KEY);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
+        if (model_properties.has_value()) properties[utils::MODEL_PROPERTIES_KEY] = *model_properties;
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
     } else {
         utils::extract_extensions_to_core(properties);
@@ -804,6 +838,7 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
+            if (model_properties.has_value()) properties[utils::MODEL_PROPERTIES_KEY] = *model_properties;
             m_pimpl = std::make_unique<VLMPipelineImpl>(language_model, models_dir, device, properties);
         }
     }
@@ -824,9 +859,12 @@ VLMPipeline::VLMPipeline(
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     utils::clear_false_prompt_lookup_from_config(properties);
+    utils::validate_vlm_model_properties(properties, utils::get_known_vlm_model_roles());
+    auto model_properties = utils::pop_option(properties, utils::MODEL_PROPERTIES_KEY);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
+        if (model_properties.has_value()) properties[utils::MODEL_PROPERTIES_KEY] = *model_properties;
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
     } else {
         utils::extract_extensions_to_core(properties);
@@ -853,6 +891,7 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
+            if (model_properties.has_value()) properties[utils::MODEL_PROPERTIES_KEY] = *model_properties;
             m_pimpl = std::make_unique<VLMPipelineImpl>(language_model, models_map, tokenizer, config_dir_path, device, properties, generation_config);
         }
 

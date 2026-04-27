@@ -806,6 +806,56 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
     OPENVINO_THROW("Model with key '", key, "' not found in models map.");
 }
 
+const std::string MODEL_PROPERTIES_KEY = "MODEL_PROPERTIES";
+
+const std::vector<std::string>& get_known_vlm_model_roles() {
+    static const std::vector<std::string> roles{
+        "vision_embeddings",
+        "text_embeddings",
+        "resampler",
+        "vision_embeddings_merger",
+        "vision_projection",
+        "multi_modal_projector",
+        "language_model",
+    };
+    return roles;
+}
+
+void validate_vlm_model_properties(const ov::AnyMap& properties,
+                                   const std::vector<std::string>& known_roles) {
+    const auto it = properties.find(MODEL_PROPERTIES_KEY);
+    if (it == properties.end()) {
+        return;
+    }
+    const auto& per_role = it->second.as<ov::AnyMap>();
+    for (const auto& [role, _] : per_role) {
+        OPENVINO_ASSERT(
+            std::find(known_roles.begin(), known_roles.end(), role) != known_roles.end(),
+            "Unknown sub-model role '", role, "' in MODEL_PROPERTIES. Known roles: ",
+            [&known_roles]() {
+                std::string s;
+                for (const auto& r : known_roles) { s += (s.empty() ? "" : ", "); s += r; }
+                return s;
+            }());
+    }
+}
+
+ov::AnyMap resolve_model_properties(const ov::AnyMap& properties,
+                                    const std::string& role) {
+    ov::AnyMap resolved = properties;
+    const auto mp_opt = pop_option(resolved, MODEL_PROPERTIES_KEY);
+    if (!role.empty() && mp_opt.has_value()) {
+        const auto per_role = mp_opt->as<ov::AnyMap>();
+        const auto role_it = per_role.find(role);
+        if (role_it != per_role.end()) {
+            for (const auto& [key, value] : role_it->second.as<ov::AnyMap>()) {
+                resolved[key] = value;  // overlay wins
+            }
+        }
+    }
+    return resolved;
+}
+
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config) {
     ov::AnyMap plugin_config = properties;
     auto it = plugin_config.find(ov::genai::scheduler_config.name());
