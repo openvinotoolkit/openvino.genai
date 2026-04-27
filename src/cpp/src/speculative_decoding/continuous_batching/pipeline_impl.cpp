@@ -171,12 +171,15 @@ get_prefix_len(
         if (need_adjust) {
             auto& tree_metadata = running_sequence->get_tree_metadata();
             const auto& position_ids = tree_metadata.tree_position_ids;
-            const auto prev_generated_len = running_sequence->get_generated_len() - position_ids.size();
-            auto prefix_len_from_last_generated = sequence_prefix_len - prev_generated_len;
-            for (size_t i = 0; i < prefix_len_from_last_generated; ++i) {
-                if (position_ids[i] != i) {
-                    sequence_prefix_len = prev_generated_len + i;
-                    break;
+            const size_t prev_generated_len = running_sequence->get_generated_len() - position_ids.size();
+            if (!position_ids.empty() && sequence_prefix_len > prev_generated_len) {
+                const size_t prefix_len_from_last_generated = sequence_prefix_len - prev_generated_len;
+                const size_t adjustment_len = std::min(prefix_len_from_last_generated, position_ids.size());
+                for (size_t i = 0; i < adjustment_len; ++i) {
+                    if (position_ids[i] != i) {
+                        sequence_prefix_len = prev_generated_len + i;
+                        break;
+                    }
                 }
             }
         }
@@ -326,9 +329,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             // in tree search case, we only consider the prefix with the same token ids and same positions as valid prefix
             auto need_prefix_adjustment = request->get_sampling_parameters().is_tree_search() && !m_is_validation_mode_enabled;
             std::tie(min_generated_tokens, min_candidate_len) = get_prefix_len(running_sequences, candidates, need_prefix_adjustment);
-            OPENVINO_ASSERT(running_sequences.size() == 1);
-            auto running_sequence = running_sequences[0];
-            {
+
+            for (auto& running_sequence : running_sequences) {
                 if (!candidates.count(running_sequence->get_grouped_id())) {
                     continue;
                 }
@@ -341,8 +343,19 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                 candidate_token_log_probs.resize(min_candidate_len);
                 result.inserted_tokens_cnt = insert_tokens_to_sequence(running_sequence, candidate_token_ids, candidate_token_log_probs, logit_processor, is_update_logit_processor);
                 // handle hidden states for eagle mode
-                if (eagle_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) { // update hidden states for draft model
+                if (eagle_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
+                    // Eagle mode hidden state management currently supports only single sequence
+                    OPENVINO_ASSERT(running_sequences.size() == 1,
+                                   "Eagle mode hidden state update currently supports only single sequence generation. "
+                                   "Found ", running_sequences.size(), " sequences.");
+                    // update hidden states for draft model
                     const auto& hidden_state = candidate_sequence.hidden_states;
+                    OPENVINO_ASSERT(
+                        hidden_state.get_size() > 0,
+                        "Hidden states are required for eagle mode but the main model returned an empty tensor.");
+                    OPENVINO_ASSERT(
+                        !hidden_state.get_shape().empty(),
+                        "Hidden states are required for eagle mode but the main model returned a scalar tensor.");
                     const size_t current_len = hidden_state.get_shape()[0];
 
                     std::vector<size_t> indices;
