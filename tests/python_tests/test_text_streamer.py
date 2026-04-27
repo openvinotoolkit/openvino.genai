@@ -15,7 +15,7 @@ def chunks(arr: list, n: int):
         yield arr[i:i + n]
 
 tokenizer_model_ids = []
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     tokenizer_model_ids = [
         "microsoft/phi-1_5",
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0",

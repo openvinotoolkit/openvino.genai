@@ -367,7 +367,7 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
     return generation_config
 
 
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     preemption_params = [
         ({"num_kv_blocks": 34, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),
         ({"num_kv_blocks": 34, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),

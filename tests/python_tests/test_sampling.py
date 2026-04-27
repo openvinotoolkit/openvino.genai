@@ -166,7 +166,7 @@ def test_greedy(model_tiny_random_phi3: OVConvertedModelSchema, generation_confi
     generate_and_compare(model_tiny_random_phi3, prompt, generation_config)
 
 
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     beam_search_generation_configs = [
         {
             "max_new_tokens": 30,

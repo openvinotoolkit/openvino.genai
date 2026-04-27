@@ -55,7 +55,7 @@ GREEDY_INPUTS_TEST_CASES = [
     ),
 ]
 
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     INPUTS_TEST_CASES = [
         (
             {
@@ -92,7 +92,7 @@ INPUT_TENSORS_LIST = [
 ]
 
 GREEDY_TEST_CONFIGS = [{"max_new_tokens": 20}]
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     TEST_CONFIGS = [
         {"max_new_tokens": 20, "num_beam_groups": 2, "num_beams": 6, "diversity_penalty": 1.0},
     ]

@@ -9,7 +9,7 @@ from conftest import logger, SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_JS_DIR, MO
 from test_utils import run_sample
 
 BEAM_SEARCH_MODEL_LIST = []
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     BEAM_SEARCH_MODEL_LIST = [
         pytest.param(
             "phi-1_5",

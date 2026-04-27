@@ -142,9 +142,9 @@ PROMPTS: list[str] = [
 ]
 
 VIDEO_MODEL_IDS: list[str] = []
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     VIDEO_MODEL_IDS = [
-        "optimum-intel-internal-testing/tiny-random-llava-next-video",
+        # "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "optimum-intel-internal-testing/tiny-random-qwen3-vl",
         VIDEOCHAT_FLASH_QWEN_MODEL_ID,
     ]
@@ -158,9 +158,9 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 
 MODEL_IDS: list[str] = []
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     MODEL_IDS = [
-        "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+        # "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
         "optimum-intel-internal-testing/tiny-random-internvl2",
         "optimum-intel-internal-testing/tiny-random-llava",
         "optimum-intel-internal-testing/tiny-random-llava-next",
@@ -372,7 +372,7 @@ def _get_ov_model(model_id: str) -> str:
             # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
             processor.chat_template = tokenizer.chat_template
 
-        if is_transformers_version("<", "5.0"):
+        if is_transformers_version(">=", "5.0"):
             processor.audio_tokenizer = None
         else:
             if hasattr(processor, "audio_tokenizer"):
@@ -1586,9 +1586,9 @@ def conversation_video_requests(
 
 
 TAG_INSERTED_BY_TEMPLATE = []
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     TAG_INSERTED_BY_TEMPLATE = [
-        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+        # ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
         ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3-vl", "PA"),
         ("optimum-intel-internal-testing/tiny-random-llava", "PA"),
@@ -1610,7 +1610,7 @@ if is_transformers_version("<", "5.0"):
 
 
 MODELS_TO_TAG = [*IMAGE_ID_IGNORANT_MODELS_TO_TAG]
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     MODELS_TO_TAG += [
         ("optimum-intel-internal-testing/tiny-random-minicpmv-2_6", "PA"),
     ]

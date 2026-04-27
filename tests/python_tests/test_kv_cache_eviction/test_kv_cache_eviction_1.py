@@ -159,7 +159,7 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
     return generation_config
 
 
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     scheduler_params_list = [
         (
             {

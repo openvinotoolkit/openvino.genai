@@ -10,7 +10,7 @@ from optimum.intel.utils.import_utils import is_transformers_version
 
 
 GREEDY_MODEL_LIST = []
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     GREEDY_MODEL_LIST = [
         pytest.param("phi-1_5", "Alan Turing was a"),
         pytest.param("TinyLlama-1.1B-Chat-v1.0", "Alan Turing was a"),
