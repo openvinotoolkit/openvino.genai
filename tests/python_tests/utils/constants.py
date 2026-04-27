@@ -21,9 +21,10 @@ def get_default_llm_properties():
 def extra_generate_kwargs():
     from optimum.intel.utils.import_utils import is_transformers_version
     additional_args = {}
-    if is_transformers_version(">=", "4.51"):
+    if is_transformers_version(">=", "4.51") and is_transformers_version("<", "5.0"):
         additional_args["use_model_defaults"] = False
 
+    additional_args["trust_remote_code"] = True
     return additional_args
 
 
