@@ -299,7 +299,8 @@ def print_whisper_genai_latency(iter_str, metrics, prompt_idx=-1):
 
     log.info(
         f"{prefix} Whisper stage latencies | "
-        f"First token: tokenization={_fmt(metrics['tokenization_ms'])}, "
+        f"Tokenization={_fmt(metrics['tokenization_ms'])}, "
+        f"First token: "
         f"features_extraction={_fmt(metrics['features_extraction_ms'])}, "
         f"encode={_fmt(metrics['encode_first_ms'])}, "
         f"decode={_fmt(metrics['decode_first_ms'])} | "
