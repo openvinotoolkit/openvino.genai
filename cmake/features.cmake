@@ -11,6 +11,24 @@ option(ENABLE_TOOLS "Enable tools build" ON)
 option(ENABLE_GGUF "Enable support for GGUF format" ON)
 option(ENABLE_XGRAMMAR "Enable support for structured output generation with xgrammar backend" ON)
 option(ENABLE_LTO "Enable Link Time Optimization" OFF)
+option(ENABLE_COVERAGE "Enable native code coverage instrumentation" OFF)
+
+function(ov_genai_enable_coverage TARGET_NAME)
+    if(NOT ENABLE_COVERAGE)
+        return()
+    endif()
+
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        message(FATAL_ERROR "ENABLE_COVERAGE is supported only with GCC-compatible or Clang-compatible compilers")
+    endif()
+
+    target_compile_options(${TARGET_NAME} PRIVATE -O0 -g --coverage)
+
+    get_target_property(target_type ${TARGET_NAME} TYPE)
+    if(NOT target_type STREQUAL "OBJECT_LIBRARY")
+        target_link_options(${TARGET_NAME} PRIVATE --coverage)
+    endif()
+endfunction()
 
 # When building without OpenVINODeveloperPackage, verify IPO/LTO support
 if(ENABLE_LTO AND NOT OpenVINODeveloperPackage_FOUND)
