@@ -35,9 +35,9 @@ env:
   BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
-  # To switch to the primary HF token, change the filename suffix to remove `-secondary`:
-  #   HF_TOKEN_PATH: /home/runner/secrets/huggingface/hf-token
-  HF_TOKEN_PATH: /home/runner/secrets/huggingface/hf-token-secondary
+  # To switch to the primary HF token, replace `token-secondary` with `token-primary`:
+  #   HF_TOKEN_PATH: /home/runner/secrets/huggingface/token-primary
+  HF_TOKEN_PATH: /home/runner/secrets/huggingface/token-secondary
 
 jobs:
   smart_ci:
