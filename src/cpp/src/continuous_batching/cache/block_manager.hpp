@@ -1145,30 +1145,17 @@ public:
      */
     void free_empty_physical_blocks(SequenceGroup::Ptr seq_group) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
-        size_t num_logical_blocks = get_num_logical_blocks(seq_group);
+        const size_t num_logical_blocks = seq_group->get_context_len() == 0 ? 0 : get_num_logical_blocks(seq_group);
         for (const auto& sequence : seq_group->get_running_sequences()) {
             auto seq_id = sequence->get_id();
             auto it = m_block_table.find(seq_id);
             if (it == m_block_table.end() || it->second.empty() || it->second[0].empty()) {
                 if (num_logical_blocks == 0 && it != m_block_table.end()) {
-                    m_block_table.erase(it);
+                    OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
                 }
                 continue;
             }
             size_t num_physical_blocks = it->second[0].size();
-            if (num_logical_blocks == 0) {
-                size_t effective_num_layers = it->second.size();
-                for (size_t block_idx = 0; block_idx < num_physical_blocks; ++block_idx) {
-                    BlocksPerLayer blocks_to_free;
-                    blocks_to_free.reserve(effective_num_layers);
-                    for (size_t layer_idx = 0; layer_idx < effective_num_layers; ++layer_idx) {
-                        blocks_to_free.push_back(it->second[layer_idx][block_idx]);
-                    }
-                    m_allocator.free(blocks_to_free, m_prefix_hash_to_occupied_block_map);
-                }
-                m_block_table.erase(it);
-                continue;
-            }
             if (num_physical_blocks > num_logical_blocks) {
                 free_sequence_partially(seq_id, num_physical_blocks - num_logical_blocks);
             }
@@ -1259,6 +1246,10 @@ public:
     }
 
     void restore_cached_blocks(SequenceGroup::Ptr group) {
+        if (!m_enable_prefix_caching) {
+            return;
+        }
+
         // When add_request() is executed in multiple threads accessing to cached_blocks causes segfault.
         // The mutex is needed to prevent such segfaults.
         const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
