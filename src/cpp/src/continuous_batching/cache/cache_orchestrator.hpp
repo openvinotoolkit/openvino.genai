@@ -290,8 +290,20 @@ public:
     }
 
     void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group) {
+        const size_t initial_processed_tokens = sequence_group->get_num_processed_tokens();
+        size_t common_processed_tokens = std::numeric_limits<size_t>::max();
         for (auto& [type, block_mgr] : m_block_managers) {
+            sequence_group->update_processed_tokens_num(initial_processed_tokens);
             block_mgr->restore_cached_blocks(sequence_group);
+            common_processed_tokens = std::min(common_processed_tokens, sequence_group->get_num_processed_tokens());
+        }
+        if (common_processed_tokens == std::numeric_limits<size_t>::max()) {
+            return;
+        }
+
+        sequence_group->update_processed_tokens_num(common_processed_tokens);
+        for (auto& [type, block_mgr] : m_block_managers) {
+            block_mgr->free_empty_physical_blocks(sequence_group);
         }
     }
 

@@ -22,6 +22,13 @@ ov::genai::SequenceGroup::Ptr create_sequence_group(uint64_t request_id = 0) {
         ov::genai::utils::get_beam_search_config());
 }
 
+ov::genai::SequenceGroup::Ptr create_sequence_group(const std::vector<int64_t>& tokens, uint64_t request_id) {
+    return std::make_shared<ov::genai::SequenceGroup>(
+        request_id,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        ov::genai::utils::get_greedy_config());
+}
+
 void ensure_two_running_sequences(const ov::genai::SequenceGroup::Ptr& sequence_group) {
     auto parent = sequence_group->get_running_sequences().at(0);
     sequence_group->fork_sequence(parent);
@@ -265,4 +272,116 @@ TEST(TestBlockManager, FixedSizeFreeSequenceReleasesCapacityForNextSequence) {
     EXPECT_EQ(bm.get_block_table(second_seq->get_id(), 0).size(), fixed_blocks_per_sequence);
 
     bm.free_sequence(second_seq->get_id());
+}
+
+TEST(TestBlockManager, PrefixCachingCompleteCheckpointReuseAllocatesOwnedWriteBlocks) {
+    constexpr size_t block_size = 4;
+    ov::genai::BlockManager block_manager(
+        /*num_blocks=*/8,
+        /*enable_prefix_caching=*/true,
+        block_size,
+        /*num_layers=*/1);
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3};
+    auto producer_group = create_sequence_group(tokens, 20);
+    producer_group->schedule_tokens(tokens.size());
+    block_manager.append_slots(producer_group);
+    producer_group->finish_iteration();
+
+    const auto producer_seq_id = producer_group->get_running_sequences().at(0)->get_id();
+    const auto checkpoint_block_idx = block_manager.get_block_table(producer_seq_id, 0).at(0)->get_index();
+    block_manager.free_sequence(producer_seq_id);
+
+    auto first_consumer_group = create_sequence_group(tokens, 21);
+    auto second_consumer_group = create_sequence_group(tokens, 22);
+    block_manager.restore_cached_blocks(first_consumer_group);
+    block_manager.restore_cached_blocks(second_consumer_group);
+
+    const auto first_seq_id = first_consumer_group->get_running_sequences().at(0)->get_id();
+    const auto second_seq_id = second_consumer_group->get_running_sequences().at(0)->get_id();
+    ASSERT_EQ(block_manager.get_block_table(first_seq_id, 0).size(), 1);
+    ASSERT_EQ(block_manager.get_block_table(second_seq_id, 0).size(), 1);
+    EXPECT_EQ(block_manager.get_block_table(first_seq_id, 0).at(0)->get_index(), checkpoint_block_idx);
+    EXPECT_EQ(block_manager.get_block_table(second_seq_id, 0).at(0)->get_index(), checkpoint_block_idx);
+    EXPECT_EQ(block_manager.get_block_table(first_seq_id, 0).at(0)->get_references_count(), 2);
+
+    // Linear-attention complete checkpoints can be shared as read-only inputs; continuation writes
+    // must allocate request-owned blocks instead of overwriting the shared checkpoint.
+    first_consumer_group->update_processed_tokens_num(tokens.size());
+    second_consumer_group->update_processed_tokens_num(tokens.size());
+    first_consumer_group->schedule_tokens(1);
+    second_consumer_group->schedule_tokens(1);
+
+    const auto first_copy_map = block_manager.append_slots(first_consumer_group);
+    const auto second_copy_map = block_manager.append_slots(second_consumer_group);
+
+    ASSERT_EQ(block_manager.get_block_table(first_seq_id, 0).size(), 2);
+    ASSERT_EQ(block_manager.get_block_table(second_seq_id, 0).size(), 2);
+    EXPECT_TRUE(first_copy_map.empty());
+    EXPECT_TRUE(second_copy_map.empty());
+    EXPECT_EQ(block_manager.get_block_table(first_seq_id, 0).at(0)->get_index(), checkpoint_block_idx);
+    EXPECT_EQ(block_manager.get_block_table(second_seq_id, 0).at(0)->get_index(), checkpoint_block_idx);
+    EXPECT_NE(block_manager.get_block_table(first_seq_id, 0).at(1)->get_index(), checkpoint_block_idx);
+    EXPECT_NE(block_manager.get_block_table(second_seq_id, 0).at(1)->get_index(), checkpoint_block_idx);
+    EXPECT_NE(block_manager.get_block_table(first_seq_id, 0).at(1)->get_index(),
+              block_manager.get_block_table(second_seq_id, 0).at(1)->get_index());
+
+    block_manager.free_sequence(first_seq_id);
+    block_manager.free_sequence(second_seq_id);
+}
+
+TEST(TestBlockManager, PrefixCachingIncompleteCheckpointUsesCopyOnWritePerSequence) {
+    constexpr size_t block_size = 4;
+    ov::genai::BlockManager block_manager(
+        /*num_blocks=*/8,
+        /*enable_prefix_caching=*/true,
+        block_size,
+        /*num_layers=*/1);
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5};
+    auto producer_group = create_sequence_group(tokens, 23);
+    producer_group->schedule_tokens(tokens.size());
+    block_manager.append_slots(producer_group);
+    producer_group->finish_iteration();
+
+    const auto producer_seq_id = producer_group->get_running_sequences().at(0)->get_id();
+    const auto complete_checkpoint_idx = block_manager.get_block_table(producer_seq_id, 0).at(0)->get_index();
+    const auto incomplete_checkpoint_idx = block_manager.get_block_table(producer_seq_id, 0).at(1)->get_index();
+    block_manager.free_sequence(producer_seq_id);
+
+    auto first_consumer_group = create_sequence_group(tokens, 24);
+    auto second_consumer_group = create_sequence_group(tokens, 25);
+    block_manager.restore_cached_blocks(first_consumer_group);
+    block_manager.restore_cached_blocks(second_consumer_group);
+
+    const auto first_seq_id = first_consumer_group->get_running_sequences().at(0)->get_id();
+    const auto second_seq_id = second_consumer_group->get_running_sequences().at(0)->get_id();
+    ASSERT_EQ(block_manager.get_block_table(first_seq_id, 0).size(), 2);
+    ASSERT_EQ(block_manager.get_block_table(second_seq_id, 0).size(), 2);
+    EXPECT_EQ(block_manager.get_block_table(first_seq_id, 0).at(0)->get_index(), complete_checkpoint_idx);
+    EXPECT_EQ(block_manager.get_block_table(second_seq_id, 0).at(0)->get_index(), complete_checkpoint_idx);
+    EXPECT_EQ(block_manager.get_block_table(first_seq_id, 0).at(1)->get_index(), incomplete_checkpoint_idx);
+    EXPECT_EQ(block_manager.get_block_table(second_seq_id, 0).at(1)->get_index(), incomplete_checkpoint_idx);
+
+    // Both consumers resume inside the same incomplete interval, so the shared mutable checkpoint
+    // must be split through copy-on-write before either sequence writes its next state.
+    first_consumer_group->schedule_tokens(1);
+    second_consumer_group->schedule_tokens(1);
+
+    const auto first_copy_map = block_manager.append_slots(first_consumer_group);
+    const auto second_copy_map = block_manager.append_slots(second_consumer_group);
+
+    ASSERT_EQ(block_manager.get_block_table(first_seq_id, 0).size(), 2);
+    ASSERT_EQ(block_manager.get_block_table(second_seq_id, 0).size(), 2);
+    EXPECT_TRUE(first_copy_map.count(incomplete_checkpoint_idx));
+    EXPECT_TRUE(second_copy_map.empty());
+    EXPECT_EQ(block_manager.get_block_table(first_seq_id, 0).at(0)->get_index(), complete_checkpoint_idx);
+    EXPECT_EQ(block_manager.get_block_table(second_seq_id, 0).at(0)->get_index(), complete_checkpoint_idx);
+    EXPECT_NE(block_manager.get_block_table(first_seq_id, 0).at(1)->get_index(), incomplete_checkpoint_idx);
+    EXPECT_EQ(block_manager.get_block_table(second_seq_id, 0).at(1)->get_index(), incomplete_checkpoint_idx);
+    EXPECT_NE(block_manager.get_block_table(first_seq_id, 0).at(1)->get_index(),
+              block_manager.get_block_table(second_seq_id, 0).at(1)->get_index());
+
+    block_manager.free_sequence(first_seq_id);
+    block_manager.free_sequence(second_seq_id);
 }
