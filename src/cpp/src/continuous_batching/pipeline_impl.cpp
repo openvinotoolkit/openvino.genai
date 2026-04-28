@@ -510,7 +510,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     auto start_time =  std::chrono::steady_clock::now();
     PerfMetrics perf_metrics;
     auto& raw_perf_counters = perf_metrics.raw_metrics;
-    raw_perf_counters.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+    raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
     // checks that all requests has the same LoRA adapters property value
     for (size_t i = 1; i < sampling_params.size(); ++i) {
@@ -604,6 +604,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         result.m_request_id = request_id;
         result.m_generation_ids.resize(num_outputs);
         result.m_scores.resize(num_outputs);
+        result.m_finish_reasons.resize(num_outputs, GenerationFinishReason::NONE);
         result.m_status = request->get_generation_stream()->get_status();
 
         for (size_t i = 0; i < num_outputs; ++i) {
@@ -615,6 +616,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 result.m_generation_ids[i] = request->get_prompt_ids();
             std::copy(generated_ids.begin(), generated_ids.end(), std::back_inserter(result.m_generation_ids[i]));
             result.m_scores[i] = score;
+            result.m_finish_reasons[i] = sequence->get_finish_reason();
+            if (result.m_finish_reasons[i] == GenerationFinishReason::NONE && request->handle_stopped()) {
+                result.m_finish_reasons[i] = request->get_generation_stream()->get_finish_reason();
+            }
         }
 
         result.m_status = generations[request_id]->get_status();

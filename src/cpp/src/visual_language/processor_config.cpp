@@ -9,6 +9,7 @@
 
 ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     using ov::genai::utils::read_json_param;
+    read_json_param(parsed, "image_size", image_size);
     read_json_param(parsed, "patch_size", patch_size); // For llava - stored in config.json vision_config
     read_json_param(parsed, "scale_resolution", scale_resolution);
     read_json_param(parsed, "max_slice_nums", max_slice_nums);

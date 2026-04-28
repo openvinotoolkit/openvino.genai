@@ -23,6 +23,24 @@ struct Logits {
     size_t m_size;
     // Late initialized for top_p or top_k transforms
     std::vector<Token> m_vector;
+    // Set by TemperatureLogitTransform when top_k > 0 AND top_p == 1.0.
+    // When true, m_vector contains K elements in arbitrary heap order (same on both the
+    // fast path and the logprobs path — TopKFilter always uses heap selection) with either:
+    //   - raw logits unchanged         (T == 1.0 — TemperatureLogitTransform is a no-op)
+    //   - logits scaled by 1/T         (T != 1.0 — pure multiply, no max subtraction)
+    // _multinomial_sample owns the max scan and fuses expf() with the CDF scan.
+    bool m_defer_expf = false;
+
+    // Set by FullVocabLogSumExpTransform when logprobs > 0 for multinomial sampling.
+    // Holds log(Σ exp(raw_logit_i)) over ALL N vocabulary tokens computed from the original
+    // model output, before any penalty, filter, or temperature transform.
+    //
+    // After sampling selects token index `idx`, _multinomial_sample reads the unchanged
+    // raw logit from m_data[idx] and computes:
+    //   log p_i = m_data[idx] − m_full_vocab_log_sum_exp
+    //
+    // NaN (default) means logprobs were not requested; sampler uses the post-filter logprob.
+    float m_full_vocab_log_sum_exp = std::numeric_limits<float>::quiet_NaN();
 
     Logits(float* data, size_t size): m_data(data), m_size(size) {}
 
@@ -109,9 +127,14 @@ public:
     }
 
     void apply(Logits& logits) override {
-        // Initialize and sort vector. Try partial sorting first and if it's not enough, sort entire vector.
-        logits.initialize_vector();
-        if(!partial_sort_and_resize(logits))
+        if (!logits.is_vector_initialized()) {
+            // Fast path (logprobs == 0): Temperature ran directly on m_data; copy probs to m_vector now.
+            logits.initialize_vector();
+        }
+        // m_vector holds normalised probabilities (from Temperature via m_vector or m_data path).
+        // Note: TopPFilter truncates but does NOT renormalize — the retained probabilities sum to at most top_p < 1.
+        // _multinomial_sample accounts for this by scaling the random draw by total_weight (not assuming sum == 1).
+        if (!partial_sort_and_resize(logits))
             full_sort_and_resize(logits);
     }
 
@@ -123,50 +146,173 @@ class TopKFilter : public ILogitTransformer {
 public:
     TopKFilter(size_t top_k) : m_top_k(top_k) {}
 
-    // If this transform is used along with top_p, it should be applied after it since top_p sorts entire vector and top_k does it only partially
     void apply(Logits& logits) override {
 
         if (m_top_k >= logits.m_size)
             return;
 
-        // If top_p is also used vector is already initialized and sorted
-        if (!logits.is_vector_initialized()) {
-            // Initialize and partially sort vector
-            logits.initialize_vector();
-            std::partial_sort(logits.m_vector.begin(), logits.m_vector.begin() + m_top_k, logits.m_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+        // Build a K-element min-heap in one sequential O(N log K) pass, regardless of whether
+        // m_vector is already initialised (logprobs path) or not (fast path).
+        //
+        // Algorithm:
+        //   1. Seed m_vector with the first K elements; build a min-heap (smallest at root).
+        //   2. For each remaining element: if it beats the current min, replace the root and
+        //      restore heap order (pop_heap + push_heap = two O(log K) sifts).
+        //   3. m_vector ends up with the top_k values in arbitrary heap order.
+        //
+        // Downstream code (TemperatureLogitTransform, TopPFilter, _multinomial_sample)
+        // must NOT assume m_vector[0] is the maximum — they all do their own O(K) max scan.
+        static const auto min_cmp = [](const Token& a, const Token& b) {
+            return a.m_log_prob > b.m_log_prob;  // inverted: makes std::*_heap a min-heap
+        };
+
+        if (logits.is_vector_initialized()) {
+            // logprobs path: m_vector has N elements; run heap selection in-place.
+            // Seed heap from the first K elements already in m_vector.
+            std::make_heap(logits.m_vector.begin(), logits.m_vector.begin() + m_top_k, min_cmp);
+            for (size_t i = m_top_k; i < logits.m_size; i++) {
+                if (logits.m_vector[i].m_log_prob > logits.m_vector[0].m_log_prob) {
+                    std::pop_heap(logits.m_vector.begin(), logits.m_vector.begin() + m_top_k, min_cmp);
+                    logits.m_vector[m_top_k - 1] = logits.m_vector[i];
+                    std::push_heap(logits.m_vector.begin(), logits.m_vector.begin() + m_top_k, min_cmp);
+                }
+            }
+            logits.m_vector.resize(m_top_k);
+        } else {
+            // Fast path: m_vector not yet allocated; build heap directly from m_data to avoid
+            // a full initialize_vector() alloc+write of N elements that would be mostly discarded.
+            logits.m_vector.resize(m_top_k);
+            for (size_t i = 0; i < m_top_k; i++)
+                logits.m_vector[i] = Token(logits.m_data[i], static_cast<int64_t>(i));
+            std::make_heap(logits.m_vector.begin(), logits.m_vector.end(), min_cmp);
+
+            for (size_t i = m_top_k; i < logits.m_size; i++) {
+                if (logits.m_data[i] > logits.m_vector[0].m_log_prob) {
+                    std::pop_heap(logits.m_vector.begin(), logits.m_vector.end(), min_cmp);
+                    logits.m_vector.back() = Token(logits.m_data[i], static_cast<int64_t>(i));
+                    std::push_heap(logits.m_vector.begin(), logits.m_vector.end(), min_cmp);
+                }
+            }
         }
-        logits.resize(m_top_k);
+        logits.m_size = m_top_k;
     }
 
 protected:
     size_t m_top_k = 0;
 };
 
-class TemperatureLogitTransform : public ILogitTransformer {
+// Computes log(Σ exp(raw_logit_i)) over the full vocabulary and stores it in
+// Logits::m_full_vocab_log_sum_exp.  Must run first, before m_data is modified or m_vector
+// is created, so it captures the original model logits.
+//
+// After sampling selects a token index `idx`, _multinomial_sample reads m_data[idx] (always the
+// original raw logit as long as downstream transforms operate on m_vector, not m_data) and computes:
+//   log p_i = m_data[idx] − m_full_vocab_log_sum_exp
+//
+// Only inserted into the pipeline when logprobs > 0.
+class FullVocabLogSumExpTransform : public ILogitTransformer {
 public:
-    TemperatureLogitTransform(double temperature) : m_temperature(temperature) {};
+    FullVocabLogSumExpTransform() = default;
 
     void apply(Logits& logits) override {
-        float max_logit = -std::numeric_limits<float>::infinity();
-        for (size_t i = 0; i < logits.m_size; i++) {
-            if (logits.m_data[i] > max_logit) {
-                max_logit = logits.m_data[i];
+        OPENVINO_ASSERT(!logits.is_vector_initialized(),
+            "FullVocabLogSumExpTransform must run before any transform that modifies m_data or creates m_vector");
+        const float max_logit = *std::max_element(logits.m_data, logits.m_data + logits.m_size);
+        float sum = 0.0f;
+        for (size_t i = 0; i < logits.m_size; ++i)
+            sum += expf(logits.m_data[i] - max_logit);
+        logits.m_full_vocab_log_sum_exp = logf(sum) + max_logit;
+    }
+};
+
+// Copies all logits from m_data into m_vector, leaving m_data untouched.
+//
+// When logprobs > 0, this runs as the second transform (after FullVocabLogSumExpTransform)
+// before any penalty or filtering transform.  All downstream transforms use m_vector once it
+// is initialised, so m_data remains the original model logits throughout — available at
+// sampling time for correct raw log-probability reporting.
+class CopyLogitsToVectorTransform : public ILogitTransformer {
+public:
+    CopyLogitsToVectorTransform() = default;
+
+    void apply(Logits& logits) override {
+        logits.initialize_vector();
+    }
+};
+
+class TemperatureLogitTransform : public ILogitTransformer {
+public:
+    TemperatureLogitTransform(double temperature, bool defer_expf = false)
+        : m_temperature(temperature), m_defer_expf(defer_expf) {}
+
+    void apply(Logits& logits) override {
+        if (m_defer_expf && logits.is_vector_initialized()) {
+            // Deferred expf, only apply logits scaling at this moment.
+            // Guard on is_vector_initialized(): TopKFilter skips when top_k >= vocab_size,
+            // leaving m_vector empty. In that case fall through to the standard softmax path.
+            if (m_temperature != 1.0f) {
+                const float scaling_factor = 1.0f / m_temperature;
+                if (logits.is_vector_initialized()) {
+                    for (size_t i = 0; i < logits.m_size; i++)
+                        logits.m_vector[i].m_log_prob *= scaling_factor;
+                } else {
+                    for (size_t i = 0; i < logits.m_size; i++)
+                        logits.m_data[i] *= scaling_factor;
+                }
             }
-        }
-
-        float norm_sum = 0.0;
-        for (size_t i = 0; i < logits.m_size; i++) {
-            logits.m_data[i] = expf((logits.m_data[i] - max_logit) / this->m_temperature);
-            norm_sum += logits.m_data[i];
-        }
-
-        for (size_t i = 0; i < logits.m_size; i++) {
-            logits.m_data[i] /= norm_sum;
+            logits.m_defer_expf = true;
+        } else {
+            // Standard path: compute softmax(logits / T) in place.
+            // TopPFilter follows and requires normalised probabilities.
+            if (logits.is_vector_initialized()) {
+                // m_vector holds K raw logits in arbitrary heap order (TopKFilter always uses
+                // heap selection on both paths). Temperature does its own max scan so order
+                // does not matter.
+                float max_logit = logits.m_vector[0].m_log_prob;
+                for (size_t i = 1; i < logits.m_size; i++)
+                    if (logits.m_vector[i].m_log_prob > max_logit)
+                        max_logit = logits.m_vector[i].m_log_prob;
+                float norm_sum = 0.0f;
+                if (m_temperature == 1.0f) {
+                    for (size_t i = 0; i < logits.m_size; i++) {
+                        logits.m_vector[i].m_log_prob = expf(logits.m_vector[i].m_log_prob - max_logit);
+                        norm_sum += logits.m_vector[i].m_log_prob;
+                    }
+                } else {
+                    const float scaling_factor = 1.0f / m_temperature;
+                    for (size_t i = 0; i < logits.m_size; i++) {
+                        logits.m_vector[i].m_log_prob = expf((logits.m_vector[i].m_log_prob - max_logit) * scaling_factor);
+                        norm_sum += logits.m_vector[i].m_log_prob;
+                    }
+                }
+                for (size_t i = 0; i < logits.m_size; i++)
+                    logits.m_vector[i].m_log_prob /= norm_sum;
+            } else {
+                // No effective top_k filtering: expf on all m_data elements directly.
+                float max_logit = *std::max_element(logits.m_data, logits.m_data + logits.m_size);
+                float norm_sum = 0.0f;
+                if (m_temperature == 1.0f) {
+                    for (size_t i = 0; i < logits.m_size; i++) {
+                        logits.m_data[i] = expf(logits.m_data[i] - max_logit);
+                        norm_sum += logits.m_data[i];
+                    }
+                } else {
+                    const float scaling_factor = 1.0f / m_temperature;
+                    for (size_t i = 0; i < logits.m_size; i++) {
+                        logits.m_data[i] = expf((logits.m_data[i] - max_logit) * scaling_factor);
+                        norm_sum += logits.m_data[i];
+                    }
+                }
+                // Normalization required for TopPFilter correctness (cumulative prob comparison).
+                for (size_t i = 0; i < logits.m_size; i++)
+                    logits.m_data[i] /= norm_sum;
+            }
         }
     }
 
 protected:
     float m_temperature = 0.f;
+    bool  m_defer_expf  = false;
 };
 
 
@@ -205,13 +351,16 @@ public:
 
     void apply(Logits& logits) override {
         size_t vocab_size = logits.m_size;
+        // When m_vector is initialised (logprobs > 0), operate on m_vector so m_data
+        // stays as original model logits.  m_vector[i].m_index == i holds for the
+        // full-vocab copy created by CopyLogitsToVectorTransform, so direct index is valid.
+        auto logit_ref = [&](int64_t id) -> float& {
+            return logits.is_vector_initialized() ? logits.m_vector[id].m_log_prob : logits.m_data[id];
+        };
         for (const auto& prompt_id : *m_unique_prompt_token_ids) {
             OPENVINO_ASSERT((prompt_id >= 0) && (prompt_id < vocab_size), "input_ids token out of bounds");
-            if (logits.m_data[prompt_id] >= 0) {
-                logits.m_data[prompt_id] /= m_penalty;
-            } else {
-                logits.m_data[prompt_id] *= m_penalty;
-            };
+            auto& val = logit_ref(prompt_id);
+            if (val >= 0) val /= m_penalty; else val *= m_penalty;
         }
         for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
@@ -221,11 +370,8 @@ public:
                 continue;
             }
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
-            if (logits.m_data[input_id] >= 0) {
-                logits.m_data[input_id] /= m_penalty;
-            } else {
-                logits.m_data[input_id] *= m_penalty;
-            };
+            auto& val = logit_ref(input_id);
+            if (val >= 0) val /= m_penalty; else val *= m_penalty;
         }
     }
 
@@ -253,10 +399,16 @@ public:
         m_stop_token_ids(stop_token_ids), m_applicable_tensor_len(min_generated_tokens) {}
 
     void apply(Logits& logits) override {
-        // Since EOS penalty is applied early, the token vector is not initialized yet
-        // and we can assume element order match token ids.
-        for (auto stop_token_id: m_stop_token_ids)
-            logits.m_data[stop_token_id] = 0.f;
+        // When logprobs > 0 (multinomial), CopyLogitsToVectorTransform runs before this
+        // transform, so m_vector is already initialised.  Otherwise (fast path / greedy)
+        // m_vector is empty and we write directly to m_data.
+        // Set -inf so the stop token gets exactly zero probability mass.
+        for (auto stop_token_id: m_stop_token_ids) {
+            if (logits.is_vector_initialized())
+                logits.m_vector[stop_token_id].m_log_prob = -std::numeric_limits<float>::infinity();
+            else
+                logits.m_data[stop_token_id] = -std::numeric_limits<float>::infinity();
+        }
     }
 
 
@@ -277,14 +429,15 @@ public:
 
     void apply(Logits& logits) override {
         size_t vocab_size = logits.m_size;
+        auto logit_ref = [&](int64_t id) -> float& {
+            return logits.is_vector_initialized() ? logits.m_vector[id].m_log_prob : logits.m_data[id];
+        };
         for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
-            if (logits.m_data[input_id] >= 0) {
-                logits.m_data[input_id] -= m_penalty * input_id_pair.second;
-            } else {
-                logits.m_data[input_id] += m_penalty * input_id_pair.second;
-            };
+            auto& val = logit_ref(input_id);
+            if (val >= 0) val -= m_penalty * input_id_pair.second;
+            else          val += m_penalty * input_id_pair.second;
         }
     }
 
@@ -302,14 +455,15 @@ public:
 
     void apply(Logits& logits) override {
         size_t vocab_size = logits.m_size;
+        auto logit_ref = [&](int64_t id) -> float& {
+            return logits.is_vector_initialized() ? logits.m_vector[id].m_log_prob : logits.m_data[id];
+        };
         for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
-            if (logits.m_data[input_id] >= 0) {
-                logits.m_data[input_id] -= m_penalty;
-            } else {
-                logits.m_data[input_id] += m_penalty;
-            };
+            auto& val = logit_ref(input_id);
+            if (val >= 0) val -= m_penalty;
+            else          val += m_penalty;
         }
     }
 

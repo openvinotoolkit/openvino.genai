@@ -119,8 +119,12 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             OPENVINO_ASSERT(generation_outputs.size() <= 1);
             if (!generation_outputs.empty()) {
                 auto streaming_status = streamer_ptr->write(generation_outputs.begin()->second.generated_ids);
-                if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-                    streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
+                if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+                    handle->stop(ov::genai::GenerationFinishReason::TOOL_CALL);
+                } else if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
+                    handle->cancel();
+                } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
+                    handle->stop();
                 }
             }
         }
@@ -328,13 +332,19 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         const auto& sequences = sequence_group->get_finished_sequences();
         size_t num_outputs = std::min(sequence_group->get_sampling_parameters().num_return_sequences, sequences.size());
         finish_info.streaming_finish_status = sequence_group->get_generation_stream()->get_status();
+        const auto stream_finish_reason = sequence_group->get_generation_stream()->get_finish_reason();
 
         for (size_t seq_id = 0; seq_id < num_outputs; ++seq_id) {
             const auto & sequence = sequences[seq_id];
             const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_prob();
+            auto finish_reason = sequence->get_finish_reason();
+            if (finish_reason == GenerationFinishReason::NONE && sequence_group->handle_stopped()) {
+                finish_reason = stream_finish_reason;
+            }
 
             finish_info.results.tokens.push_back(sequence->get_generated_ids());
             finish_info.results.scores.push_back(score);
+            finish_info.results.finish_reasons.push_back(finish_reason);
         }
     }
 
