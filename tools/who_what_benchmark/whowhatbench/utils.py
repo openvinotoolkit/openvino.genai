@@ -235,7 +235,7 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
                                       filename=f"{SUBSET}/{SUBSET}_videos_10.tar.gz",
                                       repo_type="dataset")
 
-    max_video_size_mb = 5.4 * 1024 * 1024
+    max_video_size_mb = 6 * 1024 * 1024
     video_samples = []
     extract_dir = "./videos"
     os.makedirs(extract_dir, exist_ok=True)
