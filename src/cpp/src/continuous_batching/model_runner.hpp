@@ -750,7 +750,7 @@ public:
             _set_adaptive_rkv_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
-        if (!m_linear_attention_paging_groups.empty() && !scheduler_output.m_linear_attention_block_table.empty()) {
+        if (!m_linear_attention_paging_groups.empty() && !scheduler_output.m_linear_attention_paging_data.empty()) {
             _set_linear_attention_inputs(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
@@ -1467,15 +1467,24 @@ private:
     void _set_linear_attention_inputs(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                                        const Scheduler::Output& scheduler_output,
                                        size_t batch_size_in_sequences) {
-        // All linear attention paging groups share the same block table and layout:
-        // 2 block indices per sequence (read + write, same physical block).
-        const size_t blocks_per_sequence = 2;
         const size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+
+        size_t total_block_indices = 0;
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+
+            for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                size_t seq_id = running_sequences[seq_idx]->get_id();
+                total_block_indices += scheduler_output.m_linear_attention_paging_data.at(seq_id).block_indices.size();
+            }
+        }
 
         for (auto& pg : m_linear_attention_paging_groups) {
             ov::Tensor block_indices = _get_or_resize_tensor(
                 pg.cached_block_indices, pg.prefix + "block_indices",
-                {batch_size_in_sequences * blocks_per_sequence}, ov::element::i32);
+                {total_block_indices}, ov::element::i32);
             ov::Tensor block_indices_begins = _get_or_resize_tensor(
                 pg.cached_block_indices_begins, pg.prefix + "block_indices_begins",
                 {batch_size_in_sequences + 1}, ov::element::i32);
@@ -1504,22 +1513,21 @@ private:
                     Sequence::CPtr sequence = running_sequences[seq_idx];
                     size_t seq_id = sequence->get_id();
 
-                    const auto& la_blocks = scheduler_output.m_linear_attention_block_table.at(seq_id);
-                    OPENVINO_ASSERT(!la_blocks.empty(),
-                                    "Linear attention block table empty for sequence ", seq_id);
-                    int32_t phys_block = la_blocks[0]->get_index();
+                    const auto& paging_data = scheduler_output.m_linear_attention_paging_data.at(seq_id);
+                    OPENVINO_ASSERT(!paging_data.block_indices.empty(),
+                                    "Linear attention paging data empty for sequence ", seq_id);
 
-                    // Block 0 = read, block 1 = write (both reference the same physical block)
-                    block_indices_data[block_offset]     = phys_block;
-                    block_indices_data[block_offset + 1] = phys_block;
+                    for (size_t block_idx = 0; block_idx < paging_data.block_indices.size(); ++block_idx) {
+                        block_indices_data[block_offset + block_idx] = paging_data.block_indices[block_idx];
+                    }
 
-                    begins_data[seq_offset + 1] = static_cast<int32_t>(block_offset + blocks_per_sequence);
+                    begins_data[seq_offset + 1] = static_cast<int32_t>(block_offset + paging_data.block_indices.size());
 
-                    past_lens_data[seq_offset] = static_cast<int32_t>(sequence_group->get_num_processed_tokens());
-                    interval_data[seq_offset] = 0;  // cache_interval = 0 (reserved for future prefix caching)
+                    past_lens_data[seq_offset] = paging_data.past_length;
+                    interval_data[seq_offset] = paging_data.cache_interval;
 
                     seq_offset++;
-                    block_offset += blocks_per_sequence;
+                    block_offset += paging_data.block_indices.size();
                 }
             }
 

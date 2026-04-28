@@ -608,6 +608,9 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param top_p - if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
  * @param top_k the number of highest probability vocabulary tokens to keep for top-k-filtering.
  * @param rng_seed initializes random generator.
+ * 
+ * Linear attention cache configuration:
+ * @param cache_interval linear-attention checkpoint interval used when interval-based paging is enabled.
  *
  * CDPruner configuration:
  * @param pruning_ratio the percentage of visual tokens to prune [0-100). Set to 0 to disable pruning.
@@ -665,6 +668,9 @@ public:
     size_t top_k = std::numeric_limits<size_t>::max();
     bool do_sample = false;
     size_t rng_seed = 0;
+
+    // Linear attention cache configuration
+    size_t cache_interval = 128;
 
     // CDPruner config
     size_t pruning_ratio = 0;  // 0 means disabled, and values from 1 to 100 represent the percentage to prune.
@@ -740,6 +746,8 @@ static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
 static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
 static constexpr ov::Property<float> presence_penalty{"presence_penalty"};
 static constexpr ov::Property<float> frequency_penalty{"frequency_penalty"};
+
+static constexpr ov::Property<size_t> cache_interval{"cache_interval"};
 
 static constexpr ov::Property<size_t> pruning_ratio{"pruning_ratio"};
 static constexpr ov::Property<float> relevance_weight{"relevance_weight"};

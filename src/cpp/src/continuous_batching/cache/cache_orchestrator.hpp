@@ -23,6 +23,8 @@
 
 namespace ov::genai {
 
+inline constexpr size_t DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL = 128;
+
 /**
  * @brief Aggregates multiple cache type managers and block managers, presenting a unified,
  *        cache-type-agnostic interface.
@@ -102,20 +104,26 @@ public:
             size_t la_start = total_num_layers - la_manager->get_num_layers();
             std::iota(la_layer_ids.begin(), la_layer_ids.end(), la_start);
 
-            // Each LA block holds one full sequence state (block_size = 1 token = 1 sequence).
-            // For dynamic allocation (num_kv_blocks == 0), start with an empty pool and grow
-            // on demand via grow_fixed_size_capacity() — one block per incoming sequence.
-            // For static allocation (num_kv_blocks > 0), pre-allocate for all concurrent sequences.
-            const size_t num_la_blocks = config.num_linear_attention_blocks > 0
-                                             ? config.num_linear_attention_blocks
-                                             : (config.num_kv_blocks > 0 ? config.max_num_seqs : 0);
+            const size_t num_la_blocks = config.num_linear_attention_blocks;
 
-            auto la_block_manager = std::make_shared<BlockManager>(
-                num_la_blocks,
-                false,  // no prefix caching for linear attention (initially)
-                1,      // block_size in tokens (each block = one sequence's full state)
-                la_manager->get_num_layers(),
-                1);     // fixed_blocks_per_sequence = 1
+            std::shared_ptr<BlockManager> la_block_manager;
+            if (config.enable_prefix_caching) {
+                la_block_manager = std::make_shared<BlockManager>(
+                    num_la_blocks,
+                    true,
+                    DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL,
+                    la_manager->get_num_layers());
+            } else {
+                const size_t static_la_blocks = num_la_blocks > 0
+                                                    ? num_la_blocks
+                                                    : (config.num_kv_blocks > 0 ? config.max_num_seqs : 0);
+                la_block_manager = std::make_shared<BlockManager>(
+                    static_la_blocks,
+                    false,
+                    1,
+                    la_manager->get_num_layers(),
+                    1);
+            }
 
             orchestrator->register_cache_type(CacheType::LINEAR_ATTENTION_CACHE, la_manager,
                                                la_block_manager, la_layer_ids);

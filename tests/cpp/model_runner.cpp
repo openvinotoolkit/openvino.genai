@@ -56,7 +56,27 @@ Scheduler::Output make_output_for_single_sequence(uint64_t seq_id,
 
     // ModelRunner expects one KV block table per decoder layer. Use a single layer for tests.
     out.m_block_tables[seq_id] = {BlocksPerLayer{std::make_shared<CacheBlock>(0)}};
-    out.m_linear_attention_block_table[seq_id] = la_blocks;
+    Scheduler::Output::LinearAttentionPagingData paging_data;
+    for (const auto& block : la_blocks) {
+        paging_data.block_indices.push_back(static_cast<int32_t>(block->get_index()));
+    }
+    out.m_linear_attention_paging_data[seq_id] = std::move(paging_data);
+    return out;
+}
+
+Scheduler::Output make_output_for_sequences(
+    const std::vector<std::pair<uint64_t, Scheduler::Output::LinearAttentionPagingData>>& sequence_blocks,
+    size_t total_num_scheduled_tokens) {
+    Scheduler::Output out;
+    out.m_total_num_scheduled_tokens = total_num_scheduled_tokens;
+
+    for (size_t group_idx = 0; group_idx < sequence_blocks.size(); ++group_idx) {
+        const auto& [seq_id, paging_data] = sequence_blocks[group_idx];
+        out.m_scheduled_sequence_groups_ids.push_back(group_idx);
+        out.m_block_tables[seq_id] = {BlocksPerLayer{std::make_shared<CacheBlock>(0)}};
+        out.m_linear_attention_paging_data[seq_id] = paging_data;
+    }
+
     return out;
 }
 
@@ -83,15 +103,17 @@ TEST(TestModelRunnerLinearAttentionPaging, prefill_uses_read_plus_interval_write
     const auto seq_id = sequence_group->get_running_sequences()[0]->get_id();
 
     // Target layout for prefill with cache_interval=128 and scheduled=260:
-    // [read_init, write_0, write_1, write_2].
+    // [read_init, write_0, write_1, write_2], where the initial zero-state read
+    // reuses the first write block by default.
     auto out = make_output_for_single_sequence(
         seq_id,
         prompt_tokens.size(),
         BlocksPerLayer{
             std::make_shared<CacheBlock>(10),
+            std::make_shared<CacheBlock>(10),
             std::make_shared<CacheBlock>(11),
-            std::make_shared<CacheBlock>(12),
-            std::make_shared<CacheBlock>(13)});
+            std::make_shared<CacheBlock>(12)});
+    out.m_linear_attention_paging_data[seq_id].cache_interval = 128;
 
     std::ignore = runner.forward({sequence_group}, out);
 
@@ -102,13 +124,13 @@ TEST(TestModelRunnerLinearAttentionPaging, prefill_uses_read_plus_interval_write
     const auto la_past_lens = ireq.get_tensor("paged_conv_past_lens");
     const auto la_interval = ireq.get_tensor("paged_conv_cache_interval");
 
-    EXPECT_EQ(tensor_to_i32_vector(la_indices), (std::vector<int32_t>{10, 11, 12, 13}));
+    EXPECT_EQ(tensor_to_i32_vector(la_indices), (std::vector<int32_t>{10, 10, 11, 12}));
     EXPECT_EQ(tensor_to_i32_vector(la_begins), (std::vector<int32_t>{0, 4}));
     EXPECT_EQ(tensor_to_i32_vector(la_past_lens), (std::vector<int32_t>{0}));
     EXPECT_EQ(tensor_to_i32_vector(la_interval), (std::vector<int32_t>{128}));
 }
 
-TEST(TestModelRunnerLinearAttentionPaging, generation_uses_read_and_write_blocks_and_total_processed_past_lens) {
+TEST(TestModelRunnerLinearAttentionPaging, generation_within_interval_reuses_write_block_and_reports_total_processed_past_lens) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(create_dummy_la_paging_model(), "CPU").create_infer_request();
     ModelRunner runner(request, /*block_size=*/4, /*num_decoder_layers=*/1);
@@ -132,6 +154,9 @@ TEST(TestModelRunnerLinearAttentionPaging, generation_uses_read_and_write_blocks
         BlocksPerLayer{
             std::make_shared<CacheBlock>(20),
             std::make_shared<CacheBlock>(21)});
+    out.m_linear_attention_paging_data[seq_id].block_indices = {20, 20};
+    out.m_linear_attention_paging_data[seq_id].past_length = 4;
+    out.m_linear_attention_paging_data[seq_id].cache_interval = 128;
 
     std::ignore = runner.forward({sequence_group}, out);
 
@@ -142,8 +167,55 @@ TEST(TestModelRunnerLinearAttentionPaging, generation_uses_read_and_write_blocks
     const auto la_past_lens = ireq.get_tensor("paged_conv_past_lens");
     const auto la_interval = ireq.get_tensor("paged_conv_cache_interval");
 
-    EXPECT_EQ(tensor_to_i32_vector(la_indices), (std::vector<int32_t>{20, 21}));
+    EXPECT_EQ(tensor_to_i32_vector(la_indices), (std::vector<int32_t>{20, 20}));
     EXPECT_EQ(tensor_to_i32_vector(la_begins), (std::vector<int32_t>{0, 2}));
     EXPECT_EQ(tensor_to_i32_vector(la_past_lens), (std::vector<int32_t>{4}));
     EXPECT_EQ(tensor_to_i32_vector(la_interval), (std::vector<int32_t>{128}));
+}
+
+TEST(TestModelRunnerLinearAttentionPaging, mixed_legacy_and_prefix_modes_can_share_the_same_batch) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(create_dummy_la_paging_model(), "CPU").create_infer_request();
+    ModelRunner runner(request, /*block_size=*/4, /*num_decoder_layers=*/1);
+
+    std::vector<uint64_t> prompt_tokens = {0, 1, 2, 3};
+
+    auto legacy_sequence_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {prompt_tokens.size()}, prompt_tokens.data()),
+        utils::get_greedy_config());
+    legacy_sequence_group->update_processed_tokens_num(prompt_tokens.size());
+    auto legacy_sequence = legacy_sequence_group->get_running_sequences()[0];
+    legacy_sequence->append_token(100, 0.9f);
+    legacy_sequence_group->schedule_tokens(1);
+
+    auto prefix_sequence_group = std::make_shared<SequenceGroup>(
+        1,
+        ov::Tensor(ov::element::i64, {prompt_tokens.size()}, prompt_tokens.data()),
+        utils::get_greedy_config());
+    prefix_sequence_group->update_processed_tokens_num(prompt_tokens.size());
+    auto prefix_sequence = prefix_sequence_group->get_running_sequences()[0];
+    prefix_sequence->append_token(200, 0.9f);
+    prefix_sequence_group->schedule_tokens(1);
+
+    auto out = make_output_for_sequences(
+        {
+            {legacy_sequence->get_id(), Scheduler::Output::LinearAttentionPagingData{{30, 30}, 4, 0}},
+            {prefix_sequence->get_id(), Scheduler::Output::LinearAttentionPagingData{{40, 40}, 4, 128}}
+        },
+        /*total_num_scheduled_tokens=*/2);
+
+    std::ignore = runner.forward({legacy_sequence_group, prefix_sequence_group}, out);
+
+    auto ireq = runner.get_infer_request();
+
+    const auto la_indices = ireq.get_tensor("paged_conv_block_indices");
+    const auto la_begins = ireq.get_tensor("paged_conv_block_indices_begins");
+    const auto la_past_lens = ireq.get_tensor("paged_conv_past_lens");
+    const auto la_interval = ireq.get_tensor("paged_conv_cache_interval");
+
+    EXPECT_EQ(tensor_to_i32_vector(la_indices), (std::vector<int32_t>{30, 30, 40, 40}));
+    EXPECT_EQ(tensor_to_i32_vector(la_begins), (std::vector<int32_t>{0, 2, 4}));
+    EXPECT_EQ(tensor_to_i32_vector(la_past_lens), (std::vector<int32_t>{4, 4}));
+    EXPECT_EQ(tensor_to_i32_vector(la_interval), (std::vector<int32_t>{0, 128}));
 }
