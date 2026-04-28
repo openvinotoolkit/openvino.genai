@@ -626,6 +626,9 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * Tree search parameters:
  * @param branching_factor number of top-k candidates selected per tree node and kept globally per tree layer.
  * @param tree_depth lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+ *        NOTE: The total number of draft tokens produced by the tree is
+ *        `total_draft_tokens = branching_factor^2 * (tree_depth - 1) + branching_factor`.
+ *        `total_draft_tokens >= num_assistant_tokens` must hold. The top `num_assistant_tokens` candidates (by score) are selected from the tree for verification.
  *
  * @param structured_output_config if set, the output will be a string constrained by the specified json_schema, regex, or EBNF grammar.
  *
