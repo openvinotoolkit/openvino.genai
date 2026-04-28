@@ -212,10 +212,11 @@ ov::genai::LLMPipeline::LLMPipeline(
     // PA backend does not support linear attention states (conv/SSM caches).
     if (attention_backend == PA_BACKEND && !is_npu_requested
         && utils::has_linear_attention_states(model)) {
-        if (utils::explicitly_requires_paged_attention(user_properties)
-            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
+        if (utils::explicitly_requires_paged_attention(user_properties)) {
             GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
         } else {
+            // Always fall back to SDPA for hybrid models (linear + full attention).
+            // ATTENTION_BACKEND=PA in user_properties is treated as a preference, not a requirement.
             attention_backend = SDPA_BACKEND;
         }
     }
@@ -267,10 +268,11 @@ ov::genai::LLMPipeline::LLMPipeline(
     // PA backend does not support linear attention states (conv/SSM caches).
     if (attention_backend == PA_BACKEND && !is_npu_requested
         && utils::has_linear_attention_states(model)) {
-        if (utils::explicitly_requires_paged_attention(user_properties)
-            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
+        if (utils::explicitly_requires_paged_attention(user_properties)) {
             GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
         } else {
+            // Always fall back to SDPA for hybrid models (linear + full attention).
+            // ATTENTION_BACKEND=PA in user_properties is treated as a preference, not a requirement.
             attention_backend = SDPA_BACKEND;
         }
     }
@@ -322,10 +324,11 @@ ov::genai::LLMPipeline::LLMPipeline(
     const auto model = utils::singleton_core().read_model(model_str, weights_tensor);
     if (attention_backend == PA_BACKEND && !is_npu_requested
         && utils::has_linear_attention_states(model)) {
-        if (utils::explicitly_requires_paged_attention(user_properties)
-            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
+        if (utils::explicitly_requires_paged_attention(user_properties)) {
             GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
         } else {
+            // Always fall back to SDPA for hybrid models (linear + full attention).
+            // ATTENTION_BACKEND=PA in user_properties is treated as a preference, not a requirement.
             attention_backend = SDPA_BACKEND;
         }
     }
