@@ -374,6 +374,7 @@ public:
             decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
             decoded.scores.push_back(encoded_result.scores.at(idx));
         }
+        decoded.finish_reasons = encoded_result.finish_reasons;
         auto decode_end_time = std::chrono::steady_clock::now();
 
         std::string decoded_results = decoded.texts.at(0);
@@ -530,6 +531,7 @@ public:
             decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
             decoded.scores.push_back(encoded_result.scores.at(idx));
         }
+        decoded.finish_reasons = encoded_result.finish_reasons;
         auto decode_end_time = std::chrono::steady_clock::now();
 
         std::string decoded_text = decoded.texts.at(0);

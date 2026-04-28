@@ -460,6 +460,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
     results.scores.resize(1u);
     results.scores[0] = 0u;
     results.tokens.resize(1u);
+    results.finish_reasons.resize(1u, GenerationFinishReason::NONE);
 
     ov::Tensor position_ids{ov::element::i64, input_ids.get_shape()};
     utils::initialize_position_ids(position_ids, attention_mask);
@@ -658,6 +659,17 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
     m_streaming_was_cancelled = (streaming_status == ov::genai::StreamingStatus::CANCEL);
     if (streamer_ptr) { // push streamer's cache
         streamer_ptr->end();
+    }
+
+    if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+        results.finish_reasons[0] = GenerationFinishReason::TOOL_CALL;
+    } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
+        results.finish_reasons[0] = GenerationFinishReason::STOP;
+    } else if (m_main_request->get_generation_capacity() <= 0) {
+        results.finish_reasons[0] = GenerationFinishReason::LENGTH;
+    } else if (out_token == config.eos_token_id ||
+               std::find(config.stop_token_ids.begin(), config.stop_token_ids.end(), out_token) != config.stop_token_ids.end()) {
+        results.finish_reasons[0] = GenerationFinishReason::STOP;
     }
 
     // If not chat conversation, then reset all states.
