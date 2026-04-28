@@ -187,7 +187,6 @@ public:
     ov::genai::Tokenizer get_tokenizer() const;
 
     ov::genai::GenerationConfig get_config() const;
-    ov::genai::SchedulerConfig get_scheduler_config() const;
     void set_config(const ov::genai::GenerationConfig& config);
 
     /**

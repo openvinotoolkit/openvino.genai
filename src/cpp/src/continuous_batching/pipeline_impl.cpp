@@ -113,11 +113,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
     }
 }
 
-SchedulerConfig ContinuousBatchingPipeline::ContinuousBatchingImpl::get_scheduler_config() const {
-    OPENVINO_ASSERT(m_scheduler, "Scheduler is not initialized");
-    return m_scheduler->get_config();
-}
-
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::generate_candidates_for_prompt_lookup() {}
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {

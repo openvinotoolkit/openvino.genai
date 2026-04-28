@@ -51,7 +51,7 @@ class XAttentionSimilarityTestData:
     ],
     ids=lambda x: x.test_id,
 )
-def test_xattention_enabled_vs_disabled_similarity(test_struct):
+def test_xattention_enabled_vs_disabled_similarity(test_struct, monkeypatch, capfd):
     import whowhatbench
 
     seqs_per_request = 1
@@ -60,6 +60,8 @@ def test_xattention_enabled_vs_disabled_similarity(test_struct):
     tokenizer = model_schema.hf_tokenizer
     models_path = model_schema.models_path
 
+    monkeypatch.setenv("OPENVINO_LOG_LEVEL", "5")
+
     scheduler_cfg_no_xattn = SchedulerConfig()
     scheduler_cfg_no_xattn.use_sparse_attention = False
 
@@ -67,6 +69,9 @@ def test_xattention_enabled_vs_disabled_similarity(test_struct):
     scheduler_cfg_xattn.use_sparse_attention = True
     scheduler_cfg_xattn.sparse_attention_config.num_last_dense_tokens_in_prefill = 10
     scheduler_cfg_xattn.sparse_attention_config.mode = SparseAttentionMode.XATTENTION
+    scheduler_cfg_xattn.sparse_attention_config.xattention_threshold = 0.9
+    scheduler_cfg_xattn.sparse_attention_config.xattention_block_size = 128
+    scheduler_cfg_xattn.sparse_attention_config.xattention_stride = 16
 
     generation_config = GenerationConfig()
     generation_config.num_return_sequences = 1
@@ -80,6 +85,7 @@ def test_xattention_enabled_vs_disabled_similarity(test_struct):
         {},
         get_default_llm_properties(),
     )
+
     model_xattn = ContinuousBatchingPipeline(
         models_path,
         scheduler_cfg_xattn,
@@ -87,13 +93,14 @@ def test_xattention_enabled_vs_disabled_similarity(test_struct):
         {},
         get_default_llm_properties(),
     )
+    xattn_logs = capfd.readouterr()
+    xattn_log_text = xattn_logs.out + xattn_logs.err
 
-    effective_cfg_no_xattn = model_no_xattn.get_scheduler_config()
-    effective_cfg_xattn = model_xattn.get_scheduler_config()
-
-    assert not effective_cfg_no_xattn.use_sparse_attention
-    assert effective_cfg_xattn.use_sparse_attention
-    assert effective_cfg_xattn.sparse_attention_config.mode == SparseAttentionMode.XATTENTION
+    assert "use_sparse_attention: true" in xattn_log_text
+    assert "sparseAttentionMode: XATTENTION" in xattn_log_text
+    assert "xattention_threshold: 0.9" in xattn_log_text
+    assert "xattention_block_size: 128" in xattn_log_text
+    assert "xattention_stride: 16" in xattn_log_text
 
     data_dict = load_prompts_dataset(test_struct.prompt_file)
     evaluator = whowhatbench.Evaluator(

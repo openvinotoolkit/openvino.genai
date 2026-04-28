@@ -120,8 +120,6 @@ public:
 
     virtual ~ContinuousBatchingImpl();
 
-    SchedulerConfig get_scheduler_config() const override;
-
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
