@@ -10,6 +10,9 @@
 #include "openvino/genai/sparse_attention.hpp"
 
 namespace ov::genai {
+
+inline constexpr std::size_t DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL = 128;
+
 struct SchedulerConfig {
     // a maximum number of tokens to batch
     // (in contrast to max_batch_size which combines independent sequences, we consider total amount of tokens in a batch)
@@ -29,6 +32,11 @@ struct SchedulerConfig {
     // Each block holds the full state for one sequence across all linear attention ops.
     // When 0, automatically derived from num_kv_blocks if linear attention layers are detected.
     std::size_t num_linear_attention_blocks = 0;
+
+    // Linear-attention checkpoint interval used when interval-based paging is enabled.
+    // Custom values are supported only for models with linear attention cache inputs.
+    // Must be greater than 0 when prefix caching is enabled.
+    std::size_t cache_interval = DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL;
 
     // whether to split prompt / generate to different scheduling phases
     // Allows to process prompt partially in case when batch size is limited. 
@@ -73,11 +81,17 @@ struct SchedulerConfig {
      */
     SparseAttentionConfig sparse_attention_config;
 
+    void validate() const {
+        OPENVINO_ASSERT(!enable_prefix_caching || cache_interval > 0,
+                        "SchedulerConfig cache_interval must be greater than 0 when prefix caching is enabled");
+    }
+
     bool operator==(const SchedulerConfig& other) const {
         return max_num_batched_tokens == other.max_num_batched_tokens && num_kv_blocks == other.num_kv_blocks &&
                cache_size == other.cache_size && num_linear_attention_blocks == other.num_linear_attention_blocks &&
                dynamic_split_fuse == other.dynamic_split_fuse && use_cache_eviction == other.use_cache_eviction &&
-               max_num_seqs == other.max_num_seqs && enable_prefix_caching == other.enable_prefix_caching;
+               max_num_seqs == other.max_num_seqs && enable_prefix_caching == other.enable_prefix_caching &&
+               cache_interval == other.cache_interval;
     }
 
     /**
@@ -94,6 +108,7 @@ struct SchedulerConfig {
         oss << "  num_kv_blocks: " << num_kv_blocks << "\n";
         oss << "  cache_size: " << cache_size << "\n";
         oss << "  num_linear_attention_blocks: " << num_linear_attention_blocks << "\n";
+        oss << "  cache_interval: " << cache_interval << "\n";
         oss << "  dynamic_split_fuse: " << std::boolalpha << dynamic_split_fuse << "\n";
         oss << "  use_cache_eviction: " << std::boolalpha << use_cache_eviction << "\n";
         if (use_cache_eviction) {

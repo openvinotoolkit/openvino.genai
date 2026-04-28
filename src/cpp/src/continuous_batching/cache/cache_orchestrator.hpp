@@ -23,8 +23,6 @@
 
 namespace ov::genai {
 
-inline constexpr size_t DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL = 128;
-
 /**
  * @brief Aggregates multiple cache type managers and block managers, presenting a unified,
  *        cache-type-agnostic interface.
@@ -55,6 +53,8 @@ public:
             ov::InferRequest& infer_request,
             SchedulerConfig& config,
             std::function<size_t(const std::string&, size_t)> get_available_memory) {
+        config.validate();
+
         ov::CompiledModel compiled_model = infer_request.get_compiled_model();
 
         auto orchestrator = std::make_shared<CacheOrchestrator>();
@@ -108,10 +108,12 @@ public:
 
             std::shared_ptr<BlockManager> la_block_manager;
             if (config.enable_prefix_caching) {
+                OPENVINO_ASSERT(config.cache_interval > 0,
+                                "Internal error: SchedulerConfig cache_interval must be greater than 0 when prefix caching is enabled");
                 la_block_manager = std::make_shared<BlockManager>(
                     num_la_blocks,
                     true,
-                    DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL,
+                    config.cache_interval,
                     la_manager->get_num_layers());
             } else {
                 const size_t static_la_blocks = num_la_blocks > 0
@@ -127,6 +129,9 @@ public:
 
             orchestrator->register_cache_type(CacheType::LINEAR_ATTENTION_CACHE, la_manager,
                                                la_block_manager, la_layer_ids);
+        } else {
+            OPENVINO_ASSERT(config.cache_interval == DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL,
+                            "SchedulerConfig cache_interval can be set only for models with linear attention cache inputs");
         }
 
         OPENVINO_ASSERT(!orchestrator->get_registered_types().empty(),

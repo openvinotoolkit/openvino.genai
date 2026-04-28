@@ -87,9 +87,6 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "top_p", top_p);
     read_json_param(data, "top_k", top_k);
 
-    // LA cache parameters
-    read_json_param(data, "cache_interval", cache_interval);
-
     // assistant generation
     read_json_param(data, "assistant_confidence_threshold", assistant_confidence_threshold);
     read_json_param(data, "num_assistant_tokens", num_assistant_tokens);
@@ -146,7 +143,6 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "temperature", temperature);
     read_anymap_param(properties, "top_p", top_p);
     read_anymap_param(properties, "top_k", top_k);
-    read_anymap_param(properties, "cache_interval", cache_interval);
     // TODO: add support of 'generator' property similar to Image generation
     read_anymap_param(properties, "rng_seed", rng_seed);
 
@@ -326,8 +322,6 @@ void GenerationConfig::validate() const {
         // OPENVINO_ASSERT(top_p == 1.0f, "When 'do_sample' is false, top_p must be 1.0f, but got ", top_p);
         // OPENVINO_ASSERT(temperature == 1.0f, "When 'do_sample' is false, temperature must be a 1.0f, but got ", temperature);
     }
-
-    OPENVINO_ASSERT(cache_interval > 0, "'cache_interval' must be greater than 0, but got ", cache_interval);
 
     if (is_beam_search()) {
         OPENVINO_ASSERT(num_beams % num_beam_groups == 0, "'num_beams' (", num_beams, ") should be divisible by 'num_beam_groups' (", num_beam_groups, ")");

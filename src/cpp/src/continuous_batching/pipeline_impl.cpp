@@ -128,6 +128,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     const std::string& device,
     const ov::AnyMap& properties) {
     m_device = device;
+    SchedulerConfig normalized_config = scheduler_config;
+    normalized_config.validate();
+
     // apply LoRA
     auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
@@ -156,7 +159,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // Detect cache types, create managers and block managers, normalize config
-    SchedulerConfig normalized_config = scheduler_config;
     auto get_available_memory = [&execution_device](const std::string& /*device*/, size_t num_layers) -> size_t {
         if (execution_device.find("GPU") != std::string::npos) {
             return utils::get_available_gpu_memory(execution_device, num_layers);

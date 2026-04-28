@@ -58,7 +58,7 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
     if (scheduler_config.enable_prefix_caching) {
         la_block_manager = std::make_shared<BlockManager>(scheduler_config.num_linear_attention_blocks,
                                                           true,
-                                                          DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL,
+                                                          scheduler_config.cache_interval,
                                                           la_cache_manager->get_num_layers());
     } else {
         const size_t num_la_blocks = scheduler_config.num_linear_attention_blocks > 0
@@ -421,41 +421,72 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_requires_read_and_interval_wri
     }
 }
 
-TEST(TestScheduler, hybrid_prefix_caching_prefill_uses_generation_config_cache_interval) {
+TEST(TestScheduler, hybrid_prefix_caching_prefill_uses_scheduler_config_cache_interval) {
     SchedulerConfig scheduler_config;
-    scheduler_config.max_num_batched_tokens = 64;
+    scheduler_config.max_num_batched_tokens = 128;
     scheduler_config.num_kv_blocks = 64;
     scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.cache_interval = 64;
     scheduler_config.enable_prefix_caching = true;
     scheduler_config.dynamic_split_fuse = false;
     scheduler_config.max_num_seqs = 4;
 
-    std::vector<uint64_t> tokens(32);
+    std::vector<uint64_t> tokens(96);
     std::iota(tokens.begin(), tokens.end(), 0);
-    auto generation_config = utils::get_greedy_config();
-    generation_config.cache_interval = 64;
-
     SequenceGroup::Ptr seq_group = std::make_shared<SequenceGroup>(
         0,
         ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-        generation_config);
+        utils::get_greedy_config());
     const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {seq_group};
 
-    Scheduler scheduler = Scheduler(init_hybrid_cache_orchestrator(scheduler_config), scheduler_config);
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
     ASSERT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
     const auto& paging_data = out.m_linear_attention_paging_data.at(seq_id);
-    ASSERT_EQ(paging_data.block_indices.size(), 2);
+    ASSERT_EQ(paging_data.block_indices.size(), 3);
     EXPECT_EQ(paging_data.cache_interval, 64);
     EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
+    EXPECT_NE(paging_data.block_indices[1], paging_data.block_indices[2]);
+    EXPECT_EQ(orchestrator->get_block_size(CacheType::LINEAR_ATTENTION_CACHE), 64);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id).size(), 2);
 
     for (auto& req : requests) {
         for (auto& seq : req->get_sequences()) {
             scheduler.free_sequence(seq->get_id());
         }
     }
+}
+
+TEST(TestScheduler, scheduler_config_zero_cache_interval_requires_disabled_prefix_caching) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.enable_prefix_caching = true;
+    scheduler_config.cache_interval = 0;
+
+    EXPECT_ANY_THROW(scheduler_config.validate());
+
+    scheduler_config.enable_prefix_caching = false;
+    EXPECT_NO_THROW(scheduler_config.validate());
+    EXPECT_EQ(scheduler_config.cache_interval, 0);
+}
+
+TEST(TestScheduler, scheduler_config_custom_cache_interval_requires_linear_attention_model) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, TEST_NUM_DECODER_LAYERS)).create_infer_request();
+    auto get_available_memory = [](const std::string&, size_t) {
+        return std::numeric_limits<size_t>::max();
+    };
+
+    SchedulerConfig default_config;
+    default_config.num_kv_blocks = 64;
+    EXPECT_NO_THROW(CacheOrchestrator::create(request, default_config, get_available_memory));
+
+    SchedulerConfig custom_interval_config;
+    custom_interval_config.num_kv_blocks = 64;
+    custom_interval_config.cache_interval = 64;
+    EXPECT_ANY_THROW(CacheOrchestrator::create(request, custom_interval_config, get_available_memory));
 }
 
 TEST(TestScheduler, hybrid_prefix_caching_generation_finishing_interval_reuses_same_write_block) {

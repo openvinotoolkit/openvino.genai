@@ -606,7 +606,9 @@ private:
 
         OPENVINO_ASSERT(num_scheduled_tokens > 0, "Linear attention paging requires scheduled tokens for sequence ", seq_id);
 
-        const size_t cache_interval = sequence_group->get_sampling_parameters().cache_interval;
+        const size_t cache_interval = m_config.cache_interval;
+        OPENVINO_ASSERT(cache_interval > 0,
+                "Internal error: SchedulerConfig cache_interval must be greater than 0 when prefix caching is enabled");
         const size_t read_block_position = num_processed_tokens == 0 ? 0 : (num_processed_tokens - 1) / cache_interval;
         const size_t write_block_begin = num_processed_tokens / cache_interval;
         const size_t write_blocks_count = (num_processed_tokens % cache_interval + num_scheduled_tokens + cache_interval - 1) / cache_interval;

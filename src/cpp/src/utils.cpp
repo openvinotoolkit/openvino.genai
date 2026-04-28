@@ -783,6 +783,7 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
     } else if (default_config.has_value()) {
         scheduler_config = *default_config;
     }
+    scheduler_config.validate();
     return {plugin_config, scheduler_config};
 };
 
