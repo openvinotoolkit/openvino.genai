@@ -331,6 +331,7 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
 
 SchedulerConfig get_latency_oriented_scheduler_config();
 
+bool strictly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested = false);
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested = false);
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);

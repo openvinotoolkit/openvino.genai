@@ -212,19 +212,18 @@ ov::genai::LLMPipeline::LLMPipeline(
     // PA backend does not support linear attention states (conv/SSM caches).
     if (attention_backend == PA_BACKEND && !is_npu_requested
         && utils::has_linear_attention_states(model)) {
-        if (utils::explicitly_requires_paged_attention(user_properties)) {
-            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
-        } else {
-            // Always fall back to SDPA for hybrid models (linear + full attention).
-            // ATTENTION_BACKEND=PA in user_properties is treated as a preference, not a requirement.
-            attention_backend = SDPA_BACKEND;
-        }
+        OPENVINO_ASSERT(!utils::strictly_requires_paged_attention(user_properties),
+            "PA backend does not support models with linear attention states (hybrid models). "
+            "Remove 'scheduler_config', speculative-decoding, or 'prompt_lookup' from properties, "
+            "or use a non-hybrid model.");
+        // ATTENTION_BACKEND=PA is a preference; fall back to SDPA for hybrid models.
+        attention_backend = SDPA_BACKEND;
     }
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
-    } else if (utils::explicitly_requires_paged_attention(user_properties)) {
+    } else if (utils::strictly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
@@ -268,19 +267,18 @@ ov::genai::LLMPipeline::LLMPipeline(
     // PA backend does not support linear attention states (conv/SSM caches).
     if (attention_backend == PA_BACKEND && !is_npu_requested
         && utils::has_linear_attention_states(model)) {
-        if (utils::explicitly_requires_paged_attention(user_properties)) {
-            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
-        } else {
-            // Always fall back to SDPA for hybrid models (linear + full attention).
-            // ATTENTION_BACKEND=PA in user_properties is treated as a preference, not a requirement.
-            attention_backend = SDPA_BACKEND;
-        }
+        OPENVINO_ASSERT(!utils::strictly_requires_paged_attention(user_properties),
+            "PA backend does not support models with linear attention states (hybrid models). "
+            "Remove 'scheduler_config', speculative-decoding, or 'prompt_lookup' from properties, "
+            "or use a non-hybrid model.");
+        // ATTENTION_BACKEND=PA is a preference; fall back to SDPA for hybrid models.
+        attention_backend = SDPA_BACKEND;
     }
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
-    } else if (utils::explicitly_requires_paged_attention(user_properties)) {
+    } else if (utils::strictly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
@@ -324,13 +322,12 @@ ov::genai::LLMPipeline::LLMPipeline(
     const auto model = utils::singleton_core().read_model(model_str, weights_tensor);
     if (attention_backend == PA_BACKEND && !is_npu_requested
         && utils::has_linear_attention_states(model)) {
-        if (utils::explicitly_requires_paged_attention(user_properties)) {
-            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
-        } else {
-            // Always fall back to SDPA for hybrid models (linear + full attention).
-            // ATTENTION_BACKEND=PA in user_properties is treated as a preference, not a requirement.
-            attention_backend = SDPA_BACKEND;
-        }
+        OPENVINO_ASSERT(!utils::strictly_requires_paged_attention(user_properties),
+            "PA backend does not support models with linear attention states (hybrid models). "
+            "Remove 'scheduler_config', speculative-decoding, or 'prompt_lookup' from properties, "
+            "or use a non-hybrid model.");
+        // ATTENTION_BACKEND=PA is a preference; fall back to SDPA for hybrid models.
+        attention_backend = SDPA_BACKEND;
     }
 
     if (is_npu_requested) {
@@ -340,7 +337,7 @@ ov::genai::LLMPipeline::LLMPipeline(
             device,
             properties,
             generation_config);
-    } else if (utils::explicitly_requires_paged_attention(user_properties)) {
+    } else if (utils::strictly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,

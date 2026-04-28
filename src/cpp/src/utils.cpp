@@ -793,11 +793,12 @@ SchedulerConfig get_latency_oriented_scheduler_config() {
     return default_config;
 }
 
-bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested) {
-    auto attention_backend_it = properties.find("ATTENTION_BACKEND");
-
-    if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
-        (attention_backend_it != properties.end() && attention_backend_it->second.as<std::string>() == PA_BACKEND)) {
+bool strictly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested) {
+    // Returns true only when PA is a hard requirement imposed by a feature
+    // (scheduler_config, speculative decoding, prompt lookup).
+    // ATTENTION_BACKEND=PA is deliberately excluded: it is a preference that
+    // can be overridden for models incompatible with PA (e.g. hybrid models).
+    if (properties.find(ov::genai::scheduler_config.name()) != properties.end()) {
         if (is_paged_attention_available()) {
             return true;
         } else {
@@ -822,6 +823,19 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
         }
     }
     return false;
+}
+
+bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested) {
+    auto attention_backend_it = properties.find("ATTENTION_BACKEND");
+    if (attention_backend_it != properties.end() &&
+        attention_backend_it->second.as<std::string>() == PA_BACKEND) {
+        if (is_paged_attention_available()) {
+            return true;
+        } else {
+            OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
+        }
+    }
+    return strictly_requires_paged_attention(properties, is_npu_requested);
 }
 
 void clear_false_prompt_lookup_from_config(ov::AnyMap& properties) {
