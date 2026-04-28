@@ -27,5 +27,5 @@ torchvision>=0.16,<=0.26.0
 # For LoRA adapters
 peft==0.19.1
 # For OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
-timm==1.0.25
+timm==1.0.26
 decord==0.6.0; platform_system != "Darwin"
