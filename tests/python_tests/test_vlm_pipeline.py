@@ -2399,10 +2399,6 @@ def test_cdpruner_disable_after_enable(ov_pipe_model: VlmModelInfo, cat_tensor: 
     assert result_without_pruning.texts[0].strip() != "", "Result without pruning should not be empty"
 
 
-
-
-
-
 CDPRUNER_VIDEO_PRUNING_SUPPORTED_MODELS = [
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
 ]
@@ -2441,7 +2437,6 @@ def test_cdpruner_with_video(
             f"Pruned result (ratio={pruning_ratio}) should have fewer input tokens than baseline, "
             f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_result.perf_metrics.get_num_input_tokens()}"
         )
-
 
 
 @parametrize_cdpruner_video_pruning_models
@@ -2532,7 +2527,9 @@ def test_cdpruner_continuous_batching_chat_mode(
 
     assert len(result1) > 0, "CDPruner chat turn 1 should produce non-empty output"
     assert len(result2) > 0, "CDPruner chat turn 2 should produce non-empty output"
-    assert len(result3) > 0, "CDPruner chat turn 3 (text-only) should produce non-empty output, verifying chat history is maintained"
+    assert len(result3) > 0, (
+        "CDPruner chat turn 3 (text-only) should produce non-empty output, verifying chat history is maintained"
+    )
 
 
 def test_cdpruner_continuous_batching_chat_history(
@@ -2572,7 +2569,9 @@ def test_cdpruner_continuous_batching_chat_history(
 
     assert len(result1) > 0, "CDPruner chat turn 1 should produce non-empty output"
     assert len(result2) > 0, "CDPruner chat turn 2 should produce non-empty output"
-    assert len(result3) > 0, "CDPruner chat turn 3 (text-only) should produce non-empty output, verifying chat history is maintained"
+    assert len(result3) > 0, (
+        "CDPruner chat turn 3 (text-only) should produce non-empty output, verifying chat history is maintained"
+    )
 
 
 def test_vlm_prompt_lookup_functionality(cat_tensor):
