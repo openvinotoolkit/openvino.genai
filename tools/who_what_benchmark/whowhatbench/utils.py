@@ -239,7 +239,11 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
     extract_dir = "./videos"
     os.makedirs(extract_dir, exist_ok=True)
     with tarfile.open(videos_arc_path, "r:gz") as tar:
-        all_videos = tar.getnames()
+        all_videos = []
+        for member in tar.getmembers():
+            max_video_size_mb = 5.4 * 1024 * 1024
+            if member.size < max_video_size_mb:
+                all_videos.append(member.name)
 
         if len(all_videos) < NUM_SAMPLES:
             logger.warning(f"The required number of samples {NUM_SAMPLES} exceeds the available amount of data {len(all_videos)}."
