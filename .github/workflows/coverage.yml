@@ -185,10 +185,11 @@ jobs:
       - name: Build C++ samples
         run: |
           source "${OV_INSTALL_DIR}/setupvars.sh"
-          chmod +x "${INSTALL_DIR}/samples/cpp/build_samples.sh"
-          "${INSTALL_DIR}/samples/cpp/build_samples.sh" -i "${INSTALL_DIR}"
-          chmod +x "${INSTALL_DIR}/samples/c/build_samples.sh"
-          "${INSTALL_DIR}/samples/c/build_samples.sh" -i "${INSTALL_DIR}"
+          cp -a "${INSTALL_DIR}/." "${OV_INSTALL_DIR}/"
+          chmod +x "${OV_INSTALL_DIR}/samples/cpp/build_samples.sh"
+          "${OV_INSTALL_DIR}/samples/cpp/build_samples.sh" -i "${INSTALL_DIR}"
+          chmod +x "${OV_INSTALL_DIR}/samples/c/build_samples.sh"
+          "${OV_INSTALL_DIR}/samples/c/build_samples.sh" -i "${INSTALL_DIR}"
 
       - name: Build GenAI Node.js bindings
         run: |
