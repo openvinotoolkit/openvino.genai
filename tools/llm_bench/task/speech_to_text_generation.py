@@ -63,12 +63,12 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         )
         dec_ms = (
             [v / 1000 for v in wm.decode_inference_durations]
-            if getattr(wm, "decode_inference_durations", None) is not None
+            if getattr(perf_metrics.raw_metrics, "sampling_durations", None) is not None
             else []
         )
         smp_ms = (
             [v / 1000 for v in perf_metrics.raw_metrics.sampling_durations]
-            if getattr(wm, "decode_inference_durations", None) is not None
+            if getattr(perf_metrics.raw_metrics, "sampling_durations", None) is not None
             else []
         )
         whisper_genai_metrics = {
