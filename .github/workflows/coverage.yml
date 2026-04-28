@@ -87,12 +87,16 @@ jobs:
         - ${{ github.workspace }}:${{ github.workspace }}
       options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
     env:
+      CMAKE_GENERATOR: Ninja
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
-      WHEELS_DIR: ${{ github.workspace }}/wheels
+      INSTALL_DIR: ${{ github.workspace }}/install
+      WHEELS_DIR: ${{ github.workspace }}/install/wheels
+      SRC_DIR: ${{ github.workspace }}/src
     steps:
       - name: Checkout openvino.genai
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
+          path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download OpenVINO package
@@ -104,24 +108,24 @@ jobs:
 
       - name: Build Tokenizers Wheel
         run: |
-          python3 -m pip wheel -v --no-deps --wheel-dir "${WHEELS_DIR}" \
+          python3 -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
               --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
               --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
-              "${{ needs.openvino_download.outputs.ov_wheel_source }}" \
-              thirdparty/openvino_tokenizers
-        working-directory: ${{ github.workspace }}
+              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+              ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
+        working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Build WWB Wheel
-        run: python3 -m pip wheel -v --no-deps --wheel-dir "${WHEELS_DIR}" tools/who_what_benchmark
-        working-directory: ${{ github.workspace }}
+        run: python3 -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
+        working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Upload Wheels
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
-          path: ${{ env.WHEELS_DIR }}
+          path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
 
   CoverageBuild:
@@ -176,6 +180,7 @@ jobs:
           cmake --build "${BUILD_DIR}" --config Release --parallel "$(nproc)" --verbose
           cmake --install "${BUILD_DIR}" --config Release --prefix "${INSTALL_DIR}"
           cmake --install "${BUILD_DIR}" --config Release --prefix "${INSTALL_DIR}" --component tests
+          cmake --install "${BUILD_DIR}" --config Release --prefix "${INSTALL_DIR}" --component cpp_samples_genai
 
       - name: Build C++ samples
         run: |
@@ -318,7 +323,7 @@ jobs:
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
           name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
-          path: ${{ env.OV_INSTALL_DIR }}/wheels
+          path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
       - name: Download coverage build notes
@@ -450,7 +455,7 @@ jobs:
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
           name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
-          path: ${{ env.OV_INSTALL_DIR }}/wheels
+          path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
       - name: Download xgrammar-off build package
@@ -585,7 +590,7 @@ jobs:
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
           name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
-          path: ${{ env.OV_INSTALL_DIR }}/wheels
+          path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
       - name: Download coverage build notes
