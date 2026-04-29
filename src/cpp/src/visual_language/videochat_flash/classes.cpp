@@ -903,8 +903,8 @@ void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     // rotary_pos_emb is constant across the entire pipeline lifetime (depends only on grid_size
     // and mm_local_num_frames). Bind it once at request-construction time so cyclic_vit_infer
-    // does not re-set it on every per-sample call. m_pos_emb outlives the request queue (member
-    // ordering: queue is destroyed before m_pos_emb).
+    // does not re-set it on every per-sample call. Its lifetime is managed by InferRequest
+    // after set_tensor().
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model, this]() -> ov::InferRequest {
