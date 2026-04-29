@@ -123,6 +123,7 @@ std::vector<EncodedGenerationResult> generate_common(
         result.m_request_id = rid;
         result.m_generation_ids.resize(num_out);
         result.m_scores.resize(num_out);
+        result.m_finish_reasons.resize(num_out, GenerationFinishReason::NONE);
         result.m_status = main_generations[rid]->get_status();
 
         for (size_t i = 0; i < num_out; ++i) {
@@ -137,6 +138,10 @@ std::vector<EncodedGenerationResult> generate_common(
             std::copy(gen_ids.begin(), gen_ids.end(),
                     std::back_inserter(result.m_generation_ids[i]));
             result.m_scores[i] = score;
+            result.m_finish_reasons[i] = seq->get_finish_reason();
+            if (result.m_finish_reasons[i] == GenerationFinishReason::NONE && request->handle_stopped()) {
+                result.m_finish_reasons[i] = request->get_generation_stream()->get_finish_reason();
+            }
         }
 
         self->perf_metrics().raw_metrics.generate_durations.clear();

@@ -79,7 +79,9 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // A language model used to generate a response.
     // Input shapes: inputs_embeds[N, conversation length, hidden_size],
     // position_ids[N, conversation length], beam_idx[N].
-    // Output shape: logits[N, conversation length, vocab_size].
+    // Output shape: logits[N, conversation length, vocab_size] for NPU,
+    // or logits[N, 1, vocab_size] for non-NPU if slice_before_matmul transformation
+    // is successfully applied (pattern may not match all model architectures).
     ov::InferRequest m_language;
     // LoRA adapter controller
     std::optional<AdapterController> m_adapter_controller;
@@ -167,6 +169,10 @@ private:
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
             npu_auto_default_properties(device_properties);
         } else {
+            // Slice-before-matmul rewrites LM logits to be produced only for the last token.
+            // After this transformation, the non-NPU path returns logits with seq_len == 1,
+            // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
+            utils::apply_slice_before_matmul_transformation(language_model);
             compiled_language_model = utils::singleton_core().compile_model(language_model, device, lm_properties);
         }
         ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
@@ -204,7 +210,6 @@ private:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
-        auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
         const auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
         if (m_generation_config.adapters) {
@@ -214,8 +219,11 @@ private:
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
-        m_language = utils::singleton_core().compile_model(
-            m_language_pair.first, m_language_pair.second, device, properties_copy
+        // Slice-before-matmul rewrites LM logits to be produced only for the last token.
+        // After this transformation, default path returns logits with seq_len == 1,
+        // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
+        utils::apply_slice_before_matmul_transformation(language_model);
+        m_language = utils::singleton_core().compile_model(language_model, device, properties_copy
         ).create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
         finalize_initialization(language_model, kv_pos);
@@ -366,6 +374,7 @@ public:
             decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
             decoded.scores.push_back(encoded_result.scores.at(idx));
         }
+        decoded.finish_reasons = encoded_result.finish_reasons;
         auto decode_end_time = std::chrono::steady_clock::now();
 
         std::string decoded_results = decoded.texts.at(0);
@@ -522,6 +531,7 @@ public:
             decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
             decoded.scores.push_back(encoded_result.scores.at(idx));
         }
+        decoded.finish_reasons = encoded_result.finish_reasons;
         auto decode_end_time = std::chrono::steady_clock::now();
 
         std::string decoded_text = decoded.texts.at(0);

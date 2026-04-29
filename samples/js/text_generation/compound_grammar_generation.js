@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { z } from 'zod';
-import { ChatHistory, LLMPipeline, StructuredOutputConfig as SOC, StreamingStatus } from 'openvino-genai-node';
+import {
+    ChatHistory,
+    GenerationFinishReason,
+    LLMPipeline,
+    StructuredOutputConfig as SOC,
+    StreamingStatus,
+} from 'openvino-genai-node';
 import { serialize_json, toJSONSchema } from './helper.js';
 
 function streamer(subword) {
@@ -59,6 +65,28 @@ function toolsToArraySchema(...tools) {
 }
 
 class CustomToolCallParser {
+    constructor() {
+        this.content = "";
+    }
+
+    write(deltaText) {
+        this.content += deltaText;
+
+        const startTag = "functools";
+        const startIndex = this.content.indexOf(startTag);
+        if (startIndex === -1) {
+            return StreamingStatus.RUNNING;
+        }
+
+        const jsonPart = this.content.slice(startIndex + startTag.length);
+        try {
+            JSON.parse(jsonPart);
+            return StreamingStatus.TOOL_CALL_STOP;
+        } catch {
+            return StreamingStatus.RUNNING;
+        }
+    }
+
     parse(msg) {
         if (!msg.content) {
             msg.content = "";
@@ -80,6 +108,29 @@ class CustomToolCallParser {
             return;
         }
     }
+}
+
+class ContentStreamer {
+    constructor(tokenizer, parsers = []) {
+        this.tokenizer = tokenizer;
+        this.parsers = parsers;
+    }
+
+    write(subword) {
+        process.stdout.write(subword);
+        for (const parser of this.parsers) {
+            const status = parser.write(subword);
+            if (status !== StreamingStatus.RUNNING) {
+                return status;
+            }
+        }
+        return StreamingStatus.RUNNING;
+    }
+}
+
+function formatFinishReason(reason) {
+    const effectiveReason = reason ?? GenerationFinishReason.STOP;
+    return GenerationFinishReason[effectiveReason] ?? effectiveReason;
 }
 
 function printToolCall(answer) {
@@ -114,13 +165,12 @@ async function main() {
     }
 
     const pipe = await LLMPipeline(modelDir, "CPU");
-    const tokenizer = await pipe.getTokenizer();
-    const chatHistory = new ChatHistory([{ role: "system", content: sysMessage }]);
     const tools = [bookFlightTicket, bookHotel].map((tool) => toolToDict(tool, true));
+    const chatHistory = new ChatHistory();
     chatHistory.setTools(tools);
+    chatHistory.push({ role: "system", content: sysMessage });
 
     const generationConfig = {
-        return_decoded_results: true,
         max_new_tokens: 300,
         do_sample: false,
     };
@@ -129,14 +179,12 @@ async function main() {
     console.log("User: ", userText1);
     chatHistory.push({ role: "user", content: userText1 });
 
-    // the example grammar works the same as SOC.Regex("yes|no")
-    // but the Union grammar is more flexible and can be extended with more options
-    const yesOrNo = SOC.Union(SOC.Regex("yes"), SOC.Regex("no"));
-    generationConfig.structured_output_config = new SOC({ structural_tags_config: yesOrNo });
+    // same as SOC.Union(SOC.ConstString("yes"), SOC.ConstString("no"))
+    const yesOrNoGrammar = SOC.Union(SOC.ConstString("yes"), SOC.ConstString("no"));
+    generationConfig.structured_output_config = new SOC({ structural_tags_config: yesOrNoGrammar });
     process.stdout.write("Assistant: ");
     const answer1 = await pipe.generate(chatHistory, generationConfig, streamer);
     chatHistory.push({ role: "assistant", content: answer1.texts[0] });
-    console.log();
 
     const userText2 =
         "book flight ticket from Beijing to Paris(using airport code) in 2025-12-04 to 2025-12-10, "
@@ -148,15 +196,20 @@ async function main() {
     const toolsJson = SOC.JSONSchema(
         toolsToArraySchema(bookFlightTicket, bookHotel)
     );
-    const toolCall = SOC.Concat(startToolCallTag, toolsJson);
+    const toolCallGrammar = SOC.Concat(startToolCallTag, toolsJson);
+    const toolCallParser = new CustomToolCallParser();
+    const toolCallStreamer = new ContentStreamer(pipe.getTokenizer(), [toolCallParser]);
 
-    generationConfig.structured_output_config.structural_tags_config = toolCall;
-    generationConfig.parsers = [new CustomToolCallParser()];
+    generationConfig.structured_output_config.structural_tags_config = toolCallGrammar;
+    generationConfig.parsers = [toolCallParser];
 
     process.stdout.write("Assistant: ");
-    const answer2 = await pipe.generate(chatHistory, generationConfig);
+    const answer2 = await pipe.generate(chatHistory, generationConfig, (subword) => toolCallStreamer.write(subword));
+    console.log();
+    console.log(`Finish reason: ${formatFinishReason(answer2.finishReasons[0])}`);
+
     console.log("\n\nThe following tool calls were generated:")
-    printToolCall(answer2)
+    printToolCall(answer2);
     console.log();
 }
 

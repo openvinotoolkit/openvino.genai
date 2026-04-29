@@ -58,7 +58,7 @@ struct EncodedImage {
     /// @brief Original size of the image
     ImageSize original_image_size;
 
-    /// @brief Images features projection, used only by Phi3 and phi4mm.
+    /// @brief Images features projection, used only by Phi3, phi4mm and videochat-flash-qwen.
     ov::Tensor images_features_projection;
   
     /// @brief Resampled image, used only by MiniCPM.
@@ -155,6 +155,8 @@ protected:
     /// @brief A config for video input processing.
     /// Used by models with separate video processor (e.g. Qwen3-VL).
     VideoProcessorConfig m_video_processor_config;
+
+    VisionEncoder() = default;
 
 public:
     VisionEncoder(
