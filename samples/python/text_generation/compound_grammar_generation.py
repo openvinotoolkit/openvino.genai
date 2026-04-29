@@ -10,9 +10,10 @@ from openvino_genai import (
     GenerationConfig,
     LLMPipeline,
     StreamingStatus,
-    Parser,
+    IncrementalParser,
     DecodedResults,
     ChatHistory,
+    TextParserStreamer,
 )
 
 from openvino_genai import (
@@ -77,29 +78,40 @@ def tools_to_array_schema(*tools: BaseModel) -> str:
     )
 
 
-class CustomToolCallParser(Parser):
-    """parser to extract tool calls from the model output.
+class CustomToolCallIncrementalParser(IncrementalParser):
+    """Incremental parser that stops generation once a valid tool call payload is parsed."""
 
-    Custom parser should be inherited from Parser and implement 'parse' method.
-    """
+    def __init__(self):
+        super().__init__()
+        self._content = ""
+        self._start_tag = "functools"
 
-    def parse(self, msg: dict):
-        if "content" not in msg:
-            msg["content"] = ""
-        content = msg["content"]
+    def parse(self, msg: dict, delta_text: str, delta_tokens=None) -> str:
+        self._content += delta_text
 
-        start_tag = "functools"
-        start_index = content.find(start_tag)
+        start_index = self._content.find(self._start_tag)
         if start_index == -1:
-            return
+            return delta_text
 
-        json_part = content[start_index + len(start_tag) :]
+        json_part = self._content[start_index + len(self._start_tag) :]
         try:
             tool_calls = json.loads(json_part)
             msg["tool_calls"] = tool_calls
-            return
+            self.set_status(StreamingStatus.TOOL_CALL_STOP)
         except json.JSONDecodeError:
-            return
+            pass
+
+        return delta_text
+
+    def reset(self):
+        self.set_status(StreamingStatus.RUNNING)
+        self._content = ""
+
+
+class ContentStreamer(TextParserStreamer):
+    def write(self, message):
+        print(message.get("content", ""), end="", flush=True)
+        return StreamingStatus.RUNNING
 
 
 def print_tool_call(answer: DecodedResults):
@@ -156,7 +168,6 @@ def main():
     print("Assistant: ", end="")
     answer = pipe.generate(chat_history, generation_config, streamer=streamer)
     chat_history.append({"role": "assistant", "content": answer.texts[0]})
-    print()
 
     user_text_2 = (
         "book flight ticket from Beijing to Paris(using airport code) in 2025-12-04 to 2025-12-10, "
@@ -170,8 +181,15 @@ def main():
     tool_call_grammar = start_tool_call_tag + tools_json  # SOC.Concat(start_tool_call_tag, tools_json)
     generation_config.structured_output_config.structural_tags_config = tool_call_grammar
 
+    tool_call_parser = CustomToolCallIncrementalParser()
+    tool_call_streamer = ContentStreamer(pipe.get_tokenizer(), parsers=[tool_call_parser])
+
     print("Assistant: ", end="")
-    answer = pipe.generate(chat_history, generation_config, parsers=[CustomToolCallParser()])
+    answer = pipe.generate(chat_history, generation_config, streamer=tool_call_streamer)
+
+    reason = answer.finish_reasons[0]
+    print()
+    print(f"Finish reason: {getattr(reason, 'name', reason)}")
 
     print("\n\nThe following tool calls were generated:")
     print_tool_call(answer)

@@ -73,28 +73,38 @@ struct SequenceGroupSamplingInfo {
 class Sampler {
     class GroupBeamSearcher;
 
+    // Bundles all per-request sampler state that needs to be accessed during sampling. 
+    // This is used to keep track of logit processors, RNG engines, and stop strings for each request.
+    struct RequestSamplerContext {
+        std::mt19937 rng_engine;
+        LogitProcessor logit_processor;
+        // { max_encoded_len, stop_strings }
+        std::pair<size_t, std::set<std::string>> stop_strings;
+
+        RequestSamplerContext(size_t seed, LogitProcessor&& lp)
+            : rng_engine(seed), logit_processor(std::move(lp)) {}
+    };
+
     Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t token_idx);
     Token _greedy_sample(const Logits& logits, size_t top_logprobs) const;
-    std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence);
-    std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
+    std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence, std::mt19937& rng_engine);
+    std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr& sequence_group,
+                                                 const std::pair<size_t, std::set<std::string>>& stop_strings);
 
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
-                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probolities);
+                            bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probabilities,
+                            std::mt19937& rng_engine);
 
     SequenceGroupSamplingInfo sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits,
-                                                        LogitProcessor& logit_processor, const std::pair<size_t, std::set<std::string>>& stop_strings,
+                                                        RequestSamplerContext& context,
                                                         bool is_validation_mode_enabled);
 
-    // request ID => beam search tracking information
+    // request ID => beam search tracking information (kept separate — has its own mutex)
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
     std::mutex m_beam_search_info_mutex;
 
-    std::mt19937 rng_engine;
-    size_t seed = rng_engine.default_seed;
-    // { request_id, logit_processor }
-    std::map<uint64_t, LogitProcessor> m_logit_processors;
-    // { request_id, { max_encoded_len, { stop_strings }}}
-    std::map<int64_t, std::pair<size_t, std::set<std::string>>> m_stop_strings;
+    std::map<uint64_t, RequestSamplerContext> m_request_contexts;
+    size_t m_default_seed = std::mt19937::default_seed;  // kept for set_seed/get_seed API compat
 
     Tokenizer m_tokenizer;
 
@@ -107,11 +117,10 @@ public:
     explicit Sampler(const Tokenizer & tokenizer, size_t num_threads = 1) : m_tokenizer(tokenizer), m_thread_pool(num_threads) {};
 
     SamplerOutput sample(const std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
-    void set_seed(size_t new_seed) {
-        rng_engine.seed(new_seed);
-        seed = new_seed;
-    }
-    size_t get_seed() { return seed; }
+
+    // Non-CB pipelines required API for seed. The CB path uses per-request engines from m_request_contexts.
+    void set_seed(size_t new_seed) { m_default_seed = new_seed; }
+    size_t get_seed() const { return m_default_seed; }
 
     void set_tokenizer(const Tokenizer& tokenizer) {
         m_tokenizer = tokenizer;
