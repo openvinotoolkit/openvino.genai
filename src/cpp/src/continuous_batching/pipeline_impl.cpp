@@ -146,8 +146,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     }
 
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
-    std::cerr << "[role=language_model] OPTIMAL_NUMBER_OF_INFER_REQUESTS="
-              << compiled_model.get_property(ov::optimal_number_of_infer_requests) << std::endl;
     std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
     const bool all_gpu_device =
         std::all_of(execution_devices.begin(), execution_devices.end(), [&](const std::string& device) {

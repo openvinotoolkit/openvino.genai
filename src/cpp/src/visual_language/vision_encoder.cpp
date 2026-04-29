@@ -25,8 +25,6 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::
         model_dir / "openvino_vision_embeddings_model.xml", device,
         utils::get_model_properties(properties, "vision_embeddings", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
-    std::cerr << "[role=vision_embeddings] OPTIMAL_NUMBER_OF_INFER_REQUESTS="
-              << compiled_model.get_property(ov::optimal_number_of_infer_requests) << std::endl;
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model]() -> ov::InferRequest {

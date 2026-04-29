@@ -187,9 +187,6 @@ private:
         m_language = compiled_language_model.create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
-        // Pass full per-device properties (including MODEL_PROPERTIES) to
-        // InputsEmbedder so each sub-model compile site can route its own
-        // role overlay via utils::get_model_properties().
         auto embedder_properties = device_properties.empty()
             ? properties_copy
             : utils::pop_or_default<ov::AnyMap>(device_properties, embedder_device, {});
@@ -217,9 +214,6 @@ private:
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
 
-        // Pass full properties (including MODEL_PROPERTIES) to InputsEmbedder
-        // so each sub-model compile site can route its own role overlay via
-        // utils::get_model_properties() at the OV core boundary.
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
 
         m_tokenizer = m_inputs_embedder->get_tokenizer();

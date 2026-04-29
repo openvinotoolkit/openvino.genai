@@ -939,8 +939,6 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     ov::genai::utils::print_compiled_model_properties(compiled_model,
         m_with_cu_seqlens_input ? "VLM vision embeddings merger model with VLSDPA optimization ENABLED" :
         "VLM vision embeddings merger model with VLSDPA optimization DISABLED");
-    std::cerr << "[role=vision_embeddings_merger] OPTIMAL_NUMBER_OF_INFER_REQUESTS="
-              << compiled_model.get_property(ov::optimal_number_of_infer_requests) << std::endl;
 
     m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -966,17 +964,13 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
     utils::request_vl_sdpa_transformations(model);
 
-    auto compiled_model = utils::singleton_core().compile_model(model,
-        device,
-        utils::get_model_properties(device_config, "vision_embeddings_merger", device)
-    );
+    auto compiled_model = utils::singleton_core().compile_model(
+        model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
 
     m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
     ov::genai::utils::print_compiled_model_properties(compiled_model,
         m_with_cu_seqlens_input ? "VLM vision embeddings merger model with VLSDPA optimization ENABLED" :
         "VLM vision embeddings merger model with VLSDPA optimization DISABLED");
-    std::cerr << "[role=vision_embeddings_merger] OPTIMAL_NUMBER_OF_INFER_REQUESTS="
-              << compiled_model.get_property(ov::optimal_number_of_infer_requests) << std::endl;
 
     m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),

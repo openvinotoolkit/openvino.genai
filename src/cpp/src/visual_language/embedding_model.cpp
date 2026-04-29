@@ -52,8 +52,6 @@ EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
 
     ov::CompiledModel compiled_model = core.compile_model(m_model, device, plugin_props);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings model");
-    std::cerr << "[role=text_embeddings] OPTIMAL_NUMBER_OF_INFER_REQUESTS="
-              << compiled_model.get_property(ov::optimal_number_of_infer_requests) << std::endl;
     m_embeddings_requests_queue = init(compiled_model);
 }
 
