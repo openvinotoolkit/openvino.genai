@@ -805,10 +805,6 @@ public:
         return m_sampling_params;
     }
 
-    void set_sampling_parameters(const ov::genai::GenerationConfig& params) {
-        m_sampling_params = params;
-    }
-
     void set_out_of_memory() {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_running()) {
