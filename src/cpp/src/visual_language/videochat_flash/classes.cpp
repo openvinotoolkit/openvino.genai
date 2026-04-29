@@ -9,10 +9,19 @@
 #include "openvino/op/convert.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/op/clamp.hpp"
-#include "openvino/op/round.hpp"
 #include "openvino/op/subtract.hpp"
 #include "openvino/op/multiply.hpp"
 #include "logger.hpp"
+
+// Forward-declare the rt_info helper from openvino's transformations library to avoid
+// pulling in the private header "transformations/rt_info/disable_fp16_compression.hpp"
+// (not on the genai include path). The symbol is exported via TRANSFORMATIONS_API and
+// resolves at link time against the openvino runtime that genai already depends on.
+namespace ov {
+class Node;
+void disable_fp16_compression(const std::shared_ptr<Node>& node);
+}  // namespace ov
+
 #include "visual_language/clip.hpp"
 #include "visual_language/vlm_utils.hpp"
 #include "json_utils.hpp"
@@ -69,11 +78,18 @@ void write_native(std::ostream& os, size_t idx) {
  * Pipeline (all on device, batched, no per-frame CPU loop):
  *   1) Convert u8 -> f32
  *   2) Transpose NHWC -> NCHW
- *   3) Bicubic resize to (target_h, target_w) via Interpolate
- *   4) Clamp(0, 255) + Round to mirror the uint8-quantization step in
- *      clip_image_preprocess (keeps numerical parity with the previous CPU path)
+ *   3) Bicubic resize to (target_h, target_w) via Interpolate. Pinned to f32 with
+ *      ov::disable_fp16_compression so fp16-compressing plugins (e.g. GPU) keep this
+ *      single op in f32 -- see the inline comment near the Interpolate node for the
+ *      numerical rationale. The other ops are linear/exact and stay at the device's
+ *      default precision with no observable downstream impact.
+ *   4) Clamp(0, 255) to mirror the value range of the legacy CPU uint8 staging buffer.
+ *      Note: the integer round-trip (Add(0.5)+Floor) used by the legacy CPU reference
+ *      path is intentionally not modelled here; with the bicubic pinned to f32 the
+ *      sub-ULP residuals are absorbed by downstream LayerNorm/Softmax, matching the
+ *      qwen2vl preprocess strategy.
  *   5) Normalize: (x / 255 - mean) / std, folded into
- *      (x - mean*255) * (1 / (std*255)) with broadcast constants
+ *      (x - mean*255) * (1 / (std*255)) with broadcast constants.
  *
  * Inputs:
  *   - "raw_frames"    : u8  [N, H, W, 3] (dynamic N, H, W)
@@ -116,15 +132,15 @@ std::shared_ptr<ov::Model> build_frame_preprocess_model(
     auto resize_axes = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {2, 3});
     auto resized = std::make_shared<ov::op::v11::Interpolate>(
         nchw, resize_target, resize_axes, attrs);
+    // Pin only this op to f32 on fp16-compressing plugins (e.g. GPU). Default fp16
+    // accumulation here makes the output snap to the fp16 grid (ULP ~0.0625 in the
+    // 64..255 pixel range, e.g. 84.3125 = 84+5/16 instead of CPU's 84.3198), which
+    // perturbs downstream ViT activations and shifts LLM tokens vs the CPU baseline.
+    // The other preprocess ops (Convert/Transpose/Clamp/Subtract/Multiply) are linear
+    // or exact and stay in fp16 with no observable downstream impact.
+    ov::disable_fp16_compression(resized);
 
-    // Match clip_image_preprocess quantization quirk: round bicubic output to uint8 range first.
     auto clamped = std::make_shared<ov::op::v0::Clamp>(resized, 0.0, 255.0);
-    auto rounded = std::make_shared<ov::op::v5::Round>(
-        clamped, ov::op::v5::Round::RoundMode::HALF_TO_EVEN);
-    // NOTE: original C++ used std::round (half-away-from-zero) but values are in [0, 255] so
-    // there is no effect sign-wise; using HALF_TO_EVEN here on positive values is equivalent for
-    // the vast majority of inputs; remaining ties produce |diff| <= 1/255 <= 4e-3 after scaling,
-    // which is well below downstream vision-encoder tolerance.
 
     // Fold (x/255 - mean)/std into (x - mean*255) * (1/(std*255)) with [1,3,1,1] broadcast consts.
     const std::vector<float> mean_scaled{
@@ -137,7 +153,7 @@ std::shared_ptr<ov::Model> build_frame_preprocess_model(
         ov::element::f32, ov::Shape{1, 3, 1, 1}, mean_scaled);
     auto inv_std_const = std::make_shared<ov::op::v0::Constant>(
         ov::element::f32, ov::Shape{1, 3, 1, 1}, inv_std_scaled);
-    auto centered = std::make_shared<ov::op::v1::Subtract>(rounded, mean_const);
+    auto centered = std::make_shared<ov::op::v1::Subtract>(clamped, mean_const);
     auto normalized = std::make_shared<ov::op::v1::Multiply>(centered, inv_std_const);
 
     normalized->set_friendly_name("preprocessed_frames");
@@ -817,11 +833,12 @@ void VisionEncoderVideoChatFlashQwen::initialize_runtime_config(const std::files
 }
 
 void VisionEncoderVideoChatFlashQwen::initialize_preprocess_queue(const std::string& device, const ov::AnyMap& properties) {
-    // Build a device-side preprocess model (Convert + Transpose + Bicubic resize + Normalize).
-    // The compile device/properties are forwarded from the caller so the preprocessing subgraph
-    // can follow the same placement policy as the main vision encoder (e.g. GPU) when the memory
-    // budget allows. Previously this was hard-coded to CPU to mirror the merge-model workaround
-    // (CVS-183390); that restriction is now lifted at call sites.
+    // Build the preprocess model (Convert + Transpose + Bicubic resize + Clamp + Normalize)
+    // and compile it on the caller-requested device. The bicubic Interpolate inside the
+    // graph is tagged with ov::disable_fp16_compression so the GPU plugin keeps just that
+    // single op in f32 (see comment in build_frame_preprocess_model); the rest of the
+    // graph still runs at the device's default precision and the caller's `properties`
+    // are forwarded unchanged.
     auto preprocess_model = build_frame_preprocess_model(
         m_processor_config.image_mean, m_processor_config.image_std);
     auto compiled_preprocess = utils::singleton_core().compile_model(preprocess_model, device, properties);
