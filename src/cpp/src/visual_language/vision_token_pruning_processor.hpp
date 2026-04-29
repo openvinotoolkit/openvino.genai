@@ -56,7 +56,7 @@ struct PruningContext {
     // Spatial merge size from the vision encoder (1 = no merge).
     size_t spatial_merge_size = 1;
 
-    // Optional in/out deepstack tensor of shape [L, image_count + video_count, D]
+    // Optional in/out deepstack tensor of shape [L, total_visual_tokens, D]
     // in merger order [video; image]. Pruned in place when non-null.
     ov::Tensor* deepstack_visual_embeds = nullptr;
 };
@@ -171,8 +171,8 @@ public:
      * @brief Adjust position IDs after visual token pruning.
      * @param position_ids The position IDs to adjust (modified in-place)
      * @param input_ids The input token IDs for sequence traversal
-     * @param images_grid_thw Grid dimensions for each image
-     * @param images_sequence Image sequence ordering
+     * @param images_grid_thw Combined vision region grids (image and/or video) in prompt order
+     * @param images_sequence Combined vision region sequence indices
      * @param image_pad_token_id Token ID for image padding
      * @param vision_start_token_id Token ID for vision start marker
      * @param spatial_merge_size Spatial merge size for coordinate conversion
