@@ -399,10 +399,68 @@ jobs:
           overwrite: true
 
   CoveragePython:
-    name: Coverage Python (CPU)
+    name: Coverage Python ${{ matrix.test.name }} (CPU)
     needs: [openvino_download, genai_build_wheels, CoverageBuild]
     timeout-minutes: 720
-    runs-on: aks-linux-8-cores-32gb
+    runs-on: ${{ matrix.test.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - name: whisper
+            runner: aks-linux-8-cores-32gb
+          - name: cacheopt_e2e_part_1
+            runner: aks-linux-8-cores-32gb
+          - name: cacheopt_e2e_part_2
+            runner: aks-linux-8-cores-32gb
+          - name: llm_image_structured_output
+            runner: aks-linux-8-cores-32gb
+          - name: vlm_match_optimum_with_resolutions
+            runner: aks-linux-8-cores-32gb
+          - name: vlm
+            runner: aks-linux-8-cores-32gb
+          - name: video_generation
+            runner: aks-linux-8-cores-32gb
+          - name: gguf_reader
+            runner: aks-linux-8-cores-32gb
+          - name: tokenizer
+            runner: aks-linux-8-cores-32gb
+          - name: api
+            runner: aks-linux-8-cores-32gb
+          - name: rag
+            runner: aks-linux-8-cores-32gb
+          - name: wwb
+            runner: aks-linux-8-cores-32gb
+          - name: eagle3_speculative_decoding
+            runner: aks-linux-8-cores-32gb
+          - name: wwb_nanollava
+            runner: aks-linux-8-cores-32gb
+          - name: vlm_minicpm_o_2_6
+            runner: aks-linux-8-cores-32gb
+          - name: vlm_videochat
+            runner: aks-linux-8-cores-32gb
+          - name: vlm_qwen3_vl
+            runner: aks-linux-8-cores-32gb
+          - name: samples_llm
+            runner: aks-linux-4-cores-16gb
+          - name: samples_whisper
+            runner: aks-linux-4-cores-16gb
+          - name: samples_dreamlike_anime_1_0
+            runner: aks-linux-8-cores-32gb
+          - name: samples_lcm_dreamshaper_v7_int8_ov
+            runner: aks-linux-4-cores-16gb
+          - name: samples_rag
+            runner: aks-linux-4-cores-16gb
+          - name: samples_speech_generation
+            runner: aks-linux-4-cores-16gb
+          - name: samples_eagle3_decoding
+            runner: aks-linux-4-cores-16gb
+          - name: continuous_batching_tools
+            runner: aks-linux-4-cores-16gb
+          - name: llm_benchmark_tools
+            runner: aks-linux-4-cores-16gb
+          - name: xgrammar_off
+            runner: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -426,6 +484,7 @@ jobs:
       EXTRA_CPP_COVERAGE_DIRS: ${{ github.workspace }}/build_xgrammar
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
       PYTHONPATH: ${{ github.workspace }}/install/python
+      PY_TEST_NAMES: ${{ matrix.test.name }}
       COVERAGE_WRITE_STEP_SUMMARY: 'false'
     steps:
       - name: Checkout sources
@@ -508,21 +567,23 @@ jobs:
         id: cpu_artifact
         if: ${{ always() }}
         run: |
-          dir="${RUNNER_TEMP}/coverage-python-cpu"
+          artifact_name="coverage-python-cpu-${PY_TEST_NAMES}"
+          dir="${RUNNER_TEMP}/${artifact_name}"
           python3 .github/scripts/coverage/ci_reports.py collect-suite-results \
             --workspace "${OV_WORKSPACE}" \
             --suite python \
             --profile cpu \
-            --lane cpu \
-            --artifact-name coverage-python-cpu \
+            --lane "${PY_TEST_NAMES}" \
+            --artifact-name "${artifact_name}" \
             --artifact-dir "${dir}"
           echo "dir=${dir}" >> "${GITHUB_OUTPUT}"
+          echo "artifact_name=${artifact_name}" >> "${GITHUB_OUTPUT}"
 
       - name: Upload Python CPU artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-python-cpu
+          name: ${{ steps.cpu_artifact.outputs.artifact_name }}
           path: ${{ steps.cpu_artifact.outputs.dir }}
           if-no-files-found: warn
           retention-days: 7
@@ -753,11 +814,11 @@ jobs:
             output_key: cpp_cpu
             flag: genai-cpp-cpu
           - name: Python API, CPU
-            artifact_name: coverage-python-cpu
+            artifact_name: coverage-python-cpu-*
             output_key: python_cpu_xml
             flag: genai-python-cpu
           - name: C++ runtime, Python suite, CPU
-            artifact_name: coverage-python-cpu
+            artifact_name: coverage-python-cpu-*
             output_key: python_cpu_info
             flag: genai-native-python-cpu
           - name: Node.js bindings, CPU
@@ -779,8 +840,8 @@ jobs:
         if: ${{ needs.CoverageSummary.outputs[matrix.upload.output_key] != '' }}
         uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
-          name: ${{ matrix.upload.artifact_name }}
-          path: ${{ github.workspace }}/artifacts/${{ matrix.upload.artifact_name }}
+          pattern: ${{ matrix.upload.artifact_name }}
+          path: ${{ github.workspace }}/artifacts/${{ matrix.upload.output_key }}
 
       - name: Resolve Codecov upload file
         id: coverage_files

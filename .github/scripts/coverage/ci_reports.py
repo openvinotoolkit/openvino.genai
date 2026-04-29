@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -28,8 +29,8 @@ UPLOAD_DEFS = {
     "cpp_igpu_func": ("coverage-cpp-igpu-func", "coverage.info"),
     "cpp_dgpu_unit": ("coverage-cpp-dgpu-unit", "coverage.info"),
     "cpp_dgpu_func": ("coverage-cpp-dgpu-func", "coverage.info"),
-    "python_cpu_xml": ("coverage-python-cpu", "python-coverage.xml"),
-    "python_cpu_info": ("coverage-python-cpu", "coverage.info"),
+    "python_cpu_xml": ("coverage-python-cpu-*", "python-coverage.xml"),
+    "python_cpu_info": ("coverage-python-cpu-*", "coverage.info"),
     "python_igpu_xml": ("coverage-python-igpu", "python-coverage.xml"),
     "python_igpu_info": ("coverage-python-igpu", "coverage.info"),
     "python_dgpu_xml": ("coverage-python-dgpu", "python-coverage.xml"),
@@ -82,6 +83,15 @@ SUITE_DEFS = {
         "not_run_key": "JS_TESTS_NOT_RUN",
     },
 }
+
+
+SELECTION_ENV_BY_SUITE = {
+    "cpp": "CXX_TEST_NAMES",
+    "python": "PY_TEST_NAMES",
+    "js": "JS_TEST_NAMES",
+}
+
+
 def _read_json_file(path: Path) -> dict[str, object]:
     if not path.is_file():
         return {}
@@ -119,6 +129,13 @@ def _load_test_names(*, workspace: Path, suite: str, profile: str) -> list[str]:
     raise ValueError(f"Unsupported suite: {suite}")
 
 
+def _selected_test_names(suite: str) -> list[str]:
+    raw_value = os.environ.get(SELECTION_ENV_BY_SUITE[suite], "").strip()
+    if not raw_value:
+        return []
+    return [name.strip() for name in raw_value.split(",") if name.strip()]
+
+
 def collect_suite_results(
     *,
     workspace: Path,
@@ -132,6 +149,10 @@ def collect_suite_results(
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     tests = _load_test_names(workspace=workspace, suite=suite, profile=profile)
+    selected_tests = _selected_test_names(suite)
+    if selected_tests:
+        selected_set = set(selected_tests)
+        tests = [test for test in tests if test in selected_set]
     total = len(tests)
 
     metadata = {"suite": suite, "lane": lane, "artifact_name": artifact_name}
@@ -327,32 +348,43 @@ def merge_durations(*, workspace: Path, output: Path) -> None:
     print(f"Wrote {len(rows)} duration row(s) to {output}")
 
 
-def _find_upload_file(*, workspace: Path, artifact_name: str, filename: str) -> Path | None:
+def _artifact_name_matches(artifact_name: str, pattern: str) -> bool:
+    if pattern.endswith("*"):
+        return artifact_name.startswith(pattern[:-1])
+    return artifact_name == pattern
+
+
+def _find_upload_files(*, workspace: Path, artifact_name: str, filename: str) -> list[Path]:
     root = workspace / "artifacts"
     if not root.exists():
-        return None
+        return []
 
+    paths: list[Path] = []
     for metadata_path in sorted(root.rglob(METADATA_FILE)):
         metadata = _read_json_file(metadata_path)
-        if str(metadata.get("artifact_name", "")).strip() != artifact_name:
+        if not _artifact_name_matches(str(metadata.get("artifact_name", "")).strip(), artifact_name):
             continue
         candidate = metadata_path.parent / filename
         if candidate.is_file():
-            return candidate.resolve()
+            paths.append(candidate.resolve())
 
     for candidate in sorted(root.rglob(filename)):
-        if candidate.is_file() and artifact_name in candidate.parts:
-            return candidate.resolve()
+        if not candidate.is_file() or candidate.resolve() in paths:
+            continue
+        candidate_parts = [str(part) for part in candidate.parts]
+        if any(_artifact_name_matches(part, artifact_name) for part in candidate_parts):
+            paths.append(candidate.resolve())
 
-    return None
+    return paths
 
 
 def resolve_uploads(*, workspace: Path, output_file: Path) -> None:
     output_lines = []
     for output_name, (artifact_name, filename) in UPLOAD_DEFS.items():
-        path = _find_upload_file(workspace=workspace, artifact_name=artifact_name, filename=filename)
-        output_lines.append(f"{output_name}={path or ''}")
-        print(f"{output_name}: {path or '<missing>'}")
+        paths = _find_upload_files(workspace=workspace, artifact_name=artifact_name, filename=filename)
+        output_value = ",".join(str(path) for path in paths)
+        output_lines.append(f"{output_name}={output_value}")
+        print(f"{output_name}: {output_value or '<missing>'}")
 
     with output_file.open("a", encoding="utf-8") as handle:
         handle.write("\n".join(output_lines) + "\n")
