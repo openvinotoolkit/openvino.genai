@@ -25,7 +25,8 @@
 #include "utils.hpp"
 
 namespace {
-void throw_video_not_implemented(const std::vector<>& videos) {
+template <typename VideoType>
+void throw_video_not_implemented(const std::vector<VideoType>& videos) {
     if (!videos.empty()) {
         OPENVINO_THROW_NOT_IMPLEMENTED(
             "Video preprocessing isn't implemented for this model. Pass frames as independent images."
