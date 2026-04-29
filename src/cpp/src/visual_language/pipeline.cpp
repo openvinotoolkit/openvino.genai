@@ -253,9 +253,6 @@ public:
         auto properties_copy = properties;
 
         utils::extract_extensions_to_core(properties_copy);
-        // read_model is the language-model load path: apply the
-        // MODEL_PROPERTIES["language_model"] overlay and strip the GenAI-only
-        // meta key before reaching OV core.
         auto language_model = utils::singleton_core().read_model(
             language_model_path, {}, utils::get_model_properties(properties_copy, "language_model"));
         initialize_from_model_and_dir(language_model, models_dir, device, properties_copy);
@@ -799,9 +796,6 @@ VLMPipeline::VLMPipeline(
     } else {
         utils::extract_extensions_to_core(properties);
         auto language_model_path = models_dir / "openvino_language_model.xml";
-        // read_model is the language-model load path: apply the
-        // MODEL_PROPERTIES["language_model"] overlay and strip the GenAI-only
-        // meta key before reaching OV core.
         auto language_model = utils::singleton_core().read_model(
             language_model_path, {}, utils::get_model_properties(properties, "language_model"));
         apply_linear_attention_backend_constraints(language_model, user_properties, attention_backend);
