@@ -8,6 +8,7 @@
 #include <filesystem>
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
@@ -16,6 +17,7 @@ namespace ov::genai {
 
 class OPENVINO_GENAI_EXPORTS VLMDecodedResults : public DecodedResults{
 public:
+    GenerationStatus m_status = GenerationStatus::RUNNING;
     VLMPerfMetrics perf_metrics;
 };
 

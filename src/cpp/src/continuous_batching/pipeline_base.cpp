@@ -80,6 +80,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             GenerationResult result;
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
+            result.m_status = vlm_result.m_status;
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
             results.push_back(result);
@@ -410,6 +411,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     for (size_t i = 0; i < prompts.size(); i++) {
         auto result = encoded_results[i];
         VLMDecodedResults gen_result;
+        gen_result.m_status = result.m_status;
         gen_result.perf_metrics = result.perf_metrics;
 
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
@@ -557,6 +559,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     for (size_t i = 0; i < encoded_results.size(); ++i) {
         auto result = encoded_results.at(i);
         VLMDecodedResults gen_result;
+        gen_result.m_status = result.m_status;
         gen_result.perf_metrics = result.perf_metrics;
     
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
