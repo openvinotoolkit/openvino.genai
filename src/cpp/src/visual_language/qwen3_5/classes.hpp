@@ -46,7 +46,8 @@ public:
     void finish_chat() override;
 
 protected:
-    // Override parent Qwen3VL lm extra inputs as Qwen3.5 LM has no additional vision-related inputs.
+    // Qwen3.5 LM has no additional vision-related inputs for LM model.
+    // Override parent Qwen3VL lm_extra_inputs with empty map to reuse Qwen3VL get_imputs_embeds() method.
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs = {};
 
     std::pair<ov::Tensor, int64_t> create_position_ids(
