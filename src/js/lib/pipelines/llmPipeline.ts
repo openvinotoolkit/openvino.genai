@@ -3,7 +3,12 @@
 
 import util from "node:util";
 import { ChatHistory, LLMPipeline as LLMPipelineWrapper } from "../addon.js";
-import { GenerationConfig, StreamingStatus, LLMPipelineProperties } from "../utils.js";
+import {
+  GenerationConfig,
+  GenerationFinishReason,
+  StreamingStatus,
+  LLMPipelineProperties,
+} from "../utils.js";
 import { DecodedResults } from "../decodedResults.js";
 import { Tokenizer } from "../tokenizer.js";
 
@@ -143,6 +148,7 @@ export class LLMPipeline {
         scores: number[];
         perfMetrics: any;
         parsed: Record<string, unknown>[];
+        finishReasons: GenerationFinishReason[];
       },
     ) => {
       if (error) {
@@ -160,6 +166,7 @@ export class LLMPipeline {
           result.scores,
           result.perfMetrics,
           result.parsed,
+          result.finishReasons,
         );
         const fullText = decodedResult.toString();
         if (resolvePromise) {
@@ -260,7 +267,13 @@ export class LLMPipeline {
     const innerGenerate = util.promisify(this.pipeline.generate.bind(this.pipeline));
     const result = await innerGenerate(inputs, generationConfig, streamer);
 
-    return new DecodedResults(result.texts, result.scores, result.perfMetrics, result.parsed);
+    return new DecodedResults(
+      result.texts,
+      result.scores,
+      result.perfMetrics,
+      result.parsed,
+      result.finishReasons,
+    );
   }
 
   /**

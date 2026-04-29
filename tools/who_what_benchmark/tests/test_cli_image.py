@@ -121,44 +121,52 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     assert GT_FILE.exists()
     assert (tmp_path / "reference").exists()
 
-    output = run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--genai",
-        "--num-inference-steps",
-        "2",
-    ])
+    output = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--genai",
+            "--num-inference-steps",
+            "2",
+            "--taylorseer-config",
+            '{"disable_cache_after_step": 0}',
+        ]
+    )
 
     assert "Metrics for model" in output
     similarity = get_similarity(output)
     assert similarity >= 0.97751  # Ticket 166496
     assert (tmp_path / "target").exists()
 
-    run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--output",
-        tmp_path,
-        "--genai",
-        "--num-inference-steps",
-        "2",
-    ])
+    run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--output",
+            tmp_path,
+            "--genai",
+            "--num-inference-steps",
+            "2",
+            "--taylorseer-config",
+            '{"disable_cache_after_step": 0}',
+        ]
+    )
     assert (tmp_path / "target").exists()
     assert (tmp_path / "target.csv").exists()
 
