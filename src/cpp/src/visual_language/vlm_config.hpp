@@ -105,6 +105,9 @@ public:
     /// @brief A string token denoting end of image embeddings for Gemma4 model.
     std::string eoi_token = "<image|>";
 
+    bool enable_moe_block = false;
+    size_t hidden_size_per_layer_input = 0;
+
     /// @brief A string token denoting start of video embeddings
     std::string video_start = "<video>";
 

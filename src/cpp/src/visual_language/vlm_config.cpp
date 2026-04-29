@@ -77,6 +77,10 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // Qwen3-VL
     read_json_param(parsed, "vision_config.num_position_embeddings", vision_config_num_position_embeddings);
     read_json_param(parsed, "vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
+
+    // gemma4
+    read_json_param(parsed, "text_config.enable_moe_block", enable_moe_block);
+    read_json_param(parsed, "text_config.hidden_size_per_layer_input", hidden_size_per_layer_input);
 }
 
 }  // namespace ov::genai

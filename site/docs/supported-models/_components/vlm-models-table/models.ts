@@ -201,6 +201,7 @@ export const VLM_MODELS: VLMModelType[] = [
         links: [
           'https://huggingface.co/google/gemma-4-E2B-it',
           'https://huggingface.co/google/gemma-4-E4B-it',
+          'https://huggingface.co/google/gemma-4-26B-A4B-it',
         ],
       },
     ],
