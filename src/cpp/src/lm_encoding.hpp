@@ -4,6 +4,7 @@
 #pragma once
 
 #include <optional>
+#include <functional>
 #include "openvino/genai/llm_pipeline.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "sampling/sampler.hpp"
@@ -11,6 +12,8 @@
 namespace ov {
 namespace genai {
 
+/// Function that computes per_layer_inputs from input_ids tensor.
+using PerLayerInferFn = std::function<ov::Tensor(const ov::Tensor&)>;
 
 ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     ov::InferRequest& m_llm,
@@ -26,7 +29,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     std::optional<int64_t> rope_delta = std::nullopt,
     const size_t max_kv_cache_size = std::numeric_limits<size_t>::max(),
     const bool use_intermediate_remote_tensor = true,
-    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs = {});
+    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs = {},
+    PerLayerInferFn per_layer_infer_fn = nullptr);
 
 
 void align_cache_and_history(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state);

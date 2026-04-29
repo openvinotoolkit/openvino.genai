@@ -16,6 +16,7 @@
 #include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
+#include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/videochat_flash/classes.hpp"
 
 namespace ov::genai {
@@ -79,6 +80,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderQwen3VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::GEMMA3N) {
+        return std::make_shared<VisionEncoderGemma3n>(model_dir, device, properties);
     } else if (model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         return std::make_shared<VisionEncoderVideoChatFlashQwen>(model_dir, device, properties);
     } else {
@@ -116,6 +119,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderQwen3VL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::GEMMA3N) {
+        return std::make_shared<VisionEncoderGemma3n>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         return std::make_shared<VisionEncoderVideoChatFlashQwen>(models_map, config_dir_path, device, device_config);
     } else {

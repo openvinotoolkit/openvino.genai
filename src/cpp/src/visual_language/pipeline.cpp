@@ -158,6 +158,14 @@ private:
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
+        // Fix per_layer_inputs type: export may produce i64 input with immediate Convert to f32.
+        // Change the parameter type to f32 so we can directly set float tensors.
+        for (const auto& param : language_model->get_parameters()) {
+            if (param->get_friendly_name() == "per_layer_inputs" && param->get_element_type() == ov::element::i64) {
+                param->set_element_type(ov::element::f32);
+            }
+        }
+
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
         if (m_is_npu) {
@@ -217,6 +225,13 @@ private:
                 m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
             );
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
+        }
+
+        // Fix per_layer_inputs type: export may produce i64 input with immediate Convert to f32.
+        for (const auto& param : language_model->get_parameters()) {
+            if (param->get_friendly_name() == "per_layer_inputs" && param->get_element_type() == ov::element::i64) {
+                param->set_element_type(ov::element::f32);
+            }
         }
 
         // Slice-before-matmul rewrites LM logits to be produced only for the last token.
@@ -749,6 +764,7 @@ private:
         std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
 
         const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
+        const auto per_layer_infer_fn = m_inputs_embedder->get_per_layer_infer_fn();
 
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
@@ -757,7 +773,7 @@ private:
         return ov::genai::get_lm_encoded_results(
             m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
             position_ids, token_type_ids, cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
-            use_intermediate_remote_tensor, lm_extra_inputs
+            use_intermediate_remote_tensor, lm_extra_inputs, per_layer_infer_fn
         );
     }
 };
@@ -765,7 +781,7 @@ private:
 // TODO: remove it when GEMMA3 ticket-171180 is fixed
 bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    return vlm_config.model_type == VLMModelType::GEMMA3;
+    return vlm_config.model_type == VLMModelType::GEMMA3 || vlm_config.model_type == VLMModelType::GEMMA3N;
 }
 
 VLMPipeline::VLMPipeline(
