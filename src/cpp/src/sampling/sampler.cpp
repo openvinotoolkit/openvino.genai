@@ -1213,6 +1213,7 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
 
     auto& tree_metadata = sequence->get_tree_metadata();
     auto retrieve_indices = tree_metadata.retrieve_indices;
+    const auto& sampling_params = sequence->get_sequence_group_ptr()->get_sampling_parameters();
 
     OPENVINO_ASSERT(!retrieve_indices.empty(),
                     "verify_draft_tree: retrieve_indices is empty; "
@@ -1325,6 +1326,13 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
                         ")");
         logit_idx = num_tokens_to_validate - retrieve_index_u;
         accepted_steps++;
+
+        if (is_stop_token_id_hit(pred_token, sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
+            // The accepted token is EOS/stop; treat it as the bonus token so the sequence
+            // terminates cleanly without appending an extra target-model token.
+            bonus_token = sampled_token;
+            break;
+        }
 
         if (accepted_steps + generated_len - num_tokens_to_validate ==
             sequence->get_sequence_group_ptr()->get_max_new_tokens()) {
