@@ -3,8 +3,7 @@
 This example showcases inference of text-generation Vision Language Models (VLMs): `miniCPM-V-2_6` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino-genai-node.VLMPipeline` and configures it for the chat scenario.
 
 There are two sample files:
- - [`visual_language_chat.js`](./visual_language_chat.js) demonstrates basic usage of the VLM pipeline.
- - [`video_to_text_chat.js`](./video_to_text_chat.js) demonstrates video to text usage of the VLM pipeline.
+ - [`visual_language_chat.js`](./visual_language_chat.js) demonstrates basic usage of the VLM pipeline which supports accelerated inference using prompt lookup decoding.
 
 ## Install JS dependencies
 
@@ -22,7 +21,7 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install --upgrade-strategy eager -r ../export-requirements.txt
 ```
 
 Then, run the export with Optimum CLI:
@@ -41,19 +40,3 @@ node visual_language_chat/visual_language_chat.js ./miniCPM-V-2_6/ 319483352-d5f
 ```
 
 See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
-
-## Run video-to-text chat sample
-
-A model that supports video input is required to run this sample, for example `llava-hf/LLaVA-NeXT-Video-7B-hf`.
-
-[This video](https://huggingface.co/datasets/raushan-testing-hf/videos-test/resolve/main/sample_demo_1.mp4) can be used as a sample video.
-
-```sh
-cd samples/js
-node visual_language_chat/video_to_text_chat.js ./LLaVA-NeXT-Video-7B-hf/ sample_demo_1.mp4
-```
-
-Supported models with video input are listed in [this section](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt).
-
-Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM.
-Modify the source code to change the device for inference to the GPU.
