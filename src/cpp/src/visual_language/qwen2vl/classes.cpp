@@ -1146,7 +1146,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     // [CDPruner] Apply pruning to images. Video pruning for Qwen2-VL is not yet
     // supported; once enabled, build a parallel block that fills `video_embeddings`
     // and `video_grids` instead of the image fields.
-    if (!images.empty() && is_cdpruner_active()) {
+    if (!images.empty() && videos.empty() && is_cdpruner_active()) {
         std::vector<std::array<size_t, 3>> image_region_grids;
         image_region_grids.reserve(images_sequence.size());
         for (size_t idx : images_sequence) {
