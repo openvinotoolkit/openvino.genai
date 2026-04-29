@@ -2257,9 +2257,17 @@ parametrize_cdpruner_models = pytest.mark.parametrize(
 def test_cdpruner_functionality(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, pruning_ratio: int):
     """Test CDPruner functionality with different pruning ratios."""
     ov_pipe = ov_pipe_model.pipeline
+
+    # Run baseline (ratio=0) first to avoid pruning state leaking into the comparison
+    baseline_input_tokens = None
+    if pruning_ratio > 0:
+        baseline_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+        baseline_config.pruning_ratio = 0
+        baseline_result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=baseline_config)
+        baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
+
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     generation_config.pruning_ratio = pruning_ratio
-
     result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
 
     # Verify result is non-empty
@@ -2270,12 +2278,9 @@ def test_cdpruner_functionality(ov_pipe_model: VlmModelInfo, cat_tensor: openvin
 
     if pruning_ratio > 0:
         # Verify pruning was actually applied: pruned run must process fewer input tokens than baseline
-        baseline_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-        baseline_config.pruning_ratio = 0
-        baseline_result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=baseline_config)
-        assert result.perf_metrics.get_num_input_tokens() < baseline_result.perf_metrics.get_num_input_tokens(), (
+        assert result.perf_metrics.get_num_input_tokens() < baseline_input_tokens, (
             f"Pruned result (ratio={pruning_ratio}) should have fewer input tokens than baseline, "
-            f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_result.perf_metrics.get_num_input_tokens()}"
+            f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
         )
 
 
@@ -2420,6 +2425,17 @@ def test_cdpruner_with_video(
 ):
     """Test CDPruner with video input at different pruning ratios."""
     ov_pipe = ov_pipe_model.pipeline
+
+    # Run baseline (ratio=0) first to avoid pruning state leaking into the comparison
+    baseline_input_tokens = None
+    if pruning_ratio > 0:
+        baseline_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+        baseline_config.pruning_ratio = 0
+        baseline_result = ov_pipe.generate(
+            PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=baseline_config
+        )
+        baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
+
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     generation_config.pruning_ratio = pruning_ratio
     result = ov_pipe.generate(PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=generation_config)
@@ -2428,14 +2444,9 @@ def test_cdpruner_with_video(
 
     if pruning_ratio > 0:
         # Verify pruning was actually applied: pruned run must process fewer input tokens than baseline
-        baseline_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-        baseline_config.pruning_ratio = 0
-        baseline_result = ov_pipe.generate(
-            PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=baseline_config
-        )
-        assert result.perf_metrics.get_num_input_tokens() < baseline_result.perf_metrics.get_num_input_tokens(), (
+        assert result.perf_metrics.get_num_input_tokens() < baseline_input_tokens, (
             f"Pruned result (ratio={pruning_ratio}) should have fewer input tokens than baseline, "
-            f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_result.perf_metrics.get_num_input_tokens()}"
+            f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
         )
 
 

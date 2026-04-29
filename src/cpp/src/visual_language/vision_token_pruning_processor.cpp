@@ -442,14 +442,14 @@ void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids,
                                                       std::vector<std::vector<bool>>& keep_flags_per_region_out,
                                                       int64_t video_pad_token_id) const {
     auto kept_indices_per_image = get_last_selected_tokens();
-    OPENVINO_ASSERT(!images_sequence.empty(), "Image sequence must not be empty when pruning visual tokens");
+    OPENVINO_ASSERT(!images_sequence.empty(), "Vision region sequence must not be empty when pruning visual tokens");
     OPENVINO_ASSERT(!kept_indices_per_image.empty(), "Kept token indices are missing after pruning");
 
     // Reorder images according to sequence
     std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
     reordered_images_grid_thw.reserve(images_sequence.size());
     for (size_t new_image_id : images_sequence) {
-        OPENVINO_ASSERT(new_image_id < images_grid_thw.size(), "Image sequence index is out of range");
+        OPENVINO_ASSERT(new_image_id < images_grid_thw.size(), "Vision region sequence index is out of range");
         reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id));
     }
 
@@ -828,6 +828,9 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     // Each contiguous run of identical pad tokens is one region. The merger layout is
     // [video_tokens; image_tokens]: video occupies indices [0, video_token_count),
     // image occupies indices [video_token_count, total_tokens).
+    OPENVINO_ASSERT(context.input_ids.get_shape().at(0) == 1,
+                    "Vision token pruning pipeline only supports batch_size == 1, got: ",
+                    context.input_ids.get_shape().at(0));
     const int64_t* ids = context.input_ids.data<const int64_t>();
     const size_t seq_len = context.input_ids.get_shape().at(1);
 
@@ -927,6 +930,9 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
                     "CDPruner pruned visual features must be f32, got: ",
                     pruned_visual_features.get_element_type());
     const ov::Shape pruned_shape = pruned_visual_features.get_shape();
+    OPENVINO_ASSERT(pruned_shape.size() == 3,
+                    "CDPruner pruned visual features expected 3D shape [1, tokens, hidden], got rank: ",
+                    pruned_shape.size());
     result.pruned_visual_tokens = pruned_shape[1];
     const size_t out_hidden_size = pruned_shape[2];
     ov::Tensor pruned_2d_tensor(pruned_visual_features.get_element_type(),
