@@ -2,8 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import util from "node:util";
-import { VLMPipeline as VLMPipelineWrapper } from "../addon.js";
-import { GenerationConfig, VLMPipelineProperties, StreamingStatus } from "../utils.js";
+import { VLMPipeline as VLMPipelineWrapper, type ChatHistory } from "../addon.js";
+import {
+  GenerationConfig,
+  GenerationFinishReason,
+  VLMPipelineProperties,
+  StreamingStatus,
+} from "../utils.js";
 import { VLMDecodedResults } from "../decodedResults.js";
 import { Tokenizer } from "../tokenizer.js";
 import type { Tensor } from "openvino-node";
@@ -81,15 +86,24 @@ export class VLMPipeline {
   }
   /**
    * Stream generation results as an async iterator of strings.
-   * The iterator yields subword chunks.
-   * @param prompt - Input prompt. May contain image/video tags recognized by the model.
+   * The iterator yields subword chunks during generation.
+   * When generation finishes, the full decoded text is returned as the final
+   * iterator value (`done: true`). This value is not available through
+   * `for await...of`; call `next()` directly to read it.
+   *
+   * For custom streaming control, use {@link generate} with a streamer callback instead.
+   *
+   * @param inputs - Input prompt string or chat history. May contain image/video tags recognized by the model.
    * @param options - Optional parameters.
    * @param options.images - Array of image tensors to include in the prompt.
    * @param options.videos - Array of video frame tensors to include in the prompt.
    * @param options.generationConfig - Generation parameters.
    * @returns Async iterator producing subword chunks.
    */
-  stream(prompt: string, options: VLMGenerateOptions = {}): AsyncIterableIterator<string> {
+  stream(
+    inputs: string | ChatHistory,
+    options: VLMGenerateOptions = {},
+  ): AsyncIterableIterator<string> {
     if (!this.pipeline) throw new Error("Pipeline is not initialized");
     const { images, videos, generationConfig } = options;
 
@@ -107,6 +121,7 @@ export class VLMPipeline {
         scores: number[];
         perfMetrics: VLMPerfMetrics;
         parsed: Record<string, unknown>[];
+        finishReasons: GenerationFinishReason[];
       },
     ) => {
       if (error) {
@@ -124,6 +139,7 @@ export class VLMPipeline {
           result.scores,
           result.perfMetrics,
           result.parsed,
+          result.finishReasons,
         );
         const fullText = decodedResult.toString();
         if (resolvePromise) {
@@ -153,7 +169,7 @@ export class VLMPipeline {
       return streamingStatus;
     };
 
-    this.pipeline.generate(prompt, images, videos, streamer, generationConfig, callback);
+    this.pipeline.generate(inputs, images, videos, streamer, generationConfig, callback);
 
     return {
       async next() {
@@ -181,25 +197,36 @@ export class VLMPipeline {
     };
   }
   /**
-   * Generate sequences for VLMs.
-   * @param prompt - Input prompt. May contain model-specific image/video tags.
+   * Generate sequences for VLMs with optional streaming.
+   *
+   * For simple streaming use cases, consider using {@link stream}, which provides
+   * a convenient async iterator interface.
+   *
+   * @param inputs - Input prompt string or chat history. May contain model-specific image/video tags.
    * @param options - Optional parameters.
-   * @param options.images - Images to include in the prompt.
-   * @param options.videos - Videos to include in the prompt.
-   * @param options.generationConfig - Generation configuration parameters.
-   * @param options.streamer - Optional streamer callback called for each chunk.
-   * @returns Resolves with decoded results once generation finishes.
+   * @param options.images - Array of image tensors to include in the prompt.
+   * @param options.videos - Array of video frame tensors to include in the prompt.
+   * @param options.generationConfig - Generation configuration parameters (e.g., max_new_tokens, temperature).
+   * @param options.streamer - Optional callback invoked for each generated subword chunk.
+   * - Return a `StreamingStatus` flag to indicate whether generation should be stopped or cancelled
+   * @returns Promise resolving to {@link VLMDecodedResults} containing texts, scores, and performance metrics.
    */
   async generate(
-    prompt: string,
+    inputs: string | ChatHistory,
     options: VLMGenerateOptions & { streamer?: (chunk: string) => StreamingStatus } = {},
   ): Promise<VLMDecodedResults> {
     const { images, videos, generationConfig, streamer } = options;
     if (!this.pipeline) throw new Error("Pipeline is not initialized");
     const innerGenerate = util.promisify(this.pipeline.generate.bind(this.pipeline));
-    const result = await innerGenerate(prompt, images, videos, streamer, generationConfig);
+    const result = await innerGenerate(inputs, images, videos, streamer, generationConfig);
 
-    return new VLMDecodedResults(result.texts, result.scores, result.perfMetrics, result.parsed);
+    return new VLMDecodedResults(
+      result.texts,
+      result.scores,
+      result.perfMetrics,
+      result.parsed,
+      result.finishReasons,
+    );
   }
 
   /**
@@ -227,5 +254,14 @@ export class VLMPipeline {
   setGenerationConfig(config: GenerationConfig): void {
     if (!this.pipeline) throw new Error("Pipeline is not initialized");
     this.pipeline.setGenerationConfig(config);
+  }
+
+  /**
+   * Get the current generation config (model defaults).
+   * @returns The current GenerationConfig object.
+   */
+  getGenerationConfig(): GenerationConfig {
+    if (!this.pipeline) throw new Error("Pipeline is not initialized");
+    return this.pipeline.getGenerationConfig();
   }
 }

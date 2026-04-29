@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import os
@@ -79,3 +79,32 @@ class TestVisualLanguageChat:
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
         assert py_result.stdout == js_stdout, f"JS results should match"
+
+    @pytest.mark.vlm
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model, download_test_content, questions",
+        [
+            pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"),
+        ],
+        indirect=["convert_model", "download_test_content"],
+    )
+    def test_sample_visual_language_chat_prompt_lookup(self, convert_model, download_test_content, questions):
+        # Test visual_language_chat with prompt lookup decoding
+        py_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_chat.py"
+        py_command = [sys.executable, py_script, convert_model, download_test_content, "CPU", "true"]
+        py_result_lookup = run_sample(py_command, questions)
+
+        # Test visual_language_chat without prompt lookup decoding
+        py_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_chat.py"
+        py_command = [sys.executable, py_script, convert_model, download_test_content]
+        py_result = run_sample(py_command, questions)
+
+        # Test JavaScript sample
+        js_script = SAMPLES_JS_DIR / "visual_language_chat/visual_language_chat.js"
+        js_command = ["node", js_script, convert_model, download_test_content, "CPU", "true"]
+        js_stdout_lookup = run_js_chat(js_command, questions)
+
+        # Compare results
+        assert py_result.stdout == py_result_lookup.stdout, f"Results should match"
+        assert py_result_lookup.stdout == js_stdout_lookup, f"JS results should match"

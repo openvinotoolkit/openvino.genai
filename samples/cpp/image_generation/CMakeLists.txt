@@ -70,6 +70,22 @@ install(TARGETS lora_text2image
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
+# create TaylorSeer text2image sample executable
+
+add_executable(taylorseer_text2image taylorseer_text2image.cpp imwrite.cpp)
+
+target_include_directories(taylorseer_text2image PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(taylorseer_text2image PRIVATE openvino::genai indicators::indicators)
+
+set_target_properties(taylorseer_text2image PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS taylorseer_text2image
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
 # create heterogeneous_stable_diffusion sample executable
 
 add_executable(heterogeneous_stable_diffusion
@@ -132,6 +148,22 @@ set_target_properties(stable_diffusion_export_import PROPERTIES
     INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS stable_diffusion_export_import
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
+# create encrypted_stable_diffusion sample executable
+
+add_executable(encrypted_stable_diffusion encrypted_stable_diffusion.cpp imwrite.cpp)
+
+target_include_directories(encrypted_stable_diffusion PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(encrypted_stable_diffusion PRIVATE openvino::genai indicators::indicators)
+
+set_target_properties(encrypted_stable_diffusion PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS encrypted_stable_diffusion
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)

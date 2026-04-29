@@ -4,9 +4,9 @@
 #include "vision_encoder.hpp"
 #include "utils.hpp"
 
-
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen2_5_vl/classes.hpp"
+#include "visual_language/qwen3_vl/classes.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -16,6 +16,7 @@
 #include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
+#include "visual_language/videochat_flash/classes.hpp"
 
 namespace ov::genai {
 
@@ -28,6 +29,7 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::
             return compiled_model.create_infer_request();
         });
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
+    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(model_dir, "video_preprocessor_config.json");
 }
 
 VisionEncoder::VisionEncoder(
@@ -45,6 +47,7 @@ VisionEncoder::VisionEncoder(
             return compiled_model.create_infer_request();
         });
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "preprocessor_config.json");
+    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, "video_preprocessor_config.json");
 }
 
 ProcessorConfig VisionEncoder::get_processor_config() const {
@@ -72,8 +75,12 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderQwen2VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::QWEN2_5_VL) {
         return std::make_shared<VisionEncoderQwen2_5_VL>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::QWEN3_VL) {
+        return std::make_shared<VisionEncoderQwen3VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
+        return std::make_shared<VisionEncoderVideoChatFlashQwen>(model_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
@@ -105,8 +112,12 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderQwen2VL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::QWEN2_5_VL) {
         return std::make_shared<VisionEncoderQwen2_5_VL>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::QWEN3_VL) {
+        return std::make_shared<VisionEncoderQwen3VL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
+        return std::make_shared<VisionEncoderVideoChatFlashQwen>(models_map, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }

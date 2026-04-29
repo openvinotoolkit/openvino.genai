@@ -113,6 +113,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
     }
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::generate_candidates_for_prompt_lookup() {}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
     m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
@@ -218,7 +220,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     }
 
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
-    m_sampler->set_seed(m_generation_config.rng_seed);
 
     // If eos_token_id was not provided, take value
     if (m_generation_config.eos_token_id == -1)
@@ -263,7 +264,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
-    std::optional<ov::Tensor> token_type_ids) {
+    std::optional<ov::Tensor> token_type_ids,
+    std::optional<ov::Tensor> prompt_ids,
+    std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs
+) {
     auto sampling_params_copy = sampling_params;
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (sampling_params_copy.stop_token_ids.empty())
@@ -286,13 +290,19 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
         sequence_group = std::make_shared<SequenceGroup>(request_id, 
                                                          input_ids, 
                                                          sampling_params_copy, 
-                                                         m_block_size, 
-                                                         token_type_ids, 
+                                                         m_block_size,
+                                                         token_type_ids,
+                                                         lm_extra_inputs,
                                                          position_ids, 
-                                                         rope_delta);
+                                                         rope_delta,
+                                                         prompt_ids);
     }
     else {
-        sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params_copy, m_block_size, token_type_ids);
+        sequence_group = std::make_shared<SequenceGroup>(request_id,
+                                                         input_ids,
+                                                         sampling_params_copy,
+                                                         m_block_size,
+                                                         token_type_ids);
     }
 
     if (m_scheduler->get_config().enable_prefix_caching) {
@@ -347,6 +357,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         scheduler_output = m_scheduler->schedule(m_requests);
         scheduling_timer.end();
 
+        m_pipeline_metrics.kv_cache_size_in_bytes = scheduler_output.m_cache_size_in_bytes;
         m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
         m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
         m_pipeline_metrics.max_cache_usage = std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
@@ -434,7 +445,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
         free_fork_timer.end();
     }
-    
+
+    {
+        static ManualTimer candidates_timer("generate_candidates_for_prompt_lookup()");
+        candidates_timer.start();
+        generate_candidates_for_prompt_lookup();
+        candidates_timer.end();
+    }
+
     // append embeddings for generated tokens
     if (m_model_input_type == ModelInputType::EMBEDDINGS)
         m_model_runner->append_embeddings(m_requests, scheduler_output);
@@ -470,7 +488,9 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer,
                                                              const std::optional<std::vector<ov::Tensor>>& token_type_ids,
-                                                             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list) {
+                                                             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list,
+                                                             const std::optional<std::vector<ov::Tensor>>& prompt_ids,
+                                                             const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
 
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
@@ -482,11 +502,14 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     if (position_ids_list.has_value()) {
         OPENVINO_ASSERT((*position_ids_list).size() == input_ids.size());
     }
+    if (lm_extra_inputs_list.has_value()) {
+        OPENVINO_ASSERT((*lm_extra_inputs_list).size() == input_ids.size());
+    }
 
     auto start_time =  std::chrono::steady_clock::now();
     PerfMetrics perf_metrics;
     auto& raw_perf_counters = perf_metrics.raw_metrics;
-    raw_perf_counters.m_inference_durations =  {{ MicroSeconds(0.0f) }};
+    raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
     // checks that all requests has the same LoRA adapters property value
     for (size_t i = 1; i < sampling_params.size(); ++i) {
@@ -511,9 +534,19 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 m_inputs_embedder->set_rope_delta(*rope_delta);
             }
         }
-        bool has_valid_token = token_type_ids.has_value() && request_id < token_type_ids->size();
+        const bool has_valid_token_type_ids = token_type_ids.has_value() && request_id < token_type_ids->size();
+        const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
+        const bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
+
         generations.push_back(
-            add_request(request_id, input_ids[request_id], sampling_params[request_id], has_valid_token ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt)
+            add_request(
+                request_id,
+                input_ids[request_id],
+                sampling_params[request_id],
+                has_valid_token_type_ids ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
+                has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+                has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt
+            )
         );
     }
 
@@ -570,6 +603,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         result.m_request_id = request_id;
         result.m_generation_ids.resize(num_outputs);
         result.m_scores.resize(num_outputs);
+        result.m_finish_reasons.resize(num_outputs, GenerationFinishReason::NONE);
         result.m_status = request->get_generation_stream()->get_status();
 
         for (size_t i = 0; i < num_outputs; ++i) {
@@ -581,6 +615,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 result.m_generation_ids[i] = request->get_prompt_ids();
             std::copy(generated_ids.begin(), generated_ids.end(), std::back_inserter(result.m_generation_ids[i]));
             result.m_scores[i] = score;
+            result.m_finish_reasons[i] = sequence->get_finish_reason();
+            if (result.m_finish_reasons[i] == GenerationFinishReason::NONE && request->handle_stopped()) {
+                result.m_finish_reasons[i] = request->get_generation_stream()->get_finish_reason();
+            }
         }
 
         result.m_status = generations[request_id]->get_status();
@@ -649,6 +687,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reset_cache_usage_stat
     m_previous_step_cache_usages.clear();
     m_pipeline_metrics.max_cache_usage = 0.0;
     m_pipeline_metrics.avg_cache_usage = 0.0;
+    m_pipeline_metrics.kv_cache_size_in_bytes = 0;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {

@@ -1,49 +1,17 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-import subprocess  # nosec B404
-import logging
-from pathlib import Path
 import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
 
-from utils.constants import get_ov_cache_converted_models_dir
-from utils.atomic_download import AtomicDownloadManager
-from utils.network import retry_request
+from utils.constants import NPUW_CPU_PROPERTIES
+from utils.ov_genai_pipelines import should_skip_npuw_tests
 
-logger = logging.getLogger(__name__)
-
-MODEL_ID = "tiny-random-latent-consistency"
-MODEL_NAME = "echarlaix/tiny-random-latent-consistency"
-
-
-@pytest.fixture(scope="module")
-def image_generation_model():
-    models_dir = get_ov_cache_converted_models_dir()
-    model_path = Path(models_dir) / MODEL_ID / MODEL_NAME
-    
-    manager = AtomicDownloadManager(model_path)
-    
-    def convert_model(temp_path: Path) -> None:
-        command = [
-            "optimum-cli", "export", "openvino",
-            "--model", MODEL_NAME,
-            "--trust-remote-code",
-            "--weight-format", "fp16",
-            str(temp_path)
-        ]
-        logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
-    
-    try:
-        manager.execute(convert_model)
-    except subprocess.CalledProcessError as error:
-        logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
-        raise
-    
-    return str(model_path)
+FLUX_MODEL_ID = "tiny-random-flux"
+SD3_MODEL_ID = "tiny-random-sd3"
+SDXL_MODEL_ID = "tiny-random-sdxl"
 
 
 def get_random_image(height: int = 64, width: int = 64) -> ov.Tensor:
@@ -58,7 +26,6 @@ def get_mask_image(height: int = 64, width: int = 64) -> ov.Tensor:
 
 
 class TestImageGenerationCallback:
-    
     def test_text2image_with_simple_callback(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
         
@@ -196,3 +163,85 @@ class TestImageGenerationCallback:
         
         assert len(callback_calls) > 0
         assert image is not None
+
+
+class TestTaylorSeerImageGeneration:
+    @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
+    def test_flux_text2image_taylorseer_with_callback(self, image_generation_model):
+        """Test Flux text2image with TaylorSeer and callback."""
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+
+        # Configure TaylorSeer
+        taylorseer_config = ov_genai.TaylorSeerCacheConfig()
+        taylorseer_config.cache_interval = 5
+        taylorseer_config.disable_cache_before_step = 2
+        taylorseer_config.disable_cache_after_step = -1
+
+        generation_config = pipe.get_generation_config()
+        generation_config.taylorseer_config = taylorseer_config
+        pipe.set_generation_config(generation_config)
+
+        callback_calls = []
+
+        def callback(step, num_steps, latent):
+            callback_calls.append((step, num_steps))
+            return False
+
+        image = pipe.generate("test prompt", width=64, height=64, num_inference_steps=5, callback=callback)
+
+        assert image is not None
+        assert len(callback_calls) > 0
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID, SD3_MODEL_ID], indirect=True)
+    def test_taylorseer_default_on(self, image_generation_model):
+        """Test that TaylorSeer is enabled by default for Flux and StableDiffusion3 Text2Image pipelines."""
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+        assert pipe.get_generation_config().taylorseer_config is not None
+
+
+class TestImageGenerationOnNpuByNpuwCpu:
+    def _construct_reshaped(self, model_dir):
+        pipe = ov_genai.Text2ImagePipeline(model_dir)
+        pipe.reshape(
+            num_images_per_prompt=1, height=64, width=64, guidance_scale=pipe.get_generation_config().guidance_scale
+        )
+        return pipe
+
+    def _get_generation_args(self):
+        return {"prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69}
+
+    @pytest.mark.skipif(**should_skip_npuw_tests())
+    def test_image_generation_cpu_vs_npuw_cpu(self, image_generation_model):
+        generation_args = self._get_generation_args()
+
+        cpu_pipe = self._construct_reshaped(image_generation_model)
+        cpu_pipe.compile("CPU")
+        cpu_image = cpu_pipe.generate(**generation_args)
+
+
+        npuw_pipe = self._construct_reshaped(image_generation_model)
+        npuw_pipe.compile("NPU", **NPUW_CPU_PROPERTIES)
+        npuw_image = npuw_pipe.generate(**generation_args)
+
+        assert cpu_image.data.shape == npuw_image.data.shape
+        assert (cpu_image.data == npuw_image.data).all()
+
+    @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
+    @pytest.mark.skipif(**should_skip_npuw_tests())
+    def test_image_generation_cpu_vs_npuw_cpu_with_blob_model(self, image_generation_model):
+        generation_args = self._get_generation_args()
+
+        cpu_pipe = self._construct_reshaped(image_generation_model)
+        cpu_pipe.compile("CPU")
+        cpu_image = cpu_pipe.generate(**generation_args)
+
+        npuw_pipe = self._construct_reshaped(image_generation_model)
+        npuw_pipe.compile("NPU", **NPUW_CPU_PROPERTIES)
+        npuw_pipe.export_model("tmp_blob_model")
+        imported_npuw_pipe = ov_genai.Text2ImagePipeline(
+            image_generation_model, "NPU", blob_path="tmp_blob_model", **NPUW_CPU_PROPERTIES
+        )
+        imported_npuw_image = imported_npuw_pipe.generate(**generation_args)
+
+        assert cpu_image.data.shape == imported_npuw_image.data.shape
+        assert (cpu_image.data == imported_npuw_image.data).all()

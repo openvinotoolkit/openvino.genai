@@ -3,10 +3,12 @@
 
 #include "utils.hpp"
 
+#include <algorithm>
 #include <variant>
 #include <fstream>
 #include <memory>
 
+#include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/gather.hpp"
@@ -105,6 +107,7 @@ void update_npu_config_whisper(ov::AnyMap& config,
     update_config(config, {"NPUW_FOLD", "NO"});
     update_config(config, {"NPUW_LLM", "YES"});
     update_config(config, {"NPUW_WHISPER", "YES"});
+    rename_key(config, "WHISPER_EOS_TOKEN", "NPUW_WHISPER_EOS_TOKEN");
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
     update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
@@ -132,7 +135,7 @@ void update_npu_config_text_embedding(ov::AnyMap& config,
 }
 
 inline bool is_paged_attention_available() {
-#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+#if defined(OPENVINO_ARCH_X86_64) || (defined(OPENVINO_ARCH_ARM64) && defined(HAVE_SVE))
     return true;
 #else
     return false;
@@ -149,7 +152,7 @@ enum class ModelType { Default, Whisper, TextEmbedding };
 
 Tensor init_attention_mask(const Tensor& input_ids) {
     auto shape = input_ids.get_shape();
-    auto attention_mask = ov::Tensor{input_ids.get_element_type(), shape};
+    auto attention_mask = ov::Tensor{ov::element::i64, shape};
     std::fill_n(attention_mask.data<int64_t>(), shape[0] * shape[1], 1);
     return attention_mask;
 }
@@ -372,6 +375,37 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 } // namespace
 
+const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
+
+// Merge global properties with per-role overrides. Type mismatches fall out
+// of .as<ov::AnyMap>() as a throw; empty or missing maps are treated as
+// "no overrides" rather than errors.
+ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model_role) {
+    ov::AnyMap result;
+    for (const auto& property : properties) {
+        if (property.first != PER_MODEL_PROPERTIES) {
+            result.insert(property);
+        }
+    }
+
+    auto it = properties.find(PER_MODEL_PROPERTIES);
+    if (it == properties.end()) {
+        return result;
+    }
+
+    const auto& model_map = it->second.as<ov::AnyMap>();
+    auto role_it = model_map.find(model_role);
+    if (role_it == model_map.end()) {
+        return result;
+    }
+
+    // Role-specific values win over globals.
+    for (const auto& property : role_it->second.as<ov::AnyMap>()) {
+        result.insert_or_assign(property.first, property.second);
+    }
+    return result;
+}
+
 std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
     bool enable_save_ov_model = false;
     ov::AnyMap properties = external_properties;
@@ -435,15 +469,57 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
     return idx;
 }
 
+
+bool has_linear_attention_states(const std::shared_ptr<ov::Model>& model) {
+    return get_cache_types(*model).has_linear();
+}
+
+CacheTypes get_cache_types(const ov::Model& model) {
+    // "ReadValue" node is cache representation in stateful model
+    const std::string state_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
+    CacheTypes cache_types;
+
+    for (const auto& op : model.get_ops()) {
+        // check input size, as in LoRA adapters case it could be 0
+        if (op->get_type_name() != state_node_type_name || op->get_input_size() < 1) {
+            continue;
+        }
+
+        // Shape example: [-1,4,0,64]
+        auto shape = op->get_input_partial_shape(0);
+        if (shape.rank().is_dynamic()) {
+            continue;
+        }
+        const auto rank = shape.rank().get_length();
+        size_t dynamic_axis_count = 0, zero_axis_count = 0;
+        for (size_t i = 0; i < rank; i++) {
+            dynamic_axis_count += shape[i].is_dynamic() ? 1 : 0;
+            zero_axis_count += shape[i] == 0 ? 1 : 0;
+        }
+
+        if (rank == 4 && dynamic_axis_count == 1 && zero_axis_count == 1) {
+            cache_types.add_kvcache();
+        } else if (
+            (rank == 3 && dynamic_axis_count == 1)  // conv state
+            || (rank == 4 && dynamic_axis_count == 1 && zero_axis_count == 0)  // ssm state
+        ) {  
+            cache_types.add_linear();
+        }
+    }
+
+    return cache_types;
+}
+
+
 KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
     // therefore usually seq_length_axis = 2 and batch = 0
     KVAxesPosition kv_pos { 0u, 2u };
 
     // "ReadValue" node is KV cache representation in stateful model
-    std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
+    const std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
 
-    for (const auto op : model->get_ops()) {
+    for (const auto& op : model->get_ops()) {
         // check input size, as in LoRA adapters case it could be 0
         if (op->get_type_name() != kv_node_type_name || op->get_input_size() < 1) {
             continue;
@@ -451,6 +527,10 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
 
         // Shape example: [-1,4,0,64]
         auto shape = op->get_input_partial_shape(0);
+        if (shape.rank().is_dynamic() || shape.rank().get_length() != 4) {
+            // kv cache should have 4 dimensions
+            continue;
+        }
 
         for (size_t i = 0; i < shape.rank().get_length(); i++) {
             // Find axis = 0. This would be sequence length axis.
@@ -467,8 +547,8 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     return kv_pos;
 }
 
-void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller) {
-    if (kv_cache_state.reset_mem_state) {
+void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optional<AdapterController> adapter_controller) {
+    if (cache_state.needs_reset()) {
         if (adapter_controller) {
             for(auto& state: request.query_state()) {
                 if(!adapter_controller->has_state_name(state.get_name())) {
@@ -479,15 +559,18 @@ void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::
             request.reset_state();
         }
 
+        cache_state.reset_state();
         return;
     }
 
     // nothing to trim in this case
-    if (kv_cache_state.num_tokens_to_trim == 0)
+    if (cache_state.num_tokens_to_trim == 0)
         return;
 
-    auto states = request.query_state();
+    OPENVINO_ASSERT(!cache_state.has_linear(),
+                    "Model with linear state reached partial trim path, which is only valid for pure KV cache models.");
 
+    auto states = request.query_state();
     OPENVINO_ASSERT(states.size() > 0, "Request contains no states.");
 
     for (auto& state : states) {
@@ -497,7 +580,11 @@ void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::
         ov::Tensor old_tensor = state.get_state();
         // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
         auto shape = old_tensor.get_shape();
-        shape[kv_cache_state.seq_length_axis] -= kv_cache_state.num_tokens_to_trim;
+        OPENVINO_ASSERT(shape[cache_state.seq_length_axis] >= cache_state.num_tokens_to_trim,
+                        "trim_kv_cache: requested to trim ", cache_state.num_tokens_to_trim,
+                        " tokens, but cached sequence length is ", shape[cache_state.seq_length_axis],
+                        " for state '", state.get_name(), "'.");
+        shape[cache_state.seq_length_axis] -= cache_state.num_tokens_to_trim;
 
         ov::Coordinate new_shape_begin{0, 0, 0, 0};
         ov::Coordinate new_shape_end{shape};
@@ -759,7 +846,7 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
         }
     }
 
-    auto prompt_lookup_prop = properties.find("prompt_lookup");
+    auto prompt_lookup_prop = properties.find(ov::genai::prompt_lookup.name());
     if (prompt_lookup_prop != properties.end() && prompt_lookup_prop->second.as<bool>() == true) {
         if (is_paged_attention_available()) {
             return true;
@@ -768,6 +855,15 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
         }
     }
     return false;
+}
+
+void clear_false_prompt_lookup_from_config(ov::AnyMap& properties) {
+    bool res = false;
+    if (properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
+        res = properties.at(ov::genai::prompt_lookup.name()).as<bool>();
+        if (!res)
+            properties.erase(ov::genai::prompt_lookup.name());
+    }
 }
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties,
@@ -790,6 +886,27 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
 
     return {properties, attention_backend};
 };
+
+ExtensionList extract_extensions(ov::AnyMap& properties) {
+    auto it = properties.find(EXTENSIONS_ARG_NAME);
+    ExtensionList extensions = {};
+    if (it != properties.end()) {
+        extensions = it->second.as<ExtensionList>();
+        properties.erase(it);
+    }
+    return extensions;
+}
+
+void extract_extensions_to_core(ov::AnyMap& properties) {
+    ExtensionList extensions = extract_extensions(properties);
+    for (const auto& extension : extensions) {
+        if (std::holds_alternative<std::filesystem::path>(extension)) {
+            singleton_core().add_extension(std::get<std::filesystem::path>(extension));
+        } else {
+            singleton_core().add_extension(std::get<std::shared_ptr<ov::Extension>>(extension));
+        }
+    }
+}
 
 void release_core_plugin(const std::string& device) {
     try {
@@ -933,6 +1050,14 @@ std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& sh
         }
     }
     return std::make_pair(start, end);
+}
+
+ov::Tensor make_tensor_slice(const ov::Tensor& tensor, size_t dim, size_t start_pos, size_t end_pos) {
+    ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
+    start_shape[dim] = start_pos;
+    ov::Shape end_shape = tensor.get_shape();
+    end_shape[dim] = end_pos;
+    return ov::Tensor(tensor, start_shape, end_shape);
 }
 
 ov::genai::GenerationConfig get_beam_search_config() {

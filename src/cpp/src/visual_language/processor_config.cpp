@@ -11,6 +11,7 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
     nlohmann::json parsed = nlohmann::json::parse(stream);
     using ov::genai::utils::read_json_param;
+    read_json_param(parsed, "image_size", image_size);
     read_json_param(parsed, "patch_size", patch_size); // For llava - stored in config.json vision_config
     read_json_param(parsed, "scale_resolution", scale_resolution);
     read_json_param(parsed, "max_slice_nums", max_slice_nums);
@@ -37,6 +38,15 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     read_json_param(parsed, "max_pixels", max_pixels);
     read_json_param(parsed, "temporal_patch_size", temporal_patch_size);
     read_json_param(parsed, "merge_size", merge_size);
+    
+    // Setting qwen3_vl config params
+    // qwen3_vl uses size.shortest_edge and size.longest_edge instead of min_pixels and max_pixels
+    if (!parsed.contains("min_pixels") && !parsed.contains("max_pixels") ||
+        parsed["min_pixels"].is_null() && parsed["max_pixels"].is_null()
+    ) {
+        read_json_param(parsed, "size.shortest_edge", min_pixels);
+        read_json_param(parsed, "size.longest_edge", max_pixels);
+    }
 
     // Setting gemma3-4b-it config params
     read_json_param(parsed, "size.height", size_height);

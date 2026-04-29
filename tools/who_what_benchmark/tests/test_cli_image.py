@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import itertools
 import os
 import sys
@@ -118,44 +121,52 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     assert GT_FILE.exists()
     assert (tmp_path / "reference").exists()
 
-    output = run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--genai",
-        "--num-inference-steps",
-        "2",
-    ])
+    output = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--genai",
+            "--num-inference-steps",
+            "2",
+            "--taylorseer-config",
+            '{"disable_cache_after_step": 0}',
+        ]
+    )
 
     assert "Metrics for model" in output
     similarity = get_similarity(output)
     assert similarity >= 0.97751  # Ticket 166496
     assert (tmp_path / "target").exists()
 
-    run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--output",
-        tmp_path,
-        "--genai",
-        "--num-inference-steps",
-        "2",
-    ])
+    run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--output",
+            tmp_path,
+            "--genai",
+            "--num-inference-steps",
+            "2",
+            "--taylorseer-config",
+            '{"disable_cache_after_step": 0}',
+        ]
+    )
     assert (tmp_path / "target").exists()
     assert (tmp_path / "target.csv").exists()
 
@@ -174,6 +185,62 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         "--num-inference-steps",
         "2",
     ])
+
+
+def test_image_model_genai_with_taylorseer(tmp_path):
+    if sys.platform == "darwin":
+        pytest.xfail("Ticket 173169")
+
+    model_id = "optimum-intel-internal-testing/stable-diffusion-3-tiny-random"
+    model_type = "text-to-image"
+
+    GT_FILE = tmp_path / "gt.csv"
+    MODEL_PATH = convert_model(model_id)
+
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--num-inference-steps",
+            "4",
+        ]
+    )
+    assert GT_FILE.exists()
+    assert (tmp_path / "reference").exists()
+
+    # Test with TaylorSeer partial config
+    output = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--genai",
+            "--num-inference-steps",
+            "4",
+            "--taylorseer-config",
+            '{"cache_interval": 5, "disable_cache_before_step": 2, "disable_cache_after_step": 4}',
+        ]
+    )
+
+    assert "Metrics for model" in output
+    assert "TaylorSeer config:" in output
+    similarity = get_similarity(output)
+    assert similarity >= 0.98
 
 
 @pytest.mark.parametrize(

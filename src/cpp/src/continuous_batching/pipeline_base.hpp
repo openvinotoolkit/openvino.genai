@@ -28,8 +28,9 @@ class ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
     Tokenizer m_tokenizer;
 
-    // TODO (mzegla): GenerationConfig is request specific object
-    // and pipeline only uses default rng_seed and some special tokens.
+    // Pipeline-level generation config used for getting
+    // eos_token_id and stop_token_ids (as fallbacks when a request omits them)
+    // and adapters (for LoRA adapter setup at load time).
     GenerationConfig m_generation_config;
 
     PipelineMetrics m_pipeline_metrics;
@@ -83,7 +84,9 @@ public:
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const ov::Tensor& input_ids,
                                          const GenerationConfig& sampling_params,
-                                         std::optional<ov::Tensor> token_type_ids = std::nullopt) = 0;
+                                         std::optional<ov::Tensor> token_type_ids = std::nullopt,
+                                         std::optional<ov::Tensor> prompt_ids = std::nullopt,
+                                         std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) = 0;
 
     /**
      * Adds request to running queue based on string input
@@ -130,7 +133,9 @@ public:
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
              const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
-             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt) = 0;
+             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
+             const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
+             const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) = 0;
 
     /**
      * Performs monolitic generation based on text prompts

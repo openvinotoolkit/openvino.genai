@@ -1,6 +1,6 @@
-import os
-import shutil
-import tempfile
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import pandas as pd
 import pytest
 import logging
@@ -10,7 +10,8 @@ import sys
 from transformers import AutoTokenizer
 from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfig
 
-from conftest import run_wwb
+from test_cli_image import get_similarity
+from conftest import convert_text_model, run_wwb
 
 
 logging.basicConfig(level=logging.INFO)
@@ -18,9 +19,6 @@ logger = logging.getLogger(__name__)
 
 
 model_id = "facebook/opt-125m"
-tmp_dir = tempfile.mkdtemp()
-base_model_path = os.path.join(tmp_dir, "opt125m")
-target_model_path = os.path.join(tmp_dir, "opt125m_int8")
 
 # awq/gptq models are skipped for now: 180586
 awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
@@ -28,27 +26,34 @@ awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
 gptq_model_id = "ybelkada/opt-125m-gptq-4bit"
 
 
-def setup_module():
+def _convert_base(model_id, temp_path):
     from optimum.exporters.openvino.convert import export_tokenizer
+    from huggingface_hub import snapshot_download
 
-    logger.info("Create models")
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    base_model = OVModelForCausalLM.from_pretrained(model_id)
-    base_model.save_pretrained(base_model_path)
-    tokenizer.save_pretrained(base_model_path)
-    export_tokenizer(tokenizer, base_model_path)
+    model_local = snapshot_download(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_local)
+    base_model = OVModelForCausalLM.from_pretrained(model_local)
+    base_model.save_pretrained(temp_path)
+    tokenizer.save_pretrained(temp_path)
+    export_tokenizer(tokenizer, temp_path)
 
+
+def _convert_int8(model_id, temp_path):
+    from optimum.exporters.openvino.convert import export_tokenizer
+    from huggingface_hub import snapshot_download
+
+    model_local = snapshot_download(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_local)
     target_model = OVModelForCausalLM.from_pretrained(
-        model_id, quantization_config=OVWeightQuantizationConfig(bits=8)
+        model_local, quantization_config=OVWeightQuantizationConfig(bits=8)
     )
-    target_model.save_pretrained(target_model_path)
-    tokenizer.save_pretrained(target_model_path)
-    export_tokenizer(tokenizer, target_model_path)
+    target_model.save_pretrained(temp_path)
+    tokenizer.save_pretrained(temp_path)
+    export_tokenizer(tokenizer, temp_path)
 
 
-def teardown_module():
-    logger.info("Remove models")
-    shutil.rmtree(tmp_dir)
+base_model_path = convert_text_model(model_id, "opt125m", _convert_base)
+target_model_path = convert_text_model(model_id, "opt125m_int8", _convert_int8)
 
 
 @pytest.mark.skipif((sys.platform == "darwin"), reason='173169')
@@ -91,8 +96,6 @@ def test_text_gt_data(tmp_path):
 
 
 def test_text_output_directory(tmp_path):
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 173169")
     temp_file_name = tmp_path / "gt.csv"
     output = run_wwb([
         "--base-model",
@@ -127,8 +130,6 @@ def test_text_output_directory(tmp_path):
 
 
 def test_text_verbose():
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 173169")
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -183,8 +184,6 @@ def test_text_hf_model(model_id, tmp_path):
 
 
 def test_text_genai_model():
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 173169")
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -201,8 +200,10 @@ def test_text_genai_model():
 
 
 def test_text_genai_cb_model(tmp_path):
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 173169")
+    if sys.platform == "darwin":
+        pytest.xfail(
+            "Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only"
+        )
     config_path = tmp_path / "config.json"
     with open(config_path, "w") as f:
         config = {
@@ -246,8 +247,10 @@ def test_text_genai_cb_model(tmp_path):
 
 
 def test_text_genai_json_string_config():
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 173169")
+    if sys.platform == "darwin":
+        pytest.xfail(
+            "Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only"
+        )
 
     cb_json_string = "{\"max_num_batched_tokens\": 4096}"
     ov_json_string = "{\"KV_CACHE_PRECISION\":\"f16\", \"ATTENTION_BACKEND\": \"PA\"}"
@@ -271,3 +274,89 @@ def test_text_genai_json_string_config():
     # Test with WWB log info to make sure the configurations are passed from strings to the GenAI APIs
     assert "INFO:whowhatbench.wwb:cb_config: {'max_num_batched_tokens': 4096}" in output
     assert "INFO:whowhatbench.model_loaders:OpenVINO Config: {'KV_CACHE_PRECISION': 'f16', 'ATTENTION_BACKEND': 'PA'}" in output
+
+
+@pytest.mark.parametrize(
+    ("model_id"),
+    [("optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM")],
+)
+def test_text_chat_model(model_id, tmp_path):
+    if sys.platform == "darwin":
+        pytest.xfail("Ticket 183495")
+
+    SIMILARITY_THRESHOLD = 0.9
+    temp_file_name = tmp_path / "gt.csv"
+    chat_model_path = convert_text_model(model_id, model_id.split("/")[1], _convert_base)
+
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--gt-data",
+            temp_file_name,
+            "--num-samples",
+            "1",
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-chat",
+            "--hf",
+            "--max_new_tokens",
+            "10",
+        ]
+    )
+
+    outputs_path = tmp_path / "optimum"
+    output = run_wwb(
+        [
+            "--target-model",
+            chat_model_path,
+            "--gt-data",
+            temp_file_name,
+            "--num-samples",
+            "1",
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-chat",
+            "--output",
+            outputs_path,
+            "--max_new_tokens",
+            "10",
+        ]
+    )
+    assert "Metrics for model" in output
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert (outputs_path / "target.csv").exists()
+
+    similarity = get_similarity(output)
+    assert similarity >= SIMILARITY_THRESHOLD
+
+    outputs_path = tmp_path / "genai"
+    output = run_wwb(
+        [
+            "--target-model",
+            chat_model_path,
+            "--gt-data",
+            temp_file_name,
+            "--num-samples",
+            "1",
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-chat",
+            "--genai",
+            "--output",
+            outputs_path,
+            "--max_new_tokens",
+            "10",
+        ]
+    )
+    assert "Metrics for model" in output
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert (outputs_path / "target.csv").exists()
+
+    similarity = get_similarity(output)
+    assert similarity >= SIMILARITY_THRESHOLD

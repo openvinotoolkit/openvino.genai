@@ -8,6 +8,7 @@
 #include "openvino/genai/common_types.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/processor_config.hpp"
+#include "visual_language/video_processor_config.hpp"
 #include "circular_buffer_queue.hpp"
 
 
@@ -57,7 +58,7 @@ struct EncodedImage {
     /// @brief Original size of the image
     ImageSize original_image_size;
 
-    /// @brief Images features projection, used only by Phi3 and phi4mm.
+    /// @brief Images features projection, used only by Phi3, phi4mm and videochat-flash-qwen.
     ov::Tensor images_features_projection;
   
     /// @brief Resampled image, used only by MiniCPM.
@@ -65,6 +66,12 @@ struct EncodedImage {
 
     /// @brief Number of image tokens required to append to a normalized prompt
     size_t num_image_tokens = 0;
+};
+
+/// @brief A struct describing video metadata of a given video.
+struct VideoMetadata {
+    float fps = 24.0f;
+    std::vector<size_t> frames_indices;
 };
 
 /// @brief Embeddings of a given video. 
@@ -81,6 +88,9 @@ struct EncodedVideo {
 
     /// @brief A number of encoded frames.
     size_t frame_num;
+
+    /// @brief Video metadata, used for video input processing and prompt normalization.
+    VideoMetadata metadata;
 };
 
 /// @brief A class used to infer embeddings of an image using
@@ -141,6 +151,12 @@ protected:
 
     /// @brief A config to follow.
     ProcessorConfig m_processor_config;
+    
+    /// @brief A config for video input processing.
+    /// Used by models with separate video processor (e.g. Qwen3-VL).
+    VideoProcessorConfig m_video_processor_config;
+
+    VisionEncoder() = default;
 
 public:
     VisionEncoder(

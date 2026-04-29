@@ -57,7 +57,7 @@ and architectures, we still recommend converting the model to the IR format usin
 
 ## Sample Descriptions
 ### Common information
-Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
+Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
 Follow [build instruction](../../../src/docs/BUILD.md) to build GenAI samples
 
 GPUs usually provide better performance compared to CPUs. Modify the source code to change the device for inference to the GPU.
@@ -89,7 +89,7 @@ The following template can be used as a default, but it may not work properly wi
 #### NPU support
 
 NPU device is supported with some limitations. See [NPU inference of
-LLMs](https://docs.openvino.ai/2025/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html) documentation. In particular:
+LLMs](https://docs.openvino.ai/2026/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html) documentation. In particular:
 
 - Models must be exported with symmetric INT4 quantization (`optimum-cli export openvino --weight-format int4 --sym --model <model> <output_folder>`).
   For models with more than 4B parameters, channel wise quantization should be used (`--group-size -1`).
@@ -130,7 +130,7 @@ Recommended models: meta-llama/Llama-2-7b-hf, etc
 
 ### 5. Prompt Lookup Decoding LM (`prompt_lookup_decoding_lm`)
 - **Description:**
-[Prompt Lookup decoding](https://github.com/apoorvumang/prompt-lookup-decoding) is [assested-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) technique where the draft model is replaced with simple string matching the prompt to generate candidate token sequences. This method highly effective for input grounded generation (summarization, document QA, multi-turn chat, code editing), where there is high n-gram overlap between LLM input (prompt) and LLM output. This could be entity names, phrases, or code chunks that the LLM directly copies from the input while generating the output. Prompt lookup exploits this pattern to speed up autoregressive decoding in LLMs. This results in significant speedups with no effect on output quality.
+[Prompt Lookup decoding](https://github.com/apoorvumang/prompt-lookup-decoding) is an [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) technique where the draft model is replaced with simple string matching the prompt to generate candidate token sequences. This method is highly effective for input grounded generation (summarization, document QA, multi-turn chat, code editing), where there is high n-gram overlap between LLM input (prompt) and LLM output. This could be entity names, phrases, or code chunks that the LLM directly copies from the input while generating the output. Prompt lookup exploits this pattern to speed up autoregressive decoding in LLMs. This results in significant speedups with no effect on output quality.
 Recommended models: meta-llama/Llama-2-7b-hf, etc
 - **Main Feature:** Specialized prompt-based inference.
 - **Run Command:**
@@ -187,7 +187,7 @@ LLMPipeline and Tokenizer objects can be initialized directly from the memory bu
 - **Description:**
 This sample script demonstrates how to benchmark LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
 
-For more information how performance metrics are calculated, please follow the [performance-metrics tutorial](../../../src/README.md#performance-metrics).
+For more information on how performance metrics are calculated, please follow the [performance-metrics tutorial](../../../src/README.md#performance-metrics).
 - **Main Feature:** Benchmark model via GenAI
 - **Run Command:**
   ```bash
@@ -288,7 +288,7 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   Union (`|`) operation allows the model to choose which grammar to use during generation.
   In the sample it is used to combine two regex grammars for `"yes"` or `"no"` answer.
   Concat (`+`) operation allows to start with one grammar and continue with another.
-  Also it demonstrates how to write custom parser to extract tool calls from the generated text.
+  Also it demonstrates how to write custom incremental parser to extract tool calls from the generated text and stop generation as soon as a valid tool payload is parsed.
   In the sample it used to create a `phi-4-mini-instruct` style tool calling answer - `functools[{tool_1_json}, ...]` - by combining regex and JSON schema grammars.
 
 - **Main Features:**
@@ -297,12 +297,14 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   - Multi-turn chat with grammar switching
   - Structured tool calling using Pydantic schemas
   - Parse generated output to call tools from extracted structured data
+  - Inspect `finish_reasons` and demonstrate `TOOL_CALL` stop via incremental parsing
 - **Run Command:**
   ```bash
   python compound_grammar_generation.py model_dir
   ```
 - **Notes:**
   This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation and parsing resulting output.
+  The sample prints finish reason for each generation turn. In the tool-calling turn, generation is stopped with `TOOL_CALL` as soon as the incremental parser successfully parses the `functools[...]` payload.
   The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 

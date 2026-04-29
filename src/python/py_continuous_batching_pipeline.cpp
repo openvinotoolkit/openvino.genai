@@ -163,9 +163,13 @@ auto pipeline_metrics_docstring = R"(
     :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
     :type max_cache_usage: float
 
-
     :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
     :type avg_cache_usage: float
+
+    :param kv_cache_size_in_bytes: Total allocated KV cache size in bytes, based on the total number of KV blocks.
+      This value represents reserved/allocated memory for the KV cache and does not
+      distinguish between used and unused portions in dynamic KV cache configurations.
+    :type kv_cache_size_in_bytes: int
 )";
 
 std::ostream& operator << (std::ostream& stream, const GenerationResult& generation_result) {
@@ -250,13 +254,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readonly("m_request_id", &EncodedGenerationResult::m_request_id)
         .def_readwrite("m_generation_ids", &EncodedGenerationResult::m_generation_ids)
         .def_readwrite("m_scores", &EncodedGenerationResult::m_scores)
+        .def_readonly("finish_reasons", &EncodedGenerationResult::m_finish_reasons)
         .def_readonly("perf_metrics", &EncodedGenerationResult::perf_metrics)
         .def_readonly("extended_perf_metrics", &EncodedGenerationResult::extended_perf_metrics);
-
-    py::enum_<ov::genai::GenerationFinishReason>(m, "GenerationFinishReason")
-        .value("NONE", ov::genai::GenerationFinishReason::NONE)
-        .value("STOP", ov::genai::GenerationFinishReason::STOP)
-        .value("LENGTH", ov::genai::GenerationFinishReason::LENGTH);
 
     py::class_<GenerationOutput, std::shared_ptr<GenerationOutput>>(m, "GenerationOutput")
         .def_readwrite("generated_ids", &GenerationOutput::generated_ids)
@@ -267,7 +267,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
     auto generation_handle = py::class_<GenerationHandleImpl, std::shared_ptr<GenerationHandleImpl>>(m, "GenerationHandle")
         .def("get_status", &GenerationHandleImpl::get_status)
         .def("can_read", &GenerationHandleImpl::can_read)
-        .def("stop", &GenerationHandleImpl::stop)
+        .def("stop", &GenerationHandleImpl::stop, py::arg_v("finish_reason", GenerationFinishReason::STOP, "GenerationFinishReason.STOP"))
         .def("cancel", &GenerationHandleImpl::cancel)
         .def("read", &GenerationHandleImpl::read)
         .def("read_all", &GenerationHandleImpl::read_all);
@@ -391,14 +391,19 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readonly("scheduled_requests", &PipelineMetrics::scheduled_requests)
             .def_readonly("cache_usage", &PipelineMetrics::cache_usage)
             .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
+            .def_readonly("kv_cache_size_in_bytes", &PipelineMetrics::kv_cache_size_in_bytes)
             .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
         .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config,
                          const std::map<std::string, py::object>& tokenizer_plugin_config, const std::map<std::string, py::object>& inputs_embedder_plugin_config) {
                  ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, pyutils::properties_to_any_map(llm_plugin_config),
-                     pyutils::properties_to_any_map(tokenizer_plugin_config), pyutils::properties_to_any_map(inputs_embedder_plugin_config));
+                 ov::AnyMap llm_properties = pyutils::properties_to_any_map(llm_plugin_config);
+                 ov::AnyMap tokenizer_properties = pyutils::properties_to_any_map(tokenizer_plugin_config);
+                 ov::AnyMap inputs_embedder_properties = pyutils::properties_to_any_map(inputs_embedder_plugin_config);
+                 py::gil_scoped_release rel;
+                 return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, llm_properties,
+                     tokenizer_properties, inputs_embedder_properties);
              }),
              py::arg("models_path"),
              py::arg("scheduler_config"),
@@ -409,7 +414,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
 
         .def(py::init([](const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const py::kwargs& kwargs) {
                  ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, pyutils::kwargs_to_any_map(kwargs));
+                 ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                 py::gil_scoped_release rel;
+                 return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, properties);
              }),
              py::arg("models_path"),
              py::arg("tokenizer"),

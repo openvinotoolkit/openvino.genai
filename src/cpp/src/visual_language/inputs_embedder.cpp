@@ -10,6 +10,7 @@
 
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen2_5_vl/classes.hpp"
+#include "visual_language/qwen3_vl/classes.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -19,6 +20,7 @@
 #include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
+#include "visual_language/videochat_flash/classes.hpp"
 
 #include "utils.hpp"
 
@@ -38,8 +40,8 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
 
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
     m_is_chat_conversation = true;
-    if (!m_kv_cache_state.get_state().empty()) {
-        m_kv_cache_state.reset_state();
+    if (!m_cache_state.get_state().empty()) {
+        m_cache_state.reset_state();
     }
     if (system_message.empty()) {
         return;
@@ -47,20 +49,24 @@ void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_messa
 }
 
 void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
-    m_kv_cache_state.num_tokens_to_trim = 0;
+    m_cache_state.num_tokens_to_trim = 0;
     if (generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
         // If chat generation process was cancelled by user, let's rollback to previous state of kv cache
-        std::vector<int64_t>& state = m_kv_cache_state.get_state();
+        std::vector<int64_t>& state = m_cache_state.get_state();
 
-        m_kv_cache_state.num_tokens_to_trim = state.size() - m_prev_hist_length;
+        m_cache_state.num_tokens_to_trim = state.size() - m_prev_hist_length;
         state.resize(m_prev_hist_length);
-        m_kv_cache_state.reset_mem_state = state.empty();
+        // When cancelling the first generate (state becomes empty), partial trim would
+        // create a zero-size KV tensor causing a segfault, so a full reset is required.
+        // For hybrid/linear models, needs_reset() already returns true via
+        // has_linear() + num_tokens_to_trim > 0.
+        m_cache_state.reset_mem_state = state.empty();
     }
 }
 
 void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_is_chat_conversation = false;
-    m_kv_cache_state.reset_state();
+    m_cache_state.reset_state();
 }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
@@ -130,8 +136,8 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
 ov::Tensor InputsEmbedder::IInputsEmbedder::update_history(const ov::Tensor& new_chat_tokens) {
     ov::Tensor encoded_inputs;
     if (m_is_chat_conversation) {
-        ov::genai::align_kv_cache_and_history(new_chat_tokens, m_kv_cache_state);
-        encoded_inputs = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state).input_ids;
+        ov::genai::align_cache_and_history(new_chat_tokens, m_cache_state);
+        encoded_inputs = get_chat_encoded_input(new_chat_tokens, m_cache_state).input_ids;
     } else {
         encoded_inputs = new_chat_tokens;
     }
@@ -142,10 +148,15 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::update_history(const ov::Tensor& new
 ov::Tensor InputsEmbedder::IInputsEmbedder::get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     const auto new_chat_tokens = apply_chat_template_tokenize(prompt, metrics);
     auto new_input_ids = update_history(new_chat_tokens);
-    m_prev_hist_length = m_kv_cache_state.get_state().size();
-    m_kv_cache_state.add_inputs(new_input_ids);
+    m_prev_hist_length = m_cache_state.get_state().size();
+    m_cache_state.add_inputs(new_input_ids);
 
     return new_input_ids;
+}
+
+// For prompt lookup, encode original prompt as lookup table.
+ov::Tensor InputsEmbedder::IInputsEmbedder::encode_prompt(const std::string& original_prompt) {
+    return m_tokenizer.encode(original_prompt).input_ids;
 }
 
 std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors(const std::vector<ov::Tensor>& images) {
@@ -242,6 +253,11 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_em
 
 bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false; }
 
+const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::IInputsEmbedder::get_lm_extra_inputs() const {
+    static const std::unordered_map<std::string, ov::Tensor> empty_map;
+    return empty_map;
+}
+
 /// Public InputsEmbedder class
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
@@ -269,8 +285,12 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen2VL>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN2_5_VL) {
         m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_VL) {
+        m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
+        m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, model_dir, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -303,8 +323,12 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderQwen2VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN2_5_VL) {
         m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_VL) {
+        m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
+        m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config); 
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -365,6 +389,10 @@ bool InputsEmbedder::has_token_type_ids() const {
     return m_impl->has_token_type_ids();
 }
 
+const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::get_lm_extra_inputs() const {
+    return m_impl->get_lm_extra_inputs();
+}
+
 std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
     return m_impl->encode_images(images);
 }
@@ -375,6 +403,10 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(const std::ve
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
+}
+
+ov::Tensor InputsEmbedder::encode_prompt(const std::string& original_prompt) {
+    return m_impl->encode_prompt(original_prompt);
 }
 
 void InputsEmbedder::set_position_ids(const ov::Tensor& position_ids) {
@@ -393,8 +425,8 @@ EmbeddingsModel::Ptr InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
 }
 
-ov::genai::utils::KVCacheState& InputsEmbedder::get_kv_cache_state() {
-    return  m_impl->get_kv_cache_state();
+ov::genai::utils::CacheState& InputsEmbedder::get_cache_state() {
+    return  m_impl->get_cache_state();
 }
 
 Tokenizer InputsEmbedder::get_tokenizer() const {
@@ -419,6 +451,10 @@ void InputsEmbedder::finish_chat() {
 
 void InputsEmbedder::set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
     return m_impl->set_vision_token_pruning_config(pruning_ratio, relevance_weight);
+}
+
+std::string InputsEmbedder::get_last_pruned_prompt(const std::string& original_prompt) const {
+    return m_impl->get_last_pruned_prompt(original_prompt);
 }
 
 NormalizedPrompt InputsEmbedder::normalize_prompt(

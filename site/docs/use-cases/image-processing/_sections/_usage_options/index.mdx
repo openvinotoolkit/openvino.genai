@@ -15,7 +15,7 @@ The prompt can contain `<ov_genai_image_i>` with `i` replaced with an actual zer
 1. InternVL2: `<image>\n`
 2. llava-1.5-7b-hf: `<image>`
 3. LLaVA-NeXT: `<image>`
-4. LLaVa-NeXT-Video: `<image>`
+4. LLaVA-NeXT-Video: `<image>`
 5. nanoLLaVA: `<image>\n`
 6. nanoLLaVA-1.5: `<image>\n`
 7. MiniCPM-o-2_6: `<image>./</image>\n`
@@ -24,12 +24,15 @@ The prompt can contain `<ov_genai_image_i>` with `i` replaced with an actual zer
 10. Phi-4-multimodal-instruct: `<|image_i|>\n` - the index starts with one
 11. Qwen2-VL: `<|vision_start|><|image_pad|><|vision_end|>`
 12. Qwen2.5-VL: `<|vision_start|><|image_pad|><|vision_end|>`
-13. gemma-3-4b-it: `<start_of_image>`
+13. Qwen3-VL: `<|vision_start|><|image_pad|><|vision_end|>`
+14. gemma-3-4b-it: `<start_of_image>`
 
 Model's native video tag can be used to refer to a video. These tags are:
-1. LLaVa-NeXT-Video: `<video>`
+1. LLaVA-NeXT-Video: `<video>`
 2. Qwen2-VL: `<|vision_start|><|video_pad|><|vision_end|>`
-2. Qwen2.5-VL: `<|vision_start|><|video_pad|><|vision_end|>`
+3. Qwen2.5-VL: `<|vision_start|><|video_pad|><|vision_end|>`
+4. Qwen3-VL: `<|vision_start|><|video_pad|><|vision_end|>`
+5. VideoChat_Flash_Qwen: `<|image_i|>\n` - the index starts with one
 
 If the prompt doesn't contain image or video tags, but images or videos are provided, the tags are prepended to the prompt.
 
@@ -105,6 +108,13 @@ Similar to [text generation](/docs/use-cases/text-generation/#use-different-gene
       </TabItemJS>
   </LanguageTabs>
 </BasicGenerationConfiguration>
+
+### Working with LoRA Adapters
+
+For Visual Language Models (VLMs), LoRA adapters can customize the generated text by applying adapters to the language-model (LLM) part.
+LoRA adapters that target the vision encoder or other multimodal components are not supported.
+
+Refer to the [LoRA Adapters](/docs/guides/lora-adapters) guide for more details on working with LoRA adapters.
 
 <ChatScenario />
 

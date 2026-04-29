@@ -1,8 +1,11 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "xgrammar_backend.hpp"
 #include "logger.hpp"
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <iostream>
 
 namespace ov {
@@ -165,6 +168,7 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
     m_logits_shape = {static_cast<int64_t>(m_vocab_size)};
     m_next_token_logits->shape = &m_logits_shape[0];
     m_next_token_logits->strides = &m_logits_strides[0];
+    m_scratch.assign(m_vocab_size, 0.0f);
 }
 
 void XGrammarLogitsTransformer::accept_tokens(const TokenIds& input_ids) {
@@ -174,10 +178,25 @@ void XGrammarLogitsTransformer::accept_tokens(const TokenIds& input_ids) {
 }
 
 void XGrammarLogitsTransformer::apply(Logits& logits) {
-    m_next_token_logits->data = logits.m_data;
-
     m_grammar_matcher.FillNextTokenBitmask(m_token_bitmask.get());
-    if (!m_grammar_matcher.IsTerminated()) {
+    if (m_grammar_matcher.IsTerminated()) {
+        return;
+    }
+
+    if (logits.is_vector_initialized()) {
+        // logprobs > 0 path: m_data holds pristine raw logits — must not be written.
+        // Apply the bitmask to a scratch buffer via the same xgrammar code path, then
+        // propagate -inf to the corresponding m_vector entries.
+        std::fill(m_scratch.begin(), m_scratch.end(), 0.0f);
+        m_next_token_logits->data = m_scratch.data();
+        xgrammar::ApplyTokenBitmaskInplaceCPU(m_next_token_logits.get(), *m_token_bitmask, m_vocab_size);
+        for (auto& token : logits.m_vector) {
+            if (std::isinf(m_scratch[token.m_index])) {
+                token.m_log_prob = -std::numeric_limits<float>::infinity();
+            }
+        }
+    } else {
+        m_next_token_logits->data = logits.m_data;
         xgrammar::ApplyTokenBitmaskInplaceCPU(m_next_token_logits.get(), *m_token_bitmask, m_vocab_size);
     }
 }
