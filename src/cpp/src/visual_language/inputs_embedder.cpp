@@ -27,7 +27,7 @@
 namespace {
 void throw_video_not_implemented() {
     OPENVINO_THROW_NOT_IMPLEMENTED(
-        "Video preprocessing is't implemented for this model. Input images are processed as separate images."
+        "Video preprocessing isn't implemented for this model. Pass frames as independent images."
     );
 }
 }  // anonymous namespace
