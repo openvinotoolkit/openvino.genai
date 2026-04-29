@@ -2,7 +2,7 @@ accelerate>=0.26.0,<=1.13.0
 transformers[sentencepiece]>=4.35.2,<5.4.0
 sentence-transformers>=2.2.2,<=5.3.0
 openvino-genai
-optimum-intel[nncf]>=1.19.0,<=1.27.0
+# optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f50a0b326df82d4b05c461a9184a97f616bfa63a
 pandas>=2.0.3,<=3.0.2
 numpy>=1.23.5,<=2.4.4
 tqdm>=4.66.1,<=4.67.3
@@ -19,7 +19,7 @@ scikit-image<=0.26.0
 # - openbmb/MiniCPM-o-2_6
 soundfile==0.13.1
 librosa==0.11.0
-torchcodec<=0.11.0; sys_platform == "linux"
+# torchcodec<=0.11.0; sys_platform == "linux"
 vocos==0.1.0
 vector-quantize-pytorch==1.28.2
 torchaudio>=2.1.0,<=2.11.0

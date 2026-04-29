@@ -18,6 +18,7 @@ from transformers import AutoTokenizer
 from huggingface_hub import snapshot_download
 
 from utils.constants import get_disabled_mmap_ov_config
+from optimum.utils.import_utils import is_transformers_version
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.network import retry_request
 from utils.tokenizers import delete_rt_info, model_tmp_path
@@ -79,13 +80,18 @@ def test_encode(ov_hf_tokenizers, prompt):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
 
     encoded_ov = ov_tokenizer.encode(prompt).input_ids.data
-    if isinstance(prompt, list):
-        encoded_hf = hf_tokenizer.batch_encode_plus(prompt)["input_ids"]
+    if is_transformers_version("<", "5.0"):
+        if isinstance(prompt, list):
+            encoded_hf = hf_tokenizer.batch_encode_plus(prompt)["input_ids"]
+            for tokens_ov, tokens_hf in zip(encoded_ov, encoded_hf):
+                assert np.all(tokens_ov == tokens_hf)
+        else:
+            encoded_hf = hf_tokenizer.encode(prompt)
+            assert np.all(encoded_hf == encoded_ov[0])
+    else:
+        encoded_hf = hf_tokenizer(prompt, return_tensors="np", padding=True)["input_ids"]
         for tokens_ov, tokens_hf in zip(encoded_ov, encoded_hf):
             assert np.all(tokens_ov == tokens_hf)
-    else:
-        encoded_hf = hf_tokenizer.encode(prompt)
-        assert np.all(encoded_hf == encoded_ov[0])
 
 
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)

@@ -3,20 +3,44 @@
  
 import pytest
 import sys
+from optimum.intel.utils.import_utils import is_transformers_version
 
 from conftest import logger, SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_JS_DIR, MODELS
 from test_utils import run_sample
-    
+
+BEAM_SEARCH_MODEL_LIST = []
+if is_transformers_version(">=", "5.0"):
+    BEAM_SEARCH_MODEL_LIST = [
+        pytest.param(
+            "phi-1_5",
+            "69",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32", reason="Subprocess returned non-zero exit status 3221225477 on Windows"
+            ),
+        ),
+    ]
+else:
+    BEAM_SEARCH_MODEL_LIST = [
+        pytest.param(
+            "Qwen2-0.5B-Instruct",
+            "你好！",
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows"),
+        ),
+        pytest.param(
+            "Qwen2-0.5B-Instruct-GGUF",
+            "你好！",
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows"),
+        ),
+    ]
+
+
 class TestBeamSearchCausalLM:
     @pytest.mark.llm
     @pytest.mark.samples
+    @pytest.mark.transformers_dependent
     @pytest.mark.parametrize(
         "convert_model, sample_args",
-        [
-            pytest.param("Qwen2-0.5B-Instruct", "你好！", marks=pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows")),
-            pytest.param("Qwen2-0.5B-Instruct-GGUF", "你好！", marks=pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows")),
-            pytest.param("phi-1_5", "69", marks=pytest.mark.skipif(sys.platform == "win32", reason="Subprocess returned non-zero exit status 3221225477 on Windows")),
-        ],
+        BEAM_SEARCH_MODEL_LIST,
         indirect=["convert_model"],
     )
     def test_sample_beam_search_causal_lm(self, convert_model, sample_args):
@@ -44,6 +68,7 @@ class TestBeamSearchCausalLM:
 
     @pytest.mark.llm
     @pytest.mark.samples
+    @pytest.mark.transformers_lower_v5
     @pytest.mark.parametrize("convert_model",
         [
             "SmolLM2-135M",
@@ -97,9 +122,24 @@ class TestBeamSearchCausalLM:
             if tokenizer.chat_template:
                 prompt = tokenizer.apply_chat_template([{'role': 'user', 'content': f'"{prompt}"'}], tokenize=False, add_generation_prompt=True)
             tokenized = tokenizer(f'"{prompt}"', return_tensors='pt', add_special_tokens=False)
-        
-            for beam in transformers.LlamaForCausalLM.from_pretrained(model['name'], local_files_only=True).generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
-                ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
+
+            generate_args = {
+                "num_beam_groups": 3,
+                "num_beams": 15,
+                "num_return_sequences": 15,
+                "diversity_penalty": 1.0,
+                "max_new_tokens": 20,
+                "early_stopping": False,
+                "length_penalty": 1.0,
+                "no_repeat_ngram_size": 9**9,
+                "do_sample": False,
+            }
+            if is_transformers_version(">=", "5.0"):
+                generate_args["trust_remote_code"] = True
+            for beam in transformers.LlamaForCausalLM.from_pretrained(model["name"], local_files_only=True).generate(
+                **tokenized, **generate_args
+            ):
+                ref = ": " + tokenizer.decode(beam[tokenized["input_ids"].numel() :], skip_special_tokens=True)
                 logger.info(f'Checking for "{ref=}"')
                 
                 idx = py_predictions.find(ref)

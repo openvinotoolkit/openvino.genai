@@ -3,6 +3,7 @@
 
 from openvino_genai import GenerationConfig
 from utils.generation_config import get_greedy, get_beam_search
+from optimum.intel.utils.import_utils import is_transformers_version
 
 def get_test_dataset() -> tuple[list[str], list[GenerationConfig]]:
     prompts = [
@@ -12,11 +13,19 @@ def get_test_dataset() -> tuple[list[str], list[GenerationConfig]]:
         "Tell me something about Canada"
     ]
 
-    generation_configs = [
-        get_greedy(),
-        get_beam_search(),
-        get_greedy(),
-        get_beam_search(),
-    ]
+    if is_transformers_version(">=", "5.0"):
+        generation_configs = [
+            get_beam_search(),
+            get_beam_search(),
+            get_beam_search(),
+            get_beam_search(),
+        ]
+    else:
+        generation_configs = [
+            get_greedy(),
+            get_greedy(),
+            get_greedy(),
+            get_greedy(),
+        ]
 
     return (prompts, generation_configs)
