@@ -21,31 +21,44 @@ class CacheState;
 }
 
 /**
- * @brief Context for pruning pipeline execution.
- * Contains all necessary data and references for the complete pruning workflow.
+ * @brief Context for the CDPruner pipeline.
+ *
+ * The pipeline accepts merger-order image and/or video embeddings and reconstructs
+ * the prompt-order combined tensor internally. Either modality may be empty
+ * (single-modality run) or both may be supplied (combined image + video pruning).
  */
 struct PruningContext {
-    // Input tensors
+    // Input tensors common to text-side processing.
     const ov::Tensor& input_ids;
     const ov::Tensor& text_embeds;
-    const ov::Tensor& merged_visual_embeddings;
 
-    // Vision metadata (generic for images or videos)
-    size_t vision_count;  // Number of vision inputs (images or videos)
-    const std::vector<std::array<size_t, 3>>& visions_grid_thw;
-    const std::vector<size_t>& visions_sequence;
-    const std::vector<size_t>& tokens_per_vision;
+    // Per-modality merged embeddings in merger order [N, D]. Either may be left
+    // default-constructed (empty) when the corresponding modality is absent.
+    // Tensor copy is shallow (shared impl), so passing values is cheap.
+    ov::Tensor image_embeddings;
+    ov::Tensor video_embeddings;
 
-    // Token IDs
-    int64_t vision_pad_token_id;         // Can be image_pad_token_id or video_pad_token_id
-    int64_t vision_start_token_id = -1;  // -1 means not used (optional)
-    int64_t vision_end_token_id = -1;    // -1 means not used (optional)
+    // Per-modality region grids in prompt order (one entry per pad-token run).
+    // For models that split a video into one region per frame (e.g. Qwen3-VL),
+    // pass the per-frame grids in `video_grids`; otherwise pass one grid per video.
+    // Either vector may be left empty when the modality is absent.
+    std::vector<std::array<size_t, 3>> image_grids;
+    std::vector<std::array<size_t, 3>> video_grids;
 
-    // Configuration
-    size_t spatial_merge_size = 1;  // 1 means no merge (default)
-
-    // Video support: secondary pad token for the other modality (default -1 = not applicable)
+    // Pad token ids (-1 when the corresponding modality is absent).
+    int64_t image_pad_token_id = -1;
     int64_t video_pad_token_id = -1;
+
+    // Optional vision-region delimiters (-1 = not used).
+    int64_t vision_start_token_id = -1;
+    int64_t vision_end_token_id = -1;
+
+    // Spatial merge size from the vision encoder (1 = no merge).
+    size_t spatial_merge_size = 1;
+
+    // Optional in/out deepstack tensor of shape [L, image_count + video_count, D]
+    // in merger order [video; image]. Pruned in place when non-null.
+    ov::Tensor* deepstack_visual_embeds = nullptr;
 };
 
 /**
@@ -123,13 +136,14 @@ public:
      * Contains all necessary information about the pruning operation and its results.
      */
     struct PruningResult {
-        size_t original_visual_tokens = 0;                     ///< Original number of visual tokens before pruning
-        size_t pruned_visual_tokens = 0;                       ///< Number of visual tokens after pruning
-        ov::Tensor pruned_embeddings;                          ///< Pruned visual embeddings tensor
-        ov::Tensor pruned_input_ids;                           ///< Input IDs with pruned visual tokens removed
-        ov::Tensor pruned_text_embeds;                         ///< Text embeddings with pruned visual positions removed
+        size_t original_visual_tokens = 0;   ///< Total visual tokens before pruning
+        size_t pruned_visual_tokens = 0;     ///< Total visual tokens after pruning
+        ov::Tensor pruned_image_embeddings;  ///< Pruned image embeddings (merger order); empty if no images
+        ov::Tensor pruned_video_embeddings;  ///< Pruned video embeddings (merger order); empty if no videos
+        ov::Tensor pruned_input_ids;         ///< Input IDs with pruned visual tokens removed
+        ov::Tensor pruned_text_embeds;       ///< Text embeddings with pruned visual positions removed
         std::vector<std::vector<bool>> keep_flags_per_region;  ///< Keep flags for each visual region
-        std::optional<int64_t> updated_rope_delta;  ///< Updated rope_delta value (optional, only for RoPE models)
+        std::optional<int64_t> updated_rope_delta;             ///< Updated rope_delta (only for RoPE models)
     };
 
     /**
@@ -163,6 +177,7 @@ public:
      * @param vision_start_token_id Token ID for vision start marker
      * @param spatial_merge_size Spatial merge size for coordinate conversion
      * @param keep_flags_per_region_out Output: keep flags for each vision region
+     * @param video_pad_token_id Token ID for video padding (optional, default -1 means not applicable)
      */
     void adjust_position_ids(ov::Tensor& position_ids,
                              const ov::Tensor& input_ids,
@@ -207,10 +222,10 @@ public:
                                          int64_t image_pad_token_id,
                                          int64_t vision_start_token_id,
                                          int64_t vision_end_token_id,
-                                       int64_t video_pad_token_id = -1) const;
+                                         int64_t video_pad_token_id = -1) const;
 
     /**
-     * @brief Generate pruned text embeddings by removing filtered image_pad positions.
+     * @brief Generate pruned text embeddings by removing filtered vision pad (image_pad and video_pad) positions.
      */
     ov::Tensor generate_pruned_text_embeds(const ov::Tensor& input_ids,
                                            const ov::Tensor& text_embeds,

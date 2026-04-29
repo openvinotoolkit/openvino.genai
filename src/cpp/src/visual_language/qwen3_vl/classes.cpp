@@ -558,213 +558,45 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
             run_video_image_embeddings_merger(images, images_sequence, videos, videos_sequence);
     }
 
-    // Apply CDPruner to all vision inputs (images and videos combined)
-    ov::Tensor merged_image_embeddings_tensor = m_merged_image_embeddings;
-
+    // CDPruner: prune video and image vision tokens together. The pruning pipeline
+    // handles prompt-order gather/scatter and merger-order deepstack pruning internally.
     if ((!images.empty() || !videos.empty()) && is_cdpruner_active()) {
-        // Build flattened grid_thw: each video frame becomes a separate region
-        // Order: video frames first (reordered), then images (reordered)
-        // This matches the token order in deepstack_visual_embeds and merged embeddings
-        std::vector<std::array<size_t, 3>> combined_grid_thw;
-        size_t num_video_regions = 0;
-
+        std::vector<std::array<size_t, 3>> video_grids_per_frame;
         for (size_t vid_id : videos_sequence) {
-            const auto& [grid_t, grid_h, grid_w] = videos_grid_thw[vid_id];
-            for (size_t frame = 0; frame < grid_t; ++frame) {
-                combined_grid_thw.push_back({1, grid_h, grid_w});
-                ++num_video_regions;
+            const auto& [gt, gh, gw] = videos_grid_thw[vid_id];
+            for (size_t f = 0; f < gt; ++f) {
+                video_grids_per_frame.push_back({1, gh, gw});
             }
         }
-
+        std::vector<std::array<size_t, 3>> image_grids;
+        image_grids.reserve(images_sequence.size());
         for (size_t img_id : images_sequence) {
-            combined_grid_thw.push_back(images_grid_thw[img_id]);
+            image_grids.push_back(images_grid_thw[img_id]);
         }
 
-        const size_t total_regions = combined_grid_thw.size();
-
-        // Calculate tokens per region
-        std::vector<size_t> tokens_per_vision;
-        tokens_per_vision.reserve(total_regions);
-        for (const auto& [grid_t, grid_h, grid_w] : combined_grid_thw) {
-            tokens_per_vision.push_back(calc_tokens_num(grid_t, grid_h, grid_w));
-        }
-
-        // Combined embeddings: [video_embeds, image_embeds]
-        const auto& video_shape = m_merged_video_embeddings.get_shape();
-        const auto& image_shape = merged_image_embeddings_tensor.get_shape();
-        const size_t video_token_count = video_shape[0];
-        const size_t image_token_count = image_shape[0];
-        const size_t total_tokens = video_token_count + image_token_count;
-
-        if (video_token_count > 0) {
-            OPENVINO_ASSERT(video_shape.size() >= 2,
-                            "Merged video embeddings must be at least 2D, got shape rank ",
-                            video_shape.size(), ".");
-        }
-        if (image_token_count > 0) {
-            OPENVINO_ASSERT(image_shape.size() >= 2,
-                            "Merged image embeddings must be at least 2D, got shape rank ",
-                            image_shape.size(), ".");
-        }
-        if (video_token_count > 0 && image_token_count > 0) {
-            OPENVINO_ASSERT(video_shape[1] == image_shape[1],
-                            "Video and image embedding widths must match when both are present. Got video width ",
-                            video_shape[1], " and image width ", image_shape[1], ".");
-        }
-
-        const size_t hidden_dim = (video_token_count > 0) ? video_shape[1] : image_shape[1];
-        const auto embed_element_type = (video_token_count > 0)
-            ? m_merged_video_embeddings.get_element_type()
-            : merged_image_embeddings_tensor.get_element_type();
-
-        ov::Tensor combined_embeds(embed_element_type, {total_tokens, hidden_dim});
-        if (video_token_count > 0) {
-            std::memcpy(combined_embeds.data(),
-                        m_merged_video_embeddings.data(),
-                        m_merged_video_embeddings.get_byte_size());
-        }
-        if (image_token_count > 0) {
-            std::memcpy(static_cast<uint8_t*>(combined_embeds.data()) + m_merged_video_embeddings.get_byte_size(),
-                        merged_image_embeddings_tensor.data(),
-                        merged_image_embeddings_tensor.get_byte_size());
-        }
-
-        // Identity sequence (embeddings are already reordered)
-        std::vector<size_t> combined_sequence(total_regions);
-        std::iota(combined_sequence.begin(), combined_sequence.end(), 0);
-
-        const size_t spatial_merge_size = std::max<size_t>(1, m_vision_encoder->get_processor_config().merge_size);
+        ov::Tensor& deepstack_embeds = m_lm_extra_inputs["deepstack_visual_embeds"];
 
         PruningContext pruning_context{input_ids,
                                        text_embeds,
-                                       combined_embeds,
-                                       total_regions,
-                                       combined_grid_thw,
-                                       combined_sequence,
-                                       tokens_per_vision,
+                                       m_merged_image_embeddings,
+                                       m_merged_video_embeddings,
+                                       image_grids,
+                                       video_grids_per_frame,
                                        image_pad_token_id,
+                                       video_pad_token_id,
                                        vision_start_token_id,
                                        vision_end_token_id,
-                                       spatial_merge_size,
-                                       video_pad_token_id};
+                                       m_vision_encoder->get_processor_config().merge_size,
+                                       deepstack_embeds ? &deepstack_embeds : nullptr};
 
         if (auto pruning_result = execute_pruning_pipeline(pruning_context)) {
             input_ids = pruning_result->pruned_input_ids;
             text_embeds = pruning_result->pruned_text_embeds;
-
             if (pruning_result->updated_rope_delta.has_value()) {
                 m_rope_delta = pruning_result->updated_rope_delta.value();
             }
-
-            // Split pruned embeddings back into video and image portions
-            const auto& keep_flags = pruning_result->keep_flags_per_region;
-            size_t pruned_video_tokens = 0;
-            for (size_t i = 0; i < num_video_regions; ++i) {
-                pruned_video_tokens += static_cast<size_t>(
-                    std::count(keep_flags[i].begin(), keep_flags[i].end(), true));
-            }
-            OPENVINO_ASSERT(pruning_result->pruned_visual_tokens >= pruned_video_tokens,
-                            "Pruned visual token count (",
-                            pruning_result->pruned_visual_tokens,
-                            ") must be >= pruned video token count (",
-                            pruned_video_tokens, ").");
-            const size_t pruned_image_tokens = pruning_result->pruned_visual_tokens - pruned_video_tokens;
-
-            const auto& pruned_embeddings_shape = pruning_result->pruned_embeddings.get_shape();
-            OPENVINO_ASSERT(pruned_embeddings_shape.size() >= 2,
-                            "Pruned embeddings tensor must be at least 2D.");
-            const size_t embed_dim = pruned_embeddings_shape[1];
-            const auto pruned_elem_type = pruning_result->pruned_embeddings.get_element_type();
-
-            m_merged_video_embeddings = ov::Tensor(pruned_elem_type, {pruned_video_tokens, embed_dim});
-            merged_image_embeddings_tensor = ov::Tensor(pruned_elem_type, {pruned_image_tokens, embed_dim});
-
-            if (pruned_video_tokens > 0) {
-                std::memcpy(m_merged_video_embeddings.data(),
-                            pruning_result->pruned_embeddings.data(),
-                            m_merged_video_embeddings.get_byte_size());
-            }
-            if (pruned_image_tokens > 0) {
-                std::memcpy(merged_image_embeddings_tensor.data(),
-                            static_cast<const uint8_t*>(pruning_result->pruned_embeddings.data()) +
-                                m_merged_video_embeddings.get_byte_size(),
-                            merged_image_embeddings_tensor.get_byte_size());
-            }
-            m_merged_image_embeddings = merged_image_embeddings_tensor;
-
-            // Prune deepstack_visual_embeds
-            // deepstack shape: [num_layers, total_vision_tokens, hidden_size]
-            // Token order matches combined embeddings: video tokens first, image tokens second
-            auto& deepstack_embeds = m_lm_extra_inputs["deepstack_visual_embeds"];
-
-            if (deepstack_embeds && deepstack_embeds.get_size() > 0) {
-                const auto deepstack_shape = deepstack_embeds.get_shape();
-
-                if (deepstack_shape.size() == 3) {
-                    const size_t num_layers = deepstack_shape[0];
-                    const size_t original_tokens = deepstack_shape[1];
-                    const size_t ds_hidden_size = deepstack_shape[2];
-
-                    const auto ds_elem_type = deepstack_embeds.get_element_type();
-                    const size_t ds_elem_size = ds_elem_type.size();
-
-                    // Build kept token indices from all region keep_flags
-                    std::vector<size_t> kept_indices;
-                    kept_indices.reserve(pruning_result->pruned_visual_tokens);
-                    size_t abs_idx = 0;
-                    for (const auto& region_flags : keep_flags) {
-                        for (bool flag : region_flags) {
-                            if (flag) {
-                                kept_indices.push_back(abs_idx);
-                            }
-                            ++abs_idx;
-                        }
-                    }
-
-                    OPENVINO_ASSERT(abs_idx == original_tokens,
-                                    "Keep flags total size (", abs_idx,
-                                    ") != deepstack tokens (", original_tokens, ")");
-                    OPENVINO_ASSERT(kept_indices.size() == pruning_result->pruned_visual_tokens,
-                                    "Kept indices count (", kept_indices.size(),
-                                    ") != pruned_visual_tokens (", pruning_result->pruned_visual_tokens, ")");
-
-                    if (pruning_result->pruned_visual_tokens < original_tokens) {
-                        const size_t kept_count = kept_indices.size();
-                        ov::Tensor pruned_deepstack(ds_elem_type,
-                                                    {num_layers, kept_count, ds_hidden_size});
-
-                        const size_t token_bytes = ds_hidden_size * ds_elem_size;
-                        const auto* src = static_cast<const uint8_t*>(deepstack_embeds.data());
-                        auto* dst = static_cast<uint8_t*>(pruned_deepstack.data());
-
-                        for (size_t layer = 0; layer < num_layers; ++layer) {
-                            const size_t layer_src_offset = layer * original_tokens * token_bytes;
-                            const size_t layer_dst_offset = layer * kept_count * token_bytes;
-
-                            // Coalesce contiguous kept indices into single memcpy calls
-                            size_t dst_idx = 0;
-                            while (dst_idx < kept_count) {
-                                const size_t run_dst_start = dst_idx;
-                                const size_t run_src_start = kept_indices[dst_idx];
-                                size_t run_length = 1;
-
-                                while (dst_idx + run_length < kept_count &&
-                                       kept_indices[dst_idx + run_length] == run_src_start + run_length) {
-                                    ++run_length;
-                                }
-
-                                std::memcpy(dst + layer_dst_offset + run_dst_start * token_bytes,
-                                            src + layer_src_offset + run_src_start * token_bytes,
-                                            run_length * token_bytes);
-
-                                dst_idx += run_length;
-                            }
-                        }
-
-                        m_lm_extra_inputs["deepstack_visual_embeds"] = std::move(pruned_deepstack);
-                    }
-                }
-            }
+            m_merged_image_embeddings = std::move(pruning_result->pruned_image_embeddings);
+            m_merged_video_embeddings = std::move(pruning_result->pruned_video_embeddings);
         }
     }
 

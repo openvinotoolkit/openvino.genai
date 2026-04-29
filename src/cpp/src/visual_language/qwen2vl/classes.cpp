@@ -1143,54 +1143,37 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     merged_video_embeddings_tensor = m_merged_video_embeddings;
     merged_image_embeddings_tensor = m_merged_image_embeddings;
 
-    // [CDPruner] Lambda to apply pruning (reusable for both images and videos)
-    auto apply_pruning = [&](size_t vision_count,
-                             const std::vector<std::array<size_t, 3>>& grid_thw,
-                             const std::vector<size_t>& sequence,
-                             ov::Tensor& merged_embeddings,
-                             int64_t vision_pad_token_id) {
-        // Calculate tokens per vision input
-        std::vector<size_t> tokens_per_vision;
-        tokens_per_vision.reserve(grid_thw.size());
-        for (const auto& [grid_t, grid_h, grid_w] : grid_thw) {
-            tokens_per_vision.push_back(calc_tokens_num(grid_t, grid_h, grid_w));
+    // [CDPruner] Apply pruning to images. Video pruning for Qwen2-VL is not yet
+    // supported; once enabled, build a parallel block that fills `video_embeddings`
+    // and `video_grids` instead of the image fields.
+    if (!images.empty() && is_cdpruner_active()) {
+        std::vector<std::array<size_t, 3>> image_region_grids;
+        image_region_grids.reserve(images_sequence.size());
+        for (size_t idx : images_sequence) {
+            image_region_grids.push_back(images_grid_thw[idx]);
         }
-
-        const size_t spatial_merge_size = std::max<size_t>(1, m_vision_encoder->get_processor_config().merge_size);
 
         PruningContext pruning_context{input_ids,
                                        text_embeds,
-                                       merged_embeddings,
-                                       vision_count,
-                                       grid_thw,
-                                       sequence,
-                                       tokens_per_vision,
-                                       vision_pad_token_id,
+                                       merged_image_embeddings_tensor,
+                                       /*video_embeddings=*/{},
+                                       std::move(image_region_grids),
+                                       /*video_grids=*/{},
+                                       image_pad_token_id,
+                                       /*video_pad_token_id=*/-1,
                                        vision_start_token_id,
                                        vision_end_token_id,
-                                       spatial_merge_size};
+                                       std::max<size_t>(1, m_vision_encoder->get_processor_config().merge_size)};
 
         if (auto pruning_result = execute_pruning_pipeline(pruning_context)) {
-            merged_embeddings = pruning_result->pruned_embeddings;
+            merged_image_embeddings_tensor = std::move(pruning_result->pruned_image_embeddings);
             input_ids = pruning_result->pruned_input_ids;
             text_embeds = pruning_result->pruned_text_embeds;
-
             if (pruning_result->updated_rope_delta.has_value()) {
                 m_rope_delta = pruning_result->updated_rope_delta.value();
             }
         }
-    };
-
-    // Apply pruning to images
-    if (!images.empty() && is_cdpruner_active()) {
-        apply_pruning(images.size(),
-                      images_grid_thw,
-                      images_sequence,
-                      merged_image_embeddings_tensor,
-                      image_pad_token_id);
     }
-
-    // TODO: Apply pruning to videos when video pruning is supported
 
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(input_ids,
                                                                  text_embeds,
