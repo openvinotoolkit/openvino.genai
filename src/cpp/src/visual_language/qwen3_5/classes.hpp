@@ -41,15 +41,7 @@ public:
         int64_t rope_delta
     ) override;
 
-    void start_chat(const std::string& system_message) override;
-
-    void finish_chat() override;
-
 protected:
-    // Qwen3.5 LM has no additional vision-related inputs for LM model.
-    // Override parent Qwen3VL lm_extra_inputs with empty map to reuse Qwen3VL get_imputs_embeds() method.
-    std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs = {};
-
     std::pair<ov::Tensor, int64_t> create_position_ids(
         const ov::Tensor& input_ids_tensor,
         const std::vector<std::array<size_t, 3>>& images_grid_thw,

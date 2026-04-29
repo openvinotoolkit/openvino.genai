@@ -91,15 +91,9 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen3_5::get_generat
     return {position_ids, rope_delta};
 }
 
-void InputsEmbedderQwen3_5::start_chat(const std::string& system_message) {
-    InputsEmbedderQwen2VL::start_chat(system_message);
-}
-
-void InputsEmbedderQwen3_5::finish_chat() {
-    InputsEmbedderQwen2VL::finish_chat();
-}
-
-const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderQwen3_5::get_lm_extra_inputs() const {    
+const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderQwen3_5::get_lm_extra_inputs() const {
+    // Qwen3.5 LM has no additional vision-related inputs for LM model.
+    // Override parent Qwen3VL getter with returning default empty map to reuse Qwen3VL get_imputs_embeds() method.
     return InputsEmbedder::IInputsEmbedder::get_lm_extra_inputs();
 }
 
