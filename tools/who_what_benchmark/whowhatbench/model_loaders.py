@@ -189,18 +189,23 @@ def load_text_llamacpp_pipeline(model_dir):
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {**PYTORCH_MODEL_DTYPE_KWARG}
+    trust_remote_code = False
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
+    else:
+        try:
+            config = AutoConfig.from_pretrained(model_id)
+        except Exception:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            trust_remote_code = True
+        # Workaround for gpt-oss model so the torch_dtypes will not be mixed up
+        if getattr(config, "model_type", None) == "gpt_oss":
+            model_kwargs["torch_dtype"] = "auto"
+
     if not torch.cuda.is_available or device.lower() == "cpu":
-        trust_remote_code = False
         is_gptq = False
         is_awq = False
         if not kwargs.get('gguf_file'):
-            try:
-                config = AutoConfig.from_pretrained(model_id)
-            except Exception:
-                config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-                trust_remote_code = True
 
             if getattr(config, "quantization_config", None):
                 is_gptq = config.quantization_config["quant_method"] == "gptq"
