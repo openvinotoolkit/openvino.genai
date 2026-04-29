@@ -16,6 +16,7 @@
 #include "speculative_decoding/stateful/eagle3_strategy.hpp"
 #include "speculative_decoding/stateful/fast_draft_strategy.hpp"
 #include "utils.hpp"
+#include "model_desc.hpp"
 #include "logger.hpp"
 
 namespace {

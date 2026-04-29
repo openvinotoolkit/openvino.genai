@@ -55,6 +55,9 @@ std::vector<EncodedGenerationResult> generate_common(
     auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, self->tokenizer());
 
     strategy.check_streaming(streamer_ptr, input_ids, sampling_params);
+    if (position_ids.has_value()) {
+        OPENVINO_ASSERT(position_ids->size() == input_ids.size());
+    }
 
     std::vector<GenerationHandle> main_generations;
     for (size_t rid = 0; rid < input_ids.size(); ++rid) {

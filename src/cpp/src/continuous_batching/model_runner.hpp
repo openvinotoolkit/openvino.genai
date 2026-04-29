@@ -17,8 +17,6 @@
 #include "continuous_batching/attention_output.hpp"
 #include "continuous_batching/cache_eviction.hpp"
 
-#include "speculative_decoding/continuous_batching/update_request_structs.hpp"
-
 namespace ov::genai {
 
 inline std::string get_paged_attention_score_output_for_decoder_layer(size_t decoder_layer_id) {

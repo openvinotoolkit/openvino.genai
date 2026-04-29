@@ -84,11 +84,11 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     update_eagle_pipeline_params(d2t_tensor);
 }
 
-ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input(const ov::Tensor& original_input_ids) {
+ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input(const ov::Tensor& original_input) {
     if (m_model_input_type == ModelInputType::TOKENS) {
-        return create_draft_input_ids(original_input_ids);
+        return create_draft_input_ids(original_input);
     } else {
-        return create_draft_input_embeddings(original_input_ids);
+        return create_draft_input_embeddings(original_input);
     }
 }
 

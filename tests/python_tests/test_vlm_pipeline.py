@@ -66,7 +66,7 @@ from utils.generation_config import (
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
-from utils.hugging_face import download_and_convert_model_class
+from utils.hugging_face import download_and_convert_model
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 import logging
@@ -203,10 +203,27 @@ VLM_EAGLE3_MAIN_MODEL_ID = "xf2022/tiny-random-qwen3-vl-layer10"
 VLM_EAGLE3_DRAFT_MODEL_ID = "xf2022/tiny-random-qwen3-vl-eagle3"
 
 
+def _skip_unsupported_transformers_export(model_id: str) -> None:
+    if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
+        pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
+    if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
+        pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
+    if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(
+        ">", "4.51.3"
+    ):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
+        )
+    if "qwen3-vl" in model_id.lower() and is_transformers_version("<", "4.57.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
+        )
+
+
 def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:
-    draft_model_path = download_and_convert_model_class(
+    _skip_unsupported_transformers_export(VLM_EAGLE3_DRAFT_MODEL_ID)
+    draft_model_path = download_and_convert_model(
         VLM_EAGLE3_DRAFT_MODEL_ID,
-        OVModelForCausalLM,
         model_kwargs={"task": "image-text-to-text"},
     ).models_path
     return Path(_get_ov_model(VLM_EAGLE3_MAIN_MODEL_ID)), draft_model_path
@@ -239,20 +256,7 @@ def _setup_generation_config(
 
 
 def _get_ov_model(model_id: str) -> str:
-    if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
-        pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
-    if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
-        pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
-    if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(
-        ">", "4.51.3"
-    ):
-        pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
-        )
-    if "qwen3-vl" in model_id.lower() and is_transformers_version("<", "4.57.0"):
-        pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
-        )
+    _skip_unsupported_transformers_export(model_id)
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
