@@ -12,16 +12,6 @@
 #include "openvino/op/subtract.hpp"
 #include "openvino/op/multiply.hpp"
 #include "logger.hpp"
-
-// Forward-declare the rt_info helper from openvino's transformations library to avoid
-// pulling in the private header "transformations/rt_info/disable_fp16_compression.hpp"
-// (not on the genai include path). The symbol is exported via TRANSFORMATIONS_API and
-// resolves at link time against the openvino runtime that genai already depends on.
-namespace ov {
-class Node;
-void disable_fp16_compression(const std::shared_ptr<Node>& node);
-}  // namespace ov
-
 #include "visual_language/clip.hpp"
 #include "visual_language/vlm_utils.hpp"
 #include "json_utils.hpp"
@@ -32,10 +22,21 @@ void disable_fp16_compression(const std::shared_ptr<Node>& node);
 #include <cstring>
 #include <numeric>
 #include <cmath>
+#include <cstdlib>
 #include <optional>
 #include <sstream>
 #include <mutex>
 #include <fstream>
+
+// Forward-declare the rt_info helper from openvino's transformations library to avoid
+// pulling in the private header "transformations/rt_info/disable_fp16_compression.hpp"
+// (not on the genai include path). The symbol is exported via TRANSFORMATIONS_API and
+// resolves at link time against the openvino runtime that genai already depends on.
+namespace ov {
+class Node;
+void disable_fp16_compression(const std::shared_ptr<Node>& node);
+} // namespace ov
+
 namespace ov::genai {
 
 namespace {

@@ -2713,9 +2713,7 @@ def _build_videochat_pipe_with_env(value: str | None) -> VLMPipeline:
         pytest.param("CPP", id="legacy_cpp_loop"),
     ],
 )
-def test_videochatflash_preprocess_env_switch(
-    vision_preprocess_env, synthetic_video_32x32_tensor: openvino.Tensor
-):
+def test_videochatflash_preprocess_env_switch(vision_preprocess_env, synthetic_video_32x32_tensor: openvino.Tensor):
     """Smoke test: VLMPipeline must construct and generate non-empty output
     under both VISION_PREPROCESS settings (default OV-graph and CPP fallback).
     This guards the runtime selector in initialize_preprocess_queue from
@@ -2752,12 +2750,8 @@ def test_videochatflash_preprocess_ov_matches_cpp_reference(
     cfg_ov = _setup_generation_config(pipe_ov, max_new_tokens=5, do_sample=False)
     cfg_cpp = _setup_generation_config(pipe_cpp, max_new_tokens=5, do_sample=False)
 
-    res_ov = pipe_ov.generate(
-        prompt, images=[], videos=[synthetic_video_32x32_tensor], generation_config=cfg_ov
-    )
-    res_cpp = pipe_cpp.generate(
-        prompt, images=[], videos=[synthetic_video_32x32_tensor], generation_config=cfg_cpp
-    )
+    res_ov = pipe_ov.generate(prompt, images=[], videos=[synthetic_video_32x32_tensor], generation_config=cfg_ov)
+    res_cpp = pipe_cpp.generate(prompt, images=[], videos=[synthetic_video_32x32_tensor], generation_config=cfg_cpp)
     assert res_ov.texts[0] == res_cpp.texts[0], (
         "OV-graph preprocess output diverged from the legacy CPP reference at "
         f"greedy step within max_new_tokens=5: OV='{res_ov.texts[0]}' vs "
