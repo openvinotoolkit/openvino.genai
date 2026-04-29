@@ -26,7 +26,7 @@
 
 namespace {
 template <typename VideoType>
-void throw_video_not_implemented(const std::vector<VideoType>& videos) {
+void throw_if_video_not_implemented(const std::vector<VideoType>& videos) {
     if (!videos.empty()) {
         OPENVINO_THROW_NOT_IMPLEMENTED(
             "Video preprocessing isn't implemented for this model. Pass frames as independent images."
@@ -215,12 +215,12 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
     const std::vector<size_t>& videos_sequence,
     const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
 ) {
-    throw_video_not_implemented(videos);
+    throw_if_video_not_implemented(videos);
     return get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings, images_sequence);
 }
 
 std::vector<ov::genai::EncodedVideo> InputsEmbedder::IInputsEmbedder::encode_videos(const std::vector<ov::Tensor>& videos) {
-    throw_video_not_implemented(videos);
+    throw_if_video_not_implemented(videos);
     return {};
 }
 
@@ -231,7 +231,7 @@ NormalizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
     const std::vector<EncodedImage>& images,
     const std::vector<EncodedVideo>& videos
 ) const {
-    throw_video_not_implemented(videos);
+    throw_if_video_not_implemented(videos);
     return normalize_prompt(prompt, base_image_id, images);
 }
 
