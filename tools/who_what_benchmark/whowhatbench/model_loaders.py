@@ -200,7 +200,8 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             trust_remote_code = True
         # MoE weights of gpt_oss models post-trained with MXFP4 quantization
         # they are dequantized with torch.bfloat16 https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/integrations/mxfp4.py#L104
-        # forcing the model to any other type will cause a type mismatch error https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/gpt_oss/modeling_gpt_oss.py#L117
+        # forcing the model to any other type will cause a type mismatch error
+        # https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/gpt_oss/modeling_gpt_oss.py#L117
         if getattr(config, "model_type", None) == "gpt_oss":
             model_kwargs["torch_dtype"] = "auto"
 
