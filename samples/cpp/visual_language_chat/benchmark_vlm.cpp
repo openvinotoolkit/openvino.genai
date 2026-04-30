@@ -60,6 +60,12 @@ int main(int argc, char* argv[]) try {
     const std::string draft_models_path = result["draft_model"].as<std::string>();
     const std::string image_path = result["image"].as<std::string>();
     std::string device = result["device"].as<std::string>();
+
+    if (device == "NPU" && !draft_models_path.empty()) {
+        std::cout << "--draft_model is not supported when --device is NPU" << std::endl;
+        return EXIT_FAILURE;
+    }
+
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
     std::vector<ov::Tensor> images = utils::load_images(image_path);
@@ -83,7 +89,7 @@ int main(int argc, char* argv[]) try {
 
     std::unique_ptr<ov::genai::VLMPipeline> pipe;
     if (device == "NPU")
-        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, properties);
+        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device);
     else {
         // Setting of Scheduler config will trigger usage of ContinuousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
         ov::genai::SchedulerConfig scheduler_config;
