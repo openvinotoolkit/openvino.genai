@@ -574,7 +574,8 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
             image_grids.push_back(images_grid_thw[img_id]);
         }
 
-        ov::Tensor& deepstack_embeds = m_lm_extra_inputs["deepstack_visual_embeds"];
+        auto deepstack_it = m_lm_extra_inputs.find("deepstack_visual_embeds");
+        ov::Tensor* deepstack_ptr = (deepstack_it != m_lm_extra_inputs.end() && deepstack_it->second) ? &deepstack_it->second : nullptr;
 
         PruningContext pruning_context{input_ids,
                                        text_embeds,
@@ -587,7 +588,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
                                        vision_start_token_id,
                                        vision_end_token_id,
                                        m_vision_encoder->get_processor_config().merge_size,
-                                       deepstack_embeds ? &deepstack_embeds : nullptr};
+                                       deepstack_ptr};
 
         if (auto pruning_result = execute_pruning_pipeline(pruning_context)) {
             input_ids = pruning_result->pruned_input_ids;

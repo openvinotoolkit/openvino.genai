@@ -874,6 +874,12 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
                     ")");
     OPENVINO_ASSERT(v_idx == video_token_count, "Video pad tokens in prompt do not cover all video embeddings");
     OPENVINO_ASSERT(i_idx == image_token_count, "Image pad tokens in prompt do not cover all image embeddings");
+    OPENVINO_ASSERT(v_region == context.video_grids.size(),
+                    "Fewer video regions in prompt than entries in video_grids (",
+                    v_region, " vs ", context.video_grids.size(), ")");
+    OPENVINO_ASSERT(i_region == context.image_grids.size(),
+                    "Fewer image regions in prompt than entries in image_grids (",
+                    i_region, " vs ", context.image_grids.size(), ")");
 
     const size_t total_regions = combined_grid_thw.size();
     const size_t spatial_merge_size = std::max<size_t>(1, context.spatial_merge_size);
@@ -882,8 +888,16 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     std::vector<size_t> tokens_per_vision;
     tokens_per_vision.reserve(total_regions);
     for (const auto& [gt, gh, gw] : combined_grid_thw) {
-        tokens_per_vision.push_back(gt * gh * gw / merge_length);
+        const size_t region_elements = gt * gh * gw;
+        OPENVINO_ASSERT(region_elements % merge_length == 0,
+                        "Vision grid elements (", region_elements,
+                        ") must be divisible by merge_length (", merge_length, ")");
+        tokens_per_vision.push_back(region_elements / merge_length);
     }
+    const size_t derived_total_tokens = std::accumulate(tokens_per_vision.begin(), tokens_per_vision.end(), size_t{0});
+    OPENVINO_ASSERT(derived_total_tokens == total_tokens,
+                    "Derived per-vision token count (", derived_total_tokens,
+                    ") != merged vision tokens (", total_tokens, ")");
 
     std::vector<size_t> combined_sequence(total_regions);
     std::iota(combined_sequence.begin(), combined_sequence.end(), 0);

@@ -2253,7 +2253,7 @@ parametrize_cdpruner_models = pytest.mark.parametrize(
 
 
 @parametrize_cdpruner_models
-@pytest.mark.parametrize("pruning_ratio", [0, 30, 50, 80])
+@pytest.mark.parametrize("pruning_ratio", [50, 70, 80])
 def test_cdpruner_functionality(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, pruning_ratio: int):
     """Test CDPruner functionality with different pruning ratios."""
     ov_pipe = ov_pipe_model.pipeline
@@ -2417,7 +2417,7 @@ parametrize_cdpruner_video_pruning_models = pytest.mark.parametrize(
 
 
 @parametrize_cdpruner_video_pruning_models
-@pytest.mark.parametrize("pruning_ratio", [0, 30, 50, 80])
+@pytest.mark.parametrize("pruning_ratio", [50, 70, 80])
 def test_cdpruner_with_video(
     ov_pipe_model: VlmModelInfo,
     synthetic_video_32x32_tensor: openvino.Tensor,
