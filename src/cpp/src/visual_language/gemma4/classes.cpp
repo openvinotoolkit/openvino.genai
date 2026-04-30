@@ -259,45 +259,10 @@ ov::Tensor InputsEmbedderGemma4::get_per_layer_embeddings(const ov::Tensor& inpu
     return result;
 }
 
-ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
-                                                   const std::vector<EncodedImage>& images,
-                                                   VLMPerfMetrics& metrics,
-                                                   bool recalculate_merged_embeddings,
-                                                   const std::vector<size_t>& images_sequence) {
-    std::vector<ov::Tensor> image_embeds;
-    image_embeds.reserve(images_sequence.size());
-    for (size_t new_image_id : images_sequence) {
-        image_embeds.push_back(images.at(new_image_id).resized_source);
-    }
-
-    ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
-
-    if (has_per_layer_embeddings()) {
-        m_lm_extra_inputs["per_layer_inputs"] = get_per_layer_embeddings(input_ids);
-    }
-
-    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
-    EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
-
-    if (images.empty()) {
-        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
-        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
-        return inputs_embeds;
-    }
-
-    encode_image_token_id();
-
-    ov::Tensor inputs_embeds =
-        utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, m_image_token_id);
-    return inputs_embeds;
-}
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::get_inputs_embeds_with_token_type_ids(
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
     const std::string& prompt,
     const std::vector<EncodedImage>& images,
     VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
     const std::vector<size_t>& images_sequence) {
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
@@ -317,17 +282,34 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::get_inputs_embeds_with_t
 
     encode_image_token_id();
 
-    const auto token_type_ids = get_token_type_ids(input_ids);
-
     if (images.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
         std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
-        return {inputs_embeds, token_type_ids};
+        return {std::move(inputs_embeds), std::move(input_ids)};
     }
 
     ov::Tensor inputs_embeds =
         utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, m_image_token_id);
-    return {inputs_embeds, token_type_ids};
+    return {std::move(inputs_embeds), std::move(input_ids)};
+}
+
+ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
+                                                   const std::vector<EncodedImage>& images,
+                                                   VLMPerfMetrics& metrics,
+                                                   bool recalculate_merged_embeddings,
+                                                   const std::vector<size_t>& images_sequence) {
+    return compute_inputs_embeds(prompt, images, metrics, images_sequence).first;
+}
+
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::get_inputs_embeds_with_token_type_ids(
+    const std::string& prompt,
+    const std::vector<EncodedImage>& images,
+    VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& images_sequence) {
+    auto [inputs_embeds, input_ids] = compute_inputs_embeds(prompt, images, metrics, images_sequence);
+    ov::Tensor token_type_ids = get_token_type_ids(input_ids);
+    return {std::move(inputs_embeds), std::move(token_type_ids)};
 }
 
 bool InputsEmbedderGemma4::has_token_type_ids() const {

@@ -81,6 +81,14 @@ private:
         return m_vlm_config.hidden_size_per_layer_input > 0;
     }
 
+    /// @brief Compute merged text+image embeddings together with the encoded input_ids.
+    /// Shared implementation behind get_inputs_embeds() and get_inputs_embeds_with_token_type_ids().
+    /// @return A pair of (inputs_embeds, input_ids).
+    std::pair<ov::Tensor, ov::Tensor> compute_inputs_embeds(const std::string& prompt,
+                                                            const std::vector<EncodedImage>& images,
+                                                            VLMPerfMetrics& metrics,
+                                                            const std::vector<size_t>& images_sequence);
+
     ov::Tensor get_token_type_ids(const ov::Tensor& input_ids);
 
     int64_t m_image_token_id = -1;
