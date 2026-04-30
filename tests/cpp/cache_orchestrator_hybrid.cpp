@@ -67,6 +67,25 @@ std::shared_ptr<ov::Model> create_hybrid_model(ov::Core core, size_t num_layers)
         params);
 }
 
+std::shared_ptr<ov::Model> create_state_table_model(ov::Core core, const std::vector<std::string>& state_table_names) {
+    ov::OutputVector outputs;
+    ov::ParameterVector params;
+    ov::element::Type kv_cache_type = core.get_property("CPU", ov::hint::kv_cache_precision);
+
+    auto state_shape = ov::PartialShape::dynamic(3);
+    state_shape[1] = 256;
+    state_shape[2] = 128;
+
+    for (const std::string& state_table_name : state_table_names) {
+        auto state = std::make_shared<ov::op::v0::Parameter>(kv_cache_type, state_shape);
+        state->get_output_tensor(0).set_names({state_table_name});
+        params.push_back(state);
+        outputs.push_back(state->output(0));
+    }
+
+    return std::make_shared<ov::Model>(outputs, params);
+}
+
 /// Helper: Create a SequenceGroup with specified request ID and forked sequences if needed.
 SequenceGroup::Ptr create_sequence_group(uint64_t request_id, size_t num_sequences = 1) {
     std::vector<int64_t> tokens = {0, 1, 2, 3};
@@ -128,6 +147,41 @@ std::shared_ptr<CacheOrchestrator> create_hybrid_orchestrator(
 }
 
 }  // namespace
+
+TEST(TestLinearAttentionCacheManager, HasCacheInputsIgnoresMalformedStateTableSuffixes) {
+    ov::Core core;
+    ov::CompiledModel compiled_model = core.compile_model(create_state_table_model(core,
+        {"conv_state_table.",
+         "conv_state_table.12x",
+         "conv_state_table.18446744073709551616"}));
+
+    EXPECT_FALSE(LinearAttentionCacheManager::has_cache_inputs(compiled_model));
+}
+
+TEST(TestLinearAttentionCacheManager, HasCacheInputsAcceptsLargeStateTableSuffixes) {
+    ov::Core core;
+    ov::CompiledModel compiled_model = core.compile_model(create_state_table_model(core,
+        {"conv_state_table.878332661264156340"}));
+
+    EXPECT_TRUE(LinearAttentionCacheManager::has_cache_inputs(compiled_model));
+}
+
+TEST(TestLinearAttentionCacheManager, ConstructorAcceptsLargeStateTableSuffixes) {
+    ov::Core core;
+    ov::CompiledModel compiled_model = core.compile_model(create_state_table_model(core,
+        {"conv_state_table.878332661264156340",
+         "conv_state_table.18446744073709551616", // invalid
+         "conv_state_table.0"}));  // valid
+    ov::InferRequest request = compiled_model.create_infer_request();
+
+    ASSERT_TRUE(LinearAttentionCacheManager::has_cache_inputs(compiled_model));
+    LinearAttentionCacheManager manager(request);
+    manager.allocate_cache_if_needed(3);
+
+    EXPECT_EQ(manager.get_num_layers(), 2);
+    EXPECT_EQ(request.get_tensor("conv_state_table.878332661264156340").get_shape(), (ov::Shape{3, 256, 128}));
+    EXPECT_EQ(request.get_tensor("conv_state_table.0").get_shape(), (ov::Shape{3, 256, 128}));
+}
 
 /// @test RequiredTokens_UsesMax
 /// Verify that required_tokens_count() returns the maximum deficit across all cache types.

@@ -4,14 +4,18 @@
 #pragma once
 
 #include <algorithm>
+#include <charconv>
 #include <cstring>
 #include <map>
 #include <numeric>
 #include <string>
+#include <system_error>
 #include <vector>
 #include <list>
 
 #include "openvino/runtime/tensor.hpp"
+#include "openvino/runtime/compiled_model.hpp"
+#include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/remote_context.hpp"
 #include "openvino/runtime/remote_tensor.hpp"
 #include "continuous_batching/cache/i_cache_manager.hpp"
@@ -75,11 +79,25 @@ class LinearAttentionCacheManager : public ICacheManager {
     /// Returns {"conv_state_table", 7}.  Returns {"", 0} if not a state table name.
     static std::pair<std::string, size_t> parse_state_table_name(const std::string& name) {
         const std::string suffix = "_state_table.";
-        auto pos = name.find(suffix);
-        if (pos == std::string::npos)
+        const size_t pos = name.find(suffix);
+        if (pos == std::string::npos) {
             return {"", 0};
+        }
+
+        const size_t layer_idx_pos = pos + suffix.size();
+        if (layer_idx_pos == name.size()) {
+            return {"", 0};
+        }
+
+        size_t layer_idx = 0;
+        const char* begin = name.data() + layer_idx_pos;
+        const char* end = name.data() + name.size();
+        const auto [ptr, error_code] = std::from_chars(begin, end, layer_idx);
+        if (error_code != std::errc{} || ptr != end) {
+            return {"", 0};
+        }
+
         std::string prefix = name.substr(0, pos + suffix.size() - 1);  // e.g. "conv_state_table"
-        size_t layer_idx = std::stoul(name.substr(pos + suffix.size()));
         return {prefix, layer_idx};
     }
 
@@ -88,10 +106,13 @@ public:
      * @brief Check whether the compiled model has any state table inputs (*_state_table.*).
      */
     static bool has_cache_inputs(const ov::CompiledModel& compiled_model) {
-        for (const auto& input : compiled_model.inputs()) {
+        const auto inputs = compiled_model.inputs();
+        for (const auto& input : inputs) {
             for (const auto& name : input.get_names()) {
-                if (name.find("_state_table.") != std::string::npos)
+                const auto [prefix, layer_idx] = parse_state_table_name(name);
+                if (!prefix.empty()) {
                     return true;
+                }
             }
         }
         return false;
@@ -113,7 +134,8 @@ public:
         // Discover state table inputs and group by prefix.
         std::map<std::string, StateTableGroup> groups_map;
 
-        for (const auto& input : compiled_model.inputs()) {
+        const auto inputs = compiled_model.inputs();
+        for (const auto& input : inputs) {
             for (const auto& name : input.get_names()) {
                 auto [prefix, layer_idx] = parse_state_table_name(name);
                 if (prefix.empty())
