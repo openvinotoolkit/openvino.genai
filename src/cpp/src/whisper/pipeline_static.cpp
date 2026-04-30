@@ -287,8 +287,12 @@ void stream_generated_tokens(const std::shared_ptr<ov::genai::StreamerBase> stre
     std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
 
     auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
-    if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-        streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
+    if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
+        handle->cancel();
+    } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
+        handle->stop();
+    } else if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+        handle->stop(ov::genai::GenerationFinishReason::TOOL_CALL);
     }
 }
 
@@ -352,11 +356,16 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
     results.scores.resize(1u);
     results.scores[0] = 0u;
     results.tokens.resize(1u);
+    results.finish_reasons.resize(1u, ov::genai::GenerationFinishReason::NONE);
 
     OPENVINO_ASSERT(sequence_group->get_finished_sequences().size() == 1u);
     auto sequence = sequence_group->get_finished_sequences().front();
     results.tokens[0] = sequence->get_generated_ids();
     results.scores[0] = sequence->get_cumulative_log_prob();
+    results.finish_reasons[0] = sequence->get_finish_reason();
+    if (results.finish_reasons[0] == ov::genai::GenerationFinishReason::NONE && sequence_group->handle_stopped()) {
+        results.finish_reasons[0] = sequence_group->get_generation_stream()->get_finish_reason();
+    }
 
     sampler.clear_request_info(sequence_group->get_request_id());
 

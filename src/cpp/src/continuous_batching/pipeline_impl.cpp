@@ -220,7 +220,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     }
 
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
-    m_sampler->set_seed(m_generation_config.rng_seed);
 
     // If eos_token_id was not provided, take value
     if (m_generation_config.eos_token_id == -1)
@@ -608,6 +607,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         result.m_request_id = request_id;
         result.m_generation_ids.resize(num_outputs);
         result.m_scores.resize(num_outputs);
+        result.m_finish_reasons.resize(num_outputs, GenerationFinishReason::NONE);
         result.m_status = request->get_generation_stream()->get_status();
 
         for (size_t i = 0; i < num_outputs; ++i) {
@@ -619,6 +619,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 result.m_generation_ids[i] = request->get_prompt_ids();
             std::copy(generated_ids.begin(), generated_ids.end(), std::back_inserter(result.m_generation_ids[i]));
             result.m_scores[i] = score;
+            result.m_finish_reasons[i] = sequence->get_finish_reason();
+            if (result.m_finish_reasons[i] == GenerationFinishReason::NONE && request->handle_stopped()) {
+                result.m_finish_reasons[i] = request->get_generation_stream()->get_finish_reason();
+            }
         }
 
         result.m_status = generations[request_id]->get_status();
