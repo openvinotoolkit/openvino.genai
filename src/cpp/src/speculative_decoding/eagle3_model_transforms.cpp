@@ -325,7 +325,13 @@ std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<o
             }
         }
         if (name.find("key_cache") != std::string::npos) {
-            auto cloned_param = std::make_shared<ov::op::v0::Parameter>(param->get_element_type(), param->get_partial_shape());
+            // Use explicit precision instead of dynamic
+            auto cache_precision = param->get_element_type();
+            if (cache_precision.is_dynamic()) {
+                // Fallback to f16 if precision is dynamic
+                cache_precision = element::f16;
+            }
+            auto cloned_param = std::make_shared<ov::op::v0::Parameter>(cache_precision, param->get_partial_shape());
             cloned_param->set_friendly_name(name);
             cloned_param->output(0).set_names({name});
             // Clone runtime info from paged_attention op if found
@@ -337,7 +343,13 @@ std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<o
             inputs.push_back(cloned_param);
             key_caches.push_back(cloned_param);
         } else if (name.find("value_cache") != std::string::npos) {
-            auto cloned_param = std::make_shared<ov::op::v0::Parameter>(param->get_element_type(), param->get_partial_shape());
+            // Use explicit precision instead of dynamic
+            auto cache_precision = param->get_element_type();
+            if (cache_precision.is_dynamic()) {
+                // Fallback to f16 if precision is dynamic
+                cache_precision = element::f16;
+            }
+            auto cloned_param = std::make_shared<ov::op::v0::Parameter>(cache_precision, param->get_partial_shape());
             cloned_param->set_friendly_name(name);
             cloned_param->output(0).set_names({name});
             // Clone runtime info from paged_attention op if found

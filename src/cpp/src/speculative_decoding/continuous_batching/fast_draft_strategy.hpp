@@ -90,6 +90,11 @@ std::vector<EncodedGenerationResult> generate_common(
     }
     streamer_ptr->end();
 
+    // clear kv status if any
+    if (self->m_sync_future.valid()) {
+        self->m_sync_future.get();
+    }
+
     OPENVINO_ASSERT(self->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
     self->perf_metrics().draft_model_metrics.raw_metrics = self->draft_pipeline()->raw_perf_metrics;
