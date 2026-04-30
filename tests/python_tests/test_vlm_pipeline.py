@@ -2253,19 +2253,17 @@ parametrize_cdpruner_models = pytest.mark.parametrize(
 
 
 @parametrize_cdpruner_models
-@pytest.mark.parametrize("pruning_ratio", [50, 70, 80])
+@pytest.mark.parametrize("pruning_ratio", [0, 50, 70, 80])
 def test_cdpruner_functionality(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, pruning_ratio: int):
     """Test CDPruner functionality with different pruning ratios."""
     ov_pipe = ov_pipe_model.pipeline
 
     # Run baseline (ratio=0) first to avoid pruning state leaking into the comparison
-    baseline_input_tokens = None
-    if pruning_ratio > 0:
-        baseline_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-        baseline_config.pruning_ratio = 0
-        baseline_result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=baseline_config)
-        assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
-        baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
+    baseline_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    baseline_config.pruning_ratio = 0
+    baseline_result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=baseline_config)
+    assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
+    baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
 
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     generation_config.pruning_ratio = pruning_ratio
@@ -2281,6 +2279,12 @@ def test_cdpruner_functionality(ov_pipe_model: VlmModelInfo, cat_tensor: openvin
         # Verify pruning was actually applied: pruned run must process fewer input tokens than baseline
         assert result.perf_metrics.get_num_input_tokens() < baseline_input_tokens, (
             f"Pruned result (ratio={pruning_ratio}) should have fewer input tokens than baseline, "
+            f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
+        )
+    else:
+        # Verify no pruning: token count must equal baseline
+        assert result.perf_metrics.get_num_input_tokens() == baseline_input_tokens, (
+            f"Unpruned result (ratio=0) should have the same input tokens as baseline, "
             f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
         )
 

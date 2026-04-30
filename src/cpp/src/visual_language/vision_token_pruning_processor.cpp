@@ -941,13 +941,14 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     OPENVINO_ASSERT(pruned_shape.size() == 3,
                     "CDPruner pruned visual features expected 3D shape [1, tokens, hidden], got rank: ",
                     pruned_shape.size());
+    OPENVINO_ASSERT(pruned_shape[0] == 1,
+                    "CDPruner pruned visual features expected batch_size == 1, got: ",
+                    pruned_shape[0]);
     result.pruned_visual_tokens = pruned_shape[1];
     const size_t out_hidden_size = pruned_shape[2];
     ov::Tensor pruned_2d_tensor(pruned_visual_features.get_element_type(),
                                 {result.pruned_visual_tokens, out_hidden_size});
-    std::memcpy(pruned_2d_tensor.data(),
-                pruned_visual_features.data<const float>(),
-                result.pruned_visual_tokens * out_hidden_size * sizeof(float));
+    std::memcpy(pruned_2d_tensor.data(), pruned_visual_features.data(), pruned_2d_tensor.get_byte_size());
 
     if (result.original_visual_tokens == result.pruned_visual_tokens) {
         GENAI_INFO("Original visual tokens and pruned visual tokens are the same!");

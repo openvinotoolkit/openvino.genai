@@ -575,7 +575,8 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
         }
 
         auto deepstack_it = m_lm_extra_inputs.find("deepstack_visual_embeds");
-        ov::Tensor* deepstack_ptr = (deepstack_it != m_lm_extra_inputs.end() && deepstack_it->second) ? &deepstack_it->second : nullptr;
+        const bool has_deepstack = deepstack_it != m_lm_extra_inputs.end() && deepstack_it->second;
+        ov::Tensor* deepstack_ptr = has_deepstack ? &deepstack_it->second : nullptr;
 
         PruningContext pruning_context{input_ids,
                                        text_embeds,
