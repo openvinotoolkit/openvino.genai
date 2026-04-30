@@ -145,13 +145,15 @@ private:
         //     ov::device::properties("NPU", ...),
         //     ov::device::properties("CPU", ...)
         // }
+        // or properties per model role
+        // {
+        //     MODEL_PROPERTIES: { "language_model": {...}, "vision_embeddings": {...} }
+        // }
+        auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
+
         auto device_properties = utils::pop_or_default<ov::AnyMap>(
             properties_copy, ov::device::properties.name(), { }
         );
-        // Otherwise, the same properties are used for all models and devices
-        auto lm_properties = device_properties.empty()
-            ? properties_copy
-            : utils::pop_or_default<ov::AnyMap>(device_properties, device, {});
 
         if (m_generation_config.adapters) {
             m_generation_config.adapters->set_tensor_name_prefix(
@@ -168,7 +170,7 @@ private:
             update_npu_properties(models_dir, lm_properties);
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(
                 language_model,
-                utils::get_model_properties(lm_properties, "language_model", device),
+                lm_properties,
                 kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
@@ -179,8 +181,7 @@ private:
             // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
             utils::apply_slice_before_matmul_transformation(language_model);
             compiled_language_model = utils::singleton_core().compile_model(
-                language_model, device,
-                utils::get_model_properties(lm_properties, "language_model", device));
+                language_model, device, lm_properties);
         }
         ov::genai::utils::print_compiled_model_properties(compiled_language_model, "VLM language model");
 
