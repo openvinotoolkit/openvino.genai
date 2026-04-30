@@ -148,7 +148,7 @@ extern const std::string PER_MODEL_PROPERTIES;
 
 /// @brief Resolve properties for @p model_role by merging two layers (priority low to high):
 ///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES
-///           and DEVICE_PROPERTIES)
+///           and DEVICE_PROPERTIES if device is specified)
 ///        2. DEVICE_PROPERTIES[device] (only when @p device is non-empty)
 ///        3. PER_MODEL_PROPERTIES[model_role]
 ///        MODEL_PROPERTIES wins over DEVICE_PROPERTIES wins

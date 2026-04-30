@@ -232,7 +232,7 @@ private:
         // After this transformation, default path returns logits with seq_len == 1,
         // i.e. [N, 1, vocab_size], not [N, conversation length, vocab_size].
         utils::apply_slice_before_matmul_transformation(language_model);
-        const auto lm_properties = utils::get_model_properties(properties_copy, "language_model");
+        const auto lm_properties = utils::get_model_properties(properties_copy, "language_model", device);
         m_language = utils::singleton_core().compile_model(
             language_model, device, lm_properties).create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});

@@ -377,9 +377,6 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
 
-// Merge global properties with per-role overrides. Type mismatches fall out
-// of .as<ov::AnyMap>() as a throw; empty or missing maps are treated as
-// "no overrides" rather than errors.
 ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
     ov::AnyMap result;
     for (const auto& property : properties) {
