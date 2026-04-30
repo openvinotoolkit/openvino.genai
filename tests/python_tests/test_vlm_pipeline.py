@@ -368,7 +368,7 @@ def _get_ov_model(model_id: str) -> str:
             # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
             processor.chat_template = tokenizer.chat_template
 
-        processor.__dict__.pop("audio_tokenizer", None)
+        processor.audio_tokenizer = None
         processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
