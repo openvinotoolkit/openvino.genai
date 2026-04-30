@@ -160,12 +160,12 @@ public:
      * @brief Convert visual features to CDPruner batch format.
      * @param vision_embeds Input embeddings [total_tokens, hidden_dim]
      * @param chunk_count Number of chunks (1 for single batch, N for per-image)
-     * @param tokens_per_image Token count for each image (when chunk_count > 1)
+     * @param tokens_per_region Token count for each vision region (when chunk_count > 1)
      * @return Vector of tensors, each [1, num_tokens, hidden_dim]
      */
     std::vector<ov::Tensor> convert_visual_features(const ov::Tensor& vision_embeds,
                                                     size_t chunk_count,
-                                                    const std::vector<size_t>& tokens_per_image) const;
+                                                    const std::vector<size_t>& tokens_per_region) const;
 
     /**
      * @brief Adjust position IDs after visual token pruning.

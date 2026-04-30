@@ -224,7 +224,7 @@ ov::Tensor VisionTokenPruningProcessor::extract_text_features(const ov::Tensor& 
 std::vector<ov::Tensor> VisionTokenPruningProcessor::convert_visual_features(
     const ov::Tensor& vision_embeds,
     size_t chunk_count,
-    const std::vector<size_t>& tokens_per_image) const {
+    const std::vector<size_t>& tokens_per_region) const {
     // Convert from [num_patches, embedding_dim] to chunk_count * [1, num_patches_i, embedding_dim]
     ov::Shape original_shape = vision_embeds.get_shape();
     size_t total_tokens = original_shape[0];
@@ -243,33 +243,33 @@ std::vector<ov::Tensor> VisionTokenPruningProcessor::convert_visual_features(
         return visual_features;
     }
 
-    // Frame chunking enabled: split by individual images
-    OPENVINO_ASSERT(tokens_per_image.size() >= chunk_count,
-                    "Insufficient tokens_per_image entries. Got " + std::to_string(tokens_per_image.size()) +
+    // Frame chunking enabled: split by individual vision regions
+    OPENVINO_ASSERT(tokens_per_region.size() >= chunk_count,
+                    "Insufficient tokens_per_region entries. Got " + std::to_string(tokens_per_region.size()) +
                         ", need " + std::to_string(chunk_count));
 
     size_t current_offset = 0;
 
     for (size_t i = 0; i < chunk_count; i++) {
-        size_t image_tokens = tokens_per_image[i];
+        size_t region_tokens = tokens_per_region[i];
 
         // Boundary check
-        OPENVINO_ASSERT(current_offset + image_tokens <= total_tokens,
-                        "Image boundary exceeds embeddings size. Image " + std::to_string(i) +
-                            ": offset=" + std::to_string(current_offset) + ", tokens=" + std::to_string(image_tokens) +
+        OPENVINO_ASSERT(current_offset + region_tokens <= total_tokens,
+                        "Region boundary exceeds embeddings size. Region " + std::to_string(i) +
+                            ": offset=" + std::to_string(current_offset) + ", tokens=" + std::to_string(region_tokens) +
                             ", total=" + std::to_string(total_tokens));
 
-        // Create tensor for current image [1, tokens_i, D]
-        ov::Shape image_shape = {1, image_tokens, embedding_dim};
-        ov::Tensor features(vision_embeds.get_element_type(), image_shape);
+        // Create tensor for current region [1, tokens_i, D]
+        ov::Shape region_shape = {1, region_tokens, embedding_dim};
+        ov::Tensor features(vision_embeds.get_element_type(), region_shape);
         float* dst_data = features.data<float>();
 
         // Copy data
-        size_t elements_to_copy = image_tokens * embedding_dim;
+        size_t elements_to_copy = region_tokens * embedding_dim;
         std::memcpy(dst_data, src_data + current_offset * embedding_dim, elements_to_copy * sizeof(float));
 
         visual_features.push_back(features);
-        current_offset += image_tokens;
+        current_offset += region_tokens;
     }
 
     // Verify all tokens processed

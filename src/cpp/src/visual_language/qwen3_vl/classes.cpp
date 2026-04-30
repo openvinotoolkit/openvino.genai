@@ -601,7 +601,6 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
         }
     }
 
-    // Recalculate visual_pos_masks after potential pruning
     m_lm_extra_inputs["visual_pos_masks"] = create_visual_pos_masks(input_ids, image_pad_token_id, video_pad_token_id);
 
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(
