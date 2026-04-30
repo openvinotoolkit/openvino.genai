@@ -752,6 +752,9 @@ class DecodedResults:
     def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
+    def finish_reasons(self) -> list[GenerationFinishReason]:
+        ...
+    @property
     def parsed(self) -> list:
         ...
     @property
@@ -795,6 +798,9 @@ class EncodedGenerationResult:
     def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
+    def finish_reasons(self) -> list[GenerationFinishReason]:
+        ...
+    @property
     def m_generation_ids(self) -> list[list[int]]:
         ...
     @m_generation_ids.setter
@@ -830,6 +836,9 @@ class EncodedResults:
     """
     @property
     def extended_perf_metrics(self) -> ExtendedPerfMetrics:
+        ...
+    @property
+    def finish_reasons(self) -> list[GenerationFinishReason]:
         ...
     @property
     def perf_metrics(self) -> PerfMetrics:
@@ -1260,11 +1269,14 @@ class GenerationFinishReason:
       STOP
     
       LENGTH
+    
+      TOOL_CALL
     """
     LENGTH: typing.ClassVar[GenerationFinishReason]  # value = <GenerationFinishReason.LENGTH: 2>
     NONE: typing.ClassVar[GenerationFinishReason]  # value = <GenerationFinishReason.NONE: 0>
     STOP: typing.ClassVar[GenerationFinishReason]  # value = <GenerationFinishReason.STOP: 1>
-    __members__: typing.ClassVar[dict[str, GenerationFinishReason]]  # value = {'NONE': <GenerationFinishReason.NONE: 0>, 'STOP': <GenerationFinishReason.STOP: 1>, 'LENGTH': <GenerationFinishReason.LENGTH: 2>}
+    TOOL_CALL: typing.ClassVar[GenerationFinishReason]  # value = <GenerationFinishReason.TOOL_CALL: 3>
+    __members__: typing.ClassVar[dict[str, GenerationFinishReason]]  # value = {'NONE': <GenerationFinishReason.NONE: 0>, 'STOP': <GenerationFinishReason.STOP: 1>, 'LENGTH': <GenerationFinishReason.LENGTH: 2>, 'TOOL_CALL': <GenerationFinishReason.TOOL_CALL: 3>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -1302,7 +1314,7 @@ class GenerationHandle:
         ...
     def read_all(self) -> list[GenerationOutput]:
         ...
-    def stop(self) -> None:
+    def stop(self, finish_reason: GenerationFinishReason = ...) -> None:
         ...
 class GenerationOutput:
     finish_reason: GenerationFinishReason
@@ -1680,6 +1692,10 @@ class ImageGenerationPerfMetrics:
 class IncrementalParser:
     def __init__(self) -> None:
         ...
+    def get_status(self) -> StreamingStatus:
+        """
+        Get the current streaming status of the parser.
+        """
     def parse(self, delta_message: dict, delta_text: str, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
         """
         Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.
@@ -1687,6 +1703,10 @@ class IncrementalParser:
     def reset(self) -> None:
         """
         Reset the internal state of the parser.
+        """
+    def set_status(self, status: StreamingStatus) -> None:
+        """
+        Set the current streaming status of the parser.
         """
 class InpaintingPipeline:
     """
@@ -2924,11 +2944,14 @@ class StreamingStatus:
       CANCEL
     
       STOP
+    
+      TOOL_CALL_STOP
     """
     CANCEL: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.CANCEL: 2>
     RUNNING: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.RUNNING: 0>
     STOP: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.STOP: 1>
-    __members__: typing.ClassVar[dict[str, StreamingStatus]]  # value = {'RUNNING': <StreamingStatus.RUNNING: 0>, 'CANCEL': <StreamingStatus.CANCEL: 2>, 'STOP': <StreamingStatus.STOP: 1>}
+    TOOL_CALL_STOP: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.TOOL_CALL_STOP: 3>
+    __members__: typing.ClassVar[dict[str, StreamingStatus]]  # value = {'RUNNING': <StreamingStatus.RUNNING: 0>, 'CANCEL': <StreamingStatus.CANCEL: 2>, 'STOP': <StreamingStatus.STOP: 1>, 'TOOL_CALL_STOP': <StreamingStatus.TOOL_CALL_STOP: 3>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:

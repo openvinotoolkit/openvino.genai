@@ -25,6 +25,17 @@
 
 #include "utils.hpp"
 
+namespace {
+template <typename VideoType>
+void throw_if_video_not_implemented(const std::vector<VideoType>& videos) {
+    if (!videos.empty()) {
+        OPENVINO_THROW_NOT_IMPLEMENTED(
+            "Video preprocessing isn't implemented for this model. Pass frames as independent images."
+        );
+    }
+}
+}  // anonymous namespace
+
 namespace ov::genai {
 
 // Base InputsEmbedder class
@@ -203,18 +214,15 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& images_sequence,
     const std::vector<size_t>& videos_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
-    if (!videos.size()) {
-        return get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings, images_sequence);
-    }
-    OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) {
+    throw_if_video_not_implemented(videos);
+    return get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings, images_sequence);
 }
 
 std::vector<ov::genai::EncodedVideo> InputsEmbedder::IInputsEmbedder::encode_videos(const std::vector<ov::Tensor>& videos) {
-    if (!videos.size()) {
-        return {};
-    }
-    OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
+    throw_if_video_not_implemented(videos);
+    return {};
 }
 
 NormalizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
@@ -222,11 +230,10 @@ NormalizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
     size_t base_image_id,
     size_t base_video_id,
     const std::vector<EncodedImage>& images,
-    const std::vector<EncodedVideo>& videos) const {
-    if (!videos.size()) {
-        return normalize_prompt(prompt, base_image_id, images);
-    }
-    OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
+    const std::vector<EncodedVideo>& videos
+) const {
+    throw_if_video_not_implemented(videos);
+    return normalize_prompt(prompt, base_image_id, images);
 }
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
@@ -246,9 +253,9 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_em
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& image_sequence,
     const std::vector<size_t>& videos_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
-    OPENVINO_ASSERT(videos.size() == 0U, "The model doesn't support 'videos' preprocessing yet. Please use 'images' instead.");
-
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) {
+    throw_if_video_not_implemented(videos);
     return get_inputs_embeds_with_token_type_ids(prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
 }
 

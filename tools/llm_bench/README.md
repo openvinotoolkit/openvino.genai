@@ -226,7 +226,7 @@ python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandal
 - `--static_reshape`: Reshape image generation pipeline to specific width & height at pipeline creation time.
 - `--guidance_scale`: guidance_scale parameter for pipeline, supported via json JSON input only.
 - `--images`: Like a `--media`, path to the directory or single image.
-- `--taylorseer_config`: TaylorSeer cache configuration, supported via JSON string or path to JSON file.
+- `--taylorseer_config`: TaylorSeer cache configuration, supported via JSON string or path to JSON file.  **Note:** TaylorSeer caching is enabled by default for Flux and StableDiffusion3 Text2Image pipelines. To disable it for a baseline benchmark, pass `--taylorseer_config '{"disable_cache_after_step": 0}'`.
 
 > **Supported Image Generation model types:** stable-diffusion, ssd, tiny-sd, small-sd, lcm, sdxl, dreamlike, flux
 

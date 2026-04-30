@@ -53,7 +53,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@36a8f092d3250e7a2a365f0445e61297d91c358e
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@10d999b8d93ce104907890c54f85eb585112f751
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -1055,13 +1055,14 @@ jobs:
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
-      - name: CMake Build without XGrammar
+      - name: CMake Build without XGrammar & Enable_LTO=On
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           cmake -DOpenVINODeveloperPackage_DIR=${{ env.INSTALL_DIR }}/developer_package/cmake \
                 -DENABLE_PYTHON=ON \
                 -DENABLE_XGRAMMAR=OFF \
-                -BUILD_TOKENIZERS=OFF \
+                -DBUILD_TOKENIZERS=OFF \
+                -DENABLE_LTO=ON \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
                 -DCMAKE_C_COMPILER_LAUNCHER=sccache \
