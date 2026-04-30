@@ -220,7 +220,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     }
 
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
-    m_sampler->set_seed(m_generation_config.rng_seed);
 
     // If eos_token_id was not provided, take value
     if (m_generation_config.eos_token_id == -1)
