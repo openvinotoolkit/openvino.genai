@@ -31,7 +31,6 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
-import collections
 import inspect
 from enum import Enum
 from dataclasses import dataclass
@@ -41,7 +40,6 @@ import openvino_tokenizers
 import openvino
 import PIL
 import pytest
-import platform
 import requests
 import sys
 import os
@@ -161,6 +159,7 @@ MODEL_IDS: list[str] = [
     "optimum-intel-internal-testing/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+    "optimum-intel-internal-testing/tiny-random-gemma4",
     *VIDEO_MODEL_IDS,
 ]
 
@@ -183,6 +182,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
+    "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
@@ -237,6 +237,7 @@ TEST_IMAGE_URLS = {
 NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-internvl2",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
+    "optimum-intel-internal-testing/tiny-random-gemma4",
 }
 
 DEFAULT_NPUW_PROPERTIES = {
@@ -300,6 +301,10 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
         )
+    if "optimum-intel-internal-testing/tiny-random-gemma4" == model_id and is_transformers_version("<", "5.5.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
+        )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
 
@@ -360,6 +365,10 @@ def _get_ov_model(model_id: str) -> str:
             # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
             processor.chat_template = tokenizer.chat_template
         processor.audio_tokenizer = None
+        # Remove audio_tokenizer to avoid serialization issues (audio inputs are not supported).
+        # Setting to None is insufficient because Gemma4Processor.to_dict() still detects
+        # the key and calls .name_or_path on a None object.
+        processor.__dict__.pop("audio_tokenizer", None)
         processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
@@ -386,6 +395,9 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
+
+    if "gemma4" in ov_model and ov_backend == "PA":
+        pytest.xfail("gemma4 does not support PA attention backend")
 
     models_path = _get_ov_model(ov_model)
 
@@ -1568,6 +1580,7 @@ TAG_INSERTED_BY_TEMPLATE = [
     ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
     ("optimum-intel-internal-testing/tiny-random-qwen3-vl", "PA"),
     ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
+    ("optimum-intel-internal-testing/tiny-random-gemma4", "SDPA"),
     ("qnguyen3/nanoLLaVA", "PA"),
     ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
 ]
@@ -2012,14 +2025,17 @@ OPTIMUM_VS_GENAI_DEFAULT_IMAGE_RESOLUTIONS = [(100, 77), (999, 666), (1920, 1080
 # (Width, Height)
 OPTIMUM_VS_GENAI_DEFAULT_VIDEO_RESOLUTIONS = [(32, 32), (176, 132), (640, 480)]
 
-# For qwen2-series models, we use smaller image / video resolutions.
-# This is because running with larger image and/or video resolutions allocates,
-# a ton of memory. And in the case of optimum, there seems to be a big chunk that
-# is not freed after test completion. See ticket: CVS-180177
 OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS = {
+    # For qwen2-series models, we use smaller image / video resolutions.
+    # This is because running with larger image and/or video resolutions allocates,
+    # a ton of memory. And in the case of optimum, there seems to be a big chunk that
+    # is not freed after test completion. See ticket: CVS-180177
     "optimum-intel-internal-testing/tiny-random-qwen2vl": [(100, 77), (350, 350), (480, 512)],
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(100, 77), (350, 350), (480, 512)],
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(100, 77), (350, 350), (480, 512)],
+    # (999, 666) resolution fails, result is reasonable and close to optimum-intel output.
+    # There is a known image resize incompatibility, so different image sizes are used to test the Gemma 4 model.
+    "optimum-intel-internal-testing/tiny-random-gemma4": [(100, 77), (1000, 666), (997, 666), (999, 665), (1920, 1080)],
 }
 
 OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
