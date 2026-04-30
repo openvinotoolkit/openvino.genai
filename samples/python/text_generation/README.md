@@ -288,7 +288,7 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   Union (`|`) operation allows the model to choose which grammar to use during generation.
   In the sample it is used to combine two regex grammars for `"yes"` or `"no"` answer.
   Concat (`+`) operation allows to start with one grammar and continue with another.
-  Also it demonstrates how to write custom parser to extract tool calls from the generated text.
+  Also it demonstrates how to write custom incremental parser to extract tool calls from the generated text and stop generation as soon as a valid tool payload is parsed.
   In the sample it used to create a `phi-4-mini-instruct` style tool calling answer - `functools[{tool_1_json}, ...]` - by combining regex and JSON schema grammars.
 
 - **Main Features:**
@@ -297,12 +297,14 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   - Multi-turn chat with grammar switching
   - Structured tool calling using Pydantic schemas
   - Parse generated output to call tools from extracted structured data
+  - Inspect `finish_reasons` and demonstrate `TOOL_CALL` stop via incremental parsing
 - **Run Command:**
   ```bash
   python compound_grammar_generation.py model_dir
   ```
 - **Notes:**
   This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation and parsing resulting output.
+  The sample prints finish reason for each generation turn. In the tool-calling turn, generation is stopped with `TOOL_CALL` as soon as the incremental parser successfully parses the `functools[...]` payload.
   The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 
