@@ -460,6 +460,8 @@ int main(int argc, char* argv[]) try {
     ("device_config", "Plugin configuration JSON. Example: '{\"MODEL_DISTRIBUTION_POLICY\":\"TENSOR_PARALLEL\",\"PERF_COUNT\":true}' Default: {\"PERF_COUNT\":true}", cxxopts::value<std::string>()->default_value("{\"PERF_COUNT\":true}"))
     ("use_cache_eviction", "Whether to use cache eviction", cxxopts::value<bool>()->default_value("false"))
     ("use_xattention", "Whether to enable sparse prefill in XATTENTION mode", cxxopts::value<bool>()->default_value("false"))
+    ("xattention_threshold", "XATTENTION cumulative importance score threshold", cxxopts::value<float>()->default_value("100.0"))
+    ("xattention_block_size", "XATTENTION block size in tokens", cxxopts::value<size_t>()->default_value("64"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -491,6 +493,8 @@ int main(int argc, char* argv[]) try {
     const size_t cache_size = result["cache_size"].as<size_t>();
     const bool use_cache_eviction = result["use_cache_eviction"].as<bool>();
     const bool use_xattention = result["use_xattention"].as<bool>();
+    const float xattention_threshold = result["xattention_threshold"].as<float>();
+    const size_t xattention_block_size = result["xattention_block_size"].as<size_t>();
 
     bool is_speculative_decoding_enabled = !draft_model_path.empty();
 
@@ -508,14 +512,22 @@ int main(int argc, char* argv[]) try {
         scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(32, 32, 128, ov::genai::AggregationMode::NORM_SUM, false, 8, ov::genai::KVCrushConfig(0, ov::genai::KVCrushAnchorPointMode::MEAN));
     }
     if (use_xattention) {
+        OPENVINO_ASSERT(xattention_threshold >= 0.0f, "xattention_threshold must be greater than or equal to 0");
+        OPENVINO_ASSERT(xattention_block_size > 0, "xattention_block_size must be greater than 0");
         scheduler_config.use_sparse_attention = true;
         scheduler_config.sparse_attention_config.mode = ov::genai::SparseAttentionMode::XATTENTION;
+        scheduler_config.sparse_attention_config.xattention_threshold = xattention_threshold;
+        scheduler_config.sparse_attention_config.xattention_block_size = xattention_block_size;
     }
 
     std::cout << "Benchmarking parameters: " << std::endl;
     std::cout << "\tMax number of batched tokens: " << scheduler_config.max_num_batched_tokens << std::endl;
     std::cout << "\tScheduling type: " << (scheduler_config.dynamic_split_fuse ? "dynamic split-fuse" : "vLLM") << std::endl;
     std::cout << "\tUse XATTENTION sparse prefill: " << std::boolalpha << use_xattention << std::endl;
+    if (use_xattention) {
+        std::cout << "\tXATTENTION threshold: " << xattention_threshold << std::endl;
+        std::cout << "\tXATTENTION block size: " << xattention_block_size << std::endl;
+    }
     if (!scheduler_config.dynamic_split_fuse) {
         std::cout << "\tMax number of batched sequences: " << scheduler_config.max_num_seqs << std::endl;
     }
