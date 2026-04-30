@@ -19,13 +19,13 @@ namespace genai {
 class InputsEmbedder;
 
 struct ModelDesc {
-    std::string device;
-    ov::genai::SchedulerConfig scheduler_config;
-    ov::AnyMap properties;
-    ov::genai::GenerationConfig generation_config;
     std::shared_ptr<ov::Model> model = nullptr;
-    std::shared_ptr<ov::genai::InputsEmbedder> inputs_embedder;
     ov::genai::Tokenizer tokenizer;
+    std::shared_ptr<ov::genai::InputsEmbedder> inputs_embedder;
+    std::string device;
+    ov::AnyMap properties;
+    ov::genai::SchedulerConfig scheduler_config;
+    ov::genai::GenerationConfig generation_config;
 
     ModelDesc(const std::shared_ptr<ov::Model>& model,
               const ov::genai::Tokenizer& tokenizer,

@@ -58,6 +58,9 @@ def main():
     parser.add_argument("draft_model_dir", nargs="?", default="", help="Path to the draft model directory")
     args = parser.parse_args()
 
+    if args.device == "NPU" and args.draft_model_dir:
+        parser.error("draft_model_dir is not supported when device is NPU")
+
     rgbs = read_images(args.image_dir)
 
     # GPU and NPU can be used as well.

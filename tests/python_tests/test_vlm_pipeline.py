@@ -47,7 +47,7 @@ import sys
 import os
 import numpy as np
 import transformers
-from optimum.intel.openvino import OVModelForCausalLM, OVModelForVisualCausalLM
+from optimum.intel.openvino import OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
 from huggingface_hub import snapshot_download
 from openvino_genai import (

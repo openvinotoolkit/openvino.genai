@@ -73,6 +73,9 @@ def main():
 
     args = parser.parse_args()
 
+    if args.device == "NPU" and args.draft_model:
+        parser.error("--draft_model is not supported when --device is NPU")
+
     if args.prompt is not None and args.prompt_file is not None:
         raise RuntimeError(f'Prompt and prompt file should not exist together!')
     else:
