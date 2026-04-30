@@ -283,7 +283,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
 
     if (images.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
-        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
+        text_embeds.copy_to(inputs_embeds);
         return {std::move(inputs_embeds), std::move(input_ids)};
     }
 
