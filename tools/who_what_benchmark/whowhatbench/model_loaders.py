@@ -786,6 +786,93 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
     return model
 
 
+def load_speech_generation_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
+    import openvino_genai
+
+    return GenAIModelWrapper(
+        openvino_genai.Text2SpeechPipeline(model_dir, device=device, **(ov_config or {})),
+        model_dir,
+        "speech-generation",
+    )
+
+
+def _resolve_remote_code_and_config(model_id):
+    remote_code = False
+    try:
+        model_config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+    except Exception:
+        model_config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        remote_code = True
+    return remote_code, model_config
+
+
+def _load_speecht5_processor(model_id, remote_code):
+    from transformers import SpeechT5Processor
+
+    return SpeechT5Processor.from_pretrained(model_id, trust_remote_code=remote_code)
+
+
+def _load_speecht5_hifigan_vocoder(vocoder_path=None):
+    from transformers import SpeechT5HifiGan
+
+    if vocoder_path is not None:
+        return SpeechT5HifiGan.from_pretrained(vocoder_path)
+    return SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
+
+
+def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
+    from .speech_generation_evaluator import TextToSpeechModelWrapper
+
+    vocoder_path = kwargs.get("vocoder_path")
+
+    if use_hf:
+        logger.info("Using HF Transformers API")
+        from transformers import SpeechT5ForTextToSpeech
+
+        remote_code, _ = _resolve_remote_code_and_config(model_id)
+        model = SpeechT5ForTextToSpeech.from_pretrained(
+            model_id,
+            trust_remote_code=remote_code,
+            **PYTORCH_MODEL_DTYPE_KWARG,
+        )
+        processor = _load_speecht5_processor(model_id, remote_code)
+
+        # for HF, we need to explicitly load the vocoder.
+        # Assume it's microsoft/speecht5_hifigan for now.
+        vocoder = _load_speecht5_hifigan_vocoder(vocoder_path)
+        return TextToSpeechModelWrapper(model, processor, vocoder)
+
+    if use_genai:
+        logger.info("Using OpenVINO GenAI API")
+        return load_speech_generation_genai_pipeline(model_id, device, ov_config, **kwargs)
+
+    logger.info("Using Optimum API")
+    from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq
+
+    remote_code, model_config = _resolve_remote_code_and_config(model_id)
+
+    from_pretrained_kwargs = {
+        "device": device,
+        "ov_config": ov_config,
+        "config": model_config,
+        "trust_remote_code": remote_code,
+    }
+    if vocoder_path is not None:
+        # Optimum forwards extra kwargs from from_pretrained() to export.
+        # Pass vocoder so that SpeechT5 export can consume it.
+        from_pretrained_kwargs["vocoder"] = vocoder_path
+
+    model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
+        model_id,
+        **from_pretrained_kwargs,
+    )
+    processor = _load_speecht5_processor(model_id, remote_code)
+
+    # For Optimum, we don't need to load vocoder as it should pick up openvino_vocoder IR by default.
+    # And this currently matches GenAI behavior, which will also pick up the same openvino_vocoder IR.
+    return TextToSpeechModelWrapper(model, processor, None)
+
+
 def load_model(
     model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
 ):
@@ -817,5 +904,7 @@ def load_model(
         return load_reranking_model(model_id, device, ov_options, use_hf, use_genai)
     elif model_type == "text-to-video":
         return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+    elif model_type == "speech-generation":
+        return load_speech_generation_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
