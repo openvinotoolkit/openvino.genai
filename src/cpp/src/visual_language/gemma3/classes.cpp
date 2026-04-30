@@ -106,7 +106,7 @@ NormalizedPrompt InputsEmbedderGemma3::normalize_prompt(const std::string& promp
         }
         expanded_tag += end_of_image + "\n\n";
 
-        // fixme: there is seem to be an issue with how image_token is replaced. unified_prompt.find needs search_offset.
+        // fixme: there seems to be an issue with how image_token is replaced. unified_prompt.find needs search_offset.
         // refer to gemma4 implementation.
         unified_prompt.replace(unified_prompt.find(start_of_image), start_of_image.length(), expanded_tag);
     }

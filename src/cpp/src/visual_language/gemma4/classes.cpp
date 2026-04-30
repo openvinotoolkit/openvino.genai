@@ -4,6 +4,7 @@
 #include "visual_language/gemma4/classes.hpp"
 
 #include <cmath>
+#include <cstring>
 
 #include "debug_utils.hpp"
 #include "utils.hpp"
