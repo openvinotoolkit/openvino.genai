@@ -89,7 +89,8 @@ class Sequence {
         m_prefix_hashes(seq.m_prefix_hashes),
         m_generated_ids_embeds(seq.m_generated_ids_embeds),
         m_position_ids_list(seq.m_position_ids_list),
-        m_rope_delta(seq.m_rope_delta)
+        m_rope_delta(seq.m_rope_delta),
+        m_tree_metadata(seq.m_tree_metadata)
          {
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
@@ -161,8 +162,8 @@ public:
         return m_hidden_state;
     }
 
-    void set_tree_metadata(const TreeMetaData& metadata) {
-        m_tree_metadata = metadata;
+    void set_tree_metadata(TreeMetaData metadata) {
+        m_tree_metadata = std::move(metadata);
     }
 
     const TreeMetaData& get_tree_metadata() const {
@@ -802,10 +803,6 @@ public:
 
     const ov::genai::GenerationConfig& get_sampling_parameters() const {
         return m_sampling_params;
-    }
-
-    void set_sampling_parameters(const ov::genai::GenerationConfig& params) {
-        m_sampling_params = params;
     }
 
     void set_out_of_memory() {

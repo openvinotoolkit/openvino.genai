@@ -874,3 +874,41 @@ def test_continuous_batching_add_extension(
     assert result_extension_obj[0].m_generation_ids[0].strip() == result_ref[0].m_generation_ids[0].strip(), (
         "Result should be the same for model with extension 'CustomAdd' and reference model."
     )
+
+
+def _run_cb_requests(pipe: ContinuousBatchingPipeline, prompt: str, configs: list) -> list[list[int]]:
+    """Submit requests via add_request/step and return generated token IDs for each."""
+    handles = [pipe.add_request(idx, prompt, generation_config=cfg) for idx, cfg in enumerate(configs)]
+    while pipe.has_non_finished_requests():
+        pipe.step()
+    return [handle.read_all()[0].generated_ids for handle in handles]
+
+
+def test_cb_same_seed_produces_identical_output(model_facebook_opt_125m: OVConvertedModelSchema):
+    """Two requests with the same rng_seed must produce identical token sequences."""
+    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
+    config = GenerationConfig(do_sample=True, temperature=1.5, max_new_tokens=20, rng_seed=42)
+    prompt = "Tell me an interesting fact about space."
+
+    tokens_a, tokens_b = _run_cb_requests(pipe, prompt, [config, config])
+
+    assert tokens_a == tokens_b, (
+        f"Requests with the same rng_seed=42 must produce identical output.\nGot:\n  a: {tokens_a}\n  b: {tokens_b}"
+    )
+
+
+def test_cb_different_seed_produces_different_output(model_facebook_opt_125m: OVConvertedModelSchema):
+    """Requests with different rng_seeds must diverge for at least one trial."""
+    rng_seeds = [42, 123, 777, 2024]
+    configs = [
+        GenerationConfig(do_sample=True, temperature=2.0, max_new_tokens=30, rng_seed=seed) for seed in rng_seeds
+    ]
+    prompt = "Tell me an interesting fact about space."
+
+    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
+    token_seqs = _run_cb_requests(pipe, prompt, configs)
+
+    assert len(set(map(tuple, token_seqs))) > 1, (
+        f"Requests with different rng_seeds {rng_seeds} must produce at least one distinct output, "
+        f"but all produced identical token sequences: {token_seqs[0]}"
+    )

@@ -12,7 +12,8 @@ namespace genai {
 enum class StreamingStatus {
     RUNNING = 0, // Continue to run of inference
     STOP = 1, // Stop generation, keep history as is, KV cache includes last request and generated tokens
-    CANCEL = 2 // Stop generate, drop last prompt and all generated tokens from history, KV cache includes history but last step
+    CANCEL = 2, // Stop generate, drop last prompt and all generated tokens from history, KV cache includes history but last step
+    TOOL_CALL_STOP = 3 // Stop generation invoked by tool calling parser
 };
 
 /**
