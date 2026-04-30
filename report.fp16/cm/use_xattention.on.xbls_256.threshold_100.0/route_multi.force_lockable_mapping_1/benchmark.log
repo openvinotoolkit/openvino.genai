@@ -1,0 +1,64 @@
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+CLIntercept (64-bit) is loading...
+CLIntercept file location: /home/ceciliapeng/OCL/opencl-intercept-layer/build_RelWithDebInfo/install/bin/../lib/libOpenCL.so
+CLIntercept URL: https://github.com/intel/opencl-intercept-layer
+CLIntercept git description: v3.0.6-15-g2d4ab35
+CLIntercept git refspec: refs/heads/main
+CLIntercept git hash: 2d4ab357818ce32e19876b82914a335ea1c5a375
+CLIntercept optional features:
+    cliloader(supported)
+    cliprof(supported)
+    kernel overrides(supported)
+    ITT tracing(NOT supported)
+    MDAPI(supported)
+    Demangling(supported)
+    clock(steady_clock)
+CLIntercept environment variable prefix: CLI_
+CLIntercept config file: clintercept.conf
+Trying to load dispatch from: ./real_libOpenCL.so
+Couldn't load library: ./real_libOpenCL.so
+Trying to load dispatch from: /usr/lib/x86_64-linux-gnu/libOpenCL.so.1
+... success!
+Control DumpDir is set to non-default value: /home/ceciliapeng/openvino.genai/report.fp16/cm/use_xattention.on.xbls_256.threshold_100.0/route_multi.force_lockable_mapping_1/profiling
+Control ReportToStderr is set to non-default value: true
+Control ChromePerformanceTiming is set to non-default value: true
+Timer Started!
+... loading complete.
+Benchmarking parameters: 
+	Max number of batched tokens: 4096
+	Scheduling type: dynamic split-fuse
+	Use XATTENTION sparse prefill: true
+	XATTENTION threshold: 100
+	XATTENTION block size: 256
+Dataset parameters: 
+	Num prompts: 3
+	Max input length: 32768
+	Max output length: 2048
+	Max total tokens: disabled
+	Target device: GPU
+	Plugin configuration JSON: {"KV_CACHE_PRECISION": "f16", "CACHE_DIR": "ov_cachedir"}
+Setting plugin config: CACHE_DIR : ov_cachedir
+Setting plugin config: KV_CACHE_PRECISION : f16
+Loading models, creating pipelines, preparing environment...
+Setup finished, launching LLM executor, traffic simulation and statistics reporter threads
+Launching traffic simulator thread with request_rate: inf
+Traffic thread adding request to the queue...
+Traffic thread adding request to the queue...
+Traffic thread adding request to the queue...
+All requests sent, traffic simulation finished. Exiting thread.
+Launching LLM engine thread
+Benchmark finished, summarizing statistics...
+Benchmark duration: 61 s
+Total number of input tokens: 49152
+Total number of output tokens: 267
+Input throughput: 805 tokens / s
+Output throughput: 4 tokens / s
+Mean TTFT: 34473 ms
+Mean TPOT: 137 ms
+Exiting statistics reporter thread.
+All requests processed, LLM Engine loop escaped. Exiting thread.
+Benchmark finished
+Total Enqueues: 154320
+
+CLIntercept is shutting down...
+... shutdown complete.

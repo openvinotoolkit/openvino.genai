@@ -146,13 +146,17 @@ if [[ "$OUTPUT_DIR" = /* ]]; then
 else
     LOG_DIR="$ROOT_DIR/$OUTPUT_DIR"
 fi
+# Normalize trailing slash (except root) so path-prefix parsing in --compare works.
+if [[ "$LOG_DIR" != "/" ]]; then
+    LOG_DIR="${LOG_DIR%/}"
+fi
 mkdir -p "$LOG_DIR"
 
 # If --compare is set, generate CSV report and exit
 if [[ "$DO_COMPARE" == "1" ]]; then
     REPORT_CSV="$LOG_DIR/compare_report.csv"
     mkdir -p "$(dirname "$REPORT_CSV")"
-    echo "case_id,case_name,xattention_block_size,xattention_threshold,route,backend,force_lockable_mapping,input_throughput,output_throughput,mean_ttft,mean_tpot,benchmark_duration,total_input_tokens,total_output_tokens,log_path,profiling_dir,sum_kernel_ms,kernels" > "$REPORT_CSV"
+    echo "case_id,case_name,xattention_block_size,route,force_lockable_mapping,backend,xattention_threshold,input_throughput,output_throughput,mean_ttft,mean_tpot,benchmark_duration,total_input_tokens,total_output_tokens,log_path,profiling_dir,sum_kernel_ms,kernels" > "$REPORT_CSV"
 
     parse_kernel_summary() {
         local trace_file="$1"
@@ -324,9 +328,9 @@ PY
         if [[ -n "$kernels" ]]; then
             kernel_multiline="${kernels// | /$'\n'}"
             # Quote the kernels field so embedded newlines stay in the same CSV cell.
-            echo "$case_id,$key,$xattention_block_size,$xattention_threshold,$route,$backend,$force_lockable,$input_tp,$output_tp,$mean_ttft,$mean_tpot,$benchmark_duration,$total_input_tokens,$total_output_tokens,$rel_log_path,$rel_profiling_dir,$sum_kernel_ms,\"$kernel_multiline\"" >> "$REPORT_CSV"
+            echo "$case_id,$key,$xattention_block_size,$route,$force_lockable,$backend,$xattention_threshold,$input_tp,$output_tp,$mean_ttft,$mean_tpot,$benchmark_duration,$total_input_tokens,$total_output_tokens,$rel_log_path,$rel_profiling_dir,$sum_kernel_ms,\"$kernel_multiline\"" >> "$REPORT_CSV"
         else
-            echo "$case_id,$key,$xattention_block_size,$xattention_threshold,$route,$backend,$force_lockable,$input_tp,$output_tp,$mean_ttft,$mean_tpot,$benchmark_duration,$total_input_tokens,$total_output_tokens,$rel_log_path,$rel_profiling_dir,$sum_kernel_ms," >> "$REPORT_CSV"
+            echo "$case_id,$key,$xattention_block_size,$route,$force_lockable,$backend,$xattention_threshold,$input_tp,$output_tp,$mean_ttft,$mean_tpot,$benchmark_duration,$total_input_tokens,$total_output_tokens,$rel_log_path,$rel_profiling_dir,$sum_kernel_ms," >> "$REPORT_CSV"
         fi
         case_id=$((case_id + 1))
     done < <(

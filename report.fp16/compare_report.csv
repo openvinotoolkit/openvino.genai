@@ -1,0 +1,64 @@
+case_id,case_name,xattention_block_size,route,force_lockable_mapping,backend,xattention_threshold,input_throughput,output_throughput,mean_ttft,mean_tpot,benchmark_duration,total_input_tokens,total_output_tokens,log_path,profiling_dir,sum_kernel_ms,kernels
+0,ocl,na,multi,na,ocl,na,463 tokens / s,2 tokens / s,61911 ms,236 ms,106 s,49152,267,report.fp16/ocl/benchmark.log,report.fp16/ocl/profiling,53992.010753,"pa_kv_cache_update_ref_(calls=9828,sum_ms=372.653560)
+paged_attention_opt__gqa_single_token(calls=9324,sum_ms=7372.775372)
+paged_attention_opt__single_token_finalization(calls=9324,sum_ms=324.590681)
+sdpa_micro__generate(calls=468,sum_ms=45308.021156)
+sdpa_micro__prefill(calls=36,sum_ms=613.969984)"
+1,cm_use_xattention_on_xbls_256_threshold_0_1_route_multi_force_lockable_mapping_0,256,multi,0,cm,0.1,819 tokens / s,4 tokens / s,31503 ms,161 ms,60 s,49152,267,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.1/route_multi.force_lockable_mapping_0/benchmark.log,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.1/route_multi.force_lockable_mapping_0/profiling,9785.644313,"pa_kv_cache_update_ref_cm(calls=9828,sum_ms=178.935998)
+pa_multi_token_cm_bs1(calls=72,sum_ms=292.353614)
+pa_multi_token_cm_bs256(calls=432,sum_ms=1651.283048)
+pa_single_token_cm(calls=9324,sum_ms=7432.954397)
+pa_single_token_finalization_cm(calls=9324,sum_ms=230.117256)"
+2,cm_use_xattention_on_xbls_256_threshold_0_1_route_multi_force_lockable_mapping_1,256,multi,1,cm,0.1,805 tokens / s,4 tokens / s,32125 ms,161 ms,61 s,49152,267,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.1/route_multi.force_lockable_mapping_1/benchmark.log,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.1/route_multi.force_lockable_mapping_1/profiling,9624.458091,"pa_kv_cache_update_ref_cm(calls=9828,sum_ms=177.138189)
+pa_multi_token_cm_bs1(calls=72,sum_ms=251.757678)
+pa_multi_token_cm_bs256(calls=432,sum_ms=1605.442009)
+pa_single_token_cm(calls=9324,sum_ms=7362.808926)
+pa_single_token_finalization_cm(calls=9324,sum_ms=227.311289)"
+3,cm_use_xattention_on_xbls_256_threshold_0_1_route_split_force_lockable_mapping_0,256,split,0,cm,0.1,630 tokens / s,3 tokens / s,43674 ms,188 ms,78 s,49152,267,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.1/route_split.force_lockable_mapping_0/benchmark.log,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.1/route_split.force_lockable_mapping_0/profiling,24811.561940,"pa_kv_cache_update_ref_cm(calls=9828,sum_ms=183.795557)
+pa_multi_token_cm_bs1(calls=468,sum_ms=16410.870427)
+pa_multi_token_cm_bs256(calls=36,sum_ms=79.950506)
+pa_single_token_cm(calls=9612,sum_ms=7897.847958)
+pa_single_token_finalization_cm(calls=9612,sum_ms=239.097492)"
+4,cm_use_xattention_on_xbls_256_threshold_0_1_route_split_force_lockable_mapping_1,256,split,1,cm,0.1,655 tokens / s,3 tokens / s,41263 ms,184 ms,75 s,49152,267,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.1/route_split.force_lockable_mapping_1/benchmark.log,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.1/route_split.force_lockable_mapping_1/profiling,23354.338986,"pa_kv_cache_update_ref_cm(calls=9828,sum_ms=177.517770)
+pa_multi_token_cm_bs1(calls=468,sum_ms=15329.379479)
+pa_multi_token_cm_bs256(calls=36,sum_ms=78.873002)
+pa_single_token_cm(calls=9612,sum_ms=7532.752388)
+pa_single_token_finalization_cm(calls=9612,sum_ms=235.816347)"
+5,cm_use_xattention_on_xbls_256_threshold_0_9_route_multi_force_lockable_mapping_0,256,multi,0,cm,0.9,756 tokens / s,4 tokens / s,35118 ms,165 ms,65 s,49152,267,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.9/route_multi.force_lockable_mapping_0/benchmark.log,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.9/route_multi.force_lockable_mapping_0/profiling,13408.074484,"pa_kv_cache_update_ref_cm(calls=9828,sum_ms=173.605734)
+pa_multi_token_cm_bs1(calls=72,sum_ms=267.562777)
+pa_multi_token_cm_bs256(calls=432,sum_ms=5305.042636)
+pa_single_token_cm(calls=9324,sum_ms=7434.046546)
+pa_single_token_finalization_cm(calls=9324,sum_ms=227.816791)"
+6,cm_use_xattention_on_xbls_256_threshold_0_9_route_multi_force_lockable_mapping_1,256,multi,1,cm,0.9,756 tokens / s,4 tokens / s,34940 ms,164 ms,65 s,49152,267,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.9/route_multi.force_lockable_mapping_1/benchmark.log,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.9/route_multi.force_lockable_mapping_1/profiling,13430.104217,"pa_kv_cache_update_ref_cm(calls=9828,sum_ms=178.467950)
+pa_multi_token_cm_bs1(calls=72,sum_ms=236.373408)
+pa_multi_token_cm_bs256(calls=432,sum_ms=5493.087518)
+pa_single_token_cm(calls=9324,sum_ms=7295.356216)
+pa_single_token_finalization_cm(calls=9324,sum_ms=226.819125)"
+7,cm_use_xattention_on_xbls_256_threshold_0_9_route_split_force_lockable_mapping_0,256,split,0,cm,0.9,622 tokens / s,3 tokens / s,44473 ms,188 ms,79 s,49152,267,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.9/route_split.force_lockable_mapping_0/benchmark.log,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.9/route_split.force_lockable_mapping_0/profiling,24883.624017,"pa_kv_cache_update_ref_cm(calls=9828,sum_ms=187.315543)
+pa_multi_token_cm_bs1(calls=468,sum_ms=16346.948133)
+pa_multi_token_cm_bs256(calls=36,sum_ms=187.333319)
+pa_single_token_cm(calls=9612,sum_ms=7921.327780)
+pa_single_token_finalization_cm(calls=9612,sum_ms=240.699242)"
+8,cm_use_xattention_on_xbls_256_threshold_0_9_route_split_force_lockable_mapping_1,256,split,1,cm,0.9,655 tokens / s,3 tokens / s,41206 ms,184 ms,75 s,49152,267,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.9/route_split.force_lockable_mapping_1/benchmark.log,report.fp16/cm/use_xattention.on.xbls_256.threshold_0.9/route_split.force_lockable_mapping_1/profiling,23337.627279,"pa_kv_cache_update_ref_cm(calls=9828,sum_ms=180.102565)
+pa_multi_token_cm_bs1(calls=468,sum_ms=15155.129274)
+pa_multi_token_cm_bs256(calls=36,sum_ms=187.658942)
+pa_single_token_cm(calls=9612,sum_ms=7577.913511)
+pa_single_token_finalization_cm(calls=9612,sum_ms=236.822987)"
+9,cm_use_xattention_on_xbls_256_threshold_100_0_route_multi_force_lockable_mapping_0,256,multi,0,cm,100.0,833 tokens / s,4 tokens / s,33480 ms,136 ms,59 s,49152,267,report.fp16/cm/use_xattention.on.xbls_256.threshold_100.0/route_multi.force_lockable_mapping_0/benchmark.log,report.fp16/cm/use_xattention.on.xbls_256.threshold_100.0/route_multi.force_lockable_mapping_0/profiling,15158.573316,"pa_kv_cache_update_ref_cm(calls=9828,sum_ms=159.315781)
+pa_multi_token_cm_bs1(calls=288,sum_ms=7829.745397)
+pa_multi_token_cm_bs256(calls=216,sum_ms=790.436157)
+pa_single_token_cm(calls=9324,sum_ms=6212.761564)
+pa_single_token_finalization_cm(calls=9324,sum_ms=166.314417)"
+10,cm_use_xattention_on_xbls_256_threshold_100_0_route_multi_force_lockable_mapping_1,256,multi,1,cm,100.0,805 tokens / s,4 tokens / s,34473 ms,137 ms,61 s,49152,267,report.fp16/cm/use_xattention.on.xbls_256.threshold_100.0/route_multi.force_lockable_mapping_1/benchmark.log,report.fp16/cm/use_xattention.on.xbls_256.threshold_100.0/route_multi.force_lockable_mapping_1/profiling,15061.636381,"pa_kv_cache_update_ref_cm(calls=9828,sum_ms=162.153006)
+pa_multi_token_cm_bs1(calls=288,sum_ms=7554.656340)
+pa_multi_token_cm_bs256(calls=216,sum_ms=775.379285)
+pa_single_token_cm(calls=9324,sum_ms=6391.659250)
+pa_single_token_finalization_cm(calls=9324,sum_ms=177.788500)"
+11,cm_use_xattention_on_xbls_256_threshold_100_0_route_split_force_lockable_mapping_0,256,split,0,cm,100.0,630 tokens / s,3 tokens / s,44498 ms,185 ms,78 s,49152,267,report.fp16/cm/use_xattention.on.xbls_256.threshold_100.0/route_split.force_lockable_mapping_0/benchmark.log,report.fp16/cm/use_xattention.on.xbls_256.threshold_100.0/route_split.force_lockable_mapping_0/profiling,24881.527731,"pa_kv_cache_update_ref_cm(calls=9828,sum_ms=183.812284)
+pa_multi_token_cm_bs1(calls=504,sum_ms=16892.206757)
+pa_single_token_cm(calls=9612,sum_ms=7571.082969)
+pa_single_token_finalization_cm(calls=9612,sum_ms=234.425721)"
+12,cm_use_xattention_on_xbls_256_threshold_100_0_route_split_force_lockable_mapping_1,256,split,1,cm,100.0,655 tokens / s,3 tokens / s,41899 ms,183 ms,75 s,49152,267,report.fp16/cm/use_xattention.on.xbls_256.threshold_100.0/route_split.force_lockable_mapping_1/benchmark.log,report.fp16/cm/use_xattention.on.xbls_256.threshold_100.0/route_split.force_lockable_mapping_1/profiling,23611.966354,"pa_kv_cache_update_ref_cm(calls=9828,sum_ms=179.886146)
+pa_multi_token_cm_bs1(calls=504,sum_ms=15730.016975)
+pa_single_token_cm(calls=9612,sum_ms=7466.882327)
+pa_single_token_finalization_cm(calls=9612,sum_ms=235.180906)"
