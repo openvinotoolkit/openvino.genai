@@ -955,6 +955,14 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env&
 }
 
 template <>
+Napi::Value cpp_to_js<std::optional<std::string>, Napi::Value>(const Napi::Env& env, const std::optional<std::string>& value) {
+    if (value.has_value()) {
+        return Napi::String::New(env, value.value());
+    }
+    return env.Undefined();
+}
+
+template <>
 Napi::Value cpp_to_js<int64_t, Napi::Value>(const Napi::Env& env, const int64_t& value) {
     if (value >= NAPI_NUMBER_MIN_INTEGER && value <= NAPI_NUMBER_MAX_INTEGER) {
         return Napi::Number::New(env, value);
@@ -1474,32 +1482,11 @@ Napi::Value cpp_to_js<ov::genai::ImageGenerationConfig, Napi::Value>(
     const ov::genai::ImageGenerationConfig& config) {
     Napi::Object obj = Napi::Object::New(env);
 
-    if (config.prompt_2.has_value()) {
-        obj.Set("prompt_2", Napi::String::New(env, config.prompt_2.value()));
-    } else {
-        obj.Set("prompt_2", env.Undefined());
-    }
-    if (config.prompt_3.has_value()) {
-        obj.Set("prompt_3", Napi::String::New(env, config.prompt_3.value()));
-    } else {
-        obj.Set("prompt_3", env.Undefined());
-    }
-    if (config.negative_prompt.has_value()) {
-        obj.Set("negative_prompt", Napi::String::New(env, config.negative_prompt.value()));
-    } else {
-        obj.Set("negative_prompt", env.Undefined());
-    }
-    if (config.negative_prompt_2.has_value()) {
-        obj.Set("negative_prompt_2", Napi::String::New(env, config.negative_prompt_2.value()));
-    } else {
-        obj.Set("negative_prompt_2", env.Undefined());
-    }
-    if (config.negative_prompt_3.has_value()) {
-        obj.Set("negative_prompt_3", Napi::String::New(env, config.negative_prompt_3.value()));
-    } else {
-        obj.Set("negative_prompt_3", env.Undefined());
-    }
-
+    obj.Set("prompt_2", cpp_to_js<std::optional<std::string>, Napi::Value>(env, config.prompt_2));
+    obj.Set("prompt_3", cpp_to_js<std::optional<std::string>, Napi::Value>(env, config.prompt_3));
+    obj.Set("negative_prompt", cpp_to_js<std::optional<std::string>, Napi::Value>(env, config.negative_prompt));
+    obj.Set("negative_prompt_2", cpp_to_js<std::optional<std::string>, Napi::Value>(env, config.negative_prompt_2));
+    obj.Set("negative_prompt_3", cpp_to_js<std::optional<std::string>, Napi::Value>(env, config.negative_prompt_3));
     obj.Set("num_images_per_prompt", cpp_to_js<size_t, Napi::Value>(env, config.num_images_per_prompt));
     obj.Set("rng_seed", cpp_to_js<size_t, Napi::Value>(env, config.rng_seed));
     obj.Set("guidance_scale", cpp_to_js<float, Napi::Value>(env, config.guidance_scale));

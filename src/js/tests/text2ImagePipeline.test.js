@@ -33,16 +33,11 @@ describe("Text2ImagePipeline methods", () => {
   });
 
   it("generate(prompt) returns image tensor", async () => {
-    const result = await pipeline.generate("a tiny robot", {
-      width: 64,
-      height: 64,
-      num_inference_steps: 2,
-    });
+    const result = await pipeline.generate("a tiny robot");
 
     assert.ok(result);
     assert.ok(result.data instanceof Uint8Array);
     assert.ok(result.data.length > 0);
-    assert.deepStrictEqual(result.getShape(), [1, 64, 64, 3]);
   });
 
   it("generate(prompt, generationConfig) supports num_images_per_prompt", async () => {

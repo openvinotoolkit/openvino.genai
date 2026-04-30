@@ -10,7 +10,6 @@ Users can change the sample code and play with the following generation paramete
 - Change width or height of generated image
 - Generate multiple images per prompt (`num_images_per_prompt`)
 - Adjust a number of inference steps (`num_inference_steps`)
-- Play with [guidance scale](https://huggingface.co/spaces/stabilityai/stable-diffusion/discussions/9) (read [more details](https://arxiv.org/abs/2207.12598))
 - (SD 1.x, 2.x; SD3, SDXL) Add negative prompt when guidance scale > 1
 - (SDXL, SD3, FLUX) Specify other positive prompts like `prompt_2`
 - Add a per-step callback to monitor progress or stop generation early
