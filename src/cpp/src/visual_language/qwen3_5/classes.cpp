@@ -93,7 +93,7 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen3_5::get_generat
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderQwen3_5::get_lm_extra_inputs() const {
     // Qwen3.5 LM has no additional vision-related inputs for LM model.
-    // Override parent Qwen3VL getter with returning default empty map to reuse Qwen3VL get_imputs_embeds() method.
+    // Override parent Qwen3VL getter with returning default empty map to reuse Qwen3VL get_inputs_embeds() method.
     return InputsEmbedder::IInputsEmbedder::get_lm_extra_inputs();
 }
 
