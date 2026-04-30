@@ -4,7 +4,6 @@
 #include "whisper/pipeline_static.hpp"
 
 #include <chrono>
-#include <regex>
 #include <utility>
 
 #include "openvino/runtime/intel_npu/properties.hpp"
@@ -245,21 +244,6 @@ int64_t detect_language(ov::Tensor& encoder_hidden_state,
     return output_token;
 }
 
-std::string find_language_by_token_id(const std::map<std::string, int64_t>& lang_to_id, int64_t token_id) {
-    for (const auto& [language, id] : lang_to_id) {
-        if (id == token_id) {
-            return language;
-        }
-    }
-
-    OPENVINO_THROW("Language token id ", token_id, " not found in lang_to_id map.");
-}
-
-std::string to_unescaped_language(const std::string& language) {
-    // "<|en|>" -> "en"
-    return std::regex_replace(language, std::regex("[|<>]+"), "");
-}
-
 ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
                                       ov::InferRequest& decoder,
                                       const ov::genai::WhisperGenerationConfig& config,
@@ -278,7 +262,7 @@ ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
         }
     } else {
         language_token_id = detect_language(encoder_hidden_state, decoder, config, raw_metrics);
-        language = find_language_by_token_id(config.lang_to_id, language_token_id);
+        language = ov::genai::utils::find_language_by_token_id(config.lang_to_id, language_token_id);
     }
 
     int64_t task_token_id = config.transcribe_token_id;
@@ -286,7 +270,7 @@ ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
         task_token_id = config.translate_token_id;
     }
 
-    return {std::vector<int64_t>{config.decoder_start_token_id, language_token_id, task_token_id}, to_unescaped_language(language)};
+    return {std::vector<int64_t>{config.decoder_start_token_id, language_token_id, task_token_id}, ov::genai::utils::to_unescaped_language(language)};
 }
 
 void stream_generated_tokens(const std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,

@@ -5,7 +5,6 @@
 
 #include <iostream>
 #include <openvino/openvino.hpp>
-#include <regex>
 #include <thread>
 
 #include "openvino/genai/perf_metrics.hpp"
@@ -223,21 +222,6 @@ ov::Tensor encode(ov::InferRequest& request,
     return request.get_tensor("last_hidden_state");
 }
 
-std::string find_language_by_token_id(const std::map<std::string, int64_t>& lang_to_id, int64_t token_id) {
-    for (const auto& [language, id] : lang_to_id) {
-        if (id == token_id) {
-            return language;
-        }
-    }
-
-    OPENVINO_THROW("Language token id ", token_id, " not found in lang_to_id map.");
-}
-
-std::string to_unescaped_language(const std::string& language) {
-    // "<|en|>" -> "en"
-    return std::regex_replace(language, std::regex("[|<>]+"), "");
-}
-
 ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
                                               std::shared_ptr<ov::genai::WhisperDecoder> decoder,
                                               const ov::genai::WhisperGenerationConfig& config,
@@ -257,7 +241,7 @@ ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
     } else {
         auto [language_token, infer_ms] = decoder->detect_language(encoder_hidden_state, config);
         language_token_id = language_token;
-        language = find_language_by_token_id(config.lang_to_id, language_token_id);
+        language = ov::genai::utils::find_language_by_token_id(config.lang_to_id, language_token_id);
         raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
     }
 
@@ -267,7 +251,7 @@ ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
     }
 
     return {std::vector<int64_t>{config.decoder_start_token_id, language_token_id, task_token_id},
-            to_unescaped_language(language)};
+            ov::genai::utils::to_unescaped_language(language)};
 }
 
 }  // namespace

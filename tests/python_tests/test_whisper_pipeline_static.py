@@ -289,3 +289,13 @@ def test_language_detection(model_descr, sample_from_multilingual_dataset, langu
     expected, actual_out = get_word_timestamps_results_cpu_npu(model_path, sample_from_multilingual_dataset)
     compare_results_with_assert(expected, actual_out)
     assert expected.language == actual_out.language == language
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
+def test_language_detection_en(model_descr, sample_from_dataset):
+    _, model_path = load_and_save_whisper_model(model_descr, stateful=True)
+
+    expected, actual_out = get_word_timestamps_results_cpu_npu(model_path, sample_from_dataset)
+    compare_results_with_assert(expected, actual_out)
+    assert expected.language == actual_out.language == "en"

@@ -3,6 +3,8 @@
 
 #include "whisper/whisper_utils.hpp"
 
+#include <regex>
+
 namespace {
 
 template <typename T>
@@ -84,6 +86,21 @@ ov::genai::WhisperGenerationConfig prepare_per_generate_config(
 
     result_config.validate();
     return result_config;
+}
+
+std::string find_language_by_token_id(const std::map<std::string, int64_t>& lang_to_id, int64_t token_id) {
+    for (const auto& [language, id] : lang_to_id) {
+        if (id == token_id) {
+            return language;
+        }
+    }
+
+    OPENVINO_THROW("Language token id ", token_id, " not found in lang_to_id map.");
+}
+
+std::string to_unescaped_language(const std::string& language) {
+    // "<|en|>" -> "en"
+    return std::regex_replace(language, std::regex("[|<>]+"), "");
 }
 
 }  // namespace utils
