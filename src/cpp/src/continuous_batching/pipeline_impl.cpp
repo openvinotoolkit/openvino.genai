@@ -64,6 +64,26 @@ namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
+void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
+                                       const SchedulerConfig& scheduler_config) {
+    const bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
+    const bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
+    const bool allow_xattention = scheduler_config.use_sparse_attention &&
+                                  scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
+    const bool allow_score_aggregation = true;
+    const bool allow_adaptive_rkv = scheduler_config.use_cache_eviction &&
+                                    scheduler_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV;
+
+    ov::pass::SDPAToPagedAttention(is_need_per_layer_cache_control,
+                                   is_need_per_layer_cache_control,
+                                   allow_score_aggregation,
+                                   allow_cache_rotation,
+                                   allow_xattention,
+                                   allow_adaptive_rkv)
+        .run_on_model(model);
+    utils::apply_gather_before_matmul_transformation(model);
+}
+
 ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const std::shared_ptr<ov::Model>& model,
     const Tokenizer& tokenizer,
@@ -76,13 +96,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_generation_config = generation_config;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
 
-    bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
-    bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
-    bool allow_xattention = scheduler_config.use_sparse_attention && scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
-    bool allow_score_aggregation = true;
-    bool allow_adaptive_rkv = scheduler_config.use_cache_eviction && scheduler_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV;
-    ov::pass::SDPAToPagedAttention(is_need_per_layer_cache_control, is_need_per_layer_cache_control, allow_score_aggregation, allow_cache_rotation, allow_xattention, allow_adaptive_rkv).run_on_model(model);
-    utils::apply_gather_before_matmul_transformation(model);
+    prepare_model_for_paged_attention(model, scheduler_config);
     initialize_pipeline(model, scheduler_config, device, properties);
 }
 

@@ -48,23 +48,6 @@ void npu_auto_default_properties(ov::AnyMap& device_properties) {
     device_properties["AUTO"] = auto_properties;
 }
 
-void apply_linear_attention_backend_constraints(
-    const std::shared_ptr<ov::Model>& language_model,
-    const ov::AnyMap& user_properties,
-    std::string& attention_backend
-) {
-    if (attention_backend != PA_BACKEND || !utils::has_linear_attention_states(language_model)) {
-        return;
-    }
-
-    if (utils::explicitly_requires_paged_attention(user_properties)
-        || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
-        GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
-    } else {
-        attention_backend = SDPA_BACKEND;
-    }
-}
-
 }
 
 class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
@@ -783,7 +766,6 @@ VLMPipeline::VLMPipeline(
         utils::extract_extensions_to_core(properties);
         auto language_model_path = models_dir / "openvino_language_model.xml";
         auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties);
-        apply_linear_attention_backend_constraints(language_model, user_properties, attention_backend);
 
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(user_properties)) {
@@ -796,10 +778,11 @@ VLMPipeline::VLMPipeline(
                 // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
                 // but cannot perform its inference later
     #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-                m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(language_model, models_dir, scheduler_config, device, plugin_properties);
+                    m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(language_model->clone(), models_dir, scheduler_config, device, plugin_properties);
 #endif
-            } catch (ov::Exception&) {
-                // ignore exceptions from PA
+            } catch (const ov::Exception& exception) {
+                GENAI_WARN("Paged Attention backend initialization failed. Falling back to SDPA backend.");
+                GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
             }
         }
 
@@ -832,7 +815,6 @@ VLMPipeline::VLMPipeline(
         utils::extract_extensions_to_core(properties);
         const auto& [model_str, weights] = utils::get_model_weights_pair(models_map, "language");
         auto language_model = utils::singleton_core().read_model(model_str, weights);
-        apply_linear_attention_backend_constraints(language_model, user_properties, attention_backend);
 
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(user_properties)) {
@@ -845,10 +827,11 @@ VLMPipeline::VLMPipeline(
                 // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
                 // but cannot perform its inference later
     #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-                m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(language_model, models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
+                    m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(language_model->clone(), models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
     #endif
-            } catch (ov::Exception&) {
-                // ignore exceptions from PA
+            } catch (const ov::Exception& exception) {
+                GENAI_WARN("Paged Attention backend initialization failed. Falling back to SDPA backend.");
+                GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
             }
         }
 
@@ -953,6 +936,10 @@ Tokenizer VLMPipeline::get_tokenizer() const {
 
 GenerationConfig VLMPipeline::get_generation_config() const {
     return m_pimpl->get_generation_config();
+}
+
+std::string VLMPipeline::get_attention_backend() const {
+    return m_pimpl->get_attention_backend();
 }
 
 void VLMPipeline::set_generation_config(const GenerationConfig& new_config) {

@@ -11,6 +11,9 @@
 
 namespace ov::genai {
 
+void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
+                                       const SchedulerConfig& scheduler_config);
+
 class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
     std::shared_ptr<Scheduler> m_scheduler;

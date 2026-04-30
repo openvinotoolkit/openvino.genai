@@ -23,6 +23,8 @@
 
 namespace ov::genai {
 
+class ContinuousBatchingAdapter;
+
 /**
  * @brief Contains general pipeline metrics, either aggregated throughout the lifetime of the generation pipeline
  * or measured at the previous generation step.
@@ -86,6 +88,7 @@ protected:
     friend class Eagle3DecodingImpl;
     friend class PromptLookupImpl;
     friend class VLMPipeline;
+    friend class ContinuousBatchingAdapter;
 
     std::shared_ptr<IContinuousBatchingPipeline> m_impl;
 
@@ -110,6 +113,14 @@ private:
                                const ov::AnyMap& properties = {},
                                const ov::AnyMap& tokenizer_properties = {},
                                const ov::AnyMap& vision_encoder_properties = {});
+
+    ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& model,
+                               const ov::genai::Tokenizer& tokenizer,
+                               const SchedulerConfig& scheduler_config,
+                               const std::string& device,
+                               const ov::AnyMap& properties,
+                               const ov::genai::GenerationConfig& generation_config,
+                               const std::filesystem::path& config_path = {});
 
 public:
     ContinuousBatchingPipeline(const std::filesystem::path& models_path,
