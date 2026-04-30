@@ -14,7 +14,7 @@ from transformers import set_seed
 from contextlib import contextmanager
 from datasets.packaged_modules.parquet.parquet import Parquet
 
-from .utils.utils import parquet_generate_tables
+from .utils import parquet_generate_tables
 from .registry import register_evaluator
 from .text2image_evaluator import Text2ImageEvaluator
 

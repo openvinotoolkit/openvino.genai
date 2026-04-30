@@ -953,8 +953,8 @@ def create_evaluator(base_model, args):
         elif task == "visual-text-chat":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
-            # in base_model/target_model is provided, wwb will generate data and the chat_template should be defined
-            # with test_data only, wwb will not generate data and the chat_template is not necessary
+            # If base_model/target_model is provided, wwb will generate data and the chat_template should be defined.
+            # If test_data only is provided, wwb will not generate data and the chat_template is not necessary.
             if (
                 (args.base_model is not None or args.target_model is not None)
                 and getattr(processor, "chat_template", None) is None

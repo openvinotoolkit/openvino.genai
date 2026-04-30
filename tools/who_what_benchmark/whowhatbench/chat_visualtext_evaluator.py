@@ -13,8 +13,8 @@ from typing import Any, Union, List, TypedDict, Optional
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
 from .whowhat_metrics import TextSimilarity
-from .utils.utils import get_ignore_parameters_flag, load_image
-from .utils.visual_utils import MODEL_TYPE_TO_CLS_MAPPING, fix_phi3_v_eos_token_id
+from .utils import get_ignore_parameters_flag, load_image
+from .input_preprocessors import MODEL_TYPE_TO_CLS_MAPPING, fix_phi3_v_eos_token_id
 
 
 class VisualTextChatInput(TypedDict):
