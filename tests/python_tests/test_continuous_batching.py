@@ -76,7 +76,9 @@ def model_facebook_opt_125m() -> OVConvertedModelSchema:
     return download_and_convert_model(model_id)
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="Cases with group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
+)
 @pytest.mark.parametrize("llm_model", read_models_list(FILE_DIR_NAME / "models" / "lightweight"), indirect=True)
 def test_e2e_lightweight_models(llm_model: OVConvertedModelSchema):
     prompts, generation_configs = get_test_dataset()
@@ -156,7 +158,9 @@ def test_cb_streamer_vs_return_vs_stateful(model_facebook_opt_125m: OVConvertedM
     assert "".join(streamed) == reference
 
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(
+    reason="group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
+)
 @pytest.mark.parametrize(
     "generation_config_kwargs", 
     [
@@ -229,7 +233,7 @@ def test_chat_scenario_vs_stateful(
             assert generated == reference
 
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 and transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize(
     "generation_config_kwargs",
@@ -275,7 +279,7 @@ def test_continuous_batching_add_request_health_check(
         for output in outputs:
             assert output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 and transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize(
     "generation_config_kwargs", 
     [
@@ -368,6 +372,8 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
 
 
 if is_transformers_version("<", "5.0"):
+    # beam search fails with optimum-intel 423b423 and transformers>=5.0
+    # restore after fix of CVS-185790
     preemption_params = [
         ({"num_kv_blocks": 34, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),
         ({"num_kv_blocks": 34, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),

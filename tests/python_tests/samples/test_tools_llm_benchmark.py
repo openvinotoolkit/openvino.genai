@@ -265,7 +265,9 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
-    @pytest.mark.transformers_lower_v5
+    @pytest.mark.transformers_lower_v5(
+        reason="KeyError: 'num_frames' with optimum-intel 423b423 and transformers>=5.0, CVS-185784"
+    )
     @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1"], ["-d", "cpu", "-n", "1", "--optimum"]])
     @pytest.mark.parametrize("media_file", ["3283_1447_000000.flac"])
     @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
@@ -369,7 +371,9 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
-    @pytest.mark.transformers_lower_v5
+    @pytest.mark.transformers_lower_v5(
+        reason="llava-next-video hasn't supported by optimum-intel 423b423 with transformers>=5.0 yet"
+    )
     @pytest.mark.parametrize("download_test_content", ["video0.mp4"], indirect=True)
     @pytest.mark.parametrize("convert_model, sample_args", [
         pytest.param("tiny-random-llava-next-video", ["-d", "cpu", "-n", "1", "--genai", "-vf", "5"]),

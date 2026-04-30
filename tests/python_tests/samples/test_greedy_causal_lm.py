@@ -12,7 +12,9 @@ from optimum.intel.utils.import_utils import is_transformers_version
 GREEDY_MODEL_LIST = []
 if is_transformers_version("<", "5.0"):
     GREEDY_MODEL_LIST = [
+        # fails with optimum-intel 423b423 and transformers>=5.0, CVS-185559
         pytest.param("phi-1_5", "Alan Turing was a"),
+        # accuracy drop with llama architecture with optimum-intel 423b423 and transformers>=5.0, CVS-185791
         pytest.param("TinyLlama-1.1B-Chat-v1.0", "Alan Turing was a"),
     ]
 else:
@@ -31,6 +33,7 @@ else:
 class TestGreedyCausalLM:
     @pytest.mark.llm
     @pytest.mark.samples
+    @pytest.mark.transformers_dependent
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         GREEDY_MODEL_LIST,

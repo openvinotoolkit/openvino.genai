@@ -11,7 +11,7 @@ from test_utils import run_sample
 class TestChatSample:
     @pytest.mark.llm
     @pytest.mark.samples
-    @pytest.mark.transformers_lower_v5
+    @pytest.mark.transformers_lower_v5(reason="Accuracy drop with llama architecture, CVS-185791")
     @pytest.mark.parametrize("convert_model", ["TinyLlama-1.1B-Chat-v1.0"], indirect=True)
     @pytest.mark.parametrize("prompts",
         [

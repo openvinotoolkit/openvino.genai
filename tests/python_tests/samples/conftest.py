@@ -248,7 +248,9 @@ def setup_and_teardown(request, tmp_path_factory):
 
 
 def get_hf_cli_command() -> str:
-    # huggingface_hub < 1.0 supports huggingface-cli, huggingface_hub >= 1.0 use hf
+    # huggingface_hub < 1.0 supports huggingface-cli
+    # huggingface_hub >= 0.34 supports huggingface-cli and hf
+    # huggingface_hub >= 1.0 huggingface-cli is deprecated, need to use hf
     version = metadata.version("huggingface_hub")
     major = int(version.split(".", 1)[0])
     if major >= 1:

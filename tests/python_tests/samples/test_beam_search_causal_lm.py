@@ -10,6 +10,8 @@ from test_utils import run_sample
 
 BEAM_SEARCH_MODEL_LIST = []
 if is_transformers_version("<", "5.0"):
+    # phi-1_5 fails with optimum-intel 423b423 and transformers>=5.0
+    # restore after fix of CVS-185559
     BEAM_SEARCH_MODEL_LIST = [
         pytest.param(
             "phi-1_5",
@@ -68,7 +70,7 @@ class TestBeamSearchCausalLM:
 
     @pytest.mark.llm
     @pytest.mark.samples
-    @pytest.mark.transformers_lower_v5
+    @pytest.mark.transformers_lower_v5(reason="Accuracy drop with llama architecture, CVS-185791")
     @pytest.mark.parametrize("convert_model",
         [
             "SmolLM2-135M",

@@ -13,6 +13,7 @@ import torch.nn.functional as F
 
 import cv2
 import logging
+import inspect
 import numpy as np
 import pandas as pd
 from sentence_transformers import SentenceTransformer, util
@@ -178,13 +179,15 @@ class TextSimilarity:
             trust_remote_code = True
             tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
-        if hasattr(tokenizer, "pad_token") and tokenizer.pad_token:
-            pad_token = tokenizer.pad_token
-        else:
-            pad_token = tokenizer.eos_token
-        self.model = SentenceTransformer(
-            model_id, tokenizer_kwargs={"pad_token": pad_token}, trust_remote_code=trust_remote_code, device="cpu"
-        )
+        model_kwargs = {"trust_remote_code": trust_remote_code, "device": "cpu"}
+        if "tokenizer_kwargs" in inspect.signature(SentenceTransformer.__init__).parameters:
+            if hasattr(tokenizer, "pad_token") and tokenizer.pad_token:
+                pad_token = tokenizer.pad_token
+            else:
+                pad_token = tokenizer.eos_token
+            model_kwargs["tokenizer_kwargs"] = {"pad_token": pad_token}
+
+        self.model = SentenceTransformer(model_id, **model_kwargs)
 
     def evaluate(self, gt, prediction):
         return evaluate_similarity(self.model, gt, prediction)

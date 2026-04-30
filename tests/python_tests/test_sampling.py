@@ -167,6 +167,8 @@ def test_greedy(model_tiny_random_phi3: OVConvertedModelSchema, generation_confi
 
 
 if is_transformers_version("<", "5.0"):
+    # group beam search fails with optimum-intel 423b423 and transformers>=5.0
+    # restore after fix of CVS-185790
     beam_search_generation_configs = [
         {
             "max_new_tokens": 30,
@@ -211,14 +213,18 @@ else:
     ]
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="Some cases with group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
+)
 @pytest.mark.parametrize("generation_config", beam_search_generation_configs, ids=beam_search_ids)
 def test_beam_search(model_facebook_opt_125m: OVConvertedModelSchema, generation_config: GenerationConfig):
     prompts = ["What is OpenVINO?"]
     generate_and_compare(model_facebook_opt_125m, prompts, generation_config)
 
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(
+    reason="Group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
+)
 @pytest.mark.xfail(
     raises=AssertionError,
     reason="Stop strings do not seem to work as expected with beam search in HF, so comparison will fail. If it changes, these cases shall be merged to the test above.",

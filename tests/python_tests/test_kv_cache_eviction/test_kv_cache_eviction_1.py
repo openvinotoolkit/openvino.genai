@@ -190,6 +190,7 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
 
 
 if is_transformers_version("<", "5.0"):
+    # error: group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790
     scheduler_params_list = [
         (
             {

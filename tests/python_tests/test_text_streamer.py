@@ -16,6 +16,9 @@ def chunks(arr: list, n: int):
 
 tokenizer_model_ids = []
 if is_transformers_version("<", "5.0"):
+    # phi-1_5 fails with optimum-intel 423b423 and transformers>=5.0
+    # TinyLlama fails because of accuracy drop with llama architecture
+    # restore after fix of CVS-185559, CVS-185791
     tokenizer_model_ids = [
         "microsoft/phi-1_5",
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
@@ -61,7 +64,10 @@ unicode_prompts = [*map(lambda x: str.encode(x, 'unicode_escape'), [
     "Сынақ жолы á",
 ])]
 
-@pytest.mark.transformers_dependent
+
+@pytest.mark.transformers_dependent(
+    reason="Some cases fails with optimum-intel 423b423 and transformers>=5.0, CVS-185559, CVS-185791"
+)
 @pytest.mark.parametrize("model_id", tokenizer_model_ids)
 @pytest.mark.parametrize("prompt", [*eng_prompts, *unicode_prompts])
 def test_text_prompts(tmp_path, prompt, model_id):
@@ -106,7 +112,9 @@ encoded_prompts = [
 ]
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="Some cases fails with optimum-intel 423b423 and transformers>=5.0, CVS-185559, CVS-185791"
+)
 @pytest.mark.parametrize("model_id", tokenizer_model_ids)
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 def test_encoded_prompts(tmp_path, encoded_prompt, model_id):

@@ -471,7 +471,7 @@ def test_return_timestamps_short_form(model_descr, sample_from_dataset):
     )
 
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 1}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
@@ -499,7 +499,7 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_da
     )
 
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=10, long_form=True)], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
@@ -526,7 +526,7 @@ def test_longform_audio(model_descr, sample_from_dataset):
     assert "".join(streamer_result) == hf_result["text"]
 
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_shortform(model_descr):
@@ -646,7 +646,7 @@ def test_longform_audio_with_word_level_timestamps(model_descr, sample_from_data
     assert len(genai_result.words) > 0
 
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")

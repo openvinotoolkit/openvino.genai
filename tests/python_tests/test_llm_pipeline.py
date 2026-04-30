@@ -57,6 +57,8 @@ GREEDY_INPUTS_TEST_CASES = [
 ]
 
 if is_transformers_version("<", "5.0"):
+    # beam search fails with optimum-intel 423b423 and transformers>=5.0
+    # restore after fix of CVS-185790
     INPUTS_TEST_CASES = [
         (
             {
@@ -94,6 +96,8 @@ INPUT_TENSORS_LIST = [
 
 GREEDY_TEST_CONFIGS = [{"max_new_tokens": 20}]
 if is_transformers_version("<", "5.0"):
+    # beam search fails with optimum-intel 423b423 and transformers>=5.0
+    # restore after fix of CVS-185790
     TEST_CONFIGS = [
         {"max_new_tokens": 20, "num_beam_groups": 2, "num_beams": 6, "diversity_penalty": 1.0},
     ]
@@ -157,7 +161,9 @@ def ov_pipe(llm_model: OVConvertedModelSchema) -> ov_genai.LLMPipeline:
     return create_ov_pipeline(llm_model.models_path)
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="Some cases with beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
+)
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("generation_config_dict,prompt", INPUTS_TEST_CASES)
 @pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
@@ -175,7 +181,9 @@ def test_string_inputs(
     )
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("generation_config_dict,prompt", GREEDY_INPUTS_TEST_CASES)  # exclude beam search case
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
@@ -193,7 +201,9 @@ def test_linear_attention_string_inputs(
     )
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("inputs", INPUT_TENSORS_LIST)
 def test_encoded_inputs(
@@ -239,7 +249,9 @@ def test_readonly_input_tensor(ov_pipe: ov_genai.LLMPipeline) -> None:
     ov_pipe.generate(readonly_tensor, max_new_tokens=5)
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="Some cases with beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
+)
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("generation_config_dict", TEST_CONFIGS)
 @pytest.mark.parametrize("prompts", BATCHED_PROMPTS)
@@ -258,7 +270,9 @@ def test_batch_string_inputs(
     )
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 @pytest.mark.parametrize("generation_config_dict", GREEDY_TEST_CONFIGS)  # exclude beam search config
@@ -290,7 +304,7 @@ def test_empty_encoded_inputs_throw(ov_pipe: ov_genai.LLMPipeline) -> None:
         ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
 
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 def test_different_input_types_works_same_and_change_nothing(
     llm_model: OVConvertedModelSchema,
@@ -314,7 +328,9 @@ def test_different_input_types_works_same_and_change_nothing(
     assert res_string_input_1 == res_string_input_2
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 @pytest.mark.parametrize("prompt", [prompt for prompts in BATCHED_PROMPTS for prompt in prompts])
@@ -328,7 +344,9 @@ def test_linear_model_deterministic(
     assert result1 == result2
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 def test_linear_attention_batch_input_same_as_individual(
@@ -354,7 +372,7 @@ def test_linear_attention_batch_input_same_as_individual(
 #
 # Chat scenario
 #
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("inputs", CHAT_INPUTS)
 @pytest.mark.parametrize(
@@ -445,7 +463,9 @@ def test_chat_scenario(
         assert_hf_equals_genai(chat_history_hf, chat_history_messages_ov)
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("inputs", CHAT_INPUTS[:1])  # exclude beam search config
 @pytest.mark.parametrize(
@@ -506,7 +526,7 @@ def test_linear_attention_chat_scenario(
     assert_hf_equals_genai(chat_history_hf, chat_history_messages_ov)
 
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", [CHAT_MODELS_LIST[0]], indirect=True)
 def test_chat_scenario_several_chats_in_series(
     llm_model: OVConvertedModelSchema,
@@ -544,7 +564,9 @@ def test_chat_scenario_several_chats_in_series(
         assert_hf_equals_genai(chat_history_hf, chat_history_ov)
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 def test_chat_scenario_several_chats_in_series_linear_cache(
@@ -584,7 +606,7 @@ def test_chat_scenario_several_chats_in_series_linear_cache(
         assert_hf_equals_genai(chat_history_hf, chat_history_ov, chat_number=i)
 
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 def test_chat_scenario_several_start(ov_pipe: ov_genai.LLMPipeline) -> None:
     generation_config_kwargs, _ = CHAT_INPUTS[0]
@@ -596,7 +618,7 @@ def test_chat_scenario_several_start(ov_pipe: ov_genai.LLMPipeline) -> None:
     ov_pipe.finish_chat()
 
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 def test_generate_works_same_before_and_after_chat(ov_pipe: ov_genai.LLMPipeline) -> None:
     generation_config_kwargs, _ = CHAT_INPUTS[0]
@@ -614,7 +636,9 @@ def test_generate_works_same_before_and_after_chat(ov_pipe: ov_genai.LLMPipeline
     assert res_after_chat == res_before_chat
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 @pytest.mark.parametrize("questions", [QUESTIONS[:2]])
@@ -735,7 +759,7 @@ def test_callback_terminate_by_status(ov_pipe: ov_genai.LLMPipeline) -> None:
     assert len(ov_output.tokens[0]) < max_new_tokens
 
 
-@pytest.mark.transformers_lower_v5
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 def test_chat_scenario_callback_cancel(
     llm_model: OVConvertedModelSchema,

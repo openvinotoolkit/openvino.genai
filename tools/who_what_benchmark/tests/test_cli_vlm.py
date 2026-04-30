@@ -212,6 +212,7 @@ def test_vlm_nanollava(model_id, model_type, optimum_threshold, genai_threshold,
 
 
 if Version(transformers_version) < Version("5.0.0"):
+    # llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0
     VISUAL_VIDEO_TEXT_MODELS = (("optimum-intel-internal-testing/tiny-random-llava-next-video", "visual-video-text"),)
 else:
     VISUAL_VIDEO_TEXT_MODELS = [
@@ -219,7 +220,9 @@ else:
     ]
 
 
-@pytest.mark.transformers_dependent
+@pytest.mark.transformers_dependent(
+    reason="llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0"
+)
 @pytest.mark.parametrize(("model_id", "model_type"), VISUAL_VIDEO_TEXT_MODELS)
 def test_vlm_video(model_id, model_type, tmp_path):
     run_test(model_id, model_type, 0.8, 0.8, tmp_path)
