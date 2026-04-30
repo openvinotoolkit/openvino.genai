@@ -29,3 +29,7 @@ peft==0.19.1
 # For OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
 timm==1.0.26
 decord==0.6.0; platform_system != "Darwin"
+# For speech generation evaluation
+jiwer>=3.0.0,<=4.0.0
+pywhispercpp>=1.4.1,<1.5.0
+speechbrain>=1.0.0,<=1.0.3

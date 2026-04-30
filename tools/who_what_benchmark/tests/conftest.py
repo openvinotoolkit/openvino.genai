@@ -63,6 +63,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
+    "speecht5_tts": {
+        "name": "microsoft/speecht5_tts",
+        "convert_args": ["--model-kwargs", '{"vocoder": "microsoft/speecht5_hifigan"}'],
+    },
 }
 
 
