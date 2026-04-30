@@ -226,19 +226,19 @@ std::vector<ov::Tensor> VisionTokenPruningProcessor::convert_visual_features(
     size_t chunk_count,
     const std::vector<size_t>& tokens_per_region) const {
     // Convert from [num_patches, embedding_dim] to chunk_count * [1, num_patches_i, embedding_dim]
-    ov::Shape original_shape = vision_embeds.get_shape();
-    size_t total_tokens = original_shape[0];
-    size_t embedding_dim = original_shape[1];
-    const float* src_data = vision_embeds.data<const float>();
+    const ov::Shape original_shape = vision_embeds.get_shape();
+    const size_t total_tokens = original_shape[0];
+    const size_t embedding_dim = original_shape[1];
+    const size_t elem_size = vision_embeds.get_element_type().size();
+    const size_t row_bytes = embedding_dim * elem_size;
+    const auto* src = static_cast<const uint8_t*>(vision_embeds.data());
 
     std::vector<ov::Tensor> visual_features;
 
     // When chunk_count = 1 (frame chunking disabled), treat all tokens as a single batch
     if (chunk_count == 1) {
-        ov::Shape batch_shape = {1, total_tokens, embedding_dim};
-        ov::Tensor features(vision_embeds.get_element_type(), batch_shape);
-        float* dst_data = features.data<float>();
-        std::memcpy(dst_data, src_data, total_tokens * embedding_dim * sizeof(float));
+        ov::Tensor features(vision_embeds.get_element_type(), {1, total_tokens, embedding_dim});
+        std::memcpy(features.data(), src, total_tokens * row_bytes);
         visual_features.push_back(features);
         return visual_features;
     }
@@ -251,7 +251,7 @@ std::vector<ov::Tensor> VisionTokenPruningProcessor::convert_visual_features(
     size_t current_offset = 0;
 
     for (size_t i = 0; i < chunk_count; i++) {
-        size_t region_tokens = tokens_per_region[i];
+        const size_t region_tokens = tokens_per_region[i];
 
         // Boundary check
         OPENVINO_ASSERT(current_offset + region_tokens <= total_tokens,
@@ -259,14 +259,8 @@ std::vector<ov::Tensor> VisionTokenPruningProcessor::convert_visual_features(
                             ": offset=" + std::to_string(current_offset) + ", tokens=" + std::to_string(region_tokens) +
                             ", total=" + std::to_string(total_tokens));
 
-        // Create tensor for current region [1, tokens_i, D]
-        ov::Shape region_shape = {1, region_tokens, embedding_dim};
-        ov::Tensor features(vision_embeds.get_element_type(), region_shape);
-        float* dst_data = features.data<float>();
-
-        // Copy data
-        size_t elements_to_copy = region_tokens * embedding_dim;
-        std::memcpy(dst_data, src_data + current_offset * embedding_dim, elements_to_copy * sizeof(float));
+        ov::Tensor features(vision_embeds.get_element_type(), {1, region_tokens, embedding_dim});
+        std::memcpy(features.data(), src + current_offset * row_bytes, region_tokens * row_bytes);
 
         visual_features.push_back(features);
         current_offset += region_tokens;

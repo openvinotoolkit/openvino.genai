@@ -2435,8 +2435,8 @@ def test_cdpruner_with_video(
         baseline_result = ov_pipe.generate(
             PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=baseline_config
         )
-        baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
         assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
+        baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
 
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     generation_config.pruning_ratio = pruning_ratio
