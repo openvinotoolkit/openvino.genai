@@ -19,25 +19,25 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
-    "@docusaurus/core": "3.9.2",
-    "@docusaurus/preset-classic": "3.9.2",
+    "@docusaurus/core": "3.10.0",
+    "@docusaurus/preset-classic": "3.10.0",
     "@easyops-cn/docusaurus-search-local": "0.55.1",
     "@mdx-js/react": "3.1.1",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react": "19.2.5",
+    "react-dom": "19.2.5"
   },
   "devDependencies": {
-    "@docusaurus/eslint-plugin": "3.9.2",
-    "@docusaurus/module-type-aliases": "3.9.2",
-    "@docusaurus/tsconfig": "3.9.2",
-    "@docusaurus/types": "3.9.2",
-    "@eslint/eslintrc": "3.3.4",
+    "@docusaurus/eslint-plugin": "3.10.0",
+    "@docusaurus/module-type-aliases": "3.10.0",
+    "@docusaurus/tsconfig": "3.10.0",
+    "@docusaurus/types": "3.10.0",
+    "@eslint/eslintrc": "3.3.5",
     "@eslint/js": "9.39.2",
     "eslint": "9.39.2",
     "eslint-plugin-react": "7.37.5",
-    "globals": "15.15.0",
-    "typescript": "5.7.3",
-    "typescript-eslint": "8.53.1"
+    "globals": "17.5.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.59.1"
   },
   "overrides": {
     "serialize-javascript": "^7.0.3"
