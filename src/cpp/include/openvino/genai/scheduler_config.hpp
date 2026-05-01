@@ -23,12 +23,12 @@ struct SchedulerConfig {
     // total number of KV blocks available to scheduler logic
     std::size_t num_kv_blocks = 0;
 
-    // total size of KV cache in GB
+    // total size of cache in GB
     // When both num_kv_blocks and cache_size are set, num_kv_blocks is used. 
     // When both num_kv_blocks and cache_size are equal to zero dynamic KV-cache allocation is turned on.
     std::size_t cache_size = 0;
 
-    // total number of linear attention state blocks available to scheduler logic.
+    // total number of linear attention blocks available to scheduler logic.
     // Each block holds the full state for one sequence across all linear attention ops.
     // When 0, automatically derived from num_kv_blocks if linear attention layers are detected.
     std::size_t num_linear_attention_blocks = 0;

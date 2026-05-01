@@ -59,30 +59,123 @@ public:
 
         auto orchestrator = std::make_shared<CacheOrchestrator>();
 
-        size_t aggregate_block_size_in_bytes = 0;
-        size_t total_num_layers = 0;
-
+        std::shared_ptr<KVCacheManager> kv_manager;
         if (KVCacheManager::has_cache_inputs(compiled_model)) {
-            auto kv_manager = std::make_shared<KVCacheManager>(infer_request);
+            kv_manager = std::make_shared<KVCacheManager>(infer_request);
+        }
 
+        std::shared_ptr<LinearAttentionCacheManager> la_manager;
+        if (LinearAttentionCacheManager::has_cache_inputs(compiled_model)) {
+            la_manager = std::make_shared<LinearAttentionCacheManager>(infer_request);
+        }
+
+        OPENVINO_ASSERT(la_manager || config.num_linear_attention_blocks == 0,
+                        "SchedulerConfig num_linear_attention_blocks can be set only for models with linear attention cache inputs");
+
+        if (!la_manager) {
+            OPENVINO_ASSERT(config.cache_interval == DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL || config.cache_interval == 0,
+                            "SchedulerConfig cache_interval can be set only for models with linear attention cache inputs");
+        }
+
+        size_t total_num_layers = 0;
+        if (kv_manager) {
             total_num_layers += kv_manager->get_num_decoder_layers();
-            aggregate_block_size_in_bytes += kv_manager->get_block_size_in_bytes();
+        }
+        if (la_manager) {
+            total_num_layers += la_manager->get_num_layers();
+        }
 
+        const std::string allocation_device = kv_manager ? kv_manager->get_device() : (la_manager ? la_manager->get_device() : std::string{});
+        const size_t total_available_memory = allocation_device.empty()
+                                                  ? std::numeric_limits<size_t>::max()
+                                                  : get_available_memory(allocation_device, total_num_layers);
+
+        size_t normalized_num_kv_blocks = config.num_kv_blocks;
+        size_t normalized_num_la_blocks = config.num_linear_attention_blocks;
+        const size_t kv_block_size = kv_manager ? kv_manager->get_block_size() : 0;
+        const size_t kv_block_size_in_bytes = kv_manager ? kv_manager->get_block_size_in_bytes() : 0;
+        const size_t la_block_size_in_bytes = la_manager ? la_manager->get_block_size_in_bytes() : 0;
+
+        auto bytes_for_token_target = [&](size_t token_target) {
+            size_t total_bytes = 0;
+            if (kv_manager) {
+                const size_t kv_blocks = (token_target + kv_block_size - 1) / kv_block_size;
+                total_bytes += kv_blocks * kv_block_size_in_bytes;
+            }
+            if (la_manager && config.enable_prefix_caching) {
+                const size_t la_blocks = (token_target + config.cache_interval - 1) / config.cache_interval;
+                total_bytes += la_blocks * la_block_size_in_bytes;
+            }
+            return total_bytes;
+        };
+
+        if (la_manager && !config.enable_prefix_caching && normalized_num_la_blocks == 0 &&
+            (normalized_num_kv_blocks > 0 || config.cache_size > 0)) {
+            normalized_num_la_blocks = config.max_num_batched_tokens == std::numeric_limits<size_t>::max()
+                                           ? 1
+                                           : config.max_num_seqs;
+        }
+
+        if (config.cache_size > 0 && normalized_num_kv_blocks == 0) {
+            const size_t budget_in_bytes = config.cache_size * 1024ULL * 1024ULL * 1024ULL;
+            OPENVINO_ASSERT(budget_in_bytes <= total_available_memory,
+                            "Requested cache size is larger than available memory size on the system.");
+
+            if (la_manager && !config.enable_prefix_caching) {
+                const size_t reserved_la_bytes = normalized_num_la_blocks * la_block_size_in_bytes;
+                OPENVINO_ASSERT(reserved_la_bytes <= budget_in_bytes,
+                                "Requested linear attention cache allocation exceeds the configured cache size.");
+                if (kv_manager) {
+                    normalized_num_kv_blocks = (budget_in_bytes - reserved_la_bytes) / kv_block_size_in_bytes;
+                }
+            } else {
+                size_t low = 0;
+                size_t high = 0;
+                if (kv_manager) {
+                    high = (budget_in_bytes / kv_block_size_in_bytes) * kv_block_size;
+                } else if (la_manager) {
+                    high = (budget_in_bytes / la_block_size_in_bytes) * config.cache_interval;
+                }
+
+                while (low < high) {
+                    const size_t mid = low + (high - low + 1) / 2;
+                    if (bytes_for_token_target(mid) <= budget_in_bytes) {
+                        low = mid;
+                    } else {
+                        high = mid - 1;
+                    }
+                }
+
+                if (kv_manager) {
+                    normalized_num_kv_blocks = (low + kv_block_size - 1) / kv_block_size;
+                }
+                if (la_manager) {
+                    normalized_num_la_blocks = (low + config.cache_interval - 1) / config.cache_interval;
+                }
+            }
+        } else if (normalized_num_kv_blocks > 0) {
+            if (la_manager && config.enable_prefix_caching && normalized_num_la_blocks == 0) {
+                const size_t token_target = normalized_num_kv_blocks * kv_block_size;
+                normalized_num_la_blocks = (token_target + config.cache_interval - 1) / config.cache_interval;
+            }
+
+            size_t total_requested_bytes = 0;
+            if (kv_manager) {
+                total_requested_bytes += normalized_num_kv_blocks * kv_block_size_in_bytes;
+            }
+            if (la_manager) {
+                total_requested_bytes += normalized_num_la_blocks * la_block_size_in_bytes;
+            }
+            OPENVINO_ASSERT(total_requested_bytes <= total_available_memory,
+                            "Requested cache blocks require more memory than available on the system.");
+        }
+
+        config.num_kv_blocks = normalized_num_kv_blocks;
+        config.num_linear_attention_blocks = normalized_num_la_blocks;
+
+        if (kv_manager) {
             std::vector<size_t> layer_ids(kv_manager->get_num_decoder_layers());
             std::iota(layer_ids.begin(), layer_ids.end(), 0);
-
-            size_t total_available_memory = get_available_memory(kv_manager->get_device(), total_num_layers);
-            if (config.num_kv_blocks == 0 && config.cache_size > 0) {
-                size_t size_in_bytes = config.cache_size * 1024 * 1024 * 1024;
-                OPENVINO_ASSERT(size_in_bytes <= total_available_memory,
-                                "Requested KV-cache size is larger than available memory size on the system.");
-                config.num_kv_blocks = size_in_bytes / aggregate_block_size_in_bytes;
-            }
-            if (config.num_kv_blocks > 0) {
-                size_t size_in_bytes = aggregate_block_size_in_bytes * config.num_kv_blocks;
-                OPENVINO_ASSERT(size_in_bytes <= total_available_memory,
-                                "Requested number of KV-blocks require more memory than available on the system.");
-            }
 
             auto block_manager = std::make_shared<BlockManager>(
                 config.num_kv_blocks,
@@ -94,33 +187,23 @@ public:
                                                config.use_cache_eviction);
         }
 
-        if (LinearAttentionCacheManager::has_cache_inputs(compiled_model)) {
-            auto la_manager = std::make_shared<LinearAttentionCacheManager>(infer_request);
-
-            total_num_layers += la_manager->get_num_layers();
-
+        if (la_manager) {
             std::vector<size_t> la_layer_ids(la_manager->get_num_layers());
-            // Linear attention global layer IDs start after KV layers
-            size_t la_start = total_num_layers - la_manager->get_num_layers();
+            const size_t la_start = kv_manager ? kv_manager->get_num_decoder_layers() : 0;
             std::iota(la_layer_ids.begin(), la_layer_ids.end(), la_start);
-
-            const size_t num_la_blocks = config.num_linear_attention_blocks;
 
             std::shared_ptr<BlockManager> la_block_manager;
             if (config.enable_prefix_caching) {
                 OPENVINO_ASSERT(config.cache_interval > 0,
                                 "Internal error: SchedulerConfig cache_interval must be greater than 0 when prefix caching is enabled");
                 la_block_manager = std::make_shared<BlockManager>(
-                    num_la_blocks,
+                    config.num_linear_attention_blocks,
                     true,
                     config.cache_interval,
                     la_manager->get_num_layers());
             } else {
-                const size_t static_la_blocks = num_la_blocks > 0
-                                                    ? num_la_blocks
-                                                    : (config.num_kv_blocks > 0 ? config.max_num_seqs : 0);
                 la_block_manager = std::make_shared<BlockManager>(
-                    static_la_blocks,
+                    config.num_linear_attention_blocks,
                     false,
                     1,
                     la_manager->get_num_layers(),
@@ -129,9 +212,6 @@ public:
 
             orchestrator->register_cache_type(CacheType::LINEAR_ATTENTION_CACHE, la_manager,
                                                la_block_manager, la_layer_ids);
-        } else {
-            OPENVINO_ASSERT(config.cache_interval == DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL,
-                            "SchedulerConfig cache_interval can be set only for models with linear attention cache inputs");
         }
 
         OPENVINO_ASSERT(!orchestrator->get_registered_types().empty(),
