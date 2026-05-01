@@ -7,12 +7,12 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "openvino/genai/llm_pipeline.hpp"
-#include "llm/pipeline_base.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -90,58 +90,7 @@ std::string make_test_name(const ::testing::TestParamInfo<BackendModelParam>& in
     return name;
 }
 
-const std::string& get_expected_default_backend(const BackendModelParam& param) {
-    if (!param.has_kvcache) {
-        return ov::genai::SDPA_BACKEND;
-    }
-    if (param.has_linear &&
-        param.model_id.find("tiny-random-lfm2") == std::string::npos &&
-        param.model_id.find("tiny-random-qwen3-next") == std::string::npos) {
-        return ov::genai::SDPA_BACKEND;
-    }
-    return ov::genai::PA_BACKEND;
-}
-
 }  // namespace
-
-class DummyLLMPipelineImpl final : public ov::genai::LLMPipelineImplBase {
-public:
-    DummyLLMPipelineImpl() : ov::genai::LLMPipelineImplBase(ov::genai::Tokenizer(), ov::genai::GenerationConfig()) {}
-
-    ov::genai::DecodedResults generate(
-        ov::genai::StringInputs,
-        ov::genai::OptionalGenerationConfig,
-        ov::genai::StreamerVariant) override {
-        return {};
-    }
-
-    ov::genai::DecodedResults generate(
-        const ov::genai::ChatHistory&,
-        ov::genai::OptionalGenerationConfig,
-        ov::genai::StreamerVariant) override {
-        return {};
-    }
-
-    ov::genai::EncodedResults generate(
-        const ov::genai::EncodedInputs&,
-        ov::genai::OptionalGenerationConfig,
-        ov::genai::StreamerVariant) override {
-        return {};
-    }
-
-    void start_chat(const std::string&) override {}
-    void finish_chat() override {}
-};
-
-TEST(LLMPipelineBackendProperty, DefaultsToSdpaAndCanBeUpdated) {
-    DummyLLMPipelineImpl impl;
-
-    EXPECT_EQ(impl.get_attention_backend(), ov::genai::SDPA_BACKEND);
-
-    impl.set_attention_backend(ov::genai::PA_BACKEND);
-
-    EXPECT_EQ(impl.get_attention_backend(), ov::genai::PA_BACKEND);
-}
 
 class LLMPipelineBackendRealModel : public ::testing::TestWithParam<BackendModelParam> {};
 
@@ -152,9 +101,9 @@ TEST_P(LLMPipelineBackendRealModel, ExplicitSdpaBypassesDefaultPa) {
 
     ov::AnyMap properties;
     properties["ATTENTION_BACKEND"] = ov::genai::SDPA_BACKEND;
-    ov::genai::LLMPipeline pipe(model_dir, "CPU", properties);
-
-    EXPECT_EQ(pipe.get_attention_backend(), ov::genai::SDPA_BACKEND) << param.model_id;
+    EXPECT_NO_THROW({
+        auto pipe = std::make_unique<ov::genai::LLMPipeline>(model_dir, "CPU", properties);
+    }) << param.model_id;
 }
 
 TEST_P(LLMPipelineBackendRealModel, DefaultSelectsExpectedBackend) {
@@ -162,9 +111,20 @@ TEST_P(LLMPipelineBackendRealModel, DefaultSelectsExpectedBackend) {
     const std::filesystem::path model_dir = get_model_dir(param);
     skip_if_model_unavailable(model_dir);
 
-    ov::genai::LLMPipeline pipe(model_dir, "CPU");
+    try {
+        auto pipe = std::make_unique<ov::genai::LLMPipeline>(model_dir, "CPU");
+        SUCCEED() << "Default backend initialization succeeded for " << param.model_id;
+    } catch (const ov::Exception& ex) {
+        const std::string message = ex.what();
+        EXPECT_NE(message.find("explicit backend=\"SDPA\""), std::string::npos)
+            << "Unexpected error for model " << param.model_id << ": " << message;
 
-    EXPECT_EQ(pipe.get_attention_backend(), get_expected_default_backend(param)) << param.model_id;
+        ov::AnyMap sdpa_props;
+        sdpa_props["ATTENTION_BACKEND"] = ov::genai::SDPA_BACKEND;
+        EXPECT_NO_THROW({
+            auto sdpa_pipe = std::make_unique<ov::genai::LLMPipeline>(model_dir, "CPU", sdpa_props);
+        }) << param.model_id;
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(

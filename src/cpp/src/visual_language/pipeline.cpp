@@ -952,10 +952,6 @@ GenerationConfig VLMPipeline::get_generation_config() const {
     return m_pimpl->get_generation_config();
 }
 
-std::string VLMPipeline::get_attention_backend() const {
-    return m_pimpl->get_attention_backend();
-}
-
 void VLMPipeline::set_generation_config(const GenerationConfig& new_config) {
     m_pimpl->set_generation_config(new_config);
 }

@@ -217,16 +217,15 @@ ov::genai::LLMPipeline::LLMPipeline(
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
     } else if (attention_backend == PA_BACKEND) {
-        // try to call CB adapter one more time, but with safe guard to silent exception
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model->clone(), tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
 #endif
         } catch (const ov::Exception& exception) {
-            GENAI_WARN("Paged Attention backend initialization failed. Falling back to SDPA backend.");
             GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
+            OPENVINO_THROW("Paged Attention backend initialization failed. Initialize pipeline with explicit backend=\"SDPA\".");
         }
     }
 
@@ -267,11 +266,11 @@ ov::genai::LLMPipeline::LLMPipeline(
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model->clone(), tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
 #endif
         } catch (const ov::Exception& exception) {
-            GENAI_WARN("Paged Attention backend initialization failed. Falling back to SDPA backend.");
             GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
+            OPENVINO_THROW("Paged Attention backend initialization failed. Initialize pipeline with explicit backend=\"SDPA\".");
         }
     }
 
@@ -320,8 +319,8 @@ ov::genai::LLMPipeline::LLMPipeline(
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model->clone(), tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config);
 #endif
         } catch (const ov::Exception& exception) {
-            GENAI_WARN("Paged Attention backend initialization failed. Falling back to SDPA backend.");
             GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
+            OPENVINO_THROW("Paged Attention backend initialization failed. Initialize pipeline with explicit backend=\"SDPA\".");
         }
     }
 
@@ -397,10 +396,6 @@ EncodedResults LLMPipeline::generate(const EncodedInputs& inputs, const ov::AnyM
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
     return m_pimpl->get_generation_config();
-}
-
-std::string ov::genai::LLMPipeline::get_attention_backend() const {
-    return m_pimpl->get_attention_backend();
 }
 
 ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {

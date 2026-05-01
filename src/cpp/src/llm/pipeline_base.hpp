@@ -24,10 +24,6 @@ public:
         return m_generation_config;
     }
 
-    std::string get_attention_backend() const {
-        return m_attention_backend;
-    }
-
     void set_attention_backend(const std::string& attention_backend) {
         m_attention_backend = attention_backend;
     }

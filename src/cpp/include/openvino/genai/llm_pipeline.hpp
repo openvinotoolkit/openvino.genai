@@ -326,7 +326,6 @@ public:
     ov::genai::Tokenizer get_tokenizer();
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& config);
-    std::string get_attention_backend() const;
 
 
     /**

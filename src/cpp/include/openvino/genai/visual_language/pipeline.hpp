@@ -287,9 +287,6 @@ public:
     /// @param new_config A config to override default values with.
     void set_generation_config(const GenerationConfig& new_config);
 
-    /// @brief Get attention backend selected during pipeline initialization.
-    std::string get_attention_backend() const;
-
 private:
     class VLMPipelineBase;
     class VLMPipelineImpl;
