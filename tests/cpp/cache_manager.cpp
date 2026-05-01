@@ -12,7 +12,7 @@ using namespace ov::genai;
 
 size_t get_total_allocated_bytes(std::shared_ptr<KVCacheManager> cache_manager) {
     size_t allocated_bytes = 0;
-    for (size_t i = 0; i < cache_manager->get_num_decoder_layers(); i++) {
+    for (size_t i = 0; i < cache_manager->get_num_layers(); i++) {
         auto key_cache = cache_manager->get_key_cache(i);
         auto value_cache = cache_manager->get_value_cache(i);
         allocated_bytes += key_cache.get_byte_size() + value_cache.get_byte_size();
@@ -38,10 +38,10 @@ TEST(TestCacheManager, test_cache_size_param) {
     ov::InferRequest request = core.compile_model(get_dummy_model(core, num_decoder_layers)).create_infer_request();
 
     auto cache_manager = std::make_shared<KVCacheManager>(request);
-    ASSERT_EQ(num_decoder_layers, cache_manager->get_num_decoder_layers());
+    ASSERT_EQ(num_decoder_layers, cache_manager->get_num_layers());
     const size_t num_kv_blocks = get_num_kv_blocks(scheduler_config.cache_size, cache_manager->get_block_size_in_bytes());
 
-    auto block_manager = BlockManager(num_kv_blocks, false, cache_manager->get_block_size(), cache_manager->get_num_decoder_layers());
+    auto block_manager = BlockManager(num_kv_blocks, false, cache_manager->get_block_size(), cache_manager->get_num_layers());
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
 
     const size_t kv_cache_total_size = scheduler_config.cache_size * 1024 * 1024 * 1024;
@@ -83,8 +83,8 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     size_t block_size_in_bytes = cache_manager->get_block_size_in_bytes();
     const size_t num_kv_blocks = get_num_kv_blocks(scheduler_config.cache_size, block_size_in_bytes);
 
-    auto block_manager = BlockManager(num_kv_blocks, false, cache_manager->get_block_size(), cache_manager->get_num_decoder_layers());
-    ASSERT_EQ(num_decoder_layers, cache_manager->get_num_decoder_layers());
+    auto block_manager = BlockManager(num_kv_blocks, false, cache_manager->get_block_size(), cache_manager->get_num_layers());
+    ASSERT_EQ(num_decoder_layers, cache_manager->get_num_layers());
 
     // check initial cache allocation
     block_manager.increase_kv_blocks_number(100);

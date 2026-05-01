@@ -55,7 +55,7 @@ class LinearAttentionCacheManager : public ICacheManager {
     std::string m_device;
     ov::RemoteContext m_context;  ///< Valid only on GPU; empty on CPU.
     std::vector<StateTableGroup> m_groups;
-    size_t m_total_num_layers = 0;
+    size_t m_num_cache_tensors = 0;
     size_t m_num_allocated_blocks = 0;
     size_t m_block_size_in_bytes = 0;
     ov::InferRequest m_request;
@@ -162,18 +162,22 @@ public:
                 group.sorted_indices.push_back(idx);
             }
             std::sort(group.sorted_indices.begin(), group.sorted_indices.end());
-            m_total_num_layers += group.layers.size();
+            m_num_cache_tensors += group.layers.size();
             m_groups.push_back(std::move(group));
         }
 
-        OPENVINO_ASSERT(m_total_num_layers > 0,
+        OPENVINO_ASSERT(!m_groups.empty(),
                         "LinearAttentionCacheManager: no *_state_table.* inputs found");
     }
 
     // --- ICacheManager interface ---
 
     size_t get_num_layers() const override {
-        return m_total_num_layers;
+        return m_groups.size();
+    }
+
+    size_t get_num_cache_tensors() const override {
+        return m_num_cache_tensors;
     }
 
     std::string get_device() const override {

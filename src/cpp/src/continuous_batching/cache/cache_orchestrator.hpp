@@ -77,18 +77,18 @@ public:
                             "SchedulerConfig cache_interval can be set only for models with linear attention cache inputs");
         }
 
-        size_t total_num_layers = 0;
+        size_t num_cache_tensors = 0;
         if (kv_manager) {
-            total_num_layers += kv_manager->get_num_decoder_layers();
+            num_cache_tensors += kv_manager->get_num_cache_tensors();
         }
         if (la_manager) {
-            total_num_layers += la_manager->get_num_layers();
+            num_cache_tensors += la_manager->get_num_cache_tensors();
         }
 
         const std::string allocation_device = kv_manager ? kv_manager->get_device() : (la_manager ? la_manager->get_device() : std::string{});
         const size_t total_available_memory = allocation_device.empty()
                                                   ? std::numeric_limits<size_t>::max()
-                                                  : get_available_memory(allocation_device, total_num_layers);
+                                                  : get_available_memory(allocation_device, num_cache_tensors);
 
         size_t normalized_num_kv_blocks = config.num_kv_blocks;
         size_t normalized_num_la_blocks = config.num_linear_attention_blocks;
@@ -174,14 +174,14 @@ public:
         config.num_linear_attention_blocks = normalized_num_la_blocks;
 
         if (kv_manager) {
-            std::vector<size_t> layer_ids(kv_manager->get_num_decoder_layers());
+            std::vector<size_t> layer_ids(kv_manager->get_num_layers());
             std::iota(layer_ids.begin(), layer_ids.end(), 0);
 
             auto block_manager = std::make_shared<BlockManager>(
                 config.num_kv_blocks,
                 config.enable_prefix_caching,
                 kv_manager->get_block_size(),
-                kv_manager->get_num_decoder_layers());
+                kv_manager->get_num_layers());
 
             orchestrator->register_cache_type(CacheType::KV_CACHE, kv_manager, block_manager, layer_ids,
                                                config.use_cache_eviction);
@@ -189,7 +189,7 @@ public:
 
         if (la_manager) {
             std::vector<size_t> la_layer_ids(la_manager->get_num_layers());
-            const size_t la_start = kv_manager ? kv_manager->get_num_decoder_layers() : 0;
+            const size_t la_start = kv_manager ? kv_manager->get_num_layers() : 0;
             std::iota(la_layer_ids.begin(), la_layer_ids.end(), la_start);
 
             std::shared_ptr<BlockManager> la_block_manager;
@@ -605,6 +605,14 @@ public:
         return total;
     }
 
+    size_t get_num_cache_tensors() const {
+        size_t total = 0;
+        for (const auto& [type, cache_mgr] : m_cache_managers) {
+            total += cache_mgr->get_num_cache_tensors();
+        }
+        return total;
+    }
+
     size_t get_block_size_in_bytes() const {
         size_t total = 0;
         for (const auto& [type, cache_mgr] : m_cache_managers) {
@@ -655,8 +663,8 @@ public:
         return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_tables(seq_id)[0];
     }
 
-    /// @return Number of KV attention layers only (excluding conv / other cache types).
-    size_t get_num_decoder_layers() const {
+    /// @return Number of KV attention layers only (excluding other cache types).
+    size_t get_num_kv_layers() const {
         auto it = m_cache_managers.find(CacheType::KV_CACHE);
         return it != m_cache_managers.end() ? it->second->get_num_layers() : 0;
     }

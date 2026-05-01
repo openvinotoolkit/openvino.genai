@@ -964,7 +964,7 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
     return inputs_embeds;
 }
 
-size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_layers) {
+size_t get_available_gpu_memory(const std::string& device, size_t num_cache_tensors) {
     OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "get_available_gpu_memory() is applicable for GPU only.");
 
     ov::Core core = utils::singleton_core();
@@ -994,10 +994,10 @@ size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_la
     // max allocatable memory size on GPU
     auto max_alloc_memory_size = core.get_property(device, ov::intel_gpu::device_max_alloc_mem_size);
 
-    // Total KV-cache size if a single tensor is limited by 'device_max_alloc_mem_size' property
-    auto max_allocatable_kv_cache = max_alloc_memory_size * num_decoder_layers * 2;
+    // Total cache size if each cache tensor is limited by 'device_max_alloc_mem_size' property.
+    auto max_allocatable_cache = max_alloc_memory_size * num_cache_tensors;
 
-    return std::min(total_device_memory - used_device_mem, max_allocatable_kv_cache);
+    return std::min(total_device_memory - used_device_mem, max_allocatable_cache);
 }
 
 std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties) {

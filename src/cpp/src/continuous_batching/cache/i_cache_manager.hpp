@@ -42,6 +42,9 @@ public:
     /// @return Number of decoder layers managed by this cache manager.
     virtual size_t get_num_layers() const = 0;
 
+    /// @return Number of cache tensors managed by this cache manager.
+    virtual size_t get_num_cache_tensors() const = 0;
+
     /// @return Block size in tokens.
     virtual size_t get_block_size() const = 0;
 

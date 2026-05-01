@@ -12,7 +12,7 @@
 namespace ov::genai {
 
 class KVCacheManager : public ICacheManager {
-    size_t m_num_decoder_layers = 0;
+    size_t m_num_layers = 0;
     std::string m_device;
     size_t m_block_size = 0; // block size is per inference device 
     std::vector<ov::element::Type> m_key_precisions, m_value_precisions;
@@ -108,18 +108,18 @@ public:
             }
         }
         m_block_size = all_gpu_device ? ( has_xattention ? gpu_block_size_xattn : gpu_block_size ) : cpu_block_size;
-        m_num_decoder_layers = m_value_precisions.size();
-        OPENVINO_ASSERT(m_num_decoder_layers == m_key_precisions.size(), "Invalid case: a different number of K and V caches in a LLM model");
-    }
-
-    size_t get_num_decoder_layers() const {
-        return m_num_decoder_layers;
+        m_num_layers = m_value_precisions.size();
+        OPENVINO_ASSERT(m_num_layers == m_key_precisions.size(), "Invalid case: a different number of K and V caches in a LLM model");
     }
 
     // --- ICacheManager interface ---
 
     size_t get_num_layers() const override {
-        return m_num_decoder_layers;
+        return m_num_layers;
+    }
+
+    size_t get_num_cache_tensors() const override {
+        return m_num_layers * 2;
     }
 
     std::string get_device() const override {
@@ -167,7 +167,7 @@ public:
             ov::Coordinate start_value{0,0,0,0};
 
             if (m_context) {// Allocate KV caches
-                for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
+                for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_layers; ++decoder_layer_id) {
                     ov::Shape value_cache_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], num_kv_blocks);
                     ov::Shape key_cache_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], num_kv_blocks);
 
@@ -197,7 +197,7 @@ public:
                     update_request_tensor(decoder_layer_id);
                 }
             } else {
-                for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
+                for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_layers; ++decoder_layer_id) {
                     ov::Shape value_cache_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], num_kv_blocks);
                     ov::Shape key_cache_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], num_kv_blocks);
 
@@ -280,7 +280,7 @@ public:
             size_t src_block_id = blocks_pair.first;
             const std::list<size_t>& dst_block_ids = blocks_pair.second;
             for (size_t dst_block_id : dst_block_ids) {
-                for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
+                for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_layers; ++decoder_layer_id) {
                     ov::Shape key_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], m_num_allocated_kv_blocks);
                     ov::Shape value_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], m_num_allocated_kv_blocks);
                     ov::Coordinate key_src_start_roi(key_shape.size(), 0);
@@ -335,7 +335,7 @@ public:
     }
 
     void clear() override {
-        for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; ++decoder_layer_id) {
+        for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_layers; ++decoder_layer_id) {
             m_key_cache[decoder_layer_id] = ov::Tensor();
             m_value_cache[decoder_layer_id] = ov::Tensor();
         }

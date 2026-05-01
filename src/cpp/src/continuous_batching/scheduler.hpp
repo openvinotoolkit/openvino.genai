@@ -569,7 +569,9 @@ private:
         if (device.find("GPU") == std::string::npos) {
             m_cache_orchestrator->grow_capacity_by_tokens(growth_tokens);
         } else {
-            const size_t available_gpu_memory = utils::get_available_gpu_memory(m_cache_orchestrator->get_device(), m_cache_orchestrator->get_num_layers());
+            const size_t available_gpu_memory = utils::get_available_gpu_memory(
+                m_cache_orchestrator->get_device(),
+                m_cache_orchestrator->get_num_cache_tensors());
             size_t required_memory = m_cache_orchestrator->memory_cost_for_additional_tokens(growth_tokens);
             if (required_memory <= available_gpu_memory) {
                 m_cache_orchestrator->grow_capacity_by_tokens(growth_tokens);

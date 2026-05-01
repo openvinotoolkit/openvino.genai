@@ -173,14 +173,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // Detect cache types, create managers and block managers, normalize config
-    auto get_available_memory = [&execution_device](const std::string& /*device*/, size_t num_layers) -> size_t {
+    auto get_available_memory = [&execution_device](const std::string& /*device*/, size_t num_cache_tensors) -> size_t {
         if (execution_device.find("GPU") != std::string::npos) {
-            return utils::get_available_gpu_memory(execution_device, num_layers);
+            return utils::get_available_gpu_memory(execution_device, num_cache_tensors);
         }
         return get_available_cpu_memory();
     };
     auto cache_orchestrator = CacheOrchestrator::create(infer_request, normalized_config, get_available_memory);
-    m_num_decoder_layers = cache_orchestrator->get_num_decoder_layers();
+    m_num_decoder_layers = cache_orchestrator->get_num_kv_layers();
 
     bool can_use_partial_preemption = true;
     if (execution_device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
