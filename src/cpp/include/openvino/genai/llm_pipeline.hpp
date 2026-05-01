@@ -10,6 +10,7 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
@@ -36,6 +37,7 @@ using StringInputs = std::variant<std::string, std::vector<std::string>>;
 *
 * @param tokens sequence of resulting tokens
 * @param scores sum of logarithmic probabilities of all tokens in the sequence
+* @param finish_reasons reason why generation is finished for each sequence
 * @param perf_metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
 * @param extended_perf_metrics pipeline specific performance metrics etc. of type ov::genai::PerfMetrics.
 *        Applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
@@ -46,6 +48,7 @@ class EncodedResults {
 public:
     std::vector<std::vector<int64_t>> tokens;
     std::vector<float> scores;
+    std::vector<GenerationFinishReason> finish_reasons;
     PerfMetrics perf_metrics;
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
 };
@@ -56,6 +59,7 @@ public:
 *
 * @param texts vector of resulting sequences
 * @param scores scores for each sequence
+* @param finish_reasons vector of finish reasons for each sequence
 * @param perf_metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
 * @param extended_perf_metrics pipeline specific performance metrics etc. of type ov::genai::PerfMetrics
 *        Applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
@@ -66,6 +70,7 @@ class DecodedResults {
 public:
     std::vector<std::string> texts;
     std::vector<float> scores;
+    std::vector<GenerationFinishReason> finish_reasons;
     PerfMetrics perf_metrics;
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
     std::vector<JsonContainer> parsed;

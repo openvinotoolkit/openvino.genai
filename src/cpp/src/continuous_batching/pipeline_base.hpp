@@ -27,8 +27,9 @@ class ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
     Tokenizer m_tokenizer;
 
-    // TODO (mzegla): GenerationConfig is request specific object
-    // and pipeline only uses default rng_seed and some special tokens.
+    // Pipeline-level generation config used for getting
+    // eos_token_id and stop_token_ids (as fallbacks when a request omits them)
+    // and adapters (for LoRA adapter setup at load time).
     GenerationConfig m_generation_config;
 
     PipelineMetrics m_pipeline_metrics;

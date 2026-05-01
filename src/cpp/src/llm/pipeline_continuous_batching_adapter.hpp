@@ -111,10 +111,12 @@ public:
         );
         std::vector<std::string> plain_replies;
         std::vector<float> plain_scores;
+        std::vector<GenerationFinishReason> plain_finish_reasons;
         for (GenerationResult& res : generated) {
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
+            std::move(res.m_finish_reasons.begin(), res.m_finish_reasons.end(), std::back_inserter(plain_finish_reasons));
         }
 
         PerfMetrics perf_metrics;
@@ -144,7 +146,13 @@ public:
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
-        return {std::move(plain_replies), std::move(plain_scores), std::move(perf_metrics), generated[0].extended_perf_metrics};
+        DecodedResults result;
+        result.texts = std::move(plain_replies);
+        result.scores = std::move(plain_scores);
+        result.finish_reasons = std::move(plain_finish_reasons);
+        result.perf_metrics = std::move(perf_metrics);
+        result.extended_perf_metrics = generated[0].extended_perf_metrics;
+        return result;
     }
 
     DecodedResults generate(
@@ -162,10 +170,12 @@ public:
         // TODO Consider moving to method and reuse
         std::vector<std::string> plain_replies;
         std::vector<float> plain_scores;
+        std::vector<GenerationFinishReason> plain_finish_reasons;
         for (GenerationResult& res : generated) {
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
+            std::move(res.m_finish_reasons.begin(), res.m_finish_reasons.end(), std::back_inserter(plain_finish_reasons));
         }
 
         PerfMetrics perf_metrics;
@@ -195,7 +205,13 @@ public:
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
-        return {std::move(plain_replies), std::move(plain_scores), std::move(perf_metrics), generated[0].extended_perf_metrics};
+        DecodedResults result;
+        result.texts = std::move(plain_replies);
+        result.scores = std::move(plain_scores);
+        result.finish_reasons = std::move(plain_finish_reasons);
+        result.perf_metrics = std::move(perf_metrics);
+        result.extended_perf_metrics = generated[0].extended_perf_metrics;
+        return result;
     }
 
     EncodedResults generate(
@@ -256,10 +272,12 @@ public:
                
         std::vector<std::vector<int64_t>> plain_tokens;
         std::vector<float> plain_scores;
+        std::vector<GenerationFinishReason> plain_finish_reasons;
         for (EncodedGenerationResult& res : generated) {
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
+            std::move(res.m_finish_reasons.begin(), res.m_finish_reasons.end(), std::back_inserter(plain_finish_reasons));
         }
         
         PerfMetrics perf_metrics;
@@ -275,7 +293,13 @@ public:
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
-        return {std::move(plain_tokens), std::move(plain_scores), std::move(perf_metrics), generated[0].extended_perf_metrics};
+        EncodedResults result;
+        result.tokens = std::move(plain_tokens);
+        result.scores = std::move(plain_scores);
+        result.finish_reasons = std::move(plain_finish_reasons);
+        result.perf_metrics = std::move(perf_metrics);
+        result.extended_perf_metrics = generated[0].extended_perf_metrics;
+        return result;
     }
 
     void start_chat(const std::string& system_message) override {
