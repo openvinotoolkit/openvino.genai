@@ -42,7 +42,7 @@ disable_progress_bar()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-PYTORCH_MODEL_DTYPE_KWARG = {"torch_dtype": torch.float32}
+PYTORCH_MODEL_DTYPE_KWARG = {"torch_dtype": "auto"}
 
 
 def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=False):
