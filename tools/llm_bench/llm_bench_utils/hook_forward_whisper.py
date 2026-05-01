@@ -48,7 +48,6 @@ class WhisperHook:
             if "enc_token_time" in data and "enc_infer_time" in data:
                 latency_data["enc_token_time"] = round(data["enc_token_time"] * 1000, 2)
                 latency_data["enc_infer_time"] = round(data["enc_infer_time"] * 1000, 2)
-                latency_data["enc_sample_time"] = round((data["enc_token_time"] - data["enc_infer_time"]) * 1000, 2)
             if "dec_token_time" in data:
                 dec_token_count = len(data["dec_token_time"])
                 dec_infer_count = len(data["dec_infer_time"])
@@ -90,8 +89,7 @@ class WhisperHook:
             if "enc_token_time" in data and "enc_infer_time" in data:
                 str += (
                     f"{title} encoder token latency: {data['enc_token_time']:.2f} ms/token, "
-                    f"encoder infers latency: {data['enc_infer_time']:.2f} ms/infer, "
-                    f"encoder sampling latency: {data['enc_sample_time']:.2f} ms"
+                    f"encoder infers latency: {data['enc_infer_time']:.2f} ms/infer"
                 )
             if "dec_1st_token_time" in data and "dec_2nd_tokens_time" in data:
                 str += (
