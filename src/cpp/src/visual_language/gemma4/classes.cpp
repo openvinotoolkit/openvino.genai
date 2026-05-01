@@ -273,6 +273,10 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
 
     if (has_per_layer_embeddings()) {
         m_lm_extra_inputs["per_layer_inputs"] = get_per_layer_embeddings(input_ids);
+    } else {
+        // MOE LM models still have a `per_layer_inputs` Parameter input with hidden_size_per_layer == 0,
+        // so a zero-element tensor with rank 4 must be supplied to satisfy the input port.
+        m_lm_extra_inputs["per_layer_inputs"] = make_empty_per_layer_inputs(input_ids);
     }
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());

@@ -61,7 +61,11 @@ public:
 
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() override {
         if (!has_per_layer_embeddings()) {
-            return nullptr;
+            // MOE LM models still have a `per_layer_inputs` Parameter input with hidden_size_per_layer == 0,
+            // so a zero-element tensor with rank 4 must be supplied to satisfy the input port.
+            return [](const ov::Tensor& input_ids) {
+                return make_empty_per_layer_inputs(input_ids);
+            };
         }
         return [this](const ov::Tensor& input_ids) {
             return get_per_layer_embeddings(input_ids);
@@ -79,6 +83,15 @@ private:
 
     bool has_per_layer_embeddings() const {
         return m_vlm_config.hidden_size_per_layer_input > 0;
+    }
+
+    /// @brief Build a zero-element `per_layer_inputs` tensor matching the LM model's expected rank.
+    /// Used for Gemma4 MOE variants whose LM model exposes the input with last dim == 0.
+    static ov::Tensor make_empty_per_layer_inputs(const ov::Tensor& input_ids) {
+        const auto& shape = input_ids.get_shape();
+        const size_t batch_size = shape.size() > 0 ? shape[0] : 1;
+        const size_t seq_len = shape.size() > 1 ? shape[1] : 0;
+        return ov::Tensor(ov::element::f32, {batch_size, seq_len, 1, 0});
     }
 
     /// @brief Compute merged text+image embeddings together with the encoded input_ids.
