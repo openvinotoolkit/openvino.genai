@@ -3,9 +3,10 @@
 
 #pragma once
 
-#include "openvino/genai/visibility.hpp"
-#include <openvino/runtime/properties.hpp>
 #include <filesystem>
+#include <openvino/runtime/properties.hpp>
+
+#include "openvino/genai/visibility.hpp"
 
 namespace ov::genai {
 
@@ -24,6 +25,7 @@ enum class VLMModelType {
     QWEN3_5,
     QWEN3_5_MOE,
     GEMMA3,
+    GEMMA4,
     VIDEOCHAT_FLASH_QWEN,
 };
 
@@ -76,7 +78,7 @@ public:
     /// @brief phi3_v and phi4mm new line token embedding to separate images.
     std::vector<float> sub_GN = std::vector(4096, 0.0f);
     std::vector<float> glb_GN = std::vector(4096, 0.0f);
-    
+
     /// @brief A string token denoting start of vision embeddings for Qwen2VL model.
     std::string vision_start_token = "<|vision_start|>";
     /// @brief A placeholder for image embeddings in text for Qwen2VL model.
@@ -84,7 +86,7 @@ public:
     std::string video_pad_token = "<|video_pad|>";
     /// @brief A string token denoting end of vision embeddings for Qwen2VL model.
     std::string vision_end_token = "<|vision_end|>";
-    
+
     /// @brief A size of a window for Qwen2.5VL model, used in window attention.
     size_t vision_config_window_size = 112;
 
@@ -98,7 +100,14 @@ public:
     /// @brief A string token denoting end of vision embeddings for gemma3-4b-it model.
     std::string end_of_image = "<end_of_image>";
 
-    /// @brief A string token denoting start of video embeddings 
+    /// @brief A string token denoting start of image embeddings for Gemma4 model.
+    std::string boi_token = "<|image>";
+    /// @brief A placeholder for image embeddings in text for Gemma4 model.
+    std::string image_token = "<|image|>";
+    /// @brief A string token denoting end of image embeddings for Gemma4 model.
+    std::string eoi_token = "<image|>";
+
+    /// @brief A string token denoting start of video embeddings
     std::string video_start = "<video>";
 
     // Qwen3-VL specific config

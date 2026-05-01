@@ -6,7 +6,11 @@
 #include <array>
 #include <filesystem>
 #include <nlohmann/json_fwd.hpp>
+
 #include <openvino/core/any.hpp>
+#include <openvino/runtime/properties.hpp>
+
+#include "openvino/genai/visibility.hpp"
 
 namespace ov::genai {
 /// @brief A Configuration class passed to VisionEncoder and used to
@@ -49,6 +53,10 @@ public:
     // gemma3-4b-it specific config params
     size_t size_height = 896;
     size_t size_width = 896;
+
+    // gemma4 specific config params
+    size_t pooling_kernel_size = 3;
+    size_t max_soft_tokens = 280;
 
     struct {
         size_t num_crops = 4;

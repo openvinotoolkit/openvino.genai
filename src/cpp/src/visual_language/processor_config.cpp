@@ -16,7 +16,7 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
 
     read_json_param(parsed, "norm_mean", norm_mean);
     read_json_param(parsed, "norm_std", norm_std);
-    
+
     // Setting llava config params
     read_json_param(parsed, "image_mean", image_mean);
     read_json_param(parsed, "image_std", image_std);
@@ -36,12 +36,11 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     read_json_param(parsed, "max_pixels", max_pixels);
     read_json_param(parsed, "temporal_patch_size", temporal_patch_size);
     read_json_param(parsed, "merge_size", merge_size);
-    
+
     // Setting qwen3_vl config params
     // qwen3_vl uses size.shortest_edge and size.longest_edge instead of min_pixels and max_pixels
     if (!parsed.contains("min_pixels") && !parsed.contains("max_pixels") ||
-        parsed["min_pixels"].is_null() && parsed["max_pixels"].is_null()
-    ) {
+        parsed["min_pixels"].is_null() && parsed["max_pixels"].is_null()) {
         read_json_param(parsed, "size.shortest_edge", min_pixels);
         read_json_param(parsed, "size.longest_edge", max_pixels);
     }
@@ -49,6 +48,10 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     // Setting gemma3-4b-it config params
     read_json_param(parsed, "size.height", size_height);
     read_json_param(parsed, "size.width", size_width);
+
+    // Setting gemma4 config params
+    read_json_param(parsed, "pooling_kernel_size", pooling_kernel_size);
+    read_json_param(parsed, "max_soft_tokens", max_soft_tokens);
 }
 
 ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path)
@@ -71,5 +74,7 @@ ov::genai::ProcessorConfig ov::genai::ProcessorConfig::from_any_map(
     read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
     read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
     read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
+    read_anymap_param(config_map, "pooling_kernel_size", extracted_config.pooling_kernel_size);
+    read_anymap_param(config_map, "max_soft_tokens", extracted_config.max_soft_tokens);
     return extracted_config;
 }
