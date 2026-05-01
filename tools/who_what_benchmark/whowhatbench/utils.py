@@ -235,14 +235,15 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
                                       filename=f"{SUBSET}/{SUBSET}_videos_10.tar.gz",
                                       repo_type="dataset")
 
-    max_video_size_mb = 6 * 1024 * 1024
+    # max resolution 1280x720, max size 6MB
+    max_video_size_bytes = 6 * 1024 * 1024
     video_samples = []
     extract_dir = "./videos"
     os.makedirs(extract_dir, exist_ok=True)
     with tarfile.open(videos_arc_path, "r:gz") as tar:
         all_videos = []
         for member in tar.getmembers():
-            if member.size < max_video_size_mb:
+            if member.size < max_video_size_bytes:
                 all_videos.append(member.name)
 
         if len(all_videos) < NUM_SAMPLES:
