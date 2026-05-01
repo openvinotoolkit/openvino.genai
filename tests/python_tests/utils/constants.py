@@ -24,7 +24,6 @@ def extra_generate_kwargs():
     if is_transformers_version(">=", "4.51") and is_transformers_version("<", "5.0"):
         additional_args["use_model_defaults"] = False
 
-    additional_args["trust_remote_code"] = True
     return additional_args
 
 
