@@ -663,13 +663,13 @@ jobs:
           - name: 'Whisper'
             # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
             cmd: |
-              python -m pytest -s -v tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -k "not transformers_lower_v5 and not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"
+              python -m pytest -s -v tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5" -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 120
           - name: 'Whisper Transformers under 5.0'
             cmd: |
               python -m pip install transformers==4.55.4
-              python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -k "transformers_lower_v5"
+              python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5"
             timeout: 120
           - name: 'Cacheopt E2E (Part 1)'
             cmd: 'python -m pytest -s -v tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py'
@@ -686,7 +686,7 @@ jobs:
           - name: 'LLM with transformers under 5.0'
             cmd: |
               python -m pip install transformers==4.55.4
-              python -m pytest -v ./tests/python_tests/test_llm_pipeline.py -k "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
+              python -m pytest -v ./tests/python_tests/test_llm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
             timeout: 90
           - name: 'VLM (match_optimum_with_resolutions)'
@@ -694,14 +694,14 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'VLM'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions and not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions" -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'VLM with transformers under 5.0'
             cmd: |
               python -m pip install transformers==4.55.4
               python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
-              python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
+              python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'Video Generation'
@@ -717,14 +717,14 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
             timeout: 60
           - name: 'API tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3" -m "not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
             timeout: 60
           - name: 'API tests transformers under 5.0'
             cmd: |
               python -m pip install transformers==4.55.4
               python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
-              python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "transformers_lower_v5 or transformers_dependent" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
+              python -m pytest -v ./tests/python_tests/test_continuous_batching.py -m "transformers_lower_v5 or transformers_dependent" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
             timeout: 60
           - name: 'Rag tests'

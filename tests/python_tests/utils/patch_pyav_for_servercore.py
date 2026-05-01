@@ -23,4 +23,5 @@ def install_av_stub_module_for_windows():
     from types import ModuleType
 
     sys.modules["av"] = ModuleType("av")
+    sys.modules["av"].__spec__ = importlib.machinery.ModuleSpec("av", loader=None)
     sys.modules["av"].__version__ = "0.0.0"
