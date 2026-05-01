@@ -122,6 +122,10 @@ private:
         m_sampler.set_seed(m_generation_config.rng_seed);
 
         m_vision_registry = std::make_shared<VisionRegistry>();
+
+        // NPU does not support history, so use full chat history on each chat iteration.
+        // Linear attention forces full KV cache reset, so use full chat history with all images on each chat iteration.
+        m_use_full_chat_history = m_is_npu || cache_state.has_linear();
     }
 
     void initialize_from_model_and_dir(
@@ -183,8 +187,7 @@ private:
             : utils::pop_or_default<ov::AnyMap>(device_properties, embedder_device, {});
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
-        // NPU does not support history, so use full chat history on each chat iteration.
-        m_use_full_chat_history = m_is_npu;
+        
         finalize_initialization(language_model, kv_pos);
     }
 
