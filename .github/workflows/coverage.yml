@@ -435,7 +435,7 @@ jobs:
       - name: Install iGPU coverage dependencies
         run: |
           apt-get update
-          apt-get install -y lcov clinfo wget ca-certificates gpg-agent software-properties-common tzdata
+          apt-get install -y lcov clinfo wget ca-certificates gpg-agent software-properties-common tzdata git
         env:
           DEBIAN_FRONTEND: noninteractive
           TZ: Europe/London
