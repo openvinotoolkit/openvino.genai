@@ -822,3 +822,19 @@ def test_cb_different_seed_produces_different_output(model_facebook_opt_125m: OV
         f"Requests with different rng_seeds {rng_seeds} must produce at least one distinct output, "
         f"but all produced identical token sequences: {token_seqs[0]}"
     )
+
+
+def test_cb_add_request_rejects_dynamic_lora_mode(model_facebook_opt_125m: OVConvertedModelSchema):
+    """add_request() must reject MODE_DYNAMIC LoRA adapters."""
+    import openvino_genai as ov_genai
+
+    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
+
+    adapter_config = ov_genai.AdapterConfig(mode=ov_genai.AdapterConfig.Mode.MODE_DYNAMIC)
+
+    config = GenerationConfig()
+    config.max_new_tokens = 10
+    config.adapters = adapter_config
+
+    with pytest.raises(RuntimeError):
+        pipe.add_request(0, "test prompt", generation_config=config)
