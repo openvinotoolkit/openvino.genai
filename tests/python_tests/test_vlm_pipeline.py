@@ -364,7 +364,9 @@ def _get_ov_model(model_id: str) -> str:
         if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
             # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
             processor.chat_template = tokenizer.chat_template
-        if model_id == "optimum-intel-internal-testing/tiny-random-gemma4":
+        if isinstance(processor, getattr(transformers, "Gemma4Processor", type(None))) or isinstance(
+            processor, getattr(transformers, "Qwen3VLProcessor", type(None))
+        ):
             # Remove audio_tokenizer to avoid serialization issues (audio inputs are not supported).
             # Setting to None is insufficient because Gemma4Processor.to_dict() still detects
             # the key and calls .name_or_path on a None object.
