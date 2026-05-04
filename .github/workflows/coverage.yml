@@ -441,7 +441,8 @@ jobs:
           TZ: Europe/London
 
       - name: Checkout sources
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: ababushk/checkout@dd591a6a2ac25618db4eda86e7e0d938f88cf01b # cherry_pick_retries
+        timeout-minutes: 15
         with:
           submodules: recursive
 
