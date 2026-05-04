@@ -219,8 +219,8 @@ py::object _call_cb_generate(
 py::object _call_cb_vlm_generate(
     ContinuousBatchingPipeline& pipe,
     const std::vector<std::string>& prompts,
-    const std::vector<std::vector<ov::Tensor>> images_batches,
-    const std::vector<std::vector<ov::Tensor>> videos_batches,
+    const std::vector<std::vector<ov::Tensor>>& images_batches,
+    const std::vector<std::vector<ov::Tensor>>& videos_batches,
     const std::vector<ov::genai::GenerationConfig>& generation_configs,
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs = {}
@@ -246,8 +246,8 @@ py::object _call_cb_vlm_generate(
 py::object _call_cb_vlm_generate_chat_history(
     ContinuousBatchingPipeline& pipe,
     const std::vector<ChatHistory>& histories,
-    const std::vector<std::vector<ov::Tensor>> images_batches,
-    const std::vector<std::vector<ov::Tensor>> videos_batches,
+    const std::vector<std::vector<ov::Tensor>>& images_batches,
+    const std::vector<std::vector<ov::Tensor>>& videos_batches,
     const std::vector<ov::genai::GenerationConfig>& generation_configs,
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs = {}
