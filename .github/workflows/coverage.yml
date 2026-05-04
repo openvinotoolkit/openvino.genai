@@ -411,7 +411,7 @@ jobs:
     timeout-minutes: 120
     runs-on: [self-hosted, igpu]
     container:
-      image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      image: ubuntu:22.04
       volumes:
         - /mount:/mount
         - ${{ github.workspace }}:${{ github.workspace }}
@@ -432,18 +432,18 @@ jobs:
       BUILD_JS_DIR: ${{ github.workspace }}/build_js
       COVERAGE_WRITE_STEP_SUMMARY: 'false'
     steps:
+      - name: Install iGPU coverage dependencies
+        run: |
+          apt-get update
+          apt-get install -y lcov clinfo wget ca-certificates gpg-agent software-properties-common tzdata git
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          TZ: Europe/London
+
       - name: Checkout sources
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           submodules: recursive
-
-      - name: Install iGPU coverage dependencies
-        run: |
-          apt-get update
-          apt-get install -y lcov clinfo wget ca-certificates gpg-agent software-properties-common tzdata
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          TZ: Europe/London
 
       - name: Download OpenVINO package
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
