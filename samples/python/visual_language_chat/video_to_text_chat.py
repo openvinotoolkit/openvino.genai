@@ -31,7 +31,7 @@ def read_video(path: str, num_frames: int = 8) -> tuple[Tensor, openvino_genai.V
 
     Args:
         path: The path to the video.
-        num_frames: Number of frames sampled from the video.
+        num_frames: Number of frames used to calculate frames indices for further sampling.
 
     Returns: tuple of Tensor containing original video and corresponding VideoMetadata.
 
