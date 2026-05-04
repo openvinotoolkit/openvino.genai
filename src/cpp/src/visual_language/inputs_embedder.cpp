@@ -185,7 +185,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::sample_video_if_needed(
     OPENVINO_ASSERT(video_metadata.frames_indices.size() <= video_frames_num,
         "Number of frames to sample cannot be greater than total number of frames in the video.");
 
-    if (video_metadata.frames_indices.empty() || video_metadata.frames_indices.size() == video_frames_num) {
+    if (video_metadata.frames_indices.empty()) {
         return video;
     }
 
