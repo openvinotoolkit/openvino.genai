@@ -233,12 +233,6 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
     if kwargs.get("adapters") is not None:
         model = apply_peft_adapters(model, kwargs["adapters"], kwargs.get("alphas", None))
 
-    if is_cpu and getattr(getattr(model, "config", None), "model_type", None) == "gpt_oss":
-        logger.info("Casting GPT-OSS HF model to float32 on CPU to avoid MoE dtype mismatches")
-        model = model.float()
-        if getattr(model, "config", None) is not None:
-            model.config.torch_dtype = torch.float32
-
     model.eval()
     return model
 
