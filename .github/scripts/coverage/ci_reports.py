@@ -25,6 +25,7 @@ METADATA_FILE = "coverage-artifact-metadata.json"
 
 UPLOAD_DEFS = {
     "cpp_cpu": ("coverage-cpp-cpu", "coverage.info"),
+    "cpp_igpu_opencl": ("coverage-cpp-igpu-opencl", "coverage.info"),
     "cpp_igpu_unit": ("coverage-cpp-igpu-unit", "coverage.info"),
     "cpp_igpu_func": ("coverage-cpp-igpu-func", "coverage.info"),
     "cpp_dgpu_unit": ("coverage-cpp-dgpu-unit", "coverage.info"),

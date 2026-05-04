@@ -26,6 +26,12 @@ env:
   OPENVINO_LOG_LEVEL: 4
   ENABLE_BRANCH_COVERAGE: 'false'
   LCOV_CAPTURE_TIMEOUT_SECONDS: '3600'
+  IGPU_DRIVER_PACKAGES: |-
+    https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.15985.7/intel-igc-core_1.0.15985.7_amd64.deb
+    https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.15985.7/intel-igc-opencl_1.0.15985.7_amd64.deb
+    https://github.com/intel/compute-runtime/releases/download/24.05.28454.6/intel-level-zero-gpu_1.3.28454.6_amd64.deb
+    https://github.com/intel/compute-runtime/releases/download/24.05.28454.6/intel-opencl-icd_24.05.28454.6_amd64.deb
+    https://github.com/intel/compute-runtime/releases/download/24.05.28454.6/libigdgmm12_22.3.11_amd64.deb
   GENAI_COVERAGE_INSTALL_ARTIFACT: coverage_genai_install
   GENAI_COVERAGE_NOTES_ARTIFACT: coverage_build_notes
   GENAI_COVERAGE_NODEJS_ARTIFACT: coverage_genai_nodejs_bindings
@@ -166,12 +172,13 @@ jobs:
       - name: Configure and build GenAI coverage package
         run: |
           apt update
-          apt install -y libgtk2.0-dev pkg-config ffmpeg libavformat-dev libavcodec-dev libswscale-dev libavutil-dev lcov
+          apt install -y libgtk2.0-dev pkg-config ffmpeg libavformat-dev libavcodec-dev libswscale-dev libavutil-dev lcov ocl-icd-opencl-dev opencl-headers opencl-clhpp-headers
           source "${OV_INSTALL_DIR}/setupvars.sh"
           cmake -DOpenVINODeveloperPackage_DIR="${OpenVINODeveloperPackage_DIR}" \
                 -DENABLE_PYTHON=ON \
                 -DENABLE_TESTS=ON \
                 -DENABLE_COVERAGE=ON \
+                -DENABLE_SYSTEM_OPENCL=ON \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
                 -DCMAKE_C_COMPILER_LAUNCHER=sccache \
@@ -393,6 +400,129 @@ jobs:
         with:
           name: coverage-cpp-cpu
           path: ${{ steps.cpu_artifact.outputs.dir }}
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 0
+          overwrite: true
+
+  CoverageCppGpu:
+    name: Coverage C++ (iGPU, CDPruner OpenCL)
+    needs: [openvino_download, CoverageBuild]
+    timeout-minutes: 120
+    runs-on: [self-hosted, igpu]
+    container:
+      image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: "--group-add 44 --group-add 993 --device /dev/dri/card1:/dev/dri/card1 --device /dev/dri/renderD128:/dev/dri/renderD128"
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ github.workspace }}
+    env:
+      TEST_PROFILE: gpu
+      CXX_TEST_NAMES: cdpruner_dpp_opencl
+      OV_WORKSPACE: ${{ github.workspace }}
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/install
+      INSTALL_PKG_DIR: ${{ github.workspace }}/install
+      BIN_DIR: ${{ github.workspace }}/install/tests
+      BUILD_DIR: ${{ github.workspace }}/build
+      BUILD_JS_DIR: ${{ github.workspace }}/build_js
+      COVERAGE_WRITE_STEP_SUMMARY: 'false'
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          submodules: recursive
+
+      - name: Install iGPU coverage dependencies
+        run: |
+          apt-get update
+          apt-get install -y lcov clinfo wget ca-certificates gpg-agent software-properties-common tzdata
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          TZ: Europe/London
+
+      - name: Download OpenVINO package
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Download GenAI coverage install
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          name: ${{ env.GENAI_COVERAGE_INSTALL_ARTIFACT }}
+          path: ${{ env.INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Download coverage build notes
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          name: ${{ env.GENAI_COVERAGE_NOTES_ARTIFACT }}
+          path: ${{ github.workspace }}/coverage_notes
+          merge-multiple: true
+
+      - name: Install iGPU driver dependencies
+        run: |
+          set -euo pipefail
+          "${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh" -c=core -c=dev -c=gpu -y
+
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf "${tmp_dir}"' EXIT
+          pushd "${tmp_dir}"
+          while IFS= read -r package_url; do
+            [[ -n "${package_url}" ]] || continue
+            wget "${package_url}"
+          done <<< "${IGPU_DRIVER_PACKAGES}"
+          dpkg -i *.deb
+          popd
+
+      - name: Verify iGPU OpenCL availability
+        run: |
+          clinfo
+          clinfo | grep -Eq 'Device Type[[:space:]]+GPU'
+
+      - name: Restore coverage notes
+        run: |
+          rm -rf "${BUILD_DIR}" "${BUILD_JS_DIR}"
+          mkdir -p "${BUILD_DIR}" "${BUILD_JS_DIR}"
+          cp -a coverage_notes/main-build/. "${BUILD_DIR}/"
+
+      - name: Install coverage Python dependencies
+        run: python3 -m pip install -r .github/scripts/coverage/requirements-ci.txt
+
+      - name: Run iGPU C++ coverage tests
+        run: |
+          source "${OV_INSTALL_DIR}/setupvars.sh"
+          python3 .github/scripts/coverage/coverage.py step run-cpp-tests
+
+      - name: Generate iGPU native C/C++ coverage report
+        run: python3 .github/scripts/coverage/coverage.py step collect-cpp-coverage
+
+      - name: Collect C++ iGPU results
+        id: igpu_artifact
+        if: ${{ always() }}
+        run: |
+          dir="${RUNNER_TEMP}/coverage-cpp-igpu-opencl"
+          python3 .github/scripts/coverage/ci_reports.py collect-suite-results \
+            --workspace "${OV_WORKSPACE}" \
+            --suite cpp \
+            --profile gpu \
+            --lane igpu-opencl \
+            --artifact-name coverage-cpp-igpu-opencl \
+            --artifact-dir "${dir}"
+          echo "dir=${dir}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload C++ iGPU artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-cpp-igpu-opencl
+          path: ${{ steps.igpu_artifact.outputs.dir }}
           if-no-files-found: warn
           retention-days: 7
           compression-level: 0
@@ -731,9 +861,10 @@ jobs:
   CoverageSummary:
     name: Coverage Summary
     if: ${{ always() && needs.CoverageBuild.result == 'success' }}
-    needs: [CoverageBuild, CoverageCpp, CoveragePython, CoverageJS]
+    needs: [CoverageBuild, CoverageCpp, CoverageCppGpu, CoveragePython, CoverageJS]
     outputs:
       cpp_cpu: ${{ steps.coverage_files.outputs.cpp_cpu }}
+      cpp_igpu_opencl: ${{ steps.coverage_files.outputs.cpp_igpu_opencl }}
       python_cpu_xml: ${{ steps.coverage_files.outputs.python_cpu_xml }}
       python_cpu_info: ${{ steps.coverage_files.outputs.python_cpu_info }}
       js_cpu_lcov: ${{ steps.coverage_files.outputs.js_cpu_lcov }}
@@ -769,8 +900,8 @@ jobs:
           python3 .github/scripts/coverage/ci_reports.py render-summary \
             --workspace "${{ github.workspace }}" \
             --summary-file "${GITHUB_STEP_SUMMARY}" \
-            --selection cpu \
-            --selected-lanes cpu
+            --selection cpu,gpu \
+            --selected-lanes cpu,igpu-opencl
 
       - name: Merge duration reports
         if: ${{ always() }}
@@ -813,6 +944,10 @@ jobs:
             artifact_name: coverage-cpp-cpu
             output_key: cpp_cpu
             flag: genai-cpp-cpu
+          - name: C++ runtime, C++ suite, iGPU OpenCL
+            artifact_name: coverage-cpp-igpu-opencl
+            output_key: cpp_igpu_opencl
+            flag: genai-cpp-igpu-opencl
           - name: Python API, CPU
             artifact_name: coverage-python-cpu-*
             output_key: python_cpu_xml
