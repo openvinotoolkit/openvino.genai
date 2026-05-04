@@ -70,7 +70,8 @@ class TestVideoGenerationConfig:
         assert config.height == 32
         assert config.width == 64
 
-    def test_config_validate_invalid(self):
+    def test_config_validate_guidance_scale_with_negative_prompt(self):
+        """guidance_scale <= 1 with negative_prompt is accepted (warning only)."""
         pipe_path = get_ov_cache_converted_models_dir() / MODEL_ID / MODEL_NAME
         if not pipe_path.exists():
             pytest.skip("Model not available for validation test")
@@ -80,8 +81,10 @@ class TestVideoGenerationConfig:
         config.guidance_scale = 0.5
         config.negative_prompt = "bad quality"
 
-        with pytest.raises(Exception):
-            pipe.set_generation_config(config)
+        pipe.set_generation_config(config)
+        retrieved = pipe.get_generation_config()
+        assert retrieved.guidance_scale == pytest.approx(0.5)
+        assert retrieved.negative_prompt == "bad quality"
 
 
 class TestText2VideoPipelineConstructor:
@@ -358,7 +361,9 @@ class TestTaylorSeer:
 
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
 
-        pipe.generate("test prompt", callback=make_callback(baseline_latents), **generate_kwargs)
+        pipe.generate(
+            "test prompt", callback=make_callback(baseline_latents), taylorseer_config=None, **generate_kwargs
+        )
         ts_result = pipe.generate(
             "test prompt",
             taylorseer_config=taylorseer_config,
@@ -381,6 +386,10 @@ class TestTaylorSeer:
             "Last step latents are identical — TaylorSeer prediction should have changed the result"
         )
 
+    def test_taylorseer_default_on(self, video_generation_model):
+        """Test that TaylorSeer is enabled by default"""
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        assert pipe.get_generation_config().taylorseer_config is not None
 
 class TestLoRAVideoGeneration:
     def test_lora_adapters_constructor(self, video_generation_model):

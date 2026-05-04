@@ -234,7 +234,9 @@ void init_vlm_pipeline(py::module_& m) {
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::VLMPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
+            ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+            py::gil_scoped_release rel;
+            return std::make_unique<ov::genai::VLMPipeline>(models_path, device, properties);
         }),
         py::arg("models_path"), "folder with exported model files",
         py::arg("device"), "device on which inference will be done",
@@ -253,7 +255,10 @@ void init_vlm_pipeline(py::module_& m) {
             const ov::genai::OptionalGenerationConfig& generation_config,
             const py::kwargs& kwargs
         ) {
-            return std::make_unique<ov::genai::VLMPipeline>(models, tokenizer, config_dir_path, device, pyutils::kwargs_to_any_map(kwargs), generation_config.value_or(ov::genai::GenerationConfig()));
+            ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+            ov::genai::GenerationConfig config = generation_config.value_or(ov::genai::GenerationConfig());
+            py::gil_scoped_release rel;
+            return std::make_unique<ov::genai::VLMPipeline>(models, tokenizer, config_dir_path, device, properties, config);
         }),
         py::arg("models"), "map with decrypted models",
         py::arg("tokenizer"), "genai Tokenizers",

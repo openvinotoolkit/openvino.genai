@@ -12,6 +12,8 @@ from .embeddings_evaluator import EmbeddingsEvaluator
 from .reranking_evaluator import RerankingEvaluator
 from .text2video_evaluator import Text2VideoEvaluator
 from .chat_text_evaluator import ChatTextEvaluator
+from .speech_generation_evaluator import SpeechGenerationEvaluator
+from .chat_visualtext_evaluator import ChatVisualTextEvaluator
 
 
 __all__ = [
@@ -26,5 +28,7 @@ __all__ = [
     "RerankingEvaluator",
     "Text2VideoEvaluator",
     "ChatTextEvaluator",
+    "SpeechGenerationEvaluator",
+    "ChatVisualTextEvaluator",
     "EVALUATOR_REGISTRY",
 ]

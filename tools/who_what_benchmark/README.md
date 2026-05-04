@@ -57,7 +57,7 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 ```
 
 > **NOTE**: use --verbose option for debug to see the outputs with the largest difference.
-> **NOTE**: use --model-type text-chat option to run evaluation in chat mode
+> **NOTE**: use `--model-type text-chat` option to run evaluation in chat mode
 
 ### Compare Visual Language Models with image inputs (VLMs)
 ```sh
@@ -70,6 +70,8 @@ wwb --base-model llava-hf/llava-v1.6-mistral-7b-hf --gt-data llava_test/gt.csv -
 # Target images will be stored in the "target" subfolder under the same path with .csv.
 wwb --target-model llava-int8 --gt-data llava_test/gt.csv --model-type visual-text --genai
 ```
+
+> **NOTE**: use `--model-type visual-text-chat` option to run evaluation in chat mode
 
 ### Compare Visual Language Models with video inputs (VLMs)
 ```sh
@@ -149,6 +151,55 @@ wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type 
 # compute metrics with GenAI
 wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --genai --output ltx_video_genai
 ```
+
+### Compare Text-to-video models with LoRA (LTX-Video)
+
+Community LoRA adapters for LTX-Video are available on [HuggingFace](https://huggingface.co/models?other=base_model:adapter:Lightricks/LTX-Video).
+
+```sh
+# Export model to OpenVINO
+optimum-cli export openvino -m Lightricks/LTX-Video --weight-format fp32 ltx-video-model
+# Collect references using HuggingFace diffusers with a LoRA adapter
+wwb --base-model Lightricks/LTX-Video --gt-data ltx_lora_test/gt.csv --model-type text-to-video --adapters path/to/lora.safetensors --alphas 0.9 --hf
+# Compute metrics with OpenVINO GenAI and the same LoRA adapter
+wwb --target-model ltx-video-model --gt-data ltx_lora_test/gt.csv --model-type text-to-video --adapters path/to/lora.safetensors --alphas 0.9 --genai
+# Compare a LoRA-loaded model against a plain baseline (empty adapter override)
+wwb --target-model ltx-video-model --gt-data ltx_lora_test/gt.csv --model-type text-to-video --adapters path/to/lora.safetensors --alphas 0.9 --genai --empty_adapters
+```
+
+### Compare Speech-generation models
+```sh
+# Export SpeechT5 to OpenVINO.
+optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts_ov
+
+# Download speaker embeddings (Replace with your own embeddings if needed)
+hf download Xenova/cmu-arctic-xvectors-extracted cmu_us_slt_arctic-wav-arctic_a0508.bin --repo-type dataset --local-dir .
+
+# Collect reference audio with the Hugging Face baseline.
+# Reference wav files will be stored under "reference" subfolder under the same path with .csv.
+wwb --base-model microsoft/speecht5_tts --gt-data speech_gen_test/gt.csv --model-type speech-generation --speaker_embeddings cmu_us_slt_arctic-wav-arctic_a0508.bin --hf
+
+# Compute the metric
+# Target wav files will be stored in the "target" subfolder under the same path with .csv.
+# you can also specify the parameter: --output [custom folder], then the target wav files and the corresponding CSV files with metrics will be saved to that folder.
+# compute metrics with optimum-intel
+wwb --target-model speecht5_tts_ov --gt-data speech_gen_test/gt.csv --model-type speech-generation --output optimum_output --speaker_embeddings cmu_us_slt_arctic-wav-arctic_a0508.bin
+# compute metrics with GenAI
+wwb --target-model speecht5_tts_ov --gt-data speech_gen_test/gt.csv --model-type speech-generation --output genai_output --speaker_embeddings cmu_us_slt_arctic-wav-arctic_a0508.bin --genai
+```
+
+For SpeechT5, `--speaker_embeddings` is optional.
+If omitted for HF/Optimum, WWB will download and use
+`Xenova/cmu-arctic-xvectors-extracted/cmu_us_slt_arctic-wav-arctic_a0508.bin` automatically.
+For GenAI, this is the default speaker embedding that is compiled into the runtime.
+
+The speech-generation evaluator reports these metrics:
+
+* `speaker score` - speaker similarity based on SpeechBrain speaker verification.
+* `content score` - transcript similarity between base model and target model output, based on whisper transcription and normalized text comparison.
+* `acoustic score` - overall sound-character similarity based on spectral features (RMS, log-mel DTW, spectral rolloff)
+* `duration score` - relative utterance length similarity between target and reference.
+* `overall similarity` - aggregate score used for sorting worst examples.
 
 ### API
 The API provides a way to access to investigate the worst generated text examples.
@@ -241,3 +292,5 @@ wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv -
 The dataset is licensed under Creative Commons Attribution 4.0 (CC BY 4.0).
 * This project uses data from the Puffin dataset (https://huggingface.co/datasets/LDJnr/Puffin). \
 The dataset is licensed under the Apache License 2.0.
+* This project uses questions from the VQA v2 dataset (https://visualqa.org/). \
+Annotations are licensed under CC BY 4.0.

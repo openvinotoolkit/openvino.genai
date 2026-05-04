@@ -53,6 +53,10 @@ namespace genai {
     m_generation_config(model_desc.generation_config),
     m_tokenizer(model_desc.tokenizer) {
     m_kv_pos = ov::genai::utils::get_kv_axes_pos(model_desc.model);
+    m_cache_types = utils::get_cache_types(*model_desc.model);
+    OPENVINO_ASSERT(!m_cache_types.has_linear(),
+        "Stateful speculative decoding does not support models with linear attention states. "
+        "KV cache rollback would reset the entire state instead of trimming.");
     if (m_device == "NPU") {
         auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, m_properties, m_kv_pos);
         m_max_prompt_len = kv_desc.max_prompt_len;
@@ -276,7 +280,7 @@ void LLMInferWrapper::trim_kv_cache(const size_t tokens_to_remove) {
     // For NPU "trim" is done by position ids on NPUW side.
     if (m_device != "NPU") {
         // Trim kv_cache values on tokens_to_remove
-        ov::genai::utils::KVCacheState to_trim_state;
+        ov::genai::utils::CacheState to_trim_state(m_cache_types);
         to_trim_state.num_tokens_to_trim = tokens_to_remove;
         to_trim_state.seq_length_axis =  m_kv_pos.seq_len;
         to_trim_state.reset_mem_state = false;
@@ -456,6 +460,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
     results.scores.resize(1u);
     results.scores[0] = 0u;
     results.tokens.resize(1u);
+    results.finish_reasons.resize(1u, GenerationFinishReason::NONE);
 
     ov::Tensor position_ids{ov::element::i64, input_ids.get_shape()};
     utils::initialize_position_ids(position_ids, attention_mask);
@@ -654,6 +659,17 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
     m_streaming_was_cancelled = (streaming_status == ov::genai::StreamingStatus::CANCEL);
     if (streamer_ptr) { // push streamer's cache
         streamer_ptr->end();
+    }
+
+    if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+        results.finish_reasons[0] = GenerationFinishReason::TOOL_CALL;
+    } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
+        results.finish_reasons[0] = GenerationFinishReason::STOP;
+    } else if (m_main_request->get_generation_capacity() <= 0) {
+        results.finish_reasons[0] = GenerationFinishReason::LENGTH;
+    } else if (out_token == config.eos_token_id ||
+               std::find(config.stop_token_ids.begin(), config.stop_token_ids.end(), out_token) != config.stop_token_ids.end()) {
+        results.finish_reasons[0] = GenerationFinishReason::STOP;
     }
 
     // If not chat conversation, then reset all states.

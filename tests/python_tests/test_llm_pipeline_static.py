@@ -3,6 +3,7 @@
 
 from openvino_genai import (
     GenerationConfig,
+    GenerationFinishReason,
     Tokenizer,
     LLMPipeline,
     StreamerBase,
@@ -65,6 +66,11 @@ def ov_model(llm_model: OVConvertedModelSchema) -> LLMPipeline:
         "CPU", 
         **get_default_llm_properties(),
     )
+
+
+@pytest.fixture(scope="module")
+def tokenizer(llm_model: OVConvertedModelSchema) -> Tokenizer:
+    return Tokenizer(llm_model.models_path)
 
 
 @pytest.fixture(scope="module")
@@ -274,7 +280,7 @@ def test_invalid_length_properties_raise_error(
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_batch_one_no_exception(npu_model: LLMPipeline):
-    prompt = 'The Sun is yellow because'
+    prompt = "The Sun is yellow because"
     # Check it doesn't throw any exception when batch of size 1 is provided
     npu_model.generate([prompt], max_new_tokens=20)
 
@@ -283,7 +289,7 @@ def test_batch_one_no_exception(npu_model: LLMPipeline):
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_batch_raise_error(npu_model: LLMPipeline):
-    prompt = 'The Sun is yellow because'
+    prompt = "The Sun is yellow because"
     with pytest.raises(RuntimeError):
         npu_model.generate([prompt] * 3, max_new_tokens=100)
 
@@ -312,14 +318,12 @@ def test_unsupported_sampling_raise_error(
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_terminate_by_max_number_of_tokens(
-    llm_model: OVConvertedModelSchema,
     npu_model: LLMPipeline, 
+    tokenizer: Tokenizer,
 ):
-    model_path = llm_model.models_path
-    prompt = 'The Sun is yellow because'
+    prompt = "The Sun is yellow because"
     num_tokens = 128
 
-    tokenizer = Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
     # ignore_eos=True to ensure model will generate exactly num_tokens
     encoded_results = npu_model.generate(tokenized_input, max_new_tokens=num_tokens, ignore_eos=True)
@@ -329,16 +333,16 @@ def test_terminate_by_max_number_of_tokens(
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_terminate_by_out_of_memory(
-    llm_model: OVConvertedModelSchema, 
-    npu_config: dict
+    llm_model: OVConvertedModelSchema,
+    npu_config: dict,
+    tokenizer: Tokenizer,
 ):
     model_path = llm_model.models_path
-    prompt = 'The Sun is yellow because'
+    prompt = "The Sun is yellow because"
     pipeline_config = { "MAX_PROMPT_LEN": 256, "MIN_RESPONSE_LEN": 64 }
     pipeline_config |= npu_config
     kv_cache_size = pipeline_config['MAX_PROMPT_LEN'] + pipeline_config['MIN_RESPONSE_LEN']
 
-    tokenizer = Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
     input_len = tokenized_input.input_ids.get_shape()[1]
 
@@ -351,11 +355,10 @@ def test_terminate_by_out_of_memory(
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_terminate_by_sampler(
-    llm_model: OVConvertedModelSchema, 
     npu_model: LLMPipeline,
+    tokenizer: Tokenizer,
 ):
-    model_path = llm_model.models_path
-    prompt = 'The Sun is yellow because'
+    prompt = "The Sun is yellow because"
 
     current_iter = 0
     num_iters = 10
@@ -371,7 +374,6 @@ def test_terminate_by_sampler(
         def end(self):
             pass
 
-    tokenizer = Tokenizer(model_path)
     tokenized_input = tokenizer.encode(prompt)
 
     encoded_results = npu_model.generate(
@@ -382,6 +384,57 @@ def test_terminate_by_sampler(
     )
 
     assert len(encoded_results.tokens[0]) == num_iters
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize(
+    ("streaming_status", "expected_finish_reason"),
+    [
+        pytest.param(StreamingStatus.STOP, GenerationFinishReason.STOP, id="stop"),
+        pytest.param(StreamingStatus.TOOL_CALL_STOP, GenerationFinishReason.TOOL_CALL, id="tool_call_stop"),
+    ],
+)
+def test_terminate_finish_reason_by_sampler(
+    llm_model: OVConvertedModelSchema,
+    streaming_status: StreamingStatus,
+    expected_finish_reason: GenerationFinishReason,
+    tokenizer: Tokenizer,
+):
+    model_path = llm_model.models_path
+    prompt = "The Sun is yellow because"
+
+    current_iter = 0
+    num_iters = 10
+
+    class TestStreamer(StreamerBase):
+        def __init__(self):
+            StreamerBase.__init__(self)
+
+        def write(self, token_id) -> StreamingStatus:
+            nonlocal current_iter
+            current_iter += 1
+            return StreamingStatus.RUNNING if current_iter != num_iters else streaming_status
+
+        def end(self):
+            pass
+
+    tokenized_input = tokenizer.encode(prompt)
+    static_cpu_model = LLMPipeline(
+        model_path,
+        "CPU",
+        get_default_llm_properties(),
+        ATTENTION_BACKEND="SDPA",
+    )
+
+    encoded_results = static_cpu_model.generate(
+        tokenized_input,
+        max_new_tokens=1000,
+        ignore_eos=True,
+        streamer=TestStreamer(),
+    )
+
+    assert len(encoded_results.tokens[0]) == num_iters
+    assert encoded_results.finish_reasons == [expected_finish_reason]
 
 
 # FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!

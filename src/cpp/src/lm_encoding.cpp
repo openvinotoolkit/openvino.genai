@@ -81,12 +81,13 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     std::vector<SequenceGroup::Ptr> sequence_groups,
     std::optional<ov::Tensor> position_ids,
     std::optional<ov::Tensor> token_type_ids,
-    utils::KVCacheState& kv_cache_state,
+    utils::CacheState& cache_state,
     EmbeddingsModel::Ptr m_embedding,
     std::optional<int64_t> rope_delta,
     const size_t max_kv_cache_size,
     const bool use_intermediate_remote_tensor,
-    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs
+    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs,
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids)> per_layer_embeddings_callback
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -102,8 +103,12 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             OPENVINO_ASSERT(generation_outputs.size() <= 1);
             if (!generation_outputs.empty()) {
                 auto streaming_status = streamer_ptr->write(generation_outputs.begin()->second.generated_ids);
-                if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-                    streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
+                if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+                    handle->stop(ov::genai::GenerationFinishReason::TOOL_CALL);
+                } else if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
+                    handle->cancel();
+                } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
+                    handle->stop();
                 }
             }
         }
@@ -144,7 +149,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             m_llm.set_tensor(name, tensor);
         }
     } else {
-        kv_cache_state.add_inputs(input_ids);
+        cache_state.add_inputs(input_ids);
         m_llm.set_tensor("input_ids", input_ids);
     }
     m_llm.set_tensor("attention_mask", attention_mask);
@@ -257,6 +262,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                     ov::Tensor new_visual_pos_masks{tensor.get_element_type(), {batch_size, 1}};
                     std::fill_n(new_visual_pos_masks.data<bool>(), new_visual_pos_masks.get_size(), false);
                     m_llm.set_tensor(name, new_visual_pos_masks);
+                } else if (name == "per_layer_inputs" && per_layer_embeddings_callback) {
+                    m_llm.set_tensor(name, per_layer_embeddings_callback(new_input_ids));
                 }
             }
         } else {
@@ -267,7 +274,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         // in case of beam_search in chat mode, kv cache contains info about longest generated result among all sequences
         // last answer will be removed from kv_cache and will be included to the prompt on the next step
         if (new_input_ids.get_size() == 1)
-            kv_cache_state.add_inputs(new_input_ids);
+            cache_state.add_inputs(new_input_ids);
 
         update_attention_mask_with_beams(m_llm.get_tensor("attention_mask"), next_beams);
 
@@ -311,13 +318,19 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         const auto& sequences = sequence_group->get_finished_sequences();
         size_t num_outputs = std::min(sequence_group->get_sampling_parameters().num_return_sequences, sequences.size());
         finish_info.streaming_finish_status = sequence_group->get_generation_stream()->get_status();
+        const auto stream_finish_reason = sequence_group->get_generation_stream()->get_finish_reason();
 
         for (size_t seq_id = 0; seq_id < num_outputs; ++seq_id) {
             const auto & sequence = sequences[seq_id];
             const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_prob();
+            auto finish_reason = sequence->get_finish_reason();
+            if (finish_reason == GenerationFinishReason::NONE && sequence_group->handle_stopped()) {
+                finish_reason = stream_finish_reason;
+            }
 
             finish_info.results.tokens.push_back(sequence->get_generated_ids());
             finish_info.results.scores.push_back(score);
+            finish_info.results.finish_reasons.push_back(finish_reason);
         }
     }
 
@@ -330,24 +343,27 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 }
 
 
-TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils::KVCacheState& kv_cache_state) {
+TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state) {
     TokenizedInputs encoded_input;
-    size_t kv_cache_len = kv_cache_state.get_state().size();
-    if (kv_cache_len == 0) {
+    size_t cache_len = cache_state.get_state().size();
+    if (
+        cache_len == 0 
+        || cache_state.needs_reset()  // models with linear attention need full input if prefix is altered
+    ) {
         encoded_input.input_ids = new_chat_tokens;
         ov::Tensor new_attention_mask(ov::element::i64, new_chat_tokens.get_shape());
         std::fill_n(new_attention_mask.data<int64_t>(), new_chat_tokens.get_shape()[1], 1);
         encoded_input.attention_mask = new_attention_mask;
     } else {
         ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.get_element_type(),
-                                            {1, new_chat_tokens.get_shape().at(1) - kv_cache_len},
-                                            new_chat_tokens.data<int64_t>() + kv_cache_len);
+                                            {1, new_chat_tokens.get_shape().at(1) - cache_len},
+                                            new_chat_tokens.data<int64_t>() + cache_len);
 
         ov::Tensor new_attention_mask(ov::element::i64, new_tensor.get_shape());
         std::fill_n(new_attention_mask.data<int64_t>(), new_tensor.get_shape()[1], 1);
 
         encoded_input.input_ids = ov::Tensor(new_chat_tokens.get_element_type(),
-                                             {1, new_chat_tokens.get_shape().at(1) - kv_cache_len});
+                                             {1, new_chat_tokens.get_shape().at(1) - cache_len});
         new_tensor.copy_to(encoded_input.input_ids);
 
         encoded_input.attention_mask = new_attention_mask;
@@ -357,7 +373,7 @@ TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils:
 }
 
 
-void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::KVCacheState& kv_cache_state) {
+void align_cache_and_history(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state) {
     // KV cache in model already contains prompts and answers from previous iterations.
     // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
     // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
@@ -367,17 +383,18 @@ void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::KVCach
     // Also some symbols combinations can be encoded by the tokenizer in different ways.
     // So let's check it out, find the same part of tokenized history and templated one, and use that part on the next step.
 
-    std::vector<int64_t>& state = kv_cache_state.get_state();
+    std::vector<int64_t>& state = cache_state.get_state();
 
-    if (state.empty())
+    if (state.empty()) {
         return;
+    }
 
     size_t first_diverse_tokens_idx = ov::genai::utils::get_first_history_difference(new_chat_tokens, state);
     // in the case of beam_search the longest answer is in the kv cache, but the best one is needed
-    // so generated tokens were not added to KVCacheState and num_tokens_to_trim was set to the size of the generated serquence
-    kv_cache_state.num_tokens_to_trim += state.size() - first_diverse_tokens_idx;
+    // so generated tokens were not added to KV CacheState and num_tokens_to_trim was set to the size of the generated sequence
+    cache_state.num_tokens_to_trim += state.size() - first_diverse_tokens_idx;
     state.resize(first_diverse_tokens_idx);
-    kv_cache_state.reset_mem_state = state.empty();
+    cache_state.reset_mem_state = cache_state.needs_reset();
 }
 
 }  // namespace genai

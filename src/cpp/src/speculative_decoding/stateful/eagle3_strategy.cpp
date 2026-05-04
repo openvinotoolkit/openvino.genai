@@ -42,6 +42,11 @@ Eagle3InferWrapperBase::Eagle3InferWrapperBase(const ModelDesc& model_desc)
       m_sampler(model_desc.tokenizer) {
     m_kv_axes_pos = utils::get_kv_axes_pos(model_desc.model);
 
+    m_cache_types = utils::get_cache_types(*model_desc.model);
+    OPENVINO_ASSERT(!m_cache_types.has_linear(),
+        "Stateful speculative decoding does not support models with linear attention states. "
+        "KV cache rollback would reset the entire state instead of trimming.");
+
     if (m_device == "NPU") {
         auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, m_properties, m_kv_axes_pos);
         m_max_prompt_len = kv_desc.max_prompt_len;
@@ -99,7 +104,7 @@ void Eagle3InferWrapperBase::trim_kv_cache(size_t tokens_to_remove) {
                     " tokens. Valid range: 0 < tokens_to_remove < current_len");
 
     if (m_device != "NPU") {
-        utils::KVCacheState state;
+        utils::CacheState state(m_cache_types);
         state.num_tokens_to_trim = tokens_to_remove;
         state.seq_length_axis = m_kv_axes_pos.seq_len;
         state.reset_mem_state = false;
@@ -599,6 +604,17 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     EncodedResults results;
     results.tokens = {m_target->get_generated_tokens()};
     results.scores = {0.0f};
+    auto sequence_group = m_target->get_sequence_group();
+    OPENVINO_ASSERT(sequence_group, "Target sequence group must be initialized before collecting Eagle3 results");
+
+    auto sequence = m_target->get_current_sequence();
+    OPENVINO_ASSERT(sequence, "Target sequence must be initialized before collecting Eagle3 results");
+
+    auto finish_reason = sequence->get_finish_reason();
+    if (finish_reason == GenerationFinishReason::NONE && sequence_group->handle_stopped()) {
+        finish_reason = sequence_group->get_generation_stream()->get_finish_reason();
+    }
+    results.finish_reasons = {finish_reason};
 
     generate_timer.end();
 

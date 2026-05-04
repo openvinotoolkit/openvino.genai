@@ -1,6 +1,8 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
+
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
 #include "openvino/genai/perf_metrics.hpp"
@@ -70,6 +72,7 @@ private:
     int64_t last_token = -1;
     ov::genai::utils::KVAxesPosition m_kv_pos;
     ov::InferRequest m_request;
+    ov::genai::utils::CacheTypes m_cache_types;
 
     // Data placeholder for 1-token inference:
     int64_t m_new_input_token = -1;

@@ -80,6 +80,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             GenerationResult result;
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
+            result.m_finish_reasons = std::move(vlm_result.finish_reasons);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
             results.push_back(result);
         }
@@ -157,6 +158,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             res.m_request_id,
             std::move(generated),
             std::move(res.m_scores),
+            std::move(res.m_finish_reasons),
             res.m_status,
             perf_metrics,
             res.extended_perf_metrics
@@ -189,6 +191,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             GenerationResult result;
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
+            result.m_finish_reasons = std::move(vlm_result.finish_reasons);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
             results.push_back(result);
         }
@@ -249,6 +252,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             encoded_result.m_request_id,
             std::move(decoded_outputs),
             std::move(encoded_result.m_scores),
+            std::move(encoded_result.m_finish_reasons),
             encoded_result.m_status,
             std::move(perf_metrics),
             std::move(encoded_result.extended_perf_metrics)
@@ -437,6 +441,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             gen_result.texts.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
             gen_result.scores.push_back(result.m_scores.at(idx));
         }
+        gen_result.finish_reasons = result.m_finish_reasons;
         auto decode_end_time = std::chrono::steady_clock::now();
         gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
         
@@ -603,6 +608,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             gen_result.texts.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
             gen_result.scores.push_back(result.m_scores.at(idx));
         }
+        gen_result.finish_reasons = result.m_finish_reasons;
         auto decode_end_time = std::chrono::steady_clock::now();
         gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
         
@@ -707,6 +713,10 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
 
     if (streaming_status == StreamingStatus::STOP) {
         handle->stop();
+        return;
+    }
+    if (streaming_status == StreamingStatus::TOOL_CALL_STOP) {
+        handle->stop(GenerationFinishReason::TOOL_CALL);
         return;
     }
 
