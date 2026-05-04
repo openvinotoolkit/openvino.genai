@@ -327,10 +327,12 @@ def resolve_json_dataset_path(dataset_path: str) -> str:
         logger.info(f"JSON dataset found in whowhatbench.prompts resources: {resource_path}")
         return str(resource_path)
 
-    logger.error(f"JSON dataset file '{dataset_path}' not found in local filesystem or whowhatbench.prompts resources")
-    raise FileNotFoundError(
-        f"JSON dataset file '{dataset_path}' was not found as a local file or in whowhatbench.prompts resources"
+    error_message = (
+        f"JSON dataset file '{dataset_path}' was not found as a local file "
+        "or in whowhatbench.prompts resources"
     )
+    logger.error(error_message)
+    raise FileNotFoundError(error_message)
 
 
 def read_json_dataset(dataset_path: str):

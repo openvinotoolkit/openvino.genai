@@ -823,6 +823,7 @@ def create_evaluator(base_model, args):
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
+        prompts = None
 
         if task == "text":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
@@ -924,7 +925,6 @@ def create_evaluator(base_model, args):
                 vocoder_path=args.vocoder_path,
             )
         elif task == "visual-text" or task == "visual-video-text":
-            prompts = load_prompts(args)
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
             if config and is_model_with_automatic_crop(config) and args.hf:

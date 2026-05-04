@@ -54,6 +54,8 @@ def _convert_int8(model_id, temp_path):
 
 base_model_path = convert_text_model(model_id, "opt125m", _convert_base)
 target_model_path = convert_text_model(model_id, "opt125m_int8", _convert_int8)
+agent_model_id = "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"
+agent_model_path = convert_text_model(agent_model_id, "tiny_phi3_agent", _convert_base)
 
 
 @pytest.mark.skipif((sys.platform == "darwin"), reason='173169')
@@ -403,6 +405,79 @@ def test_text_agent_dataset_json(dataset_name, as_jsonl, tmp_path):
         "--device",
         "CPU",
         "--hf",
+    ])
+
+    data = pd.read_csv(gt_path)
+    assert len(data["prompts"].values) == 1
+    assert "Say hello in one word." in data["prompts"].values[0]
+    assert "Agent dataset summary" in output
+
+
+@pytest.mark.parametrize(
+    ("dataset_name", "as_jsonl"),
+    [
+        ("messages_optimum.json", False),
+        ("messages_optimum.jsonl", True),
+    ],
+)
+def test_text_agent_dataset_json_optimum(dataset_name, as_jsonl, tmp_path):
+    if sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
+
+    dataset_path = tmp_path / dataset_name
+    gt_path = tmp_path / f"gt_{dataset_name}.csv"
+    _create_messages_dataset(dataset_path, as_jsonl=as_jsonl)
+
+    output = run_wwb([
+        "--base-model",
+        agent_model_path,
+        "--gt-data",
+        gt_path,
+        "--dataset",
+        dataset_path,
+        "--model-type",
+        "text-agent",
+        "--num-samples",
+        "1",
+        "--device",
+        "CPU",
+    ])
+
+    data = pd.read_csv(gt_path)
+    assert len(data["prompts"].values) == 1
+    assert "Say hello in one word." in data["prompts"].values[0]
+    assert "Agent dataset summary" in output
+
+
+@pytest.mark.parametrize(
+    ("dataset_name", "as_jsonl"),
+    [
+        ("messages_genai.json", False),
+        ("messages_genai.jsonl", True),
+    ],
+)
+def test_text_agent_dataset_json_genai(dataset_name, as_jsonl, tmp_path):
+    if sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
+
+    dataset_path = tmp_path / dataset_name
+    gt_path = tmp_path / f"gt_{dataset_name}.csv"
+    _create_messages_dataset(dataset_path, as_jsonl=as_jsonl)
+
+    output = run_wwb([
+        "--base-model",
+        agent_model_path,
+        "--gt-data",
+        gt_path,
+        "--dataset",
+        dataset_path,
+        "--model-type",
+        "text-agent",
+        "--num-samples",
+        "1",
+        "--device",
+        "CPU",
+        "--genai",
     ])
 
     data = pd.read_csv(gt_path)

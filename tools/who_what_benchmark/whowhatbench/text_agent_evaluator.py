@@ -1,5 +1,4 @@
-# Copyright (C) 2023-2026 Intel Corporation
-# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Intel Corporation
 
 from typing import Any, Dict, List, Optional
 
@@ -212,6 +211,15 @@ class TextAgentEvaluator(BaseEvaluator):
     def _record_max_new_tokens(self, record: Dict[str, Any]) -> int:
         return int(record.get("max_completion_tokens", self.max_new_tokens))
 
+    @staticmethod
+    def _validate_messages_list(record: Dict[str, Any]) -> List[Dict[str, Any]]:
+        messages = record.get("messages")
+        if not isinstance(messages, list):
+            raise ValueError("Each JSON record must contain a 'messages' list")
+        if len(messages) == 0:
+            raise ValueError("Each JSON record must contain a non-empty 'messages' list")
+        return messages
+
     def _extract_prompt_preview(self, record: Dict[str, Any]) -> str:
         messages = record.get("messages", [])
         user_texts = []
@@ -366,11 +374,7 @@ class TextAgentEvaluator(BaseEvaluator):
             kwargs["reasoning_effort"] = "low"
 
     def _generate_non_genai(self, model, tokenizer, record: Dict[str, Any]) -> str:
-        messages = record.get("messages")
-        if not isinstance(messages, list):
-            raise ValueError("Each JSON record must contain a 'messages' list")
-        if len(messages) == 0:
-            raise ValueError("Each JSON record must contain a non-empty 'messages' list")
+        messages = record["messages"]
 
         tools = record.get("tools")
         device = getattr(model, "device", "cpu")
@@ -436,11 +440,7 @@ class TextAgentEvaluator(BaseEvaluator):
     def _generate_genai(self, model, _tokenizer, record: Dict[str, Any]) -> str:
         import openvino_genai
 
-        messages = record.get("messages")
-        if not isinstance(messages, list):
-            raise ValueError("Each JSON record must contain a 'messages' list")
-        if len(messages) == 0:
-            raise ValueError("Each JSON record must contain a non-empty 'messages' list")
+        messages = record["messages"]
 
         history = openvino_genai.ChatHistory()
         valid_content_messages = 0
@@ -504,6 +504,7 @@ class TextAgentEvaluator(BaseEvaluator):
         prompts = []
         answers = []
         for idx, record in enumerate(tqdm(records, desc="Evaluate pipeline")):
+            self._validate_messages_list(record)
             prompt_preview = self._extract_prompt_preview(record)
             if not isinstance(prompt_preview, str) or not prompt_preview.strip():
                 raise ValueError(
