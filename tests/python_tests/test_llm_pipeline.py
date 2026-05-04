@@ -8,6 +8,7 @@ import os
 import json
 import logging
 import numpy as np
+from pathlib import Path
 from typing import Literal, Callable
 from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
@@ -24,6 +25,7 @@ from utils.tokenizers import (
     model_tmp_path,  # noqa: F401
 )
 from utils.ov_genai_pipelines import (
+    ALL_PIPELINE_TYPES,
     LINEAR_ATTENTION_PIPELINE_TYPES,
     create_ov_pipeline,
     generate_and_compare,
@@ -32,6 +34,7 @@ from utils.ov_genai_pipelines import (
     GenerationChatInputsType,
 )
 from data.models import get_models_list, CHAT_MODELS_LIST, LINEAR_ATTENTION_MODELS_LIST
+from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 
 
 def assert_hf_equals_genai(hf_reference, genai_output, **kwargs) -> None:
@@ -70,6 +73,11 @@ PERF_METRICS_TEST_CASES = [
 PERF_METRICS_STRUCTURED_OUTPUT_TEST_CASES = [
     ({"max_new_tokens": 20}, "Generate json of a person"),
 ]
+
+CUSTOM_EXTENSIONS_TEST_CASES = [
+    ({"max_new_tokens": 20}, "Generate json of a person"),
+]
+
 
 INPUT_TENSORS_LIST = [
     # input_ids, attention_mask
@@ -1098,3 +1106,108 @@ def test_pipelines_generate_with_streaming(
         mock_streamer.assert_not_called()
     else:
         mock_streamer.assert_called()
+
+
+@pytest.mark.parametrize("llm_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
+@pytest.mark.parametrize("generation_config,prompt", CUSTOM_EXTENSIONS_TEST_CASES)
+def test_llm_pipeline_add_extension(
+    llm_model: OVConvertedModelSchema,
+    generation_config: dict,
+    prompt: str,
+    tmp_path: Path,
+) -> None:
+    myadd_model_path = get_extension_model(llm_model.models_path, tmp_path, "MyAdd")
+    assert_ir_contains_op_type(myadd_model_path, "MyAdd")
+
+    # The custom op "MyAdd" is provided by a compiled extension library and is intended to behave like OpenVINO "Add".
+    properties = {"extensions": [str(get_extension_lib_path())]}
+    ov_pipe_extension_path = ov_genai.LLMPipeline(myadd_model_path, "CPU", **properties)
+    result_extension_path = ov_pipe_extension_path.generate([prompt], **generation_config)
+
+    # The Python custom op "CustomAdd" is intended to behave like OpenVINO "Add", but it exercises Python ov.Op registration and callback-based evaluation.
+    customadd_model_path = get_extension_model(llm_model.models_path, tmp_path, "CustomAdd")
+    assert_ir_contains_op_type(customadd_model_path, "CustomAdd")
+    CustomAdd.evaluate_calls = 0
+    properties = {"extensions": [ov.OpExtension(CustomAdd)]}
+    ov_pipe_extension_obj = ov_genai.LLMPipeline(customadd_model_path, "CPU", **properties)
+    result_extension_obj = ov_pipe_extension_obj.generate([prompt], **generation_config)
+    assert CustomAdd.evaluate_calls > 0, "Python custom op 'CustomAdd' was not called"
+
+    # Reference result with the original model and without custom extensions.
+    ov_pipe_ref = ov_genai.LLMPipeline(llm_model.models_path, "CPU")
+    result_ref = ov_pipe_ref.generate([prompt], **generation_config)
+
+    assert result_extension_path.texts[0].strip() == result_ref.texts[0].strip(), (
+        "Result should be the same for model with extension 'MyAdd' and reference model."
+    )
+    assert result_extension_obj.texts[0].strip() == result_ref.texts[0].strip(), (
+        "Result should be the same for model with extension 'CustomAdd' and reference model."
+    )
+
+
+# Speculative decoding and prompt lookup require extra GenerationConfig params;
+# exclude them from generic RNG-seed tests.
+_NON_ASSISTANT_PIPELINE_TYPES = tuple(
+    pt
+    for pt in ALL_PIPELINE_TYPES
+    if pt not in (PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING)
+)
+
+
+def _extract_texts(result) -> list[str]:
+    """Return a flat list of generated strings from either str, DecodedResults, or list[GenerationResult]."""
+    if isinstance(result, str):
+        # LLMPipeline.generate(str, ...) returns a plain str for STATEFUL/PA/AUTO pipelines
+        return [result]
+    if isinstance(result, list):
+        # ContinuousBatchingPipeline.generate() returns list[GenerationResult]
+        return [gen_id for r in result for gen_id in r.m_generation_ids]
+    return list(result.texts)
+
+
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+@pytest.mark.parametrize("pipeline_type", _NON_ASSISTANT_PIPELINE_TYPES)
+def test_same_rng_seed_produces_identical_output(
+    llm_model: OVConvertedModelSchema, pipeline_type: PipelineType
+) -> None:
+    """Two generate() calls with the same rng_seed must produce identical output text."""
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
+    config = ov_genai.GenerationConfig(do_sample=True, temperature=1.0, max_new_tokens=20, rng_seed=42)
+    prompt = "Which season is better, summer or winter?"
+
+    texts1 = _extract_texts(ov_pipe.generate(prompt, generation_config=config))
+    texts2 = _extract_texts(ov_pipe.generate(prompt, generation_config=config))
+
+    assert texts1 == texts2, (
+        f"generate() with rng_seed=42 must be reproducible.\nFirst call:  {texts1}\nSecond call: {texts2}"
+    )
+
+
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+@pytest.mark.parametrize("pipeline_type", _NON_ASSISTANT_PIPELINE_TYPES)
+def test_different_rng_seed_produces_different_output(
+    llm_model: OVConvertedModelSchema, pipeline_type: PipelineType
+) -> None:
+    """Different rng_seeds must produce at least one distinct output across multiple seeds."""
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
+    rng_seeds = [42, 123, 777, 2024]
+    prompt = "Which season is better, summer or winter?"
+
+    text_tuples = [
+        tuple(
+            _extract_texts(
+                ov_pipe.generate(
+                    prompt,
+                    generation_config=ov_genai.GenerationConfig(
+                        do_sample=True, temperature=1.3, max_new_tokens=40, rng_seed=seed
+                    ),
+                )
+            )
+        )
+        for seed in rng_seeds
+    ]
+
+    assert len(set(text_tuples)) > 1, (
+        f"generate() with different rng_seeds {rng_seeds} must produce at least one distinct output, "
+        f"but all produced: {text_tuples[0]!r}"
+    )
