@@ -121,9 +121,6 @@ auto video_metadata_docstring = R"(
     Structure with metadata describing the original video source.
     Controls video frames sampling before encoding.
 
-    :param total_num_frames: Total number of frames in the original video before any sampling. 0 means unknown.
-    :type total_num_frames: int
-
     :param fps: Frame rate of the original video in frames per second. 0 means unknown.
     :type fps: float
 
@@ -192,7 +189,6 @@ py::object call_vlm_generate_with_chat_history(
 void init_video_metadata(py::module_& m) {
     py::class_<ov::genai::VideoMetadata>(m, "VideoMetadata", video_metadata_docstring)
         .def(py::init<>())
-        .def_readwrite("total_num_frames", &ov::genai::VideoMetadata::total_num_frames)
         .def_readwrite("fps", &ov::genai::VideoMetadata::fps)
         .def_readwrite("frames_indices", &ov::genai::VideoMetadata::frames_indices);
 }

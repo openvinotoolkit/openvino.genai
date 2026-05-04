@@ -35,7 +35,6 @@ std::pair<ov::Tensor, ov::genai::VideoMetadata> load_video(const std::filesystem
     const auto frames_indices = make_indices(total_num_frames, num_frames);
 
     ov::genai::VideoMetadata video_metadata;
-    video_metadata.total_num_frames = total_num_frames;
     video_metadata.fps = cap.get(cv::CAP_PROP_FPS);
     // Passing video metadata with frame indices defined enables sampling based on provided indices within the pipeline,
     // and any model-specific sampling logic will be skipped (if defined).

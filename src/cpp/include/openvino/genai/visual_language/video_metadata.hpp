@@ -14,8 +14,6 @@ namespace ov::genai {
  * @brief Metadata describing the original video source. Controls video frames sampling before encoding.
  */
 struct OPENVINO_GENAI_EXPORTS VideoMetadata {
-    /// Total number of frames in the original video before any sampling. 0 means unknown.
-    size_t total_num_frames = 0;
     /// Frame rate of the original video in frames per second. 0 means unknown.
     float fps = 0.0f;
     /// Indices of frames to sample from the provided video tensor.

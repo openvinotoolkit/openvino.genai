@@ -42,7 +42,6 @@ def read_video(path: str, num_frames: int = 8) -> tuple[Tensor, openvino_genai.V
     indices = np.arange(0, total_num_frames, total_num_frames / num_frames).astype(int)
 
     video_metadata = openvino_genai.VideoMetadata()
-    video_metadata.total_num_frames = total_num_frames
     video_metadata.fps = cap.get(cv2.CAP_PROP_FPS)
     # Passing video metadata with frame indices defined enables sampling based on provided indices within the pipeline,
     # and any model-specific sampling logic will be skipped (if defined).

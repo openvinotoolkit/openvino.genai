@@ -4567,9 +4567,6 @@ class VideoMetadata:
         Structure with metadata describing the original video source.
         Controls video frames sampling before encoding.
     
-        :param total_num_frames: Total number of frames in the original video before any sampling. 0 means unknown.
-        :type total_num_frames: int
-    
         :param fps: Frame rate of the original video in frames per second. 0 means unknown.
         :type fps: float
     
@@ -4591,12 +4588,6 @@ class VideoMetadata:
         ...
     @frames_indices.setter
     def frames_indices(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
-        ...
-    @property
-    def total_num_frames(self) -> int:
-        ...
-    @total_num_frames.setter
-    def total_num_frames(self, arg0: typing.SupportsInt) -> None:
         ...
 class WhisperDecodedResultChunk:
     """
