@@ -69,6 +69,8 @@ from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 from utils.ov_genai_pipelines import should_skip_npuw_tests
+from utils.tiny_model_factory import is_locally_generated, generate_hf_model
+import utils.tiny_model_generators  # noqa: F401 - registers generators
 
 import logging
 logger = logging.getLogger(__name__)
@@ -323,7 +325,10 @@ def _get_ov_model(model_id: str) -> str:
         return model_dir
 
     def convert_to_temp(temp_dir: Path) -> None:
-        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+        if is_locally_generated(model_id):
+            model_cached = str(generate_hf_model(model_id))
+        else:
+            model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
