@@ -4,23 +4,10 @@
 """
 Registry-based factory for generating tiny random VLM models at test time.
 
-Models registered here are generated locally instead of being downloaded from
-HuggingFace. This allows fixing model dimensions that trigger platform-specific
-bugs (e.g., CPU plugin edge cases on SPR) without waiting for upstream updates.
-
-The factory only handles PyTorch model generation. OV IR export is performed
-by the existing _get_ov_model() conversion pipeline in test_vlm_pipeline.py.
-Generation is on-demand: triggered when _get_ov_model() is called for a
-registered model_id.
-
 To add a new locally-generated model:
 
     @register_generator("optimum-intel-internal-testing/tiny-random-<name>")
     def _generate_<name>(output_dir: Path) -> None:
-        # 1. Build config from a reference model
-        # 2. Create model with random weights
-        # 3. Save model + tokenizer to output_dir
-        ...
 """
 
 import logging
