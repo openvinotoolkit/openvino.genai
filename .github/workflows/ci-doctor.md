@@ -18,6 +18,12 @@ on:
 #     types:
 #       - completed
 
+engine:
+  id: copilot
+  # Latest Copilot CLI v1.0.22 blocks safeoutputs MCP server: https://github.com/github/gh-aw/issues/25550
+  version: v1.0.20
+  model: gpt-5-mini
+
 rate-limit:
   max: 5 # Maximum runs per window
   window: 60 # Time window in minutes
@@ -103,10 +109,10 @@ You are the CI Failure Doctor, an expert investigative agent that analyzes faile
 ## Current Context
 
 - **Repository**: ${{ github.repository }}
-- **Workflow Run**: ${{ github.event.workflow_run.id }}
-- **Conclusion**: ${{ github.event.workflow_run.conclusion }}
-- **Run URL**: ${{ github.event.workflow_run.html_url }}
-- **Head SHA**: ${{ github.event.workflow_run.head_sha }}
+- **Investigated Run ID**: ${{ github.event.workflow_run.id || inputs.run_id }}
+- **Conclusion** (only set for workflow_run triggers): ${{ github.event.workflow_run.conclusion }}
+- **Run URL** (only set for workflow_run triggers): ${{ github.event.workflow_run.html_url }}
+- **Head SHA** (only set for workflow_run triggers): ${{ github.event.workflow_run.head_sha }}
 
 ## Pre-Analysis Data
 
@@ -122,17 +128,24 @@ Logs have been pre-downloaded before this session started:
 
 **Trigger detection:**
 
+Workflow can be triggered in two ways:
+
+1. Manually via `workflow_dispatch` with a specified run ID (`${{ inputs.run_id }}`) for investigation (used for testing and re-investigation of past failures)
+2. Automatically via `workflow_run` when a monitored workflow completes (only if it failed or was cancelled)
+
+- If triggered by `workflow_dispatch`: The investigated run ID comes from `${{ inputs.run_id }}`. Use `get_workflow_run` with this ID to fetch the run details (conclusion, URL, head SHA, etc.) and proceed with the investigation.
 - If triggered by `workflow_run` event: ONLY proceed if `${{ github.event.workflow_run.conclusion }}` is `failure` or `cancelled`. Exit immediately if successful.
 - If triggered by `workflow_run` event and the run was on a **pull request**: verify `github.event.workflow_run.pull_requests[0].base.ref` is `master`. Exit immediately if the PR targets a different base branch.
 
 ### Phase 1: Initial Triage
 
-1. **Verify Failure**: Check that `${{ github.event.workflow_run.conclusion }}` is `failure` or `cancelled`
+1. **Get Workflow Details**: Call `get_workflow_run` with the **Investigated Run ID** to fetch the full run object (conclusion, URL, head SHA, jobs, etc.). Use this data for all subsequent steps.
+2. **Verify Failure**: Check that the investigated run's conclusion is `failure` or `cancelled`
    - **If the workflow was successful**: Call the `noop` tool with message "CI workflow completed successfully - no investigation needed" and **stop immediately**. Do not proceed with any further analysis.
    - **If the workflow failed or was cancelled**: Proceed with the investigation steps below.
-2. **Get Workflow Details**: Use `get_workflow_run` to get full details of the failed run
 3. **List Jobs**: Use `list_workflow_jobs` to identify which specific jobs failed
 4. **Quick Assessment**: Determine if this is a new type of failure or a recurring pattern
+5. **Collect PR Context**: From the workflow run object, record the associated PR number (from `pull_requests` array) if one exists. This information will be used at the end to decide the output action.
 
 ### Phase 2: Deep Log Analysis
 
@@ -227,11 +240,7 @@ Logs have been pre-downloaded before this session started:
    - **AI Team Self-Improvement**: Give a short set of additional prompting instructions to copy-and-paste into instructions.md for AI coding agents to help prevent this type of failure in future
    - **Historical Context**: Similar past failures and their resolutions
 
-2. **Actionable Deliverables**:
-   - Create an issue with investigation results (if warranted)
-   - Comment on related PR with analysis (if PR-triggered)
-   - Provide specific file locations and line numbers for fixes
-   - Suggest code changes or configuration updates
+2. **Choose Output Action**: After the investigation is complete, decide how to deliver the report. See the **Output Routing Decision** section below for the rules.
 
 ## Output Requirements
 
@@ -304,12 +313,33 @@ When creating an investigation issue, use this structure:
 
 You **MUST** always end by calling exactly one of these safe output tools before finishing:
 
-- **`create_issue`**: For actionable CI failures that require developer attention
-- **`add_comment`**: To comment on an existing related issue
-- **`noop`**: When no action is needed (e.g., CI was successful, or failure is already tracked)
-- **`missing_data`**: When you cannot gather the information needed to complete the investigation
+- **`add_comment`**: Post the investigation summary as a comment on a PR or an existing issue.
+- **`create_issue`**: Open a new repo issue with the investigation report.
+- **`noop`**: When no action is needed (e.g., CI was successful, or failure is already tracked).
+- **`missing_data`**: When you cannot gather the information needed to complete the investigation.
 
 **Never complete without calling a safe output tool.** If in doubt, call `noop` with a brief summary of what you found.
+
+### Output Routing Decision
+
+Make this decision **after** the investigation is complete, based on the root cause:
+
+1. Is the root cause **specific to PR changes** (e.g., a bug introduced by the PR, a test broken by PR code, a dependency the PR updated)?
+   - **Yes**, and a PR number is available → Use `add-comment` on the PR.
+   - **Yes**, but no PR number is available → Use `create-issue`.
+2. Is the root cause a **general/systemic issue** (e.g., flaky test, infrastructure problem, cache miss unrelated to PR changes, runner issue, external service outage)?
+   - **Yes** → Use `create-issue`, even if the run was PR-triggered.
+3. Is there an existing open issue already tracking the same failure?
+   - **Yes** (opened recently) → Use `add-comment` on that issue instead of creating a duplicate.
+4. Is no action needed?
+   - The investigated workflow **succeeded** → Use `noop`.
+   - A **very recent duplicate issue** (opened within the last hour) was already commented on → Use `noop`.
+
+Examples:
+
+- PR updates `actions/cache` and Coverity cache breaks → **comment on the PR** (PR caused it)
+- PR adds new code and a pre-existing flaky test fails → **open or comment on a repo issue** (not caused by the PR)
+- Master build fails due to expired credentials → **open or comment on a repo issue** (no PR involved)
 
 ## Cache Usage Strategy
 

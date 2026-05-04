@@ -1,17 +1,9 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-
 import sys
+import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
-# win32 fails on ffmpeg DLLs load
-# import transformers.pipeline imports VideoClassificationPipeline which requires PyAV (ffmpeg bindings)
-# wa is to create mock 'av' module to prevent DLLs loading errors
-# ticket: 179943
-if sys.platform == "win32":
-    from types import ModuleType
-
-    sys.modules["av"] = ModuleType("av")
-    sys.modules["av"].__version__ = "0.0.0"
+patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import openvino_genai as ov_genai
 import functools
@@ -535,6 +527,8 @@ def test_longform_audio(model_descr, sample_from_dataset):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_shortform(model_descr):
+    if model_descr[0] == "openai/whisper-tiny":
+        pytest.xfail("Accuracy issue. Ticket CVS-185132")
     samples = []
     ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
 
@@ -575,6 +569,8 @@ def align_words_by_text(ref_words, test_words):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_reference):
+    if model_descr[0] == "openai/whisper-tiny":
+        pytest.xfail("Accuracy issue. Ticket CVS-185132")
     ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
     samples = [i["audio"]["array"] for i in ds]
 

@@ -33,18 +33,18 @@ using namespace ov::genai;
 namespace {
 
 const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
-    std::nullopt,  // negative_prompt
-    1,             // num_videos_per_prompt
-    nullptr,       // generator
-    7.5f,          // guidance_scale
-    512,           // height
-    704,           // width
-    50,            // num_inference_steps
-    128,           // max_sequence_length
-    0.0,           // guidance_rescale
-    161,           // num_frames
-    25.0f,         // frame_rate
-    std::nullopt   // taylorseer_config
+    std::nullopt,            // negative_prompt
+    1,                       // num_videos_per_prompt
+    nullptr,                 // generator
+    7.5f,                    // guidance_scale
+    512,                     // height
+    704,                     // width
+    50,                      // num_inference_steps
+    128,                     // max_sequence_length
+    0.0,                     // guidance_rescale
+    161,                     // num_frames
+    25.0f,                   // frame_rate
+    TaylorSeerCacheConfig{}  // taylorseer_config
 };
 
 // Some defaults aren't special values so it's not possible to distinguish

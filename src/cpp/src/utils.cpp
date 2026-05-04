@@ -3,10 +3,12 @@
 
 #include "utils.hpp"
 
+#include <algorithm>
 #include <variant>
 #include <fstream>
 #include <memory>
 
+#include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/gather.hpp"
@@ -150,7 +152,7 @@ enum class ModelType { Default, Whisper, TextEmbedding };
 
 Tensor init_attention_mask(const Tensor& input_ids) {
     auto shape = input_ids.get_shape();
-    auto attention_mask = ov::Tensor{input_ids.get_element_type(), shape};
+    auto attention_mask = ov::Tensor{ov::element::i64, shape};
     std::fill_n(attention_mask.data<int64_t>(), shape[0] * shape[1], 1);
     return attention_mask;
 }
@@ -237,6 +239,8 @@ ProcessorConfig from_any_map(
     read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
     read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
     read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
+    read_anymap_param(config_map, "pooling_kernel_size", extracted_config.pooling_kernel_size);
+    read_anymap_param(config_map, "max_soft_tokens", extracted_config.max_soft_tokens);
     return extracted_config;
 }
 
@@ -372,6 +376,37 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 }
 
 } // namespace
+
+const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
+
+// Merge global properties with per-role overrides. Type mismatches fall out
+// of .as<ov::AnyMap>() as a throw; empty or missing maps are treated as
+// "no overrides" rather than errors.
+ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model_role) {
+    ov::AnyMap result;
+    for (const auto& property : properties) {
+        if (property.first != PER_MODEL_PROPERTIES) {
+            result.insert(property);
+        }
+    }
+
+    auto it = properties.find(PER_MODEL_PROPERTIES);
+    if (it == properties.end()) {
+        return result;
+    }
+
+    const auto& model_map = it->second.as<ov::AnyMap>();
+    auto role_it = model_map.find(model_role);
+    if (role_it == model_map.end()) {
+        return result;
+    }
+
+    // Role-specific values win over globals.
+    for (const auto& property : role_it->second.as<ov::AnyMap>()) {
+        result.insert_or_assign(property.first, property.second);
+    }
+    return result;
+}
 
 std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
     bool enable_save_ov_model = false;
@@ -1017,6 +1052,14 @@ std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& sh
         }
     }
     return std::make_pair(start, end);
+}
+
+ov::Tensor make_tensor_slice(const ov::Tensor& tensor, size_t dim, size_t start_pos, size_t end_pos) {
+    ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
+    start_shape[dim] = start_pos;
+    ov::Shape end_shape = tensor.get_shape();
+    end_shape[dim] = end_pos;
+    return ov::Tensor(tensor, start_shape, end_shape);
 }
 
 ov::genai::GenerationConfig get_beam_search_config() {
