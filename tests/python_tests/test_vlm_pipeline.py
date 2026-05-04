@@ -2721,6 +2721,9 @@ def test_video_metadata_sampling(
     ov_pipe_model: VlmModelInfo,
     video_sampling_inputs: list[tuple[openvino.Tensor, VideoMetadata | None]],
 ):
+    if "tiny-videochat-flash-qwen" in ov_pipe_model.model_id:
+        pytest.xfail("Implement proper video sampling for VideoChat-Flash-Qwen. Ticket - CVS-183520.")
+
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(
