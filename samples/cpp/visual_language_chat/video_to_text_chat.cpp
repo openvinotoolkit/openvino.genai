@@ -7,6 +7,8 @@
 #include <opencv2/videoio.hpp>
 #include <iostream>
 #include <filesystem>
+#include <set>
+#include <cstring>
 
 namespace fs = std::filesystem;
 
