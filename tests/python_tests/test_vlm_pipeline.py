@@ -69,6 +69,8 @@ from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
 from utils.ov_genai_pipelines import should_skip_npuw_tests
+from utils.tiny_model_factory import is_locally_generated, generate_hf_model
+import utils.tiny_model_generators  # noqa: F401 - registers generators
 
 import logging
 logger = logging.getLogger(__name__)
@@ -323,7 +325,10 @@ def _get_ov_model(model_id: str) -> str:
         return model_dir
 
     def convert_to_temp(temp_dir: Path) -> None:
-        model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+        if is_locally_generated(model_id):
+            model_cached = str(generate_hf_model(model_id))
+        else:
+            model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
@@ -1675,6 +1680,23 @@ def test_model_tags_representation(
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         messages = [{"role": "user", "content": f"{ov_pipe_model.get_vision_tag(vision_type)(0)}{prompt}"}]
         templated_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    elif model_id == "optimum-intel-internal-testing/tiny-random-gemma4-moe":
+        processor = retry_request(
+            lambda: transformers.AutoProcessor.from_pretrained(
+                "google/gemma-4-26B-A4B-it",
+                **align_with_optimum_cli,
+            )
+        )
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image" if vision_type == VisionType.IMAGE else "video"},
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ]
+        templated_prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
     else:
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
