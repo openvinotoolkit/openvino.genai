@@ -1680,6 +1680,23 @@ def test_model_tags_representation(
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         messages = [{"role": "user", "content": f"{ov_pipe_model.get_vision_tag(vision_type)(0)}{prompt}"}]
         templated_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    elif model_id == "optimum-intel-internal-testing/tiny-random-gemma4-moe":
+        processor = retry_request(
+            lambda: transformers.AutoProcessor.from_pretrained(
+                "google/gemma-4-26B-A4B-it",
+                **align_with_optimum_cli,
+            )
+        )
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image" if vision_type == VisionType.IMAGE else "video"},
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ]
+        templated_prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
     else:
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
