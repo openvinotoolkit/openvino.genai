@@ -164,9 +164,9 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, device, device_config) {
     // per-layer embeddings model is optional, large MOE models don't have it
-    // if (!has_per_layer_embeddings()) {
-    //     return;
-    // }
+    if (!has_per_layer_embeddings()) {
+        return;
+    }
 
     auto per_layer_model_path = model_dir / "openvino_text_embeddings_per_layer_model.xml";
     auto compiled = utils::singleton_core().compile_model(per_layer_model_path, device, device_config);
@@ -186,9 +186,9 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
     // per-layer embeddings model is optional, large MOE models don't have it
-    // if (!has_per_layer_embeddings()) {
-    //     return;
-    // }
+    if (!has_per_layer_embeddings()) {
+        return;
+    }
 
     auto it = models_map.find("text_embeddings_per_layer");
 
@@ -271,15 +271,9 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
 
     ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
 
-    m_lm_extra_inputs["per_layer_inputs"] = get_per_layer_embeddings(input_ids);
-
-    // if (has_per_layer_embeddings()) {
-    //     m_lm_extra_inputs["per_layer_inputs"] = get_per_layer_embeddings(input_ids);
-    // } else {
-    //     // MOE LM models still have a `per_layer_inputs` Parameter input with hidden_size_per_layer == 0,
-    //     // so a zero-element tensor with rank 4 must be supplied to satisfy the input port.
-    //     m_lm_extra_inputs["per_layer_inputs"] = make_empty_per_layer_inputs(input_ids);
-    // }
+    if (has_per_layer_embeddings()) {
+        m_lm_extra_inputs["per_layer_inputs"] = get_per_layer_embeddings(input_ids);
+    }
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();

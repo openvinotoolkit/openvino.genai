@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <array>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -61,13 +60,10 @@ public:
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const override;
 
     std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() override {
-        // if (!has_per_layer_embeddings()) {
-        //     // MOE LM models still have a `per_layer_inputs` Parameter input with hidden_size_per_layer == 0,
-        //     // so a zero-element tensor with rank 4 must be supplied to satisfy the input port.
-        //     return [this](const ov::Tensor& input_ids) {
-        //         return make_empty_per_layer_inputs(input_ids);
-        //     };
-        // }
+        if (!has_per_layer_embeddings()) {
+            return nullptr;
+        }
+
         return [this](const ov::Tensor& input_ids) {
             return get_per_layer_embeddings(input_ids);
         };
@@ -84,18 +80,6 @@ private:
 
     bool has_per_layer_embeddings() const {
         return m_vlm_config.hidden_size_per_layer_input > 0;
-    }
-
-    /// @brief Build a zero-element `per_layer_inputs` tensor matching the LM model's expected rank.
-    /// Used for Gemma4 MOE variants whose LM model exposes the input with last dim == 0.
-    /// A non-null backing buffer is provided to avoid potential null pointer dereferences in
-    /// downstream consumers when the tensor has zero elements.
-    ov::Tensor make_empty_per_layer_inputs(const ov::Tensor& input_ids) {
-        const auto& shape = input_ids.get_shape();
-        const size_t batch_size = shape.size() > 0 ? shape[0] : 1;
-        const size_t seq_len = shape.size() > 1 ? shape[1] : 0;
-        std::array<float, 1> empty_per_layer_inputs_storage{};
-        return ov::Tensor(ov::element::f32, {batch_size, seq_len, 1, 0}, empty_per_layer_inputs_storage.data());
     }
 
     /// @brief Compute merged text+image embeddings together with the encoded input_ids.
