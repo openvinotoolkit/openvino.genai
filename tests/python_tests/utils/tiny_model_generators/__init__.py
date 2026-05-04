@@ -3,11 +3,6 @@
 
 """
 Tiny random model generator for gemma4-moe.
-
-MOE parameters are scaled down proportionally to avoid a CPU plugin edge case
-on SPR (Intel Xeon Gold 6430L) where extreme dimension ratios
-(hidden_size=8, 128 experts, moe_intermediate_size=704) trigger a segfault
-in vectorized kernels.
 """
 
 from pathlib import Path
