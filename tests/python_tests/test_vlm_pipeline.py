@@ -374,7 +374,9 @@ def _get_ov_model(model_id: str) -> str:
             processor.chat_template = tokenizer.chat_template
 
         processor.audio_tokenizer = None
-        if isinstance(processor, getattr(transformers, "Gemma4Processor", type(None))):
+        if isinstance(processor, getattr(transformers, "Gemma4Processor", type(None))) or isinstance(
+            processor, getattr(transformers, "Qwen3VLProcessor", type(None))
+        ):
             # Remove audio_tokenizer to avoid serialization issues (audio inputs are not supported).
             # Setting to None is insufficient because Gemma4Processor.to_dict() still detects
             # the key and calls .name_or_path on a None object.
