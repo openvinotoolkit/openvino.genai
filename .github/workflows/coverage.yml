@@ -435,7 +435,7 @@ jobs:
       - name: Install iGPU coverage dependencies
         run: |
           apt-get update
-          apt-get install -y lcov clinfo wget ca-certificates gpg-agent software-properties-common tzdata git
+          apt-get install -y lcov clinfo wget ca-certificates gpg-agent software-properties-common tzdata
         env:
           DEBIAN_FRONTEND: noninteractive
           TZ: Europe/London
@@ -444,7 +444,7 @@ jobs:
         uses: ababushk/checkout@dd591a6a2ac25618db4eda86e7e0d938f88cf01b # cherry_pick_retries
         timeout-minutes: 15
         with:
-          submodules: recursive
+          submodules: 'true'
 
       - name: Download OpenVINO package
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
