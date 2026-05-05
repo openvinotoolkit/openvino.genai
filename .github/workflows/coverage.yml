@@ -437,7 +437,7 @@ jobs:
       - name: Install iGPU coverage dependencies
         run: |
           apt-get update
-          apt-get install -y lcov clinfo wget ca-certificates gpg-agent software-properties-common tzdata git
+          apt-get install -y lcov clinfo wget ca-certificates gpg-agent software-properties-common tzdata git python3-yaml
         env:
           DEBIAN_FRONTEND: noninteractive
           TZ: Europe/London
@@ -472,7 +472,7 @@ jobs:
       - name: Install iGPU driver dependencies
         run: |
           set -euo pipefail
-          "${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh" -c=core -c=dev -c=gpu -y
+          bash "${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh" -c=core -c=dev -c=gpu -y
 
           tmp_dir="$(mktemp -d)"
           trap 'rm -rf "${tmp_dir}"' EXIT
