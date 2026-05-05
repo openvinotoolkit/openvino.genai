@@ -605,10 +605,12 @@ public:
      */
     size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
-        size_t blocks_num = std::ceil(num_required_blocks / sequence_group->get_not_finished_sequences().size());
-        auto not_finished_sequences = sequence_group->get_not_finished_sequences();
+        const auto not_finished_sequences = sequence_group->get_not_finished_sequences();
+        const size_t num_not_finished_sequences = not_finished_sequences.size();
+        // ceil(num_required_blocks / num_not_finished_sequences) with integer arithmetic
+        const size_t blocks_num = (num_required_blocks + num_not_finished_sequences - 1) / num_not_finished_sequences;
         for (size_t idx = 0; idx < not_finished_sequences.size(); ++idx) {
-            auto seq_id = not_finished_sequences[idx]->get_id();
+            const auto seq_id = not_finished_sequences[idx]->get_id();
             OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
             free_sequence_partially(seq_id, blocks_num);
         }
@@ -630,7 +632,7 @@ public:
         size_t blocks_released = 0;
         auto not_finished_sequences = sequence_group->get_not_finished_sequences();
         for (size_t idx = 0; idx < not_finished_sequences.size(); ++idx) {
-            auto seq_id = not_finished_sequences[idx]->get_id();
+            const auto seq_id = not_finished_sequences[idx]->get_id();
             OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
             if (free_last_block(seq_id)) {
                 blocks_released++;
