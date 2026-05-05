@@ -2950,9 +2950,7 @@ def test_vision_pos_embeds_modes_equivalence(ov_pipe_model: VlmModelInfo, cat_te
     gen_config.max_new_tokens = 20
     gen_config.do_sample = False
 
-    result_default = ov_pipe_default.generate(
-        PROMPTS[0], images=[cat_tensor], generation_config=gen_config
-    )
+    result_default = ov_pipe_default.generate(PROMPTS[0], images=[cat_tensor], generation_config=gen_config)
 
     # CPP mode: CPU fallback weighted sum. Build a fresh pipeline with the env
     # var set, since VISION_POS_EMBEDS is read in the InputsEmbedder constructor.
@@ -2961,9 +2959,7 @@ def test_vision_pos_embeds_modes_equivalence(ov_pipe_model: VlmModelInfo, cat_te
     try:
         model_path = _get_ov_model(ov_pipe_model.model_id)
         ov_pipe_cpp = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_pipe_model.ov_backend)
-        result_cpp = ov_pipe_cpp.generate(
-            PROMPTS[0], images=[cat_tensor], generation_config=gen_config
-        )
+        result_cpp = ov_pipe_cpp.generate(PROMPTS[0], images=[cat_tensor], generation_config=gen_config)
     finally:
         if prev_val is None:
             os.environ.pop("VISION_POS_EMBEDS", None)
