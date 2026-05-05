@@ -201,10 +201,17 @@ def test_linear_attention_string_inputs(
     )
 
 
+ENCODED_INPUTS_MODELS_LIST = [*LINEAR_ATTENTION_MODELS_LIST]
+if is_transformers_version(">=", "5.0"):
+    # LINEAR_ATTENTION_MODELS_LIST depends on the tranformers version, but MODELS_LIST is the same
+    # to eliminate duplication of tests, MODELS_LIST will be added for transformers>=5.0 only
+    ENCODED_INPUTS_MODELS_LIST += MODELS_LIST
+
+
 @pytest.mark.transformers_dependent(
     reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
 )
-@pytest.mark.parametrize("llm_model", MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("llm_model", ENCODED_INPUTS_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("inputs", INPUT_TENSORS_LIST)
 def test_encoded_inputs(
     llm_model: OVConvertedModelSchema,
@@ -759,8 +766,17 @@ def test_callback_terminate_by_status(ov_pipe: ov_genai.LLMPipeline) -> None:
     assert len(ov_output.tokens[0]) < max_new_tokens
 
 
-@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
-@pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+CHAT_CALLBACK_MODELS_LIST = [*LINEAR_ATTENTION_MODELS_LIST]
+if is_transformers_version("<", "5.0"):
+    # LINEAR_ATTENTION_MODELS_LIST depends on the tranformers version
+    # CHAT_MODELS_LIST is supported on transformers<5.0
+    CHAT_CALLBACK_MODELS_LIST += CHAT_MODELS_LIST
+
+
+@pytest.mark.transformers_dependent(
+    reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788"
+)
+@pytest.mark.parametrize("llm_model", CHAT_CALLBACK_MODELS_LIST, indirect=True)
 def test_chat_scenario_callback_cancel(
     llm_model: OVConvertedModelSchema,
     ov_pipe: ov_genai.LLMPipeline,

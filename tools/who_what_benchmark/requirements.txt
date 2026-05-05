@@ -29,4 +29,4 @@ peft==0.19.1
 # For speech generation evaluation
 jiwer>=3.0.0,<=4.0.0
 pywhispercpp>=1.4.1,<1.5.0
-speechbrain>=1.0.0,<=1.1.0
+speechbrain>=1.0.0,<=1.0.3
