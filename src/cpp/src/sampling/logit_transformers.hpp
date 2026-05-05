@@ -142,6 +142,57 @@ protected:
     double m_top_p = 0.f;
 };
 
+// Min-P sampling (Nguyen et al., arXiv 2407.01082, ICLR 2025): keep tokens whose probability is at least min_p * p_max,
+// where p_max is the probability of the most likely token after Temperature.
+//
+// This runs AFTER TemperatureLogitTransform (which normalises m_vector to probabilities)
+// and BEFORE TopPFilter (which applies nucleus truncation on the surviving set).
+//
+// m_vector must hold normalised probabilities when this runs — defer_expf must be false
+// whenever min_p is active (enforced in LogitProcessor).
+class MinPFilter : public ILogitTransformer {
+public:
+    MinPFilter(double min_p) : m_min_p(min_p) {}
+
+    void apply(Logits& logits) override {
+        if (!logits.is_vector_initialized()) {
+            // Fast path (logprobs == 0): Temperature ran directly on m_data; copy probs to m_vector now.
+            logits.initialize_vector();
+        }
+        // m_vector holds normalised probabilities (Temperature has run).
+        // Find p_max in a single O(N) pass, tracking the argmax index as a fallback.
+        float max_prob = 0.0f;
+        size_t argmax_idx = 0;
+        for (size_t i = 0; i < logits.m_size; ++i) {
+            if (logits.m_vector[i].m_log_prob > max_prob) {
+                max_prob = logits.m_vector[i].m_log_prob;
+                argmax_idx = i;
+            }
+        }
+
+        const float threshold = static_cast<float>(m_min_p) * max_prob;
+
+        // Partition in-place: compact passing tokens to the front without sorting.
+        // Normally, the top token satisfies p_max >= min_p * p_max (since min_p < 1), so at least
+        // one token always survives.  Guard against the degenerate case where all probabilities are
+        // NaN (e.g. Temperature received all-masked logits): NaN comparisons silently yield false,
+        // leaving new_size==0 and crashing the sampler.  Keep the argmax token as a safe fallback.
+        size_t new_size = 0;
+        for (size_t i = 0; i < logits.m_size; ++i) {
+            if (logits.m_vector[i].m_log_prob >= threshold)
+                logits.m_vector[new_size++] = logits.m_vector[i];
+        }
+        if (new_size == 0) {
+            logits.m_vector[0] = logits.m_vector[argmax_idx];
+            new_size = 1;
+        }
+        logits.resize(new_size);
+    }
+
+protected:
+    double m_min_p = 0.0;
+};
+
 class TopKFilter : public ILogitTransformer {
 public:
     TopKFilter(size_t top_k) : m_top_k(top_k) {}
