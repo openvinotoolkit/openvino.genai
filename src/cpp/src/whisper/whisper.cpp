@@ -332,7 +332,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
             chunk_sot_tokens.push_back(config.no_timestamps_token_id);
         }
 
-        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, chunk_sot_tokens, config, 1);
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, chunk_sot_tokens, config);
 
         auto [chunk_result, cancelled] = decode(decoder,
                                                 chunk_sot_tokens,

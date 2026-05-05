@@ -111,7 +111,9 @@ auto scheduler_config_docstring = R"(
         independent sequences, we consider total amount of tokens in a batch).
     num_kv_blocks:              total number of KV blocks available to scheduler logic.
     cache_size:                 total size of KV cache in GB.
-    block_size:                 block size for KV cache.
+    cache_interval:             linear-attention checkpoint interval used when interval-based paging is enabled.
+                                Custom values are supported only for models with linear attention cache inputs.
+                                Must be greater than 0 when prefix caching is enabled.
     dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
 
     vLLM-like settings:
@@ -376,6 +378,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
         .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
         .def_readwrite("cache_size", &SchedulerConfig::cache_size)
+        .def_readwrite("cache_interval", &SchedulerConfig::cache_interval)
         .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
         .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
         .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching)

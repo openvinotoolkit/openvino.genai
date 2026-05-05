@@ -22,10 +22,9 @@ LINEAR_ATTENTION_MODELS_LIST = (
     "optimum-intel-internal-testing/tiny-random-lfm2",
     # "optimum-intel-internal-testing/tiny-mamba",  # beam_idx is not connected
     # "optimum-intel-internal-testing/tiny-random-zamba2",  # no chat template
-    "optimum-intel-internal-testing/tiny-random-granitemoehybrid",
 )
 
-if is_transformers_version(">=", "4.57"):
+if is_transformers_version(">=", "4.57") and is_transformers_version("<", "5.0"):
     LINEAR_ATTENTION_MODELS_LIST += ("optimum-intel-internal-testing/tiny-random-qwen3-next",)
 
 

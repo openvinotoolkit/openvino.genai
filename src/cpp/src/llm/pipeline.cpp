@@ -209,34 +209,23 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     const auto model = utils::read_model(models_path, properties);
 
-    // PA backend does not support linear attention states (conv/SSM caches).
-    if (attention_backend == PA_BACKEND && !is_npu_requested
-        && utils::has_linear_attention_states(model)) {
-        if (utils::explicitly_requires_paged_attention(user_properties)
-            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
-            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
-        } else {
-            attention_backend = SDPA_BACKEND;
-        }
-    }
-
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
     } else if (attention_backend == PA_BACKEND) {
-        // try to call CB adapter one more time, but with safe guard to silent exception
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties);
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
 #endif
-        } catch (ov::Exception&) {
-            // ignore exceptions from PA
+        } catch (const ov::Exception& exception) {
+            GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
+            OPENVINO_THROW("Paged Attention backend initialization failed. Initialize pipeline with explicit backend=\"SDPA\".");
         }
     }
 
@@ -264,34 +253,24 @@ ov::genai::LLMPipeline::LLMPipeline(
     const auto model = utils::read_model(models_path, properties);
     const Tokenizer tokenizer(models_path, properties);
 
-    // PA backend does not support linear attention states (conv/SSM caches).
-    if (attention_backend == PA_BACKEND && !is_npu_requested
-        && utils::has_linear_attention_states(model)) {
-        if (utils::explicitly_requires_paged_attention(user_properties)
-            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
-            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
-        } else {
-            attention_backend = SDPA_BACKEND;
-        }
-    }
-
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, utils::get_latency_oriented_scheduler_config(), device, properties);
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
 #endif
-        } catch (ov::Exception&) {
-            // ignore exceptions from PA
+        } catch (const ov::Exception& exception) {
+            GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
+            OPENVINO_THROW("Paged Attention backend initialization failed. Initialize pipeline with explicit backend=\"SDPA\".");
         }
     }
 
@@ -318,17 +297,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     utils::extract_extensions_to_core(properties);
 
-    // PA backend does not support linear attention states (conv/SSM caches).
     const auto model = utils::singleton_core().read_model(model_str, weights_tensor);
-    if (attention_backend == PA_BACKEND && !is_npu_requested
-        && utils::has_linear_attention_states(model)) {
-        if (utils::explicitly_requires_paged_attention(user_properties)
-            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
-            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
-        } else {
-            attention_backend = SDPA_BACKEND;
-        }
-    }
 
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(
@@ -340,19 +309,18 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
-                                                              tokenizer, scheduler_config, device, device_properties, generation_config);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config);
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor, tokenizer,
-                                                                  utils::get_latency_oriented_scheduler_config(), device, properties, generation_config);
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model->clone(), tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config);
 #endif
-        } catch (ov::Exception&) {
-            // ignore exceptions from PA
+        } catch (const ov::Exception& exception) {
+            GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
+            OPENVINO_THROW("Paged Attention backend initialization failed. Initialize pipeline with explicit backend=\"SDPA\".");
         }
     }
 

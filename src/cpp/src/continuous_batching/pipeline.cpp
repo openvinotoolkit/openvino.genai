@@ -198,6 +198,43 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline(
+    const std::shared_ptr<ov::Model>& model,
+    const ov::genai::Tokenizer& tokenizer,
+    const SchedulerConfig& scheduler_config,
+    const std::string& device,
+    const ov::AnyMap& properties,
+    const ov::genai::GenerationConfig& generation_config,
+    const std::filesystem::path& config_path) {
+    auto start_time = std::chrono::steady_clock::now();
+
+    auto properties_without_draft_model = properties;
+    auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
+    auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_desr.properties, config_path);
+    auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    if (!config_path.empty()) {
+        properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = config_path;
+    }
+
+    utils::print_scheduler_config_info(scheduler_config);
+
+    if (is_prompt_lookup_enabled) {
+        OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
+        m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
+    } else if (draft_model_desr.model != nullptr && eagle_rt_info.eagle3_mode) {
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_desr, eagle_rt_info.hidden_layers_list);
+    } else if (draft_model_desr.model != nullptr) {
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_desr);
+    } else {
+        m_impl = std::make_shared<ContinuousBatchingImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
+    }
+
+    m_impl->m_load_time_ms = get_load_time(start_time);
+}
+
+ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const std::string& model_str,
     const ov::Tensor& weights_tensor,
     const Tokenizer& tokenizer,

@@ -39,7 +39,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
     std::vector<SequenceGroup::Ptr> sequence_groups{
-        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config, 32)),
+        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config)),
     };
 
     // to emulate processed prompt and add next token [ 0 ]
@@ -83,7 +83,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
     std::vector<SequenceGroup::Ptr> sequence_groups{
-        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config, 32)),
+        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config)),
     };
 
     // to emulate processed prompt and add next token [ 0 ]
@@ -128,7 +128,7 @@ TEST(SamplerValidationMode, gen_phase) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
     std::vector<SequenceGroup::Ptr> sequence_groups{
-        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config, 32)),
+        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config)),
     };
 
     // to emulate processed prompt and add next token [ 0 ]
@@ -172,7 +172,7 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_part_seq) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
     std::vector<SequenceGroup::Ptr> sequence_groups{
-        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config, 32)),
+        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config)),
     };
 
     // append candidates [ 0, 1, 1 ]
@@ -218,7 +218,7 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_whole_seq) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
     std::vector<SequenceGroup::Ptr> sequence_groups{
-        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config, 32)),
+        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config)),
     };
 
     // append candidates [ 1, 2, 3 ]
@@ -263,7 +263,7 @@ TEST(SamplerValidationMode, prompt_phase) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
     std::vector<SequenceGroup::Ptr> sequence_groups{
-        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config, 32)),
+        SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config)),
     };
 
     // append candidates [ 0, 1, 2 ]
