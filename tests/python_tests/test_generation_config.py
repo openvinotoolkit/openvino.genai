@@ -3,6 +3,7 @@
 
 from openvino_genai import GenerationConfig
 import json
+import math
 import os
 import pytest
 
@@ -12,7 +13,11 @@ def verify_set_values(generation_config, kwargs):
     for key, value in kwargs.items():
         if key == "stop_token_ids":
             continue
-        assert getattr(generation_config, key) == value
+        actual = getattr(generation_config, key)
+        if isinstance(value, float):
+            assert math.isclose(actual, value, rel_tol=1e-5), f"{key}: {actual} != {value}"
+        else:
+            assert actual == value
     if "eos_token_id" in kwargs:
         assert kwargs["eos_token_id"] in generation_config.stop_token_ids
         if "stop_token_ids" in kwargs:
@@ -37,7 +42,11 @@ configs = [
     dict(max_new_tokens=1, do_sample=True, top_k=1),
     dict(max_new_tokens=1, do_sample=True, top_p=0.5),
     dict(max_new_tokens=1, do_sample=True, temperature=0.5),
-    # parameters requiring multimonial are ignored when do_sample=False
+    dict(max_new_tokens=1, do_sample=True, min_p=0.0),  # 0.0 disables the filter
+    dict(max_new_tokens=1, do_sample=True, min_p=0.05),  # typical value
+    dict(max_new_tokens=1, do_sample=True, min_p=0.1),
+    dict(max_new_tokens=1, do_sample=True, top_k=40, top_p=0.95, min_p=0.05),  # combined
+    # parameters requiring multinomial are ignored when do_sample=False
     dict(max_new_tokens=1, top_k=1), # requires do_sample=True
     dict(max_new_tokens=1, top_p=0.5), # requires do_sample=True
     dict(max_new_tokens=1, temperature=2.0), # requires do_sample=True
@@ -84,9 +93,11 @@ invalid_configs = [
     dict(max_new_tokens=1, presence_penalty=-3.0), # invalid presence_penalty
     dict(max_new_tokens=1, frequency_penalty=3.0), # invalid frequency_penalty
     # multinomial sampling
-    dict(max_new_tokens=1, do_sample=True, top_p=1.1), # 'top_p' must be within (0, 1] when 'do_sample' is True
-    dict(max_new_tokens=1, do_sample=True, top_p=0), # 'top_p' must be within (0, 1] when 'do_sample' is True
-    dict(max_new_tokens=1, do_sample=True, temperature=-1.0), # invalid temp
+    dict(max_new_tokens=1, do_sample=True, top_p=1.1),  # 'top_p' must be within (0, 1] when 'do_sample' is True
+    dict(max_new_tokens=1, do_sample=True, top_p=0),  # 'top_p' must be within (0, 1] when 'do_sample' is True
+    dict(max_new_tokens=1, do_sample=True, temperature=-1.0),  # invalid temp
+    dict(max_new_tokens=1, do_sample=True, min_p=-0.1),  # min_p must be >= 0.0
+    dict(max_new_tokens=1, do_sample=True, min_p=1.0),  # min_p must be < 1.0
     # beam search
     dict(max_new_tokens=1, num_beams=2, num_return_sequences=3), # 'num_beams' must be >= 'num_return_sequences'
     dict(max_new_tokens=1, num_beams=3, num_beam_groups=2), # 'num_beams' must be divisible by 'num_beam_groups'
