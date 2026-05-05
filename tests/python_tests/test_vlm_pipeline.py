@@ -372,7 +372,7 @@ def _get_ov_model(model_id: str) -> str:
             # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
             processor.chat_template = tokenizer.chat_template
 
-        if is_transformers_version(">=", "5.0"):
+        if is_transformers_version("<", "5.0"):
             processor.audio_tokenizer = None
         else:
             if hasattr(processor, "audio_tokenizer"):
