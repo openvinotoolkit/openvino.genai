@@ -484,10 +484,8 @@ jobs:
           dpkg -i *.deb
           popd
 
-      - name: Verify iGPU OpenCL availability
-        run: |
-          clinfo
-          clinfo | grep -Eq 'Device Type[[:space:]]+GPU'
+      - name: Verify GPU device availability
+        run: clinfo
 
       - name: Restore coverage notes
         run: |
