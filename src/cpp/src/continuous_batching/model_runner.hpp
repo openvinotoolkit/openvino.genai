@@ -711,7 +711,7 @@ public:
             m_request.set_tensor("max_context_len", max_context_len);
         }
         if (m_is_use_rotation_inputs) {
-            m_request.set_tensor("rotation_trig_lut", m_cache_rotation_trig_lut);
+            m_request.set_tensor("model_rotation_trig_lut", m_cache_rotation_trig_lut);
             _set_cache_rotation_coefficients(sequence_groups, scheduler_output);
         }
 
