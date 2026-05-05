@@ -765,39 +765,6 @@ public:
             m_request.set_tensor("score_aggregation_window", score_aggregation_window);
         }
 
-        // {
-        //     // === DEBUG: dump all model inputs before inference ===
-        //     std::cerr << "\n=== ModelRunner::forward() — PRE-INFER DEBUG DUMP ===\n";
-        //     auto compiled_model = m_request.get_compiled_model();
-        //     for (const auto& input : compiled_model.inputs()) {
-        //         std::string name;
-        //         for (const auto& n : input.get_names()) { name = n; break; }
-        //         ov::Tensor t;
-        //         try { t = m_request.get_tensor(name); } catch (...) { std::cerr << "  [" << name << "] — UNBOUND\n"; continue; }
-        //         auto shape = t.get_shape();
-        //         std::cerr << "  [" << name << "]  shape={";
-        //         for (size_t i = 0; i < shape.size(); ++i) { if (i) std::cerr << ","; std::cerr << shape[i]; }
-        //         std::cerr << "}  type=" << t.get_element_type() << "  bytes=" << t.get_byte_size();
-
-        //         // Print values for small I32 / I64 tensors (< 64 elements)
-        //         if (t.get_size() > 0 && t.get_size() <= 64) {
-        //             if (t.get_element_type() == ov::element::i32) {
-        //                 std::cerr << "  vals=[";
-        //                 auto* d = t.data<int32_t>();
-        //                 for (size_t i = 0; i < t.get_size(); ++i) { if (i) std::cerr << ","; std::cerr << d[i]; }
-        //                 std::cerr << "]";
-        //             } else if (t.get_element_type() == ov::element::i64) {
-        //                 std::cerr << "  vals=[";
-        //                 auto* d = t.data<int64_t>();
-        //                 for (size_t i = 0; i < t.get_size(); ++i) { if (i) std::cerr << ","; std::cerr << d[i]; }
-        //                 std::cerr << "]";
-        //             }
-        //         }
-        //         std::cerr << "\n";
-        //     }
-        //     std::cerr << "=== END DEBUG DUMP ===\n\n";
-        // }
-
         {
             static ManualTimer timer("pure generate inference");
             timer.start();
