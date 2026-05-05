@@ -23,6 +23,7 @@ env:
   HF_HOME: /mount/caches/huggingface/lin
   HF_DATASETS_CACHE: /tmp/.hf_cache/datasets/
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/
+  NODE_EXTRA_CA_CERTS: /usr/local/share/ca-certificates/IntelProxyRootCA-Base64.crt
   OPENVINO_LOG_LEVEL: 4
   ENABLE_BRANCH_COVERAGE: 'false'
   LCOV_CAPTURE_TIMEOUT_SECONDS: '3600'
