@@ -6,6 +6,7 @@
 #include "logger.hpp"
 
 #include <cstdlib>
+#include <cstring>
 
 #include "openvino/op/add.hpp"
 #include "openvino/op/multiply.hpp"
@@ -263,7 +264,7 @@ ov::Tensor create_visual_pos_masks(
 // VISION_POS_EMBEDS=CPP environment variable. Otherwise the default (patched model) is used.
 bool is_cpp_pos_embeds_fallback_requested() {
     const char* env = std::getenv("VISION_POS_EMBEDS");
-    return env && std::string(env) == "CPP";
+    return env && std::strcmp(env, "CPP") == 0;
 }
 
 /**
