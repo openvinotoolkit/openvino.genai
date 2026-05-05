@@ -17,6 +17,7 @@ import {
 } from "./parsers.js";
 import {
   GenerationConfig,
+  GenerationFinishReason,
   StreamingStatus,
   VLMPipelineProperties,
   LLMPipelineProperties,
@@ -144,6 +145,7 @@ export interface LLMPipeline {
         scores: number[];
         perfMetrics: PerfMetrics;
         parsed: Record<string, unknown>[];
+        finishReasons: GenerationFinishReason[];
       },
     ) => void,
   ): void;
@@ -203,6 +205,7 @@ export interface VLMPipeline {
         scores: number[];
         perfMetrics: VLMPerfMetrics;
         parsed: Record<string, unknown>[];
+        finishReasons: GenerationFinishReason[];
       },
     ) => void,
   ): void;

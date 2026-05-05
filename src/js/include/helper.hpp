@@ -307,6 +307,16 @@ Napi::Value cpp_to_js<ov::genai::ImageGenerationPerfMetrics, Napi::Value>(
 template <>
 Napi::Value cpp_to_js<ov::genai::StopCriteria, Napi::Value>(const Napi::Env& env, const ov::genai::StopCriteria& value);
 
+template <>
+Napi::Value cpp_to_js<ov::genai::GenerationFinishReason, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::GenerationFinishReason& value);
+
+template <>
+Napi::Value cpp_to_js<std::vector<ov::genai::GenerationFinishReason>, Napi::Value>(
+    const Napi::Env& env,
+    const std::vector<ov::genai::GenerationFinishReason>& value);
+
 template <typename MapElementType>
 Napi::Object cpp_map_to_js_object(const Napi::Env& env, const std::map<std::string, MapElementType>& map) {
     Napi::Object obj = Napi::Object::New(env);
