@@ -1,6 +1,6 @@
 # Text to Image JavaScript Generation Pipeline
 
-This example showcases inference of text-to-image diffusion models like Stable Diffusion 1.5, 2.1, FLUX, and LCM. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `Text2ImagePipeline` from `openvino-genai-node` and uses a text prompt as input source.
+This example showcases inference of text-to-image diffusion models like Stable Diffusion, FLUX, and LCM. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `Text2ImagePipeline` from `openvino-genai-node` and uses a text prompt as input source.
 
 Sample files:
  - [`text2image.js`](./text2image.js) demonstrates basic usage of the text-to-image pipeline with a step callback and saves the result as a BMP file using `bmp-js`
