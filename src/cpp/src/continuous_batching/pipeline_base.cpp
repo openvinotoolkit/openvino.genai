@@ -371,7 +371,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[0].get_shape()[1], 0));
 
-        lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
+        lm_extra_inputs_list.push_back(m_inputs_embedder->get_lm_extra_inputs());
 
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
@@ -638,7 +638,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
     std::optional<ov::Tensor> token_type_ids;
     // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
     std::optional<ov::Tensor> prompt_ids;
-    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
@@ -650,9 +649,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
         } else {
             inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
         }
-        lm_extra_inputs = deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs());
+        return add_request(request_id, inputs, sampling_params, token_type_ids, prompt_ids, m_inputs_embedder->get_lm_extra_inputs());
     }
-    return add_request(request_id, inputs, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
 }
 
 GenerationHandle
@@ -682,7 +680,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     std::optional<ov::Tensor> token_type_ids;
     // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
     std::optional<ov::Tensor> prompt_ids;
-    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
@@ -691,9 +688,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
 
         const auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, metrics, true, image_sequence, video_sequence);
-        lm_extra_inputs = deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs());
+        return add_request(request_id, inputs, std::move(sampling_params), token_type_ids, prompt_ids, m_inputs_embedder->get_lm_extra_inputs());
     }
-    return add_request(request_id, inputs, std::move(sampling_params), token_type_ids, prompt_ids, lm_extra_inputs);
 }
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
