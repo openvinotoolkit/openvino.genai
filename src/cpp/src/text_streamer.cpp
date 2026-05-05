@@ -21,6 +21,17 @@ TextStreamer::TextStreamer(const Tokenizer& tokenizer,
                            std::function<ov::genai::CallbackTypeVariant(std::string)> callback,
                            const ov::AnyMap& detokenization_params) {
     m_tokenizer = tokenizer;
+    // Wrap string-only callback so the internal API is always (string, tokens)
+    m_subword_callback = [cb = std::move(callback)](std::string text, std::vector<int64_t>) -> CallbackTypeVariant {
+        return cb(std::move(text));
+    };
+    m_additional_detokenization_params = detokenization_params;
+}
+
+TextStreamer::TextStreamer(const Tokenizer& tokenizer,
+                           std::function<ov::genai::CallbackTypeVariant(std::string, std::vector<int64_t>)> callback,
+                           const ov::AnyMap& detokenization_params) {
+    m_tokenizer = tokenizer;
     m_subword_callback = std::move(callback);
     m_additional_detokenization_params = detokenization_params;
 }
@@ -35,24 +46,26 @@ StreamingStatus TextStreamer::write(int64_t token) {
         // Flush the cache after the new line symbol
         res << std::string_view{text.data() + m_printed_len, text.size() - m_printed_len};
 
-        auto res_status = run_callback_if_needed(res.str());
+        auto chunk_tokens = std::vector<int64_t>(m_tokens_cache.begin() + m_printed_token_idx, m_tokens_cache.end());
+        auto res_status = run_callback_if_needed(res.str(), chunk_tokens);
         m_tokens_cache.clear();
         m_decoded_lengths.clear();
         m_printed_len = 0;
+        m_printed_token_idx = 0;
         return res_status;
     }
 
     if (is_incomplete(text)) {
         m_decoded_lengths[m_decoded_lengths.size() - 1] = -1;
         // Don't print incomplete text
-        return run_callback_if_needed(res.str());
+        return run_callback_if_needed(res.str(), {});
     }
 
     // In some cases adding the next token can shorten the text,
     // e.g. when apostrophe removing regex had worked after adding new tokens.
     // Printing several last tokens is delayed.
     if (m_decoded_lengths.size() < delay_n_tokens) {
-        return run_callback_if_needed(res.str());
+        return run_callback_if_needed(res.str(), {});
     }
 
     compute_decoded_length_for_position(m_decoded_lengths.size() - delay_n_tokens);
@@ -64,11 +77,21 @@ StreamingStatus TextStreamer::write(int64_t token) {
         // Print to output only if text length is increased.
         res << std::string_view{text.data() + m_printed_len, print_until - m_printed_len} << std::flush;
     }
-    
-    auto status = run_callback_if_needed(res.str());
-    
+
+    // The flushed token is at index (size - delay_n_tokens), i.e. the token
+    // whose decoded length was just confirmed stable.
+    size_t flush_token_idx = m_decoded_lengths.size() - delay_n_tokens;
+    std::vector<int64_t> chunk_tokens;
+    if (print_until > -1 && print_until > m_printed_len && flush_token_idx >= m_printed_token_idx) {
+        chunk_tokens.assign(m_tokens_cache.begin() + m_printed_token_idx,
+                            m_tokens_cache.begin() + flush_token_idx + 1);
+    }
+
+    auto status = run_callback_if_needed(res.str(), chunk_tokens);
+
     if (print_until > -1 && print_until > m_printed_len) {
         m_printed_len = print_until;
+        m_printed_token_idx = flush_token_idx + 1;
     }
     return status;
 }
@@ -110,24 +133,36 @@ StreamingStatus TextStreamer::set_streaming_status(CallbackTypeVariant callback_
         return std::get<bool>(callback_status) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
 }
 
-StreamingStatus TextStreamer::run_callback_if_needed(const std::string& text) {
-    if (text.empty()) {
+StreamingStatus TextStreamer::run_callback_if_needed(const std::string& text, const std::vector<int64_t>& tokens) {
+    if (text.empty() && tokens.empty()) {
         return StreamingStatus::RUNNING;
     } else {
-        return set_streaming_status(m_subword_callback(text));
+        return set_streaming_status(m_subword_callback(text, tokens));
     }
 }
 
 void TextStreamer::end() {
     std::stringstream res;
     std::string text = m_tokenizer.decode(m_tokens_cache, m_additional_detokenization_params);
-    if (text.size() <= m_printed_len)
+    if (text.size() <= m_printed_len) {
+        // No new text, but flush any unprinted special tokens
+        auto chunk_tokens = std::vector<int64_t>(m_tokens_cache.begin() + m_printed_token_idx, m_tokens_cache.end());
+        m_tokens_cache.clear();
+        m_decoded_lengths.clear();
+        m_printed_len = 0;
+        m_printed_token_idx = 0;
+        if (!chunk_tokens.empty()) {
+            m_subword_callback("", chunk_tokens);
+        }
         return;
+    }
     res << std::string_view{text.data() + m_printed_len, text.size() - m_printed_len} << std::flush;
+    auto chunk_tokens = std::vector<int64_t>(m_tokens_cache.begin() + m_printed_token_idx, m_tokens_cache.end());
     m_tokens_cache.clear();
     m_decoded_lengths.clear();
     m_printed_len = 0;
-    m_subword_callback(res.str());
+    m_printed_token_idx = 0;
+    m_subword_callback(res.str(), chunk_tokens);
     return;
 }
 
