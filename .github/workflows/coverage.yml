@@ -494,7 +494,7 @@ jobs:
           cp -a coverage_notes/main-build/. "${BUILD_DIR}/"
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: ./.github/actions/setup_python
+        uses: openvinotoolkit/openvino/.github/actions/setup_python@master
         with:
           version: ${{ env.PYTHON_VERSION }}
           pip-cache-path: ${{ env.PIP_CACHE_PATH }}
