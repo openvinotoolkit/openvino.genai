@@ -2933,34 +2933,41 @@ def test_video_metadata_sampling_continuous_batching(
     _compare_outputs_for_video_sampling(*outputs_add_request_api)
 
 
-@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
-def test_vision_pos_embeds_modes_equivalence(cat_tensor, backend):
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [("optimum-intel-internal-testing/tiny-random-qwen3-vl", b) for b in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+def test_vision_pos_embeds_modes_equivalence(ov_pipe_model: VlmModelInfo, cat_tensor):
     """Test that VISION_POS_EMBEDS=CPP (CPU fallback) and default (patched model)
     produce identical results for Qwen3-VL."""
-    model_id = "optimum-intel-internal-testing/tiny-random-qwen3-vl"
-    model_path = _get_ov_model(model_id)
+    # Default-mode pipeline comes from the module-scoped fixture (env var unset
+    # at construction time => patched model, device-side weighted sum).
+    ov_pipe_default = ov_pipe_model.pipeline
 
     gen_config = GenerationConfig()
     gen_config.max_new_tokens = 20
     gen_config.do_sample = False
 
-    # Default mode: patched model (device-side weighted sum)
-    prev_val = os.environ.pop("VISION_POS_EMBEDS", None)
-    try:
-        ov_pipe_default = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
-        result_default = ov_pipe_default.generate(PROMPTS[0], images=[cat_tensor], generation_config=gen_config)
-    finally:
-        if prev_val is not None:
-            os.environ["VISION_POS_EMBEDS"] = prev_val
+    result_default = ov_pipe_default.generate(
+        PROMPTS[0], images=[cat_tensor], generation_config=gen_config
+    )
 
-    # CPP mode: CPU fallback weighted sum
+    # CPP mode: CPU fallback weighted sum. Build a fresh pipeline with the env
+    # var set, since VISION_POS_EMBEDS is read in the InputsEmbedder constructor.
+    prev_val = os.environ.get("VISION_POS_EMBEDS")
     os.environ["VISION_POS_EMBEDS"] = "CPP"
     try:
-        ov_pipe_cpp = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
-        result_cpp = ov_pipe_cpp.generate(PROMPTS[0], images=[cat_tensor], generation_config=gen_config)
+        model_path = _get_ov_model(ov_pipe_model.model_id)
+        ov_pipe_cpp = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_pipe_model.ov_backend)
+        result_cpp = ov_pipe_cpp.generate(
+            PROMPTS[0], images=[cat_tensor], generation_config=gen_config
+        )
     finally:
-        os.environ.pop("VISION_POS_EMBEDS", None)
-        if prev_val is not None:
+        if prev_val is None:
+            os.environ.pop("VISION_POS_EMBEDS", None)
+        else:
             os.environ["VISION_POS_EMBEDS"] = prev_val
 
     assert result_default.texts[0] == result_cpp.texts[0], (

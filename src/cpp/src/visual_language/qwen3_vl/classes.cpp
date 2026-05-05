@@ -259,9 +259,11 @@ ov::Tensor create_visual_pos_masks(
     return result;
 }
 
-bool check_vision_pos_embeds_env() {
+// Returns true when the user requested the C++ fallback path via the
+// VISION_POS_EMBEDS=CPP environment variable. Otherwise the default (patched model) is used.
+bool is_cpp_pos_embeds_fallback_requested() {
     const char* env = std::getenv("VISION_POS_EMBEDS");
-    return !(env && std::string(env) == "CPP");
+    return env && std::string(env) == "CPP";
 }
 
 /**
@@ -331,7 +333,7 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const std::string& device,
     const ov::AnyMap device_config
 ) : InputsEmbedderQwen2VL(vlm_config, model_dir, device, device_config),
-    m_use_patched_pos_model(check_vision_pos_embeds_env()) {
+    m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()) {
     auto pos_model = utils::singleton_core().read_model(
         model_dir / "openvino_vision_embeddings_pos_model.xml");
     if (m_use_patched_pos_model) {
@@ -355,7 +357,7 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const std::string& device,
     const ov::AnyMap device_config
 ) : InputsEmbedderQwen2VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config),
-    m_use_patched_pos_model(check_vision_pos_embeds_env()) {
+    m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()) {
     const auto& [pos_model_str, pos_weights] = 
         utils::get_model_weights_pair(models_map, "vision_embeddings_pos");
     auto pos_model = utils::singleton_core().read_model(pos_model_str, pos_weights);
