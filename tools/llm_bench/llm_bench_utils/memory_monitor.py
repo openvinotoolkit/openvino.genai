@@ -31,10 +31,56 @@ import logging as log
 import traceback
 import json
 import sys
+import ctypes
+import ctypes.util
 
 
 # CUSTOM FIX TO AVOID ISSUE: RuntimeError: main thread is not in main loop.
 matplotlib.use("Agg")
+
+# ── portable malloc_trim ──────────────────────────────────────────────────────
+def _load_libc():
+    """Load the C standard library portably (Linux / macOS). Returns None on Windows."""
+    if sys.platform == "win32":
+        return None
+    lib = ctypes.CDLL(None)          # fast path: already mapped into the process
+    if not hasattr(lib, "malloc_trim"):
+        name = ctypes.util.find_library("c")
+        lib = ctypes.CDLL(name) if name else None
+    return lib
+
+_libc = _load_libc()
+
+def malloc_trim() -> bool:
+    """
+    Release free heap memory back to the OS in the current (main) process.
+    - Linux / glibc : malloc_trim(0) — returns free heap pages to the OS
+    - Windows       : HeapCompact()  — coalesces / decommits all process heaps
+    Returns True if memory was trimmed, False otherwise.
+    Safe to call at any time — only touches already-freed memory.
+    """
+    if sys.platform == "win32":
+        try:
+            kernel32 = ctypes.windll.kernel32
+            count = kernel32.GetProcessHeaps(0, None)
+            HeapsArray = ctypes.c_void_p * count
+            heaps = HeapsArray()
+            kernel32.GetProcessHeaps(count, heaps)
+            trimmed = False
+            for heap in heaps:
+                if kernel32.HeapCompact(heap, 0):
+                    trimmed = True
+            return trimmed
+        except OSError:
+            return False
+
+    if _libc is None or not hasattr(_libc, "malloc_trim"):
+        return False
+    _libc.malloc_trim.restype  = ctypes.c_int
+    _libc.malloc_trim.argtypes = [ctypes.c_size_t]
+    return bool(_libc.malloc_trim(0))
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 
 class MonitorLevel(Enum):
@@ -170,6 +216,8 @@ class MemoryMonitorHandler:
         if self.mmh:
             self.mmh.update_marker("cooldown")
             log.info(f"MemoryMonitor: {label}: {self.cooldown}")
+        trimmed = malloc_trim()
+        log.info(f"MemoryMonitor: malloc_trim: {trimmed}")
         time.sleep(self.cooldown)
 
     def iter_stop_and_collect_data(self, iter_num, dict_format=True):
