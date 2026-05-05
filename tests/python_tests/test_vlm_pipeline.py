@@ -945,9 +945,6 @@ def test_vlm_pipeline_chat(
     system_message: str,
     iteration_images: list[list[PIL.Image]],
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
