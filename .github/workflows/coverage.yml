@@ -413,6 +413,7 @@ jobs:
     container:
       image: ubuntu:22.04
       volumes:
+        - /usr/local/share/ca-certificates:/usr/local/share/ca-certificates:ro
         - /mount:/mount
         - ${{ github.workspace }}:${{ github.workspace }}
       options: "--group-add 44 --group-add 993 --device /dev/dri/card1:/dev/dri/card1 --device /dev/dri/renderD128:/dev/dri/renderD128"
