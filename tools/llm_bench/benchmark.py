@@ -133,13 +133,12 @@ def get_argparser():
         default=0,
         required=False,
         type=int,
-        help="Enables memory usage monitoring mode. For 0 monitoring is off. Use 1 to track memory consumption"
-        " during model compilation and warm-up iteration, 2 to track across all iterations, or 3 to track in"
-        " separate process over model compilation and warm-up, and respectively 4 for the whole benchmarking,"
-        "as well as 5 for monitor memory in cooldown phases only."
-        " Warning: Concurrent memory consumption and performance benchmarking is not recommended. Performance"
-        " impact can be reduced by using longer --memory_consumption_cooldown and --memory_consumption_interval"
-        " values, though a degradation is unavoidable.",
+        help="Enables memory usage monitoring mode. 0 = off (default). "
+        "1 = thread, warm-up only; 2 = thread, all iterations; "
+        "3 = separate process, warm-up only; 4 = separate process, all iterations. "
+        "Warning: concurrent memory and performance benchmarking is not recommended. "
+        "Performance impact can be reduced with longer --memory_consumption_cooldown "
+        "and --memory_consumption_interval values, though some degradation is unavoidable.",
     )
     parser.add_argument(
         "--memory_consumption_cooldown",
