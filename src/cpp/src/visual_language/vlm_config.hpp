@@ -34,6 +34,7 @@ enum class VLMModelType {
     QWEN3_OMNI,
     DEEPSEEK_OCR2,
     MUSE_GLIMMER,
+    MISTRAL3,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -167,6 +168,18 @@ public:
     int64_t video_token_id = -1;
     // Speaker name-to-codec-token mapping
     std::map<std::string, int64_t> speaker_ids;
+
+    // Mistral3 (Pixtral) specific config
+    /// @brief Spatial merge size for Pixtral vision encoder.
+    size_t spatial_merge_size = 2;
+    /// @brief Image token index used to mark image placeholder positions.
+    size_t image_token_index = 10;
+    /// @brief A string token denoting a single image patch for Mistral3/Pixtral.
+    std::string img_token = "[IMG]";
+    /// @brief A string token denoting a row break in the image patch grid for Mistral3/Pixtral.
+    std::string img_break = "[IMG_BREAK]";
+    /// @brief A string token denoting end of image patches for Mistral3/Pixtral.
+    std::string img_end = "[IMG_END]";
 
     /// @brief Default constructor.
     VLMConfig() = default;
