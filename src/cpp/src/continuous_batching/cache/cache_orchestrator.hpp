@@ -422,8 +422,10 @@ public:
         return m_block_managers.at(type)->get_block_size();
     }
 
+    /// @return Number of KV cache blocks currently allocated for the given sequence group or 0 if model does not have KV cache.
     size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
-        return first_block_manager()->get_num_logical_blocks(seq_group);
+        auto it = m_block_managers.find(CacheType::KV_CACHE);
+        return it != m_block_managers.end() ? it->second->get_num_logical_blocks(seq_group) : 0;
     }
 
     // -----------------------------------------------------------------------
@@ -685,11 +687,6 @@ public:
     }
 
 private:
-    const std::shared_ptr<BlockManager>& first_block_manager() const {
-        OPENVINO_ASSERT(!m_block_managers.empty(), "No cache types registered");
-        return m_block_managers.begin()->second;
-    }
-
     const std::shared_ptr<ICacheManager>& first_cache_manager() const {
         OPENVINO_ASSERT(!m_cache_managers.empty(), "No cache types registered");
         return m_cache_managers.begin()->second;
