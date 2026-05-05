@@ -157,6 +157,7 @@ MODEL_IDS: list[str] = [
     "optimum-intel-internal-testing/tiny-random-llava-next",
     "optimum-intel-internal-testing/tiny-random-internvl2",
     "optimum-intel-internal-testing/tiny-random-gemma3",
+    "optimum-intel-internal-testing/tiny-random-mistral3",
     "qnguyen3/nanoLLaVA",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
     "optimum-intel-internal-testing/tiny-random-gemma4",
@@ -177,6 +178,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
+    "optimum-intel-internal-testing/tiny-random-mistral3": lambda idx: "[IMG]",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
@@ -199,6 +201,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": 32,
+    "optimum-intel-internal-testing/tiny-random-mistral3": 32,
     "qnguyen3/nanoLLaVA": 384,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
@@ -1581,6 +1584,7 @@ TAG_INSERTED_BY_TEMPLATE = [
     ("optimum-intel-internal-testing/tiny-random-qwen3-vl", "PA"),
     ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
     ("optimum-intel-internal-testing/tiny-random-gemma4", "SDPA"),
+    ("optimum-intel-internal-testing/tiny-random-mistral3", "PA"),
     ("qnguyen3/nanoLLaVA", "PA"),
     ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
 ]
@@ -2076,6 +2080,8 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-minicpmv-2_6/*/image*": "CVS-180070",
     # videochat_flash_qwen text-only cases
     "*tiny-videochat-flash-qwen/PA/CPP/text-only": "CVS-183813",
+    # mistral3 cases
+    "*tiny-random-mistral3/*": "CVS-180070",
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.

@@ -12,8 +12,25 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
     nlohmann::json parsed = nlohmann::json::parse(stream);
     using ov::genai::utils::read_json_param;
+
     read_json_param(parsed, "image_size", image_size);
-    read_json_param(parsed, "patch_size", patch_size); // For llava - stored in config.json vision_config
+
+    // patch_size can be an integer (LLaVA) or an object {"height": N, "width": N} (Pixtral)
+    if (parsed.contains("patch_size") && parsed["patch_size"].is_object()) {
+        size_t patch_size_height = 0;
+        size_t patch_size_width = 0;
+        read_json_param(parsed, "patch_size.height", patch_size_height);
+        read_json_param(parsed, "patch_size.width", patch_size_width);
+        OPENVINO_ASSERT(patch_size_height == patch_size_width,
+                        "Non-square patch_size is not supported: height=",
+                        patch_size_height,
+                        ", width=",
+                        patch_size_width);
+        patch_size = patch_size_height;
+    } else {
+        read_json_param(parsed, "patch_size", patch_size);
+    }
+
     read_json_param(parsed, "scale_resolution", scale_resolution);
     read_json_param(parsed, "max_slice_nums", max_slice_nums);
 
@@ -55,4 +72,7 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     // Setting gemma4 config params
     read_json_param(parsed, "pooling_kernel_size", pooling_kernel_size);
     read_json_param(parsed, "max_soft_tokens", max_soft_tokens);
+
+    // Setting mistral3 (pixtral) config params
+    read_json_param(parsed, "size.longest_edge", longest_edge);
 }
