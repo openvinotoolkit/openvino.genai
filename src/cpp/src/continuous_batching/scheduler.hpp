@@ -410,15 +410,11 @@ private:
                         scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
                     }
 
-
-
-                    // merge per-type copy_blocks
                     for (auto& [type, copy_map] : per_type_copy_map) {
-                        for (const auto& src_dst : copy_map) {
-                            size_t src_index = src_dst.first;
-                            const std::list<size_t>& dst_indexes = src_dst.second;
-                            for (const auto dst_index : dst_indexes)
-                                typed_block_copy_map[type][src_index].push_back(dst_index);
+                        auto& accumulated_copy_map = typed_block_copy_map[type];
+                        for (auto& [src_index, dst_indexes] : copy_map) {
+                            auto& accumulated_dst_indexes = accumulated_copy_map[src_index];
+                            accumulated_dst_indexes.splice(accumulated_dst_indexes.end(), dst_indexes);
                         }
                     }
 
