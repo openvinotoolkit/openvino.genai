@@ -493,9 +493,6 @@ jobs:
           mkdir -p "${BUILD_DIR}" "${BUILD_JS_DIR}"
           cp -a coverage_notes/main-build/. "${BUILD_DIR}/"
 
-      - name: Install coverage Python dependencies
-        run: python3 -m pip install -r .github/scripts/coverage/requirements-ci.txt
-
       - name: Run iGPU C++ coverage tests
         run: |
           source "${OV_INSTALL_DIR}/setupvars.sh"
