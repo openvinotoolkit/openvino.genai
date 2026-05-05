@@ -493,10 +493,10 @@ jobs:
           mkdir -p "${BUILD_DIR}" "${BUILD_JS_DIR}"
           cp -a coverage_notes/main-build/. "${BUILD_DIR}/"
 
-      - name: Setup Python ${{ env.NODE_VERSION }}
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: ./.github/actions/setup_python
         with:
-          version: ${{ env.NODE_VERSION }}
+          version: ${{ env.PYTHON_VERSION }}
           pip-cache-path: ${{ env.PIP_CACHE_PATH }}
           should-setup-pip-paths: 'true'
           self-hosted-runner: 'true'
