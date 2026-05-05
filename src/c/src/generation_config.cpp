@@ -267,6 +267,17 @@ ov_status_e ov_genai_generation_config_set_top_k(ov_genai_generation_config* con
     }
     return ov_status_e::OK;
 }
+ov_status_e ov_genai_generation_config_set_min_p(ov_genai_generation_config* config, const float value) {
+    if (!config || !(config->object)) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        config->object->min_p = value;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
 ov_status_e ov_genai_generation_config_set_do_sample(ov_genai_generation_config* config, const bool value) {
     if (!config || !(config->object)) {
         return ov_status_e::INVALID_C_PARAM;
