@@ -1,13 +1,12 @@
-from .preprocessors import fix_phi3_v_eos_token_id
-from .llava_preprocessors import LLAVAInputsPreprocessor, NanoLlavaInputsPreprocessor
-from .minicpmv_preprocessors import MiniCPMVInputsPreprocessor
-from .minicpmo_preprocessors import MiniCPMOInputsPreprocessor
-from .internvl_preprocessors import InternVLInputsPreprocessor
-from .phi3_preprocessors import Phi3MMInputsPreprocessor
-from .phi4_preprocessors import Phi4MMInputsPreprocessor
-from .qwen2_preprocessors import Qwen2VLInputsPreprocessor
-from .qwen3_preprocessors import Qwen3VLInputsPreprocessor
-from .gemma3_preprocessors import Gemma3InputsPreprocessor
+from .llava import LLAVAInputsPreprocessor, NanoLlavaInputsPreprocessor
+from .minicpmv import MiniCPMVInputsPreprocessor
+from .minicpmo import MiniCPMOInputsPreprocessor
+from .internvl import InternVLInputsPreprocessor
+from .phi3 import Phi3MMInputsPreprocessor
+from .phi4 import Phi4MMInputsPreprocessor
+from .qwen2 import Qwen2VLInputsPreprocessor
+from .qwen3 import Qwen3VLInputsPreprocessor
+from .gemma3 import Gemma3InputsPreprocessor
 
 MODEL_TYPE_TO_CLS_MAPPING = {
     "qwen3_vl": Qwen3VLInputsPreprocessor,
@@ -29,5 +28,4 @@ MODEL_TYPE_TO_CLS_MAPPING = {
 
 __all__ = [
     "MODEL_TYPE_TO_CLS_MAPPING",
-    "fix_phi3_v_eos_token_id",
 ]

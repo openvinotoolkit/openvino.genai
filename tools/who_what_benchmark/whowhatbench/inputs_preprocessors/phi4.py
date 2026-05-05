@@ -4,7 +4,7 @@ from transformers import (
     PretrainedConfig,
     PreTrainedTokenizer,
 )
-from .preprocessors import VLMInputsPreprocessor
+from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 from typing import TYPE_CHECKING, Optional, Union
 import inspect
 

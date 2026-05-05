@@ -4,7 +4,7 @@ from transformers import (
     PretrainedConfig,
     PreTrainedTokenizer,
 )
-from .preprocessors import VLMInputsPreprocessor
+from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 from typing import TYPE_CHECKING, Optional, Union
 
 if TYPE_CHECKING:
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from transformers.image_utils import VideoInput
 
 
-class MiniCPMOInputsPreprocessor(VLMInputsPreprocessor):
+class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
     def __init__(self, chat_mode: bool = False):
         super().__init__(chat_mode)
 
@@ -38,20 +38,37 @@ class MiniCPMOInputsPreprocessor(VLMInputsPreprocessor):
 
         self.update_images(image)
         im_suffix = ""
-        if image:
+        if image is not None:
             if not isinstance(image, list):
                 image = [image]
             im_suffix = "(<image>./</image>)" * len(image) + "\n"
 
-        new_message = {"role": "user", "content": im_suffix + text}
-        if self.chat_mode:
-            self.chat_history.append(new_message)
-            messages = self.chat_history
+        apply_chat_template_func = None
+        if getattr(processor, "chat_template", None) is not None:
+            apply_chat_template_func = processor.apply_chat_template
+        elif getattr(processor.tokenizer, "chat_template", None) is not None:
+            apply_chat_template_func = processor.tokenizer.apply_chat_template
+
+        if apply_chat_template_func is not None:
+            new_message = {"role": "user", "content": im_suffix + text}
+            if self.chat_mode:
+                self.chat_history.append(new_message)
+                messages = self.chat_history
+            else:
+                messages = [new_message]
+
+            prompt = apply_chat_template_func(messages, tokenize=False, add_generation_prompt=True)
         else:
-            messages = [new_message]
+            prompt = ""
+            if self.chat_mode:
+                raise ValueError("Chat mode is not supported when there is no chat_template in processor or tokenizer.")
+            else:
+                prompt = (
+                    f"<|im_start|>user\n(<image>./</image>)\n{text}<|im_end|>\n<|im_start|>assistant\n"
+                    if image is not None
+                    else text
+                )
 
-        prompt = processor.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = processor(prompt, self.images, return_tensors="pt")
+        inputs = processor(prompt, [self.images] if self.images is None else self.images, return_tensors="pt")
         inputs.pop("image_sizes", None)
-
         return inputs

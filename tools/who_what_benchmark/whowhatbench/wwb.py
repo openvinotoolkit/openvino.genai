@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
-from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
+from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config
 

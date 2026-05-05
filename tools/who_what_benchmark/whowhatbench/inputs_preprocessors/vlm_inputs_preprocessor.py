@@ -17,19 +17,6 @@ if TYPE_CHECKING:
 TRANSFORMERS_VERSION = Version(__version__)
 
 
-def fix_phi3_v_eos_token_id(model_type: str, tokenizer: PreTrainedTokenizer) -> dict:
-    """
-    phi3_v configs aren't consistent. Override the default
-    eos_token_id with the one from a tokenizer similar to
-    an example in
-    https://huggingface.co/microsoft/Phi-3.5-vision-instruct
-    """
-    if "phi3_v" == model_type:
-        return {"eos_token_id": tokenizer.eos_token_id}
-    else:
-        return dict()
-
-
 class VLMInputsPreprocessor(ABC):
     def __init__(self, chat_mode: bool = False):
         self.images = None

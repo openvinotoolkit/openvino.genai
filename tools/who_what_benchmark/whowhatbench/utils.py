@@ -19,13 +19,26 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from pathlib import Path
-from transformers import set_seed
+from transformers import set_seed, PreTrainedTokenizer
 from contextlib import contextmanager
 from datasets.utils.file_utils import xopen
 from transformers.image_utils import load_image
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def fix_phi3_v_eos_token_id(model_type: str, tokenizer: PreTrainedTokenizer) -> dict:
+    """
+    phi3_v configs aren't consistent. Override the default
+    eos_token_id with the one from a tokenizer similar to
+    an example in
+    https://huggingface.co/microsoft/Phi-3.5-vision-instruct
+    """
+    if "phi3_v" == model_type:
+        return {"eos_token_id": tokenizer.eos_token_id}
+    else:
+        return dict()
 
 
 def new_randn_tensor(

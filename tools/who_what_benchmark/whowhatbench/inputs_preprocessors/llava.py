@@ -10,7 +10,7 @@ from transformers import (
 from packaging.version import Version
 from typing import TYPE_CHECKING, Optional, Union
 
-from .preprocessors import VLMInputsPreprocessor
+from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 
 if TYPE_CHECKING:
     from PIL.Image import Image

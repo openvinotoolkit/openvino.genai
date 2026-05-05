@@ -4,7 +4,7 @@ from transformers import (
     PretrainedConfig,
     PreTrainedTokenizer,
 )
-from .preprocessors import VLMInputsPreprocessor
+from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 from typing import TYPE_CHECKING, Optional, Union
 
 if TYPE_CHECKING:
@@ -12,12 +12,13 @@ if TYPE_CHECKING:
     from transformers.image_utils import VideoInput
 
 
-class Gemma3InputsPreprocessor(VLMInputsPreprocessor):
+class Phi3MMInputsPreprocessor(VLMInputsPreprocessor):
     def __init__(self, chat_mode: bool = False):
+        self.image_offset = 1
         super().__init__(chat_mode)
 
     def update_chat_history_with_answer(self, answer):
-        self.chat_history.append({"role": "assistant", "content": [{"type": "text", "text": answer}]})
+        self.chat_history.append({"role": "assistant", "content": answer})
 
     def preprocess_inputs(
         self,
@@ -37,30 +38,27 @@ class Gemma3InputsPreprocessor(VLMInputsPreprocessor):
             raise ValueError("Audio input is not supported")
 
         self.update_images(image)
-        content = []
         if image is not None:
             if not isinstance(image, list):
                 image = [image]
-            content.extend([{"type": "image"}] * len(image))
+            for i, _ in enumerate(image):
+                image_token = getattr(processor.tokenizer, "image_token", f"<|image_{i + self.image_offset}|>\n")
+                if image_token not in text:
+                    text = image_token + text
+            self.image_offset += len(image)
 
-        content.append({"type": "text", "text": text})
-
-        if self.chat_mode:
-            self.chat_history.append({"role": "user", "content": content})
-            conversation = self.chat_history
+        if getattr(processor.tokenizer, "chat_template", None) is None:
+            if self.chat_mode:
+                raise ValueError("Chat mode is not supported when there is no chat_template defined.")
         else:
-            conversation = [{"role": "user", "content": content}]
+            new_message = {"role": "user", "content": text}
+            if self.chat_mode:
+                self.chat_history.append(new_message)
+                chat_prompt = self.chat_history
+            else:
+                chat_prompt = [new_message]
 
-        text_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
+            text = processor.tokenizer.apply_chat_template(chat_prompt, add_generation_prompt=True, tokenize=False)
 
-        # switch off add_bos_token if chat template already includes it
-        orig_add_bos_token = processor.tokenizer.add_bos_token
-        if getattr(processor.tokenizer, "chat_template", None) and "bos_token" in processor.tokenizer.chat_template:
-            processor.tokenizer.add_bos_token = False
-
-        inputs = processor(images=self.images, text=text_prompt, return_tensors="pt")
-
-        # recover add_bos_token flag in tokenizer
-        processor.tokenizer.add_bos_token = orig_add_bos_token
-
+        inputs = processor(images=self.images, text=text, return_tensors="pt")
         return inputs
