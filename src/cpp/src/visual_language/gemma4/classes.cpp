@@ -90,7 +90,7 @@ void extract_patches(const clip_image_f32& float_image,
 namespace ov::genai {
 
 EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
     // 1. Convert input tensor (NHWC uint8) to clip_image_u8 (HWC uint8)
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);

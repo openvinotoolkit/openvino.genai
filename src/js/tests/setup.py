@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from optimum.intel import (
     OVModelForCausalLM,
+    OVFluxPipeline,
     OVModelForVisualCausalLM,
     OVModelForFeatureExtraction,
     OVModelForSequenceClassification,
@@ -52,6 +53,11 @@ TEST_MODELS = {
         "model_kwargs": {
             "vocoder": "fxmarty/speecht5-hifigan-tiny",
         },
+    },
+    "IMAGE_GENERATION_MODEL": {
+        "model_id": "optimum-intel-internal-testing/tiny-random-flux",
+        "model_class": OVFluxPipeline,
+        "model_kwargs": {"has_tokenizer": False},
     },
 }
 
