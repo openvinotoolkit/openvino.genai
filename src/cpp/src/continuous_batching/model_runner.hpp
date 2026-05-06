@@ -15,7 +15,7 @@
 #include "continuous_batching/timer.hpp"
 
 #include "continuous_batching/attention_output.hpp"
-#include "continuous_batching/cache_eviction.hpp"
+#include "continuous_batching/cache/cache_eviction.hpp"
 
 namespace ov::genai {
 
@@ -219,6 +219,15 @@ class ModelRunner {
     bool m_is_use_xattention_inputs;
 
     bool m_is_use_adaptive_rkv;
+    /// Descriptor for a linear attention paging group discovered from model inputs.
+    struct PagingGroup {
+        std::string prefix;  ///< e.g. "paged_conv_" or "paged_gdn."
+        ov::Tensor cached_block_indices;
+        ov::Tensor cached_block_indices_begins;
+        ov::Tensor cached_past_lens;
+        ov::Tensor cached_cache_interval;
+    };
+    std::vector<PagingGroup> m_linear_attention_paging_groups;
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
@@ -281,6 +290,24 @@ public:
           m_is_use_adaptive_rkv(m_is_use_adaptive_rkv_inputs) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
+
+        // Discover linear attention paging groups from model inputs.
+        // Each group has {prefix}block_indices, {prefix}block_indices_begins,
+        // {prefix}past_lens, {prefix}cache_interval.
+        // A paging group is identified by any input whose name ends with "block_indices_begins"
+        // but is not exactly "block_indices_begins" (which belongs to the KV cache).
+        auto compiled_model = m_request.get_compiled_model();
+        for (const auto& input : compiled_model.inputs()) {
+            for (const auto& name : input.get_names()) {
+                const std::string marker = "block_indices_begins";
+                if (name.size() > marker.size() &&
+                    name.compare(name.size() - marker.size(), marker.size(), marker) == 0) {
+                    std::string prefix = name.substr(0, name.size() - marker.size());
+                    m_linear_attention_paging_groups.push_back({prefix, {}, {}, {}, {}});
+                }
+                break;  // use first name per input
+            }
+        }
     }
 
     /**
@@ -340,7 +367,7 @@ public:
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
 
         size_t batch_size_in_sequences = 0;
-        size_t total_num_tokens = 0, total_num_blocks = 0;
+        size_t total_num_tokens = 0;
         size_t max_context_len_val = 0;
         size_t hidden_size = 0;
         bool have_token_type_ids = false;
@@ -360,7 +387,6 @@ public:
             size_t num_sequences = sequence_group->num_running_seqs();
             batch_size_in_sequences += num_sequences;
             total_num_tokens += sequence_group->get_num_scheduled_tokens() * num_sequences;
-            total_num_blocks += sequence_group->get_num_blocks() * num_sequences;
             max_context_len_val = std::max(max_context_len_val, sequence_group->get_context_len());
 
             if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
@@ -599,8 +625,9 @@ public:
                     position_ids_idx++;
                 }
 
-                size_t num_blocks = sequence_group->get_num_logical_blocks();
-                size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
+                const auto& kv_blocks = scheduler_output.m_block_tables.at(sequence->get_id());
+                const size_t num_blocks = kv_blocks[0].size();
+                const size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
                 size_t num_past_blocks_to_ignore = 0;
 
                 if (scheduler_output.m_apply_sparse_attention_mask) {
@@ -684,9 +711,8 @@ public:
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
             m_request.set_tensor("hidden_states", hidden_state_input);
         }
-        if (position_ids.get_shape().size() == 3 && position_ids.get_shape()[0] == 3 &&
-            position_ids.get_shape()[1] == 1) {
-            // M-RoPE: squeeze pseudo-batch dim [3, 1, total_token_num] -> [3, total_token_num]
+        if (position_ids.get_shape().size() == 3 && position_ids.get_shape()[1] == 1) {
+            // M-RoPE: squeeze pseudo-batch dim [dim, 1, total_token_num] -> [dim, total_token_num]
             const auto& position_ids_shape = position_ids.get_shape();
             position_ids.set_shape({position_ids_shape[0], position_ids_shape[2]});
         }
@@ -702,7 +728,7 @@ public:
             m_request.set_tensor("subsequence_begins", subsequence_begins);
         }
 
-        _set_block_indices(sequence_groups, scheduler_output, total_num_blocks, seq_id_to_skipped_blocks_map);
+        _set_block_indices(sequence_groups, scheduler_output, seq_id_to_skipped_blocks_map);
 
         if (!m_cached_block_indices_begins) {
             m_request.set_tensor("block_indices_begins", block_indices_begins);
@@ -723,6 +749,10 @@ public:
             _set_adaptive_rkv_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
+        if (!m_linear_attention_paging_groups.empty() && !scheduler_output.m_linear_attention_paging_data.empty()) {
+            _set_linear_attention_inputs(sequence_groups, scheduler_output, batch_size_in_sequences);
+        }
+
         if (matmul_gathering_is_available) {
             // use pre-allocated tensor for gather_indices as well
             ov::Tensor gather_indices = m_request.get_tensor("sampled_tokens_indices");
@@ -733,6 +763,39 @@ public:
         if (m_is_aggregate_attention_scores && !m_cached_score_aggregation_window) {
             m_request.set_tensor("score_aggregation_window", score_aggregation_window);
         }
+
+        // {
+        //     // === DEBUG: dump all model inputs before inference ===
+        //     std::cerr << "\n=== ModelRunner::forward() — PRE-INFER DEBUG DUMP ===\n";
+        //     auto compiled_model = m_request.get_compiled_model();
+        //     for (const auto& input : compiled_model.inputs()) {
+        //         std::string name;
+        //         for (const auto& n : input.get_names()) { name = n; break; }
+        //         ov::Tensor t;
+        //         try { t = m_request.get_tensor(name); } catch (...) { std::cerr << "  [" << name << "] — UNBOUND\n"; continue; }
+        //         auto shape = t.get_shape();
+        //         std::cerr << "  [" << name << "]  shape={";
+        //         for (size_t i = 0; i < shape.size(); ++i) { if (i) std::cerr << ","; std::cerr << shape[i]; }
+        //         std::cerr << "}  type=" << t.get_element_type() << "  bytes=" << t.get_byte_size();
+
+        //         // Print values for small I32 / I64 tensors (< 64 elements)
+        //         if (t.get_size() > 0 && t.get_size() <= 64) {
+        //             if (t.get_element_type() == ov::element::i32) {
+        //                 std::cerr << "  vals=[";
+        //                 auto* d = t.data<int32_t>();
+        //                 for (size_t i = 0; i < t.get_size(); ++i) { if (i) std::cerr << ","; std::cerr << d[i]; }
+        //                 std::cerr << "]";
+        //             } else if (t.get_element_type() == ov::element::i64) {
+        //                 std::cerr << "  vals=[";
+        //                 auto* d = t.data<int64_t>();
+        //                 for (size_t i = 0; i < t.get_size(); ++i) { if (i) std::cerr << ","; std::cerr << d[i]; }
+        //                 std::cerr << "]";
+        //             }
+        //         }
+        //         std::cerr << "\n";
+        //     }
+        //     std::cerr << "=== END DEBUG DUMP ===\n\n";
+        // }
 
         {
             static ManualTimer timer("pure generate inference");
@@ -992,11 +1055,12 @@ private:
                     const auto& kv_blocks = scheduler_output.m_block_tables.at(seq_id);
 
                     if (is_fill_all) {
-                        size_t num_blocks = sequence_group->get_num_logical_blocks();
+                        const auto& block_table = kv_blocks[layer_idx];
+                        const size_t num_blocks = block_table.size();
                         for (size_t block_id = 0; block_id < num_blocks; ++block_id) {
                             // In case no cache eviction is requested, all per-layer block tables are expected to be
                             // identical at all times
-                            block_indices_data[block_id] = kv_blocks[layer_idx][block_id]->get_index();
+                            block_indices_data[block_id] = block_table[block_id]->get_index();
                         }
                         block_indices_data += num_blocks;
                         filled_blocks_per_layer[layer_idx] += num_blocks;
@@ -1068,7 +1132,6 @@ private:
 
     void _set_block_indices(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                             const Scheduler::Output& scheduler_output,
-                            size_t total_num_blocks,
                             const std::map<size_t, std::set<size_t>>& seq_id_to_skipped_blocks_map) {
         std::vector<std::string> tensor_names = {"block_indices"};
 
@@ -1094,8 +1157,10 @@ private:
                 size_t num_running_sequences = running_sequences.size();
                 for (size_t k = 0; k < num_running_sequences; ++k) {
                     Sequence::CPtr sequence = running_sequences[k];
-                    size_t num_blocks = sequence_group->get_num_logical_blocks();
                     size_t seq_id = sequence->get_id();
+                    const auto& kv_blocks = scheduler_output.m_block_tables.at(seq_id);
+                    const auto& block_table = kv_blocks[layer_idx];
+                    size_t num_blocks = block_table.size();
                     std::vector<size_t> remaining_logical_block_ids;
                     if (seq_id_to_skipped_blocks_map.find(seq_id) != seq_id_to_skipped_blocks_map.end()) {
                         const auto& skip_set = seq_id_to_skipped_blocks_map.at(seq_id);
@@ -1389,6 +1454,94 @@ private:
             _fill_select_indices_from_block_tables(indices_tensor_names,
                                                    scheduler_output,
                                                    scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence);
+        }
+    }
+
+    /**
+     * @brief Fills paged_conv_* model inputs from the conv block tables in scheduler_output.
+     *
+     * Sets: paged_conv_block_indices, paged_conv_block_indices_begins,
+     *        paged_conv_past_lens, paged_conv_cache_interval.
+     */
+    void _set_linear_attention_inputs(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                       const Scheduler::Output& scheduler_output,
+                                       size_t batch_size_in_sequences) {
+        const size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+
+        size_t total_block_indices = 0;
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+
+            for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                size_t seq_id = running_sequences[seq_idx]->get_id();
+                total_block_indices += scheduler_output.m_linear_attention_paging_data.at(seq_id).block_indices.size();
+            }
+        }
+
+        for (auto& pg : m_linear_attention_paging_groups) {
+            ov::Tensor block_indices = _get_or_resize_tensor(
+                pg.cached_block_indices, pg.prefix + "block_indices",
+                {total_block_indices}, ov::element::i32);
+            ov::Tensor block_indices_begins = _get_or_resize_tensor(
+                pg.cached_block_indices_begins, pg.prefix + "block_indices_begins",
+                {batch_size_in_sequences + 1}, ov::element::i32);
+            ov::Tensor past_lens = _get_or_resize_tensor(
+                pg.cached_past_lens, pg.prefix + "past_lens",
+                {batch_size_in_sequences}, ov::element::i32);
+            ov::Tensor cache_interval = _get_or_resize_tensor(
+                pg.cached_cache_interval, pg.prefix + "cache_interval",
+                {batch_size_in_sequences}, ov::element::i32);
+
+            int32_t* block_indices_data = block_indices.data<int32_t>();
+            int32_t* begins_data = block_indices_begins.data<int32_t>();
+            int32_t* past_lens_data = past_lens.data<int32_t>();
+            int32_t* interval_data = cache_interval.data<int32_t>();
+
+            begins_data[0] = 0;
+            size_t seq_offset = 0;
+            size_t block_offset = 0;
+
+            for (size_t i = 0; i < num_sequence_groups; ++i) {
+                size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+                std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+
+                for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                    Sequence::CPtr sequence = running_sequences[seq_idx];
+                    size_t seq_id = sequence->get_id();
+
+                    const auto& paging_data = scheduler_output.m_linear_attention_paging_data.at(seq_id);
+                    OPENVINO_ASSERT(!paging_data.block_indices.empty(),
+                                    "Linear attention paging data empty for sequence ", seq_id);
+
+                    for (size_t block_idx = 0; block_idx < paging_data.block_indices.size(); ++block_idx) {
+                        block_indices_data[block_offset + block_idx] = paging_data.block_indices[block_idx];
+                    }
+
+                    begins_data[seq_offset + 1] = static_cast<int32_t>(block_offset + paging_data.block_indices.size());
+
+                    past_lens_data[seq_offset] = paging_data.past_length;
+                    interval_data[seq_offset] = paging_data.cache_interval;
+
+                    seq_offset++;
+                    block_offset += paging_data.block_indices.size();
+                }
+            }
+
+            if (!pg.cached_block_indices) {
+                m_request.set_tensor(pg.prefix + "block_indices", block_indices);
+            }
+            if (!pg.cached_block_indices_begins) {
+                m_request.set_tensor(pg.prefix + "block_indices_begins", block_indices_begins);
+            }
+            if (!pg.cached_past_lens) {
+                m_request.set_tensor(pg.prefix + "past_lens", past_lens);
+            }
+            if (!pg.cached_cache_interval) {
+                m_request.set_tensor(pg.prefix + "cache_interval", cache_interval);
+            }
         }
     }
 };

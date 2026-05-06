@@ -305,7 +305,7 @@ EncodedResults StatefulLLMPipeline::generate(
     int64_t output_sequence_len = logits.get_shape().at(1);
 
     auto sequence_group = std::make_shared<SequenceGroup>(
-        0 /* request_id */, input_ids, config, 1 /* block_size */);
+        0 /* request_id */, input_ids, config);
     sequence_group->schedule_tokens(sequence_group->get_prompt_len());
     sequence_group->set_output_seq_len(output_sequence_len);
 

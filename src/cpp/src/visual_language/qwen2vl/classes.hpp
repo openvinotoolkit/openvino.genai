@@ -153,7 +153,7 @@ protected:
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
     ) const;
 
-    ov::Tensor create_position_ids(
+    virtual std::pair<ov::Tensor, int64_t> create_position_ids(
         const ov::Tensor& input_ids_tensor,
         const std::vector<std::array<size_t, 3>>& images_grid_thw,
         const std::vector<size_t>& images_sequence,

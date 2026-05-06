@@ -226,24 +226,6 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
         return std::nullopt;
 }
 
-ProcessorConfig from_any_map(
-    const ov::AnyMap& config_map,
-    const ProcessorConfig& initial
-) {
-    auto iter = config_map.find("processor_config");
-    ProcessorConfig extracted_config = config_map.end() != iter ?
-        iter->second.as<ProcessorConfig>() : initial;
-    using utils::read_anymap_param;
-    read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
-    read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
-    read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
-    read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
-    read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
-    read_anymap_param(config_map, "pooling_kernel_size", extracted_config.pooling_kernel_size);
-    read_anymap_param(config_map, "max_soft_tokens", extracted_config.max_soft_tokens);
-    return extracted_config;
-}
-
 ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config) {
     ov::genai::ModelDesc draft_model;
     if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
@@ -818,6 +800,7 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
     } else if (default_config.has_value()) {
         scheduler_config = *default_config;
     }
+    scheduler_config.validate();
     return {plugin_config, scheduler_config};
 };
 
@@ -963,7 +946,7 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
     return inputs_embeds;
 }
 
-size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_layers) {
+size_t get_available_gpu_memory(const std::string& device, size_t num_cache_tensors) {
     OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "get_available_gpu_memory() is applicable for GPU only.");
 
     ov::Core core = utils::singleton_core();
@@ -993,10 +976,10 @@ size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_la
     // max allocatable memory size on GPU
     auto max_alloc_memory_size = core.get_property(device, ov::intel_gpu::device_max_alloc_mem_size);
 
-    // Total KV-cache size if a single tensor is limited by 'device_max_alloc_mem_size' property
-    auto max_allocatable_kv_cache = max_alloc_memory_size * num_decoder_layers * 2;
+    // Total cache size if each cache tensor is limited by 'device_max_alloc_mem_size' property.
+    auto max_allocatable_cache = max_alloc_memory_size * num_cache_tensors;
 
-    return std::min(total_device_memory - used_device_mem, max_allocatable_kv_cache);
+    return std::min(total_device_memory - used_device_mem, max_allocatable_cache);
 }
 
 std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties) {

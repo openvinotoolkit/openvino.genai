@@ -12,6 +12,7 @@ namespace ov::genai {
 class ov::genai::VLMPipeline::VLMPipelineBase {
     // Load pipeline time
     float m_load_time_ms = 0;
+    std::string m_attention_backend = SDPA_BACKEND;
 
     GenerationConfig resolve_generation_config(const ov::AnyMap& config_map) {
         ov::genai::OptionalGenerationConfig optional_config = utils::get_config_from_map(config_map);
@@ -120,6 +121,10 @@ public:
     virtual GenerationConfig get_generation_config() const = 0;
 
     virtual void set_generation_config(const GenerationConfig& new_config) = 0;
+
+    void set_attention_backend(const std::string& attention_backend) {
+        m_attention_backend = attention_backend;
+    }
 
     void set_load_time(float load_time_ms) {
         m_load_time_ms = load_time_ms;

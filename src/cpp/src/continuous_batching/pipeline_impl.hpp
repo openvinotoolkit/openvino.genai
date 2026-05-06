@@ -6,10 +6,13 @@
 #include "continuous_batching/pipeline_base.hpp"
 
 #include "openvino/genai/lora_adapter.hpp"
-#include "continuous_batching/cache_eviction.hpp"
+#include "continuous_batching/cache/cache_eviction.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
+
+void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
+                                       const SchedulerConfig& scheduler_config);
 
 class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
@@ -38,7 +41,6 @@ protected:
     bool m_is_validation_mode_enabled = false;
 
     size_t m_num_decoder_layers = 0;
-    size_t m_block_size = 0;
 
     // Pre-allocated per-layer storages for the per-token cache re-rotation deltas used in cache eviction case
     std::vector<ov::Tensor> m_rotation_deltas_stores;

@@ -7,9 +7,10 @@
 #include <filesystem>
 #include <vector>
 
-#include "continuous_batching/block_manager.hpp"
+#include "continuous_batching/cache/block_manager.hpp"
+#include "continuous_batching/cache/cache_type.hpp"
 #include "sequence_group.hpp"
-#include "scheduler.hpp"
+#include "continuous_batching/scheduler.hpp"
 
 namespace ov::genai {
 const std::string DEFAULT_POSTFIX = std::string();
@@ -83,7 +84,7 @@ public:
      */
     void dump_cache_state(const Scheduler &schdl, const std::vector <SequenceGroup::Ptr> &sequence_groups,
                           size_t dump_count) {
-        dump_cache_state(schdl.m_block_manager, sequence_groups, dump_count);
+        dump_cache_state(schdl.m_cache_orchestrator->get_block_manager(CacheType::KV_CACHE), sequence_groups, dump_count);
 
     }
 
