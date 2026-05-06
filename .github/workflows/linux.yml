@@ -650,7 +650,7 @@ jobs:
             cmd: |
               python -m pip install transformers==4.57.6 git+https://github.com/huggingface/optimum-intel.git@0566b76f094d4c3084e06d29a248b39a1bff3fa4
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl"
-              python -m pytest -s -v tests/python_tests/test_llm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-next"
+              python -m pytest -s -v tests/python_tests/test_llm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-next or lfm2"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test  || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 60
           - name: 'VLM (gemma4)'
