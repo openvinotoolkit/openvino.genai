@@ -461,14 +461,12 @@ public:
     }
 
     /**
-     * @return Whether any token capacity has been allocated in every variable-size cache type.
-     *         Fixed-size-per-sequence managers (e.g. linear attention) are skipped: their pool
-     *         starts empty and grows on demand, so a zero-block pool is not a "no capacity" signal.
+     * @return Whether every registered cache type has an allocated block pool.
      */
     bool has_token_capacity() const {
         return std::all_of(m_block_managers.begin(), m_block_managers.end(),
             [](const auto& pair) {
-                return pair.second->is_fixed_size_per_sequence() || pair.second->has_token_capacity();
+                return pair.second->has_token_capacity();
             });
     }
 
@@ -489,11 +487,15 @@ public:
      * is sequence-count-driven, not token-count-driven.
      * @param num_tokens Number of additional tokens to accommodate.
      */
-    void grow_capacity_by_tokens(size_t num_tokens) {
+    bool grow_capacity_by_tokens(size_t num_tokens) {
+        bool grew_capacity = false;
         for (auto& [type, block_mgr] : m_block_managers) {
-            if (!block_mgr->is_fixed_size_per_sequence())
+            if (!block_mgr->is_fixed_size_per_sequence()) {
                 block_mgr->grow_capacity_by_tokens(num_tokens);
+                grew_capacity = true;
+            }
         }
+        return grew_capacity;
     }
 
     /**
@@ -522,6 +524,29 @@ public:
                     block_mgr->get_total_number_of_kv_blocks() + additional_blocks);
             }
         }
+    }
+
+    /**
+     * @brief Ensures each fixed-size-per-sequence cache type has enough free blocks for
+     *        the sequence group. Variable-size managers are skipped.
+     * @return Whether any fixed-size block pool was grown.
+     */
+    bool ensure_sequence_capacity(SequenceGroup::CPtr seq_group) {
+        bool grew_capacity = false;
+        for (auto& [type, block_mgr] : m_block_managers) {
+            if (!block_mgr->is_fixed_size_per_sequence()) {
+                continue;
+            }
+
+            const size_t required_blocks = block_mgr->required_blocks_count(seq_group);
+            const size_t free_blocks = block_mgr->num_free_blocks();
+            if (required_blocks > free_blocks) {
+                block_mgr->increase_kv_blocks_number(
+                    block_mgr->get_total_number_of_kv_blocks() + required_blocks - free_blocks);
+                grew_capacity = true;
+            }
+        }
+        return grew_capacity;
     }
 
     // -----------------------------------------------------------------------

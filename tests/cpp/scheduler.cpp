@@ -79,6 +79,25 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
     return orchestrator;
 }
 
+std::shared_ptr<CacheOrchestrator> init_linear_attention_cache_orchestrator(SchedulerConfig scheduler_config,
+                                                                            size_t la_num_layers = 1) {
+    ov::Core core = ov::Core();
+    ov::InferRequest request = core.compile_model(get_dummy_hybrid_model(core, 0, la_num_layers)).create_infer_request();
+
+    auto la_cache_manager = std::make_unique<LinearAttentionCacheManager>(request);
+    auto la_block_manager = std::make_unique<BlockManager>(scheduler_config.num_linear_attention_blocks,
+                                                           false,
+                                                           1,
+                                                           la_cache_manager->get_num_layers(),
+                                                           1);
+
+    auto orchestrator = std::make_shared<CacheOrchestrator>();
+    orchestrator->register_cache_type(CacheType::LINEAR_ATTENTION_CACHE,
+                                      std::move(la_cache_manager),
+                                      std::move(la_block_manager));
+    return orchestrator;
+}
+
 struct HybridCreateContext {
     ov::InferRequest request;
     size_t kv_block_size = 0;
@@ -413,7 +432,36 @@ TEST(TestScheduler, hybrid_initialize_cache_grows_fixed_size_by_total_concurrent
     }
 }
 
-TEST(TestScheduler, DISABLED_hybrid_runtime_arrival_beyond_initial_fixed_capacity_schedules_after_growth) {
+TEST(TestScheduler, linear_attention_only_initializes_fixed_size_capacity) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 0;
+    scheduler_config.cache_size = 0;
+    scheduler_config.num_linear_attention_blocks = 0;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 8;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group = std::make_shared<SequenceGroup>(0,
+                                                                    ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                    utils::get_greedy_config());
+    const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {seq_group};
+
+    auto orchestrator = init_linear_attention_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+
+    EXPECT_FALSE(orchestrator->has_token_capacity());
+    auto out = scheduler.schedule(requests);
+
+    EXPECT_EQ(out.m_scheduled_sequence_groups_ids.size(), 1);
+    EXPECT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 1);
+
+    scheduler.free_sequence(seq_id);
+}
+
+TEST(TestScheduler, hybrid_runtime_arrival_beyond_initial_fixed_capacity_schedules_after_growth) {
     SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;
     scheduler_config.num_kv_blocks = 0;
