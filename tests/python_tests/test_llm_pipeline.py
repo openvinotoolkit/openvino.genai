@@ -147,6 +147,25 @@ def ov_pipe(llm_model: OVConvertedModelSchema) -> ov_genai.LLMPipeline:
     return create_ov_pipeline(llm_model.models_path)
 
 
+@pytest.mark.parametrize("llm_model", [MODELS_LIST[0]], indirect=True)
+def test_decoded_results_tokens(
+    llm_model: OVConvertedModelSchema,
+) -> None:
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
+    config = ov_genai.GenerationConfig(max_new_tokens=20, apply_chat_template=False, do_sample=False)
+    # Pass a list of prompts so that LLMPipeline returns DecodedResults instead of a single string.
+    result: ov_genai.DecodedResults = ov_pipe.generate(["table is made of"], generation_config=config)
+
+    assert len(result.tokens) == len(result.texts)
+    assert len(result.tokens) >= 1
+    for sequence_tokens in result.tokens:
+        assert len(sequence_tokens) > 0
+        assert all(isinstance(token, int) for token in sequence_tokens)
+    tokenizer = ov_pipe.get_tokenizer()
+    for idx, sequence_tokens in enumerate(result.tokens):
+        assert tokenizer.decode(sequence_tokens) == result.texts[idx]
+
+
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("generation_config_dict,prompt", INPUTS_TEST_CASES)
 @pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)

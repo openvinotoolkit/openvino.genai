@@ -686,6 +686,26 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
 
 
 @parametrize_one_model_sdpa
+def test_vlm_pipeline_tokens(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup)
+
+    res = ov_pipe.generate(
+        PROMPTS[0],
+        images=[cat_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res.tokens) == len(res.texts)
+    assert len(res.tokens) >= 1
+    for sequence_tokens in res.tokens:
+        assert len(sequence_tokens) > 0
+        assert all(isinstance(token, int) for token in sequence_tokens)
+    tokenizer = ov_pipe.get_tokenizer()
+    for idx, sequence_tokens in enumerate(res.tokens):
+        assert tokenizer.decode(sequence_tokens) == res.texts[idx]
+
+
+@parametrize_one_model_sdpa
 def test_vlm_readonly_image_tensor(ov_pipe_model: VlmModelInfo, cat_image_32x32):
     ov_pipe = ov_pipe_model.pipeline
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=5)
