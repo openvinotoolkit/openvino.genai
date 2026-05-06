@@ -71,6 +71,8 @@ public:
     std::vector<std::string> texts;
     std::vector<float> scores;
     std::vector<GenerationFinishReason> finish_reasons;
+    /// @brief Generated token ids per sequence (parallels @ref texts).
+    std::vector<std::vector<int64_t>> tokens;
     PerfMetrics perf_metrics;
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
     std::vector<JsonContainer> parsed;

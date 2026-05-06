@@ -112,6 +112,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def(py::init<>())
         .def_property_readonly("texts", [](const DecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })
         .def_readonly("scores", &DecodedResults::scores)
+        .def_readonly("tokens", &DecodedResults::tokens)
         .def_property_readonly("parsed", [](const DecodedResults& dr) -> py::list {
             py::list result_dicts;
             for (const auto& parsed: dr.parsed) {

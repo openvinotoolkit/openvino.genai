@@ -417,6 +417,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         gen_result.perf_metrics.raw_metrics.detokenization_durations = vlm_perf_metrics[i].raw_metrics.detokenization_durations;
         
         auto decode_start_time = std::chrono::steady_clock::now();
+        gen_result.tokens = result.m_generation_ids;
         for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
             gen_result.texts.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
             gen_result.scores.push_back(result.m_scores.at(idx));
@@ -564,6 +565,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         gen_result.perf_metrics.raw_metrics.detokenization_durations = vlm_perf_metrics[i].raw_metrics.detokenization_durations;
         
         auto decode_start_time = std::chrono::steady_clock::now();
+        gen_result.tokens = result.m_generation_ids;
         for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
             gen_result.texts.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
             gen_result.scores.push_back(result.m_scores.at(idx));
