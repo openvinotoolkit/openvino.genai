@@ -46,7 +46,8 @@ public:
 
     ProcessedChatData process(
         const std::vector<ov::Tensor>& new_images,
-        const std::vector<ov::Tensor>& new_videos = {}
+        const std::vector<ov::Tensor>& new_videos = {},
+        const std::vector<VideoMetadata>& new_videos_metadata = {}
     );
 
     void rollback();
@@ -65,7 +66,8 @@ private:
 
     void encode_visions_if_needed(
         const std::vector<size_t>& image_indices,
-        const std::vector<size_t>& video_indices
+        const std::vector<size_t>& video_indices,
+        const std::vector<VideoMetadata>& videos_metadata = {}
     );
                 
     void fill_messages_metadata(
