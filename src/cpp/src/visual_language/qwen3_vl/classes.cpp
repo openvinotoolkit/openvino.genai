@@ -422,7 +422,10 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3VL::run_video_image_embeddi
     vision_embeddings_merger.infer();
     
     ov::Tensor vision_embeds = vision_embeddings_merger.get_tensor("last_hidden_state");
-    m_lm_extra_inputs["deepstack_visual_embeds"] = vision_embeddings_merger.get_tensor("deepstack_feature_lists");
+    
+    if (has_lm_extra_input("deepstack_visual_embeds")) {
+        m_lm_extra_inputs["deepstack_visual_embeds"] = vision_embeddings_merger.get_tensor("deepstack_feature_lists");
+    }
     
     auto vision_embeds_shape = vision_embeds.get_shape();
     
@@ -523,27 +526,33 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
     int64_t image_pad_token_id = m_vision_token_ids.at("image_pad");
     int64_t video_pad_token_id = m_vision_token_ids.at("video_pad");
 
-    m_position_ids = create_position_ids(input_ids, images_grid_thw, images_sequence, 0, 
-                                         videos_grid_thw, videos_sequence, 0, 
-                                         vision_start_token_id, history_vision_count);
-
-    int64_t position_ids_max = *std::max_element(m_position_ids.data<int64_t>(), 
-                                                 m_position_ids.data<int64_t>() + m_position_ids.get_size());
-    m_rope_delta = position_ids_max + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
+    std::tie(m_position_ids, m_rope_delta) = create_position_ids(
+        input_ids,
+        images_grid_thw,
+        images_sequence,
+        0,
+        videos_grid_thw,
+        videos_sequence,
+        0,
+        vision_start_token_id,
+        history_vision_count
+    );
 
     if (images.empty() && videos.empty()) {
-        // visual_pos_masks extra input
-        const size_t batch_size = input_ids.get_shape()[0];
-        ov::Tensor visual_pos_masks(ov::element::boolean, {batch_size, 1});
-        std::fill_n(visual_pos_masks.data<bool>(), visual_pos_masks.get_size(), false);
-        m_lm_extra_inputs["visual_pos_masks"] = std::move(visual_pos_masks);
+        if (has_lm_extra_input("visual_pos_masks")) {
+            const size_t batch_size = input_ids.get_shape()[0];
+            ov::Tensor visual_pos_masks(ov::element::boolean, {batch_size, 1});
+            std::fill_n(visual_pos_masks.data<bool>(), visual_pos_masks.get_size(), false);
+            m_lm_extra_inputs["visual_pos_masks"] = std::move(visual_pos_masks);
+        }
 
-        // deepstack_visual_embeds extra input
-        const size_t num_layers = m_vlm_config.vision_config_deepstack_visual_indexes.size();
-        const size_t hidden_size = text_embeds.get_shape()[2];
-        ov::Tensor deepstack_visual_embeds(ov::element::f32, {num_layers, 1, hidden_size});
-        std::fill_n(deepstack_visual_embeds.data<float>(), deepstack_visual_embeds.get_size(), 0.0f);
-        m_lm_extra_inputs["deepstack_visual_embeds"] = std::move(deepstack_visual_embeds);
+        if (has_lm_extra_input("deepstack_visual_embeds")) {
+            const size_t num_layers = m_vlm_config.vision_config_deepstack_visual_indexes.size();
+            const size_t hidden_size = text_embeds.get_shape()[2];
+            ov::Tensor deepstack_visual_embeds(ov::element::f32, {num_layers, 1, hidden_size});
+            std::fill_n(deepstack_visual_embeds.data<float>(), deepstack_visual_embeds.get_size(), 0.0f);
+            m_lm_extra_inputs["deepstack_visual_embeds"] = std::move(deepstack_visual_embeds);
+        }
 
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
         std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
@@ -555,7 +564,9 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
             run_video_image_embeddings_merger(images, images_sequence, videos, videos_sequence);
     }
 
-    m_lm_extra_inputs["visual_pos_masks"] = create_visual_pos_masks(input_ids, image_pad_token_id, video_pad_token_id);
+    if (has_lm_extra_input("visual_pos_masks")) {
+        m_lm_extra_inputs["visual_pos_masks"] = create_visual_pos_masks(input_ids, image_pad_token_id, video_pad_token_id);
+    }
 
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(
         input_ids, text_embeds, m_merged_image_embeddings, m_merged_video_embeddings,
@@ -564,18 +575,31 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
 
 void InputsEmbedderQwen3VL::start_chat(const std::string& system_message) {
     InputsEmbedderQwen2VL::start_chat(system_message);
-    m_lm_extra_inputs["deepstack_visual_embeds"] = ov::Tensor();
-    m_lm_extra_inputs["visual_pos_masks"] = ov::Tensor();
+    if (has_lm_extra_input("deepstack_visual_embeds")) {
+        m_lm_extra_inputs["deepstack_visual_embeds"] = ov::Tensor();
+    }
+    if (has_lm_extra_input("visual_pos_masks")) {
+        m_lm_extra_inputs["visual_pos_masks"] = ov::Tensor();
+    }
 }
 
 void InputsEmbedderQwen3VL::finish_chat() {
     InputsEmbedderQwen2VL::finish_chat();
-    m_lm_extra_inputs["deepstack_visual_embeds"] = ov::Tensor();
-    m_lm_extra_inputs["visual_pos_masks"] = ov::Tensor();
+    if (has_lm_extra_input("deepstack_visual_embeds")) {
+        m_lm_extra_inputs["deepstack_visual_embeds"] = ov::Tensor();
+    }
+    if (has_lm_extra_input("visual_pos_masks")) {
+        m_lm_extra_inputs["visual_pos_masks"] = ov::Tensor();
+    }
 }
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderQwen3VL::get_lm_extra_inputs() const {
     return m_lm_extra_inputs;
+}
+
+bool InputsEmbedderQwen3VL::has_lm_extra_input(const std::string& input_name) const {
+    const auto& lm_extra_inputs = get_lm_extra_inputs();
+    return lm_extra_inputs.find(input_name) != lm_extra_inputs.end();
 }
 
 } // namespace ov::genai

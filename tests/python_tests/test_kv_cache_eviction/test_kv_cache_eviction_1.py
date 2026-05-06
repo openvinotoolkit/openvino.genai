@@ -91,17 +91,7 @@ LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
     ids=lambda x: x.test_id,
 )
 @pytest.mark.parametrize(
-    "apply_rotation",
-    [
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                reason="with_rotation fail with Port for tensor name rotation_trig_lut was not found. Ticket: 185953"
-            ),
-        ),
-        False,
-    ],
-    ids=["with_rotation", "no_rotation"],
+    "apply_rotation", [True, False], ids=["with_rotation", "no_rotation"]
 )  # rotation should improve similarity
 @pytest.mark.parametrize(
     "use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]

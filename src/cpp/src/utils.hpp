@@ -17,7 +17,6 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/generation_config.hpp"
-#include "visual_language/processor_config.hpp"
 
 #include "openvino/genai/streamer_base.hpp"
 
@@ -120,11 +119,6 @@ Config from_config_json_if_exists(const std::filesystem::path& models_path, cons
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
-
-ProcessorConfig from_any_map(
-    const ov::AnyMap& config_map,
-    const ProcessorConfig& initial
-);
 
 ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config);
 

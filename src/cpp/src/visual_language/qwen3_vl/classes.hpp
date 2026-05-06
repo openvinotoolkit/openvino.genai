@@ -61,6 +61,8 @@ protected:
         {"visual_pos_masks", ov::Tensor()}
     };
 
+    bool has_lm_extra_input(const std::string& input_name) const;
+
     void expand_video_tags_in_prompt(
         std::string& unified_prompt,
         const std::vector<EncodedVideo>& encoded_videos,

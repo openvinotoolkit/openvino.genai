@@ -325,7 +325,7 @@ EncodedImage VisionEncoderLLaVANextVideo::encode(const ov::Tensor& image, const 
     ov::InferRequest& encoder = infer_request_guard.get();
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard_mm_projector(this->m_ireq_queue_multi_modal_projector.get());
     ov::InferRequest& mm_projector = infer_request_guard_mm_projector.get();
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
     ov::Shape pixel_values_shape;
     if (use_ov_vision_preprocess) {
