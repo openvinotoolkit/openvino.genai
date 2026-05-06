@@ -8,6 +8,7 @@ There are several sample files:
  - [`lora_text2image.cpp`](./lora_text2image.cpp) shows how to apply LoRA adapters to the pipeline
  - [`taylorseer_text2image.cpp`](./taylorseer_text2image.cpp) demonstrates text to image generation with TaylorSeer caching optimization for improved performance. Flux and StableDiffusion3 models are supported.
  - [`heterogeneous_stable_diffusion.cpp`](./heterogeneous_stable_diffusion.cpp) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
+ - [`encrypted_stable_diffusion.cpp`](./encrypted_stable_diffusion.cpp) demonstrates how to use the text to image pipeline with encrypted models and cache encryption callbacks
  - [`image2image.cpp`](./image2image.cpp) demonstrates basic usage of the image to image pipeline
  - [`image2image_concurrency.cpp`](./image2image_concurrency.cpp) demonstrates concurrent usage of the image to image pipeline to create multiple images with different prompts
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
@@ -111,7 +112,7 @@ With adapter | Without adapter
 
 ## Run text to image with TaylorSeer caching optimization
 
-The `taylorseer_text2image` sample demonstrates how to use TaylorSeer Lite caching to accelerate text to image generation. TaylorSeer is a caching optimization technique that uses Taylor series approximation to predict intermediate outputs during diffusion inference, reducing the number of computationally expensive transformer forward passes.
+The `taylorseer_text2image` sample demonstrates how to use TaylorSeer Lite caching to accelerate text to image generation. TaylorSeer is a caching optimization technique that uses Taylor series approximation to predict intermediate outputs during diffusion inference, reducing the number of computationally expensive transformer forward passes. TaylorSeer caching is **enabled by default** for Flux and StableDiffusion3 Text2Image pipelines.
 
 Run the sample with custom parameters:
 
@@ -119,9 +120,9 @@ Run the sample with custom parameters:
 ./taylorseer_text2image ./flux.1-dev/FP16 "a beautiful sunset over mountains"
 ```
 
-The sample generates two images with and without TaylorSeer config applied using the same prompt:
-   - `taylorseer.bmp` with TaylorSeer config applied
-   - `taylorseer_baseline.bmp` without TaylorSeer config applied
+The sample generates two images using the same prompt:
+   - `taylorseer_baseline.bmp` without caching
+   - `taylorseer.bmp` with TaylorSeer caching applied
 
 Check the difference:
 
@@ -142,6 +143,52 @@ For example:
 `./heterogeneous_stable_diffusion ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' CPU NPU GPU`
 
 The sample will create a stable diffusion pipeline such that the text encoder is executed on the CPU, UNet on the NPU, and VAE decoder on the GPU.
+
+## Run text to image with encrypted models
+
+The `encrypted_stable_diffusion.cpp` sample demonstrates how to load and use the text to image pipeline with encrypted models. The Text2ImagePipeline and individual model components can be initialized directly from memory buffers when decrypting models on-the-fly.
+
+The following code snippet demonstrates how to load text encoder models from memory buffers:
+
+```cpp
+auto [text_encoder_model_str, text_encoder_model_weights] = decrypt_model(
+    models_path / "text_encoder", "openvino_model.xml", "openvino_model.bin");
+ov::genai::Tokenizer text_tokenizer = decrypt_tokenizer(models_path / "tokenizer");
+
+ov::genai::CLIPTextModel text_encoder(
+    text_encoder_model_str,
+    text_encoder_model_weights,
+    ov::genai::CLIPTextModel::Config(models_path / "text_encoder" / "config.json"),
+    text_tokenizer, device, config);
+
+...
+
+// Initialize stable diffusion pipeline
+auto pipe = ov::genai::Text2ImagePipeline::stable_diffusion(
+    ov::genai::Scheduler::from_config(models_path / "scheduler" / "scheduler_config.json"),
+    text_encoder,
+    unet,
+    vae_decoder
+);
+```
+
+The sample also demonstrates how to enable user-defined encryption and decryption callbacks for plugin cache using `ov::EncryptionCallbacks`.
+
+**Main Features:**
+- Read model and tokenizer directly from memory buffers
+- Support for encrypted model files with custom decryption
+- Demonstration of cache encryption callbacks for compiled model storage
+
+> **Disclaimer:** The sample's cache callbacks use XOR-based logic for demonstration only and do not provide confidentiality. Replace them with real cryptographic primitives or a vetted cryptography library before using this approach for sensitive data.
+**Run Command:**
+```bash
+./encrypted_stable_diffusion <MODEL_DIR> "<PROMPT>" [<DEVICE>]
+```
+
+**Example:**
+```bash
+./encrypted_stable_diffusion ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'
+```
 
 ## Run image to image pipeline
 
@@ -186,7 +233,7 @@ The resulting image is:
 
 Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeline` are applicable for `InpaintingPipeline`.
 
-## benchmarking sample for image generation pipelines
+## Benchmarking sample for image generation pipelines
 
 This `benchmark_image_gen.cpp` sample script demonstrates how to benchmark the text to image pipeline, image to image pipeline and inpainting pipeline. The script includes functionality for warm-up iterations, generating image, and calculating various performance metrics.
 
