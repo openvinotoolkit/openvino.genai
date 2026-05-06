@@ -61,8 +61,12 @@ void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_p
     if (streamer_ptr && handle->can_read()) {
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
         auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
-        if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-            streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
+        if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+            handle->stop(ov::genai::GenerationFinishReason::TOOL_CALL);
+        } else if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
+            handle->cancel();
+        } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
+            handle->stop();
         }
     }
 }
@@ -159,7 +163,10 @@ DecodedResults StatefulLLMPipeline::generate(
     auto encoded_results = generate(tokenized_input, config, streamer);
 
     auto decode_start_time =  std::chrono::steady_clock::now();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    DecodedResults decoded_results;
+    decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
+    decoded_results.scores = encoded_results.scores;
+    decoded_results.finish_reasons = encoded_results.finish_reasons;
     auto decode_stop_time =  std::chrono::steady_clock::now();
 
     if (m_is_chat_conversation) {
@@ -211,7 +218,10 @@ DecodedResults StatefulLLMPipeline::generate(
     auto encoded_results = generate(tokenized_inputs, config, streamer);
 
     auto decode_start_time =  std::chrono::steady_clock::now();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    DecodedResults decoded_results;
+    decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
+    decoded_results.scores = encoded_results.scores;
+    decoded_results.finish_reasons = encoded_results.finish_reasons;
     auto decode_stop_time =  std::chrono::steady_clock::now();
     
     // Update perf metrics
@@ -273,6 +283,7 @@ EncodedResults StatefulLLMPipeline::generate(
     results.scores.resize(1u);
     results.scores[0] = 0u;
     results.tokens.resize(1u);
+    results.finish_reasons.resize(1u, GenerationFinishReason::NONE);
 
     // NB: Check if there is enough space in KV-cache to process input prompt
     auto prompt_len = input_ids.get_size();
@@ -362,6 +373,10 @@ EncodedResults StatefulLLMPipeline::generate(
     auto sequence = sequence_group->get_finished_sequences().front();
     results.tokens[0] = sequence->get_generated_ids();
     results.scores[0] = sequence->get_cumulative_log_prob();
+    results.finish_reasons[0] = sequence->get_finish_reason();
+    if (results.finish_reasons[0] == GenerationFinishReason::NONE && sequence_group->handle_stopped()) {
+        results.finish_reasons[0] = sequence_group->get_generation_stream()->get_finish_reason();
+    }
     m_chat_generation_finish_status = sequence_group->get_generation_stream()->get_status();
     m_sampler.clear_request_info(sequence_group->get_request_id());
 

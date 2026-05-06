@@ -156,7 +156,10 @@ DecodedResults StatefulSpeculativePipelineBase::generate(StringInputs inputs,
     auto encoded_results = generate_tokens(tokenized_input, config, streamer);
 
     // Detokenize
-    DecodedResults decoded_results = {detokenize(encoded_results.tokens), encoded_results.scores};
+    DecodedResults decoded_results;
+    decoded_results.texts = detokenize(encoded_results.tokens);
+    decoded_results.scores = encoded_results.scores;
+    decoded_results.finish_reasons = encoded_results.finish_reasons;
 
     // Handle chat history
     if (m_is_chat_active) {
@@ -213,7 +216,10 @@ DecodedResults StatefulSpeculativePipelineBase::generate(const ChatHistory& hist
     auto encoded_results = generate_tokens(tokenized_inputs, config, streamer);
 
     // Detokenize
-    DecodedResults decoded_results = {detokenize(encoded_results.tokens), encoded_results.scores};
+    DecodedResults decoded_results;
+    decoded_results.texts = detokenize(encoded_results.tokens);
+    decoded_results.scores = encoded_results.scores;
+    decoded_results.finish_reasons = encoded_results.finish_reasons;
 
     generate_timer.end();
 

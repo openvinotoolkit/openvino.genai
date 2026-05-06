@@ -1,30 +1,28 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "openvino/genai/visual_language/pipeline.hpp"
+
 #include <optional>
 #include <random>
 
-#include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/genai/visual_language/perf_metrics.hpp"
-#include "openvino/genai/tokenizer.hpp"
-#include "openvino/genai/text_streamer.hpp"
-#include "openvino/runtime/properties.hpp"
-#include "openvino/runtime/auto/properties.hpp"
-
-#include "visual_language/vlm_config.hpp"
-#include "visual_language/inputs_embedder.hpp"
-#include "visual_language/embedding_model.hpp"
-#include "visual_language/pipeline_base.hpp"
-#include "visual_language/continuous_batching_adapter.hpp"
-
-#include "visual_language/vision_registry.hpp"
-#include "visual_language/vlm_chat_context.hpp"
-
-#include "sampling/sampler.hpp"
-#include "utils.hpp"
 #include "lm_encoding.hpp"
 #include "logger.hpp"
 #include "lora/helper.hpp"
+#include "openvino/genai/text_streamer.hpp"
+#include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/visual_language/perf_metrics.hpp"
+#include "openvino/runtime/auto/properties.hpp"
+#include "openvino/runtime/properties.hpp"
+#include "sampling/sampler.hpp"
+#include "utils.hpp"
+#include "visual_language/continuous_batching_adapter.hpp"
+#include "visual_language/embedding_model.hpp"
+#include "visual_language/inputs_embedder.hpp"
+#include "visual_language/pipeline_base.hpp"
+#include "visual_language/vision_registry.hpp"
+#include "visual_language/vlm_chat_context.hpp"
+#include "visual_language/vlm_config.hpp"
 
 using namespace ov::genai;
 
@@ -376,6 +374,7 @@ public:
             decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
             decoded.scores.push_back(encoded_result.scores.at(idx));
         }
+        decoded.finish_reasons = encoded_result.finish_reasons;
         auto decode_end_time = std::chrono::steady_clock::now();
 
         std::string decoded_results = decoded.texts.at(0);
@@ -535,6 +534,7 @@ public:
             decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
             decoded.scores.push_back(encoded_result.scores.at(idx));
         }
+        decoded.finish_reasons = encoded_result.finish_reasons;
         auto decode_end_time = std::chrono::steady_clock::now();
 
         std::string decoded_text = decoded.texts.at(0);
@@ -754,22 +754,36 @@ private:
 
         const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
 
+        auto per_layer_callback = m_inputs_embedder->get_per_layer_embeddings_callback();
+
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
-        return ov::genai::get_lm_encoded_results(
-            m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
-            position_ids, token_type_ids, cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
-            use_intermediate_remote_tensor, lm_extra_inputs
-        );
+        return ov::genai::get_lm_encoded_results(m_language,
+                                                 inputs_embeds,
+                                                 new_atten_mask,
+                                                 streamer_ptr,
+                                                 m_sampler,
+                                                 std::move(requests),
+                                                 position_ids,
+                                                 token_type_ids,
+                                                 cache_state,
+                                                 m_embedding,
+                                                 rope_delta,
+                                                 m_max_kv_cache_size,
+                                                 use_intermediate_remote_tensor,
+                                                 lm_extra_inputs,
+                                                 std::move(per_layer_callback));
     }
 };
 
-// TODO: remove it when GEMMA3 ticket-171180 is fixed
 bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    return vlm_config.model_type == VLMModelType::GEMMA3;
+    // TODO: remove it when GEMMA3 ticket-171180 is fixed
+    return vlm_config.model_type == VLMModelType::GEMMA3
+           // ticket: 183493
+           || vlm_config.model_type == VLMModelType::GEMMA4;
 }
 
 VLMPipeline::VLMPipeline(

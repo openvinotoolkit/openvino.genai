@@ -612,6 +612,7 @@ protected:
                 m_generation_config.guidance_scale = 3.5f;
                 m_generation_config.num_inference_steps = 28;
                 m_generation_config.strength = 1.0f;
+                m_generation_config.taylorseer_config = TaylorSeerCacheConfig{};
             } else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
                 m_generation_config.guidance_scale = 7.0f;
                 m_generation_config.num_inference_steps = 28;

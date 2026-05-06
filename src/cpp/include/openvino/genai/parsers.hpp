@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 #include "openvino/genai/json_container.hpp"
+#include "openvino/genai/streamer_base.hpp"
 
 namespace ov {
 namespace genai {
@@ -161,8 +162,9 @@ private:
  */
 class OPENVINO_GENAI_EXPORTS IncrementalParser {
 public:
-    IncrementalParser() = default;
-
+    IncrementalParser();
+    virtual ~IncrementalParser();
+    
     /**
      * @brief Parse incremental text content and return filtered text.
      *
@@ -185,7 +187,22 @@ public:
      */
     virtual void reset() = 0;
 
-    virtual ~IncrementalParser() = default;
+    /**
+     * @brief Get the current streaming status of the parser.
+     */
+    StreamingStatus get_status() const {
+        return m_status;
+    }
+    
+    /**
+     * @brief Set the current streaming status of the parser.
+     */
+    void set_status(StreamingStatus status) {
+        m_status = status;
+    }
+
+private:
+    StreamingStatus m_status = StreamingStatus::RUNNING;
 };
 
 /**
