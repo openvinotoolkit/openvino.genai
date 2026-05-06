@@ -1,10 +1,10 @@
 ---
-name: genai-model-checker
+name: model-checker
 description: "Validate a newly supported optimum-intel model with OpenVINO GenAI. Use when: checking new model support, verifying model export to OpenVINO IR, running GenAI inference test with llm_bench, benchmarking model accuracy with who-what-benchmark."
 argument-hint: "model_id and task (e.g. tencent/HY-MT1.5-1.8B text-generation-with-past)"
 ---
 
-# GenAI Model Checker
+# Model Checker
 
 Validates that a HuggingFace model exported via optimum-intel works correctly with OpenVINO GenAI pipelines and passes accuracy benchmarks.
 
@@ -31,13 +31,15 @@ The user must provide:
 
 ## Prerequisites
 
-Activate the Python virtual environment before running any commands.
+Ensure the Python virtual environment is activated before running any commands.
 
 1. **Locate the virtual environment** — check for common directories at the repository root: `.venv/`, `venv/`, `env/`. Use `list_dir` to find it. If none is found, ask the user for its location.
-2. **Activate** based on the current platform:
+2. **Check if already activated**: if `which python` or `where python` points inside the virtual environment, it's already activated. If not, proceed to activate it.
+3. **Activate** based on the current platform:
    - **Linux/macOS**: `source <venv_path>/bin/activate`
    - **Windows (cmd)**: `<venv_path>\Scripts\activate.bat`
    - **Windows (PowerShell)**: `<venv_path>\Scripts\Activate.ps1`
+4. The background terminal doesn't inherit the venv activation. Run it with the venv activated in the same command.
 
 ## Procedure
 
@@ -46,13 +48,13 @@ Activate the Python virtual environment before running any commands.
 Run the checker script from the repository root:
 
 ```
-python3 .github/skills/genai-model-checker/scripts/check_model.py \
+python3 .github/skills/model-checker/scripts/check_model.py \
     --model-id <model_id> \
     --task <export_task> \
-    --work-dir /tmp/genai-model-check
+    --work-dir .model_enabler/model_checker
 ```
 
-Run `python3 .github/skills/genai-model-checker/scripts/check_model.py --help` for the full argument reference including defaults.
+Run `python3 .github/skills/model-checker/scripts/check_model.py --help` for the full argument reference including defaults. The `--work-dir` is where all intermediate files, logs, and outputs will be stored. Do not pipe with any additional logging or redirection — the script handles its own logging.
 
 #### Skip flags (for re-runs after a fix)
 
@@ -81,9 +83,19 @@ The script logs progress for each step and exits with code 0 (pass) or non-zero 
 
 **Log files:** each tool writes its own dedicated log; paths are printed during execution. When a step fails, read the corresponding log for the full traceback and context before drawing any conclusions.
 
+**work-dir:** work-dir is in current workspace, prefer to use tool calls to access logs and outputs instead of custom bash commands.
+
 ### Step 3: Report Results
 
-Report results to the user. If all steps pass, indicate success and provide performance metrics and accuracy data. If a step fails, analyze tool logs and provide a summary with the failed tool log path.
+Results format:
+
+- **Model**: `<model_id>` (`<task>`)
+- **Validation**: PASSED / FAILED
+- **Performance** (if passed):
+  - 1st token latency, 2nd token latency, throughput
+  - Optimum similarity / GenAI similarity (if applicable)
+- **Logs**: paths to export log, llm_bench log, WWB logs
+- **Failed step analysis** (if failed): summary of the failure and relevant log path for details
 
 ### Security
 

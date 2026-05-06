@@ -1,6 +1,8 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
+
 const std::pair<std::string, std::string> chat_template_fallback_map[] = {
 {
     // THUDM/chatglm3-6b
