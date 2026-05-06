@@ -8,6 +8,7 @@
 #include <future>
 #include <algorithm>
 #include <atomic>
+#include <numeric>
 
 namespace ov::genai {
 

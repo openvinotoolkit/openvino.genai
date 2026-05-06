@@ -2,10 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
-#include <cmath>
-#include <iostream>
 #include <numeric>
-#include <random>
 #include <vector>
 
 #include "utils.hpp"
@@ -34,7 +31,7 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
 void update_3d_position_ids(ov::Tensor&& position_ids, const ov::Tensor& attention_mask, const int64_t rope_delta) {
     const size_t batch_size = attention_mask.get_shape().at(0);
     const size_t sequence_length = attention_mask.get_shape().at(1);
-    const size_t thw_dim_size = 3;
+    const size_t thw_dim_size = position_ids.get_shape().at(0);
 
     position_ids.set_shape({thw_dim_size, batch_size, 1});
     int64_t* position_ids_data = position_ids.data<int64_t>();

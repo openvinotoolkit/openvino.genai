@@ -324,6 +324,10 @@ public:
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
 
+        // Audio encoding must happen before text tokenization: encoded audio embeddings
+        // are merged into the input embedding at <|AUDIO|> placeholder positions.
+        // m_pending_audios is populated by pipeline_base from the AnyMap "audios" key.
+        m_inputs_embedder->encode_audios(m_pending_audios);
         auto encoded_images = m_inputs_embedder->encode_images(images);
         const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);

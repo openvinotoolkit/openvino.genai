@@ -675,6 +675,12 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
     }
 }
 
+VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& config_dir, ConfigOnlyTag)
+    : VisionEncoder(config_dir, ConfigOnlyTag{}) {}
+
+VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir, ConfigOnlyTag)
+    : VisionEncoder(models_map, config_dir, ConfigOnlyTag{}) {}
+
 // keep both implementations for comparison and testing, here is the cpp version
 void VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& images,
                                                            const ProcessorConfig& config,
@@ -928,21 +934,24 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-    auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_merger_model.xml");
-    utils::request_vl_sdpa_transformations(model);
+    auto merger_path = model_dir / "openvino_vision_embeddings_merger_model.xml";
+    if (std::filesystem::exists(merger_path)) {
+        auto model = utils::singleton_core().read_model(merger_path);
+        utils::request_vl_sdpa_transformations(model);
 
-    auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
+        auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
 
-    m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
-    ov::genai::utils::print_compiled_model_properties(compiled_model,
-        m_with_cu_seqlens_input ? "VLM vision embeddings merger model with VLSDPA optimization ENABLED" :
-        "VLM vision embeddings merger model with VLSDPA optimization DISABLED");
+        m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
+        ov::genai::utils::print_compiled_model_properties(compiled_model,
+            m_with_cu_seqlens_input ? "VLM vision embeddings merger model with VLSDPA optimization ENABLED" :
+            "VLM vision embeddings merger model with VLSDPA optimization DISABLED");
 
-    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
-        });
+        m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled_model.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled_model]() -> ov::InferRequest {
+                return compiled_model.create_infer_request();
+            });
+    }
 
     encode_vision_placeholder_tokens();
 
@@ -957,26 +966,28 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    auto model = utils::singleton_core().read_model(
-        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
-        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
-    utils::request_vl_sdpa_transformations(model);
+    if (models_map.count("vision_embeddings_merger")) {
+        auto model = utils::singleton_core().read_model(
+            utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
+            utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
+        utils::request_vl_sdpa_transformations(model);
 
-    auto compiled_model = utils::singleton_core().compile_model(model,
-        device,
-        device_config
-    );
+        auto compiled_model = utils::singleton_core().compile_model(model,
+            device,
+            device_config
+        );
 
-    m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
-    ov::genai::utils::print_compiled_model_properties(compiled_model,
-        m_with_cu_seqlens_input ? "VLM vision embeddings merger model with VLSDPA optimization ENABLED" :
-        "VLM vision embeddings merger model with VLSDPA optimization DISABLED");
+        m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
+        ov::genai::utils::print_compiled_model_properties(compiled_model,
+            m_with_cu_seqlens_input ? "VLM vision embeddings merger model with VLSDPA optimization ENABLED" :
+            "VLM vision embeddings merger model with VLSDPA optimization DISABLED");
 
-    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
-        });
+        m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled_model.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled_model]() -> ov::InferRequest {
+                return compiled_model.create_infer_request();
+            });
+    }
 
     encode_vision_placeholder_tokens();
 

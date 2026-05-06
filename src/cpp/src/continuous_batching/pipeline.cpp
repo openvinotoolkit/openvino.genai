@@ -386,6 +386,10 @@ bool ContinuousBatchingPipeline::has_non_finished_requests() {
     return m_impl->has_non_finished_requests();
 }
 
+void ContinuousBatchingPipeline::encode_audios(const std::vector<ov::Tensor>& audios) {
+    m_impl->encode_audios(audios);
+}
+
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
     auto encoded_results = m_impl->generate(input_ids, sampling_params, streamer);
 

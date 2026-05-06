@@ -8,6 +8,7 @@
 #include <utility>
 #include <cstdint>
 
+#include "openvino/genai/audio_streamer_base.hpp"
 #include "openvino/genai/extensions.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -107,6 +108,7 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
 }
 
 const std::string STREAMER_ARG_NAME = "streamer";
+const std::string AUDIO_STREAMER_ARG_NAME = "audio_streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
 const std::string EXTENSIONS_ARG_NAME = "extensions";
@@ -118,6 +120,7 @@ Config from_config_json_if_exists(const std::filesystem::path& models_path, cons
 }
 
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
+ov::genai::AudioStreamerVariant get_audio_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
 

@@ -16,6 +16,7 @@ from .py_openvino_genai import (
     RawPerfMetrics,
     PerfMetrics,
     StreamerBase,
+    AudioStreamerBase,
     get_version,
     StreamingStatus,
     TextStreamer,
@@ -42,6 +43,7 @@ __version__ = get_version()
 
 from .py_openvino_genai import (
     VLMPipeline,
+    VLMDecodedResults,
 )
 
 # LLM pipeline
