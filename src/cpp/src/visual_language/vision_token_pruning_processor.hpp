@@ -38,10 +38,11 @@ struct PruningContext {
     ov::Tensor image_embeddings;
     ov::Tensor video_embeddings;
 
-    // Per-modality region grids in prompt order (one entry per pad-token run).
-    // For models that split a video into one region per frame (e.g. Qwen3-VL),
-    // pass the per-frame grids in `video_grids`; otherwise pass one grid per video.
-    // Either vector may be left empty when the modality is absent.
+    // Per-modality region grids in prompt order (one entry per vision region, i.e. per
+    // vision_start_token_id / vision_end_token_id block). For models that split a video
+    // into one region per frame (e.g. Qwen3-VL), pass the per-frame grids in `video_grids`;
+    // otherwise pass one grid per video. Either vector may be left empty when the modality
+    // is absent.
     std::vector<std::array<size_t, 3>> image_grids;
     std::vector<std::array<size_t, 3>> video_grids;
 
@@ -49,7 +50,8 @@ struct PruningContext {
     int64_t image_pad_token_id = -1;
     int64_t video_pad_token_id = -1;
 
-    // Optional vision-region delimiters (-1 = not used).
+    // Vision-region delimiter token ids. Must be set (not -1) whenever vision tokens
+    // are present; execute() uses them to enter/exit vision regions during the scan.
     int64_t vision_start_token_id = -1;
     int64_t vision_end_token_id = -1;
 

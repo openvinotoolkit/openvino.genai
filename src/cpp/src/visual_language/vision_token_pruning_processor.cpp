@@ -832,9 +832,13 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     const size_t row_bytes = hidden_dim * embed_element_type.size();
 
     // ---- Single scan over input_ids: build prompt_to_merger and combined_grid_thw ----
-    // Each contiguous run of identical pad tokens is one region. The merger layout is
+    // Regions are delimited by vision_start_token_id / vision_end_token_id. Inside each
+    // region, the first pad token triggers a grid entry registration. The merger layout is
     // [video_tokens; image_tokens]: video occupies indices [0, video_token_count),
     // image occupies indices [video_token_count, total_tokens).
+    OPENVINO_ASSERT(context.vision_start_token_id != -1 && context.vision_end_token_id != -1,
+                    "vision_start_token_id and vision_end_token_id must be set (not -1) when "
+                    "vision tokens are present");
     OPENVINO_ASSERT(context.input_ids.get_shape().at(0) == 1,
                     "Vision token pruning pipeline only supports batch_size == 1, got: ",
                     context.input_ids.get_shape().at(0));
