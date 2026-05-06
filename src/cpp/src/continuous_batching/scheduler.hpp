@@ -174,8 +174,8 @@ public:
         m_cache_orchestrator->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free, cache_type);
     }
 
-    void clear_kv_cache() {
-        OPENVINO_ASSERT(m_config.enable_prefix_caching == false, "KV-cache should not be cleared if prefix caching is enabled.");
+    void clear_cache() {
+        OPENVINO_ASSERT(m_config.enable_prefix_caching == false, "Cache should not be cleared if prefix caching is enabled.");
         m_cache_orchestrator->clear();
     }
 
