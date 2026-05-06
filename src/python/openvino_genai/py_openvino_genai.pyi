@@ -2636,7 +2636,7 @@ class SchedulerConfig:
         max_num_batched_tokens:     a maximum number of tokens to batch (in contrast to max_batch_size which combines
             independent sequences, we consider total amount of tokens in a batch).
         num_kv_blocks:              total number of KV blocks available to scheduler logic.
-        cache_size:                 total size of KV cache in GB.
+        cache_size:                 total size of cache in GB.
         num_linear_attention_blocks: total number of linear attention blocks available to scheduler logic. 
                                     Only applicable for models with linear attention cache inputs.
         cache_interval:             linear-attention checkpoint interval used when interval-based paging is enabled.
