@@ -122,6 +122,7 @@ export class VLMPipeline {
         perfMetrics: VLMPerfMetrics;
         parsed: Record<string, unknown>[];
         finishReasons: GenerationFinishReason[];
+        tokens: BigInt64Array[];
       },
     ) => {
       if (error) {
@@ -140,6 +141,7 @@ export class VLMPipeline {
           result.perfMetrics,
           result.parsed,
           result.finishReasons,
+          result.tokens,
         );
         const fullText = decodedResult.toString();
         if (resolvePromise) {
@@ -226,6 +228,7 @@ export class VLMPipeline {
       result.perfMetrics,
       result.parsed,
       result.finishReasons,
+      result.tokens,
     );
   }
 

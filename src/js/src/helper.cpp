@@ -1553,6 +1553,14 @@ Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedRes
     Napi::Object obj = Napi::Object::New(env);
     obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.texts));
     obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
+    Napi::Array tokens_array = Napi::Array::New(env, results.tokens.size());
+    for (size_t i = 0; i < results.tokens.size(); ++i) {
+        const auto& sequence = results.tokens[i];
+        Napi::BigInt64Array sequence_array = Napi::BigInt64Array::New(env, sequence.size());
+        std::copy(sequence.begin(), sequence.end(), sequence_array.Data());
+        tokens_array[i] = sequence_array;
+    }
+    obj.Set("tokens", tokens_array);
     obj.Set("perfMetrics", PerfMetricsWrapper::wrap(env, results.perf_metrics));
     obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
     obj.Set("finishReasons",
@@ -1564,6 +1572,14 @@ Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDec
     Napi::Object obj = Napi::Object::New(env);
     obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.texts));
     obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
+    Napi::Array tokens_array = Napi::Array::New(env, results.tokens.size());
+    for (size_t i = 0; i < results.tokens.size(); ++i) {
+        const auto& sequence = results.tokens[i];
+        Napi::BigInt64Array sequence_array = Napi::BigInt64Array::New(env, sequence.size());
+        std::copy(sequence.begin(), sequence.end(), sequence_array.Data());
+        tokens_array[i] = sequence_array;
+    }
+    obj.Set("tokens", tokens_array);
     obj.Set("perfMetrics", VLMPerfMetricsWrapper::wrap(env, results.perf_metrics));
     obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
     obj.Set("finishReasons",

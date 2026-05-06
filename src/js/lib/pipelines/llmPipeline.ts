@@ -149,6 +149,7 @@ export class LLMPipeline {
         perfMetrics: any;
         parsed: Record<string, unknown>[];
         finishReasons: GenerationFinishReason[];
+        tokens: BigInt64Array[];
       },
     ) => {
       if (error) {
@@ -167,6 +168,7 @@ export class LLMPipeline {
           result.perfMetrics,
           result.parsed,
           result.finishReasons,
+          result.tokens,
         );
         const fullText = decodedResult.toString();
         if (resolvePromise) {
@@ -273,6 +275,7 @@ export class LLMPipeline {
       result.perfMetrics,
       result.parsed,
       result.finishReasons,
+      result.tokens,
     );
   }
 

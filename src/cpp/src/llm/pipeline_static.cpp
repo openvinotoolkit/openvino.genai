@@ -157,6 +157,7 @@ DecodedResults StatefulLLMPipeline::generate(
     DecodedResults decoded_results;
     decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
     decoded_results.scores = encoded_results.scores;
+    decoded_results.tokens = encoded_results.tokens;
     decoded_results.finish_reasons = encoded_results.finish_reasons;
     auto decode_stop_time =  std::chrono::steady_clock::now();
 
@@ -207,6 +208,7 @@ DecodedResults StatefulLLMPipeline::generate(
     DecodedResults decoded_results;
     decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
     decoded_results.scores = encoded_results.scores;
+    decoded_results.tokens = encoded_results.tokens;
     decoded_results.finish_reasons = encoded_results.finish_reasons;
     auto decode_stop_time =  std::chrono::steady_clock::now();
     
