@@ -4,6 +4,7 @@
 
 #include "visual_language/phi3_vision/classes.hpp"
 
+#include "continuous_batching/timer.hpp"
 #include "visual_language/clip.hpp"
 #include "visual_language/vlm_utils.hpp"
 #include "openvino/opsets/opset13.hpp"
@@ -909,24 +910,37 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_promp
         m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
     }
     std::vector<std::variant<ov::Tensor, size_t>> new_chat_tokens;
+    ManualTimer encode_timer("Encode");
+    encode_timer.start();
     if (m_is_chat_conversation) {
-        auto start_tokenizer_time = std::chrono::steady_clock::now();
         new_chat_tokens = vlm_utils::split_tokenize(image_prompt, m_tokenizer, NATIVE_PATTERN);
-        auto end_tokenizer_time = std::chrono::steady_clock::now();
-        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        encode_timer.end();
+        metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
     } else {
         std::string templated_prompt;
+        bool apply_template = false;
+        TimePoint template_end_time;
         if (m_apply_chat_template) {
             ChatHistory history({{{"role", "user"}, {"content", image_prompt}}});
             constexpr bool add_generation_prompt = true;
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            template_end_time = std::chrono::steady_clock::now();
+            apply_template = true;
         } else {
             templated_prompt = image_prompt;
         }
-        auto start_tokenizer_time = std::chrono::steady_clock::now();
         new_chat_tokens = vlm_utils::split_tokenize(templated_prompt, m_tokenizer, NATIVE_PATTERN);
-        auto end_tokenizer_time = std::chrono::steady_clock::now();
-        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        encode_timer.end();
+        if (apply_template) {
+            metrics.raw_metrics.chat_template_durations.emplace_back(
+                PerfMetrics::get_microsec(template_end_time - encode_timer.get_start_time())
+            );
+            metrics.raw_metrics.tokenization_durations.emplace_back(
+                PerfMetrics::get_microsec(encode_timer.get_end_time() - template_end_time)
+            );
+        } else {
+            metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
+        }
     }
     ov::Tensor new_merged_tokens = vlm_utils::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
     ov::Tensor new_tokens = update_history(new_merged_tokens);

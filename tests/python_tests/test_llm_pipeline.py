@@ -1077,6 +1077,36 @@ def test_perf_metrics_with_structured_output(
     )
 
 
+@pytest.mark.parametrize("llm_model", [CHAT_MODELS_LIST[0]], indirect=True)
+def test_perf_metrics_with_apply_chat_template(ov_pipe: ov_genai.LLMPipeline) -> None:
+    chat_history = [
+        "What is the capital of France?",
+        "What is the capital of Germany?",
+    ]
+
+    metrics = [None] * len(chat_history)
+    for i, msg in enumerate(chat_history):
+        metrics[i] = ov_pipe.generate(msg, max_new_tokens=20, apply_chat_template=True).perf_metrics
+    perf_metrics = sum(metrics[1:], start=metrics[0])
+
+    raw_metrics = perf_metrics.raw_metrics
+
+    # sanity check
+    assert perf_metrics.get_generate_duration().mean > perf_metrics.get_chat_template_duration().mean
+
+    raw_chat_template_duration = np.array(raw_metrics.chat_template_durations) / 1000
+    assert np.allclose(np.mean(raw_chat_template_duration), perf_metrics.get_chat_template_duration().mean)
+    assert np.allclose(np.std(raw_chat_template_duration), perf_metrics.get_chat_template_duration().std)
+
+
+@pytest.mark.parametrize("llm_model", [CHAT_MODELS_LIST[0]], indirect=True)
+def test_perf_metrics_without_apply_chat_template(ov_pipe: ov_genai.LLMPipeline) -> None:
+    result = ov_pipe.generate(["What is the capital of France?"], max_new_tokens=20, apply_chat_template=False)
+
+    assert result.perf_metrics.raw_metrics.chat_template_durations == []
+    assert result.perf_metrics.get_chat_template_duration() is None
+
+
 @pytest.mark.parametrize("llm_model", ["facebook/opt-125m"], indirect=True)
 @pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
 @pytest.mark.parametrize("stop_str", {True, False})

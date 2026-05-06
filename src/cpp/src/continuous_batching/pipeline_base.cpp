@@ -90,37 +90,47 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     auto start_time = std::chrono::steady_clock::now();
 
     std::vector<MicroSeconds> tokenization_durations;
+    std::vector<std::optional<MicroSeconds>> template_durations;
+    tokenization_durations.reserve(prompts.size());
+    template_durations.reserve(prompts.size());
     static ManualTimer timer("tokenize");
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
         m_history.push_back({{"role", "user"}, {"content", prompts.at(0)}});
         constexpr bool add_generation_prompt = true;
+        const auto template_start = std::chrono::steady_clock::now();
         std::string history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-        timer.start();
         const auto encode_start = std::chrono::steady_clock::now();
+        timer.start();
         // ov::genai::add_special_tokens(false) is aligned with stateful pipeline
         input_ids.push_back(m_tokenizer.encode(history, ov::genai::add_special_tokens(false)).input_ids);
         tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
+        template_durations.emplace_back(PerfMetrics::get_microsec(encode_start - template_start));
         timer.end();
     } else {
         input_ids.reserve(prompts.size());
         timer.start();
         for (size_t i = 0; i < prompts.size(); i++) {
             const std::string& prompt = prompts.at(i);
-            const auto encode_start = std::chrono::steady_clock::now();
             ov::Tensor encoded_inputs;
             if (sampling_params.at(i).apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
                 ChatHistory history({{{"role", "user"}, {"content", prompt}}});
                 constexpr bool add_generation_prompt = true;
+                const auto template_start = std::chrono::steady_clock::now();
                 auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                const auto encode_start = std::chrono::steady_clock::now();
                 encoded_inputs = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
+                tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
+                template_durations.emplace_back(PerfMetrics::get_microsec(encode_start - template_start));
             } else {
                 // in case when chat_template was not found in tokenizer_config.json or set
                 std::string input_str(prompt);
+                const auto encode_start = std::chrono::steady_clock::now();
                 encoded_inputs = m_tokenizer.encode(input_str, ov::genai::add_special_tokens(true)).input_ids;
+                tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
+                template_durations.emplace_back(std::nullopt);
             }
             input_ids.push_back(encoded_inputs);
-            tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
         }
         timer.end();
     }
@@ -135,6 +145,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         auto& perf_metrics = res.perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
         raw_counters.tokenization_durations.emplace_back(tokenization_durations[i]);
+        if (template_durations[i].has_value()) {
+            raw_counters.chat_template_durations.emplace_back(*template_durations[i]);
+        }
 
         std::vector<std::string> generated;
         generated.reserve(res.m_generation_ids.size());
@@ -204,19 +217,31 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     input_ids.reserve(histories.size());
 
     std::vector<MicroSeconds> tokenization_durations;
+    std::vector<MicroSeconds> template_durations;
+    tokenization_durations.reserve(histories.size());
+    template_durations.reserve(histories.size());
+
     static ManualTimer timer("tokenize");
     timer.start();
 
     for (size_t i = 0; i < histories.size(); i++) {
         OPENVINO_ASSERT(sampling_params[i].apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
         OPENVINO_ASSERT(!histories[i].empty(), "Chat history must not be empty when using ChatHistory in generate method.");
-        const auto encode_start = std::chrono::steady_clock::now();
+        
         constexpr bool add_generation_prompt = true;
+        
+        const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(histories[i], add_generation_prompt);
+
+        const auto encode_start = std::chrono::steady_clock::now();
         input_ids.push_back(
             m_tokenizer.encode(templated_history, add_special_tokens(false)).input_ids
         );
-        tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
+        const auto encode_end = std::chrono::steady_clock::now();
+        
+        tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_end - encode_start));
+        // Store chat template duration for metrics tracking
+        template_durations.emplace_back(PerfMetrics::get_microsec(encode_start - template_start));
     }
     
     timer.end();
@@ -231,6 +256,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         auto& perf_metrics = encoded_result.perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
         raw_counters.tokenization_durations.emplace_back(tokenization_durations[i]);
+        raw_counters.chat_template_durations.emplace_back(template_durations[i]);
 
         std::vector<std::string> decoded_outputs;
         decoded_outputs.reserve(encoded_result.m_generation_ids.size());
@@ -320,7 +346,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_history_video_ids.insert(m_history_video_ids.end(), video_sequence.begin(), video_sequence.end());
         m_history_vision_count.emplace_back(std::make_pair(video_sequence.size(), image_sequence.size()));
 
+        const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
+        vlm_perf_metrics[0].raw_metrics.chat_template_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start)
+        );
 
         m_inputs_embedder->set_apply_chat_template_status(false);
 
@@ -414,6 +444,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
         gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;
+        gen_result.perf_metrics.raw_metrics.chat_template_durations = vlm_perf_metrics[i].raw_metrics.chat_template_durations;
         gen_result.perf_metrics.raw_metrics.detokenization_durations = vlm_perf_metrics[i].raw_metrics.detokenization_durations;
         
         auto decode_start_time = std::chrono::steady_clock::now();
@@ -507,9 +538,13 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     
         auto processed_chat_data = chat_contexts[i].process(images_vector[i], videos_vector[i]);
     
+        const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(
             processed_chat_data.normalized_history,
             true
+        );
+        vlm_perf_metrics[i].raw_metrics.chat_template_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start)
         );
     
         m_inputs_embedder->set_apply_chat_template_status(false);
@@ -561,6 +596,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
         gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;
+        gen_result.perf_metrics.raw_metrics.chat_template_durations = vlm_perf_metrics[i].raw_metrics.chat_template_durations;
         gen_result.perf_metrics.raw_metrics.detokenization_durations = vlm_perf_metrics[i].raw_metrics.detokenization_durations;
         
         auto decode_start_time = std::chrono::steady_clock::now();
