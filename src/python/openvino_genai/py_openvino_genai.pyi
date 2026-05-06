@@ -2301,9 +2301,9 @@ class PipelineMetrics:
         :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
         :type avg_cache_usage: float
     
-        :param cache_size_in_bytes: Total allocated KV cache size in bytes, based on the total number of KV blocks.
-          This value represents reserved/allocated memory for the KV cache and does not
-          distinguish between used and unused portions in dynamic KV cache configurations.
+        :param cache_size_in_bytes: Total allocated cache size in bytes, based on the total number of cache blocks.
+          This value represents reserved/allocated memory for the cache and does not
+          distinguish between used and unused portions in dynamic cache configurations.
         :type cache_size_in_bytes: int
     """
     def __init__(self) -> None:
@@ -2637,6 +2637,8 @@ class SchedulerConfig:
             independent sequences, we consider total amount of tokens in a batch).
         num_kv_blocks:              total number of KV blocks available to scheduler logic.
         cache_size:                 total size of KV cache in GB.
+        num_linear_attention_blocks: total number of linear attention blocks available to scheduler logic. 
+                                    Only applicable for models with linear attention cache inputs.
         cache_interval:             linear-attention checkpoint interval used when interval-based paging is enabled.
                                     Custom values are supported only for models with linear attention cache inputs.
                                     Must be greater than 0 when prefix caching is enabled.
@@ -2694,6 +2696,12 @@ class SchedulerConfig:
         ...
     @num_kv_blocks.setter
     def num_kv_blocks(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def num_linear_attention_blocks(self) -> int:
+        ...
+    @num_linear_attention_blocks.setter
+    def num_linear_attention_blocks(self, arg0: typing.SupportsInt) -> None:
         ...
 class SparseAttentionConfig:
     """
