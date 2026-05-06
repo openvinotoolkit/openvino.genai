@@ -31,17 +31,67 @@ import logging as log
 import traceback
 import json
 import sys
+import ctypes
+import ctypes.util
 
 
 # CUSTOM FIX TO AVOID ISSUE: RuntimeError: main thread is not in main loop.
 matplotlib.use("Agg")
 
 
+# ── portable malloc_trim ──────────────────────────────────────────────────────
+def _load_libc():
+    """Load the C standard library portably (Linux / macOS). Returns None on Windows."""
+    if sys.platform == "win32":
+        return None
+    lib = ctypes.CDLL(None)          # fast path: already mapped into the process
+    if not hasattr(lib, "malloc_trim"):
+        name = ctypes.util.find_library("c")
+        lib = ctypes.CDLL(name) if name else None
+    return lib
+
+_libc = _load_libc()
+
+def malloc_trim() -> bool:
+    """
+    Release free heap memory back to the OS in the current (main) process.
+    - Linux / glibc : malloc_trim(0) — returns free heap pages to the OS
+    - Windows       : HeapCompact()  — coalesces / decommits all process heaps
+    Returns True if memory was trimmed, False otherwise.
+    Safe to call at any time — only touches already-freed memory.
+    """
+    if sys.platform == "win32":
+        try:
+            kernel32 = ctypes.windll.kernel32
+            import ctypes.wintypes as _wt
+            kernel32.GetProcessHeaps.argtypes = [_wt.DWORD, ctypes.c_void_p]
+            kernel32.GetProcessHeaps.restype = _wt.DWORD
+            kernel32.HeapCompact.argtypes = [ctypes.c_void_p, _wt.DWORD]
+            kernel32.HeapCompact.restype = ctypes.c_size_t  # SIZE_T - avoids int overflow
+            count = kernel32.GetProcessHeaps(0, None)
+            HeapsArray = ctypes.c_void_p * count
+            heaps = HeapsArray()
+            kernel32.GetProcessHeaps(count, heaps)
+            trimmed = False
+            for heap in heaps:
+                if kernel32.HeapCompact(heap, 0):
+                    trimmed = True
+            return trimmed
+        except OSError:
+            return False
+
+    if _libc is None or not hasattr(_libc, "malloc_trim"):
+        return False
+    _libc.malloc_trim.restype = ctypes.c_int
+    _libc.malloc_trim.argtypes = [ctypes.c_size_t]
+    return bool(_libc.malloc_trim(0))
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 class MonitorLevel(Enum):
     DISABLED = 0
     WARMUP = 1
     FULL = 2
-    IDLE = 3
 
 
 class MonitorType(Enum):
@@ -55,8 +105,6 @@ class MonitorMode(Enum):
     THREAD_FULL = (MonitorLevel.FULL, MonitorType.THREAD)
     PROCESS_WARMUP = (MonitorLevel.WARMUP, MonitorType.PROCESS)
     PROCESS_FULL = (MonitorLevel.FULL, MonitorType.PROCESS)
-    PROCESS_IDLE = (MonitorLevel.IDLE, MonitorType.PROCESS)
-
     def __init__(self, monitor_level, monitor_type):
         self.monitor_level = monitor_level
         self.monitor_type = monitor_type
@@ -70,10 +118,9 @@ class MonitorMode(Enum):
             cls.THREAD_FULL,
             cls.PROCESS_WARMUP,
             cls.PROCESS_FULL,
-            cls.PROCESS_IDLE,
         ]
-        if not 0 <= code <= 5:
-            raise ValueError(f"Invalid memory monitor mode: {code}. Must be 0-5")
+        if not 0 <= code <= 4:
+            raise ValueError(f"Invalid memory monitor mode: {code}. Must be 0-4")
         return modes[code]
 
     @property
@@ -96,10 +143,6 @@ class MonitorMode(Enum):
     def is_enabled(self) -> bool:
         return self.monitor_level != MonitorLevel.DISABLED
 
-    @property
-    def is_idle(self) -> bool:
-        return self.monitor_level == MonitorLevel.IDLE
-
 
 class MemoryMonitorHandler:
     def __init__(self, args):
@@ -107,7 +150,7 @@ class MemoryMonitorHandler:
         self.mth = MemThreadHandler(args) if self.mode.is_thread else None
         self.mmh = None
         if self.mode.is_process:
-            self.mmh = MemoryMarkerHandler(args, self.mode.is_idle)
+            self.mmh = MemoryMarkerHandler(args)
         self.cooldown = args.memory_consumption_cooldown
         self.last_iter_number = None
 
@@ -170,6 +213,8 @@ class MemoryMonitorHandler:
         if self.mmh:
             self.mmh.update_marker("cooldown")
             log.info(f"MemoryMonitor: {label}: {self.cooldown}")
+        trimmed = malloc_trim()
+        log.info(f"MemoryMonitor: malloc_trim: {trimmed}")
         time.sleep(self.cooldown)
 
     def iter_stop_and_collect_data(self, iter_num, dict_format=True):
@@ -908,30 +953,6 @@ class MemoryMarkerMonitor(list):
             print(f"Error checking markers: {e}")
         return False
 
-    def idle_loop(self, metadata):
-        count_error = 0
-        while not self.should_stop:
-            before_marker = self.marker
-            if self.check_for_markers():
-                print("Memory worker: Received stop signal")
-                break
-
-            if before_marker != "cooldown" and self.marker == "cooldown":
-                try:
-                    self.collect_samples(before_marker)
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    print("Memory worker: Target process no longer accessible")
-                    break
-                except Exception as e:
-                    print(f"Error collecting samples: {e}")
-                    count_error += 1
-
-            self.sampling_sleep()
-            if count_error > 3:
-                print("Memory worker: too many errors: stop!")
-                break
-        self.write_final_results(metadata)
-
     def loop(self, metadata):
         count_error = 0
         while not self.should_stop:
@@ -1015,7 +1036,7 @@ class MemoryMarkerMonitor(list):
 
 
 class MemoryMarkerHandler:
-    def __init__(self, args, is_idle=False):
+    def __init__(self, args):
         mode = args.memory_consumption
         cooldown = args.memory_consumption_cooldown
         interval = args.memory_consumption_interval
@@ -1026,7 +1047,7 @@ class MemoryMarkerHandler:
         self.s_event = multiprocessing.Event()
 
         time.sleep(max(cooldown, 1))  # needed for some machines
-        pargs = self.marker_queue, parent_pid, interval, report_path, mode, cooldown, self.s_event, is_idle
+        pargs = self.marker_queue, parent_pid, interval, report_path, mode, cooldown, self.s_event
         self.background_process = mProcess(target=self.background_worker, args=pargs, daemon=True)
         self.background_process.start()
         self.update_marker("start")
@@ -1083,7 +1104,7 @@ class MemoryMarkerHandler:
                 time.sleep(0.1)
 
     @staticmethod
-    def background_worker(conn, pid, interval, path, mode, cooldown, s_event, is_idle):
+    def background_worker(conn, pid, interval, path, mode, cooldown, s_event):
         try:
             mmm = MemoryMarkerMonitor(conn, pid, interval, path)
         except Exception:
@@ -1106,10 +1127,7 @@ class MemoryMarkerHandler:
             print("Could not set event: %s", exc)
 
         try:
-            if is_idle:
-                mmm.idle_loop(metadata)
-            else:
-                mmm.loop(metadata)
+            mmm.loop(metadata)
             conn.close()
             log.info("Memory monitor background worker stopped")
         except Exception as e:
