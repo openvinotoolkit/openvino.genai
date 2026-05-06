@@ -118,7 +118,10 @@ DecodedResults StatefulLLMPipeline::get_decoded_results(
     auto encoded_results = generate(encoded_input, generation_config, streamer);
 
     auto decode_start_time =  std::chrono::steady_clock::now();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    DecodedResults decoded_results;
+    decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
+    decoded_results.scores = encoded_results.scores;
+    decoded_results.finish_reasons = encoded_results.finish_reasons;
     auto decode_stop_time =  std::chrono::steady_clock::now();
 
     // generate_durations

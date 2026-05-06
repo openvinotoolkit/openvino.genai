@@ -26,3 +26,7 @@ torchaudio>=2.1.0,<=2.11.0
 torchvision>=0.16,<=0.26.0
 # For LoRA adapters
 peft==0.19.1
+# For speech generation evaluation
+jiwer>=3.0.0,<=4.0.0
+pywhispercpp>=1.4.1,<1.5.0
+speechbrain>=1.0.0,<=1.0.3

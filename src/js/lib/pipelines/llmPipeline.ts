@@ -3,7 +3,12 @@
 
 import util from "node:util";
 import { ChatHistory, LLMPipeline as LLMPipelineWrapper } from "../addon.js";
-import { GenerationConfig, StreamingStatus, LLMPipelineProperties } from "../utils.js";
+import {
+  GenerationConfig,
+  GenerationFinishReason,
+  StreamingStatus,
+  LLMPipelineProperties,
+} from "../utils.js";
 import { DecodedResults } from "../decodedResults.js";
 import { Tokenizer } from "../tokenizer.js";
 
@@ -101,10 +106,24 @@ export class LLMPipeline {
 
   /**
    * Stream generation results as an async iterator of strings.
-   * The iterator yields subword chunks.
+   * The iterator yields subword chunks during generation.
+   * When generation finishes, the full decoded text is returned as the final
+   * iterator value (`done: true`). This value is not available through
+   * `for await...of`; call `next()` directly to read it.
+   *
+   * For batch processing or custom streaming control, see {@link generate}.
+   *
    * @param inputs - Input prompt string or chat history.
    * @param generationConfig - Generation configuration parameters.
    * @returns Async iterator producing subword chunks.
+   *
+   * @example
+   * // Stream subword chunks to console
+   * for await (const chunk of pipe.stream(prompt, { max_new_tokens: 100 })) {
+   *   process.stdout.write(chunk);
+   * }
+   *
+   * @throws {Error} If inputs is an array - use {@link generate} for batch processing
    */
   stream(inputs: string | ChatHistory, generationConfig: GenerationConfig = {}) {
     if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
@@ -129,6 +148,7 @@ export class LLMPipeline {
         scores: number[];
         perfMetrics: any;
         parsed: Record<string, unknown>[];
+        finishReasons: GenerationFinishReason[];
       },
     ) => {
       if (error) {
@@ -146,6 +166,7 @@ export class LLMPipeline {
           result.scores,
           result.perfMetrics,
           result.parsed,
+          result.finishReasons,
         );
         const fullText = decodedResult.toString();
         if (resolvePromise) {
@@ -204,11 +225,34 @@ export class LLMPipeline {
   }
 
   /**
-   * Generate sequences for LLMs.
+   * Generate text sequences with optional streaming.
+   *
+   * This method supports:
+   * - Single prompt generation
+   * - Batch generation (array of prompts)
+   * - Chat history-based generation
+   * - Optional custom streaming via callback
+   *
+   * For simple streaming use cases, consider using {@link stream}, which provides
+   * a convenient async iterator interface.
+   *
    * @param inputs - Input prompt string, array of prompts, or chat history.
    * @param generationConfig - Generation configuration parameters.
-   * @param streamer - Optional streamer callback called for each chunk.
+   * @param streamer - Optional callback invoked for each generated text chunk.
+   * - Return a `StreamingStatus` flag to indicate whether generation should be stopped or cancelled
    * @returns Resolves with decoded results once generation finishes.
+   *
+   * @example
+   * // Simple generation without streaming
+   * const result = await pipe.generate("Hello", { max_new_tokens: 50 });
+   * console.log(result.texts[0]);
+   *
+   * @example
+   * // With custom streamer
+   * const result = await pipe.generate(prompt, config, (chunk) => {
+   *   process.stdout.write(chunk);
+   *   return StreamingStatus.RUNNING;
+   * });
    */
   async generate(
     inputs: string | string[] | ChatHistory,
@@ -223,7 +267,13 @@ export class LLMPipeline {
     const innerGenerate = util.promisify(this.pipeline.generate.bind(this.pipeline));
     const result = await innerGenerate(inputs, generationConfig, streamer);
 
-    return new DecodedResults(result.texts, result.scores, result.perfMetrics, result.parsed);
+    return new DecodedResults(
+      result.texts,
+      result.scores,
+      result.perfMetrics,
+      result.parsed,
+      result.finishReasons,
+    );
   }
 
   /**

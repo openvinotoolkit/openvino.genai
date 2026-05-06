@@ -740,6 +740,9 @@ private:
             m_generation_config.num_inference_steps = 28;
             m_generation_config.max_sequence_length = 256;
             m_generation_config.strength = m_pipeline_type == PipelineType::TEXT_2_IMAGE ? 1.0f : 0.6f;
+            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
+                m_generation_config.taylorseer_config = TaylorSeerCacheConfig{};
+            }
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
         }

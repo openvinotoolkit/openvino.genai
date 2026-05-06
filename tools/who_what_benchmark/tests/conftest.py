@@ -59,6 +59,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "tiny-random-flux": {"name": "optimum-intel-internal-testing/tiny-random-flux", "convert_args": []},
     "tiny-random-flux-fill": {"name": "optimum-intel-internal-testing/tiny-random-flux-fill", "convert_args": []},
     "tiny-random-ltx-video": {"name": "optimum-intel-internal-testing/tiny-random-ltx-video", "convert_args": []},
+    "speecht5_tts": {
+        "name": "microsoft/speecht5_tts",
+        "convert_args": ["--model-kwargs", '{"vocoder": "microsoft/speecht5_hifigan"}'],
+    },
 }
 
 

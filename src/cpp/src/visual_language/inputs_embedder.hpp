@@ -73,7 +73,8 @@ public:
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
-    PerLayerInferFn get_per_layer_infer_fn() const;
+    // returns per-layer embeddings callback, or nullptr if not available
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
@@ -198,7 +199,9 @@ private:
 
         virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
-        virtual PerLayerInferFn get_per_layer_infer_fn() const;
+        virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() {
+            return nullptr;
+        }
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
@@ -369,6 +372,7 @@ private:
     friend class InputsEmbedderQwen3VL;
     friend class InputsEmbedderGemma3;
     friend class InputsEmbedderGemma3n;
+    friend class InputsEmbedderGemma4;
     friend class InputsEmbedderVideoChatFlashQwen;
 };
 

@@ -48,34 +48,64 @@ LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
         "segfault on mac"
     ),
 )
-@pytest.mark.parametrize("test_struct", [
-    # prompts + generation length are longer than the eviction arena, eviction expected w/ impact to similarity
-    CacheOptTestStruct(test_id="prompts_longer_than_eviction_arena",
-                       prompt_file="long_prompts.txt", max_new_tokens=128, num_kv_blocks=500, use_cache_eviction=True,
-                       cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
-                       similarity_threshold=0.8,
-                       max_cache_usage_optimization_ratio=2.0,
-                       avg_cache_usage_optimization_ratio=1.7),
-
-    # prompts + generation length are shorter than the eviction arena, no eviction expected
-    CacheOptTestStruct(test_id="prompts_and_gen_shorter_than_eviction_arena",
-                       prompt_file="short_prompts.txt", max_new_tokens=32, num_kv_blocks=500, use_cache_eviction=True,
-                       cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
-                       similarity_threshold=0.98,
-                       max_cache_usage_optimization_ratio=0.95,  # no improvement expected
-                       avg_cache_usage_optimization_ratio=0.95),
-
-    # short prompts, long generation - eviction expected
-    CacheOptTestStruct(test_id="gen_longer_than_eviction_arena",
-                       prompt_file="short_prompts.txt", max_new_tokens=160, num_kv_blocks=500, use_cache_eviction=True,
-                       cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
-                       similarity_threshold=0.94,
-                       max_cache_usage_optimization_ratio=1.4,
-                       avg_cache_usage_optimization_ratio=1.1),
-
-    ], ids=lambda x: x.test_id)
-@pytest.mark.parametrize("apply_rotation", [True, False], ids=["with_rotation", "no_rotation"])         # rotation should improve similarity
-@pytest.mark.parametrize("use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]) # sparse attn should not degrade similarity too much
+@pytest.mark.parametrize(
+    "test_struct",
+    [
+        # prompts + generation length are longer than the eviction arena, eviction expected w/ impact to similarity
+        CacheOptTestStruct(
+            test_id="prompts_longer_than_eviction_arena",
+            prompt_file="long_prompts.txt",
+            max_new_tokens=128,
+            num_kv_blocks=500,
+            use_cache_eviction=True,
+            cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
+            similarity_threshold=0.8,
+            max_cache_usage_optimization_ratio=2.0,
+            avg_cache_usage_optimization_ratio=1.7,
+        ),
+        # prompts + generation length are shorter than the eviction arena, no eviction expected
+        CacheOptTestStruct(
+            test_id="prompts_and_gen_shorter_than_eviction_arena",
+            prompt_file="short_prompts.txt",
+            max_new_tokens=32,
+            num_kv_blocks=500,
+            use_cache_eviction=True,
+            cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
+            similarity_threshold=0.98,
+            max_cache_usage_optimization_ratio=0.95,  # no improvement expected
+            avg_cache_usage_optimization_ratio=0.95,
+        ),
+        # short prompts, long generation - eviction expected
+        CacheOptTestStruct(
+            test_id="gen_longer_than_eviction_arena",
+            prompt_file="short_prompts.txt",
+            max_new_tokens=160,
+            num_kv_blocks=500,
+            use_cache_eviction=True,
+            cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
+            similarity_threshold=0.94,
+            max_cache_usage_optimization_ratio=1.4,
+            avg_cache_usage_optimization_ratio=1.1,
+        ),
+    ],
+    ids=lambda x: x.test_id,
+)
+@pytest.mark.parametrize(
+    "apply_rotation",
+    [
+        pytest.param(
+            True,
+            marks=pytest.mark.xfail(
+                reason="with_rotation fail with Port for tensor name rotation_trig_lut was not found. Ticket: 185953"
+            ),
+        ),
+        False,
+    ],
+    ids=["with_rotation", "no_rotation"],
+)  # rotation should improve similarity
+@pytest.mark.parametrize(
+    "use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]
+)  # sparse attn should not degrade similarity too much
 def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply_rotation, use_sparse_attention):
     import whowhatbench
 

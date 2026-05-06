@@ -7,6 +7,14 @@ export enum StreamingStatus {
   RUNNING,
   STOP,
   CANCEL,
+  TOOL_CALL_STOP,
+}
+
+export enum GenerationFinishReason {
+  NONE,
+  STOP,
+  LENGTH,
+  TOOL_CALL,
 }
 
 /** controls the stopping condition for grouped beam search. The following values are possible?:
