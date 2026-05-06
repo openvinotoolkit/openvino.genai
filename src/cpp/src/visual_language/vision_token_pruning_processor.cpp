@@ -698,14 +698,19 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
         OPENVINO_ASSERT(kept_indices_per_image.size() == 1 && region_count > 1, "Kept token indices layout mismatch");
 
         std::vector<std::vector<size_t>> normalized(region_count);
-        size_t offset = 0;
+        std::vector<size_t> region_offsets(region_count);
+        size_t abs_off = 0;
+        for (size_t i = 0; i < region_count; ++i) {
+            region_offsets[i] = abs_off;
+            abs_off += tokens_per_image[i];
+        }
         for (size_t kept_idx : kept_indices_per_image[0]) {
             for (size_t img_idx = 0; img_idx < region_count; ++img_idx) {
-                if (kept_idx >= offset && kept_idx < offset + tokens_per_image[img_idx]) {
-                    normalized[img_idx].push_back(kept_idx - offset);
+                if (kept_idx >= region_offsets[img_idx] &&
+                    kept_idx < region_offsets[img_idx] + tokens_per_image[img_idx]) {
+                    normalized[img_idx].push_back(kept_idx - region_offsets[img_idx]);
                     break;
                 }
-                offset += tokens_per_image[img_idx];
             }
         }
         return normalized;
@@ -790,6 +795,14 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     // use operator bool() before calling any accessors.
     const bool has_images = static_cast<bool>(context.image_embeddings);
     const bool has_videos = static_cast<bool>(context.video_embeddings);
+    if (has_images) {
+        OPENVINO_ASSERT(context.image_embeddings.get_shape().size() == 2,
+                        "image_embeddings must be rank-2 [tokens, hidden_dim]");
+    }
+    if (has_videos) {
+        OPENVINO_ASSERT(context.video_embeddings.get_shape().size() == 2,
+                        "video_embeddings must be rank-2 [tokens, hidden_dim]");
+    }
     const size_t image_token_count = has_images ? context.image_embeddings.get_shape()[0] : 0;
     const size_t video_token_count = has_videos ? context.video_embeddings.get_shape()[0] : 0;
     const size_t total_tokens = image_token_count + video_token_count;
