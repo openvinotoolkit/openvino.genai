@@ -706,7 +706,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
           - name: 'WWB tests'
-            cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -m "not nanollava"'
+            cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -m "not nanollava" -k "not videochat"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
           - name: 'EAGLE3 speculative decoding tests'
@@ -718,6 +718,14 @@ jobs:
             cmd: |
               python -m pip install transformers==4.48.0 diffusers==0.35.2
               python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            timeout: 90
+          - name: 'WWB tests (videochat)'
+            cmd: |
+              # Temporary pin: depends on upstream PR #1637 (not merged yet).
+              # TODO: replace with official release once available.
+              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@0d632c6afbb4d885625d5cb3f7c41ffa5f7bd3f0
+              python -m pytest -v ./tools/who_what_benchmark/tests -k "videochat"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
           - name: 'VLM (MiniCPM-o-2_6)'

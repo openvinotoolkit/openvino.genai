@@ -495,6 +495,8 @@ def load_processor(args):
                 trust_remote_code=True)
             preprocessor = NanollavaProcessorWrapper(model.process_images, model.config, model.dtype, tokenizer)
             config = model.config
+        elif config.model_type == "videochat_flash_qwen":
+            preprocessor = None
         else:
             preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
@@ -767,7 +769,11 @@ def genai_gen_reranking(model, tokenizer, query, documents):
 
 
 def is_model_with_automatic_crop(config):
-    return "internvl" in config.model_type or "minicpmv" in config.model_type
+    return (
+        "internvl" in config.model_type
+        or "minicpmv" in config.model_type
+        or "videochat_flash_qwen" in config.model_type
+    )
 
 
 def create_evaluator(base_model, args):
