@@ -140,9 +140,7 @@ std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> AudioEncoderQwen3Omni
 
     size_t n_frames = 0;
     auto mel_data = m_mel_extractor.extract(raw_speech, n_frames);
-    if (n_frames == 0) {
-        OPENVINO_THROW("Audio input too short to produce mel spectrogram frames");
-    }
+    OPENVINO_ASSERT(n_frames > 0, "Audio input too short to produce mel spectrogram frames");
 
     const auto num_mel_bins = m_config.audio_config_num_mel_bins;
     const auto n_window_infer = m_config.audio_config_n_window_infer;
@@ -191,6 +189,7 @@ std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> AudioEncoderQwen3Omni
     // because it uses data-dependent loops that can't be traced)
     const size_t window_aftercnn = max_aftercnn_len * (n_window_infer / (n_window * 2));
     std::vector<int32_t> cu_chunk_lens = {0};
+    OPENVINO_ASSERT(window_aftercnn > 0, "Audio encoder: window_aftercnn is zero — check config values n_window_infer and n_window");
     for (size_t c = 0; c < num_chunks; c++) {
         const auto cnn_len = static_cast<size_t>(acl_data[c]);
         const size_t full_windows = cnn_len / window_aftercnn;

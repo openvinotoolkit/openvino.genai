@@ -133,6 +133,29 @@ py::object call_vlm_generate(
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
+    // Route through AnyMap overload when audio kwargs are present,
+    // since only the AnyMap path sets up m_pending_audios/m_pending_audio_streamer.
+    if (kwargs.contains("audios") || kwargs.contains("audio_streamer")) {
+        auto map = pyutils::kwargs_to_any_map(kwargs);
+        if (!images.empty()) {
+            map[ov::genai::images.name()] = images;
+        }
+        if (!videos.empty()) {
+            map[ov::genai::videos.name()] = videos;
+        }
+        map["generation_config"] = generation_config;
+        ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+        if (!std::holds_alternative<std::monostate>(streamer)) {
+            map.insert(ov::genai::streamer(std::move(streamer)));
+        }
+        ov::genai::VLMDecodedResults res;
+        {
+            py::gil_scoped_release rel;
+            res = pipe.generate(prompt, map);
+        }
+        return py::cast(res);
+    }
+
     auto updated_config = pyutils::update_config_from_kwargs(generation_config, kwargs);
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     ov::genai::VLMDecodedResults res;
@@ -152,6 +175,27 @@ py::object call_vlm_generate_with_chat_history(
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
+    if (kwargs.contains("audios") || kwargs.contains("audio_streamer")) {
+        auto map = pyutils::kwargs_to_any_map(kwargs);
+        if (!images.empty()) {
+            map[ov::genai::images.name()] = images;
+        }
+        if (!videos.empty()) {
+            map[ov::genai::videos.name()] = videos;
+        }
+        map["generation_config"] = generation_config;
+        ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+        if (!std::holds_alternative<std::monostate>(streamer)) {
+            map.insert(ov::genai::streamer(std::move(streamer)));
+        }
+        ov::genai::VLMDecodedResults res;
+        {
+            py::gil_scoped_release rel;
+            res = pipe.generate(history, map);
+        }
+        return py::cast(res);
+    }
+
     auto updated_config = pyutils::update_config_from_kwargs(generation_config, kwargs);
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     ov::genai::VLMDecodedResults res;

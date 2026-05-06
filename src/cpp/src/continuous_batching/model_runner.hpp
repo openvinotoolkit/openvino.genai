@@ -784,8 +784,20 @@ public:
                     sequence->update_hidden_state(
                         _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
                     if (m_has_intermediate_hidden_states_output) {
-                        sequence->update_intermediate_hidden_state(
-                            _get_intermediate_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
+                        auto ihs = _get_intermediate_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id());
+                        auto ihs_shape = ihs.get_shape();
+                        size_t num_tokens = ihs_shape.at(0);
+                        if (num_tokens > 1) {
+                            // Prefill: slice the batch tensor into per-token tensors so that
+                            // the accumulated vector is indexed by absolute token position.
+                            for (size_t t = 0; t < num_tokens; ++t) {
+                                const auto [start_coord, end_coord] = ov::genai::utils::make_roi(ihs_shape, 0, t, t + 1);
+                                ov::Tensor token_hs(ihs, start_coord, end_coord);
+                                sequence->update_intermediate_hidden_state(token_hs);
+                            }
+                        } else {
+                            sequence->update_intermediate_hidden_state(ihs);
+                        }
                     }
                 }
             }

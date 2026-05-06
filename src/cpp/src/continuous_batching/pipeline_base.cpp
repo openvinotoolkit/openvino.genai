@@ -304,6 +304,9 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
     m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                        generation_config.relevance_weight);
 
+    OPENVINO_ASSERT(!(generation_config.return_audio && generation_config.is_prompt_lookup()),
+                    "return_audio and prompt_lookup cannot both be enabled");
+
     // Shared helpers for prompt-ID extraction used in both chat-conversation and multi-prompt branches
     auto prepare_prompt_ids = [&](const std::string& prompt, const GenerationConfig& params) -> size_t {
         if (params.is_prompt_lookup()) {
