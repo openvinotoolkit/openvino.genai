@@ -276,11 +276,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                     m_llm.set_tensor(name, per_layer_embeddings_callback(new_input_ids));
                 }
             }
-            // Compute per_layer_inputs for the new token if per_layer infer function is available
-            if (per_layer_infer_fn) {
-                ov::Tensor per_layer_tensor = per_layer_infer_fn(new_input_ids);
-                m_llm.set_tensor("per_layer_inputs", per_layer_tensor);
-            }
         } else {
             m_llm.set_tensor("input_ids", new_input_ids);
         }

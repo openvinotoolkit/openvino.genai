@@ -267,10 +267,6 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::IInputsEmbedd
     return empty_map;
 }
 
-PerLayerInferFn InputsEmbedder::IInputsEmbedder::get_per_layer_infer_fn() const {
-    return nullptr;
-}
-
 /// Public InputsEmbedder class
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
