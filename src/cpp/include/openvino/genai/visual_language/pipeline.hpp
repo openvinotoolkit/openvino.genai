@@ -11,6 +11,7 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
+#include "openvino/genai/visual_language/video_metadata.hpp"
 
 namespace ov::genai {
 
@@ -303,4 +304,5 @@ private:
 static constexpr ov::Property<ov::Tensor> image{"image"};
 static constexpr ov::Property<std::vector<ov::Tensor>> images{"images"};
 static constexpr ov::Property<std::vector<ov::Tensor>> videos{"videos"};
+static constexpr ov::Property<std::vector<VideoMetadata>> videos_metadata{"videos_metadata"};
 }

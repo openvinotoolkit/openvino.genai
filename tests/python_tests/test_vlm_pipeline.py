@@ -57,6 +57,7 @@ from openvino_genai import (
     StreamingStatus,
     GenerationFinishReason,
     ChatHistory,
+    VideoMetadata,
 )
 
 from utils.network import retry_request
@@ -152,8 +153,8 @@ else:
     VIDEO_MODEL_IDS = [
         "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+        "optimum-intel-internal-testing/tiny-random-qwen3.5"
     ]
-
 
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 
@@ -193,6 +194,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
@@ -210,6 +212,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
@@ -222,6 +225,7 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-qwen2vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": 256,
+    "optimum-intel-internal-testing/tiny-random-qwen3.5": 256,
 }
 
 
@@ -318,6 +322,10 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
         )
+    if "optimum-intel-internal-testing/tiny-random-qwen3.5" == model_id and is_transformers_version("<", "5.2.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
+        )
     if "optimum-intel-internal-testing/tiny-random-gemma4" == model_id and is_transformers_version("<", "5.5.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
@@ -381,12 +389,17 @@ def _get_ov_model(model_id: str) -> str:
         if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
             # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
             processor.chat_template = tokenizer.chat_template
-        processor.audio_tokenizer = None
-        if is_transformers_version(">=", "5.0"):
+
+        if (
+            isinstance(processor, getattr(transformers, "Gemma4Processor", type(None)))
+            or model.config.model_type == "qwen3_5" or is_transformers_version(">=", "5.0")
+        ):
             # Remove audio_tokenizer to avoid serialization issues (audio inputs are not supported).
             # Setting to None is insufficient because Gemma4Processor.to_dict() still detects
             # the key and calls .name_or_path on a None object.
             processor.__dict__.pop("audio_tokenizer", None)
+        else:
+            processor.audio_tokenizer = None
 
         processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
@@ -414,6 +427,9 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
+
+    if "tiny-random-qwen3.5" in ov_model and ov_backend == "PA":
+        pytest.xfail("Qwen3.5 does not support PA attention backend")
 
     if "gemma4" in ov_model and ov_backend == "PA":
         pytest.xfail("gemma4 does not support PA attention backend")
@@ -997,6 +1013,9 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
+    if "tiny-random-qwen3.5" in ov_pipe_model.model_id:
+        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
+
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
@@ -1175,6 +1194,9 @@ def test_vlm_pipeline_chat_with_video(
     system_message: str,
     iteration_images_and_videos,
 ):
+    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
+        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
+
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -1383,6 +1405,9 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
+    if "tiny-random-qwen3.5" in ov_pipe_model.model_id:
+        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
+
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Explain in details 1+1=",
@@ -1635,6 +1660,7 @@ else:
         ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
         ("qnguyen3/nanoLLaVA", "PA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4", "SDPA"),
+        ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
     ]
 
 
@@ -1775,6 +1801,9 @@ def test_model_tags_prepend_native(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
+    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
+        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
+
     ov_pipe = ov_pipe_model.pipeline
     vision_tag = ov_pipe_model.get_vision_tag(vision_type)
 
@@ -1815,6 +1844,9 @@ def test_model_tags_prepend_universal(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
+    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
+        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
+
     ov_pipe = ov_pipe_model.pipeline
 
     conversation_requests = request.getfixturevalue(
@@ -1854,6 +1886,9 @@ def test_model_tags_append(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
+    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
+        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
+
     ov_pipe = ov_pipe_model.pipeline
     vision_tag = ov_pipe_model.get_vision_tag(vision_type)
 
@@ -2116,6 +2151,7 @@ OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS = {
     "optimum-intel-internal-testing/tiny-random-qwen2vl": [(100, 77), (350, 350), (480, 512)],
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(100, 77), (350, 350), (480, 512)],
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(100, 77), (350, 350), (480, 512)],
+    "optimum-intel-internal-testing/tiny-random-qwen3.5": [(100, 77), (350, 350), (480, 512)],
     # (999, 666) resolution fails, result is reasonable and close to optimum-intel output.
     # There is a known image resize incompatibility, so different image sizes are used to test the Gemma 4 model.
     "optimum-intel-internal-testing/tiny-random-gemma4": [(100, 77), (1000, 666), (997, 666), (999, 665), (1920, 1080)],
@@ -2125,6 +2161,7 @@ OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
     "optimum-intel-internal-testing/tiny-random-qwen2vl": [(32, 32), (70, 70)],
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(32, 32), (70, 70)],
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(32, 32), (70, 70)],
+    "optimum-intel-internal-testing/tiny-random-qwen3.5": [(32, 32), (70, 70)],
 }
 
 # test-id glob pattern -> xfail reason
@@ -2146,6 +2183,10 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # qwen3-vl cases that use 70x70 video with GRAPH preprocessing
     "*tiny-random-qwen3-vl/*/GRAPH/video-70x70": "CVS-180070",
     "*tiny-random-qwen3-vl/*/GRAPH/image-100x77/video-70x70": "CVS-180070",
+    # qwen3.5 cases that use 32x32 video
+    "*tiny-random-qwen3.5/*/video-32x32": "CVS-180070",
+    # qwen3.5 cases that use 70x70 video with CPP preprocessing
+    "*tiny-random-qwen3.5/*/CPP/video-70x70": "CVS-180070",
     # llava-next-video graph pre-processing 'real' resize cases that include video
     "*tiny-random-llava-next-video/*/GRAPH/video*": "CVS-180070",
     "*tiny-random-llava-next-video/*/GRAPH/image*/video*": "CVS-180070",
@@ -2169,6 +2210,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
+    "optimum-intel-internal-testing/tiny-random-qwen3.5",
 ]
 
 # For these models, we will only add GRAPH pre-processing tests.
@@ -2769,3 +2811,115 @@ def test_vlm_pipeline_add_extension(cat_tensor, tmp_path: Path) -> None:
     assert result_extension_obj.texts[0].strip() == result_ref.texts[0].strip(), (
         "Result should be the same for model with extension 'CustomAdd' and reference model."
     )
+
+
+@pytest.fixture(scope="module")
+def video_sampling_inputs(synthetic_video_32x32) -> list[tuple[openvino.Tensor, VideoMetadata | None]]:
+    video_tensor = openvino.Tensor(synthetic_video_32x32)
+
+    frames_indices = list(range(4))
+    presampled_video_tensor = openvino.Tensor(synthetic_video_32x32[frames_indices])
+
+    video_metadata = VideoMetadata()
+    video_metadata.frames_indices = frames_indices
+
+    return [
+        (video_tensor, None),
+        (presampled_video_tensor, None),
+        (video_tensor, video_metadata),
+    ]
+
+
+def _compare_outputs_for_video_sampling(
+    output_all_frames: str,
+    output_presampled: str,
+    output_with_metadata: str,
+):
+    assert output_all_frames != output_with_metadata, (
+        "Result should be different when using video metadata to sample frames."
+    )
+    assert output_presampled == output_with_metadata, (
+        "Presampled video result should match video metadata result when using the same frame indices."
+    )
+
+
+@parametrize_all_models_with_video
+def test_video_metadata_sampling(
+    ov_pipe_model: VlmModelInfo,
+    video_sampling_inputs: list[tuple[openvino.Tensor, VideoMetadata | None]],
+):
+    if "tiny-videochat-flash-qwen" in ov_pipe_model.model_id:
+        pytest.xfail("Implement proper video sampling for VideoChat-Flash-Qwen. Ticket - CVS-183520.")
+
+    ov_pipe = ov_pipe_model.pipeline
+
+    generation_config = _setup_generation_config(
+        ov_pipe, max_new_tokens=20, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup
+    )
+
+    prompt = PROMPTS[0]
+
+    outputs = []
+    for video, video_metadata in video_sampling_inputs:
+        videos_metadata_kwargs = {"videos_metadata": [video_metadata]} if video_metadata else {}
+        output = ov_pipe.generate(
+            prompt,
+            videos=[video],
+            generation_config=generation_config,
+            **videos_metadata_kwargs,
+        )
+        outputs.append(output.texts[0])
+
+    _compare_outputs_for_video_sampling(*outputs)
+
+
+def test_video_metadata_sampling_continuous_batching(
+    ov_continuous_batching_pipe_qwen2vl: ContinuousBatchingPipeline,
+    video_sampling_inputs: list[tuple[openvino.Tensor, VideoMetadata | None]],
+):
+    ov_pipe = ov_continuous_batching_pipe_qwen2vl
+
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 20
+    generation_config.do_sample = False
+
+    prompt = PROMPTS[0]
+
+    outputs_generate_api = []
+
+    for video, video_metadata in video_sampling_inputs:
+        results = ov_pipe.generate(
+            [prompt],
+            videos=[[video]],
+            videos_metadata_batches=[[video_metadata]] if video_metadata else [],
+            generation_config=[generation_config],
+        )
+        outputs_generate_api.append(results[0].texts[0])
+
+    _compare_outputs_for_video_sampling(*outputs_generate_api)
+
+    outputs_add_request_api = []
+    handles = []
+
+    for request_id, (video, video_metadata) in enumerate(video_sampling_inputs):
+        handle = ov_pipe.add_request(
+            request_id,
+            prompt,
+            images=[],
+            videos=[video],
+            videos_metadata=[video_metadata] if video_metadata else [],
+            generation_config=generation_config,
+        )
+        handles.append(handle)
+
+    while ov_pipe.has_non_finished_requests():
+        ov_pipe.step()
+
+    tokenizer = ov_pipe.get_tokenizer()
+
+    for handle in handles:
+        results = handle.read_all()
+        for result in results:
+            outputs_add_request_api.append(tokenizer.decode(result.generated_ids))
+
+    _compare_outputs_for_video_sampling(*outputs_add_request_api)

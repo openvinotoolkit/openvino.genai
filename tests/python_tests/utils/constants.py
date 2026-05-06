@@ -36,6 +36,7 @@ def extra_generate_kwargs(generation_config: HFGenerationConfig = None):
     return additional_args
 
 
+OV_MODEL_INDEX = "model_index.json"
 OV_MODEL_FILENAME = "openvino_model.xml"
 OV_TOKENIZER_FILENAME = "openvino_tokenizer.xml"
 OV_DETOKENIZER_FILENAME = "openvino_detokenizer.xml"
