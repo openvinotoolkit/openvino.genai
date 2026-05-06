@@ -8,10 +8,10 @@ openvino_genai
 pillow==12.2.0
 torch>=2.1.0,<=2.11
 transformers[sentencepiece]>=4.40.0,<5.4.0
-diffusers>=0.22.0,<=0.37.1
+diffusers>=0.22.0,<=0.38.0
 # optimum is in dependency list of optimum-intel
 optimum-intel[nncf]>=1.25.0,<=1.27.0
-packaging>=20.0,<=26.1
+packaging>=20.0,<=26.2
 psutil
 timm<=1.0.26
 tiktoken>=0.3.0,<=0.12.0
