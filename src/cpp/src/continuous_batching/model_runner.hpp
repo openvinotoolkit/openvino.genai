@@ -590,11 +590,41 @@ public:
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
-                        const auto& position_ids_elem = sequence->get_position_ids_list()[position_id];
-                        const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(position_ids_elem.get_shape(), position_ids_idx, false);
 
-                        ov::Tensor dst_roi(position_ids, begin, end);
-                        position_ids_elem.copy_to(dst_roi);
+                        // Get base position_ids (3D: [temporal, height, width] for VLM)
+                        const auto& position_ids_elem = sequence->get_position_ids_list()[position_id];
+
+                        // Check if tree_position_ids exist for speculative decoding (similar to TOKENS case above)
+                        const auto& tree_pos_ids = sequence->get_tree_metadata().tree_position_ids;
+                        if (!tree_pos_ids.empty()) {
+                            // Tree decoding mode: adjust temporal dimension based on tree depth
+                            OPENVINO_ASSERT(position_ids_idx < tree_pos_ids.size(),
+                                           "position_ids_idx (", position_ids_idx,
+                                           ") is out of bounds for tree_position_ids.size() (", tree_pos_ids.size(), ")");
+                            size_t tree_pos_id = tree_pos_ids[position_ids_idx];
+
+                            // Clone and adjust position_ids
+                            ov::Tensor adjusted_position_ids(position_ids_elem.get_element_type(),
+                                                             position_ids_elem.get_shape());
+                            position_ids_elem.copy_to(adjusted_position_ids);
+
+                            // Adjust temporal dimension (first element in [temporal, height, width])
+                            // Tree position IDs represent tree depth/layer in speculative decoding
+                            int64_t* data = adjusted_position_ids.data<int64_t>();
+                            data[0] = group_position_id + static_cast<int64_t>(tree_pos_id);  // Adjust temporal
+                            // data[1] (height) and data[2] (width) remain unchanged
+
+                            const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(
+                                adjusted_position_ids.get_shape(), position_ids_idx, false);
+                            ov::Tensor dst_roi(position_ids, begin, end);
+                            adjusted_position_ids.copy_to(dst_roi);
+                        } else {
+                            // Non-tree mode: use original position_ids directly
+                            const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(
+                                position_ids_elem.get_shape(), position_ids_idx, false);
+                            ov::Tensor dst_roi(position_ids, begin, end);
+                            position_ids_elem.copy_to(dst_roi);
+                        }
                     } else {
                         OPENVINO_THROW("Unknown model inputs type.");
                     }
