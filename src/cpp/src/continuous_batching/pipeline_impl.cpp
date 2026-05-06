@@ -270,8 +270,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
 ) {
     if (sampling_params.adapters.has_value()) {
         const auto mode = sampling_params.adapters->get_mode();
-        OPENVINO_ASSERT(mode != AdapterConfig::MODE_DYNAMIC && mode != AdapterConfig::MODE_AUTO,
-            "MODE_DYNAMIC and MODE_AUTO LoRA adapters are not supported in the add_request() + step() flow. "
+        OPENVINO_ASSERT(mode != AdapterConfig::MODE_DYNAMIC && mode != AdapterConfig::MODE_AUTO && mode != AdapterConfig::MODE_STATIC_RANK,
+            "MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported in the add_request() + step() flow. "
             "Use MODE_STATIC or MODE_FUSE instead.");
     }
 
