@@ -1659,7 +1659,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             assisting_pipeline_info.min_generated_len =
                 std::min(assisting_pipeline_info.min_generated_len, sequence->get_generated_len());
             logit_processor.update_generated_len(sequence->get_generated_len());
-            for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
+            for (const auto& dropped_seq_id : _try_finish_generation(sequence_group, stop_strings)) {
                 sg_sampling_info.sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
             }
         } else {
@@ -1738,7 +1738,6 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         if (sequence_group->requires_sampling()) {
             // Call sample_from_sequence_group asynchronously
             sg_sampling_future_map[request_id] = m_thread_pool.submit(&Sampler::sample_from_sequence_group, this, sequence_group, sequence_group_logits,
-                                                                      std::ref(ctx), is_validation_mode_enabled);
                                                                       std::ref(ctx), is_validation_mode_enabled);
         } else {
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
