@@ -581,6 +581,10 @@ public:
         return m_block_table.at(seq_id);
     }
 
+    size_t get_num_layers() const {
+        return m_num_layers;
+    }
+
     /**
      * Gets the block table for a given sequence and given layer.
      * @param seq_id The identifier of an ov::genai::Sequence.

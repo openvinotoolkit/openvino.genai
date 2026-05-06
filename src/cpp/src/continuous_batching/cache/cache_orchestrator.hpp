@@ -95,16 +95,17 @@ public:
      * @param per_layer_control If true, the model was compiled with per-layer block index
      *                          inputs for this cache type (e.g. for cache eviction).
      */
-    void register_cache_type(CacheType type,
-                             std::unique_ptr<ICacheManager> cache_mgr,
-                             std::unique_ptr<BlockManager> block_mgr,
-                             bool per_layer_control = false) {
+    void register_cache_type(
+            CacheType type,
+            std::unique_ptr<ICacheManager> cache_mgr,
+            std::unique_ptr<BlockManager> block_mgr,
+            bool per_layer_control = false) {
         OPENVINO_ASSERT(cache_mgr, "Cache manager must not be null");
         OPENVINO_ASSERT(block_mgr, "Block manager must not be null");
         OPENVINO_ASSERT(m_cache_managers.find(type) == m_cache_managers.end(),
                 "Cache type is already registered");
-        const size_t num_layers = cache_mgr->get_num_layers();
-        OPENVINO_ASSERT(num_layers > 0, "Cache manager must have at least one layer");
+        const size_t num_layers = block_mgr->get_num_layers();
+        OPENVINO_ASSERT(num_layers > 0, "Cache type must register at least one block-table layer");
         const size_t layer_start = m_layer_to_cache_type.size();
         m_type_layer_start[type] = layer_start;
         m_cache_managers[type] = std::move(cache_mgr);
@@ -812,16 +813,17 @@ private:
                 config.num_linear_attention_blocks,
                 true,
                 config.cache_interval,
-                la_manager->get_num_layers());
+                1);
         } else {
             la_block_manager = std::make_unique<BlockManager>(
                 config.num_linear_attention_blocks,
                 false,
                 1,
-                la_manager->get_num_layers(),
+                1,
                 1);
         }
 
+        // Linear-attention state tensors are per physical layer/group, but share one logical block table.
         register_cache_type(CacheType::LINEAR_ATTENTION_CACHE, std::move(la_manager), std::move(la_block_manager));
     }
 

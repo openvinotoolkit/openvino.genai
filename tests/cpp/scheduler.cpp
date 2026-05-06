@@ -58,7 +58,7 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
         la_block_manager = std::make_unique<BlockManager>(scheduler_config.num_linear_attention_blocks,
                                                           true,
                                                           scheduler_config.cache_interval,
-                                                          la_cache_manager->get_num_layers());
+                                                          1);
     } else {
         const size_t num_la_blocks = scheduler_config.num_linear_attention_blocks > 0
                                          ? scheduler_config.num_linear_attention_blocks
@@ -66,11 +66,10 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
         la_block_manager = std::make_unique<BlockManager>(num_la_blocks,
                                                           false,
                                                           1,
-                                                          la_cache_manager->get_num_layers(),
+                                                          1,  // one logical block table for all LA layers
                                                           1);
     }
 
-    const size_t la_num_layers_actual = la_cache_manager->get_num_layers();
     auto orchestrator = std::make_shared<CacheOrchestrator>();
     orchestrator->register_cache_type(CacheType::KV_CACHE, std::move(kv_cache_manager), std::move(kv_block_manager));
 
@@ -89,7 +88,7 @@ std::shared_ptr<CacheOrchestrator> init_linear_attention_cache_orchestrator(Sche
     auto la_block_manager = std::make_unique<BlockManager>(scheduler_config.num_linear_attention_blocks,
                                                            false,
                                                            1,
-                                                           la_cache_manager->get_num_layers(),
+                                                           1,
                                                            1);
 
     auto orchestrator = std::make_shared<CacheOrchestrator>();
@@ -245,10 +244,19 @@ TEST(TestScheduler, hybrid_output_fills_linear_attention_block_table_in_prompt_a
     auto seq_id2 = seq_group2->get_running_sequences()[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {seq_group1, seq_group2};
 
-    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                       TEST_BLOCK_SIZE,
+                                                       /*kv_num_layers=*/1,
+                                                       /*la_num_layers=*/3);
     Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
     auto prompt_out = scheduler.schedule(requests);
 
+    EXPECT_EQ(orchestrator->get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE).get_num_layers(), 3);
+    EXPECT_EQ(orchestrator->get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE).get_num_cache_tensors(), 6);
+    ASSERT_EQ(prompt_out.m_block_tables.at(seq_id1).size(), 2);
+    ASSERT_EQ(prompt_out.m_block_tables.at(seq_id2).size(), 2);
+    EXPECT_EQ(prompt_out.m_block_tables.at(seq_id1)[1].size(), 1);
+    EXPECT_EQ(prompt_out.m_block_tables.at(seq_id2)[1].size(), 1);
     EXPECT_TRUE(prompt_out.m_linear_attention_paging_data.count(seq_id1));
     EXPECT_TRUE(prompt_out.m_linear_attention_paging_data.count(seq_id2));
     EXPECT_EQ(prompt_out.m_linear_attention_paging_data.at(seq_id1).block_indices.size(), 2);

@@ -134,7 +134,7 @@ std::shared_ptr<CacheOrchestrator> create_hybrid_orchestrator(
         num_la_blocks,
         false,  // no prefix caching
         1,      // block_size = 1 token (one sequence per block)
-        num_layers,
+        1,      // one logical block table for all LA layers
         la_fixed_blocks_per_seq);  // fixed blocks per sequence
 
     orchestrator->register_cache_type(
@@ -179,6 +179,43 @@ TEST(TestLinearAttentionCacheManager, ConstructorAcceptsLargeStateTableSuffixes)
     EXPECT_EQ(manager.get_num_cache_tensors(), 2);
     EXPECT_EQ(request.get_tensor("conv_state_table.878332661264156340").get_shape(), (ov::Shape{3, 256, 128}));
     EXPECT_EQ(request.get_tensor("conv_state_table.0").get_shape(), (ov::Shape{3, 256, 128}));
+}
+
+TEST(TestCacheOrchestratorHybrid, SharedLinearAttentionRegistersSingleBlockTableLayer) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(get_dummy_hybrid_model(core,
+                                                                         /*kv_num_layers=*/3,
+                                                                         /*la_num_layers=*/3))
+                                      .create_infer_request();
+
+    SchedulerConfig config;
+    config.num_kv_blocks = 4;
+    config.num_linear_attention_blocks = 2;
+    config.max_num_seqs = 2;
+
+    auto orchestrator = CacheOrchestrator::create(request,
+                                                  config,
+                                                  [](const std::string&, size_t) {
+                                                      return std::numeric_limits<size_t>::max();
+                                                  });
+
+    auto sequence_group = create_sequence_group(99);
+    Sequence::Ptr sequence = sequence_group->get_running_sequences().front();
+    orchestrator->allocate_tokens(sequence, sequence_group, 1, sequence_group->get_prompt_len());
+
+    const auto block_tables = orchestrator->get_block_tables(sequence->get_id());
+    ASSERT_EQ(block_tables.size(), 4);
+    EXPECT_EQ(orchestrator->get_cache_type_for_layer(0), CacheType::KV_CACHE);
+    EXPECT_EQ(orchestrator->get_cache_type_for_layer(1), CacheType::KV_CACHE);
+    EXPECT_EQ(orchestrator->get_cache_type_for_layer(2), CacheType::KV_CACHE);
+    EXPECT_EQ(orchestrator->get_cache_type_for_layer(3), CacheType::LINEAR_ATTENTION_CACHE);
+
+    const auto la_block_table = orchestrator->get_linear_attention_block_table(sequence->get_id());
+    ASSERT_EQ(la_block_table.size(), 1);
+    ASSERT_EQ(block_tables[3].size(), 1);
+    EXPECT_EQ(block_tables[3][0]->get_index(), la_block_table[0]->get_index());
+
+    orchestrator->free_sequence(sequence->get_id());
 }
 
 /// @test RequiredTokens_UsesMax
