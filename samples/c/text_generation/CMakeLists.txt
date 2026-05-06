@@ -9,9 +9,9 @@ find_package(OpenVINOGenAI REQUIRED
 )
 
 function(add_sample_executable target_name)
-    add_executable(${target_name} ${target_name}.c)
+    add_executable(${target_name} ${target_name}.c ${ARGN})
     # Specifies that the source file should be compiled as a C source file
-    set_source_files_properties(${target_name}.c PROPERTIES LANGUAGE C)
+    set_source_files_properties(${target_name}.c ${ARGN} PROPERTIES LANGUAGE C)
     target_link_libraries(${target_name} PRIVATE openvino::genai::c)
     set_target_properties(${target_name} PROPERTIES
         # Ensure out-of-box LC_RPATH on macOS with SIP
@@ -22,11 +22,15 @@ function(add_sample_executable target_name)
             EXCLUDE_FROM_ALL)
 endfunction()
 
+set(COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../common)
+
 set (SAMPLE_LIST
     greedy_causal_lm_c
-    chat_sample_c
     benchmark_genai_c)
 
 foreach(sample IN LISTS SAMPLE_LIST)
     add_sample_executable(${sample})
 endforeach()
+
+add_sample_executable(chat_sample_c ${COMMON_DIR}/json_utils.c)
+target_include_directories(chat_sample_c PRIVATE ${COMMON_DIR})
