@@ -153,7 +153,7 @@ else:
     VIDEO_MODEL_IDS = [
         "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
-        "optimum-intel-internal-testing/tiny-random-qwen3.5"
+        "optimum-intel-internal-testing/tiny-random-qwen3.5",
     ]
 
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
@@ -392,7 +392,8 @@ def _get_ov_model(model_id: str) -> str:
 
         if (
             isinstance(processor, getattr(transformers, "Gemma4Processor", type(None)))
-            or model.config.model_type == "qwen3_5" or is_transformers_version(">=", "5.0")
+            or model.config.model_type == "qwen3_5"
+            or is_transformers_version(">=", "5.0")
         ):
             # Remove audio_tokenizer to avoid serialization issues (audio inputs are not supported).
             # Setting to None is insufficient because Gemma4Processor.to_dict() still detects
