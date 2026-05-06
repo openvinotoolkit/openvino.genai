@@ -210,8 +210,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                                                        is_use_xattention,
                                                        is_use_adaptive_rkv);
         if (eviction_config.apply_rotation) {
-            auto kv_mgr = std::static_pointer_cast<KVCacheManager>(cache_orchestrator->get_cache_manager(CacheType::KV_CACHE));
-            _prepare_rotation_data_storage(normalized_config, kv_mgr->get_v_head_size(0));
+            const auto& kv_mgr = static_cast<const KVCacheManager&>(cache_orchestrator->get_cache_manager(CacheType::KV_CACHE));
+            _prepare_rotation_data_storage(normalized_config, kv_mgr.get_v_head_size(0));
         }
     } else {
         m_scheduler = std::make_shared<Scheduler>(cache_orchestrator, normalized_config, can_use_partial_preemption);

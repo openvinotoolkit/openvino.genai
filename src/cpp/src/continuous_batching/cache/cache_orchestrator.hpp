@@ -11,6 +11,7 @@
 #include <memory>
 #include <numeric>
 #include <set>
+#include <tuple>
 #include <vector>
 
 #include "openvino/runtime/infer_request.hpp"
@@ -68,16 +69,16 @@ public:
                                                   ? std::numeric_limits<size_t>::max()
                                                   : get_available_memory(allocation_device, num_cache_tensors);
 
-        auto [num_kv_blocks, num_la_blocks] = normalize_block_counts(kv_mgr, la_mgr, config, total_available_memory);
+        auto [num_kv_blocks, num_la_blocks] = normalize_block_counts(kv_mgr.get(), la_mgr.get(), config, total_available_memory);
         config.num_kv_blocks = num_kv_blocks;
         config.num_linear_attention_blocks = num_la_blocks;
 
+        const size_t la_layer_start = kv_mgr ? kv_mgr->get_num_layers() : 0;
         if (kv_mgr) {
-            orchestrator->register_kv_cache(kv_mgr, config);
+            orchestrator->register_kv_cache(std::move(kv_mgr), config);
         }
         if (la_mgr) {
-            const size_t la_layer_start = kv_mgr ? kv_mgr->get_num_layers() : 0;
-            orchestrator->register_linear_attention_cache(la_mgr, la_layer_start, config);
+            orchestrator->register_linear_attention_cache(std::move(la_mgr), la_layer_start, config);
         }
 
         OPENVINO_ASSERT(!orchestrator->get_registered_types().empty(),
@@ -96,8 +97,8 @@ public:
      *                          inputs for this cache type (e.g. for cache eviction).
      */
     void register_cache_type(CacheType type,
-                             std::shared_ptr<ICacheManager> cache_mgr,
-                             std::shared_ptr<BlockManager> block_mgr,
+                             std::unique_ptr<ICacheManager> cache_mgr,
+                             std::unique_ptr<BlockManager> block_mgr,
                              const std::vector<size_t>& layer_ids,
                              bool per_layer_control = false) {
         m_cache_managers[type] = std::move(cache_mgr);
@@ -462,7 +463,7 @@ public:
     }
 
     std::string get_device() const {
-        return first_cache_manager()->get_device();
+        return first_cache_manager().get_device();
     }
 
     size_t get_num_layers() const {
@@ -493,12 +494,16 @@ public:
     //  Low-level accessors (for debugging / type-specific edge cases)
     // -----------------------------------------------------------------------
 
-    std::shared_ptr<ICacheManager> get_cache_manager(CacheType type) const {
-        return m_cache_managers.at(type);
+    const ICacheManager& get_cache_manager(CacheType type) const {
+        return *m_cache_managers.at(type);
     }
 
-    std::shared_ptr<BlockManager> get_block_manager(CacheType type) const {
-        return m_block_managers.at(type);
+    BlockManager& get_block_manager(CacheType type) {
+        return *m_block_managers.at(type);
+    }
+
+    const BlockManager& get_block_manager(CacheType type) const {
+        return *m_block_managers.at(type);
     }
 
     const std::map<size_t, CacheType>& get_layer_to_cache_type_map() const {
@@ -558,18 +563,18 @@ private:
      *        Validates that LA-specific config fields are not set when no LA cache is present.
      *        Returns a tuple of (kv_manager, la_manager).
      */
-    static std::tuple<std::shared_ptr<KVCacheManager>, std::shared_ptr<LinearAttentionCacheManager>>
+    static std::tuple<std::unique_ptr<KVCacheManager>, std::unique_ptr<LinearAttentionCacheManager>>
     detect_cache_managers(ov::InferRequest& infer_request, const SchedulerConfig& config) {
         ov::CompiledModel compiled_model = infer_request.get_compiled_model();
 
-        std::shared_ptr<KVCacheManager> kv_manager;
+        std::unique_ptr<KVCacheManager> kv_manager;
         if (KVCacheManager::has_cache_inputs(compiled_model)) {
-            kv_manager = std::make_shared<KVCacheManager>(infer_request);
+            kv_manager = std::make_unique<KVCacheManager>(infer_request);
         }
 
-        std::shared_ptr<LinearAttentionCacheManager> la_manager;
+        std::unique_ptr<LinearAttentionCacheManager> la_manager;
         if (LinearAttentionCacheManager::has_cache_inputs(compiled_model)) {
-            la_manager = std::make_shared<LinearAttentionCacheManager>(infer_request);
+            la_manager = std::make_unique<LinearAttentionCacheManager>(infer_request);
         }
 
         OPENVINO_ASSERT(la_manager || config.num_linear_attention_blocks == 0,
@@ -580,7 +585,7 @@ private:
                             "SchedulerConfig cache_interval can be set only for models with linear attention cache inputs");
         }
 
-        return {kv_manager, la_manager};
+        return {std::move(kv_manager), std::move(la_manager)};
     }
 
     /**
@@ -589,8 +594,8 @@ private:
      *        Returns a tuple of (num_kv_blocks, num_la_blocks).
      */
     static std::tuple<size_t, size_t>
-    normalize_block_counts(const std::shared_ptr<KVCacheManager>& kv_manager,
-                          const std::shared_ptr<LinearAttentionCacheManager>& la_manager,
+    normalize_block_counts(const KVCacheManager* kv_manager,
+                          const LinearAttentionCacheManager* la_manager,
                           const SchedulerConfig& config,
                           size_t total_available_memory) {
         const size_t kv_block_size = kv_manager ? kv_manager->get_block_size() : 0;
@@ -680,18 +685,18 @@ private:
     /**
      * @brief Create a BlockManager for KV cache and register it with this orchestrator.
      */
-    void register_kv_cache(const std::shared_ptr<KVCacheManager>& kv_manager,
+    void register_kv_cache(std::unique_ptr<KVCacheManager> kv_manager,
                            const SchedulerConfig& config) {
         std::vector<size_t> layer_ids(kv_manager->get_num_layers());
         std::iota(layer_ids.begin(), layer_ids.end(), 0);
 
-        auto block_manager = std::make_shared<BlockManager>(
+        auto block_manager = std::make_unique<BlockManager>(
             config.num_kv_blocks,
             config.enable_prefix_caching,
             kv_manager->get_block_size(),
             kv_manager->get_num_layers());
 
-        register_cache_type(CacheType::KV_CACHE, kv_manager, block_manager, layer_ids,
+        register_cache_type(CacheType::KV_CACHE, std::move(kv_manager), std::move(block_manager), layer_ids,
                             config.use_cache_eviction);
     }
 
@@ -699,23 +704,23 @@ private:
      * @brief Create a BlockManager for linear attention cache and register it with this orchestrator.
      * @param layer_start Global layer index offset for LA layers.
      */
-    void register_linear_attention_cache(const std::shared_ptr<LinearAttentionCacheManager>& la_manager,
+    void register_linear_attention_cache(std::unique_ptr<LinearAttentionCacheManager> la_manager,
                                          size_t layer_start,
                                          const SchedulerConfig& config) {
         std::vector<size_t> la_layer_ids(la_manager->get_num_layers());
         std::iota(la_layer_ids.begin(), la_layer_ids.end(), layer_start);
 
-        std::shared_ptr<BlockManager> la_block_manager;
+        std::unique_ptr<BlockManager> la_block_manager;
         if (config.enable_prefix_caching) {
             OPENVINO_ASSERT(config.cache_interval > 0,
                             "Internal error: SchedulerConfig cache_interval must be greater than 0 when prefix caching is enabled");
-            la_block_manager = std::make_shared<BlockManager>(
+            la_block_manager = std::make_unique<BlockManager>(
                 config.num_linear_attention_blocks,
                 true,
                 config.cache_interval,
                 la_manager->get_num_layers());
         } else {
-            la_block_manager = std::make_shared<BlockManager>(
+            la_block_manager = std::make_unique<BlockManager>(
                 config.num_linear_attention_blocks,
                 false,
                 1,
@@ -723,16 +728,16 @@ private:
                 1);
         }
 
-        register_cache_type(CacheType::LINEAR_ATTENTION_CACHE, la_manager, la_block_manager, la_layer_ids);
+        register_cache_type(CacheType::LINEAR_ATTENTION_CACHE, std::move(la_manager), std::move(la_block_manager), la_layer_ids);
     }
 
-    const std::shared_ptr<ICacheManager>& first_cache_manager() const {
+    const ICacheManager& first_cache_manager() const {
         OPENVINO_ASSERT(!m_cache_managers.empty(), "No cache types registered");
-        return m_cache_managers.begin()->second;
+        return *m_cache_managers.begin()->second;
     }
 
-    std::map<CacheType, std::shared_ptr<ICacheManager>> m_cache_managers;
-    std::map<CacheType, std::shared_ptr<BlockManager>> m_block_managers;
+    std::map<CacheType, std::unique_ptr<ICacheManager>> m_cache_managers;
+    std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
     std::map<size_t, CacheType> m_layer_to_cache_type;
     std::map<size_t, size_t> m_global_to_local_layer_id;  ///< global layer ID -> local index within its block manager
     std::map<CacheType, bool> m_per_layer_control;          ///< per-type flag: layers managed individually or as one
