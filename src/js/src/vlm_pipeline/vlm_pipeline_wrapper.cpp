@@ -24,6 +24,10 @@ struct VLMTsfnContext {
     std::optional<Napi::ThreadSafeFunction> streamer;
 
     VLMGenerateInputs inputs;
+    // Strong reference to the JS ChatHistory wrapper to keep its underlying
+    // ov::genai::ChatHistory (referenced via pointer in `inputs`) alive
+    // for the duration of the async generation.
+    Napi::ObjectReference chat_history_ref;
     std::vector<ov::Tensor> images;
     std::vector<ov::Tensor> videos;
     std::shared_ptr<std::atomic<bool>> is_generating;
@@ -96,9 +100,9 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
             overloaded{[context, &config, &streamer, &result](const std::string& prompt) {
                            result = context->pipe->generate(prompt, context->images, context->videos, config, streamer);
                        },
-                       [context, &config, &streamer, &result](const ov::genai::ChatHistory& history) {
+                       [context, &config, &streamer, &result](ov::genai::ChatHistory* history) {
                            result =
-                               context->pipe->generate(history, context->images, context->videos, config, streamer);
+                               context->pipe->generate(*history, context->images, context->videos, config, streamer);
                        }},
             context->inputs);
 
@@ -202,6 +206,12 @@ Napi::Value VLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         auto callback = info[5].As<Napi::Function>();
 
         context = new VLMTsfnContext(std::move(inputs), this->is_generating);
+        if (info[0].IsObject()) {
+            // Hold a strong reference to the JS ChatHistory wrapper so its underlying
+            // ov::genai::ChatHistory (and its mutable internal state across calls) stays alive
+            // for the duration of the async generation.
+            context->chat_history_ref = Napi::Persistent(info[0].As<Napi::Object>());
+        }
         context->images = std::move(images);
         context->videos = std::move(videos);
         context->pipe = this->pipe;

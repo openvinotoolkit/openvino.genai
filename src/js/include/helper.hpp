@@ -25,9 +25,9 @@ struct overloaded : Ts... {
 template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
-using GenerateInputs = std::variant<ov::genai::StringInputs, ov::genai::ChatHistory>;
-/** VLM generate first argument: prompt string or ChatHistory */
-using VLMGenerateInputs = std::variant<std::string, ov::genai::ChatHistory>;
+using GenerateInputs = std::variant<ov::genai::StringInputs, ov::genai::ChatHistory*>;
+/** VLM generate first argument: prompt string or ChatHistory*/
+using VLMGenerateInputs = std::variant<std::string, ov::genai::ChatHistory*>;
 
 #define VALIDATE_ARGS_COUNT(info, expected_count, method_name)                                 \
     if (info.Length() != expected_count) {                                                     \

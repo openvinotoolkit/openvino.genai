@@ -24,6 +24,10 @@ struct TsfnContext {
     std::optional<Napi::ThreadSafeFunction> streamer_tsfn;
 
     GenerateInputs inputs;
+    // Strong reference to the JS ChatHistory wrapper to keep its underlying
+    // ov::genai::ChatHistory (referenced via pointer in `inputs`) alive
+    // for the duration of the async generation.
+    Napi::ObjectReference chat_history_ref;
     std::shared_ptr<std::atomic<bool>> is_generating;
     std::shared_ptr<ov::genai::LLMPipeline> pipe = nullptr;
     std::shared_ptr<ov::AnyMap> generation_config = nullptr;
@@ -95,8 +99,8 @@ void performInferenceThread(TsfnContext* context) {
         std::visit(overloaded{[context, config, streamer, &result](ov::genai::StringInputs& inputs) {
                                   result = context->pipe->generate(inputs, config, streamer);
                               },
-                              [context, config, streamer, &result](ov::genai::ChatHistory& inputs) {
-                                  result = context->pipe->generate(inputs, config, streamer);
+                              [context, config, streamer, &result](ov::genai::ChatHistory* inputs) {
+                                  result = context->pipe->generate(*inputs, config, streamer);
                               },
                               [&](auto&) {
                                   OPENVINO_THROW("Unsupported type for generate inputs.");
@@ -201,6 +205,11 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         auto callback = info[3].As<Napi::Function>();
 
         context = new TsfnContext(inputs, this->is_generating);
+        if (is_chat_history(env, info[0])) {
+            // Hold a strong reference to the JS ChatHistory wrapper so its underlying
+            // ov::genai::ChatHistory stays alive for the duration of the async generation.
+            context->chat_history_ref = Napi::Persistent(info[0].As<Napi::Object>());
+        }
         context->pipe = this->pipe;
         context->generation_config = std::make_shared<ov::AnyMap>(generation_config);
         // Create a ThreadSafeFunction

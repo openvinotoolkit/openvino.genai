@@ -861,7 +861,7 @@ GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value
         } else if (value.IsArray()) {
             return js_to_cpp<std::vector<std::string>>(env, value);
         } else if (is_chat_history(env, value)) {
-            return unwrap<ov::genai::ChatHistory>(env, value);
+            return &unwrap<ov::genai::ChatHistory>(env, value);
         }
         OPENVINO_THROW("Passed argument must be a string, ChatHistory or an array of strings.");
     } catch (const ov::Exception& e) {
@@ -876,7 +876,7 @@ VLMGenerateInputs js_to_cpp<VLMGenerateInputs>(const Napi::Env& env, const Napi:
             return value.As<Napi::String>().Utf8Value();
         }
         if (is_chat_history(env, value)) {
-            return unwrap<ov::genai::ChatHistory>(env, value);
+            return &unwrap<ov::genai::ChatHistory>(env, value);
         }
         OPENVINO_THROW("Passed argument must be a string or ChatHistory.");
     } catch (const ov::Exception& e) {

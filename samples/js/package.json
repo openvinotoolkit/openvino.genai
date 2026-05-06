@@ -3,17 +3,19 @@
   "version": "1.0.0",
   "license": "Apache-2.0",
   "type": "module",
-  "devDependencies": {
-    "node-wav": "^0.0.2",
-    "openvino-node": "^2026.1.0",
-    "openvino-genai-node": "^2026.1.0",
-    "yargs": "^18.0.0",
-    "zod": "^4.1.13"
-  },
   "engines": {
     "node": ">=21.0.0"
   },
   "scripts": {
     "test": "node tests/usage.test.js"
+  },
+  "dependencies": {
+    "jpeg-js": "^0.4.4",
+    "node-wav": "^0.0.2",
+    "openvino-genai-node": "^2026.1.0",
+    "openvino-node": "^2026.1.0",
+    "pngjs": "^7.0.0",
+    "yargs": "^18.0.0",
+    "zod": "^4.1.13"
   }
 }
