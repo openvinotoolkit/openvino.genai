@@ -109,6 +109,15 @@ Similar to [text generation](/docs/use-cases/text-generation/#use-different-gene
   </LanguageTabs>
 </BasicGenerationConfiguration>
 
+### Video Metadata and Sampling
+
+When a video is provided as an input, video metadata can be passed along with the video to control the sampling of video frames.
+
+Passing `VideoMetadata` with `frames_indices` defined enables sampling based on provided indices within the pipeline, and any model-specific sampling logic will be skipped (if defined).
+Leave `frames_indices` empty to apply model-specific sampling (e.g. for Qwen3-VL).
+
+Refer to the video-to-text [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/visual_language_chat/video_to_text_chat.py) and [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/visual_language_chat/video_to_text_chat.cpp) samples for more details.
+
 ### Working with LoRA Adapters
 
 For Visual Language Models (VLMs), LoRA adapters can customize the generated text by applying adapters to the language-model (LLM) part.

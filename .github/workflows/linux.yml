@@ -662,7 +662,7 @@ jobs:
             timeout: 60
           - name: 'VLM (gemma4)'
             cmd: |
-              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@ff99d6e13774841bdd17ac0d4c8bd2d181cf7c27 # PR 1688
+              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@39121884e050a32f9ded590f8597760d7e7ac205 # master with gemma4 support
               python -m pip install transformers==5.5.0
               pip show transformers optimum-intel openvino_tokenizers openvino_genai
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4"

@@ -311,6 +311,17 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
+        return generate(prompt, images, videos, {}, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -332,7 +343,7 @@ public:
                                                            generation_config.relevance_weight);
 
         auto encoded_images = m_inputs_embedder->encode_images(images);
-        auto encoded_videos = m_inputs_embedder->encode_videos(videos);
+        auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
         if (m_is_chat_conversation) {
@@ -479,6 +490,17 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
+        return generate(history, images, videos, {}, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        const ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -498,7 +520,7 @@ public:
 
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
-        auto processed_chat_data = chat_context.process(images, videos);
+        auto processed_chat_data = chat_context.process(images, videos, videos_metadata);
 
         bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
 

@@ -57,6 +57,7 @@ from openvino_genai import (
     StreamingStatus,
     GenerationFinishReason,
     ChatHistory,
+    VideoMetadata,
 )
 
 from utils.network import retry_request
@@ -161,6 +162,7 @@ MODEL_IDS: list[str] = [
     "qnguyen3/nanoLLaVA",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
     "optimum-intel-internal-testing/tiny-random-gemma4",
+    "optimum-intel-internal-testing/tiny-random-gemma4-moe",
     *VIDEO_MODEL_IDS,
 ]
 
@@ -185,6 +187,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|image|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
@@ -242,6 +245,7 @@ NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-internvl2",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
     "optimum-intel-internal-testing/tiny-random-gemma4",
+    "optimum-intel-internal-testing/tiny-random-gemma4-moe",
 }
 
 DEFAULT_NPUW_PROPERTIES = {
@@ -309,7 +313,10 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
         )
-    if "optimum-intel-internal-testing/tiny-random-gemma4" == model_id and is_transformers_version("<", "5.5.0"):
+    if model_id in [
+        "optimum-intel-internal-testing/tiny-random-gemma4",
+        "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+    ] and is_transformers_version("<", "5.5.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
         )
@@ -1600,6 +1607,7 @@ TAG_INSERTED_BY_TEMPLATE = [
     ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
     ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
     ("optimum-intel-internal-testing/tiny-random-gemma4", "SDPA"),
+    ("optimum-intel-internal-testing/tiny-random-gemma4-moe", "SDPA"),
     ("qnguyen3/nanoLLaVA", "PA"),
     ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
 ]
@@ -2709,3 +2717,115 @@ def test_vlm_pipeline_add_extension(cat_tensor, tmp_path: Path) -> None:
     assert result_extension_obj.texts[0].strip() == result_ref.texts[0].strip(), (
         "Result should be the same for model with extension 'CustomAdd' and reference model."
     )
+
+
+@pytest.fixture(scope="module")
+def video_sampling_inputs(synthetic_video_32x32) -> list[tuple[openvino.Tensor, VideoMetadata | None]]:
+    video_tensor = openvino.Tensor(synthetic_video_32x32)
+
+    frames_indices = list(range(4))
+    presampled_video_tensor = openvino.Tensor(synthetic_video_32x32[frames_indices])
+
+    video_metadata = VideoMetadata()
+    video_metadata.frames_indices = frames_indices
+
+    return [
+        (video_tensor, None),
+        (presampled_video_tensor, None),
+        (video_tensor, video_metadata),
+    ]
+
+
+def _compare_outputs_for_video_sampling(
+    output_all_frames: str,
+    output_presampled: str,
+    output_with_metadata: str,
+):
+    assert output_all_frames != output_with_metadata, (
+        "Result should be different when using video metadata to sample frames."
+    )
+    assert output_presampled == output_with_metadata, (
+        "Presampled video result should match video metadata result when using the same frame indices."
+    )
+
+
+@parametrize_all_models_with_video
+def test_video_metadata_sampling(
+    ov_pipe_model: VlmModelInfo,
+    video_sampling_inputs: list[tuple[openvino.Tensor, VideoMetadata | None]],
+):
+    if "tiny-videochat-flash-qwen" in ov_pipe_model.model_id:
+        pytest.xfail("Implement proper video sampling for VideoChat-Flash-Qwen. Ticket - CVS-183520.")
+
+    ov_pipe = ov_pipe_model.pipeline
+
+    generation_config = _setup_generation_config(
+        ov_pipe, max_new_tokens=20, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup
+    )
+
+    prompt = PROMPTS[0]
+
+    outputs = []
+    for video, video_metadata in video_sampling_inputs:
+        videos_metadata_kwargs = {"videos_metadata": [video_metadata]} if video_metadata else {}
+        output = ov_pipe.generate(
+            prompt,
+            videos=[video],
+            generation_config=generation_config,
+            **videos_metadata_kwargs,
+        )
+        outputs.append(output.texts[0])
+
+    _compare_outputs_for_video_sampling(*outputs)
+
+
+def test_video_metadata_sampling_continuous_batching(
+    ov_continuous_batching_pipe_qwen2vl: ContinuousBatchingPipeline,
+    video_sampling_inputs: list[tuple[openvino.Tensor, VideoMetadata | None]],
+):
+    ov_pipe = ov_continuous_batching_pipe_qwen2vl
+
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 20
+    generation_config.do_sample = False
+
+    prompt = PROMPTS[0]
+
+    outputs_generate_api = []
+
+    for video, video_metadata in video_sampling_inputs:
+        results = ov_pipe.generate(
+            [prompt],
+            videos=[[video]],
+            videos_metadata_batches=[[video_metadata]] if video_metadata else [],
+            generation_config=[generation_config],
+        )
+        outputs_generate_api.append(results[0].texts[0])
+
+    _compare_outputs_for_video_sampling(*outputs_generate_api)
+
+    outputs_add_request_api = []
+    handles = []
+
+    for request_id, (video, video_metadata) in enumerate(video_sampling_inputs):
+        handle = ov_pipe.add_request(
+            request_id,
+            prompt,
+            images=[],
+            videos=[video],
+            videos_metadata=[video_metadata] if video_metadata else [],
+            generation_config=generation_config,
+        )
+        handles.append(handle)
+
+    while ov_pipe.has_non_finished_requests():
+        ov_pipe.step()
+
+    tokenizer = ov_pipe.get_tokenizer()
+
+    for handle in handles:
+        results = handle.read_all()
+        for result in results:
+            outputs_add_request_api.append(tokenizer.decode(result.generated_ids))
+
+    _compare_outputs_for_video_sampling(*outputs_add_request_api)
