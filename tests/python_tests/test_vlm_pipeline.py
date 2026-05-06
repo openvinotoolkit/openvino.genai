@@ -1308,7 +1308,7 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
 
 
 @pytest.mark.skipif(**should_skip_npuw_tests())
-def test_vlm_npu_auto_config(cat_tensor):
+def test_vlm_npu_auto_config_cpu_gpu(cat_tensor):
     models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
     properties = {
         "DEVICE_PROPERTIES": {
@@ -1325,7 +1325,7 @@ def test_vlm_npu_auto_config(cat_tensor):
 
 
 @pytest.mark.skipif(**should_skip_npuw_tests())
-def test_vlm_npu_auto_config(cat_tensor):
+def test_vlm_npu_auto_config_gpu_cpu(cat_tensor):
     models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
     properties = {
         "DEVICE_PROPERTIES": {
