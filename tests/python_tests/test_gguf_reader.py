@@ -64,6 +64,8 @@ def test_pipelines_with_gguf_generate(
 ):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
+    if sys.platform == "linux":
+        pytest.skip(reason="CVS-185220")
 
     opt_model = model_gguf.opt_model
     hf_tokenizer = model_gguf.hf_tokenizer
@@ -199,6 +201,7 @@ def test_full_gguf_pipeline(
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 172335")
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
+@pytest.mark.skipif(sys.platform == "linux", reason="CVS-185220")
 def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
     # Please refer details in issue: https://github.com/huggingface/transformers/issues/38063

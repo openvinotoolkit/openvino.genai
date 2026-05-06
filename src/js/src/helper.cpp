@@ -1039,6 +1039,24 @@ Napi::Value cpp_to_js<ov::genai::StopCriteria, Napi::Value>(const Napi::Env& env
 }
 
 template <>
+Napi::Value cpp_to_js<ov::genai::GenerationFinishReason, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::GenerationFinishReason& value) {
+    return Napi::Number::New(env, static_cast<int>(value));
+}
+
+template <>
+Napi::Value cpp_to_js<std::vector<ov::genai::GenerationFinishReason>, Napi::Value>(
+    const Napi::Env& env,
+    const std::vector<ov::genai::GenerationFinishReason>& value) {
+    auto js_array = Napi::Array::New(env, value.size());
+    for (size_t i = 0; i < value.size(); ++i) {
+        js_array[i] = cpp_to_js<ov::genai::GenerationFinishReason, Napi::Value>(env, value[i]);
+    }
+    return js_array;
+}
+
+template <>
 Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env,
                                                              const ov::genai::JsonContainer& json_container) {
     return json_parse(env, json_container.to_json_string());
@@ -1537,6 +1555,8 @@ Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedRes
     obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
     obj.Set("perfMetrics", PerfMetricsWrapper::wrap(env, results.perf_metrics));
     obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
+    obj.Set("finishReasons",
+            cpp_to_js<std::vector<ov::genai::GenerationFinishReason>, Napi::Value>(env, results.finish_reasons));
     return obj;
 }
 
@@ -1546,6 +1566,8 @@ Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDec
     obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
     obj.Set("perfMetrics", VLMPerfMetricsWrapper::wrap(env, results.perf_metrics));
     obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
+    obj.Set("finishReasons",
+            cpp_to_js<std::vector<ov::genai::GenerationFinishReason>, Napi::Value>(env, results.finish_reasons));
     return obj;
 }
 
