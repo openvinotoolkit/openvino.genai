@@ -2528,14 +2528,17 @@ def test_cdpruner_continuous_batching_chat_mode(
     Verifies the pipeline produces non-empty output for all turns and does not crash.
     Chat history integrity is confirmed by the text-only turn 3 receiving a response.
     Verifies that pruning reduces input token count compared to the unpruned baseline."""
-    # Baseline: run single-turn with pruning_ratio=0 to get unpruned token count
+    # Baseline: run single-turn with pruning_ratio=0 inside the same chat context to get
+    # an unpruned token count that is comparable to the pruned run (same system message overhead).
     baseline_config = GenerationConfig()
     baseline_config.max_new_tokens = 10
     baseline_config.do_sample = False
     baseline_config.pruning_ratio = 0
+    ov_continuous_batching_pipe_qwen2vl.start_chat("You are a helpful assistant.")
     baseline_result = ov_continuous_batching_pipe_qwen2vl.generate(
         ["What is in this image?"], images=[[cat_tensor]], generation_config=[baseline_config]
     )[0]
+    ov_continuous_batching_pipe_qwen2vl.finish_chat()
     assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
     baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
 
