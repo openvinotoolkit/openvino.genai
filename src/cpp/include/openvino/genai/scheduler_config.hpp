@@ -30,7 +30,7 @@ struct SchedulerConfig {
 
     // total number of linear attention blocks available to scheduler logic.
     // Each block holds the full state for one sequence across all linear attention ops.
-    // When 0, automatically derived from num_kv_blocks if linear attention layers are detected.
+    // When 0, automatically derived from max_num_seqs if linear attention layers are detected.
     std::size_t num_linear_attention_blocks = 0;
 
     // Linear-attention checkpoint interval used when interval-based paging is enabled.
