@@ -984,9 +984,6 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id:
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
@@ -1159,9 +1156,6 @@ def test_vlm_pipeline_chat_with_video(
     system_message: str,
     iteration_images_and_videos,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -1364,9 +1358,6 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id:
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Explain in details 1+1=",
@@ -1738,9 +1729,6 @@ def test_model_tags_prepend_native(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
     vision_tag = ov_pipe_model.get_vision_tag(vision_type)
 
@@ -1778,9 +1766,6 @@ def test_model_tags_prepend_universal(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
 
     conversation_requests = request.getfixturevalue(
@@ -1817,9 +1802,6 @@ def test_model_tags_append(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
     vision_tag = ov_pipe_model.get_vision_tag(vision_type)
 
