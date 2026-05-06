@@ -2301,10 +2301,10 @@ class PipelineMetrics:
         :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
         :type avg_cache_usage: float
     
-        :param kv_cache_size_in_bytes: Total allocated KV cache size in bytes, based on the total number of KV blocks.
+        :param cache_size_in_bytes: Total allocated KV cache size in bytes, based on the total number of KV blocks.
           This value represents reserved/allocated memory for the KV cache and does not
           distinguish between used and unused portions in dynamic KV cache configurations.
-        :type kv_cache_size_in_bytes: int
+        :type cache_size_in_bytes: int
     """
     def __init__(self) -> None:
         ...
@@ -2312,10 +2312,10 @@ class PipelineMetrics:
     def avg_cache_usage(self) -> float:
         ...
     @property
-    def cache_usage(self) -> float:
+    def cache_size_in_bytes(self) -> int:
         ...
     @property
-    def kv_cache_size_in_bytes(self) -> int:
+    def cache_usage(self) -> float:
         ...
     @property
     def max_cache_usage(self) -> float:

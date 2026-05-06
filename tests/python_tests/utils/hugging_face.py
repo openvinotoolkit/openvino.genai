@@ -183,7 +183,9 @@ def run_hugging_face(
         scores = []
 
         # default was changed from 1 to None in transformers v5
-        num_return_sequences = hf_generation_config.num_return_sequences or 1
+        num_return_sequences = (
+            1 if hf_generation_config.num_return_sequences is None else hf_generation_config.num_return_sequences
+        )
         for idx, hf_encoded_out in enumerate(hf_encoded_outputs.sequences):
             prompt_idx = idx // num_return_sequences
             prompt_len = 0 if generation_configs.echo else input_ids[prompt_idx].numel()

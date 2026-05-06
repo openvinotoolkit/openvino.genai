@@ -61,11 +61,11 @@ struct PipelineMetrics {
     float inference_duration = 0.0;
 
     /**
-     * Total allocated KV cache size in bytes, based on the total number of KV blocks.
-     * This value represents reserved/allocated memory for the KV cache and does not
-     * distinguish between used and unused portions in dynamic KV cache configurations.
+     * Total allocated cache size in bytes, based on the total number of cache blocks.
+     * This value represents reserved/allocated memory for the cache and does not
+     * distinguish between used and unused portions in dynamic cache configurations.
      */
-    size_t kv_cache_size_in_bytes = 0;
+    size_t cache_size_in_bytes = 0;
 };
 
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {

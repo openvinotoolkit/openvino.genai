@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 #include <numeric>
+#include <set>
 #include "openvino/runtime/core.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
