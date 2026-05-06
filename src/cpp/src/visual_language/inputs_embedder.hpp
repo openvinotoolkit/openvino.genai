@@ -7,6 +7,7 @@
 #include <vector>
 #include <filesystem>
 #include <regex>
+#include <functional>
 
 #include "utils.hpp"
 #include "lm_encoding.hpp"
@@ -71,6 +72,9 @@ public:
     bool has_token_type_ids() const;
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
+
+    // returns per-layer embeddings callback, or nullptr if not available
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
@@ -194,6 +198,10 @@ private:
         virtual bool has_token_type_ids() const;
 
         virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
+
+        virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() {
+            return nullptr;
+        }
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
@@ -363,6 +371,7 @@ private:
     friend class InputsEmbedderQwen2_5_VL;
     friend class InputsEmbedderQwen3VL;
     friend class InputsEmbedderGemma3;
+    friend class InputsEmbedderGemma4;
     friend class InputsEmbedderVideoChatFlashQwen;
 };
 
