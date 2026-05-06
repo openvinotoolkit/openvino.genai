@@ -50,7 +50,9 @@ def main():
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
     parser.add_argument("-dm", "--draft_model", type=str, help="Path to draft model and tokenizers base directory")
-    parser.add_argument("-na", "--num_assistant_tokens", type=int, default=5, help="Number of assistant tokens")
+    parser.add_argument("-nat", "--num_assistant_tokens", type=int, default=5, help="Number of assistant tokens")
+    parser.add_argument("-bf", "--branching_factor", type=int, default=1, help="Branching factor")
+    parser.add_argument("-td", "--tree_depth", type=int, default=0, help="Tree depth")
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-pf", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image")
@@ -109,6 +111,8 @@ def main():
     if draft_model_path:
         properties["draft_model"] = ov_genai.draft_model(draft_model_path, device)
         config.num_assistant_tokens = args.num_assistant_tokens
+        config.branching_factor = args.branching_factor
+        config.tree_depth = args.tree_depth
 
     if device == "NPU":
         pipe = ov_genai.VLMPipeline(models_path, device)

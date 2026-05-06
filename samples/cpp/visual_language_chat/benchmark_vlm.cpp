@@ -15,6 +15,9 @@ int main(int argc, char* argv[]) try {
     options.add_options()
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("dm,draft_model", "Path to draft model and tokenizers base directory", cxxopts::value<std::string>()->default_value(""))
+    ("nat,num_assistant_tokens", "Number of assistant tokens", cxxopts::value<size_t>()->default_value("5"))
+    ("bf,branching_factor", "Number of assistant tokens", cxxopts::value<size_t>()->default_value("1"))
+    ("td,tree_depth", "Number of assistant tokens", cxxopts::value<size_t>()->default_value("0"))
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
     ("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
     ("i,image", "Image", cxxopts::value<std::string>()->default_value("image.jpg"))
@@ -83,6 +86,9 @@ int main(int argc, char* argv[]) try {
      ov::AnyMap properties;
     if (!draft_models_path.empty()) {
         properties.insert(ov::genai::draft_model(draft_models_path, device));
+        config.num_assistant_tokens = result["num_assistant_tokens"].as<size_t>();
+        config.branching_factor = result["branching_factor"].as<size_t>();
+        config.tree_depth = result["tree_depth"].as<size_t>();
     }
 
     std::cout << ov::get_openvino_version() << std::endl;
