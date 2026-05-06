@@ -1308,12 +1308,29 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
 
 
 @pytest.mark.skipif(**should_skip_npuw_tests())
-def test_vlm_npu_auto_config(cat_tensor):
+def test_vlm_npu_auto_config_cpu_gpu(cat_tensor):
     models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
     properties = {
         "DEVICE_PROPERTIES": {
             "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048},
             "AUTO": {openvino.properties.device.priorities: "CPU,GPU"},
+        }
+    }
+
+    ov_pipe = VLMPipeline(models_path, "NPU", config=properties)
+
+    generation_config = _setup_generation_config(ov_pipe)
+
+    ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
+
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_vlm_npu_auto_config_gpu_cpu(cat_tensor):
+    models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
+    properties = {
+        "DEVICE_PROPERTIES": {
+            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048},
+            "AUTO": {openvino.properties.device.priorities: "GPU,CPU"},
         }
     }
 

@@ -40,7 +40,9 @@ void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& 
 
 void npu_auto_default_properties(ov::AnyMap& device_properties) {
     auto auto_properties = utils::pop_or_default<ov::AnyMap>(device_properties, "AUTO", {});
-    auto_properties.insert(ov::device::priorities("CPU"));
+    if (auto_properties.find(ov::device::priorities.name()) == auto_properties.end()) {
+        auto_properties.insert(ov::device::priorities("CPU"));
+    }
     auto_properties.insert(ov::intel_auto::enable_startup_fallback(false));
 
     device_properties["AUTO"] = auto_properties;
@@ -324,6 +326,7 @@ public:
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
 
+        auto embeddings_start_time = std::chrono::steady_clock::now();
         auto encoded_images = m_inputs_embedder->encode_images(images);
         const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
@@ -361,7 +364,8 @@ public:
             generation_config,
             perf_metrics,
             streamer,
-            intermediate_remote_tensor
+            intermediate_remote_tensor,
+            embeddings_start_time
         );
 
         EncodedResults& encoded_result = finish_info.results;
@@ -472,6 +476,7 @@ public:
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
 
+        auto embeddings_start_time = std::chrono::steady_clock::now();
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
         auto processed_chat_data = chat_context.process(images, videos);
@@ -513,7 +518,8 @@ public:
             generation_config,
             perf_metrics,
             streamer,
-            intermediate_remote_tensor
+            intermediate_remote_tensor,
+            embeddings_start_time
         );
 
         EncodedResults& encoded_result = generation_finish_info.results;
@@ -664,13 +670,14 @@ private:
         GenerationConfig& generation_config,
         VLMPerfMetrics& perf_metrics,
         const StreamerVariant& streamer,
-        const bool use_intermediate_remote_tensor
+        const bool use_intermediate_remote_tensor,
+        const std::chrono::steady_clock::time_point& embeddings_start_time
     ) {
         ov::Tensor inputs_embeds;
         std::optional<ov::Tensor> token_type_ids;
         bool recalculate_merged_embeddings = encoded_images.size() > 0 || encoded_videos.size() > 0;
 
-        auto start_get_inputs_embeds = std::chrono::steady_clock::now();
+        auto start_get_inputs_embeds = embeddings_start_time;
         if (m_inputs_embedder->has_token_type_ids()) {
             std::tie(inputs_embeds, token_type_ids) =
                 m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt,
