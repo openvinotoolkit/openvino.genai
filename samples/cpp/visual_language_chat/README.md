@@ -84,32 +84,59 @@ benchmark_vlm [OPTIONS]
 ### Options
 
 - `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
-- `-p, --prompt` (default: ''): The prompt to generate text. If without `-p` and `--pf`, the default prompt is `"What is on the image?"`
-- `--pf, --prompt_file` Read prompt from file.
+- `-p, --prompt` (default: ''): The prompt to generate text. If neither `-p` nor `--prompt_file` is provided, the default prompt is `"What is on the image?"`
+- `--prompt_file` Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to the image.
-- `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
-- `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
+- `-H, --image_height`: Target image height for resizing. Must be a positive value and provided together with `-W, --image_width`.
+- `-W, --image_width`: Target image width for resizing. Must be a positive value and provided together with `-H, --image_height`.
+- `--num_warmup` (default: `1`): Number of warmup iterations.
+- `--max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
-- `-pr, --pruning_ratio`: (optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.
-- `-rw, --relevance_weight` (optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.
+- `--pruning_ratio`: (optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.
+- `--relevance_weight` (optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.
+
+
 
 ### Output:
 
 ```
-benchmark_vlm -m miniCPM-V-2_6 -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3
+benchmark_vlm -m miniCPM-V-2_6 -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3 -d GPU
 ```
 
 ```
-Load time: 1982.00 ms
-Generate time: 13820.99 ± 64.62 ms
-Tokenization time: 1.26 ± 0.09 ms
-Detokenization time: 0.33 ± 0.05 ms
-Embeddings preparation time: 5733.85 ± 26.34 ms
-TTFT: 11246.98 ± 80.55 ms
-TPOT: 135.45 ± 4.73 ms/token
-Throughput: 7.38 ± 0.26 tokens/s
+Number of images: 1, prompt token size: 6
+Input token size: 360
+Output token size: 20
+Load time: 17498.00 ms
+Generate time: 1149.09 ± 2.97 ms
+Tokenization time: 1.89 ± 0.13 ms
+Detokenization time: 0.25 ± 0.03 ms
+Embeddings preparation time: 274.10 ± 0.80 ms
+TTFT: 399.59 ± 4.10 ms
+TPOT: 39.42 ± 0.42 ms/token
+Throughput: 25.37 ± 0.27 tokens/s
 ```
+
+* With different image size
+
+	```
+	benchmark_vlm -m miniCPM-V-2_6 -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3 -d GPU -H 224 -W 224
+	```
+
+	```
+	Number of images: 1, prompt token size: 6
+	Input token size: 95
+	Output token size: 20
+	Load time: 6061.00 ms
+	Generate time: 883.83 ± 21.24 ms
+	Tokenization time: 1.65 ± 0.05 ms
+	Detokenization time: 0.23 ± 0.01 ms
+	Embeddings preparation time: 57.81 ± 0.48 ms
+	TTFT: 122.47 ± 1.21 ms
+	TPOT: 40.05 ± 1.62 ms/token
+	Throughput: 24.97 ± 1.01 tokens/s
+	```
 
 For more information on how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).
 
