@@ -496,6 +496,14 @@ TEST(TestScheduler, hybrid_runtime_arrival_beyond_initial_fixed_capacity_schedul
     auto out = scheduler.schedule(requests);
     EXPECT_TRUE(out.m_linear_attention_paging_data.count(seq_id1));
     EXPECT_TRUE(out.m_linear_attention_paging_data.count(seq_id2));
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            if (scheduler.has_block_table(seq->get_id())) {
+                scheduler.free_sequence(seq->get_id());
+            }
+        }
+    }
 }
 
 TEST(TestScheduler, hybrid_prefix_caching_prefill_requires_read_and_interval_write_blocks) {

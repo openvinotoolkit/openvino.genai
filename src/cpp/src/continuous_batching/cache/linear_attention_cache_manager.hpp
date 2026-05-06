@@ -173,7 +173,8 @@ public:
     // --- ICacheManager interface ---
 
     size_t get_num_layers() const override {
-        return m_groups.size();
+        const auto& group = m_groups.front();
+        return group.layers.size();
     }
 
     size_t get_num_cache_tensors() const override {

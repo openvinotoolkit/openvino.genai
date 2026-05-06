@@ -175,7 +175,7 @@ TEST(TestLinearAttentionCacheManager, ConstructorAcceptsLargeStateTableSuffixes)
     LinearAttentionCacheManager manager(request);
     manager.allocate_cache_if_needed(3);
 
-    EXPECT_EQ(manager.get_num_layers(), 1);
+    EXPECT_EQ(manager.get_num_layers(), 2);
     EXPECT_EQ(manager.get_num_cache_tensors(), 2);
     EXPECT_EQ(request.get_tensor("conv_state_table.878332661264156340").get_shape(), (ov::Shape{3, 256, 128}));
     EXPECT_EQ(request.get_tensor("conv_state_table.0").get_shape(), (ov::Shape{3, 256, 128}));
