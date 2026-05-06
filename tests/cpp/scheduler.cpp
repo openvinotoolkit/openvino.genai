@@ -34,9 +34,7 @@ std::shared_ptr<CacheOrchestrator> init_cache_orchestrator(SchedulerConfig sched
     auto cache_manager = std::make_unique<KVCacheManager>(request);
     auto block_manager = std::make_unique<BlockManager>(scheduler_config.num_kv_blocks, scheduler_config.enable_prefix_caching, block_size, num_layers);
     auto orchestrator = std::make_shared<CacheOrchestrator>();
-    std::vector<size_t> all_layers(num_layers);
-    std::iota(all_layers.begin(), all_layers.end(), 0);
-    orchestrator->register_cache_type(CacheType::KV_CACHE, std::move(cache_manager), std::move(block_manager), all_layers);
+    orchestrator->register_cache_type(CacheType::KV_CACHE, std::move(cache_manager), std::move(block_manager));
     return orchestrator;
 }
 
@@ -73,16 +71,11 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
 
     const size_t la_num_layers_actual = la_cache_manager->get_num_layers();
     auto orchestrator = std::make_shared<CacheOrchestrator>();
-    std::vector<size_t> kv_layer_ids(kv_num_layers);
-    std::iota(kv_layer_ids.begin(), kv_layer_ids.end(), 0);
-    orchestrator->register_cache_type(CacheType::KV_CACHE, std::move(kv_cache_manager), std::move(kv_block_manager), kv_layer_ids);
+    orchestrator->register_cache_type(CacheType::KV_CACHE, std::move(kv_cache_manager), std::move(kv_block_manager));
 
-    std::vector<size_t> la_layer_ids(la_num_layers_actual);
-    std::iota(la_layer_ids.begin(), la_layer_ids.end(), kv_num_layers);
     orchestrator->register_cache_type(CacheType::LINEAR_ATTENTION_CACHE,
                                       std::move(la_cache_manager),
-                                      std::move(la_block_manager),
-                                      la_layer_ids);
+                                      std::move(la_block_manager));
     return orchestrator;
 }
 

@@ -34,7 +34,8 @@ namespace ov::genai {
  *
  * Adding a new cache type requires:
  *   1. Implementing ICacheManager for the new type.
- *   2. Calling register_cache_type() with the new type, its manager, block manager, and layer IDs.
+ *   2. Calling register_cache_type() with the new type, its manager and block manager.
+ *      Layer IDs are assigned contiguously in registration order, starting from 0.
  */
 class CacheOrchestrator {
 public:
@@ -73,40 +74,44 @@ public:
         config.num_kv_blocks = num_kv_blocks;
         config.num_linear_attention_blocks = num_la_blocks;
 
-        const size_t la_layer_start = kv_mgr ? kv_mgr->get_num_layers() : 0;
         if (kv_mgr) {
             orchestrator->register_kv_cache(std::move(kv_mgr), config);
         }
         if (la_mgr) {
-            orchestrator->register_linear_attention_cache(std::move(la_mgr), la_layer_start, config);
+            orchestrator->register_linear_attention_cache(std::move(la_mgr), config);
         }
 
-        OPENVINO_ASSERT(!orchestrator->has_registered_types(), "No supported cache types detected in the model");
+        OPENVINO_ASSERT(orchestrator->has_registered_types(), "No supported cache types detected in the model");
 
         return orchestrator;
     }
 
     /**
-     * @brief Register a cache type with its managers and the model layers it handles.
+     * @brief Register a cache type with its managers.
+     *
      * @param type              Cache type identifier.
      * @param cache_mgr         Physical cache manager for this type.
      * @param block_mgr         Block manager for this type.
-     * @param layer_ids         Decoder layer indices handled by this cache type.
      * @param per_layer_control If true, the model was compiled with per-layer block index
      *                          inputs for this cache type (e.g. for cache eviction).
      */
     void register_cache_type(CacheType type,
                              std::unique_ptr<ICacheManager> cache_mgr,
                              std::unique_ptr<BlockManager> block_mgr,
-                             const std::vector<size_t>& layer_ids,
                              bool per_layer_control = false) {
+        OPENVINO_ASSERT(cache_mgr, "Cache manager must not be null");
+        OPENVINO_ASSERT(block_mgr, "Block manager must not be null");
+        OPENVINO_ASSERT(m_cache_managers.find(type) == m_cache_managers.end(),
+                "Cache type is already registered");
+        const size_t num_layers = cache_mgr->get_num_layers();
+        OPENVINO_ASSERT(num_layers > 0, "Cache manager must have at least one layer");
+        const size_t layer_start = m_layer_to_cache_type.size();
+        m_type_layer_start[type] = layer_start;
         m_cache_managers[type] = std::move(cache_mgr);
         m_block_managers[type] = std::move(block_mgr);
         m_per_layer_control[type] = per_layer_control;
-        for (size_t local_idx = 0; local_idx < layer_ids.size(); ++local_idx) {
-            const size_t global_id = layer_ids[local_idx];
-            m_layer_to_cache_type[global_id] = type;
-            m_global_to_local_layer_id[global_id] = local_idx;
+        for (size_t local_idx = 0; local_idx < num_layers; ++local_idx) {
+            m_layer_to_cache_type[layer_start + local_idx] = type;
         }
     }
 
@@ -151,7 +156,7 @@ public:
         const size_t total_layers = m_layer_to_cache_type.size();
         std::vector<BlocksPerLayer> merged(total_layers);
         for (const auto& [global_layer_id, type] : m_layer_to_cache_type) {
-            size_t local_idx = m_global_to_local_layer_id.at(global_layer_id);
+            const size_t local_idx = global_layer_id - m_type_layer_start.at(type);
             const auto& local_tables = m_block_managers.at(type)->get_block_tables(seq_id);
             merged[global_layer_id] = local_tables[local_idx];
         }
@@ -687,29 +692,22 @@ private:
      */
     void register_kv_cache(std::unique_ptr<KVCacheManager> kv_manager,
                            const SchedulerConfig& config) {
-        std::vector<size_t> layer_ids(kv_manager->get_num_layers());
-        std::iota(layer_ids.begin(), layer_ids.end(), 0);
-
         auto block_manager = std::make_unique<BlockManager>(
             config.num_kv_blocks,
             config.enable_prefix_caching,
             kv_manager->get_block_size(),
             kv_manager->get_num_layers());
 
-        register_cache_type(CacheType::KV_CACHE, std::move(kv_manager), std::move(block_manager), layer_ids,
+        register_cache_type(CacheType::KV_CACHE, std::move(kv_manager), std::move(block_manager),
                             config.use_cache_eviction);
     }
 
     /**
      * @brief Create a BlockManager for linear attention cache and register it with this orchestrator.
-     * @param layer_start Global layer index offset for LA layers.
+     *        Layer IDs are assigned contiguously after any previously registered types.
      */
     void register_linear_attention_cache(std::unique_ptr<LinearAttentionCacheManager> la_manager,
-                                         size_t layer_start,
                                          const SchedulerConfig& config) {
-        std::vector<size_t> la_layer_ids(la_manager->get_num_layers());
-        std::iota(la_layer_ids.begin(), la_layer_ids.end(), layer_start);
-
         std::unique_ptr<BlockManager> la_block_manager;
         if (config.enable_prefix_caching) {
             OPENVINO_ASSERT(config.cache_interval > 0,
@@ -728,14 +726,14 @@ private:
                 1);
         }
 
-        register_cache_type(CacheType::LINEAR_ATTENTION_CACHE, std::move(la_manager), std::move(la_block_manager), la_layer_ids);
+        register_cache_type(CacheType::LINEAR_ATTENTION_CACHE, std::move(la_manager), std::move(la_block_manager));
     }
 
     std::map<CacheType, std::unique_ptr<ICacheManager>> m_cache_managers;
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
     std::map<size_t, CacheType> m_layer_to_cache_type;
-    std::map<size_t, size_t> m_global_to_local_layer_id;  ///< global layer ID -> local index within its block manager
-    std::map<CacheType, bool> m_per_layer_control;          ///< per-type flag: layers managed individually or as one
+    std::map<CacheType, size_t> m_type_layer_start;  ///< first global layer ID for each registered cache type
+    std::map<CacheType, bool> m_per_layer_control;   ///< per-type flag: layers managed individually or as one
 };
 
 }  // namespace ov::genai

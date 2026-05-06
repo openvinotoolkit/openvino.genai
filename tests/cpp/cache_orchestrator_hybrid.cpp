@@ -124,12 +124,9 @@ std::shared_ptr<CacheOrchestrator> create_hybrid_orchestrator(
     auto kv_block_manager = std::make_unique<BlockManager>(
         num_kv_blocks, false, kv_block_size, num_layers);
 
-    std::vector<size_t> kv_layers(num_layers);
-    std::iota(kv_layers.begin(), kv_layers.end(), 0);
-
     auto orchestrator = std::make_shared<CacheOrchestrator>();
     orchestrator->register_cache_type(
-        CacheType::KV_CACHE, std::move(kv_manager), std::move(kv_block_manager), kv_layers);
+        CacheType::KV_CACHE, std::move(kv_manager), std::move(kv_block_manager));
 
     // Register LinearAttention cache type with fixed-size-per-sequence mode.
     auto la_manager = std::make_unique<LinearAttentionCacheManager>(request);
@@ -141,7 +138,7 @@ std::shared_ptr<CacheOrchestrator> create_hybrid_orchestrator(
         la_fixed_blocks_per_seq);  // fixed blocks per sequence
 
     orchestrator->register_cache_type(
-        CacheType::LINEAR_ATTENTION_CACHE, std::move(la_manager), std::move(la_block_manager), kv_layers);
+        CacheType::LINEAR_ATTENTION_CACHE, std::move(la_manager), std::move(la_block_manager));
 
     return orchestrator;
 }
