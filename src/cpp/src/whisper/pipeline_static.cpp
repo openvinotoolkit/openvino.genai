@@ -1190,7 +1190,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
             chunk_sot_tokens.push_back(config.no_timestamps_token_id);
         }
 
-        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, chunk_sot_tokens, config, 1);
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, chunk_sot_tokens, config);
 
         auto [results, cancelled] = full_decode(hidden_state_tensor,
                                                 config,

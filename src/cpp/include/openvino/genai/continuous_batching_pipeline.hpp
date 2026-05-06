@@ -24,6 +24,8 @@
 
 namespace ov::genai {
 
+class ContinuousBatchingAdapter;
+
 /**
  * @brief Contains general pipeline metrics, either aggregated throughout the lifetime of the generation pipeline
  * or measured at the previous generation step.
@@ -60,11 +62,11 @@ struct PipelineMetrics {
     float inference_duration = 0.0;
 
     /**
-     * Total allocated KV cache size in bytes, based on the total number of KV blocks.
-     * This value represents reserved/allocated memory for the KV cache and does not
-     * distinguish between used and unused portions in dynamic KV cache configurations.
+     * Total allocated cache size in bytes, based on the total number of cache blocks.
+     * This value represents reserved/allocated memory for the cache and does not
+     * distinguish between used and unused portions in dynamic cache configurations.
      */
-    size_t kv_cache_size_in_bytes = 0;
+    size_t cache_size_in_bytes = 0;
 };
 
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
@@ -87,6 +89,7 @@ protected:
     friend class Eagle3DecodingImpl;
     friend class PromptLookupImpl;
     friend class VLMPipeline;
+    friend class ContinuousBatchingAdapter;
 
     std::shared_ptr<IContinuousBatchingPipeline> m_impl;
 
@@ -111,6 +114,14 @@ private:
                                const ov::AnyMap& properties = {},
                                const ov::AnyMap& tokenizer_properties = {},
                                const ov::AnyMap& vision_encoder_properties = {});
+
+    ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& model,
+                               const ov::genai::Tokenizer& tokenizer,
+                               const SchedulerConfig& scheduler_config,
+                               const std::string& device,
+                               const ov::AnyMap& properties,
+                               const ov::genai::GenerationConfig& generation_config,
+                               const std::filesystem::path& config_path = {});
 
 public:
     ContinuousBatchingPipeline(const std::filesystem::path& models_path,

@@ -182,8 +182,12 @@ def run_hugging_face(
         generation_ids = []
         scores = []
 
+        # default was changed from 1 to None in transformers v5
+        num_return_sequences = (
+            1 if hf_generation_config.num_return_sequences is None else hf_generation_config.num_return_sequences
+        )
         for idx, hf_encoded_out in enumerate(hf_encoded_outputs.sequences):
-            prompt_idx = idx // hf_generation_config.num_return_sequences
+            prompt_idx = idx // num_return_sequences
             prompt_len = 0 if generation_configs.echo else input_ids[prompt_idx].numel()
             decoded_text = hf_tokenizer.decode(hf_encoded_out[prompt_len:], skip_special_tokens=True)
             generation_ids.append(decoded_text)
@@ -191,7 +195,7 @@ def run_hugging_face(
                 scores.append(hf_encoded_outputs.sequences_scores[idx])
 
             # if we need to move to next generation result
-            if (idx + 1) // hf_generation_config.num_return_sequences != prompt_idx:
+            if (idx + 1) // num_return_sequences != prompt_idx:
                 generation_result = GenerationResult()
                 generation_result.m_generation_ids = generation_ids
                 generation_result.m_scores = scores

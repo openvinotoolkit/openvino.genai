@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "continuous_batching/kvcrush.hpp"
+#include "continuous_batching/cache/kvcrush.hpp"
 
 #include <random>
 namespace ov::genai {

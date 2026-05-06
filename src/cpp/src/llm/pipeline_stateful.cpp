@@ -424,7 +424,6 @@ EncodedResults StatefulLLMPipeline::generate(
     }
 
     std::vector<SequenceGroup::Ptr> requests;
-    size_t block_size = 1;
 
     for (size_t request_id = 0; request_id < batch_size; request_id++) {
         SequenceGroup::Ptr sequence_group;
@@ -434,14 +433,14 @@ EncodedResults StatefulLLMPipeline::generate(
             tokenized_chat_hist.reserve(state.size() + input_ids.get_size());
             std::copy(state.begin(), state.end(), std::back_inserter(tokenized_chat_hist));
             std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(tokenized_chat_hist));
-            sequence_group = std::make_shared<SequenceGroup>(request_id,  ov::Tensor(ov::element::i64, {1, tokenized_chat_hist.size()}, tokenized_chat_hist.data()), config, block_size);
+            sequence_group = std::make_shared<SequenceGroup>(request_id,  ov::Tensor(ov::element::i64, {1, tokenized_chat_hist.size()}, tokenized_chat_hist.data()), config);
         } else {
             size_t seq_len = input_ids.get_shape().at(1);
             size_t batch_offset = request_id * seq_len;
             const int64_t* prompt_start = input_ids.data<const int64_t>() + batch_offset;
             std::vector<int64_t> tokenized_prompt(prompt_start, prompt_start + seq_len);
 
-            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_prompt, config, block_size);
+            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_prompt, config);
         }
 
         requests.push_back(sequence_group);

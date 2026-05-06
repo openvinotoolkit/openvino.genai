@@ -6,6 +6,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -22,6 +23,10 @@ public:
 
     GenerationConfig get_generation_config() const {
         return m_generation_config;
+    }
+
+    void set_attention_backend(const std::string& attention_backend) {
+        m_attention_backend = attention_backend;
     }
 
     void set_generation_config(GenerationConfig config) {
@@ -73,6 +78,7 @@ protected:
     std::optional<AdapterController> m_adapter_controller;
 
     float m_load_time_ms = 0.0f;
+    std::string m_attention_backend = SDPA_BACKEND;
 };
 
 }  // namespace genai
