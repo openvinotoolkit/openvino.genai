@@ -211,13 +211,14 @@ private:
             return m_cache_orchestrator->num_free_blocks() > prev_blocks_count;
         }
 
-        size_t tokens_needed = m_cache_orchestrator->required_tokens_count(target);
         if (victim->get_sampling_parameters().is_beam_search()) {
-            preempted_tokens = m_cache_orchestrator->free_partially_beam_search_group_by_tokens(victim, tokens_needed);
+            preempted_tokens = m_cache_orchestrator->free_partially_beam_search_group_for_target(victim, target);
         }
         else {
-            preempted_tokens = m_cache_orchestrator->free_group_partially_by_tokens(victim, tokens_needed);
+            preempted_tokens = m_cache_orchestrator->free_group_partially_for_target(victim, target);
         }
+
+        preempted_tokens = std::min(preempted_tokens, processed_tokens);
 
         // case when preemption requires preempt prompt tokens
         if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < victim->get_prompt_len()) {

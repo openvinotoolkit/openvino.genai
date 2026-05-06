@@ -6,6 +6,7 @@
 #include <memory>
 #include <list>
 #include <map>
+#include <set>
 #include <algorithm>
 #include <fstream>
 #include <chrono>
@@ -563,7 +564,11 @@ public:
 
     ~BlockManager() {
         // sanity check that all sequences are freed
-        OPENVINO_ASSERT(m_block_table.empty());
+        const size_t leaked_tables = m_block_table.size();
+        const uint64_t first_leaked_seq_id = leaked_tables > 0 ? m_block_table.begin()->first : 0;
+        OPENVINO_ASSERT(m_block_table.empty(),
+            "BlockManager leaked sequence block tables: ", leaked_tables,
+            ", first leaked sequence id: ", first_leaked_seq_id);
     }
 
     /**
@@ -733,6 +738,20 @@ public:
         }
         size_t victim_occupied = get_number_of_blocks_occupied_by_sequence(victim);
         return victim_occupied > needed;
+    }
+
+    bool can_partially_preempt_victim(SequenceGroup::Ptr victim) {
+        if (!m_fixed_blocks_per_sequence) {
+            return true;
+        }
+
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        for (const auto& sequence : victim->get_not_finished_sequences()) {
+            if (m_block_table.find(sequence->get_id()) != m_block_table.end()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

@@ -395,3 +395,52 @@ TEST(TestCacheOrchestratorHybrid, TotalCacheBytes_IncludesAll) {
 
     EXPECT_EQ(actual_total, expected_total);
 }
+
+TEST(TestCacheOrchestratorHybrid, PartialPreemptionIsDisallowedWhenFixedSizeTargetNeedsBlocks) {
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/8,
+        /*num_la_blocks=*/1,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/1);
+
+    auto victim = create_sequence_group(200, /*num_sequences=*/1);
+    auto target = create_sequence_group(201, /*num_sequences=*/1);
+    auto victim_seq = victim->get_running_sequences()[0];
+
+    // Allocate victim to occupy both KV and fixed-size LA resources.
+    orchestrator->allocate_tokens(victim_seq, victim, TEST_BLOCK_SIZE + 1, victim->get_prompt_len());
+
+    // Target has no LA allocation yet, so fixed-size cache needs blocks.
+    EXPECT_FALSE(orchestrator->can_partially_preempt(victim, target));
+
+    orchestrator->free_sequence(victim_seq->get_id());
+}
+
+TEST(TestCacheOrchestratorHybrid, PartialPreemptionIsDisallowedWhenFixedSizeVictimHasState) {
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/16,
+        /*num_la_blocks=*/2,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/1);
+
+    auto victim = create_sequence_group(300, /*num_sequences=*/1);
+    auto target = create_sequence_group(301, /*num_sequences=*/1);
+    auto victim_seq = victim->get_running_sequences()[0];
+    auto target_seq = target->get_running_sequences()[0];
+
+    // Allocate both groups once to consume fixed-size LA blocks. This makes LA deficit zero for target.
+    orchestrator->allocate_tokens(victim_seq, victim, TEST_BLOCK_SIZE * 2 + 1, victim->get_prompt_len());
+    orchestrator->allocate_tokens(target_seq, target, 1, target->get_prompt_len());
+
+    // Increase target token demand so KV has a non-zero deficit.
+    target->schedule_tokens(TEST_BLOCK_SIZE + 1);
+
+    // The target already owns fixed-size LA state, but the victim also owns LA state
+    // that cannot represent token-level rollback. Partial preemption must be rejected.
+    EXPECT_FALSE(orchestrator->can_partially_preempt(victim, target));
+
+    orchestrator->free_sequence(victim_seq->get_id());
+    orchestrator->free_sequence(target_seq->get_id());
+}

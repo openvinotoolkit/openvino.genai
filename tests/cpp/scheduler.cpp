@@ -297,6 +297,57 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_returns_aliased_read_writ
     }
 }
 
+TEST(TestScheduler, hybrid_non_prefix_linear_attention_uses_full_preemption_for_fixed_size_victim_state) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 4;
+    scheduler_config.num_linear_attention_blocks = 2;
+    scheduler_config.enable_prefix_caching = false;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 8;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group1 = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    SequenceGroup::Ptr seq_group2 = std::make_shared<SequenceGroup>(
+        1,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto seq_id1 = seq_group1->get_running_sequences()[0]->get_id();
+    const auto seq_id2 = seq_group2->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {seq_group1, seq_group2};
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    auto prompt_out = scheduler.schedule(requests);
+
+    EXPECT_EQ(prompt_out.m_scheduled_sequence_groups_ids.size(), 2);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id1).size(), 1);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id2).size(), 1);
+
+    for (auto& req : requests) {
+        req->finish_iteration();
+    }
+
+    for (size_t step = 0; step < TEST_BLOCK_SIZE; ++step) {
+        std::ignore = scheduler.schedule(requests);
+        for (auto& req : requests) {
+            req->get_running_sequences()[0]->append_token(42, 0.9f);
+            req->finish_iteration();
+        }
+    }
+
+    auto gen_out = scheduler.schedule(requests);
+
+    EXPECT_EQ(gen_out.m_scheduled_sequence_groups_ids, std::vector<uint64_t>({0}));
+    EXPECT_FALSE(scheduler.has_block_table(seq_id2));
+    EXPECT_EQ(seq_group2->get_num_processed_tokens(), 0);
+
+    scheduler.free_sequence(seq_id1);
+}
+
 TEST(TestScheduler, hybrid_admission_when_la_pool_is_bottleneck) {
     SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;

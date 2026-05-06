@@ -156,8 +156,9 @@ public:
         const size_t total_layers = m_layer_to_cache_type.size();
         std::vector<BlocksPerLayer> merged(total_layers);
         for (const auto& [global_layer_id, type] : m_layer_to_cache_type) {
-            const size_t local_idx = global_layer_id - m_type_layer_start.at(type);
+            const size_t local_idx = m_per_layer_control.at(type) ? global_layer_id - m_type_layer_start.at(type) : 0;
             const auto& local_tables = m_block_managers.at(type)->get_block_tables(seq_id);
+            OPENVINO_ASSERT(local_idx < local_tables.size(), "Block table layer index is out of range");
             merged[global_layer_id] = local_tables[local_idx];
         }
         return merged;
@@ -348,33 +349,97 @@ public:
     }
 
     /**
-     * @brief Frees enough blocks from victim to release at least num_tokens tokens.
-     * Each cache type independently converts tokens to blocks and frees from its own pool.
-     * @param victim The sequence group to free from.
-     * @param num_tokens Minimum number of tokens to free from the group total.
-     * @return Number of tokens actually freed (minimum across all cache types).
+     * @brief Partially preempts victim for target using per-cache-type deficits.
+     *
+     * Fixed-size-per-sequence cache types are skipped: their capacity is sequence-level,
+     * not token-level. For token accounting, the return value uses KV cache released tokens
+     * when KV cache is present; otherwise it falls back to the minimum released tokens across
+     * variable-size cache types.
      */
-    size_t free_group_partially_by_tokens(SequenceGroup::Ptr victim, size_t num_tokens) {
-        size_t min_tokens_released = std::numeric_limits<size_t>::max();
-        for (auto& [type, block_mgr] : m_block_managers) {
-            min_tokens_released = std::min(min_tokens_released, block_mgr->free_group_partially_by_tokens(victim, num_tokens));
+    size_t free_group_partially_for_target(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
+        size_t tokens_to_release = 0;
+
+        for (const auto& [type, block_mgr] : m_block_managers) {
+            if (block_mgr->is_fixed_size_per_sequence()) {
+                continue;
+            }
+            tokens_to_release = std::max(tokens_to_release, block_mgr->required_tokens_count(target));
         }
-        return min_tokens_released;
+
+        if (tokens_to_release == 0) {
+            return 0;
+        }
+
+        size_t min_tokens_released = std::numeric_limits<size_t>::max();
+        size_t kv_tokens_released = 0;
+        bool has_kv = false;
+        bool has_variable_types = false;
+
+        for (auto& [type, block_mgr] : m_block_managers) {
+            if (block_mgr->is_fixed_size_per_sequence()) {
+                continue;
+            }
+
+            has_variable_types = true;
+            const size_t released = block_mgr->free_group_partially_by_tokens(victim, tokens_to_release);
+            min_tokens_released = std::min(min_tokens_released, released);
+            if (type == CacheType::KV_CACHE) {
+                kv_tokens_released = released;
+                has_kv = true;
+            }
+        }
+
+        if (has_kv) {
+            return kv_tokens_released;
+        }
+        return has_variable_types ? min_tokens_released : 0;
     }
 
     /**
-     * @brief Frees enough blocks from a beam search victim to release at least num_tokens tokens.
-     * Each cache type independently converts tokens to blocks and frees from its own pool.
-     * @param victim The sequence group to free from.
-     * @param num_tokens Minimum number of tokens to free from the group total.
-     * @return Number of tokens actually freed (minimum across all cache types).
+     * @brief Partially preempts a beam-search victim for target using per-cache-type deficits.
+     *
+     * Fixed-size-per-sequence cache types are skipped: their capacity is sequence-level,
+     * not token-level. For token accounting, the return value uses KV cache released tokens
+     * when KV cache is present; otherwise it falls back to the minimum released tokens across
+     * variable-size cache types.
      */
-    size_t free_partially_beam_search_group_by_tokens(SequenceGroup::Ptr victim, size_t num_tokens) {
-        size_t min_tokens_released = std::numeric_limits<size_t>::max();
-        for (auto& [type, block_mgr] : m_block_managers) {
-            min_tokens_released = std::min(min_tokens_released, block_mgr->free_partially_beam_search_group_by_tokens(victim, num_tokens));
+    size_t free_partially_beam_search_group_for_target(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
+        size_t tokens_to_release = 0;
+
+        for (const auto& [type, block_mgr] : m_block_managers) {
+            if (block_mgr->is_fixed_size_per_sequence()) {
+                continue;
+            }
+            tokens_to_release = std::max(tokens_to_release, block_mgr->required_tokens_count(target));
         }
-        return min_tokens_released;
+
+        if (tokens_to_release == 0) {
+            return 0;
+        }
+
+        size_t min_tokens_released = std::numeric_limits<size_t>::max();
+        size_t kv_tokens_released = 0;
+        bool has_kv = false;
+        bool has_variable_types = false;
+
+        for (auto& [type, block_mgr] : m_block_managers) {
+            if (block_mgr->is_fixed_size_per_sequence()) {
+                continue;
+            }
+
+            has_variable_types = true;
+            const size_t released = block_mgr->free_partially_beam_search_group_by_tokens(victim, tokens_to_release);
+            min_tokens_released = std::min(min_tokens_released, released);
+            if (type == CacheType::KV_CACHE) {
+                kv_tokens_released = released;
+                has_kv = true;
+            }
+        }
+
+        if (has_kv) {
+            return kv_tokens_released;
+        }
+        return has_variable_types ? min_tokens_released : 0;
     }
 
     /**
@@ -386,7 +451,13 @@ public:
      */
     bool can_partially_preempt(SequenceGroup::Ptr victim, SequenceGroup::CPtr target) {
         return std::all_of(m_block_managers.begin(), m_block_managers.end(),
-            [&](const auto& pair) { return pair.second->can_partially_preempt(victim, target); });
+            [&](const auto& pair) {
+                const auto& block_mgr = pair.second;
+                if (block_mgr->is_fixed_size_per_sequence()) {
+                    return block_mgr->required_blocks_count(target) == 0 && block_mgr->can_partially_preempt_victim(victim);
+                }
+                return block_mgr->can_partially_preempt_victim(victim) && block_mgr->can_partially_preempt(victim, target);
+            });
     }
 
     /**
