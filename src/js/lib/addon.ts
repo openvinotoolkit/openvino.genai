@@ -24,12 +24,16 @@ import {
   WhisperGenerationConfig,
   WhisperPipelineProperties,
   SpeechGenerationConfig,
+  ImageGenerationConfig,
+  Text2ImageCallback,
+  Text2ImagePipelineProperties,
   Text2SpeechPipelineProperties,
 } from "./utils.js";
 import {
   VLMPerfMetrics,
   PerfMetrics,
   WhisperPerfMetrics,
+  Text2ImagePerfMetrics,
   Text2SpeechPerfMetrics,
 } from "./perfMetrics.js";
 import type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
@@ -213,6 +217,25 @@ export interface VLMPipeline {
   getGenerationConfig(): GenerationConfig;
 }
 
+export interface Text2ImagePipeline {
+  new (): Text2ImagePipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: Text2ImagePipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    prompt: string,
+    properties: ImageGenerationConfig,
+    streamer: Text2ImageCallback | undefined,
+    callback: (err: Error | null, result: Tensor) => void,
+  ): void;
+  getPerformanceMetrics(): Text2ImagePerfMetrics;
+  getGenerationConfig(): ImageGenerationConfig;
+  setGenerationConfig(config: ImageGenerationConfig): void;
+}
+
 export interface Text2SpeechPipeline {
   new (): Text2SpeechPipeline;
   init(
@@ -243,6 +266,7 @@ interface OpenVINOGenAIAddon {
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
   WhisperPipeline: WhisperPipeline;
+  Text2ImagePipeline: Text2ImagePipeline;
   Text2SpeechPipeline: Text2SpeechPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
@@ -278,6 +302,7 @@ export const {
   LLMPipeline,
   VLMPipeline,
   WhisperPipeline,
+  Text2ImagePipeline,
   Text2SpeechPipeline,
   ChatHistory,
   Tokenizer,
