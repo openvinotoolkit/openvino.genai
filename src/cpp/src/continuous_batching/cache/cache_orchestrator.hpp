@@ -81,8 +81,7 @@ public:
             orchestrator->register_linear_attention_cache(std::move(la_mgr), la_layer_start, config);
         }
 
-        OPENVINO_ASSERT(!orchestrator->get_registered_types().empty(),
-                        "No supported cache types detected in the model");
+        OPENVINO_ASSERT(!orchestrator->has_registered_types(), "No supported cache types detected in the model");
 
         return orchestrator;
     }
@@ -105,11 +104,10 @@ public:
         m_block_managers[type] = std::move(block_mgr);
         m_per_layer_control[type] = per_layer_control;
         for (size_t local_idx = 0; local_idx < layer_ids.size(); ++local_idx) {
-            size_t global_id = layer_ids[local_idx];
+            const size_t global_id = layer_ids[local_idx];
             m_layer_to_cache_type[global_id] = type;
             m_global_to_local_layer_id[global_id] = local_idx;
         }
-        m_types_ordered.push_back(type);
     }
 
     // -----------------------------------------------------------------------
@@ -463,7 +461,9 @@ public:
     }
 
     std::string get_device() const {
-        return first_cache_manager().get_device();
+        OPENVINO_ASSERT(!m_cache_managers.empty(), "No cache types registered");
+        const auto& first_cache_manager = *m_cache_managers.begin()->second;
+        return first_cache_manager.get_device();
     }
 
     size_t get_num_layers() const {
@@ -514,10 +514,6 @@ public:
         return m_layer_to_cache_type.at(layer_id);
     }
 
-    const std::vector<CacheType>& get_registered_types() const {
-        return m_types_ordered;
-    }
-
     // -----------------------------------------------------------------------
     //  Linear attention cache helpers
     // -----------------------------------------------------------------------
@@ -558,6 +554,10 @@ public:
     }
 
 private:
+    bool has_registered_types() const {
+        return !m_cache_managers.empty();
+    }
+
     /**
      * @brief Detect and create KV and linear attention cache managers from the compiled model.
      *        Validates that LA-specific config fields are not set when no LA cache is present.
@@ -731,17 +731,11 @@ private:
         register_cache_type(CacheType::LINEAR_ATTENTION_CACHE, std::move(la_manager), std::move(la_block_manager), la_layer_ids);
     }
 
-    const ICacheManager& first_cache_manager() const {
-        OPENVINO_ASSERT(!m_cache_managers.empty(), "No cache types registered");
-        return *m_cache_managers.begin()->second;
-    }
-
     std::map<CacheType, std::unique_ptr<ICacheManager>> m_cache_managers;
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
     std::map<size_t, CacheType> m_layer_to_cache_type;
     std::map<size_t, size_t> m_global_to_local_layer_id;  ///< global layer ID -> local index within its block manager
     std::map<CacheType, bool> m_per_layer_control;          ///< per-type flag: layers managed individually or as one
-    std::vector<CacheType> m_types_ordered;
 };
 
 }  // namespace ov::genai
