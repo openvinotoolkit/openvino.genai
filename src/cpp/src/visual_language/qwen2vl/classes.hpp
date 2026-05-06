@@ -23,6 +23,10 @@ public:
     EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
 
 protected:
+    // Config-only constructor for subclasses where vision encoder is merged with merger
+    VisionEncoderQwen2VL(const std::filesystem::path& config_dir, ConfigOnlyTag);
+    VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir, ConfigOnlyTag);
+
     /**
      * @brief Encodes video frames by grouping them into chunks of config.temporal_patch_size adjacent frames
      * and saves results into the encoded_video struct.
@@ -175,6 +179,15 @@ protected:
 };
 
 namespace qwen2_vl_utils {
+
+ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels);
+
+ov::Tensor reshape_image_patches(
+    const ov::Tensor& patches,
+    size_t grid_t, size_t grid_h, size_t grid_w,
+    size_t channel, size_t temporal_patch_size, size_t patch_size, size_t merge_size);
+
+ov::Tensor transpose_image_patches(const ov::Tensor& reshaped_patches);
 
 std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_image_embeds_and_grid_thw(
     const std::vector<EncodedImage>& encoded_images,

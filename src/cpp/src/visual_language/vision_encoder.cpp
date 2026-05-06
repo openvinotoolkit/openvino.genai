@@ -8,6 +8,7 @@
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen2_5_vl/classes.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
+#include "visual_language/qwen3_omni/classes.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -39,8 +40,7 @@ VisionEncoder::VisionEncoder(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) {
-    const auto& vision_encoder_model = utils::get_model_weights_pair(models_map, "vision_embeddings").first;
-    const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_embeddings").second;
+    const auto& [vision_encoder_model, vision_encoder_weights] = utils::get_model_weights_pair(models_map, "vision_embeddings");
     auto compiled_model = utils::singleton_core().compile_model(vision_encoder_model, vision_encoder_weights, device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -51,6 +51,14 @@ VisionEncoder::VisionEncoder(
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "preprocessor_config.json");
     m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, "video_preprocessor_config.json");
 }
+
+VisionEncoder::VisionEncoder(const std::filesystem::path& config_dir, ConfigOnlyTag) {
+    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir, "preprocessor_config.json");
+    m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir, "video_preprocessor_config.json");
+}
+
+VisionEncoder::VisionEncoder(const ModelsMap&, const std::filesystem::path& config_dir, ConfigOnlyTag tag)
+    : VisionEncoder(config_dir, tag) {}
 
 ProcessorConfig VisionEncoder::get_processor_config() const {
     return m_processor_config;
@@ -79,6 +87,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderQwen2_5_VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::QWEN3_VL) {
         return std::make_shared<VisionEncoderQwen3VL>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::QWEN3_OMNI) {
+        return std::make_shared<VisionEncoderQwen3Omni>(model_dir, device, properties);
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(model_dir, device, properties);
     } else if (model_type == VLMModelType::GEMMA4) {
@@ -118,6 +128,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderQwen2_5_VL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::QWEN3_VL) {
         return std::make_shared<VisionEncoderQwen3VL>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::QWEN3_OMNI) {
+        return std::make_shared<VisionEncoderQwen3Omni>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::GEMMA4) {

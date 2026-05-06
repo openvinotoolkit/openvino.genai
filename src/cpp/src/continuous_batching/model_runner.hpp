@@ -281,6 +281,15 @@ public:
           m_is_use_adaptive_rkv(m_is_use_adaptive_rkv_inputs) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
+        // Detect model output names for hidden state handling (Qwen3-Omni)
+        for (const auto& output : m_request.get_compiled_model().outputs()) {
+            const auto& name = output.get_any_name();
+            if (name == "hidden_states") {
+                m_has_hidden_states_output = true;
+            } else if (name == "intermediate_hidden_states") {
+                m_has_intermediate_hidden_states_output = true;
+            }
+        }
     }
 
     /**
@@ -684,10 +693,12 @@ public:
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
             m_request.set_tensor("hidden_states", hidden_state_input);
         }
-        if (position_ids.get_shape().size() == 3 && position_ids.get_shape()[0] == 3 &&
-            position_ids.get_shape()[1] == 1) {
-            // M-RoPE: squeeze pseudo-batch dim [3, 1, total_token_num] -> [3, total_token_num]
+        if (position_ids.get_shape().size() == 3 && position_ids.get_shape()[1] == 1) {
+            // M-RoPE: squeeze pseudo-batch dim [N, 1, total_token_num] -> [N, total_token_num]
+            // Validate that N is within expected range (3 for Qwen2/2.5/3-VL, 4 for Qwen3-Omni)
             const auto& position_ids_shape = position_ids.get_shape();
+            OPENVINO_ASSERT(position_ids_shape[0] >= 3 && position_ids_shape[0] <= 4,
+                            "M-RoPE position_ids first dimension must be 3 or 4, got ", position_ids_shape[0]);
             position_ids.set_shape({position_ids_shape[0], position_ids_shape[2]});
         }
         // typical LLM parameters
@@ -752,7 +763,18 @@ public:
         _reset_cache_rotation_coefficients();
 
         if (_is_hs_export()) {
-            m_hidden_states = m_request.get_tensor("last_hidden_state");
+            // Use "hidden_states" output only when the model also exports "intermediate_hidden_states"
+            // (Qwen3-Omni pattern). Otherwise prefer "last_hidden_state" to preserve existing behavior
+            // for speculative decoding and other models.
+            m_hidden_states = (m_has_hidden_states_output && m_has_intermediate_hidden_states_output)
+                ? m_request.get_tensor("hidden_states")
+                : m_request.get_tensor("last_hidden_state");
+
+            // Capture intermediate hidden states if available (Qwen3-Omni talker support)
+            if (m_has_intermediate_hidden_states_output) {
+                m_intermediate_hidden_states = m_request.get_tensor("intermediate_hidden_states");
+            }
+
             for (size_t i = 0; i < num_sequence_groups; ++i) {
                 size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
                 SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
@@ -761,6 +783,10 @@ public:
                     Sequence::Ptr sequence = running_sequences[seq_idx];
                     sequence->update_hidden_state(
                         _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
+                    if (m_has_intermediate_hidden_states_output) {
+                        sequence->update_intermediate_hidden_state(
+                            _get_intermediate_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
+                    }
                 }
             }
         }
@@ -831,27 +857,23 @@ public:
 
 private:
     ov::Tensor m_hidden_states;
+    ov::Tensor m_intermediate_hidden_states;
+    // Whether model has "hidden_states" vs "last_hidden_state" output name
+    bool m_has_hidden_states_output = false;
+    // Whether model has intermediate_hidden_states output (e.g., Qwen3-Omni)
+    bool m_has_intermediate_hidden_states_output = false;
 
     // Hidden state flags and helpers
     bool _is_hs_export()   const { return m_hidden_state_flags & HS_EXPORT; }
     bool _is_hs_import()   const { return m_hidden_state_flags & HS_IMPORT; }
     bool _is_hs_internal() const { return m_hidden_state_flags & HS_INTERNAL; }
 
-    /**
-     * @brief Retrieves a slice of the hidden state tensor corresponding to a specific request and sequence group.
-     *
-     * This method looks up the hidden state mapping for the given request and sequence group IDs.
-     * If the mapping exists and the hidden states tensor is available, it returns a sub-tensor (region of interest)
-     * representing the hidden state for the specified sequence. If the mapping does not exist or the hidden states
-     * tensor is empty, an empty tensor is returned.
-     *
-     * @param request_id        The unique identifier for the request.
-     * @param seq_grouped_id    The identifier for the sequence group within the request.
-     * @return ov::Tensor       The tensor slice representing the hidden state for the specified sequence,
-     *                          or an empty tensor if not found.
-     */
-    ov::Tensor _get_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
-        if (m_hidden_states.get_size() == 0) {
+    /// @brief Extract a per-sequence slice from a hidden states tensor using the sequence mapping.
+    /// Returns an empty tensor if the tensor is empty or the sequence is not found.
+    ov::Tensor _get_hidden_state_slice(const ov::Tensor& states_tensor,
+                                       uint64_t request_id,
+                                       uint64_t seq_grouped_id) const {
+        if (states_tensor.get_size() == 0) {
             return ov::Tensor();
         }
 
@@ -861,15 +883,22 @@ private:
             return ov::Tensor();
         }
 
-        size_t start_idx = it->second.start_token_idx;
-        size_t length = it->second.length;
+        const size_t start_idx = it->second.start_token_idx;
+        const size_t length = it->second.length;
 
-        auto shape = m_hidden_states.get_shape();
-        OPENVINO_ASSERT(shape.size() >= 2,
-                        "Hidden states tensor rank is less than 2.");
+        const auto shape = states_tensor.get_shape();
+        OPENVINO_ASSERT(shape.size() >= 2, "Hidden states tensor rank is less than 2.");
 
-        auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 0, start_idx, start_idx + length);
-        return ov::Tensor(m_hidden_states, start_coord, end_coord);
+        const auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 0, start_idx, start_idx + length);
+        return ov::Tensor(states_tensor, start_coord, end_coord);
+    }
+
+    ov::Tensor _get_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
+        return _get_hidden_state_slice(m_hidden_states, request_id, seq_grouped_id);
+    }
+
+    ov::Tensor _get_intermediate_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
+        return _get_hidden_state_slice(m_intermediate_hidden_states, request_id, seq_grouped_id);
     }
 
     /**

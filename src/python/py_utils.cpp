@@ -54,6 +54,16 @@ public:
     void seed(size_t new_seed) override { m_impl->seed(new_seed); }
 };
 
+ov::genai::StreamingStatus map_py_status(const std::optional<uint16_t>& result) {
+    if (!result.has_value())
+        return ov::genai::StreamingStatus::RUNNING;
+    if (*result == static_cast<uint16_t>(ov::genai::StreamingStatus::RUNNING))
+        return ov::genai::StreamingStatus::RUNNING;
+    if (*result == static_cast<uint16_t>(ov::genai::StreamingStatus::CANCEL))
+        return ov::genai::StreamingStatus::CANCEL;
+    return ov::genai::StreamingStatus::STOP;
+}
+
 }  // namespace
 
 namespace ov::genai::pybind::utils {
@@ -69,7 +79,7 @@ py::str handle_utf8(const std::string& text) {
 
 py::list handle_utf8(const std::vector<std::string>& decoded_res) {
     py::list res;
-    for (const auto s: decoded_res) {
+    for (const auto& s: decoded_res) {
         py::str r = handle_utf8(s);
         res.append(r);
     }
@@ -462,6 +472,11 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) && property_name == "streamer") {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
+    } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::AudioStreamerBase>(py_obj)) && property_name == "audio_streamer") {
+        auto audio_streamer = py::cast<ov::genai::pybind::utils::PyBindAudioStreamerVariant>(py_obj);
+        auto converted = py_audio_streamer_to_streamer(audio_streamer);
+        // Store the unwrapped concrete type so get_audio_streamer_from_map can .is<T>() it
+        return std::visit([](auto&& val) -> ov::Any { return ov::Any(val); }, converted);
     } else if (py::isinstance(py_obj, py::module_::import("pathlib").attr("Path"))) {
         return py::cast<std::filesystem::path>(py_obj);
     }
@@ -534,20 +549,11 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
                     return StreamingStatus::RUNNING;
                 }
                 auto py_str_obj = py::reinterpret_steal<py::str>(py_str);
-                std::optional<uint16_t> callback_output;
                 try {
-                    callback_output = (*shared_callback)(py_str_obj);
+                    return map_py_status((*shared_callback)(py_str_obj));
                 } catch (const py::error_already_set&) {
                     return StreamingStatus::RUNNING;
                 }
-                if (callback_output.has_value()) {
-                    if (*callback_output == static_cast<uint16_t>(StreamingStatus::RUNNING))
-                        return StreamingStatus::RUNNING;
-                    else if (*callback_output == static_cast<uint16_t>(StreamingStatus::CANCEL))
-                        return StreamingStatus::CANCEL;
-                    return StreamingStatus::STOP;
-                }
-                return StreamingStatus::RUNNING;
             };
             streamer = callback_wrapped;
         },
@@ -555,6 +561,42 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
             streamer = streamer_cls;
         },
         [](std::monostate none){ /*streamer is already a monostate */ }
+    }, py_streamer);
+    return streamer;
+}
+
+ov::genai::AudioStreamerVariant py_audio_streamer_to_streamer(const PyBindAudioStreamerVariant& py_streamer) {
+    ov::genai::AudioStreamerVariant streamer = std::monostate();
+
+    std::visit(overloaded {
+        [&streamer](const std::function<std::optional<uint16_t>(ov::Tensor)>& py_callback) {
+            // shared_ptr so the destructor runs with GIL held
+            auto shared_callback = std::shared_ptr<std::function<std::optional<uint16_t>(ov::Tensor)>>(
+                new std::function<std::optional<uint16_t>(ov::Tensor)>(py_callback),
+                [](std::function<std::optional<uint16_t>(ov::Tensor)>* f) {
+                    if (Py_IsInitialized()) {
+                        py::gil_scoped_acquire acquire;
+                        delete f;
+                    } else {
+                        delete f;
+                    }
+                }
+            );
+
+            auto callback_wrapped = [shared_callback = std::move(shared_callback)](ov::Tensor audio_chunk) -> StreamingStatus {
+                py::gil_scoped_acquire acquire;
+                try {
+                    return map_py_status((*shared_callback)(audio_chunk));
+                } catch (const py::error_already_set&) {
+                    return StreamingStatus::RUNNING;
+                }
+            };
+            streamer = callback_wrapped;
+        },
+        [&streamer](std::shared_ptr<ov::genai::AudioStreamerBase> streamer_cls) {
+            streamer = streamer_cls;
+        },
+        [](std::monostate) { /* already monostate */ }
     }, py_streamer);
     return streamer;
 }

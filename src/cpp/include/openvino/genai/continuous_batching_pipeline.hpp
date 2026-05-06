@@ -241,6 +241,12 @@ public:
         const StreamerVariant& streamer=std::monostate{});
 
     /**
+    * @brief Forward audio tensors to the inputs embedder for encoding (Qwen3-Omni).
+    * @param audios vector of audio tensors to encode.
+    */
+    void encode_audios(const std::vector<ov::Tensor>& audios);
+
+    /**
     * @brief start chat with keeping history in kv cache.
     * @param system_message optional system message.
     */

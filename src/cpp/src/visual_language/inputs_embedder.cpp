@@ -11,6 +11,7 @@
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen2_5_vl/classes.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
+#include "visual_language/qwen3_omni/classes.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -120,9 +121,8 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
     if (m_is_chat_conversation) {
-        std::string prompt_to_encode = prompt;
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        ov::Tensor new_chat_tokens = m_tokenizer.encode(prompt_to_encode, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
+        ov::Tensor new_chat_tokens = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         return new_chat_tokens;
@@ -130,11 +130,9 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
         ov::Tensor encoded_input_ids;
         auto start_tokenizer_time = std::chrono::steady_clock::now();
         if (m_apply_chat_template) {
-            std::string templated_prompt;
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
-
-            templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
             encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
         } else {
             encoded_input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
@@ -295,6 +293,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_VL) {
         m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
+        m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA4) {
@@ -335,6 +335,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_VL) {
         m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
+        m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA4) {
@@ -417,6 +419,10 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(const std::ve
     return m_impl->encode_videos(videos);
 }
 
+void InputsEmbedder::encode_audios(const std::vector<ov::Tensor>& audios) {
+    m_impl->encode_audios(audios);
+}
+
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
 }
@@ -442,7 +448,7 @@ EmbeddingsModel::Ptr InputsEmbedder::get_embedding_model() const {
 }
 
 ov::genai::utils::CacheState& InputsEmbedder::get_cache_state() {
-    return  m_impl->get_cache_state();
+    return m_impl->get_cache_state();
 }
 
 Tokenizer InputsEmbedder::get_tokenizer() const {
@@ -450,23 +456,23 @@ Tokenizer InputsEmbedder::get_tokenizer() const {
 }
 
 void InputsEmbedder::start_chat(const std::string& system_message) {
-    return m_impl->start_chat(system_message);
+    m_impl->start_chat(system_message);
 }
 
 void InputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
-    return m_impl->update_chat_history(decoded_results, generation_finish_status);
+    m_impl->update_chat_history(decoded_results, generation_finish_status);
 }
 
 void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
-    return m_impl->set_apply_chat_template_status(apply_chat_template);
+    m_impl->set_apply_chat_template_status(apply_chat_template);
 }
 
 void InputsEmbedder::finish_chat() {
-    return m_impl->finish_chat();
+    m_impl->finish_chat();
 }
 
 void InputsEmbedder::set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
-    return m_impl->set_vision_token_pruning_config(pruning_ratio, relevance_weight);
+    m_impl->set_vision_token_pruning_config(pruning_ratio, relevance_weight);
 }
 
 std::string InputsEmbedder::get_last_pruned_prompt(const std::string& original_prompt) const {
@@ -488,7 +494,7 @@ NormalizedPrompt InputsEmbedder::normalize_prompt(const std::string& prompt,
     const std::vector<EncodedImage>& images,
     const std::vector<EncodedVideo>& videos
 ) const {
-     return m_impl->normalize_prompt(prompt, base_image_id, base_video_id, images, videos);
+    return m_impl->normalize_prompt(prompt, base_image_id, base_video_id, images, videos);
 }
 
 void verify_ids(const std::vector<size_t>& vision_indices, size_t base_idx, size_t n_visions) {
