@@ -6,6 +6,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -77,7 +78,7 @@ protected:
     std::optional<AdapterController> m_adapter_controller;
 
     float m_load_time_ms = 0.0f;
-    std::string m_attention_backend = "SDPA";
+    std::string m_attention_backend = SDPA_BACKEND;
 };
 
 }  // namespace genai

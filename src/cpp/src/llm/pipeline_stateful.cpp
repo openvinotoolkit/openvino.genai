@@ -424,7 +424,6 @@ EncodedResults StatefulLLMPipeline::generate(
     }
 
     std::vector<SequenceGroup::Ptr> requests;
-    size_t block_size = 1;
 
     for (size_t request_id = 0; request_id < batch_size; request_id++) {
         SequenceGroup::Ptr sequence_group;
