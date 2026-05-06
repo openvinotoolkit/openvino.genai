@@ -807,6 +807,19 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     OPENVINO_ASSERT(video_token_count == 0 || !context.video_grids.empty(),
                     "video_embeddings provided without video_grids");
 
+    // ---- Validate element types: CDPruner and extract_text_features require f32 ----
+    OPENVINO_ASSERT(context.text_embeds.get_element_type() == ov::element::f32,
+                    "text_embeds must be f32 for CDPruner, got: ",
+                    context.text_embeds.get_element_type());
+    OPENVINO_ASSERT(image_token_count == 0 ||
+                        context.image_embeddings.get_element_type() == ov::element::f32,
+                    "image_embeddings must be f32 for CDPruner, got: ",
+                    context.image_embeddings.get_element_type());
+    OPENVINO_ASSERT(video_token_count == 0 ||
+                        context.video_embeddings.get_element_type() == ov::element::f32,
+                    "video_embeddings must be f32 for CDPruner, got: ",
+                    context.video_embeddings.get_element_type());
+
     // ---- Determine hidden dim / element type from the non-empty modality ----
     const size_t hidden_dim =
         (video_token_count > 0) ? context.video_embeddings.get_shape()[1] : context.image_embeddings.get_shape()[1];
