@@ -162,6 +162,7 @@ MODEL_IDS: list[str] = [
     "qnguyen3/nanoLLaVA",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
     "optimum-intel-internal-testing/tiny-random-gemma4",
+    "optimum-intel-internal-testing/tiny-random-gemma4-moe",
     *VIDEO_MODEL_IDS,
 ]
 
@@ -186,6 +187,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|image|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
@@ -243,6 +245,7 @@ NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-internvl2",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
     "optimum-intel-internal-testing/tiny-random-gemma4",
+    "optimum-intel-internal-testing/tiny-random-gemma4-moe",
 }
 
 DEFAULT_NPUW_PROPERTIES = {
@@ -310,7 +313,10 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
         )
-    if "optimum-intel-internal-testing/tiny-random-gemma4" == model_id and is_transformers_version("<", "5.5.0"):
+    if model_id in [
+        "optimum-intel-internal-testing/tiny-random-gemma4",
+        "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+    ] and is_transformers_version("<", "5.5.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
         )
@@ -1610,6 +1616,7 @@ TAG_INSERTED_BY_TEMPLATE = [
     ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
     ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
     ("optimum-intel-internal-testing/tiny-random-gemma4", "SDPA"),
+    ("optimum-intel-internal-testing/tiny-random-gemma4-moe", "SDPA"),
     ("qnguyen3/nanoLLaVA", "PA"),
     ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
 ]
