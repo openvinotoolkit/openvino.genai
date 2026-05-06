@@ -2422,7 +2422,7 @@ parametrize_cdpruner_video_pruning_models = pytest.mark.parametrize(
 
 
 @parametrize_cdpruner_video_pruning_models
-@pytest.mark.parametrize("pruning_ratio", [50, 70, 80])
+@pytest.mark.parametrize("pruning_ratio", [0, 50, 70, 80])
 def test_cdpruner_with_video(
     ov_pipe_model: VlmModelInfo,
     synthetic_video_32x32_tensor: openvino.Tensor,
@@ -2432,15 +2432,13 @@ def test_cdpruner_with_video(
     ov_pipe = ov_pipe_model.pipeline
 
     # Run baseline (ratio=0) first to avoid pruning state leaking into the comparison
-    baseline_input_tokens = None
-    if pruning_ratio > 0:
-        baseline_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-        baseline_config.pruning_ratio = 0
-        baseline_result = ov_pipe.generate(
-            PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=baseline_config
-        )
-        assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
-        baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
+    baseline_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    baseline_config.pruning_ratio = 0
+    baseline_result = ov_pipe.generate(
+        PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=baseline_config
+    )
+    assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
+    baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
 
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     generation_config.pruning_ratio = pruning_ratio
@@ -2452,6 +2450,12 @@ def test_cdpruner_with_video(
         # Verify pruning was actually applied: pruned run must process fewer input tokens than baseline
         assert result.perf_metrics.get_num_input_tokens() < baseline_input_tokens, (
             f"Pruned result (ratio={pruning_ratio}) should have fewer input tokens than baseline, "
+            f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
+        )
+    else:
+        # Verify no pruning: token count must equal baseline
+        assert result.perf_metrics.get_num_input_tokens() == baseline_input_tokens, (
+            f"Unpruned result (ratio=0) should have the same input tokens as baseline, "
             f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
         )
 
@@ -2522,7 +2526,19 @@ def test_cdpruner_continuous_batching_chat_mode(
 ):
     """Test CDPruner with continuous batching pipeline using String API in multi-turn chat mode.
     Verifies the pipeline produces non-empty output for all turns and does not crash.
-    Chat history integrity is confirmed by the text-only turn 3 receiving a response."""
+    Chat history integrity is confirmed by the text-only turn 3 receiving a response.
+    Verifies that pruning reduces input token count compared to the unpruned baseline."""
+    # Baseline: run single-turn with pruning_ratio=0 to get unpruned token count
+    baseline_config = GenerationConfig()
+    baseline_config.max_new_tokens = 10
+    baseline_config.do_sample = False
+    baseline_config.pruning_ratio = 0
+    baseline_result = ov_continuous_batching_pipe_qwen2vl.generate(
+        ["What is in this image?"], images=[[cat_tensor]], generation_config=[baseline_config]
+    )[0]
+    assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
+    baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
+
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 10
     generation_config.do_sample = False
@@ -2530,9 +2546,10 @@ def test_cdpruner_continuous_batching_chat_mode(
 
     ov_continuous_batching_pipe_qwen2vl.start_chat("You are a helpful assistant.")
 
-    result1 = ov_continuous_batching_pipe_qwen2vl.generate(
+    result1_obj = ov_continuous_batching_pipe_qwen2vl.generate(
         ["What is in this image?"], images=[[cat_tensor]], generation_config=[generation_config]
-    )[0].texts[0]
+    )[0]
+    result1 = result1_obj.texts[0]
     result2 = ov_continuous_batching_pipe_qwen2vl.generate(
         ["Now describe this one."], images=[[car_tensor]], generation_config=[generation_config]
     )[0].texts[0]
@@ -2547,6 +2564,12 @@ def test_cdpruner_continuous_batching_chat_mode(
     assert len(result3) > 0, (
         "CDPruner chat turn 3 (text-only) should produce non-empty output, verifying chat history is maintained"
     )
+    # Verify pruning was actually applied on the first vision turn
+    assert result1_obj.perf_metrics is not None, "Performance metrics should be available for turn 1"
+    assert result1_obj.perf_metrics.get_num_input_tokens() < baseline_input_tokens, (
+        "CDPruner chat turn 1 should process fewer input tokens than the unpruned baseline, "
+        f"got {result1_obj.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
+    )
 
 
 def test_cdpruner_continuous_batching_chat_history(
@@ -2556,7 +2579,21 @@ def test_cdpruner_continuous_batching_chat_history(
 ):
     """Test CDPruner with continuous batching pipeline using ChatHistory API in multi-turn chat mode.
     Verifies the pipeline produces non-empty output for all turns and does not crash.
-    Chat history integrity is confirmed by the text-only turn 3 receiving a response."""
+    Chat history integrity is confirmed by the text-only turn 3 receiving a response.
+    Verifies that pruning reduces input token count compared to the unpruned baseline."""
+    # Baseline: run single-turn with pruning_ratio=0 to get unpruned token count
+    baseline_config = GenerationConfig()
+    baseline_config.max_new_tokens = 10
+    baseline_config.do_sample = False
+    baseline_config.pruning_ratio = 0
+    baseline_history = ChatHistory()
+    baseline_history.append({"role": "user", "content": "What is in this image?"})
+    baseline_result = ov_continuous_batching_pipe_qwen2vl.generate(
+        [baseline_history], images=[[cat_tensor]], generation_config=[baseline_config]
+    )[0]
+    assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
+    baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
+
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 10
     generation_config.do_sample = False
@@ -2565,9 +2602,10 @@ def test_cdpruner_continuous_batching_chat_history(
     history = ChatHistory()
 
     history.append({"role": "user", "content": "What is in this image?"})
-    result1 = ov_continuous_batching_pipe_qwen2vl.generate(
+    result1_obj = ov_continuous_batching_pipe_qwen2vl.generate(
         [history], images=[[cat_tensor]], generation_config=[generation_config]
-    )[0].texts[0]
+    )[0]
+    result1 = result1_obj.texts[0]
     history.append({"role": "assistant", "content": result1})
 
     history.append({"role": "user", "content": "Now describe this one."})
@@ -2588,6 +2626,12 @@ def test_cdpruner_continuous_batching_chat_history(
     assert len(result2) > 0, "CDPruner chat turn 2 should produce non-empty output"
     assert len(result3) > 0, (
         "CDPruner chat turn 3 (text-only) should produce non-empty output, verifying chat history is maintained"
+    )
+    # Verify pruning was actually applied on the first vision turn
+    assert result1_obj.perf_metrics is not None, "Performance metrics should be available for turn 1"
+    assert result1_obj.perf_metrics.get_num_input_tokens() < baseline_input_tokens, (
+        "CDPruner chat history turn 1 should process fewer input tokens than the unpruned baseline, "
+        f"got {result1_obj.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
     )
 
 

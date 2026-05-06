@@ -837,16 +837,30 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     size_t i_region = 0;
     size_t v_idx = 0;
     size_t i_idx = 0;
-    int64_t prev_pad = -1;
+    bool inside_vision_region = false;
+    bool region_pad_seen = false;
     for (size_t pos = 0; pos < seq_len; ++pos) {
         const int64_t tok = ids[pos];
+        if (tok == context.vision_start_token_id) {
+            inside_vision_region = true;
+            region_pad_seen = false;
+            continue;
+        }
+        if (tok == context.vision_end_token_id) {
+            inside_vision_region = false;
+            region_pad_seen = false;
+            continue;
+        }
+        if (!inside_vision_region) {
+            continue;
+        }
         const bool is_video = (context.video_pad_token_id != -1 && tok == context.video_pad_token_id);
         const bool is_image = (context.image_pad_token_id != -1 && tok == context.image_pad_token_id);
         if (!is_video && !is_image) {
-            prev_pad = -1;
             continue;
         }
-        if (tok != prev_pad) {
+        // Register the grid entry on the first pad token of each vision region
+        if (!region_pad_seen) {
             if (is_video) {
                 OPENVINO_ASSERT(v_region < context.video_grids.size(),
                                 "More video regions in prompt than entries in video_grids");
@@ -856,7 +870,7 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
                                 "More image regions in prompt than entries in image_grids");
                 combined_grid_thw.push_back(context.image_grids[i_region++]);
             }
-            prev_pad = tok;
+            region_pad_seen = true;
         }
         prompt_to_merger.push_back(is_video ? v_idx++ : video_token_count + i_idx++);
     }
