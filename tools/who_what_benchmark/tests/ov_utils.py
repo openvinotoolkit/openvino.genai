@@ -136,6 +136,15 @@ class AtomicDownloadManager:
                 logger.exception("Could not clean up temp directory")
 
 
+def get_hf_cli_command() -> str:
+    # huggingface_hub < 1.0 supports huggingface-cli, huggingface_hub >= 1.0 use hf
+    version = metadata.version("huggingface_hub")
+    major = int(version.split(".", 1)[0])
+    if major >= 1:
+        return "hf"
+    return "huggingface-cli"
+
+
 def download_hf_files_to_cache(repo_id: str, cache_dir: Path, filenames: list[str]) -> Path:
     """Download a set of files from a Hugging Face repo into a local cache directory.
 
@@ -157,7 +166,7 @@ def download_hf_files_to_cache(repo_id: str, cache_dir: Path, filenames: list[st
     def download_to_local_dir(local_dir: Path) -> None:
         for filename in filenames:
             command = [
-                "huggingface-cli",
+                get_hf_cli_command(),
                 "download",
                 repo_id,
                 filename,
@@ -166,7 +175,7 @@ def download_hf_files_to_cache(repo_id: str, cache_dir: Path, filenames: list[st
             ]
 
             def _run_download() -> None:
-                subprocess.run(command, check=True, text=True, capture_output=True)
+                subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True)
 
             retry_request(_run_download)
 

@@ -10,8 +10,9 @@ torch>=2.1.0,<=2.11
 transformers[sentencepiece]>=4.40.0,<5.4.0
 diffusers>=0.22.0,<=0.37.1
 # optimum is in dependency list of optimum-intel
-optimum-intel[nncf]>=1.25.0,<=1.27.0
-packaging>=20.0,<=26.1
+# last supported commit f50a0b326df82d4b05c461a9184a97f616bfa63a
+optimum-intel[nncf]>=1.25.0
+packaging>=20.0,<=26.0
 psutil
 timm<=1.0.26
 tiktoken>=0.3.0,<=0.12.0
