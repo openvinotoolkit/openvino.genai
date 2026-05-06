@@ -63,6 +63,7 @@ class LinearAttentionCacheManager : public ICacheManager {
     static ov::Shape make_shape(const ov::PartialShape& pshape, size_t num_blocks) {
         ov::PartialShape ps = pshape;
         ps[0] = num_blocks;
+        OPENVINO_ASSERT(ps.is_static(), "State table shape must be static after setting block dimension");
         return ps.get_shape();
     }
 
@@ -70,6 +71,7 @@ class LinearAttentionCacheManager : public ICacheManager {
     static size_t layer_bytes_per_block(const ov::PartialShape& pshape, ov::element::Type precision) {
         size_t elems = 1;
         for (size_t d = 1; d < static_cast<size_t>(pshape.rank().get_length()); ++d) {
+            OPENVINO_ASSERT(pshape[d].is_static(), "State table dimension ", d, " must be static");
             elems *= static_cast<size_t>(pshape[d].get_length());
         }
         return elems * precision.size();
