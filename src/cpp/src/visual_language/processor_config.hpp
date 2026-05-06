@@ -55,6 +55,9 @@ public:
     size_t pooling_kernel_size = 3;
     size_t max_soft_tokens = 280;
 
+    // mistral3 (pixtral) specific config params
+    size_t longest_edge = 1540;
+
     struct {
         size_t num_crops = 4;
         size_t num_img_tokens = 144;
