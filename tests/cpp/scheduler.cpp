@@ -31,12 +31,12 @@ static constexpr size_t TEST_NUM_DECODER_LAYERS = 12;
 std::shared_ptr<CacheOrchestrator> init_cache_orchestrator(SchedulerConfig scheduler_config, size_t block_size = TEST_BLOCK_SIZE, size_t num_layers = 1) {
     ov::Core core = ov::Core();
     ov::InferRequest request = core.compile_model(get_dummy_model(core, TEST_NUM_DECODER_LAYERS)).create_infer_request();
-    auto cache_manager = std::make_shared<KVCacheManager>(request);
-    auto block_manager = std::make_shared<BlockManager>(scheduler_config.num_kv_blocks, scheduler_config.enable_prefix_caching, block_size, num_layers);
+    auto cache_manager = std::make_unique<KVCacheManager>(request);
+    auto block_manager = std::make_unique<BlockManager>(scheduler_config.num_kv_blocks, scheduler_config.enable_prefix_caching, block_size, num_layers);
     auto orchestrator = std::make_shared<CacheOrchestrator>();
     std::vector<size_t> all_layers(num_layers);
     std::iota(all_layers.begin(), all_layers.end(), 0);
-    orchestrator->register_cache_type(CacheType::KV_CACHE, cache_manager, block_manager, all_layers);
+    orchestrator->register_cache_type(CacheType::KV_CACHE, std::move(cache_manager), std::move(block_manager), all_layers);
     return orchestrator;
 }
 
@@ -47,16 +47,16 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
     ov::Core core = ov::Core();
     ov::InferRequest request = core.compile_model(get_dummy_hybrid_model(core, kv_num_layers, la_num_layers)).create_infer_request();
 
-    auto kv_cache_manager = std::make_shared<KVCacheManager>(request);
-    auto kv_block_manager = std::make_shared<BlockManager>(scheduler_config.num_kv_blocks,
+    auto kv_cache_manager = std::make_unique<KVCacheManager>(request);
+    auto kv_block_manager = std::make_unique<BlockManager>(scheduler_config.num_kv_blocks,
                                                            scheduler_config.enable_prefix_caching,
                                                            kv_block_size,
                                                            kv_num_layers);
 
-    auto la_cache_manager = std::make_shared<LinearAttentionCacheManager>(request);
-    std::shared_ptr<BlockManager> la_block_manager;
+    auto la_cache_manager = std::make_unique<LinearAttentionCacheManager>(request);
+    std::unique_ptr<BlockManager> la_block_manager;
     if (scheduler_config.enable_prefix_caching) {
-        la_block_manager = std::make_shared<BlockManager>(scheduler_config.num_linear_attention_blocks,
+        la_block_manager = std::make_unique<BlockManager>(scheduler_config.num_linear_attention_blocks,
                                                           true,
                                                           scheduler_config.cache_interval,
                                                           la_cache_manager->get_num_layers());
@@ -64,23 +64,24 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
         const size_t num_la_blocks = scheduler_config.num_linear_attention_blocks > 0
                                          ? scheduler_config.num_linear_attention_blocks
                                          : (scheduler_config.num_kv_blocks > 0 ? scheduler_config.max_num_seqs : 0);
-        la_block_manager = std::make_shared<BlockManager>(num_la_blocks,
+        la_block_manager = std::make_unique<BlockManager>(num_la_blocks,
                                                           false,
                                                           1,
                                                           la_cache_manager->get_num_layers(),
                                                           1);
     }
 
+    const size_t la_num_layers_actual = la_cache_manager->get_num_layers();
     auto orchestrator = std::make_shared<CacheOrchestrator>();
     std::vector<size_t> kv_layer_ids(kv_num_layers);
     std::iota(kv_layer_ids.begin(), kv_layer_ids.end(), 0);
-    orchestrator->register_cache_type(CacheType::KV_CACHE, kv_cache_manager, kv_block_manager, kv_layer_ids);
+    orchestrator->register_cache_type(CacheType::KV_CACHE, std::move(kv_cache_manager), std::move(kv_block_manager), kv_layer_ids);
 
-    std::vector<size_t> la_layer_ids(la_cache_manager->get_num_layers());
+    std::vector<size_t> la_layer_ids(la_num_layers_actual);
     std::iota(la_layer_ids.begin(), la_layer_ids.end(), kv_num_layers);
     orchestrator->register_cache_type(CacheType::LINEAR_ATTENTION_CACHE,
-                                      la_cache_manager,
-                                      la_block_manager,
+                                      std::move(la_cache_manager),
+                                      std::move(la_block_manager),
                                       la_layer_ids);
     return orchestrator;
 }
@@ -357,9 +358,9 @@ TEST(TestScheduler, hybrid_initialize_cache_grows_fixed_size_by_total_concurrent
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
     Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
 
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)->get_total_number_of_kv_blocks(), 0);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 0);
     std::ignore = scheduler.schedule(requests);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)->get_total_number_of_kv_blocks(), 2);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 2);
 
     for (auto& req : requests) {
         for (auto& seq : req->get_sequences()) {
@@ -388,7 +389,7 @@ TEST(TestScheduler, DISABLED_hybrid_runtime_arrival_beyond_initial_fixed_capacit
 
     std::vector<SequenceGroup::Ptr> requests = {seq_group1};
     std::ignore = scheduler.schedule(requests);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)->get_total_number_of_kv_blocks(), 1);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 1);
 
     auto running = seq_group1->get_running_sequences();
     running[0]->append_token(42, 0.9f);
@@ -950,8 +951,8 @@ TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_single_fixed_linear
 
     ASSERT_EQ(scheduler_config.num_kv_blocks, 64);
     EXPECT_EQ(scheduler_config.num_linear_attention_blocks, 1);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE)->get_total_number_of_kv_blocks(), 64);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)->get_total_number_of_kv_blocks(), 1);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_number_of_kv_blocks(), 64);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 1);
 }
 
 TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_fixed_linear_attention_capacity_from_max_num_seqs_for_bounded_batching) {
@@ -971,8 +972,8 @@ TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_fixed_linear_attent
 
     ASSERT_EQ(scheduler_config.num_kv_blocks, 64);
     EXPECT_EQ(scheduler_config.num_linear_attention_blocks, scheduler_config.max_num_seqs);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE)->get_total_number_of_kv_blocks(), 64);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)->get_total_number_of_kv_blocks(),
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_number_of_kv_blocks(), 64);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(),
               scheduler_config.max_num_seqs);
 }
 
@@ -994,7 +995,7 @@ TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_paged_linear_attent
 
     ASSERT_EQ(scheduler_config.num_kv_blocks, 10);
     EXPECT_EQ(scheduler_config.num_linear_attention_blocks, expected_la_blocks);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)->get_total_number_of_kv_blocks(),
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(),
               expected_la_blocks);
 }
 
@@ -1082,8 +1083,8 @@ TEST(TestScheduler, hybrid_create_zero_budget_keeps_all_cache_pools_dynamic) {
 
     EXPECT_EQ(scheduler_config.num_kv_blocks, 0);
     EXPECT_EQ(scheduler_config.num_linear_attention_blocks, 0);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE)->get_total_number_of_kv_blocks(), 0);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)->get_total_number_of_kv_blocks(), 0);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_number_of_kv_blocks(), 0);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 0);
 }
 
 TEST(TestScheduler, scheduler_config_explicit_linear_attention_blocks_require_linear_attention_model) {
