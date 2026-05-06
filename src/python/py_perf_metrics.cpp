@@ -49,7 +49,7 @@ auto raw_perf_metrics_docstring = R"(
     :type m_new_token_times: list[double]
 
     :param token_infer_durations : Inference time for each token in microseconds.
-    :type batch_sizes: list[float]
+    :type token_infer_durations: list[float]
 
     :param m_batch_sizes: Batch sizes for each generate call.
     :type m_batch_sizes: list[int]
@@ -58,7 +58,7 @@ auto raw_perf_metrics_docstring = R"(
     :type m_durations: list[float]
 
     :param inference_durations : Total inference duration for each generate call in microseconds.
-    :type batch_sizes: list[float]
+    :type inference_durations: list[float]
 
     :param grammar_compile_times: Time to compile the grammar in microseconds.
     :type grammar_compile_times: list[float]
