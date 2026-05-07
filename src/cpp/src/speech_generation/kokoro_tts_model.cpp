@@ -1013,8 +1013,8 @@ Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
                             "Kokoro tokenized length exceeds model context length: ", token_ids.size(),
                             " > ", context_length);
 
-            const size_t num_tokens = token_ids.size() >= 2 ? token_ids.size() - 2 : 0;
-            const size_t length_index = std::min<size_t>(num_tokens > 0 ? num_tokens - 1 : 0,
+            const size_t phoneme_length = codepoints.size();
+            const size_t length_index = std::min<size_t>(phoneme_length > 0 ? phoneme_length - 1 : 0,
                                                          speaker_shape[0] > 0 ? speaker_shape[0] - 1 : 0);
 
             // Each row in the [num_lengths, 1, 256] pack is 1*256 = 256 floats.
