@@ -111,20 +111,27 @@ BATCHED_PROMPTS = [
     ["table is made", "table is made [force left pad tokens]"],
 ]
 
-CHAT_INPUTS = [
-    ({"max_new_tokens": 20}, ""),
-    ({"max_new_tokens": 20}, "Pretend that 1+1=1"),
-    (
-        {
-            "max_new_tokens": 10,
-            "num_beam_groups": 3,
-            "num_beams": 15,
-            "num_return_sequences": 1,
-            "diversity_penalty": 1.0,
-        },
-        "",
-    ),
-]
+CHAT_INPUTS = []
+if is_transformers_version("<", "5.0"):
+    # beam search fails with optimum-intel 423b423 and transformers>=5.0
+    # restore after fix of CVS-185790
+    CHAT_INPUTS = [
+        (
+            {
+                "max_new_tokens": 10,
+                "num_beam_groups": 3,
+                "num_beams": 15,
+                "num_return_sequences": 1,
+                "diversity_penalty": 1.0,
+            },
+            "",
+        ),
+    ]
+else:
+    CHAT_INPUTS = [
+        ({"max_new_tokens": 20}, ""),
+        ({"max_new_tokens": 20}, "Pretend that 1+1=1"),
+    ]
 
 MODELS_LIST = get_models_list()
 
@@ -311,7 +318,6 @@ def test_empty_encoded_inputs_throw(ov_pipe: ov_genai.LLMPipeline) -> None:
         ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
 
 
-@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 def test_different_input_types_works_same_and_change_nothing(
     llm_model: OVConvertedModelSchema,
@@ -379,7 +385,9 @@ def test_linear_attention_batch_input_same_as_individual(
 #
 # Chat scenario
 #
-@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
+@pytest.mark.transformers_dependent(
+    reason="Some cases with beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
+)
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("inputs", CHAT_INPUTS)
 @pytest.mark.parametrize(
@@ -533,7 +541,6 @@ def test_linear_attention_chat_scenario(
     assert_hf_equals_genai(chat_history_hf, chat_history_messages_ov)
 
 
-@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", [CHAT_MODELS_LIST[0]], indirect=True)
 def test_chat_scenario_several_chats_in_series(
     llm_model: OVConvertedModelSchema,
@@ -613,7 +620,6 @@ def test_chat_scenario_several_chats_in_series_linear_cache(
         assert_hf_equals_genai(chat_history_hf, chat_history_ov, chat_number=i)
 
 
-@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 def test_chat_scenario_several_start(ov_pipe: ov_genai.LLMPipeline) -> None:
     generation_config_kwargs, _ = CHAT_INPUTS[0]
@@ -625,7 +631,6 @@ def test_chat_scenario_several_start(ov_pipe: ov_genai.LLMPipeline) -> None:
     ov_pipe.finish_chat()
 
 
-@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 def test_generate_works_same_before_and_after_chat(ov_pipe: ov_genai.LLMPipeline) -> None:
     generation_config_kwargs, _ = CHAT_INPUTS[0]
@@ -766,17 +771,7 @@ def test_callback_terminate_by_status(ov_pipe: ov_genai.LLMPipeline) -> None:
     assert len(ov_output.tokens[0]) < max_new_tokens
 
 
-CHAT_CALLBACK_MODELS_LIST = [*LINEAR_ATTENTION_MODELS_LIST]
-if is_transformers_version("<", "5.0"):
-    # LINEAR_ATTENTION_MODELS_LIST depends on the tranformers version
-    # CHAT_MODELS_LIST is supported on transformers<5.0
-    CHAT_CALLBACK_MODELS_LIST += CHAT_MODELS_LIST
-
-
-@pytest.mark.transformers_dependent(
-    reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788"
-)
-@pytest.mark.parametrize("llm_model", CHAT_CALLBACK_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 def test_chat_scenario_callback_cancel(
     llm_model: OVConvertedModelSchema,
     ov_pipe: ov_genai.LLMPipeline,
