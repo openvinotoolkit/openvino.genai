@@ -26,7 +26,7 @@ from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kw
 
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
-from typing import Any
+from typing import Any, Literal
 from difflib import SequenceMatcher
 
 from utils.dataset_utils import load_dataset_via_snapshot
@@ -199,7 +199,7 @@ MAX_DATASET_LENGTH = 30
 
 @functools.lru_cache(16)
 def get_whisper_dataset(language: str, long_form: bool) -> list:
-    # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0" 
+    # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0"
     # https://github.com/huggingface/datasets/issues/7647 dataset is fixed for streaming mode
     # if not long_form:
     if False:
@@ -222,6 +222,26 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
 
     return [x["audio"]["array"] for x in ds]
 
+
+@functools.lru_cache(16)
+def get_multilingual_dataset(language: Literal["de", "fr", "es"]) -> list:
+    mls_config = {"de": "german", "fr": "french", "es": "spanish"}
+    # dataset is too big (450gb) for snapshot download
+    ds = retry_request(
+        lambda: datasets.load_dataset(
+            "facebook/multilingual_librispeech",
+            mls_config[language],
+            split="test",
+            streaming=True,
+        )
+    )
+    ds = typing.cast(datasets.IterableDataset, ds)
+    ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
+    ds = ds.take(1)
+
+    return [x["audio"]["array"] for x in ds]
+
+
 @pytest.fixture
 def sample_from_dataset(request):
     language = request.param.get("language", "en")
@@ -236,6 +256,13 @@ def sample_from_dataset(request):
 
 def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> list[dict[str, Any]]:
     return [{"language": language, "long_form": long_form, "sample_id": i} for i in range(n)]
+
+
+@pytest.fixture
+def sample_from_multilingual_dataset(request):
+    language = request.param
+    samples = get_multilingual_dataset(language)
+    return samples[0]
 
 
 def run_pipeline_with_ref(
@@ -292,6 +319,36 @@ def test_smoke(model_descr, sample_from_dataset):
         tmp_path=model_descr[1],
         sample=sample_from_dataset,
     )
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "sample_from_multilingual_dataset,language",
+    [
+        ("de", "de"),
+        ("fr", "fr"),
+        ("es", "es"),
+    ],
+    indirect=["sample_from_multilingual_dataset"],
+)
+def test_language_detection(model_descr, sample_from_multilingual_dataset, language):
+    _, _, _, genai_pipe = read_whisper_model(model_descr)
+
+    result = genai_pipe.generate(sample_from_multilingual_dataset)
+    assert result.language == language
+
+    # explicit language should also be reflected in the result
+    result = genai_pipe.generate(sample_from_multilingual_dataset, language=f"<|{language}|>")
+    assert result.language == language
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list())
+@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
+def test_language_detection_en(model_descr, sample_from_dataset):
+    _, _, _, genai_pipe = read_whisper_model(model_descr)
+
+    result = genai_pipe.generate(sample_from_dataset)
+    assert result.language == "en"
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
