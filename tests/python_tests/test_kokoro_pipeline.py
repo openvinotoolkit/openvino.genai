@@ -503,4 +503,3 @@ class TestKokoroPipeline:
                 f"genai={speech_genai[first_diff] if first_diff >= 0 else 'n/a'}, "
                 f"max_diff={max_diff:.6f}, mean_diff={mean_diff:.6f}"
             )
-
