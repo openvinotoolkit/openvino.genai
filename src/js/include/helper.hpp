@@ -217,6 +217,13 @@ Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env, co
 template <>
 Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, const std::vector<size_t>& value);
 
+/** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<std::vector<int64_t>>
+ * (JS Array of BigInt64Array). */
+template <>
+Napi::Value cpp_to_js<std::vector<std::vector<int64_t>>, Napi::Value>(
+    const Napi::Env& env,
+    const std::vector<std::vector<int64_t>>& value);
+
 template <>
 Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env,
                                                              const ov::genai::JsonContainer& json_container);

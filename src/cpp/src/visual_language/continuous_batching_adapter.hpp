@@ -107,7 +107,7 @@ public:
             decoded.texts.push_back(result.texts.at(idx));
             decoded.scores.push_back(result.scores.at(idx));
         }
-        decoded.tokens = result.tokens;
+        decoded.tokens = std::move(result.tokens);
         decoded.finish_reasons = result.finish_reasons;
         return decoded;
     }
@@ -147,7 +147,7 @@ public:
             decoded.texts.push_back(result.texts.at(idx));
             decoded.scores.push_back(result.scores.at(idx));
         }
-        decoded.tokens = result.tokens;
+        decoded.tokens = std::move(result.tokens);
         decoded.finish_reasons = result.finish_reasons;
         return decoded;
     }
