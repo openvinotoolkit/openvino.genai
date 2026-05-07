@@ -188,6 +188,7 @@ private:
         final_decoded_results.texts = decoded_results.texts;
         final_decoded_results.scores = decoded_results.scores;
         final_decoded_results.finish_reasons = decoded_results.finish_reasons;
+        final_decoded_results.extended_perf_metrics = decoded_results.extended_perf_metrics;
         return final_decoded_results;
     }
 };

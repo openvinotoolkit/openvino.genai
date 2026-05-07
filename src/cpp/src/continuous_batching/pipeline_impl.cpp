@@ -389,6 +389,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     }
     ov::Tensor logits;
 
+    // Ensure embeddings exist before forward() for EMBEDDINGS mode (VLM).
+    // Critical for: 1) validation mode - draft candidates need embeddings
+    //               2) draft mode after rewinding - repairs embedding/token mismatch
+    if (m_model_input_type == ModelInputType::EMBEDDINGS)
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
+
     {
         static ManualTimer timer("forward");
         const auto infer_start = std::chrono::steady_clock::now();
@@ -453,9 +459,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         candidates_timer.end();
     }
 
-    // append embeddings for generated tokens
-    if (m_model_input_type == ModelInputType::EMBEDDINGS)
-        m_model_runner->append_embeddings(m_requests, scheduler_output);
+    // append embeddings for generated tokens for draft model
+    if (!m_is_validation_mode_enabled) {
+        if (m_model_input_type == ModelInputType::EMBEDDINGS)
+            m_model_runner->append_embeddings(m_requests, scheduler_output);
+    }
 
     // notify requests dropped by handle
     {

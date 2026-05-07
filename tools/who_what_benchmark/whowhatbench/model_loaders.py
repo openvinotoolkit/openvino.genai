@@ -60,6 +60,28 @@ def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=Fa
     return adapter_config
 
 
+def _add_genai_draft_model_config(ov_config, device, **kwargs):
+    import openvino_genai
+
+    draft_model_path = kwargs.get("draft_model", "")
+    if not draft_model_path:
+        return
+
+    if not Path(draft_model_path).exists():
+        raise RuntimeError(f"Error: Draft model path does not exist: {draft_model_path}")
+
+    draft_device = kwargs.get("draft_device") or device
+    draft_cb_config = kwargs.get("draft_cb_config")
+    draft_model_load_kwargs = (
+        {"scheduler_config": get_scheduler_config_genai(draft_cb_config)} if draft_cb_config is not None else {}
+    )
+    ov_config["draft_model"] = openvino_genai.draft_model(
+        draft_model_path,
+        draft_device.upper(),
+        **draft_model_load_kwargs,
+    )
+
+
 class GenAIModelWrapper:
     """
     A helper class to store additional attributes for GenAI models
@@ -152,16 +174,7 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         alphas=kwargs.get("alphas", None),
     )
 
-    draft_model_path = kwargs.get("draft_model", '')
-    if draft_model_path:
-        if not Path(draft_model_path).exists():
-            raise RuntimeError(f"Error: Draft model path does not exist: {draft_model_path}")
-        draft_device = kwargs.get("draft_device", None) or device
-        draft_model_load_kwargs = (
-            {"scheduler_config": get_scheduler_config_genai(kwargs["draft_cb_config"])}
-            if kwargs["draft_cb_config"] is not None else {}
-        )
-        ov_config["draft_model"] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
+    _add_genai_draft_model_config(ov_config, device, **kwargs)
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
@@ -361,6 +374,8 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
         alphas=kwargs.get("alphas", None),
         none_if_empty=True,
     )
+
+    _add_genai_draft_model_config(ov_config, device, **kwargs)
 
     pipeline_kwargs = {
         "device": device,
