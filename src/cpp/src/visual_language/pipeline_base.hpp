@@ -4,6 +4,7 @@
 #pragma once
 
 #include "openvino/genai/visual_language/pipeline.hpp"
+#include "visual_language/vision_properties.hpp"
 #include "utils.hpp"
 
 using namespace ov::genai;
@@ -18,43 +19,6 @@ class ov::genai::VLMPipeline::VLMPipelineBase {
         GenerationConfig config = optional_config.value_or(get_generation_config());
         config.update_generation_config(config_map);
         return config;
-    }
-
-    static std::pair<std::vector<ov::Tensor>, std::vector<ov::Tensor>> 
-    extract_images_and_videos_from_config_map(const ov::AnyMap& config_map) {
-        std::vector<ov::Tensor> images_vector = {};
-        std::vector<ov::Tensor> videos_vector = {};
-
-        auto image = config_map.find(ov::genai::image.name());
-        auto images = config_map.find(ov::genai::images.name());
-        auto videos = config_map.find(ov::genai::videos.name());
-
-        if (config_map.end() != image) {
-            images_vector = {image->second.as<ov::Tensor>()};
-        }
-
-        if (config_map.end() != images) {
-            if (images->second.is<std::vector<ov::Tensor>>()) {
-                auto imgs = images->second.as<std::vector<ov::Tensor>>();
-                images_vector.insert(images_vector.end(), imgs.begin(), imgs.end());
-            } else if (images->second.is<ov::Tensor>()) {
-                images_vector.push_back(std::move(images->second.as<ov::Tensor>()));
-            } else if (!images->second.empty()) {
-                OPENVINO_THROW("Unknown images type.");
-            }
-        }
-
-        if (config_map.end() != videos) {
-            if (videos->second.is<std::vector<ov::Tensor>>()) {
-                videos_vector = videos->second.as<std::vector<ov::Tensor>>();
-            } else if (videos->second.is<ov::Tensor>()) {
-                videos_vector = {videos->second.as<ov::Tensor>()};
-            } else if (!videos->second.empty()) {
-                OPENVINO_THROW("Unknown videos type.");
-            }
-        }
-
-        return {images_vector, videos_vector};
     }
 
 public:
@@ -76,13 +40,29 @@ public:
         const StreamerVariant& streamer
     ) = 0;
 
+    virtual VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) = 0;
+
     VLMDecodedResults generate(
         const std::string& prompt,
         const ov::AnyMap& config_map
     ) {
-        auto [images_vector, videos_vector] = extract_images_and_videos_from_config_map(config_map);
+        const auto vision_properties = extract_vision_properties(config_map);
         GenerationConfig config = resolve_generation_config(config_map);
-        return generate(prompt, images_vector, videos_vector, config, utils::get_streamer_from_map(config_map));
+        return generate(
+            prompt,
+            vision_properties.images.value_or(std::vector<ov::Tensor>{}),
+            vision_properties.videos.value_or(std::vector<ov::Tensor>{}),
+            vision_properties.videos_metadata.value_or(std::vector<VideoMetadata>{}),
+            config,
+            utils::get_streamer_from_map(config_map)
+        );
     }
 
     virtual VLMDecodedResults generate(
@@ -100,13 +80,29 @@ public:
         const StreamerVariant& streamer
     ) = 0;
 
+    virtual VLMDecodedResults generate(
+        const ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) = 0;
+
     VLMDecodedResults generate(
         const ChatHistory& history,
         const ov::AnyMap& config_map
     ) {
-        auto [images_vector, videos_vector] = extract_images_and_videos_from_config_map(config_map);
+        const auto vision_properties = extract_vision_properties(config_map);
         GenerationConfig config = resolve_generation_config(config_map);
-        return generate(history, images_vector, videos_vector, config, utils::get_streamer_from_map(config_map));
+        return generate(
+            history,
+            vision_properties.images.value_or(std::vector<ov::Tensor>{}),
+            vision_properties.videos.value_or(std::vector<ov::Tensor>{}),
+            vision_properties.videos_metadata.value_or(std::vector<VideoMetadata>{}),
+            config,
+            utils::get_streamer_from_map(config_map)
+        );
     }
 
     virtual void start_chat(const std::string& system_message) = 0;

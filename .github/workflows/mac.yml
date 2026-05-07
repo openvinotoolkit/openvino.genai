@@ -43,7 +43,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@10d999b8d93ce104907890c54f85eb585112f751
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@a5247d3e30ec70f8027a38d64aa46136ec39bc44
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -432,7 +432,14 @@ jobs:
         test:
           - name: 'Whisper'
             # TODO: skip some tests temporary until https://github.com/huggingface/datasets/issues/7647 dataset is fixed
-            cmd: 'python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5" -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            timeout: 120
+          - name: 'Whisper Transformers under 5.0'
+            cmd: |
+              python -m pip install transformers==4.55.4
+              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
+              python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "transformers_lower_v5" -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 120
           # Only supported on X64 or ARM with SVE support
@@ -463,7 +470,13 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
           - name: 'WWB tests'
-            cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava"'
+            cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava and not transformers_lower_v5"'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            timeout: 120
+          - name: 'WWB tests with transformers under 5.0'
+            cmd: |
+              python -m pip install transformers==4.57.0
+              python -m pytest -v ./tools/who_what_benchmark/tests -m "transformers_dependent or transformers_lower_v5"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
           - name: 'WWB tests (nanollava)'
@@ -526,9 +539,15 @@ jobs:
         build-type: [Release]
         test:
           - name: 'LLM'
-            marker: 'llm'
+            marker: 'llm and not transformers_lower_v5'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
+          - name: 'LLM with transformers under 5.0'
+            extra_cmd: 'python -m pip install transformers==4.55.4'
+            marker: 'llm and (transformers_dependent or transformers_lower_v5)'
+            cmd: 'tests/python_tests/samples'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
+            runner: 'aks-linux-4-cores-16gb'
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
@@ -625,6 +644,7 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
+          ${{ matrix.test.extra_cmd }}
           python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"

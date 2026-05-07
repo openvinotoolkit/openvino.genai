@@ -115,7 +115,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "stop_strings", stop_strings);
     read_anymap_param(properties, "include_stop_str_in_output", include_stop_str_in_output);
     read_anymap_param(properties, "stop_token_ids", stop_token_ids);
-    if (eos_token_id > 0) {
+    if (eos_token_id != -1) {
         set_eos_token_id(eos_token_id);
     }
 
