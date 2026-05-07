@@ -3,60 +3,79 @@
 
 #include "visual_language/qwen3_vl/classes.hpp"
 #include "utils.hpp"
+#include "logger.hpp"
 
 namespace ov::genai {
 
 namespace {
+
+constexpr float DEFAULT_METADATA_FPS = 24.0f;
 
 /**
  * @brief Calculates timestamps for video frames based on encoded video metadata.
  * @return Vector of float timestamps corresponding to each video frame.
  */
 std::vector<float> calculate_timestamps(const VideoMetadata& video_metadata, size_t merge_size) {
-    OPENVINO_ASSERT(video_metadata.fps > 0.0f, "Video metadata fps must be positive for timestamp calculation.");
+    OPENVINO_ASSERT(video_metadata.fps >= 0.0f, "Video metadata fps must be non-negative for timestamp calculation.");
 
-    // Copy frame_indices since padding may be needed
-    std::vector<size_t> frame_indices = video_metadata.frames_indices;
-    if (frame_indices.size() % merge_size != 0) {
-        frame_indices.resize(
-            frame_indices.size() + (merge_size - frame_indices.size() % merge_size),
-            frame_indices.back()
+    float metadata_fps = video_metadata.fps;
+    if (metadata_fps == 0.0f) {
+        GENAI_WARN("Qwen3-VL requires frame timestamps to construct prompts, but VideoMetadata is missing or fps is not set. "
+            "Defaulting to 24 fps. Please provide VideoMetadata with fps for more accurate results.");
+        metadata_fps = DEFAULT_METADATA_FPS;
+    }
+
+    // Copy frames_indices since padding may be needed
+    std::vector<size_t> frames_indices = video_metadata.frames_indices;
+    if (frames_indices.size() % merge_size != 0) {
+        frames_indices.resize(
+            frames_indices.size() + (merge_size - frames_indices.size() % merge_size),
+            frames_indices.back()
         );
     }
 
     std::vector<float> timestamps;
-    timestamps.reserve(frame_indices.size() / merge_size);
-    for (size_t i = 0; i < frame_indices.size(); i += merge_size) {
-        const float timestamp = (static_cast<float>(frame_indices[i] + frame_indices[i + merge_size - 1]))
-            / 2.0f / video_metadata.fps;
+    timestamps.reserve(frames_indices.size() / merge_size);
+    for (size_t i = 0; i < frames_indices.size(); i += merge_size) {
+        const float timestamp = (static_cast<float>(frames_indices[i] + frames_indices[i + merge_size - 1]))
+            / 2.0f / metadata_fps;
         timestamps.push_back(timestamp);
     }
     return timestamps;
 }
 
 /**
- * @brief Populates video metadata in encoded_video struct.
- * Computes frame sampling indices for encoded video based on video processor config.
+ * @brief Populates video metadata and computes frame sampling indices based on video processor config.
  */
-void fill_video_metadata(EncodedVideo& encoded_video, size_t total_num_frames, const VideoProcessorConfig& video_config) {
+void fill_video_metadata(VideoMetadata& video_metadata, size_t total_num_frames, const VideoProcessorConfig& video_config) {
+    if (!video_metadata.frames_indices.empty()) {
+        GENAI_WARN("Frames indices already provided in video metadata, skipping Qwen3-VL model-specific sampling.");
+        return;
+    }
+
     OPENVINO_ASSERT(!(video_config.fps != 0.0f && video_config.num_frames != 0),
         "num_frames and fps are mutually exclusive video config arguments.");
     
     if (!video_config.do_sample_frames) {
-        encoded_video.metadata.frames_indices.resize(total_num_frames);
-        std::iota(encoded_video.metadata.frames_indices.begin(), encoded_video.metadata.frames_indices.end(), 0);
+        // frames_indices is still needed for timestamp calculation
+        video_metadata.frames_indices.resize(total_num_frames);
+        std::iota(video_metadata.frames_indices.begin(), video_metadata.frames_indices.end(), 0);
         return;
     }
+
     // Sample frame indices if needed
     size_t num_frames = video_config.num_frames;
     
     if (num_frames == 0 && video_config.fps != 0.0f) {
-        OPENVINO_ASSERT(encoded_video.metadata.fps != 0.0f,
-            "Requested to sample frames by fps but video metadata fps is not set. "
-            "Provide VideoMetadata with fps or use a fixed num_frames.");
+        if (video_metadata.fps == 0.0f) {
+            GENAI_WARN("Requested to sample frames by fps, but video metadata fps is not set. "
+                "Defaulting to 24 fps for frame sampling. "
+                "Please provide VideoMetadata with fps for more accurate results.");
+            video_metadata.fps = DEFAULT_METADATA_FPS;
+        }
 
         num_frames = static_cast<size_t>(
-            total_num_frames / static_cast<double>(encoded_video.metadata.fps) * static_cast<double>(video_config.fps)
+            total_num_frames / static_cast<double>(video_metadata.fps) * static_cast<double>(video_config.fps)
         );
         num_frames = std::clamp(num_frames, video_config.min_frames, std::min(video_config.max_frames, total_num_frames));
     } else if (num_frames == 0) {
@@ -66,12 +85,12 @@ void fill_video_metadata(EncodedVideo& encoded_video, size_t total_num_frames, c
     OPENVINO_ASSERT(num_frames > 1 && num_frames <= total_num_frames,
         "Invalid number of frames (" + std::to_string(num_frames) +") for video sampling.");
 
-    encoded_video.metadata.frames_indices.reserve(num_frames);
+    video_metadata.frames_indices.reserve(num_frames);
     for (size_t i = 0; i < num_frames; ++i) {
         size_t frame_idx = static_cast<size_t>(std::round(
             static_cast<double>(i) * static_cast<double>(total_num_frames - 1) / static_cast<double>(num_frames - 1)
         ));
-        encoded_video.metadata.frames_indices.push_back(frame_idx);
+        video_metadata.frames_indices.push_back(frame_idx);
     }
 }
 
@@ -225,25 +244,9 @@ ov::Tensor create_visual_pos_masks(
 
 } // namespace
 
-EncodedVideo VisionEncoderQwen3VL::encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) {
+EncodedVideo VisionEncoderQwen3VL::encode_frames(const std::vector<ov::Tensor>& frames) {
     EncodedVideo encoded_video;
-    
-    fill_video_metadata(encoded_video, frames.size(), m_video_processor_config);
-
-    std::vector<ov::Tensor> sampled_frames;
-    if (!m_video_processor_config.do_sample_frames) {
-        sampled_frames = frames;
-    } else {
-        sampled_frames.reserve(encoded_video.metadata.frames_indices.size());
-        for (size_t idx : encoded_video.metadata.frames_indices) {
-            OPENVINO_ASSERT(idx < frames.size(),
-                            "Frame index ", idx, " out of range for ", frames.size(), " frames.");
-            sampled_frames.push_back(frames.at(idx));
-        }
-    }
-
-    VisionEncoderQwen2VL::encode_frames_with_config(encoded_video, sampled_frames, m_video_processor_config);
-
+    VisionEncoderQwen2VL::encode_frames_with_config(encoded_video, frames, m_video_processor_config);
     return encoded_video;
 }
 
@@ -284,6 +287,28 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
             return pos_compiled.create_infer_request();
         }
     );
+}
+
+std::vector<ov::genai::EncodedVideo> InputsEmbedderQwen3VL::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata
+) {
+    OPENVINO_ASSERT(videos.size() == videos_metadata.size() || videos_metadata.empty(),
+        "Number of videos and videos metadata must match if metadata provided.");
+
+    std::vector<EncodedVideo> encoded_videos;
+    for (size_t i = 0; i < videos.size(); ++i) {
+        const ov::Tensor& video = videos[i];
+        const size_t video_num_frames = video.get_shape()[0];
+        VideoMetadata video_metadata = i < videos_metadata.size() ? videos_metadata[i] : VideoMetadata{};
+        fill_video_metadata(video_metadata, video_num_frames, m_vision_encoder->get_video_processor_config());
+        const auto sampled_video = sample_video_if_needed(video, video_metadata);
+        std::vector<ov::Tensor> frames = to_single_image_tensors({sampled_video});
+        auto encoded_video = m_vision_encoder->encode_frames(frames);
+        encoded_video.metadata = video_metadata;
+        encoded_videos.emplace_back(encoded_video);
+    }
+    return encoded_videos;
 }
 
 void InputsEmbedderQwen3VL::expand_video_tags_in_prompt(

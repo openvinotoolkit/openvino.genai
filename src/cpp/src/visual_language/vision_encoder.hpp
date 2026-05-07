@@ -10,6 +10,7 @@
 #include "visual_language/processor_config.hpp"
 #include "visual_language/video_processor_config.hpp"
 #include "circular_buffer_queue.hpp"
+#include "openvino/genai/visual_language/video_metadata.hpp"
 
 
 namespace ov::genai {
@@ -66,12 +67,6 @@ struct EncodedImage {
 
     /// @brief Number of image tokens required to append to a normalized prompt
     size_t num_image_tokens = 0;
-};
-
-/// @brief A struct describing video metadata of a given video.
-struct VideoMetadata {
-    float fps = 24.0f;
-    std::vector<size_t> frames_indices;
 };
 
 /// @brief Embeddings of a given video. 
@@ -137,13 +132,17 @@ public:
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
 
     /// @brief Compute embeddings of a or multiple video given
-    virtual EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
+    virtual EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) {
         OPENVINO_THROW("The current model does not support 'video' input, please use 'images' instead.");
     }
 
     /// @brief Gets processor config
     /// @return Processor config
     ProcessorConfig get_processor_config() const;
+
+    /// @brief Gets video processor config
+    /// @return Video processor config
+    VideoProcessorConfig get_video_processor_config() const;
 
 protected:
     /// @brief  Infer requests queue for image encoding model.

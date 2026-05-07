@@ -112,6 +112,7 @@ def compare_word_timestamps_results_with_assert(expected, actual_out, ts_toleran
         assert exp_word.end_ts - act_word.end_ts == pytest.approx(0.0, abs=ts_tolerance)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
 def test_static_whisper_generation_compare_stateless(model_descr, sample_from_dataset):
@@ -125,6 +126,7 @@ def test_static_whisper_generation_compare_stateless(model_descr, sample_from_da
     compare_results_with_assert(expected, actual_out)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, language="fr"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="de"),
@@ -140,6 +142,7 @@ def test_static_whisper_autodetect(model_descr, sample_from_dataset):
     compare_results_with_assert(expected, actual_out)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='de', n=3)], indirect=True)
 def test_static_whisper_language_de(model_descr, sample_from_dataset):
@@ -153,6 +156,7 @@ def test_static_whisper_language_de(model_descr, sample_from_dataset):
     compare_results_with_assert(expected, actual_out)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='fr', n=3)], indirect=True)
 def test_static_whisper_language_fr(model_descr, sample_from_dataset):
@@ -166,6 +170,7 @@ def test_static_whisper_language_fr(model_descr, sample_from_dataset):
     compare_results_with_assert(expected, actual_out)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='ru', n=3)], indirect=True)
 def test_static_whisper_language_ru(model_descr, sample_from_dataset):
@@ -179,6 +184,7 @@ def test_static_whisper_language_ru(model_descr, sample_from_dataset):
     compare_results_with_assert(expected, actual_out)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0, "long_form": True}], indirect=True)
 def test_static_whisper_generation_long(model_descr, sample_from_dataset):
@@ -192,6 +198,7 @@ def test_static_whisper_generation_long(model_descr, sample_from_dataset):
     compare_results_with_assert(expected, actual_out)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
 def test_static_whisper_stateful_generation_compare_with_cpu(model_descr, sample_from_dataset):
@@ -202,6 +209,7 @@ def test_static_whisper_stateful_generation_compare_with_cpu(model_descr, sample
     compare_results_with_assert(expected, actual_out)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, language="fr"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="de"),
@@ -214,6 +222,7 @@ def test_static_whisper_stateful_autodetect(model_descr, sample_from_dataset):
     compare_results_with_assert(expected, actual_out)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='de', n=3)], indirect=True)
 def test_static_whisper_stateful_language_de(model_descr, sample_from_dataset):
@@ -226,6 +235,7 @@ def test_static_whisper_stateful_language_de(model_descr, sample_from_dataset):
     compare_results_with_assert(expected, actual_out)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='fr', n=3)], indirect=True)
 def test_static_whisper_stateful_language_fr(model_descr, sample_from_dataset):
@@ -236,6 +246,7 @@ def test_static_whisper_stateful_language_fr(model_descr, sample_from_dataset):
     compare_results_with_assert(expected, actual_out)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='ru', n=3)], indirect=True)
 def test_static_whisper_stateful_language_ru(model_descr, sample_from_dataset):
@@ -246,6 +257,7 @@ def test_static_whisper_stateful_language_ru(model_descr, sample_from_dataset):
     compare_results_with_assert(expected, actual_out)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0, "long_form": True}], indirect=True)
 def test_static_whisper_stateful_generation_long(model_descr, sample_from_dataset):
@@ -256,6 +268,7 @@ def test_static_whisper_stateful_generation_long(model_descr, sample_from_datase
     compare_results_with_assert(expected, actual_out)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185787")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0, "long_form": False}], indirect=True)
 def test_static_whisper_stateful_word_timestamps(model_descr, sample_from_dataset):

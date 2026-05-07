@@ -7,6 +7,7 @@ import openvino as ov
 import os
 from importlib import metadata
 from datetime import datetime
+from transformers import GenerationConfig as HFGenerationConfig
 from optimum.intel.openvino.utils import TemporaryDirectory
 from pathlib import Path
 
@@ -18,11 +19,19 @@ def get_default_llm_properties():
     }
 
 
-def extra_generate_kwargs():
+def extra_generate_kwargs(generation_config: HFGenerationConfig = None):
     from optimum.intel.utils.import_utils import is_transformers_version
     additional_args = {}
-    if is_transformers_version(">=", "4.51"):
+    if is_transformers_version(">=", "4.51") and is_transformers_version("<", "5.0"):
         additional_args["use_model_defaults"] = False
+
+    if is_transformers_version(">=", "4.51") and (
+        generation_config is not None
+        and generation_config.num_beam_groups is not None
+        and generation_config.num_beam_groups > 1
+    ):
+        additional_args["trust_remote_code"] = True
+        additional_args["do_sample"] = False
 
     return additional_args
 

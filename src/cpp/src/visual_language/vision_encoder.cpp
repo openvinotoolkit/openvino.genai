@@ -93,6 +93,10 @@ ProcessorConfig VisionEncoder::get_processor_config() const {
     return m_processor_config;
 }
 
+VideoProcessorConfig VisionEncoder::get_video_processor_config() const {
+    return m_video_processor_config;
+}
+
 VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap properties) {
     if (model_type == VLMModelType::MINICPM) {
         return std::make_shared<VisionEncoderMiniCPM>(model_dir, device, properties);
