@@ -75,7 +75,7 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 
   To download the LoRA adapter used in the example below:
   ```sh
-  huggingface-cli download svjack/ltx_video_pixel_early_lora ltx_pixel_pytorch_lora_weights.safetensors
+  hf download svjack/ltx_video_pixel_early_lora ltx_pixel_pytorch_lora_weights.safetensors
   ```
 
 - **Main Feature:** Apply LoRA adapters to a text-to-video pipeline for customized generation.

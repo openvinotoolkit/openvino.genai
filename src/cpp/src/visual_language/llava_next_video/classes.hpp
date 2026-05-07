@@ -77,7 +77,10 @@ public:
         const std::vector<size_t>& videos_sequence,
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) override;
 
-    std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos) override;
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata = {}
+    ) override;
 
     NormalizedPrompt normalize_prompt(
         const std::string& prompt,

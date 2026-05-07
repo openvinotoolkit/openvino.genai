@@ -12,6 +12,7 @@
 
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
+#include "openvino/genai/visual_language/video_metadata.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 #include "py_utils.hpp"
 #include "bindings_utils.hpp"
@@ -64,6 +65,8 @@ auto vlm_generate_kwargs_param = R"(
     Expected parameters list:
     image: ov.Tensor - input image,
     images: list[ov.Tensor] - input images,
+    videos: list[ov.Tensor] - input videos,
+    videos_metadata: list[VideoMetadata] - metadata for each video,
     generation_config: GenerationConfig,
     streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
 
@@ -114,6 +117,19 @@ auto decoded_results_docstring = R"(
     metrics:    performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
 )";
 
+auto video_metadata_docstring = R"(
+    Structure with metadata describing the original video source.
+    Controls video frames sampling before encoding.
+
+    :param fps: Frame rate of the original video in frames per second. 0 means unknown.
+    :type fps: float
+
+    :param frames_indices: Indices of frames to sample from the provided video tensor.
+    When empty (default), model-specific sampling is applied if defined, otherwise all frames are processed.
+    When non-empty, only the specified frames are extracted and model-specific sampling logic is skipped (if any).
+    :type frames_indices: list[int]
+)";
+
 py::object call_vlm_generate(
     ov::genai::VLMPipeline& pipe,
     const std::string& prompt,
@@ -125,10 +141,19 @@ py::object call_vlm_generate(
 ) {
     auto updated_config = pyutils::update_config_from_kwargs(generation_config, kwargs);
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
+    
     ov::genai::VLMDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res= pipe.generate(prompt, images, videos, updated_config, streamer);
+        res = pipe.generate(
+            prompt,
+            ov::genai::images(images),
+            ov::genai::videos(videos),
+            ov::genai::videos_metadata(videos_metadata),
+            ov::genai::generation_config(updated_config),
+            ov::genai::streamer(streamer)
+        );
     }
     return py::cast(res);
 }
@@ -144,12 +169,28 @@ py::object call_vlm_generate_with_chat_history(
 ) {
     auto updated_config = pyutils::update_config_from_kwargs(generation_config, kwargs);
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
+
     ov::genai::VLMDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res = pipe.generate(history, images, videos, updated_config, streamer);
+        res = pipe.generate(
+            history,
+            ov::genai::images(images),
+            ov::genai::videos(videos),
+            ov::genai::videos_metadata(videos_metadata),
+            ov::genai::generation_config(updated_config),
+            ov::genai::streamer(streamer)
+        );
     }
     return py::cast(res);
+}
+
+void init_video_metadata(py::module_& m) {
+    py::class_<ov::genai::VideoMetadata>(m, "VideoMetadata", video_metadata_docstring)
+        .def(py::init<>())
+        .def_readwrite("fps", &ov::genai::VideoMetadata::fps)
+        .def_readwrite("frames_indices", &ov::genai::VideoMetadata::frames_indices);
 }
 
 void init_vlm_pipeline(py::module_& m) {

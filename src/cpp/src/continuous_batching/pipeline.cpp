@@ -10,6 +10,7 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
+#include "continuous_batching/generate_properties.hpp"
 #include "prompt_lookup/prompt_lookup_impl.hpp"
 #include "continuous_batching/timer.hpp"
 #include "speculative_decoding/continuous_batching/eagle3_strategy.hpp"
@@ -18,6 +19,7 @@
 #include "utils.hpp"
 #include "model_desc.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include "visual_language/vision_properties.hpp"
 #include "json_utils.hpp"
 
 using namespace ov::genai;
@@ -38,7 +40,8 @@ float get_load_time(std::chrono::steady_clock::time_point start_time) {
     auto stop_time = std::chrono::steady_clock::now();
     return std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
-}
+
+} // namespace
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::path& models_path,
                                                         const SchedulerConfig& scheduler_config,
@@ -392,6 +395,31 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
     return m_impl->add_request(request_id, prompt, images, videos, sampling_params);
 }
 
+GenerationHandle ContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
+    const std::string& prompt,
+    const ov::AnyMap& properties_map
+) {
+    ov::genai::OptionalGenerationConfig generation_config = utils::get_config_from_map(properties_map);
+    OPENVINO_ASSERT(generation_config.has_value(),
+        "\"generation_config\" property is required in add_request with properties map");
+    
+    const auto vision_properties = extract_vision_properties(properties_map);
+
+    if (!vision_properties.has_value()) {
+        return m_impl->add_request(request_id, prompt, generation_config.value());
+    }
+
+    return m_impl->add_request(
+        request_id,
+        prompt,
+        vision_properties.images.value_or(std::vector<ov::Tensor>{}),
+        vision_properties.videos.value_or(std::vector<ov::Tensor>{}),
+        vision_properties.videos_metadata.value_or(std::vector<VideoMetadata>{}),
+        generation_config.value()
+    );
+}
+
 void ContinuousBatchingPipeline::step() {
     m_impl->step();
 }
@@ -452,6 +480,30 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
 }
 
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
+    const ov::AnyMap& properties_map
+) {
+    const size_t batch_size = prompts.size();
+    const auto properties = extract_cb_generate_properties(properties_map);
+
+    OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
+        "\"generation_config_batches\" property is required in generate with properties map");
+
+    OPENVINO_ASSERT(properties.has_vision_properties(),
+        "Vision properties are required for VLM generate with properties map. "
+        "Use the text-only generate overload for LLM requests.");
+
+    return m_impl->generate(
+        prompts,
+        CBGenerateProperties::resolve_property(properties.images_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.videos_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
+        properties.generation_config_batches.value(),
+        properties.streamer
+    );
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<ChatHistory>& histories,
     const std::vector<std::vector<ov::Tensor>>& images,
     const std::vector<GenerationConfig>& sampling_params,
@@ -468,6 +520,30 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const StreamerVariant& streamer
 ) {
     return m_impl->generate(histories, images, videos, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const ov::AnyMap& properties_map
+) {
+    const size_t batch_size = histories.size();
+    const auto properties = extract_cb_generate_properties(properties_map);
+
+    OPENVINO_ASSERT(properties.generation_config_batches.has_value(),
+        "\"generation_config_batches\" property is required in generate with properties map");
+
+    OPENVINO_ASSERT(properties.has_vision_properties(),
+        "Vision properties are required for VLM generate with properties map. "
+        "Use the text-only generate overload for LLM requests.");
+
+    return m_impl->generate(
+        histories,
+        CBGenerateProperties::resolve_property(properties.images_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.videos_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
+        properties.generation_config_batches.value(),
+        properties.streamer
+    );
 }
 
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {

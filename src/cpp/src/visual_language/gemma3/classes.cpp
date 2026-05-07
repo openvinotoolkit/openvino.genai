@@ -37,7 +37,7 @@ EncodedImage VisionEncoderGemma3::encode(const ov::Tensor& image, const ov::AnyM
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
 
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
     ov::Tensor pixel_values = get_pixel_values_gemma3(image, config);
 
@@ -106,6 +106,8 @@ NormalizedPrompt InputsEmbedderGemma3::normalize_prompt(const std::string& promp
         }
         expanded_tag += end_of_image + "\n\n";
 
+        // fixme: there seems to be an issue with how image_token is replaced. unified_prompt.find needs search_offset.
+        // refer to gemma4 implementation.
         unified_prompt.replace(unified_prompt.find(start_of_image), start_of_image.length(), expanded_tag);
     }
     return {std::move(unified_prompt), std::move(images_sequence), {}};
