@@ -141,7 +141,7 @@ PROMPTS: list[str] = [
 ]
 
 VIDEO_MODEL_IDS: list[str] = []
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     # llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0
     # qwen3_vl fails with error: "Eltwise shape infer input shapes dim index: 1 mismatch", CVS-186059
     VIDEO_MODEL_IDS = [
@@ -159,7 +159,7 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 
 MODEL_IDS: list[str] = []
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     # minicpmv, internvl_chat architectures are deprecating support for transformers >= v5 by optimum-intel
     # gemma3, llava-next, llava fails with error: "Eltwise shape infer input shapes dim index: 1 mismatch", CVS-186059
     # MiniCPM-o-2_6 maximum supported version of transformers is 4.51.3
@@ -1652,7 +1652,7 @@ def conversation_video_requests(
 
 
 TAG_INSERTED_BY_TEMPLATE = []
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     # model fails with error: "Eltwise shape infer input shapes dim index: 1 mismatch", CVS-186059
     TAG_INSERTED_BY_TEMPLATE = [
         ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
@@ -1673,7 +1673,7 @@ else:
 
 
 IMAGE_ID_IGNORANT_MODELS_TO_TAG = [*TAG_INSERTED_BY_TEMPLATE]
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     # internvl_chat architectures are deprecating support for transformers >= v5 by optimum-intel
     IMAGE_ID_IGNORANT_MODELS_TO_TAG += [
         ("optimum-intel-internal-testing/tiny-random-internvl2", "PA"),
@@ -1681,7 +1681,7 @@ if is_transformers_version("<", "5.0"):
 
 
 MODELS_TO_TAG = [*IMAGE_ID_IGNORANT_MODELS_TO_TAG]
-if is_transformers_version("<", "5.0"):
+if is_transformers_version(">=", "5.0"):
     # minicpmv architectures are deprecating support for transformers >= v5 by optimum-intel
     MODELS_TO_TAG += [
         ("optimum-intel-internal-testing/tiny-random-minicpmv-2_6", "PA"),
