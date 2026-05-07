@@ -423,7 +423,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     {
         static ManualTimer timer("sample");
         timer.start();
+        const auto sample_start = std::chrono::steady_clock::now();
         sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled);
+        m_pipeline_metrics.sampling_duration =
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start);
         m_batch_size = sampler_output.num_generated_tokens;
         timer.end();
     }
@@ -570,6 +573,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
                 raw_perf_counters.m_new_token_times.emplace_back(infer_end);
                 raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
+                raw_perf_counters.m_sampling_durations.emplace_back(m_pipeline_metrics.sampling_duration);
             }
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception

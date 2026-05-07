@@ -7,10 +7,24 @@ import sys
 MAX_INPUT_TXT_IN_LOG = 1024
 
 
-def print_metrics(iter_num, iter_data, tms=None, tms_infer=None, warm_up=False,
-                  stable_diffusion=None, tokenization_time=None, batch_size=1,
-                  prompt_idx=-1, whisper=None, text_emb=None, latency_unit=None,
-                  tts=None, cb_metric=None, text_rerank=None):
+def print_metrics(
+    iter_num,
+    iter_data,
+    tms=None,
+    tms_infer=None,
+    warm_up=False,
+    stable_diffusion=None,
+    tokenization_time=None,
+    batch_size=1,
+    prompt_idx=-1,
+    whisper=None,
+    text_emb=None,
+    latency_unit=None,
+    tts=None,
+    cb_metric=None,
+    text_rerank=None,
+    whisper_genai=None,
+):
     iter_str = str(iter_num)
     if warm_up:
         iter_str = 'warm-up'
@@ -83,6 +97,8 @@ def print_metrics(iter_num, iter_data, tms=None, tms_infer=None, warm_up=False,
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx)
     if whisper is not None:
         print_whisper_infer_latency(iter_str, whisper, prompt_idx)
+    if whisper_genai is not None:
+        print_whisper_genai_latency(iter_str, whisper_genai, prompt_idx)
     if tts is not None:
         print_tts_latency(iter_str, tts, prompt_idx)
     output_str = ''
@@ -273,6 +289,26 @@ def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False
 
 def print_whisper_infer_latency(iter_str, whisper, prompt_idx=-1):
     log.debug(f'{whisper.print_whisper_latency(iter_str, prompt_idx)}')
+
+
+def print_whisper_genai_latency(iter_str, metrics, prompt_idx=-1):
+    prefix = f"[{iter_str}][P{prompt_idx}]"
+
+    def _fmt(val):
+        return f"{val:.2f} ms" if val >= 0 else "N/A"
+
+    log.info(
+        f"{prefix} Whisper stage latencies | "
+        f"Tokenization={_fmt(metrics['tokenization_ms'])}, "
+        f"First token: "
+        f"features_extraction={_fmt(metrics['features_extraction_ms'])}, "
+        f"encode={_fmt(metrics['encode_first_ms'])}, "
+        f"decode={_fmt(metrics['decode_first_ms'])} | "
+        f"Second token: decode={_fmt(metrics['decode_second_ms'])} | "
+        f"Other tokens: decode={_fmt(metrics['decode_other_avg_ms'])}/token | "
+        f"Sampling avg={_fmt(metrics['sampling_avg_ms'])}/token | "
+        f"Detokenization={_fmt(metrics['detokenization_ms'])}"
+    )
 
 
 def print_tts_latency(iter_str, tts_hook, prompt_idx=-1):

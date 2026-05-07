@@ -30,6 +30,7 @@ using MicroSeconds = std::chrono::duration<float, std::ratio<1, 1000000>>;
  * @param m_durations Total durations for each generate call in microseconds.
  * @param m_inference_durations Total inference duration for each generate call in microseconds.
  * @param m_grammar_compile_times Time to compile the grammar in microseconds.
+ * @param m_sampling_durations Time spent in the sampler per sampling step in microseconds. One entry per sampler.sample() call, parallel to m_token_infer_durations and m_batch_sizes.
  */
 struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<MicroSeconds> generate_durations;
@@ -44,6 +45,8 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<MicroSeconds> m_inference_durations;
 
     std::vector<MicroSeconds> m_grammar_compile_times;
+
+    std::vector<MicroSeconds> m_sampling_durations;
 };
 
 /**
@@ -132,6 +135,7 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair inference_duration = {0, 0};
     MeanStdPair tokenization_duration = {-1.0f, -1.0f};
     MeanStdPair detokenization_duration = {-1.0f, -1.0f};
+    MeanStdPair sampling_duration = {-1.0f, -1.0f};
 
     size_t num_generated_tokens = 0;
     size_t num_input_tokens = 0;
@@ -151,6 +155,7 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair get_generate_duration();        // in ms
     MeanStdPair get_tokenization_duration();    // in ms
     MeanStdPair get_detokenization_duration();  // in ms
+    MeanStdPair get_sampling_duration();        // in ms
 
     // Flag indicating if raw metrics were evaluated.
     // If false means current mean/std ttft, tpot, etc. are not actual

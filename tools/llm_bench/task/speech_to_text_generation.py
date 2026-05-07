@@ -54,8 +54,38 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         ).tolist()
         tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
         tm_infer_list = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
+
+        wm = perf_metrics.whisper_raw_metrics
+        enc_ms = (
+            [v / 1000 for v in wm.encode_inference_durations]
+            if getattr(wm, "encode_inference_durations", None) is not None
+            else []
+        )
+        dec_ms = (
+            [v / 1000 for v in wm.decode_inference_durations]
+            if getattr(wm, "decode_inference_durations", None) is not None
+            else []
+        )
+        smp_ms = (
+            [v / 1000 for v in perf_metrics.raw_metrics.sampling_durations]
+            if getattr(perf_metrics.raw_metrics, "sampling_durations", None) is not None
+            else []
+        )
+        whisper_genai_metrics = {
+            "tokenization_ms": perf_metrics.get_tokenization_duration().mean,
+            "features_extraction_ms": perf_metrics.get_features_extraction_duration().mean
+            if getattr(perf_metrics, "get_features_extraction_duration", None) is not None
+            else -1,
+            "encode_first_ms": enc_ms[0] if enc_ms else -1,
+            "decode_first_ms": dec_ms[0] if dec_ms else -1,
+            "decode_second_ms": dec_ms[1] if len(dec_ms) > 1 else -1,
+            "decode_other_avg_ms": (sum(dec_ms[2:]) / len(dec_ms[2:])) if len(dec_ms) > 2 else -1,
+            "sampling_avg_ms": (sum(smp_ms) / len(smp_ms)) if smp_ms else -1,
+            "detokenization_ms": perf_metrics.get_detokenization_duration().mean,
+        }
         result_text = result_text.texts[0]
     else:
+        whisper_genai_metrics = None
         additional_args = model_utils.setup_gen_config_use_custom_args()
         start = time.perf_counter()
         result_text = pipe(
@@ -99,7 +129,8 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         tms_infer=tm_infer_list,
         warm_up=(num == 0),
         prompt_idx=speech_id,
-        whisper=whisper_hook
+        whisper=whisper_hook,
+        whisper_genai=whisper_genai_metrics,
     )
     if num > 0:
         prev_md5 = md5_list[num - 1][speech_id]
