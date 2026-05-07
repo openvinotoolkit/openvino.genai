@@ -144,13 +144,20 @@ std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_p
 extern const std::string PER_MODEL_PROPERTIES;
 
 /// @brief Resolve properties for @p model_role by merging two layers (priority low to high):
-///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES)
-///        2. PER_MODEL_PROPERTIES[model_role]
+///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES
+///           and DEVICE_PROPERTIES if device is specified)
+///        2. DEVICE_PROPERTIES[device] (only when @p device is non-empty)
+///        3. PER_MODEL_PROPERTIES[model_role]
+///        MODEL_PROPERTIES wins over DEVICE_PROPERTIES wins
+///        over globals.
 /// @param properties The main properties map. Not modified.
 /// @param model_role Sub-model role (e.g. "vision_embeddings").
+/// @param device Target device for the compile site. When empty,
+///        DEVICE_PROPERTIES is forwarded as-is (used at read_model sites
+///        which are not bound to a specific device).
 /// @return A new ov::AnyMap with the merged result. The input map is left
 ///         untouched so callers may continue using the meta keys.
-ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model_role);
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device = "");
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 
@@ -336,6 +343,15 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
 }
 
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
+
+/// @brief Returns the full set of sub-model role names recognised by
+/// VLMPipeline for `MODEL_PROPERTIES` entries.
+const std::vector<std::string>& get_known_vlm_model_roles();
+
+/// @brief Throws if `properties[MODEL_PROPERTIES]` contains a role name
+/// not in `known_roles`. No-op if the key is absent.
+void validate_vlm_model_properties(const ov::AnyMap& properties,
+                                   const std::vector<std::string>& known_roles);
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
 

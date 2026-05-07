@@ -45,11 +45,12 @@ EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
                                  const std::string& device,
                                  const ov::AnyMap& properties) {
     ov::Core core = utils::singleton_core();
-    std::shared_ptr<ov::Model> m_model = core.read_model(model_dir / "openvino_text_embeddings_model.xml", {}, properties);
+    const auto plugin_props = utils::get_model_properties(properties, "text_embeddings", device);
+    std::shared_ptr<ov::Model> m_model = core.read_model(model_dir / "openvino_text_embeddings_model.xml", {}, plugin_props);
     // apply embedding postprocessing step by merging them into the model
     merge_postprocess(m_model, scale_emb);
 
-    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
+    ov::CompiledModel compiled_model = core.compile_model(m_model, device, plugin_props);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings model");
     m_embeddings_requests_queue = init(compiled_model);
 }
@@ -64,7 +65,8 @@ EmbeddingsModel::EmbeddingsModel(const std::string& model,
     // apply embedding postprocessing step by merging them into the model
     merge_postprocess(m_model, scale_emb);
 
-    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
+    ov::CompiledModel compiled_model = core.compile_model(
+        m_model, device, utils::get_model_properties(properties, "text_embeddings", device));
     m_embeddings_requests_queue = init(compiled_model);
 }
 

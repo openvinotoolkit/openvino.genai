@@ -637,7 +637,9 @@ VisionEncoderPhi4MM::VisionEncoderPhi4MM(
 VisionEncoder(model_dir, device, properties),
 m_image_preprocessors{create_image_preprocessors(device)},
 m_separator_inserters{create_separator_inserters(device)} {
-    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
+    auto compiled_model = utils::singleton_core().compile_model(
+        model_dir / "openvino_vision_projection_model.xml", device,
+        utils::get_model_properties(properties, "vision_projection", device));
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model]() -> ov::InferRequest {
@@ -657,7 +659,9 @@ m_image_preprocessors{create_image_preprocessors(device)},
 m_separator_inserters{create_separator_inserters(device)} {
     const auto& vision_projection_model = utils::get_model_weights_pair(models_map, "vision_projection").first;
     const auto& vision_projection_weights = utils::get_model_weights_pair(models_map, "vision_projection").second;
-    auto compiled_model = utils::singleton_core().compile_model(vision_projection_model, vision_projection_weights, device, properties);
+    auto compiled_model = utils::singleton_core().compile_model(
+        vision_projection_model, vision_projection_weights, device,
+        utils::get_model_properties(properties, "vision_projection", device));
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model]() -> ov::InferRequest {
