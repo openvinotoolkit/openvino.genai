@@ -225,6 +225,64 @@ std::string reorder_syllabic_marker(const std::string &text) {
   return out;
 }
 
+std::string strip_language_switch_flags(std::string text) {
+  auto is_ascii_alpha = [](char c) {
+    const unsigned char uc = static_cast<unsigned char>(c);
+    return (uc >= 'a' && uc <= 'z') || (uc >= 'A' && uc <= 'Z');
+  };
+
+  auto is_switch_code = [&](const std::string& token) {
+    // Match espeak language-switch markers like (en), (fr), (pt-br), (en-us).
+    // Keep conservative constraints to avoid stripping arbitrary parenthesized text.
+    if (token.size() < 2 || token.size() > 12) {
+      return false;
+    }
+
+    std::size_t alpha_count = 0;
+    for (char c : token) {
+      if (is_ascii_alpha(c)) {
+        ++alpha_count;
+        continue;
+      }
+      if (c == '-') {
+        continue;
+      }
+      return false;
+    }
+    return alpha_count >= 2;
+  };
+
+  std::string out;
+  out.reserve(text.size());
+
+  std::size_t i = 0;
+  while (i < text.size()) {
+    if (text[i] != '(') {
+      out.push_back(text[i]);
+      ++i;
+      continue;
+    }
+
+    const std::size_t close_pos = text.find(')', i + 1);
+    if (close_pos == std::string::npos) {
+      out.push_back(text[i]);
+      ++i;
+      continue;
+    }
+
+    const std::string token = text.substr(i + 1, close_pos - i - 1);
+    if (is_switch_code(token)) {
+      i = close_pos + 1;
+      continue;
+    }
+
+    out.append(text, i, close_pos - i + 1);
+    i = close_pos + 1;
+  }
+
+  return out;
+}
+
 std::string normalize_espeak_to_misaki(std::string ps, bool british, const std::string &version) {
   static const std::vector<std::pair<std::string, std::string>> kE2M = {
       {as_utf8(u8"ʔˌn̩"), as_utf8(u8"ʔn")}, {as_utf8(u8"ʔn̩"), as_utf8(u8"ʔn")},
@@ -334,6 +392,9 @@ std::string normalize_espeak_generic_to_misaki(std::string ps, const std::string
     replace_all(ps, "-", "");
   }
 
+  // Python parity: EspeakBackend(..., language_switch='remove-flags').
+  ps = strip_language_switch_flags(ps);
+
   replace_all(ps, as_utf8(u8"«"), "(");
   replace_all(ps, as_utf8(u8"»"), ")");
   return trim(ps);
@@ -417,28 +478,106 @@ std::optional<std::string> phonemize_generic_with_espeak_api(EspeakApi &api,
     return candidates;
   };
 
-  replace_all(text, as_utf8(u8"«"), as_utf8(u8"“"));
-  replace_all(text, as_utf8(u8"»"), as_utf8(u8"”"));
-  replace_all(text, "(", as_utf8(u8"«"));
-  replace_all(text, ")", as_utf8(u8"»"));
-
-  std::optional<std::string> raw;
-  for (const auto& voice_candidate : build_voice_candidates(language)) {
-    raw = raw_espeak_phonemize(api, text, voice_candidate);
-    if (raw.has_value()) {
-      break;
+  auto is_preserved_punctuation = [](char c) {
+    switch (c) {
+    case '.':
+    case ',':
+    case '!':
+    case '?':
+    case ':':
+    case ';':
+    case '(':
+    case ')':
+    case '[':
+    case ']':
+    case '{':
+    case '}':
+      return true;
+    default:
+      return false;
     }
+  };
+
+  auto count_leading_spaces = [](const std::string& value) {
+    std::size_t count = 0;
+    while (count < value.size() && std::isspace(static_cast<unsigned char>(value[count]))) {
+      ++count;
+    }
+    return count;
+  };
+
+  auto count_trailing_spaces = [](const std::string& value) {
+    std::size_t count = 0;
+    while (count < value.size() && std::isspace(static_cast<unsigned char>(value[value.size() - 1 - count]))) {
+      ++count;
+    }
+    return count;
+  };
+
+  std::vector<std::string> chunks;
+  chunks.reserve(text.size());
+
+  std::string current;
+  for (char c : text) {
+    if (is_preserved_punctuation(c)) {
+      if (!current.empty()) {
+        chunks.push_back(current);
+        current.clear();
+      }
+      chunks.push_back(std::string(1, c));
+      continue;
+    }
+    current.push_back(c);
+  }
+  if (!current.empty()) {
+    chunks.push_back(current);
   }
 
-  if (!raw.has_value()) {
-    return std::nullopt;
+  std::string out;
+  for (const auto& chunk : chunks) {
+    if (chunk.size() == 1 && is_preserved_punctuation(chunk[0])) {
+      out += chunk;
+      continue;
+    }
+
+    const std::size_t leading_spaces = count_leading_spaces(chunk);
+    const std::size_t trailing_spaces = count_trailing_spaces(chunk);
+    const std::size_t core_end = chunk.size() - trailing_spaces;
+    const std::string core =
+        leading_spaces < core_end ? chunk.substr(leading_spaces, core_end - leading_spaces) : std::string{};
+
+    if (core.empty()) {
+      out += chunk;
+      continue;
+    }
+
+    std::optional<std::string> raw;
+    for (const auto& voice_candidate : build_voice_candidates(language)) {
+      raw = raw_espeak_phonemize(api, core, voice_candidate);
+      if (raw.has_value()) {
+        break;
+      }
+    }
+
+    if (!raw.has_value()) {
+      return std::nullopt;
+    }
+
+    const auto normalized = normalize_espeak_generic_to_misaki(*raw, version);
+    if (normalized.empty()) {
+      return std::nullopt;
+    }
+
+    out.append(leading_spaces, ' ');
+    out += normalized;
+    out.append(trailing_spaces, ' ');
   }
 
-  const auto normalized = normalize_espeak_generic_to_misaki(*raw, version);
-  if (normalized.empty()) {
+  const auto normalized_out = trim(out);
+  if (normalized_out.empty()) {
     return std::nullopt;
   }
-  return normalized;
+  return normalized_out;
 }
 
 } // namespace
