@@ -997,6 +997,7 @@ jobs:
         env:
           TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
+          OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/Release/openvino_tokenizers.dll"
 
       - name: Test C++ Tools
         run: |
