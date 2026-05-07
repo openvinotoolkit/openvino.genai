@@ -1071,6 +1071,12 @@ class GenerationConfig:
         top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
         do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
         num_return_sequences: the number of sequences to generate from a single prompt.
+    
+        Tree search parameters:
+        branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+        tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+        num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
+                                            verification. Total tree nodes = num_assistant_tokens + 1 (including root).
     """
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
     apply_chat_template: bool
@@ -1098,6 +1104,8 @@ class GenerationConfig:
         ...
     def is_prompt_lookup(self) -> bool:
         ...
+    def is_tree_search(self) -> bool:
+        ...
     def set_eos_token_id(self, tokenizer_eos_token_id: typing.SupportsInt) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
@@ -1109,6 +1117,14 @@ class GenerationConfig:
         ...
     @assistant_confidence_threshold.setter
     def assistant_confidence_threshold(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def branching_factor(self) -> int:
+        """
+        Number of branches (top-k) at each level of the candidate tree
+        """
+    @branching_factor.setter
+    def branching_factor(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def diversity_penalty(self) -> float:
@@ -1265,6 +1281,14 @@ class GenerationConfig:
         ...
     @top_p.setter
     def top_p(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def tree_depth(self) -> int:
+        """
+        Lookahead depth of the candidate tree
+        """
+    @tree_depth.setter
+    def tree_depth(self, arg0: typing.SupportsInt) -> None:
         ...
 class GenerationFinishReason:
     """
@@ -1966,6 +1990,12 @@ class LLMPipeline:
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
+        
+            Tree search parameters:
+            branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+            tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+            num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
+                                                verification. Total tree nodes = num_assistant_tokens + 1 (including root).
         """
     @typing.overload
     def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, device: str, config: collections.abc.Mapping[str, typing.Any] = {}, **kwargs) -> None:
@@ -2063,6 +2093,12 @@ class LLMPipeline:
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
+        
+            Tree search parameters:
+            branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+            tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+            num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
+                                                verification. Total tree nodes = num_assistant_tokens + 1 (including root).
         """
     def get_generation_config(self) -> GenerationConfig:
         ...
