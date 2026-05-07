@@ -160,7 +160,7 @@ export const VLM_MODELS: VLMModelType[] = [
         ],
       },
       {
-        name: 'Fara',
+        name: 'Fara-7B',
         links: [
           'https://huggingface.co/microsoft/Fara-7B',
         ],
