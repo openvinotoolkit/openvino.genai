@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import torch
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -12,8 +13,8 @@ from typing import Any, Union, List, TypedDict, Optional
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
 from .whowhat_metrics import TextSimilarity
-from .utils import get_ignore_parameters_flag, load_image
-from .visual_utils import MODEL_TYPE_TO_CLS_MAPPING, fix_phi3_v_eos_token_id
+from .utils import get_ignore_parameters_flag, load_image, fix_phi3_v_eos_token_id
+from .inputs_preprocessors import MODEL_TYPE_TO_CLS_MAPPING
 
 
 class VisualTextChatInput(TypedDict):
@@ -187,7 +188,14 @@ class ChatVisualTextEvaluator(TextEvaluator):
                     # The output tuple has format (<list of decoded outputs without question/prompt>, <GenerateDecoderOnlyOutput>)
                     answer_text = tokens[0][0]
                 else:
-                    answer_tokens = tokens[:, preprocess_inputs["input_ids"].shape[-1] :]
+                    # Some models includes the input_ids in the generated tokens, some - not, so we need to check and remove them if needed
+                    inputs_num = preprocess_inputs["input_ids"].shape[-1]
+                    if tokens.shape[-1] > inputs_num and torch.equal(
+                        tokens[:, :inputs_num], preprocess_inputs["input_ids"]
+                    ):
+                        answer_tokens = tokens[:, preprocess_inputs["input_ids"].shape[-1] :]
+                    else:
+                        answer_tokens = tokens
                     answer_text = tokenizer.batch_decode(answer_tokens, skip_special_tokens=True)[0]
 
                 inputs_processor.update_chat_history_with_answer(answer_text)

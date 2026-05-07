@@ -11,8 +11,13 @@ from typing import Literal, Any, Union
 
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
-from .utils import get_ignore_parameters_flag, prepare_default_data_image, prepare_default_data_video
-from .visual_utils import fix_phi3_v_eos_token_id, MODEL_TYPE_TO_CLS_MAPPING
+from .utils import (
+    get_ignore_parameters_flag,
+    prepare_default_data_image,
+    prepare_default_data_video,
+    fix_phi3_v_eos_token_id,
+)
+from .inputs_preprocessors import MODEL_TYPE_TO_CLS_MAPPING
 
 DEF_VIDEO_FRAMES_AMOUNT = 10
 
