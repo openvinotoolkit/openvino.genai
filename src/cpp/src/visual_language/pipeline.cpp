@@ -422,7 +422,7 @@ public:
                 // using here images.size() instead of encoded_images.size() since
                 // encoded_images could be overriden when m_use_full_chat_history is true
                 m_image_id += images.size();
-                m_video_id += encoded_videos.size();
+                m_video_id += videos.size();
                 // Tail of chat template is missing in KV cache.
                 // Find the tail to concatenate it with the next input prompt.
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
@@ -431,7 +431,7 @@ public:
                 if (m_use_full_chat_history) {
                     OPENVINO_ASSERT(images.size() <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
                     m_encoded_images.resize(m_encoded_images.size() - images.size());
-                    
+
                     OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
                     m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
 
