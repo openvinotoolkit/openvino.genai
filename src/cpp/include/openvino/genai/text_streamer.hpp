@@ -27,22 +27,26 @@ public:
 
     void end() override;
 
+    /// @brief Construct with a string-only callback (tokens are not exposed)
     TextStreamer(const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string)> callback, const ov::AnyMap& detokenization_params = {});
+
+    /// @brief Construct with a tokens-aware callback receiving both the decoded text chunk and the token IDs that produced it
+    TextStreamer(const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string, std::vector<int64_t>)> callback, const ov::AnyMap& detokenization_params = {});
 
 protected:
     Tokenizer m_tokenizer;
     std::vector<int64_t> m_tokens_cache;
     std::vector<int64_t> m_decoded_lengths;
     size_t m_printed_len = 0;
+    size_t m_printed_token_idx = 0;
     ov::AnyMap m_additional_detokenization_params;
 
     StreamingStatus set_streaming_status(CallbackTypeVariant callback_status);
 
-    std::function<CallbackTypeVariant(std::string)> m_subword_callback = [](std::string words) -> bool {
-        return false;
-    };
+    std::function<CallbackTypeVariant(std::string, std::vector<int64_t>)> m_subword_callback =
+        [](std::string, std::vector<int64_t>) -> bool { return false; };
 
-    StreamingStatus run_callback_if_needed(const std::string& text);
+    StreamingStatus run_callback_if_needed(const std::string& text, const std::vector<int64_t>& tokens);
 
     void compute_decoded_length_for_position(size_t cache_position);
 };

@@ -113,6 +113,12 @@ void init_streamers(py::module_& m) {
         py::arg("tokenizer"),
         py::arg("callback"),
         py::arg("detokenization_params") = ov::AnyMap({}))
+        .def(py::init([](const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string, std::vector<int64_t>)> callback, const std::map<std::string, py::object>& detokenization_params) {
+            return std::make_shared<TextStreamer>(tokenizer, callback, pyutils::properties_to_any_map(detokenization_params));
+        }),
+        py::arg("tokenizer"),
+        py::arg("callback"),
+        py::arg("detokenization_params") = ov::AnyMap({}))
 
         .def("write",
             [](TextStreamer& self, std::variant<int64_t, std::vector<int64_t>> token) {
