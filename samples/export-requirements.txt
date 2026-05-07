@@ -4,7 +4,7 @@ openvino-tokenizers[transformers]~=2026.2.0.0.dev
 https://github.com/huggingface/optimum-intel/archive/f50a0b326df82d4b05c461a9184a97f616bfa63a.tar.gz#egg=optimum-intel
 einops==0.8.2  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
-diffusers==0.37.1 # For image generation pipelines
+diffusers==0.38.0 # For image generation pipelines
 timm==1.0.26  # For exporting InternVL2
 # torchvision for visual language models
 torchvision==0.26.0
