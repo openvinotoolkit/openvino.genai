@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/qwen3_vl/classes.hpp"
+#include <algorithm>
+#include <numeric>
 #include "utils.hpp"
 #include "logger.hpp"
 
@@ -548,6 +550,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
     ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
     int64_t vision_start_token_id = m_vision_token_ids.at("vision_start");
+    int64_t vision_end_token_id = m_vision_token_ids.at("vision_end");
     int64_t image_pad_token_id = m_vision_token_ids.at("image_pad");
     int64_t video_pad_token_id = m_vision_token_ids.at("video_pad");
 
@@ -587,6 +590,50 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
     if (recalculate_merged_embeddings) {
         std::tie(m_merged_video_embeddings, m_merged_image_embeddings) = 
             run_video_image_embeddings_merger(images, images_sequence, videos, videos_sequence);
+    }
+
+    // CDPruner: prune video and image vision tokens together. The pruning pipeline
+    // handles prompt-order gather/scatter and merger-order deepstack pruning internally.
+    if ((!images.empty() || !videos.empty()) && is_cdpruner_active()) {
+        std::vector<std::array<size_t, 3>> video_grids_per_frame;
+        for (size_t vid_id : videos_sequence) {
+            const auto& [gt, gh, gw] = videos_grid_thw[vid_id];
+            for (size_t f = 0; f < gt; ++f) {
+                video_grids_per_frame.push_back({1, gh, gw});
+            }
+        }
+        std::vector<std::array<size_t, 3>> image_grids;
+        image_grids.reserve(images_sequence.size());
+        for (size_t img_id : images_sequence) {
+            image_grids.push_back(images_grid_thw[img_id]);
+        }
+
+        auto deepstack_it = m_lm_extra_inputs.find("deepstack_visual_embeds");
+        const bool has_deepstack = deepstack_it != m_lm_extra_inputs.end() && deepstack_it->second;
+        ov::Tensor* deepstack_ptr = has_deepstack ? &deepstack_it->second : nullptr;
+
+        PruningContext pruning_context{input_ids,
+                                       text_embeds,
+                                       m_merged_image_embeddings,
+                                       m_merged_video_embeddings,
+                                       std::move(image_grids),
+                                       std::move(video_grids_per_frame),
+                                       image_pad_token_id,
+                                       video_pad_token_id,
+                                       vision_start_token_id,
+                                       vision_end_token_id,
+                                       m_vision_encoder->get_processor_config().merge_size,
+                                       deepstack_ptr};
+
+        if (auto pruning_result = execute_pruning_pipeline(pruning_context)) {
+            input_ids = pruning_result->pruned_input_ids;
+            text_embeds = pruning_result->pruned_text_embeds;
+            if (pruning_result->updated_rope_delta.has_value()) {
+                m_rope_delta = pruning_result->updated_rope_delta.value();
+            }
+            m_merged_image_embeddings = std::move(pruning_result->pruned_image_embeddings);
+            m_merged_video_embeddings = std::move(pruning_result->pruned_video_embeddings);
+        }
     }
 
     if (has_lm_extra_input("visual_pos_masks")) {
