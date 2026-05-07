@@ -708,7 +708,9 @@ def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id,
         scheduler_config=scheduler_config_ref,
     )
 
-    scheduler_config_target = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": max_num_batched_tokens})
+    scheduler_config_target = dict_to_scheduler_config(
+        {"dynamic_split_fuse": True, "max_num_batched_tokens": max_num_batched_tokens}
+    )
     ov_pipe_target = create_ov_pipeline(
         main_model_path,
         pipeline_type=PipelineType.SPECULATIVE_DECODING,
@@ -727,6 +729,7 @@ def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id,
     total_iteration_number_main = len(extended_perf_metrics_gen.main_model_metrics.raw_metrics.m_durations)
     num_generated_tokens_main = extended_perf_metrics_gen.main_model_metrics.get_num_generated_tokens()
     assert total_iteration_number_main > 0 and total_iteration_number_main < num_generated_tokens_main
+
 
 dynamic_split_fuse_prompt_cases = [
     (["Why is the Sun yellow?"], 5),
