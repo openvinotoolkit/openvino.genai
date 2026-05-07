@@ -383,10 +383,12 @@ class AutoencoderKLLTXVideo:
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
-    def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+    def decode(self, latent: openvino._pyopenvino.Tensor, decode_timestep: typing.SupportsFloat | None = None, decode_noise_scale: typing.SupportsFloat | None = None) -> openvino._pyopenvino.Tensor:
         """
                         Decodes latent video to pixel space.
                         latent (ov.Tensor): Latent video tensor.
+                        decode_timestep (float | None): Decode-time timestep for timestep-conditioned decoder exports.
+                        decode_noise_scale (float | None): Optional decode-time conditioning noise scale for decoder exports that support it.
                         Returns: Decoded video tensor.
         """
     def get_config(self) -> AutoencoderKLLTXVideo.Config:
@@ -4502,6 +4504,18 @@ class VideoGenerationConfig:
     negative_prompt: str | None
     taylorseer_config: openvino_genai.py_openvino_genai.TaylorSeerCacheConfig | None
     def __init__(self) -> None:
+        ...
+    @property
+    def decode_noise_scale(self) -> float | None:
+        ...
+    @decode_noise_scale.setter
+    def decode_noise_scale(self, arg0: typing.SupportsFloat | None) -> None:
+        ...
+    @property
+    def decode_timestep(self) -> float | None:
+        ...
+    @decode_timestep.setter
+    def decode_timestep(self, arg0: typing.SupportsFloat | None) -> None:
         ...
     @property
     def frame_rate(self) -> float | None:

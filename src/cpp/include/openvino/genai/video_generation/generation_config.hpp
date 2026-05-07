@@ -57,6 +57,16 @@ struct VideoGenerationConfig {
     /// non-infinity makes the most sense. NaN corresponds to model default which is 25.0f for LTX-Video.
     std::optional<float> frame_rate = std::nullopt;
 
+    /// Decode-time timestep for timestep-conditioned VAE decoders.
+    /// std::nullopt uses pipeline default which is 0.0f for LTX-Video pipeline runtime.
+    /// This value is forwarded to VAE only when VAE config enables timestep_conditioning.
+    std::optional<float> decode_timestep = std::nullopt;
+
+    /// Decode-time conditioning noise scale for timestep-conditioned VAE decoders.
+    /// std::nullopt uses pipeline default which is 0.0f for LTX-Video pipeline runtime.
+    /// This value is forwarded to VAE only when VAE config enables timestep_conditioning.
+    std::optional<float> decode_noise_scale = std::nullopt;
+
     /**
      * TaylorSeer configuration for caching transformer outputs.
      * When set, enables TaylorSeer Lite acceleration which skips some transformer inferences
@@ -91,6 +101,11 @@ static constexpr ov::Property<float> guidance_rescale{"guidance_rescale"};
 static constexpr ov::Property<size_t> num_frames{"num_frames"};
 /// Video frame rate.
 static constexpr ov::Property<float> frame_rate{"frame_rate"};
+
+/// Decode-time timestep for timestep-conditioned VAE decoders.
+static constexpr ov::Property<float> decode_timestep{"decode_timestep"};
+/// Decode-time conditioning noise scale for timestep-conditioned VAE decoders.
+static constexpr ov::Property<float> decode_noise_scale{"decode_noise_scale"};
 
 /**
  * Function to pass 'VideoGenerationConfig' as property to 'generate()' call.
