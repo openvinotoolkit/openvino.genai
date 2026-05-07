@@ -85,7 +85,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium-st
+    runs-on: aks-linux-medium
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -129,7 +129,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb-st
+    runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -258,7 +258,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb-st
+    runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -319,7 +319,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-8-cores-16gb-st
+    runs-on: aks-linux-8-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -391,7 +391,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium-st
+    runs-on: aks-linux-medium
     container:
       image: openvinogithubactions.azurecr.io/library/python:3.12-slim
       volumes:
@@ -445,7 +445,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb-st
+    runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -519,7 +519,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb-st
+    runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -710,7 +710,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-8-cores-32gb-st
+    runs-on: aks-linux-8-cores-32gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -771,12 +771,12 @@ jobs:
             marker: 'llm and (transformers_dependent or transformers_lower_v5)'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
-            runner: 'aks-linux-4-cores-16gb-st'
+            runner: 'aks-linux-4-cores-16gb'
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Whisper_samples.test }}
-            runner: 'aks-linux-4-cores-16gb-st'
+            runner: 'aks-linux-4-cores-16gb'
           - name: 'dreamlike_anime_1_0'
             marker: 'dreamlike_anime_1_0'
             cmd: 'tests/python_tests/samples'
@@ -786,7 +786,7 @@ jobs:
             marker: 'LCM_Dreamshaper_v7_int8_ov'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
-            runner: 'aks-linux-4-cores-16gb-st'
+            runner: 'aks-linux-4-cores-16gb'
           # Test hangs on Linux. Ticket: 181387
           # - name: 'VLM'
           #   marker: 'vlm'
@@ -796,17 +796,17 @@ jobs:
           - name: 'Rag'
             marker: 'rag'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-4-cores-16gb-st'
+            runner: 'aks-linux-4-cores-16gb'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
           - name: 'Speech generation'
             marker: 'speech_generation'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-4-cores-16gb-st'
+            runner: 'aks-linux-4-cores-16gb'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
           - name: 'Eagle3 decoding'
             marker: 'eagle3_decoding'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-4-cores-16gb-st'
+            runner: 'aks-linux-4-cores-16gb'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
 
     timeout-minutes: 120
@@ -913,7 +913,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb-st
+    runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -1009,7 +1009,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb-st
+    runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -1090,7 +1090,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb-st
+    runs-on: aks-linux-4-cores-16gb
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
