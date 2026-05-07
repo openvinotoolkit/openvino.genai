@@ -79,9 +79,16 @@ inline void log_message(ov::log::Level level, const char* file, int line, const 
 
 }  // namespace detail
 
-#define GENAI_DEBUG(...) ::ov::genai::detail::log_message(ov::log::Level::DEBUG, __FILE__, __LINE__, __VA_ARGS__)
-#define GENAI_INFO(...)  ::ov::genai::detail::log_message(ov::log::Level::INFO, __FILE__, __LINE__, __VA_ARGS__)
-#define GENAI_WARN(...)  ::ov::genai::detail::log_message(ov::log::Level::WARNING, __FILE__, __LINE__, __VA_ARGS__)
-#define GENAI_ERR(...)   ::ov::genai::detail::log_message(ov::log::Level::ERR, __FILE__, __LINE__, __VA_ARGS__)
+#define GENAI_CHECK_LOG_LEVEL(LOG_LEVEL, ...)                                               \
+    do {                                                                                    \
+        if (::ov::genai::Logger::get_instance().should_log(LOG_LEVEL)) {                    \
+            ::ov::genai::detail::log_message(LOG_LEVEL, __FILE__, __LINE__, __VA_ARGS__);   \
+        }                                                                                   \
+    } while (0)
+
+#define GENAI_DEBUG(...) GENAI_CHECK_LOG_LEVEL(ov::log::Level::DEBUG, __VA_ARGS__)
+#define GENAI_INFO(...)  GENAI_CHECK_LOG_LEVEL(ov::log::Level::INFO, __VA_ARGS__)
+#define GENAI_WARN(...)  GENAI_CHECK_LOG_LEVEL(ov::log::Level::WARNING, __VA_ARGS__)
+#define GENAI_ERR(...)   GENAI_CHECK_LOG_LEVEL(ov::log::Level::ERR, __VA_ARGS__)
 
 }  // namespace ov::genai
