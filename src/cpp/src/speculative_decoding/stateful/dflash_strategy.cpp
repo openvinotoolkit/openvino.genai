@@ -493,6 +493,8 @@ EncodedResults StatefulDFlashLLMPipeline::generate_tokens(const EncodedInputs& i
                     "DFlash stateful POC supports batch size 1 only.");
     m_prompt_length = input_ids.get_shape()[1];
 
+    // Stage 1 DFlash keeps full-context target hidden states and starts each generate() from a clean KV state.
+    // Incremental chat KV reuse requires the planned DFlash KV-cache path.
     m_target->reset_state();
     m_draft->reset_state();
     m_hidden_state_provider.reset();
