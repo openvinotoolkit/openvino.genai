@@ -361,29 +361,47 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
 
-// Merge global properties with per-role overrides. Type mismatches fall out
-// of .as<ov::AnyMap>() as a throw; empty or missing maps are treated as
-// "no overrides" rather than errors.
-ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model_role) {
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
     ov::AnyMap result;
     for (const auto& property : properties) {
-        if (property.first != PER_MODEL_PROPERTIES) {
-            result.insert(property);
+        // Ignore MODEL_PROPERTIES as they are used only within this function
+        // to construct final properties map for a given model.
+        if (property.first == PER_MODEL_PROPERTIES) {
+            continue;
+        }
+        // When a concrete device is known, DEVICE_PROPERTIES[device] is
+        // flattened below so it must not be re-forwarded to the plugin
+        // (otherwise the plugin would re-overlay it on top of MODEL_PROPERTIES).
+        if (!device.empty() && property.first == ov::device::properties.name()) {
+            continue;
+        }
+        result.insert(property);
+    }
+
+    // Layer 2: DEVICE_PROPERTIES[device] over globals.
+    if (!device.empty()) {
+        auto dp_it = properties.find(ov::device::properties.name());
+        if (dp_it != properties.end()) {
+            const auto& dp_map = dp_it->second.as<ov::AnyMap>();
+            auto dev_it = dp_map.find(device);
+            if (dev_it != dp_map.end()) {
+                for (const auto& property : dev_it->second.as<ov::AnyMap>()) {
+                    result.insert_or_assign(property.first, property.second);
+                }
+            }
         }
     }
 
+    // Layer 3: MODEL_PROPERTIES[role] wins over everything else.
     auto it = properties.find(PER_MODEL_PROPERTIES);
     if (it == properties.end()) {
         return result;
     }
-
     const auto& model_map = it->second.as<ov::AnyMap>();
     auto role_it = model_map.find(model_role);
     if (role_it == model_map.end()) {
         return result;
     }
-
-    // Role-specific values win over globals.
     for (const auto& property : role_it->second.as<ov::AnyMap>()) {
         result.insert_or_assign(property.first, property.second);
     }
@@ -788,6 +806,39 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
         return it->second;
     }
     OPENVINO_THROW("Model with key '", key, "' not found in models map.");
+}
+
+const std::vector<std::string>& get_known_vlm_model_roles() {
+    static const std::vector<std::string> roles{
+        "vision_embeddings",
+        "text_embeddings",
+        "resampler",
+        "vision_embeddings_merger",
+        "vision_embeddings_pos",
+        "vision_projection",
+        "multi_modal_projector",
+        "language_model",
+    };
+    return roles;
+}
+
+void validate_vlm_model_properties(const ov::AnyMap& properties,
+                                   const std::vector<std::string>& known_roles) {
+    const auto it = properties.find(PER_MODEL_PROPERTIES);
+    if (it == properties.end()) {
+        return;
+    }
+    const auto& per_role = it->second.as<ov::AnyMap>();
+    for (const auto& [role, _] : per_role) {
+        OPENVINO_ASSERT(
+            std::find(known_roles.begin(), known_roles.end(), role) != known_roles.end(),
+            "Unknown sub-model role '", role, "' in MODEL_PROPERTIES. Known roles: ",
+            [&known_roles]() {
+                std::string s;
+                for (const auto& r : known_roles) { s += (s.empty() ? "" : ", "); s += r; }
+                return s;
+            }());
+    }
 }
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config) {
