@@ -26,42 +26,55 @@ def streamer(subword: str) -> bool:
     # "return None" will be treated the same as "return openvino_genai.StreamingStatus.RUNNING".
 
 
-def read_video(path: str, num_frames: int = 8) -> Tensor:
+def read_video(path: str, num_frames: int = 8) -> tuple[Tensor, openvino_genai.VideoMetadata]:
     """
 
     Args:
         path: The path to the video.
-        num_frames: Number of frames sampled from the video.
+        num_frames: Number of frames used to calculate frames indices for further sampling.
 
-    Returns: the ov.Tensor containing the video.
+    Returns: tuple of Tensor containing original video and corresponding VideoMetadata.
 
     """
     cap = cv2.VideoCapture(path)
 
-    frames = []
     total_num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     indices = np.arange(0, total_num_frames, total_num_frames / num_frames).astype(int)
 
+    video_metadata = openvino_genai.VideoMetadata()
+    video_metadata.fps = cap.get(cv2.CAP_PROP_FPS)
+    # Passing video metadata with frame indices defined enables sampling based on provided indices within the pipeline,
+    # and any model-specific sampling logic will be skipped (if defined).
+    # Leave frames_indices empty to apply model-specific sampling (e.g. for Qwen3-VL).
+    video_metadata.frames_indices = indices.tolist()
+
+    frames = []
     idx = 0
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-        if idx in indices:
-            frames.append(np.array(frame))
+        frames.append(np.array(frame))
         idx += 1
 
     cap.release()
     assert idx == total_num_frames, "Frame count mismatch: expected {}, got {}".format(total_num_frames, idx)
 
-    return Tensor(frames)
+    return Tensor(frames), video_metadata
 
 
-def read_videos(path: str) -> list[Tensor]:
+def read_videos(path: str) -> tuple[list[Tensor], list[openvino_genai.VideoMetadata]]:
     entry = Path(path)
     if entry.is_dir():
-        return [read_video(str(file)) for file in sorted(entry.iterdir())]
-    return [read_video(path)]
+        videos = []
+        videos_metadata = []
+        for file in sorted(entry.iterdir()):
+            video, video_metadata = read_video(str(file))
+            videos.append(video)
+            videos_metadata.append(video_metadata)
+        return videos, videos_metadata
+    video, video_metadata = read_video(path)
+    return [video], [video_metadata]
 
 
 def main():
@@ -71,7 +84,7 @@ def main():
     parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
     args = parser.parse_args()
 
-    videos = read_videos(args.video_dir)
+    videos, videos_metadata = read_videos(args.video_dir)
 
     # GPU and NPU can be used as well.
     # Note: If NPU is selected, only the language model will be run on the NPU.
@@ -89,7 +102,9 @@ def main():
     history = openvino_genai.ChatHistory()
     prompt = input("question:\n")
     history.append({"role": "user", "content": prompt})
-    decoded_results = pipe.generate(history, videos=videos, generation_config=config, streamer=streamer)
+    decoded_results = pipe.generate(
+        history, videos=videos, videos_metadata=videos_metadata, generation_config=config, streamer=streamer
+    )
     history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
     while True:

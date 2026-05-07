@@ -91,11 +91,6 @@ public:
 } // namespace
 
 void init_streamers(py::module_& m) {
-    py::enum_<ov::genai::StreamingStatus>(m, "StreamingStatus")
-        .value("RUNNING", ov::genai::StreamingStatus::RUNNING)
-        .value("CANCEL", ov::genai::StreamingStatus::CANCEL)
-        .value("STOP", ov::genai::StreamingStatus::STOP);
-
     auto streamer = py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase", streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())
         .def("write",
@@ -144,7 +139,7 @@ void init_streamers(py::module_& m) {
         // then Python implementation will be called since python does not have overloads.
         // But for texts we need to check that when we call write with strings/integer tokens they are accumulated and stored correctly in py::dict.
         // Therefore we provide a private method '_write' which is used to call 'write' with correct parameters from C++ side.
-        .def("_write", 
+        .def("_write",
             [](TextParserStreamer& self, std::variant<std::vector<int64_t>, std::string> chunk) -> StreamingStatus {
                 if (auto _token = std::get_if<std::vector<int64_t>>(&chunk)) {
                     return self.write(*_token);
