@@ -394,6 +394,35 @@ def download_gguf_model(
     return gguf_path
 
 
+def download_vlm_gguf_model(
+    gguf_model_id: str,
+    gguf_filenames: tuple[str, str],
+):
+    gguf_dir_name = sanitize_model_id(gguf_model_id)
+    ov_cache_downloaded_dir = get_ov_cache_downloaded_models_dir()
+    models_path_gguf = ov_cache_downloaded_dir / gguf_dir_name
+
+    manager = AtomicDownloadManager(models_path_gguf)
+
+    def download_to_temp(temp_path: Path) -> None:
+        for gguf_filename in gguf_filenames:
+            retry_request(lambda filename=gguf_filename: hf_hub_download(repo_id=gguf_model_id, filename=filename, local_dir=temp_path))
+
+        if gguf_model_id.endswith("-GGUF"):
+            config_model_id = gguf_model_id[:-len("-GGUF")]
+            for filename in (
+                "config.json",
+                "generation_config.json",
+                "preprocessor_config.json",
+                "video_preprocessor_config.json",
+            ):
+                retry_request(lambda filename=filename: hf_hub_download(repo_id=config_model_id, filename=filename, local_dir=temp_path))
+
+    manager.execute(download_to_temp)
+
+    return models_path_gguf
+
+
 def load_hf_model_from_gguf(gguf_model_id, gguf_filename):
     model_cached = snapshot_download(gguf_model_id)  # required to avoid HF rate limits
     return retry_request(lambda: AutoModelForCausalLM.from_pretrained(model_cached, gguf_file=gguf_filename))

@@ -441,6 +441,133 @@ std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  c
     }
 }
 
+namespace {
+std::string read_file_to_string(const std::filesystem::path& file_path) {
+    std::ifstream stream(file_path, std::ios::binary);
+    OPENVINO_ASSERT(stream.is_open(), "Failed to open file '", file_path.string(), "'");
+    return std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+}
+
+ov::Tensor read_file_to_tensor(const std::filesystem::path& file_path) {
+    std::ifstream stream(file_path, std::ios::binary | std::ios::ate);
+    OPENVINO_ASSERT(stream.is_open(), "Failed to open file '", file_path.string(), "'");
+
+    const auto file_size = static_cast<size_t>(stream.tellg());
+    stream.seekg(0, std::ios::beg);
+
+    ov::Tensor tensor(ov::element::u8, ov::Shape{file_size});
+    if (file_size > 0) {
+        stream.read(reinterpret_cast<char*>(tensor.data<uint8_t>()), file_size);
+    }
+    return tensor;
+}
+
+ModelsMap::mapped_type read_model_weights_pair_from_disk(const std::filesystem::path& xml_path) {
+    const auto bin_path = xml_path.parent_path() / (xml_path.stem().string() + ".bin");
+    OPENVINO_ASSERT(std::filesystem::exists(bin_path), "Failed to find weights file '", bin_path.string(), "'");
+    return {read_file_to_string(xml_path), read_file_to_tensor(bin_path)};
+}
+
+void merge_models_map(ModelsMap& dst, const ModelsMap& src) {
+    for (const auto& model_pair : src) {
+        OPENVINO_ASSERT(dst.count(model_pair.first) == 0,
+                        "Model with key '", model_pair.first, "' already exists in models map");
+        dst.emplace(model_pair.first, model_pair.second);
+    }
+}
+
+std::vector<std::filesystem::path> collect_gguf_models(const std::filesystem::path& models_dir) {
+    std::vector<std::filesystem::path> gguf_models;
+
+    for (const auto& entry : std::filesystem::directory_iterator(models_dir)) {
+        if (entry.is_regular_file() && is_gguf_model(entry.path())) {
+            gguf_models.push_back(entry.path());
+        }
+    }
+
+    std::sort(gguf_models.begin(), gguf_models.end());
+    return gguf_models;
+}
+} // namespace
+
+ModelsMap read_models(const std::filesystem::path& models_dir, const ov::AnyMap& properties) {
+    auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
+
+    OPENVINO_ASSERT(std::filesystem::exists(models_dir),
+                    "Could not find a model in the directory '", models_dir, "'");
+    OPENVINO_ASSERT(std::filesystem::is_directory(models_dir),
+                    "Expected models directory, got '", models_dir, "'");
+
+    const auto gguf_models = collect_gguf_models(models_dir);
+    if (!gguf_models.empty()) {
+#ifdef ENABLE_GGUF
+        ModelsMap models_map;
+        for (const auto& gguf_model : gguf_models) {
+            auto partial = create_models_map_from_gguf(gguf_model, enable_save_ov_model);
+
+            if (partial.count("vision_embeddings_merger") && !partial.count("resampler")) {
+                partial["resampler"] = partial.at("vision_embeddings_merger");//fix pytest resampler bug
+            }
+
+            merge_models_map(models_map, partial);
+        }
+        return models_map;
+#else
+        OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
+#endif
+    }
+
+    ModelsMap models_map;
+    const std::vector<std::pair<std::string, std::string>> model_files = {
+        {"language", "openvino_language_model.xml"},
+        {"text_embeddings", "openvino_text_embeddings_model.xml"},
+        {"vision_embeddings", "openvino_vision_embeddings_model.xml"},
+        {"vision_embeddings_pos", "openvino_vision_embeddings_pos_model.xml"},
+        {"vision_embeddings_merger", "openvino_vision_embeddings_merger_model.xml"},
+        {"language", "openvino_model.xml"},
+        {"resampler", "openvino_vision_embeddings_merger_model.xml"}, //fix pytest resampler bug
+    };
+
+    for (const auto& model_file : model_files) {
+        const auto model_path = models_dir / model_file.second;
+        if (std::filesystem::exists(model_path)) {
+            OPENVINO_ASSERT(models_map.count(model_file.first) == 0,
+                            "Model with key '", model_file.first, "' already exists in models map");
+            models_map.emplace(model_file.first, read_model_weights_pair_from_disk(model_path));
+        }
+    }
+
+    OPENVINO_ASSERT(!models_map.empty(), "Could not find models in the directory '", models_dir, "'");
+    return models_map;
+}
+
+bool is_gguf_bundle_dir(const std::filesystem::path& models_dir) {
+    if (!std::filesystem::exists(models_dir) || !std::filesystem::is_directory(models_dir)) {
+        return false;
+    }
+    return !collect_gguf_models(models_dir).empty();
+}
+
+std::filesystem::path find_llm_gguf_in_dir(const std::filesystem::path& models_dir) {
+    OPENVINO_ASSERT(std::filesystem::exists(models_dir),
+                    "Could not find a model in the directory '", models_dir, "'");
+    OPENVINO_ASSERT(std::filesystem::is_directory(models_dir),
+                    "Expected models directory, got '", models_dir, "'");
+
+    const auto gguf_models = collect_gguf_models(models_dir);
+    OPENVINO_ASSERT(!gguf_models.empty(), "Could not find GGUF models in the directory '", models_dir, "'");
+
+    for (const auto& gguf_model : gguf_models) {
+        try {
+            Tokenizer tokenizer(gguf_model, {});
+            return gguf_model;
+        } catch (const ov::Exception&) {
+        }
+    }
+
+    OPENVINO_THROW("Could not find language GGUF model in the directory '", models_dir, "'");
+}
+
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history) {
     size_t idx = 0;
     auto encoded_history_data = encoded_history.data<int64_t>();
