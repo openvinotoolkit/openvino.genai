@@ -136,7 +136,7 @@ def run_hugging_face(
                 attention_mask=attention_mask,
                 generation_config=hf_generation_config,
                 tokenizer=hf_tokenizer,
-                **extra_generate_kwargs(),
+                **extra_generate_kwargs(hf_generation_config),
             )
             all_text_batch = hf_tokenizer.batch_decode(
                 [generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True
@@ -176,16 +176,14 @@ def run_hugging_face(
             attention_mask=attention_mask,
             generation_config=hf_generation_config,
             tokenizer=hf_tokenizer,
-            **extra_generate_kwargs(),
+            **extra_generate_kwargs(hf_generation_config),
         )
 
         generation_ids = []
         scores = []
 
-        # default was changed from 1 to None in transformers v5
-        num_return_sequences = (
-            1 if hf_generation_config.num_return_sequences is None else hf_generation_config.num_return_sequences
-        )
+        num_return_sequences = hf_generation_config.num_return_sequences or 1
+
         for idx, hf_encoded_out in enumerate(hf_encoded_outputs.sequences):
             prompt_idx = idx // num_return_sequences
             prompt_len = 0 if generation_configs.echo else input_ids[prompt_idx].numel()
@@ -311,7 +309,7 @@ def export_with_optimum_cli(model_id: str, model_task: str, output_dir: Path, tr
     if trust_remote_code:
         command.append("--trust-remote-code")
 
-    retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True))
+    retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, encoding="utf-8"))
 
 
 def download_and_convert_model_class(

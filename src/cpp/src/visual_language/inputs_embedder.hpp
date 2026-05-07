@@ -78,7 +78,10 @@ public:
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
-    std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata = {}
+    );
 
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
@@ -205,7 +208,10 @@ private:
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
-        virtual std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
+        virtual std::vector<ov::genai::EncodedVideo> encode_videos(
+            const std::vector<ov::Tensor>& videos,
+            const std::vector<VideoMetadata>& videos_metadata = {}
+        );
 
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
         
@@ -321,6 +327,11 @@ private:
             size_t n_visions,
             VisionType vision_type = VisionType::IMAGE
         ) const;
+
+        /**
+         * @brief Sample video frames if metadata indicates sampling is needed.
+         */
+        ov::Tensor sample_video_if_needed(const ov::Tensor& video, const VideoMetadata& metadata) const;
 
         /**
         * @brief Converts a vector of batched images ([NHWC]) into a vector of individual image tensors ([1HWC]).

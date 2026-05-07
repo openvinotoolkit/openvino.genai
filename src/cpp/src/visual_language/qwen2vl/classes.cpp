@@ -891,7 +891,7 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     return encoded_img;
 }
 
-EncodedVideo VisionEncoderQwen2VL::encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) {
+EncodedVideo VisionEncoderQwen2VL::encode_frames(const std::vector<ov::Tensor>& frames) {
     EncodedVideo encoded_video;
     encode_frames_with_config(encoded_video, frames, m_processor_config);
     return encoded_video;
@@ -1207,14 +1207,25 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                                                  video_pad_token_id);
 }
 
-std::vector<ov::genai::EncodedVideo> InputsEmbedderQwen2VL::encode_videos(const std::vector<ov::Tensor>& videos) {
-    std::vector<EncodedVideo> embeds;
-    for (const ov::Tensor& single_video : videos) {
-        std::vector<ov::Tensor> single_frames = to_single_image_tensors({single_video});
-        auto encoded_video = m_vision_encoder->encode_frames(single_frames);
-        embeds.emplace_back(encoded_video);
+std::vector<ov::genai::EncodedVideo> InputsEmbedderQwen2VL::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata
+) {
+    OPENVINO_ASSERT(videos.size() == videos_metadata.size() || videos_metadata.empty(),
+        "Number of videos and videos metadata must match if metadata provided.");
+
+    std::vector<EncodedVideo> encoded_videos;
+    VideoMetadata default_metadata{};
+    for (size_t i = 0; i < videos.size(); ++i) {
+        const ov::Tensor& video = videos[i];
+        const VideoMetadata& video_metadata = i < videos_metadata.size() ? videos_metadata[i] : default_metadata;
+        const auto sampled_video = sample_video_if_needed(video, video_metadata);
+        std::vector<ov::Tensor> frames = to_single_image_tensors({sampled_video});
+        auto encoded_video = m_vision_encoder->encode_frames(frames);
+        encoded_video.metadata = video_metadata;
+        encoded_videos.emplace_back(encoded_video);
     }
-    return embeds;
+    return encoded_videos;
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderQwen2VL::encode_images(const std::vector<ov::Tensor>& images) {
