@@ -1,8 +1,8 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-diffusers==0.37.1
+diffusers==0.38.0
 https://github.com/huggingface/optimum-intel/archive/f50a0b326df82d4b05c461a9184a97f616bfa63a.tar.gz#egg=optimum-intel
 pytest==9.0.3
-transformers==5.0.0
+transformers==5.8.0
 hf_transfer==0.1.9
 gguf==0.18.0
 
