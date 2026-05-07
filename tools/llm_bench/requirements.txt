@@ -8,7 +8,7 @@ openvino_genai
 pillow==12.2.0
 torch>=2.1.0,<=2.11
 transformers[sentencepiece]>=4.40.0,<5.4.0
-diffusers>=0.22.0,<=0.37.1
+diffusers>=0.22.0,<=0.38.0
 # optimum is in dependency list of optimum-intel
 # last supported commit f50a0b326df82d4b05c461a9184a97f616bfa63a
 optimum-intel[nncf]>=1.25.0
