@@ -56,6 +56,7 @@ private:
     /// @brief Initializes infer request queue for the vision projection model.
     void initialize_vision_projection_queue(ov::CompiledModel& compiled_model);
     /// @brief Pads frames if frame count is not divisible by mm_local_num_frames.
+    // TODO Override InputsEmbedder::sample_video_if_needed instead
     ov::Tensor sample_video_if_needed(const ov::Tensor& video) const;
     /// @brief Initializes 3D sin-cos positional embedding tensor for vision encoder input.
     void initialize_positional_embedding();
@@ -82,7 +83,10 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos) override;
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata
+    ) override;
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
     ov::Tensor get_inputs_embeds(const std::string& prompt,

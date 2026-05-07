@@ -22,6 +22,8 @@ enum class VLMModelType {
     QWEN2_VL,
     QWEN2_5_VL,
     QWEN3_VL,
+    QWEN3_5,
+    QWEN3_5_MOE,
     GEMMA3,
     GEMMA4,
     VIDEOCHAT_FLASH_QWEN,
@@ -104,6 +106,12 @@ public:
     std::string image_token = "<|image|>";
     /// @brief A string token denoting end of image embeddings for Gemma4 model.
     std::string eoi_token = "<image|>";
+
+    /// @brief Enables Gemma4 MoE block inference path and related auxiliary inputs such as token_type_ids.
+    bool enable_moe_block = false;
+
+    /// @brief Hidden size of Gemma4 per-layer embedding input used during inference.
+    size_t hidden_size_per_layer_input = 0;
 
     /// @brief A string token denoting start of video embeddings
     std::string video_start = "<video>";

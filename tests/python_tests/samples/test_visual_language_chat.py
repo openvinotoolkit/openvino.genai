@@ -15,11 +15,13 @@ class TestVisualLanguageChat:
     @pytest.mark.parametrize(
         "convert_model, download_test_content, questions",
         [
-            pytest.param("llava-1.5-7b-hf", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
-            pytest.param("llava-v1.6-mistral-7b-hf", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
-            pytest.param("InternVL2-1B", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
-            pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
-            pytest.param("tiny-random-minicpmv-2_6", "images/image.png", 'What is unusual on this image?\nGo on.')
+            pytest.param("llava-1.5-7b-hf", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"),
+            pytest.param(
+                "llava-v1.6-mistral-7b-hf", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"
+            ),
+            pytest.param("InternVL2-1B", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"),
+            pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"),
+            pytest.param("tiny-random-phi3-vision", "images/image.png", "What is unusual on this image?\nGo on."),
         ],
         indirect=["convert_model", "download_test_content"],
     )
@@ -48,7 +50,7 @@ class TestVisualLanguageChat:
     @pytest.mark.parametrize(
         "convert_model, questions",
         [
-            pytest.param("tiny-random-minicpmv-2_6", 'Describe the images?'),
+            pytest.param("tiny-random-phi3-vision", "Describe the images?"),
         ],
         indirect=["convert_model"],
     )

@@ -25,6 +25,8 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen2_vl", VLMModelType::QWEN2_VL},
         {"qwen2_5_vl", VLMModelType::QWEN2_5_VL},
         {"qwen3_vl", VLMModelType::QWEN3_VL},
+        {"qwen3_5", VLMModelType::QWEN3_5},
+        {"qwen3_5_moe", VLMModelType::QWEN3_5_MOE},
         {"gemma3", VLMModelType::GEMMA3},
         {"gemma4", VLMModelType::GEMMA4},
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
@@ -77,6 +79,10 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // Qwen3-VL
     read_json_param(parsed, "vision_config.num_position_embeddings", vision_config_num_position_embeddings);
     read_json_param(parsed, "vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
+
+    // gemma4
+    read_json_param(parsed, "text_config.enable_moe_block", enable_moe_block);
+    read_json_param(parsed, "text_config.hidden_size_per_layer_input", hidden_size_per_layer_input);
 }
 
 }  // namespace ov::genai
