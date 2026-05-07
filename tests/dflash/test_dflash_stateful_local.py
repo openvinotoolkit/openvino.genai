@@ -8,6 +8,9 @@ from pathlib import Path
 import pytest
 
 
+_TARGET_PIPELINE_PROPERTIES = {"ATTENTION_BACKEND": "SDPA"}
+
+
 def _local_dflash_models():
     if os.environ.get("OV_GENAI_ENABLE_DFLASH_E2E") != "1":
         pytest.skip("Set OV_GENAI_ENABLE_DFLASH_E2E=1 to run local DFlash artifact tests")
@@ -34,7 +37,7 @@ def _generate_target_then_dflash(device, prompts, generation_config):
     target_model_path, draft_model_path = _local_dflash_models()
     ov_genai = pytest.importorskip("openvino_genai")
 
-    target_pipe = ov_genai.LLMPipeline(target_model_path, device, {})
+    target_pipe = ov_genai.LLMPipeline(target_model_path, device, _TARGET_PIPELINE_PROPERTIES.copy())
     target_results = [target_pipe.generate([prompt], generation_config) for prompt in prompts]
     target_snapshots = [
         (result.texts, result.perf_metrics.get_num_generated_tokens())
@@ -47,7 +50,12 @@ def _generate_target_then_dflash(device, prompts, generation_config):
     gc.collect()
 
     draft = ov_genai.draft_model(draft_model_path, device)
-    dflash_pipe = ov_genai.LLMPipeline(target_model_path, device, {}, draft_model=draft)
+    dflash_pipe = ov_genai.LLMPipeline(
+        target_model_path,
+        device,
+        {},
+        draft_model=draft,
+    )
     dflash_results = [dflash_pipe.generate([prompt], generation_config) for prompt in prompts]
     del dflash_pipe
     del draft
@@ -77,7 +85,12 @@ def test_dflash_local_perf_metrics_are_populated():
     target_model_path, draft_model_path = _local_dflash_models()
     ov_genai = pytest.importorskip("openvino_genai")
     draft = ov_genai.draft_model(draft_model_path, "CPU")
-    pipe = ov_genai.LLMPipeline(target_model_path, "CPU", {}, draft_model=draft)
+    pipe = ov_genai.LLMPipeline(
+        target_model_path,
+        "CPU",
+        {},
+        draft_model=draft,
+    )
 
     result = pipe.generate(
         ["Explain speculative decoding briefly."],

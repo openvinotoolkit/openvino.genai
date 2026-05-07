@@ -216,6 +216,7 @@ void DFlashTargetWrapper::trim_kv_cache(size_t tokens_to_remove) {
 
 void DFlashTargetWrapper::reset_state() {
     m_sequence_group = nullptr;
+    m_request.reset_state();
     m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
     m_raw_perf_metrics.m_durations.clear();
     m_raw_perf_metrics.m_batch_sizes.clear();
@@ -364,6 +365,7 @@ void DFlashDraftWrapper::sync_generated_tokens(const std::vector<int64_t>& targe
 
 void DFlashDraftWrapper::reset_state() {
     m_sequence_group = nullptr;
+    m_request.reset_state();
     m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
     m_raw_perf_metrics.m_durations.clear();
     m_raw_perf_metrics.m_batch_sizes.clear();
