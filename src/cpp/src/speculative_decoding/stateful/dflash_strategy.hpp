@@ -16,16 +16,25 @@
 namespace ov {
 namespace genai {
 
+/// @brief Raw outputs returned by a DFlash target or draft inference.
 struct DFlashInferenceOutput {
     ov::Tensor logits;
     ov::Tensor hidden_features;
 };
 
+/// @brief Inference output plus tokens selected by the GenAI sampler.
 struct DFlashInferResult {
     DFlashInferenceOutput output;
     std::vector<int64_t> sampled_tokens;
 };
 
+/**
+ * @brief Keeps full-context target hidden states for Stage 1 DFlash.
+ *
+ * Current DFlash draft IR is stateless and expects the full target hidden-state prefix
+ * at every block. Later KV-cache stages can replace this provider with incremental
+ * hidden-state storage without changing the pipeline loop.
+ */
 class DFlashHiddenStateProvider {
 public:
     void reset();
@@ -41,6 +50,8 @@ private:
 class DFlashSamplerAdapter {
 public:
     explicit DFlashSamplerAdapter(const Tokenizer& tokenizer);
+
+    /// @brief Configures SequenceGroup sampler state and returns newly sampled or validated tokens.
     std::vector<int64_t> sample(SequenceGroup::Ptr sequence_group,
                                 const ov::Tensor& logits,
                                 size_t input_token_count,
@@ -53,6 +64,12 @@ private:
     Sampler m_sampler;
 };
 
+/**
+ * @brief Stateful target model wrapper for DFlash.
+ *
+ * Runs target prefill/validation, exposes logits and annotated hidden states, and owns
+ * the target sequence/KV-cache state used to validate draft windows.
+ */
 class DFlashTargetWrapper {
 public:
     explicit DFlashTargetWrapper(const ov::genai::ModelDesc& model_desc);
@@ -92,6 +109,12 @@ private:
     ov::genai::RawPerfMetrics m_raw_perf_metrics;
 };
 
+/**
+ * @brief Stateless DFlash draft wrapper.
+ *
+ * Builds the DFlash input window `[seed, mask, ...]`, passes accumulated target
+ * hidden states, and samples candidate tokens from the draft logits.
+ */
 class DFlashDraftWrapper {
 public:
     DFlashDraftWrapper(const ov::genai::ModelDesc& model_desc,
@@ -127,6 +150,7 @@ private:
     int64_t m_mask_token_id = -1;
 };
 
+/// @brief Stateful single-request DFlash speculative decoding pipeline.
 class StatefulDFlashLLMPipeline : public StatefulSpeculativePipelineBase {
 public:
     StatefulDFlashLLMPipeline(const ov::genai::ModelDesc& target_model_desc,
@@ -143,12 +167,14 @@ protected:
                                    StreamerVariant streamer) override;
 
 private:
+    /// @brief Result of one DFlash validation step.
     struct SpeculativeResult {
         size_t accepted_tokens_count = 0;
         bool eos_reached = false;
         std::vector<int64_t> validated_tokens;
     };
 
+    /// @brief Runs one DFlash step: draft block, target validation, state update.
     SpeculativeResult run_speculative_iteration(size_t current_generated_tokens,
                                                 size_t max_new_tokens,
                                                 int64_t eos_token_id);

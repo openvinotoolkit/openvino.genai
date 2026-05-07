@@ -50,6 +50,7 @@ void DFlashHiddenStateProvider::append(const ov::Tensor& hidden_states, size_t t
     ov::Shape source_shape = shape;
     source_shape[1] = token_count;
     if (token_count != shape[1]) {
+        // Keep only the hidden states for tokens that were accepted/finalized.
         source = ov::Tensor(hidden_states, ov::Coordinate{0, 0, 0}, ov::Coordinate{1, token_count, shape[2]});
     }
 
@@ -64,9 +65,8 @@ void DFlashHiddenStateProvider::append(const ov::Tensor& hidden_states, size_t t
                     "Cannot append DFlash hidden states with incompatible hidden size.");
     ov::Shape new_shape = old_shape;
     new_shape[1] += token_count;
-    // TODO: This is on the generation hot path. Stage 1 keeps a full-context target_hidden tensor for
-    // the stateless DFlash draft, but this reallocates and recopies all previous hidden states on each
-    // append. Replace with a capacity-aware buffer/logical view when moving to incremental DFlash KV-cache.
+    // Stage 1 keeps a full-context target_hidden tensor for the stateless DFlash draft.
+    // Reallocate here to keep the storage contiguous for the draft model input.
     ov::Tensor merged(m_context.get_element_type(), new_shape);
     ov::Tensor old_dst(merged, ov::Coordinate{0, 0, 0}, ov::Coordinate{1, old_shape[1], old_shape[2]});
     ov::Tensor new_dst(merged, ov::Coordinate{0, old_shape[1], 0}, ov::Coordinate{1, new_shape[1], new_shape[2]});
@@ -80,6 +80,7 @@ void DFlashHiddenStateProvider::truncate(size_t context_length) {
         return;
     }
     const auto shape = m_context.get_shape();
+    // Materialize the ROI so later appends do not keep a view into a larger discarded buffer.
     ov::Tensor view(m_context, ov::Coordinate{0, 0, 0}, ov::Coordinate{1, context_length, shape[2]});
     ov::Tensor copied(m_context.get_element_type(), view.get_shape());
     copy_bytes(view, copied);
@@ -121,6 +122,7 @@ std::vector<int64_t> DFlashSamplerAdapter::sample(SequenceGroup::Ptr sequence_gr
 
     const auto& generated = sequence->get_generated_ids();
     const size_t generated_after = generated.size();
+    // In validation mode the sampler may remove rejected draft tokens before appending the fallback token.
     const size_t result_count = validation_mode
                                     ? generated_after - generated_before + num_tokens_to_validate
                                     : (generated_after > generated_before ? generated_after - generated_before : 0);
@@ -234,6 +236,7 @@ void DFlashTargetWrapper::build_model_inputs(size_t input_token_count,
     auto* ids = input_ids.data<int64_t>();
     auto* pos = position_ids.data<int64_t>();
 
+    // Reconstruct the requested suffix from prompt + generated sequence state.
     for (size_t idx = 0; idx < input_token_count; ++idx) {
         const size_t absolute_pos = start_pos + idx;
         ids[idx] = absolute_pos < prompt_len ? prompt_ids[absolute_pos] : generated_ids[absolute_pos - prompt_len];
@@ -256,6 +259,7 @@ ov::Tensor DFlashTargetWrapper::get_hidden_features() const {
     if (shape[1] == input_len) {
         return hidden;
     }
+    // Some transformed models may return the whole prefix; DFlash only needs this inference suffix.
     return ov::Tensor(hidden, ov::Coordinate{0, shape[1] - input_len, 0}, ov::Coordinate{1, shape[1], shape[2]});
 }
 
@@ -359,6 +363,7 @@ ov::Tensor DFlashDraftWrapper::build_input_ids(int64_t seed_token) const {
     ov::Tensor input_ids(ov::element::i64, {BATCH_SIZE, m_block_size});
     auto* data = input_ids.data<int64_t>();
     data[0] = seed_token;
+    // DFlash predicts the rest of the block from mask placeholders in one draft inference.
     std::fill(data + 1, data + m_block_size, m_mask_token_id);
     return input_ids;
 }
@@ -404,6 +409,7 @@ std::vector<int64_t> DFlashDraftWrapper::sample_candidates(const ov::Tensor& log
     const auto shape = logits.get_shape();
     OPENVINO_ASSERT(shape.size() == 3 && shape[1] >= candidate_count, "Invalid DFlash draft logits shape.");
     for (size_t idx = 0; idx < candidate_count; ++idx) {
+        // Reuse the regular sampler one DFlash position at a time to keep sampling behavior consistent.
         ov::Tensor one_position(logits,
                                 ov::Coordinate{0, idx, 0},
                                 ov::Coordinate{1, idx + 1, shape[2]});
@@ -476,12 +482,14 @@ EncodedResults StatefulDFlashLLMPipeline::generate_tokens(const EncodedInputs& i
     m_hidden_state_provider.reset();
 
     auto sampling_config = config;
+    // The sampler sees speculative candidates too; length is enforced by the outer DFlash loop.
     sampling_config.max_new_tokens = config.max_new_tokens + m_rt_info.block_size;
     m_target->initialize_sequence(input_ids, sampling_config);
     m_draft->initialize_sequence(input_ids, sampling_config);
 
     auto prefill_result = m_target->forward(m_prompt_length, 1);
     OPENVINO_ASSERT(prefill_result.sampled_tokens.size() == 1, "Expected one DFlash target seed token.");
+    // Stage 1 keeps the full target hidden prefix for each draft block.
     m_hidden_state_provider.append(prefill_result.output.hidden_features, m_prompt_length);
 
     int64_t seed_token = prefill_result.sampled_tokens.front();
@@ -576,6 +584,7 @@ StatefulDFlashLLMPipeline::SpeculativeResult StatefulDFlashLLMPipeline::run_spec
 
     const size_t hidden_tokens_to_append = validated_tokens.size();
     m_hidden_state_provider.append(validation_result.output.hidden_features, hidden_tokens_to_append);
+    // Draft is stateless today, but keeping its SequenceGroup aligned lets the sampler apply normal penalties.
     m_draft->sync_generated_tokens(m_target->get_generated_tokens());
 
     result.accepted_tokens_count = accepted_candidates;
