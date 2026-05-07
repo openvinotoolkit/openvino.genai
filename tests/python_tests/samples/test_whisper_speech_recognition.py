@@ -3,27 +3,9 @@
 
 import pytest
 import sys
-import re
 
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR, SAMPLES_JS_DIR
 from test_utils import run_sample
-
-
-def filter_word_level_timestamps(text: str) -> str:
-    """
-    example:
-     How are you doing today?
-    timestamps: [0.00, 2.00] text:  How are you doing today?
-    [0.00, 0.58]:  How
-    [0.58, 0.70]:  are
-    [0.70, 0.80]:  you
-    [0.80, 1.06]:  doing
-    [1.06, 1.40]:  today?
-    """
-    pattern = r"\[\d+\.\d{2}, \d+\.\d{2}\]:\s+\S+"
-    filtered_text = re.sub(pattern, "", text).strip()
-    return filtered_text
-
 
 class TestWhisperSpeechRecognition:
     @pytest.mark.whisper
@@ -54,8 +36,4 @@ class TestWhisperSpeechRecognition:
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match"
         assert py_result.stdout == js_result.stdout, "Python and JS results should match"
-        # C API has no word-level timestamps support which enabled in Python and CPP samples
-        # ticket to enable C API: 180115
-        assert filter_word_level_timestamps(py_result.stdout) == c_result.stdout.strip(), (
-            "Python and C results should match without word-level timestamps"
-        )
+        assert py_result.stdout == c_result.stdout, "Python and C results should match including timestamps"

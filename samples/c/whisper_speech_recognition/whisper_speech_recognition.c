@@ -57,7 +57,7 @@ int main(int argc, char* argv[]) {
         audio_length = resampled_length;
     }
 
-    ov_status_e status = ov_genai_whisper_pipeline_create(model_path, device, 0, &pipeline);
+    ov_status_e status = ov_genai_whisper_pipeline_create(model_path, device, 2, &pipeline, "word_timestamps", "true");
     if (status != OK) {
         if (status == UNKNOW_EXCEPTION) {
             fprintf(stderr, "Error: Failed to create Whisper pipeline. Please check:\n");
@@ -69,6 +69,7 @@ int main(int argc, char* argv[]) {
     }
 
     CHECK_STATUS(ov_genai_whisper_generation_config_create(&config));
+    CHECK_STATUS(ov_genai_whisper_generation_config_set_word_timestamps(config, true));
     CHECK_STATUS(ov_genai_whisper_generation_config_set_task(config, "transcribe"));
     CHECK_STATUS(ov_genai_whisper_generation_config_set_return_timestamps(config, true));
     CHECK_STATUS(ov_genai_whisper_pipeline_generate(pipeline, audio_data, audio_length, config, &results));
@@ -119,7 +120,52 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    size_t words_count = 0;
+    CHECK_STATUS(ov_genai_whisper_decoded_results_get_words_count(results, &words_count));
+    ov_genai_whisper_word_timing* current_word = NULL;
+    char* current_word_text = NULL;
+    if (words_count == 0) {
+        fprintf(stderr,
+                "Word-level timestamps are not available. Make sure the whisper pipeline was constructed "
+                "with word timestamps enabled and that `alignment_heads` are configured for the model.\n");
+    } else {
+        for (size_t i = 0; i < words_count; i++) {
+            current_word = NULL;
+            CHECK_STATUS(ov_genai_whisper_decoded_results_get_word_timing_at(results, i, &current_word));
+
+            float start_ts = 0.0f, end_ts = 0.0f;
+            CHECK_STATUS(ov_genai_whisper_word_timing_get_start_ts(current_word, &start_ts));
+            CHECK_STATUS(ov_genai_whisper_word_timing_get_end_ts(current_word, &end_ts));
+
+            size_t word_text_size = 0;
+            CHECK_STATUS(ov_genai_whisper_word_timing_get_word(current_word, NULL, &word_text_size));
+
+            current_word_text = (char*)malloc(word_text_size);
+            if (!current_word_text) {
+                fprintf(stderr, "Warning: Failed to allocate memory for word text %zu\n", i);
+                ov_genai_whisper_word_timing_free(current_word);
+                current_word = NULL;
+                exit_code = EXIT_FAILURE;
+                goto err;
+            }
+
+            CHECK_STATUS(ov_genai_whisper_word_timing_get_word(current_word, current_word_text, &word_text_size));
+            printf("[%.2f, %.2f]: %s\n", start_ts, end_ts, current_word_text);
+
+            free(current_word_text);
+            current_word_text = NULL;
+            ov_genai_whisper_word_timing_free(current_word);
+            current_word = NULL;
+        }
+    }
+
 err:
+    if (current_word_text) {
+        free(current_word_text);
+    }
+    if (current_word) {
+        ov_genai_whisper_word_timing_free(current_word);
+    }
     if (pipeline)
         ov_genai_whisper_pipeline_free(pipeline);
     if (config)

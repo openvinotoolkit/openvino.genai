@@ -3,7 +3,7 @@
 //
 
 /**
- * @brief This is a header file for OpenVINO GenAI C API, which is a C wrapper for  ov::genai::WhisperPipeline class.
+ * @brief This is a header file for OpenVINO GenAI C API, which is a C wrapper for ov::genai::WhisperPipeline class.
  *
  * @file whisper_pipeline.h
  */
@@ -17,6 +17,14 @@
  * @brief type define ov_genai_whisper_decoded_result_chunk from ov_genai_whisper_decoded_result_chunk_opaque
  */
 typedef struct ov_genai_whisper_decoded_result_chunk_opaque ov_genai_whisper_decoded_result_chunk;
+
+typedef struct ov_genai_whisper_word_timing_opaque ov_genai_whisper_word_timing;
+
+/**
+ * @brief Release the memory allocated for ov_genai_whisper_word_timing.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing to free memory.
+ */
+OPENVINO_GENAI_C_EXPORTS void ov_genai_whisper_word_timing_free(ov_genai_whisper_word_timing* word_timing);
 
 /**
  * @struct ov_genai_whisper_decoded_results
@@ -172,6 +180,87 @@ ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper_decoded_res
                                               ov_genai_whisper_decoded_result_chunk** chunk);
 
 /**
+ * @brief Get number of word-level results from ov_genai_whisper_decoded_results.
+ * @param results A pointer to the ov_genai_whisper_decoded_results instance.
+ * @param count A pointer to the number of words.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_decoded_results_get_words_count(const ov_genai_whisper_decoded_results* results, size_t* count);
+
+
+/**
+ * @brief Get start timestamp from ov_genai_whisper_word_timing.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing instance.
+ * @param start_ts A pointer to the start timestamp value.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_word_timing_get_start_ts(const ov_genai_whisper_word_timing* word_timing, float* start_ts);
+
+/**
+ * @brief Get end timestamp from ov_genai_whisper_word_timing.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing instance.
+ * @param end_ts A pointer to the end timestamp value.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_word_timing_get_end_ts(const ov_genai_whisper_word_timing* word_timing, float* end_ts);
+
+/**
+ * @brief Get word text from ov_genai_whisper_word_timing.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing instance.
+ * @param word A pointer to the buffer to store the word text.
+ * @param word_size A pointer to the size of the buffer or the required size for the word text.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_word_timing_get_word(const ov_genai_whisper_word_timing* word_timing, char* word, size_t* word_size);
+
+/**
+ * @brief Get number of token IDs associated with the word.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing instance.
+ * @param count A pointer to the number of token IDs.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_word_timing_get_token_ids_count(const ov_genai_whisper_word_timing* word_timing, size_t* count);
+
+/**
+ * @brief Get token ID at specific index from ov_genai_whisper_word_timing.
+ * @param word_timing A pointer to the ov_genai_whisper_word_timing instance.
+ * @param index The index of the token ID to retrieve.
+ * @param token_id A pointer to the token ID value.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_word_timing_get_token_id_at(const ov_genai_whisper_word_timing* word_timing, size_t index, int64_t* token_id);
+
+/**
+ * @brief Get word timing at specific index from ov_genai_whisper_decoded_results.
+ * @param results A pointer to the results instance.
+ * @param index The index of the word timing to retrieve.
+ * @param word_timing A pointer to store the newly created timing handle.
+ * @return ov_status_e Status code, OK(0) if successful. Returns NOT_FOUND if words are absent.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_decoded_results_get_word_timing_at(const ov_genai_whisper_decoded_results* results,
+                                                    size_t index,
+                                                    ov_genai_whisper_word_timing** word_timing);
+
+/**
+ * @brief Get word result at specific index from ov_genai_whisper_decoded_results.
+ * @param results A pointer to the ov_genai_whisper_decoded_results instance.
+ * @param index The index of the word result to retrieve.
+ * @param word A pointer to the newly created ov_genai_whisper_decoded_result_chunk containing word metadata.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_whisper_decoded_results_get_word_at(const ov_genai_whisper_decoded_results* results,
+                                             size_t index,
+                                             ov_genai_whisper_decoded_result_chunk** word);
+
+/**
  * @brief Get string representation from ov_genai_whisper_decoded_results.
  * @param results A pointer to the ov_genai_whisper_decoded_results instance.
  * @param output A pointer to the pre-allocated output string buffer. It can be set to NULL, in which case the
@@ -206,7 +295,7 @@ ov_genai_whisper_decoded_results_get_string(const ov_genai_whisper_decoded_resul
  *
  * Example with properties:
  * ov_genai_whisper_pipeline_create(model_path, "GPU", 2, &pipeline,
- *                                  "CACHE_DIR", "cache_dir");
+ *                                         "CACHE_DIR", "cache_dir");
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
                                                                       const char* device,
@@ -255,3 +344,4 @@ ov_genai_whisper_pipeline_get_generation_config(const ov_genai_whisper_pipeline*
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_pipeline_set_generation_config(ov_genai_whisper_pipeline* pipeline,
                                                 ov_genai_whisper_generation_config* config);
+
