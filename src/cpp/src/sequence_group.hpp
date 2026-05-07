@@ -155,15 +155,19 @@ public:
     // removes n last tokens and updates cumulative log prob
     // used to remove stop_string from the output
     void remove_last_tokens(int n) {
+        OPENVINO_ASSERT(n >= 0, "Number of tokens to remove must be greater than or equal to 0");
         OPENVINO_ASSERT(m_generated_ids.size() >= n, "Cannot remove more tokens than has been generated");
         for (int i = 0; i < n; i++) {
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
             m_generated_ids.pop_back();
-            if (m_type == SequenceGroupType::EMBEDDINGS) {
-                m_generated_ids_embeds.pop_back();
-                m_position_ids_list.pop_back();
-            }
+        }
+        if (m_type == SequenceGroupType::EMBEDDINGS) {
+            const size_t tokens_to_remove = static_cast<size_t>(n);
+            const size_t embeds_to_remove = std::min(tokens_to_remove, m_generated_ids_embeds.size());
+            const size_t position_ids_to_remove = std::min(tokens_to_remove, m_position_ids_list.size());
+            truncate_generated_ids_embeds(embeds_to_remove);
+            update_position_ids(position_ids_to_remove);
         }
     }
 
@@ -242,6 +246,22 @@ public:
             std::copy_n(generated_ids_embeds.data<float>() + idx * m_hidden_size, m_hidden_size, m_generated_ids_embeds[i].begin());
 
         }
+    }
+    void truncate_generated_ids_embeds(size_t num_tokens) {
+        OPENVINO_ASSERT(m_type == SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(num_tokens <= m_generated_ids_embeds.size());
+        auto current_embeds_size = m_generated_ids_embeds.size();
+        // remove the last num_tokens embeddings
+        if (num_tokens > 0)
+            m_generated_ids_embeds.erase(m_generated_ids_embeds.begin() + (current_embeds_size - num_tokens), m_generated_ids_embeds.end());
+    }
+
+    void update_position_ids(size_t num_tokens) {
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(num_tokens <= m_position_ids_list.size());
+        // remove the last num_tokens position ids
+        if (num_tokens > 0)
+            m_position_ids_list.erase(m_position_ids_list.begin() + m_position_ids_list.size() - num_tokens, m_position_ids_list.end());
     }
 
     void append_position_ids(const ov::Tensor& position_ids) {

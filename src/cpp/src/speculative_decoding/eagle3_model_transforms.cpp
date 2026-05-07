@@ -42,6 +42,9 @@ Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::file
             using ov::genai::utils::read_json_param;
             int num_decoder_layers = 0;
             read_json_param(data, "num_hidden_layers", num_decoder_layers);
+            if (num_decoder_layers == 0) {
+                read_json_param(data, "text_config.num_hidden_layers", num_decoder_layers);
+            }
 
             // Ensure sufficient layers for meaningful feature extraction
             // Minimum of 10 layers is based on practical LLM architectures (e.g., small GPT-2 has 12 layers)

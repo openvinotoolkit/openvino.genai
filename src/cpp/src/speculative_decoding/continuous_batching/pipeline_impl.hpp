@@ -22,6 +22,15 @@ public:
                                                  const ov::AnyMap& plugin_config,
                                                  bool is_validation_mode_enabled);
 
+    ContinuousBatchingForSpeculativeDecodingImpl(const std::shared_ptr<ov::Model>& model,
+                                                 std::shared_ptr<InputsEmbedder> inputs_embedder,
+                                                 const Tokenizer& tokenizer,
+                                                 const GenerationConfig& generation_config,
+                                                 const SchedulerConfig& scheduler_config,
+                                                 const std::string& device,
+                                                 const ov::AnyMap& plugin_config,
+                                                 bool is_validation_mode_enabled);
+
     void multistep();
 
     void finish_request(int64_t request_id = -1);
@@ -55,6 +64,25 @@ public:
                                             const ov::AnyMap& plugin_config,
                                             bool is_validation_mode_enabled)
         : ContinuousBatchingForSpeculativeDecodingImpl(model,
+                                                       tokenizer,
+                                                       generation_config,
+                                                       scheduler_config,
+                                                       device,
+                                                       plugin_config,
+                                                       is_validation_mode_enabled) {
+        eagle_mode_enabled = true;
+    };
+
+    ContinuousBatchingForEagle3DecodingImpl(const std::shared_ptr<ov::Model>& model,
+                                            std::shared_ptr<InputsEmbedder> inputs_embedder,
+                                            const Tokenizer& tokenizer,
+                                            const GenerationConfig& generation_config,
+                                            const SchedulerConfig& scheduler_config,
+                                            const std::string& device,
+                                            const ov::AnyMap& plugin_config,
+                                            bool is_validation_mode_enabled)
+        : ContinuousBatchingForSpeculativeDecodingImpl(model,
+                                                       inputs_embedder,
                                                        tokenizer,
                                                        generation_config,
                                                        scheduler_config,
