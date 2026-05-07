@@ -197,6 +197,8 @@ public:
     ov::genai::PipelineMetrics get_metrics() const;
 
     /// @param request_id must be unique for every add_request() call.
+    /// @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+    ///       MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
     GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const ov::genai::GenerationConfig& sampling_params);

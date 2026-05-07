@@ -268,6 +268,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs
 ) {
+    if (sampling_params.adapters.has_value()) {
+        const auto mode = sampling_params.adapters->get_mode();
+        OPENVINO_ASSERT(mode != AdapterConfig::MODE_DYNAMIC && mode != AdapterConfig::MODE_AUTO && mode != AdapterConfig::MODE_STATIC_RANK,
+            "MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported in the add_request() + step() flow. "
+            "Use MODE_STATIC or MODE_FUSE instead.");
+    }
+
     auto sampling_params_copy = sampling_params;
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (sampling_params_copy.stop_token_ids.empty())
