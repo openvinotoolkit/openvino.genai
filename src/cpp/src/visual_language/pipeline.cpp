@@ -144,6 +144,7 @@ private:
         auto device_properties = utils::pop_or_default<ov::AnyMap>(
             properties_copy, ov::device::properties.name(), { }
         );
+
         // Otherwise, the same properties are used for all models and devices
         auto lm_properties = device_properties.empty()
             ? properties_copy
@@ -161,6 +162,10 @@ private:
         if (m_is_npu) {
             embedder_device = "AUTO";
             utils::KVDesc kv_desc;
+            // Remove NPU-only KV-cache options from the shared map so the CPU
+            // vision encoder does not receive them as unsupported properties.
+            utils::pop_option(properties_copy, "MAX_PROMPT_LEN");
+            utils::pop_option(properties_copy, "MIN_RESPONSE_LEN");
             update_npu_properties(models_dir, lm_properties);
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;

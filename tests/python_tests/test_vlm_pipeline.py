@@ -1393,6 +1393,25 @@ def test_vlm_npu_auto_config(cat_tensor):
     ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
 
 
+@pytest.mark.skipif(**should_skip_npuw_tests())
+def test_vlm_npu_max_prompt_len_flat_kwargs(cat_tensor):
+    # Regression test: MAX_PROMPT_LEN / MIN_RESPONSE_LEN passed as flat top-level
+    # properties (not nested under DEVICE_PROPERTIES) must not reach the CPU vision
+    # encoder, which rejects them as unsupported and previously crashed the pipeline.
+    models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
+    properties = {
+        "NPUW_DEVICES": "CPU",
+        "NPUW_ONLINE_PIPELINE": "NONE",
+        "MAX_PROMPT_LEN": 2048,
+        "MIN_RESPONSE_LEN": 128,
+    }
+
+    ov_pipe = VLMPipeline(models_path, "NPU", **properties)
+
+    generation_config = _setup_generation_config(ov_pipe)
+    ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
+
 @parametrize_one_model_npu
 @pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_multiple_images(
