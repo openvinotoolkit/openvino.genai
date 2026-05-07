@@ -550,6 +550,9 @@ public:
         const auto& video_seq = use_full_history
             ? processed_chat_data.video_sequence
             : processed_chat_data.new_video_sequence;
+        const auto& vision_counts = use_full_history
+            ? processed_chat_data.vision_counts
+            : std::vector<std::pair<std::size_t, std::size_t>>{ {video_seq.size(), image_seq.size()} };
 
         generation_finish_info = prepare_inputs_and_generate(
             templated_history,
@@ -557,7 +560,7 @@ public:
             videos_embeds,
             image_seq,
             video_seq,
-            processed_chat_data.vision_counts,
+            vision_counts,
             generation_config,
             perf_metrics,
             streamer,
