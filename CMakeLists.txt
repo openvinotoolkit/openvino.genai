@@ -53,11 +53,22 @@ endif()
 
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 set(OV_COMPATIBILITY_VERSION ${OpenVINOGenAI_VERSION_MAJOR}.${OpenVINOGenAI_VERSION_MINOR}.${OpenVINOGenAI_VERSION_PATCH})
-find_package(OpenVINODeveloperPackage ${OV_COMPATIBILITY_VERSION} QUIET
+
+# Option to relax the version compatibility check (e.g. for Docker/CI environments
+# where the installed OpenVINO version may not exactly match the GenAI version).
+option(OV_RELAX_VERSION_CHECK "Skip OpenVINO version compatibility check" OFF)
+
+if(OV_RELAX_VERSION_CHECK)
+    set(_OV_FIND_VERSION "")
+else()
+    set(_OV_FIND_VERSION "${OV_COMPATIBILITY_VERSION}")
+endif()
+
+find_package(OpenVINODeveloperPackage ${_OV_FIND_VERSION} QUIET
              COMPONENTS Runtime Threading
              PATHS "${OpenVINO_DIR}")
 if(NOT OpenVINODeveloperPackage_FOUND)
-    find_package(OpenVINO ${OV_COMPATIBILITY_VERSION} REQUIRED
+    find_package(OpenVINO ${_OV_FIND_VERSION} REQUIRED
                  COMPONENTS Runtime Threading
                  PATHS "${OpenVINO_DIR_PY}")
 endif()
