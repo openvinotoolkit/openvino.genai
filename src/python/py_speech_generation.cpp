@@ -28,16 +28,38 @@ namespace {
 
 auto speech_generation_config_docstring = R"(
     SpeechGenerationConfig
+
+    Shared parameters:
+    :param speed: speech speed multiplier.
+    :type speed: float
     
     Speech-generation specific parameters:
     :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
     :type minlenratio: float
 
     :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-    :type minlenratio: float
+    :type maxlenratio: float
 
     :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
     :type threshold: float
+
+    Kokoro-specific parameters:
+    :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+    :type language: str
+
+    :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+    :type max_phoneme_length: int
+
+    :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                         This applies only to fallback during phonemize / G2P
+                                         (graphemes to phonemes), before acoustic model inference.
+                                         If set, this OpenVINO G2P fallback is used.
+                                         If unset (None), espeak-ng G2P fallback is used.
+                                         For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                         `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                         omit this key instead of passing None because kwargs-to-AnyMap
+                                         conversion rejects None values.
+    :type phonemize_fallback_model_dir: str | None
 )";
 
 auto speech_generation_perf_metrics_docstring = R"(
@@ -49,10 +71,13 @@ auto speech_generation_perf_metrics_docstring = R"(
 
 auto text_to_speech_decoded_results = R"(
     Structure that stores the result from the generate method, including a list of waveform tensors
-    sampled at 16 kHz, along with performance metrics
+    along with output sample rate and performance metrics
 
-    :param speeches: a list of waveform tensors sampled at 16 kHz
+    :param speeches: a list of generated waveform tensors
     :type speeches: list
+
+    :param output_sample_rate: sample rate of generated waveform tensors
+    :type output_sample_rate: int
 
     :param perf_metrics: performance metrics
     :type perf_metrics: SpeechGenerationPerfMetrics
@@ -61,18 +86,20 @@ auto text_to_speech_decoded_results = R"(
 auto text_to_speech_generate_docstring = R"(
     Generates speeches based on input texts
 
-    :param text(s): input text(s) for which to generate speech
-    :type text(s): str or list[str]
+    :param text_or_texts: input text(s) for which to generate speech
+    :type text_or_texts: str or list[str]
 
     :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                              voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                             `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+                             `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
+                             to prepare this tensor externally and pass it explicitly.
     :type speaker_embedding: openvino.Tensor or None
 
     :param properties: speech generation parameters specified as properties
     :type properties: dict
 
-    :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+    :returns: raw audios of the input texts spoken in the specified speaker's voice;
+              sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
     :rtype: Text2SpeechDecodedResults
 )";
 
@@ -99,9 +126,13 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def(py::init([](const py::kwargs& kwargs) {
             return update_speech_generation_config_from_kwargs(SpeechGenerationConfig(), kwargs);
         }))
+        .def_readwrite("speed", &SpeechGenerationConfig::speed)
         .def_readwrite("minlenratio", &SpeechGenerationConfig::minlenratio)
         .def_readwrite("maxlenratio", &SpeechGenerationConfig::maxlenratio)
         .def_readwrite("threshold", &SpeechGenerationConfig::threshold)
+        .def_readwrite("language", &SpeechGenerationConfig::language)
+        .def_readwrite("max_phoneme_length", &SpeechGenerationConfig::max_phoneme_length)
+        .def_readwrite("phonemize_fallback_model_dir", &SpeechGenerationConfig::phonemize_fallback_model_dir)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
@@ -118,6 +149,7 @@ void init_speech_generation_pipeline(py::module_& m) {
     py::class_<Text2SpeechDecodedResults>(m, "Text2SpeechDecodedResults", text_to_speech_decoded_results)
         .def(py::init<>())
         .def_readonly("speeches", &Text2SpeechDecodedResults::speeches)
+        .def_readonly("output_sample_rate", &Text2SpeechDecodedResults::output_sample_rate)
         .def_readonly("perf_metrics", &Text2SpeechDecodedResults::perf_metrics);
 
     py::class_<Text2SpeechPipeline>(m, "Text2SpeechPipeline", "Text-to-speech pipeline")
@@ -143,18 +175,15 @@ void init_speech_generation_pipeline(py::module_& m) {
                const std::string& text,
                py::object speaker_embedding,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
-                SpeechGenerationConfig base_config = pipe.get_generation_config();
-
-                auto updated_config = update_speech_generation_config_from_kwargs(base_config, kwargs);
-
                 ov::genai::Text2SpeechDecodedResults res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                 {
                     py::gil_scoped_release rel;
                     if (speaker_embedding.is_none()) {
-                        res = pipe.generate(text);
+                        res = pipe.generate(text, ov::Tensor(), properties);
                     } else {
                         const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
-                        res = pipe.generate(text, tensor);
+                        res = pipe.generate(text, tensor, properties);
                     }
                 }
                 return py::cast(res);
@@ -171,18 +200,15 @@ void init_speech_generation_pipeline(py::module_& m) {
                const std::vector<std::string>& texts,
                py::object speaker_embedding,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
-                SpeechGenerationConfig base_config = pipe.get_generation_config();
-
-                auto updated_config = update_speech_generation_config_from_kwargs(base_config, kwargs);
-
                 ov::genai::Text2SpeechDecodedResults res;
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                 {
                     py::gil_scoped_release rel;
                     if (speaker_embedding.is_none()) {
-                        res = pipe.generate(texts);
+                        res = pipe.generate(texts, ov::Tensor(), properties);
                     } else {
                         const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
-                        res = pipe.generate(texts, tensor);
+                        res = pipe.generate(texts, tensor, properties);
                     }
                 }
                 return py::cast(res);
@@ -194,5 +220,8 @@ void init_speech_generation_pipeline(py::module_& m) {
             (text_to_speech_generate_docstring + std::string(" \n ") + speech_generation_config_docstring).c_str())
 
         .def("get_generation_config", &Text2SpeechPipeline::get_generation_config, py::return_value_policy::copy)
-        .def("set_generation_config", &Text2SpeechPipeline::set_generation_config, py::arg("config"));
+        .def("set_generation_config", &Text2SpeechPipeline::set_generation_config, py::arg("config"))
+        .def("get_speaker_embedding_shape", &Text2SpeechPipeline::get_speaker_embedding_shape,
+             "Get the expected speaker embedding shape for the loaded model. "
+             "SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}");
 }

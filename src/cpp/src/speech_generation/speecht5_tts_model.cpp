@@ -131,6 +131,7 @@ Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::strin
     const ov::Tensor& used_speaker_embedding = speaker_embedding ? speaker_embedding : get_default_speaker_embedding();
 
     Text2SpeechDecodedResults gen_speech_res;
+    gen_speech_res.output_sample_rate = 16000;
 
     auto& tokenization_durations = gen_speech_res.perf_metrics.raw_metrics.tokenization_durations;
     const auto generation_start = std::chrono::steady_clock::now();
@@ -207,6 +208,10 @@ Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::strin
 
 SpeechGenerationPerfMetrics SpeechT5TTSImpl::get_performance_metrics() {
     return m_perf_metrics;
+}
+
+ov::Shape SpeechT5TTSImpl::get_speaker_embedding_shape() const {
+    return ov::Shape{1, 512};
 }
 
 }  // namespace genai
