@@ -99,14 +99,14 @@ def _to_optimum_lang_code(language: str) -> str:
 def generate_tiny_kokoro_model(output_dir: Path) -> Path:
     """
     Generate a tiny random Kokoro model with minimal components.
-    
+
     This creates a model small enough to fit in CI environments without
     requiring external model downloads. The generated model follows the
     Kokoro architecture but with reduced dimensions.
-    
+
     Args:
         output_dir: Directory to save the model
-        
+
     Returns:
         Path to the generated model directory
     """
@@ -189,12 +189,8 @@ def generate_tiny_kokoro_model(output_dir: Path) -> Path:
 
     # Create and save model components
     with torch.no_grad():
-        bert = CustomAlbert(
-            AlbertConfig(vocab_size=config["n_token"], **config["plbert"])
-        )
-        bert_encoder = torch.nn.Linear(
-            config["plbert"]["hidden_size"], config["hidden_dim"]
-        )
+        bert = CustomAlbert(AlbertConfig(vocab_size=config["n_token"], **config["plbert"]))
+        bert_encoder = torch.nn.Linear(config["plbert"]["hidden_size"], config["hidden_dim"])
         predictor = ProsodyPredictor(
             style_dim=config["style_dim"],
             d_hid=config["hidden_dim"],
@@ -231,25 +227,21 @@ def generate_tiny_kokoro_model(output_dir: Path) -> Path:
     # GenAI can consume the same exported speaker data.
     voices_dir = output_dir / "voices"
     voices_dir.mkdir(exist_ok=True)
-    voice_pack = torch.from_numpy(
-        generate_speaker_embedding((KOKORO_VOICE_PACK_LENGTHS, 1, KOKORO_REF_S_DIM))
-    )
+    voice_pack = torch.from_numpy(generate_speaker_embedding((KOKORO_VOICE_PACK_LENGTHS, 1, KOKORO_REF_S_DIM)))
     torch.save(voice_pack, voices_dir / "tiny_voice.pt")
 
     logger.info(f"Generated tiny Kokoro model at {output_dir}")
     return output_dir
 
 
-def export_model_to_openvino(
-    local_model_path: Path, output_path: Path
-) -> Path:
+def export_model_to_openvino(local_model_path: Path, output_path: Path) -> Path:
     """
     Export a Kokoro model to OpenVINO IR format using optimum-cli.
-    
+
     Args:
         local_model_path: Path to local Kokoro model (with config.json)
         output_path: Directory to save OpenVINO IR artifacts
-        
+
     Returns:
         Path to the converted model directory
     """
@@ -272,8 +264,7 @@ def export_model_to_openvino(
 
     if result.returncode != 0:
         raise RuntimeError(
-            f"Export failed with return code {result.returncode}\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+            f"Export failed with return code {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
     logger.info(f"Successfully exported model to {output_path}")
@@ -297,9 +288,7 @@ def _ensure_tiny_voice_bin(ov_path: Path, tiny_kokoro_model_path: Path) -> Path:
 
     source_pt = tiny_kokoro_model_path / "voices" / "tiny_voice.pt"
     if not source_pt.exists():
-        raise FileNotFoundError(
-            f"Missing source tiny voice pack for fallback conversion: {source_pt}"
-        )
+        raise FileNotFoundError(f"Missing source tiny voice pack for fallback conversion: {source_pt}")
 
     source_voice = torch.load(source_pt, map_location="cpu")
     if isinstance(source_voice, torch.Tensor):
@@ -315,15 +304,15 @@ def _ensure_tiny_voice_bin(ov_path: Path, tiny_kokoro_model_path: Path) -> Path:
 def generate_speaker_embedding(shape: Tuple[int, ...]) -> np.ndarray:
     """
     Generate a deterministic speaker embedding/voice-pack for testing.
-    
+
     In real scenarios, speaker embeddings come from speaker encoders or Kokoro
     voice packs. For testing, avoid random values because they can drive this
     tiny random model into unstable inference paths. Instead generate a fixed,
     bounded tensor so tests are reproducible and inputs stay well-behaved.
-    
+
     Args:
         shape: Shape of the embedding tensor
-        
+
     Returns:
         Deterministic float32 array with the given shape
     """
@@ -347,7 +336,7 @@ def generate_speaker_embedding(shape: Tuple[int, ...]) -> np.ndarray:
 def tiny_kokoro_model_path() -> Path:
     """
     Fixture that generates a tiny random Kokoro model for testing.
-    
+
     Uses atomic download pattern for thread-safe test parallelization.
     Caches the model across test runs.
     """
@@ -379,7 +368,7 @@ def tiny_kokoro_model_path() -> Path:
 def tiny_kokoro_ov_path(tiny_kokoro_model_path: Path) -> Path:
     """
     Fixture that exports the tiny Kokoro model to OpenVINO format.
-    
+
     Caches the exported model to avoid repeated exports in tests.
     """
     models_dir = get_ov_cache_converted_models_dir()
@@ -402,7 +391,7 @@ def tiny_kokoro_ov_path(tiny_kokoro_model_path: Path) -> Path:
 def speaker_embedding_tensor(tiny_kokoro_ov_path: Path):
     """
     Fixture that provides a speaker embedding tensor suitable for inference.
-    
+
     For the tiny model, load the exported deterministic voice pack so the same
     speaker data is used by both optimum and GenAI.
     """
@@ -477,9 +466,7 @@ class TestKokoroPipeline:
         speaker embedding.
         """
         # Optimum path with explicit language mapping for Kokoro KPipeline.
-        model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
-            str(tiny_kokoro_ov_path), trust_remote_code=True
-        )
+        model = OVModelForTextToSpeechSeq2Seq.from_pretrained(str(tiny_kokoro_ov_path), trust_remote_code=True)
         inputs = model.preprocess_input(
             text=prompt,
             speaker_embedding=speaker_embedding_tensor,
