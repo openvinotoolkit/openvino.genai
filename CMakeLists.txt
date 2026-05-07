@@ -57,7 +57,7 @@ find_package(OpenVINODeveloperPackage ${OV_COMPATIBILITY_VERSION} QUIET
              COMPONENTS Runtime Threading
              PATHS "${OpenVINO_DIR}")
 if(NOT OpenVINODeveloperPackage_FOUND)
-    find_package(OpenVINO ${OV_COMPATIBILITY_VERSION} REQUIRED
+    find_package(OpenVINO  REQUIRED
                  COMPONENTS Runtime Threading
                  PATHS "${OpenVINO_DIR_PY}")
 endif()
