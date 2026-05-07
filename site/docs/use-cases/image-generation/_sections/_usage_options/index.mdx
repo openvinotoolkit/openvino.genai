@@ -3,7 +3,7 @@ import GenerationConfigurationWorkflow from '@site/docs/use-cases/_shared/_gener
 ## Additional Usage Options
 
 :::tip
-Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/image_generation) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/image_generation) image generation samples.
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/image_generation), [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/image_generation), and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/image_generation) image generation samples.
 :::
 
 ### Use Different Generation Parameters
@@ -60,6 +60,22 @@ You can adjust several parameters to control the image generation process, inclu
         }
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        import { Text2ImagePipeline } from 'openvino-genai-node';
+
+        const pipeline = await Text2ImagePipeline(modelPath, 'CPU');
+        const result = await pipeline.generate(prompt, {
+            // highlight-start
+            width: 512,
+            height: 512,
+            num_images_per_prompt: 1,
+            num_inference_steps: 30,
+            guidance_scale: 7.5,
+            // highlight-end
+        });
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 :::info Understanding Image Generation Parameters

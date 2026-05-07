@@ -134,6 +134,9 @@ def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_
     assert genai_score_no_gen == genai_score
 
 
+@pytest.mark.transformers_lower_v5(
+    reason="version of the speechbrain module compatible with transformers v5.0 causes an import error with k2 module on Windows."
+)
 @pytest.mark.speech_generation
 @pytest.mark.speecht5
 @pytest.mark.parametrize(
@@ -147,6 +150,9 @@ def test_tts_speecht5(model_id, model_type, optimum_threshold, genai_threshold, 
     run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_threshold, tmp_path)
 
 
+@pytest.mark.transformers_lower_v5(
+    reason="version of the speechbrain module compatible with transformers v5.0 causes an import error with k2 module on Windows."
+)
 @pytest.mark.speech_generation
 @pytest.mark.speecht5
 def test_tts_speecht5_default_speaker_embeddings(tmp_path):

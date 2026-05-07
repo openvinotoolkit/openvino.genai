@@ -16,7 +16,7 @@ class VisionEncoderQwen3VL : public VisionEncoderQwen2VL {
 public:
     using VisionEncoderQwen2VL::VisionEncoderQwen2VL;
 
-    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
+    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) override;
 };
 
 class InputsEmbedderQwen3VL : public InputsEmbedderQwen2VL {
@@ -45,6 +45,11 @@ public:
         const std::vector<size_t>& videos_sequence = {},
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
 
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata = {}
+    ) override;
+        
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const override;
 
     void start_chat(const std::string& system_message) override;
@@ -60,6 +65,8 @@ protected:
         {"deepstack_visual_embeds", ov::Tensor()},
         {"visual_pos_masks", ov::Tensor()}
     };
+
+    bool has_lm_extra_input(const std::string& input_name) const;
 
     void expand_video_tags_in_prompt(
         std::string& unified_prompt,
