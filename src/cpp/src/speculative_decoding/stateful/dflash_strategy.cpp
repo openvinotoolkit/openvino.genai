@@ -64,6 +64,9 @@ void DFlashHiddenStateProvider::append(const ov::Tensor& hidden_states, size_t t
                     "Cannot append DFlash hidden states with incompatible hidden size.");
     ov::Shape new_shape = old_shape;
     new_shape[1] += token_count;
+    // TODO: This is on the generation hot path. Stage 1 keeps a full-context target_hidden tensor for
+    // the stateless DFlash draft, but this reallocates and recopies all previous hidden states on each
+    // append. Replace with a capacity-aware buffer/logical view when moving to incremental DFlash KV-cache.
     ov::Tensor merged(m_context.get_element_type(), new_shape);
     ov::Tensor old_dst(merged, ov::Coordinate{0, 0, 0}, ov::Coordinate{1, old_shape[1], old_shape[2]});
     ov::Tensor new_dst(merged, ov::Coordinate{0, old_shape[1], 0}, ov::Coordinate{1, new_shape[1], new_shape[2]});
@@ -432,8 +435,8 @@ StatefulDFlashLLMPipeline::~StatefulDFlashLLMPipeline() {
 
 GenerationConfig StatefulDFlashLLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
     GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(generation_config);
-    OPENVINO_ASSERT(config.is_greedy_decoding() || config.is_multinomial(),
-                    "DFlash stateful POC supports greedy and multinomial sampling only.");
+    OPENVINO_ASSERT(config.is_greedy_decoding(),
+                    "DFlash stateful POC supports greedy sampling only.");
     OPENVINO_ASSERT(config.num_beams == 1, "DFlash stateful POC does not support beam search.");
     return config;
 }

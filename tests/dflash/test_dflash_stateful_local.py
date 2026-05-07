@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import gc
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,32 @@ def _local_dflash_models():
         pytest.skip("Local DFlash target/draft artifacts are not available")
 
     return target_model_path, draft_model_path
+
+
+def _require_gpu_device():
+    ov = pytest.importorskip("openvino")
+    devices = ov.Core().get_available_devices()
+    if not any(device == "GPU" or device.startswith("GPU.") for device in devices):
+        pytest.skip(f"OpenVINO GPU device is not available, found devices: {devices}")
+
+
+def _generate_target_then_dflash_on_gpu(prompts, generation_config):
+    _require_gpu_device()
+    target_model_path, draft_model_path = _local_dflash_models()
+    ov_genai = pytest.importorskip("openvino_genai")
+
+    target_pipe = ov_genai.LLMPipeline(target_model_path, "GPU", {})
+    target_results = [target_pipe.generate([prompt], generation_config) for prompt in prompts]
+
+    # Release the baseline target before compiling the target+draft pair on GPU.
+    del target_pipe
+    gc.collect()
+
+    draft = ov_genai.draft_model(draft_model_path, "GPU")
+    dflash_pipe = ov_genai.LLMPipeline(target_model_path, "GPU", {}, draft_model=draft)
+    dflash_results = [dflash_pipe.generate([prompt], generation_config) for prompt in prompts]
+
+    return target_results, dflash_results
 
 
 def test_dflash_local_greedy_matches_target_pipeline():
@@ -50,3 +77,50 @@ def test_dflash_local_perf_metrics_are_populated():
     assert result.extended_perf_metrics is not None
     assert result.extended_perf_metrics.main_model_metrics.raw_metrics.m_durations
     assert result.extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations
+
+
+def test_dflash_local_gpu_greedy_matches_target_pipeline():
+    ov_genai = pytest.importorskip("openvino_genai")
+    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=8, ignore_eos=True)
+    target_results, dflash_results = _generate_target_then_dflash_on_gpu(
+        ["Write a Python function that adds two integers."],
+        generation_config,
+    )
+
+    target_result = target_results[0]
+    dflash_result = dflash_results[0]
+    assert dflash_result.texts == target_result.texts
+    assert dflash_result.perf_metrics.get_num_generated_tokens() == target_result.perf_metrics.get_num_generated_tokens()
+    assert dflash_result.extended_perf_metrics is not None
+    assert dflash_result.extended_perf_metrics.main_model_metrics.raw_metrics.m_durations
+    assert dflash_result.extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations
+
+
+def test_dflash_local_gpu_exercises_target_kv_rollback():
+    ov_genai = pytest.importorskip("openvino_genai")
+    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=32, ignore_eos=True)
+    prompts = [
+        "Write a compact C++ function that checks if a number is prime.",
+        "Explain speculative decoding in one paragraph.",
+        "Continue this sequence with code-like tokens: def foo(x):",
+    ]
+
+    target_results, dflash_results = _generate_target_then_dflash_on_gpu(prompts, generation_config)
+
+    total_draft_generated = 0
+    total_draft_accepted = 0
+    for prompt, target_result, dflash_result in zip(prompts, target_results, dflash_results):
+        assert dflash_result.texts == target_result.texts, f"DFlash diverged from target-only GPU for prompt: {prompt}"
+        metrics = dflash_result.extended_perf_metrics
+        assert metrics is not None
+        draft_generated = metrics.draft_model_metrics.get_num_generated_tokens()
+        draft_accepted = metrics.get_num_accepted_tokens()
+        assert draft_generated > 0, f"DFlash draft did not generate candidates for prompt: {prompt}"
+        assert draft_accepted <= draft_generated
+        total_draft_generated += draft_generated
+        total_draft_accepted += draft_accepted
+
+    assert total_draft_generated > total_draft_accepted, (
+        "GPU/GPU DFlash did not reject any draft candidates, so target KV-cache rollback was not exercised. "
+        f"draft_generated={total_draft_generated}, draft_accepted={total_draft_accepted}"
+    )
