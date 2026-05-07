@@ -35,9 +35,9 @@ env:
   BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
-  # To switch to the primary HF token, replace `token-secondary` with `token-primary`:
-  #   HF_TOKEN_PATH: /home/runner/secrets/huggingface/token-primary
-  HF_TOKEN_PATH: /home/runner/secrets/huggingface/token-secondary
+  # To switch to the secondary HF token, replace `token-primary` with `token-secondary`:
+  #   HF_TOKEN_PATH: /home/runner/secrets/huggingface/token-secondary
+  HF_TOKEN_PATH: /home/runner/secrets/huggingface/token-primary
 
 jobs:
   smart_ci:
@@ -732,7 +732,7 @@ jobs:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
-      - name: Download Build Artifactsx
+      - name: Download Build Artifacts
         if: ${{ matrix.test.run_condition }}
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
