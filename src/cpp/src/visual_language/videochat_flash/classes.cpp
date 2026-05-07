@@ -833,10 +833,17 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
 
 
 
-std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChatFlashQwen::encode_videos(const std::vector<ov::Tensor>& videos) {
+std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChatFlashQwen::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata
+) {
+    OPENVINO_ASSERT(videos.size() == videos_metadata.size() || videos_metadata.empty(),
+        "Number of videos and videos metadata must match if metadata provided.");
+
     const auto vision_encoder = std::static_pointer_cast<VisionEncoderVideoChatFlashQwen>(m_vision_encoder);
     std::vector<EncodedVideo> embeds;
     for (const ov::Tensor& video : videos) {
+        // TODO Override InputsEmbedder::sample_video_if_needed and use VideoMetadata for proper video sampling
         embeds.emplace_back(vision_encoder->encode_video(video));
     }
     return embeds;

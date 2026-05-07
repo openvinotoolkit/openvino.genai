@@ -11,6 +11,7 @@
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen2_5_vl/classes.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
+#include "visual_language/qwen3_5/classes.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -171,6 +172,41 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::encode_prompt(const std::string& ori
     return m_tokenizer.encode(original_prompt).input_ids;
 }
 
+ov::Tensor InputsEmbedder::IInputsEmbedder::sample_video_if_needed(
+    const ov::Tensor& video,
+    const VideoMetadata& video_metadata
+) const {
+    const auto& video_shape = video.get_shape();
+    
+    OPENVINO_ASSERT(video_shape.size() == 4,
+    "Video tensor must have shape {N, H, W, C}, got rank ", video_shape.size());
+    
+    const size_t video_frames_num = video_shape[0];
+    
+    OPENVINO_ASSERT(video_metadata.frames_indices.size() <= video_frames_num,
+        "Number of frames to sample cannot be greater than total number of frames in the video.");
+
+    if (video_metadata.frames_indices.empty()) {
+        return video;
+    }
+
+    ov::Tensor sampled(video.get_element_type(),
+        {video_metadata.frames_indices.size(), video_shape[1], video_shape[2], video_shape[3]});
+        
+    const auto* src = static_cast<const uint8_t*>(video.data());
+    auto* dst = static_cast<uint8_t*>(sampled.data());
+    
+    const size_t frame_bytes = video_shape[1] * video_shape[2] * video_shape[3] * video.get_element_type().size();
+
+    for (size_t i = 0; i < video_metadata.frames_indices.size(); ++i) {
+        const size_t frame_idx = video_metadata.frames_indices[i];
+        OPENVINO_ASSERT(frame_idx < video_frames_num,
+            "Frame index ", frame_idx, " out of range [0, ", video_frames_num, ")");
+        std::memcpy(dst + i * frame_bytes, src + frame_idx * frame_bytes, frame_bytes);
+    }
+    return sampled;
+}
+
 std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors(const std::vector<ov::Tensor>& images) {
     std::vector<ov::Tensor> single_image_tensors;
     for (const auto& image : images) {
@@ -220,7 +256,10 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
     return get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings, images_sequence);
 }
 
-std::vector<ov::genai::EncodedVideo> InputsEmbedder::IInputsEmbedder::encode_videos(const std::vector<ov::Tensor>& videos) {
+std::vector<ov::genai::EncodedVideo> InputsEmbedder::IInputsEmbedder::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata
+) {
     throw_if_video_not_implemented(videos);
     return {};
 }
@@ -295,6 +334,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_VL) {
         m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_5 || vlm_config.model_type == VLMModelType::QWEN3_5_MOE) {
+        m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA4) {
@@ -335,6 +376,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_VL) {
         m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_5 || vlm_config.model_type == VLMModelType::QWEN3_5_MOE) {
+        m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA4) {
@@ -413,8 +456,11 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::ve
     return m_impl->encode_images(images);
 }
 
-std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(const std::vector<ov::Tensor>& videos) {
-    return m_impl->encode_videos(videos);
+std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata
+) {
+    return m_impl->encode_videos(videos, videos_metadata);
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
