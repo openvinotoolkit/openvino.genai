@@ -62,7 +62,7 @@ public:
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder");
             } else {
-                OPENVINO_ASSERT("Unsupported pipeline type");
+                OPENVINO_THROW("Unsupported pipeline type");
             }
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
@@ -107,7 +107,7 @@ public:
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, *updated_properties);
             } else {
-                OPENVINO_ASSERT("Unsupported pipeline type");
+                OPENVINO_THROW("Unsupported pipeline type");
             }
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
