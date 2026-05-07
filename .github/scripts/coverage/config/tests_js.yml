@@ -1,0 +1,14 @@
+schema_version: 1
+suite: js
+tests:
+  - name: node_package_tests
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 ./tests/setup.py --to-env-file test.env &&
+      npx c8 --reporter=lcov --reporter=text
+      --report-dir ${OV_WORKSPACE}/js-coverage
+      --clean=true
+      --exclude 'tests/**'
+      --exclude 'dist/**/*.d.ts'
+      node --env-file=test.env --test ./tests/*.test.js

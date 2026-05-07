@@ -1,0 +1,15 @@
+schema_version: 1
+suite: cpp
+tests:
+  - name: tests_continuous_batching
+    binary: tests_continuous_batching
+    mode: gtest_single
+    profiles: [cpu]
+    args: "-AddSecondInputTest.*"
+    extra_env: "TEST_MODELS_BASE_DIR=${HF_HOME}/ov_test_models CACHE_TYPES_CSV=${BIN_DIR}/data/cache_types_models.csv"
+
+  - name: cdpruner_dpp_opencl
+    binary: tests_continuous_batching
+    mode: gtest_single
+    profiles: [gpu]
+    args: "*OpenCL*"

@@ -1,0 +1,240 @@
+schema_version: 1
+suite: python
+tests:
+  - name: whisper
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_whisper_pipeline.py
+      ./tests/python_tests/test_whisper_pipeline_static.py
+      -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"
+
+  - name: cacheopt_e2e_part_1
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py
+
+  - name: cacheopt_e2e_part_2
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py
+
+  - name: llm_image_structured_output
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_llm_pipeline.py
+      ./tests/python_tests/test_llm_pipeline_static.py
+      ./tests/python_tests/test_structured_output.py
+      ./tests/python_tests/test_image_generation.py
+      ./tests/python_tests/test_image_generation_multi_call.py
+      --override-ini cache_dir=/mount/caches/pytest/
+
+  - name: vlm_match_optimum_with_resolutions
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_vlm_pipeline.py
+      -k "test_vlm_pipeline_match_optimum_with_resolutions"
+      --override-ini cache_dir=/mount/caches/pytest/
+
+  - name: vlm
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_vlm_pipeline.py
+      -k "not test_vlm_pipeline_match_optimum_with_resolutions"
+      --override-ini cache_dir=/mount/caches/pytest/
+
+  - name: video_generation
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_video_generation.py
+      --override-ini cache_dir=/mount/caches/pytest/
+
+  - name: gguf_reader
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_gguf_reader.py
+
+  - name: tokenizer
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_tokenizer.py
+
+  - name: api
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_continuous_batching.py
+      -k "not eagle3"
+      ./tests/python_tests/test_generation_config.py
+      ./tests/python_tests/test_sampling.py
+      ./tests/python_tests/test_text_streamer.py
+
+  - name: rag
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_rag.py
+
+  - name: wwb
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tools/who_what_benchmark/tests
+      -m "not nanollava"
+
+  - name: eagle3_speculative_decoding
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_continuous_batching.py
+      -k "eagle3"
+
+  - name: wwb_nanollava
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pip install transformers==4.48.0 diffusers==0.35.2 &&
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tools/who_what_benchmark/tests
+      -m nanollava
+
+  - name: vlm_minicpm_o_2_6
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pip install transformers==4.51.3 &&
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -s -v
+      ./tests/python_tests/test_vlm_pipeline.py
+      --override-ini cache_dir=/mount/caches/pytest/
+      -k "MiniCPM-o-2_6"
+
+  - name: vlm_videochat
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@cba3f3157d18f309f87e3f50f47741582ee645d3 &&
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -s -v
+      ./tests/python_tests/test_vlm_pipeline.py
+      --override-ini cache_dir=/mount/caches/pytest/
+      -k "videochat"
+
+  - name: vlm_qwen3_vl
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pip install transformers==4.57.0 git+https://github.com/huggingface/optimum-intel.git@0566b76f094d4c3084e06d29a248b39a1bff3fa4 &&
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -s -v
+      ./tests/python_tests/test_vlm_pipeline.py
+      --override-ini cache_dir=/mount/caches/pytest/
+      -k "qwen3-vl"
+
+  - name: samples_llm
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "llm"
+
+  - name: samples_whisper
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "whisper"
+
+  - name: samples_dreamlike_anime_1_0
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "dreamlike_anime_1_0"
+
+  - name: samples_lcm_dreamshaper_v7_int8_ov
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "LCM_Dreamshaper_v7_int8_ov"
+
+  - name: samples_rag
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "rag"
+
+  - name: samples_speech_generation
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "speech_generation"
+
+  - name: samples_eagle3_decoding
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "eagle3_decoding"
+
+  - name: continuous_batching_tools
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vs
+      ./tests/python_tests/samples/test_continuous_batching_tools.py
+      -m "samples"
+
+  - name: llm_benchmark_tools
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${OV_WORKSPACE}/tools"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vs
+      ./tests/python_tests/samples/test_tools_llm_benchmark.py
+      -m "samples"
+
+  - name: xgrammar_off
+    kind: command
+    profiles: [cpu]
+    command: >-
+      PYTHONPATH="${XGRAMMAR_BUILD_DIR}:${PYTHONPATH:-}"
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_llm_pipeline.py
+      -k "not test_perf_metrics_with_structured_output"
