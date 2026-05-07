@@ -60,7 +60,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
                                                                                     main_model_desc_with_qq_bias.generation_config,
                                                                                     scheduler_configs.first,
                                                                                     main_device,
-                                                                                    main_model_desc_with_qq_bias.properties,
+                                                                                    main_model_desc.properties,
                                                                                     true);
         m_draft_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(draft_model,
                                                                                      m_inputs_embedder,
@@ -76,7 +76,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
                                                                                     main_model_desc_with_qq_bias.generation_config,
                                                                                     scheduler_configs.first,
                                                                                     main_device,
-                                                                                    main_model_desc_with_qq_bias.properties,
+                                                                                    main_model_desc.properties,
                                                                                     true);
         m_draft_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(draft_model,
                                                                                      draft_model_tokenizer,
