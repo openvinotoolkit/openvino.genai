@@ -142,6 +142,16 @@ def call_tool(tool_name: str, tool_args: str) -> str:
     else:
         raise NotImplementedError
 
+def execute_tool(tool_name: str, tool_args: str) -> str:
+    try:
+        return call_tool(tool_name, tool_args)
+    except requests.RequestException as e:
+        return f"Tool '{tool_name}' failed: network error - {e}"
+    except (json.JSONDecodeError, ValueError, KeyError) as e:
+        return f"Tool '{tool_name}' failed: invalid arguments - {e}"
+    except Exception as e:
+        return f"Tool '{tool_name}' failed: {e}"
+
 def llm_with_tool(llm_pipe, prompt, history, list_of_tool_info):
     chat_history = [(x["user"], x["bot"]) for x in history] + [(prompt, "")]
     planning_prompt = build_input_text(llm_pipe.get_tokenizer(), chat_history, list_of_tool_info)
@@ -154,7 +164,7 @@ def llm_with_tool(llm_pipe, prompt, history, list_of_tool_info):
         # parse the output to get action
         action, action_input, output = parse_first_tool_call(output)
         if action:
-            observation = call_tool(action, action_input)
+            observation = execute_tool(action, action_input)
             observation_txt = f"\nObservation: = {observation}\nThought:"
             print("\n\n- Getting information from the tool API -", observation_txt, "\n")
             output += observation_txt
