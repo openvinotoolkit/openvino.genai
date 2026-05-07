@@ -6,11 +6,11 @@ sidebar_position: 5
 
 ## Overview
 
-Some models combine more than one cache type during continuous batching.
+Some models combine more than one cache type in their architecture.
 The most common hybrid case is a model that uses both:
 
 - regular KV-cache inputs for attention layers
-- linear-attention state tables for layers such as CausalConv1D or GatedDeltaNet
+- linear-attention state tables for layers such as `CausalConv1D` or `GatedDeltaNet`.
 
 These models do not have a single cache pool.
 They have at least two different cache pools with different growth rules:
@@ -24,7 +24,7 @@ This distinction matters when configuring `SchedulerConfig`, because the same se
 
 ### KV cache
 
-KV cache capacity is measured in blocks, and each block stores a fixed number of tokens determined by the target device.
+KV cache capacity is measured in blocks, and each block corresponds to a fixed number of tokens determined by the target device.
 Increasing KV capacity increases the number of tokens that can remain resident across active sequences.
 
 Relevant settings:
@@ -70,34 +70,26 @@ For hybrid-attention models, the following rules are the most useful mental mode
 
 ### Constructor defaults matter
 
-The starting `SchedulerConfig` depends on which pipeline constructor reaches Continuous Batching.
+The starting `SchedulerConfig` depends on pipeline constructor type.
 
-`LLMPipeline` constructors that create the Continuous Batching adapter use a latency-oriented default scheduler configuration when the user does not pass an explicit scheduler config in properties.
-That default changes two important fields:
+`LLMPipeline` and `VLMPipeline` constructors that utilize Continuous Batching use a latency-oriented default scheduler configuration if the user does not pass a scheduler config in `properties`. It is optimized for local non-concurrent usage.
+That default changes two fields:
 
 - `max_num_batched_tokens = std::numeric_limits<size_t>::max()`
 - `enable_prefix_caching = true`
 
-This matters for hybrid-attention models because unlimited `max_num_batched_tokens` is treated as the client-style signal in non-prefix mode.
-
-`ContinuousBatchingPipeline` constructors do not infer that latency-oriented profile on their own.
+`ContinuousBatchingPipeline` constructors do not assume that latency-oriented profile.
 They use the `SchedulerConfig` object that the caller provides.
-If the caller default-constructs `SchedulerConfig`, the relevant defaults remain:
-
-- `max_num_batched_tokens = 256`
-- `max_num_seqs = 256`
-- `enable_prefix_caching = false`
 
 As a result, the same hybrid-attention model can start with different automatic linear-attention sizing depending on the constructor path unless these fields are set explicitly.
 
 ### Explicit KV capacity
 
-If `num_kv_blocks > 0`, it is treated as the explicit KV target.
 If `num_linear_attention_blocks` is left at `0`, the runtime derives linear-attention capacity automatically:
 
 - with `enable_prefix_caching=false` and unlimited `max_num_batched_tokens`, it starts with `1` linear-attention block
 - with `enable_prefix_caching=false` and bounded `max_num_batched_tokens`, it derives linear-attention blocks from `max_num_seqs`
-- with `enable_prefix_caching=true`, it derives linear-attention blocks from the KV token target and `cache_interval`
+- with `enable_prefix_caching=true`, it derives linear-attention blocks as `ceil(num_kv_blocks * kv_block_size / cache_interval)`
 
 This is the best option when deterministic capacity matters more than fitting into a precise byte budget.
 
