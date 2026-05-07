@@ -667,7 +667,7 @@ m_separator_inserters{create_separator_inserters(device)} {
 }
 
 EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
     ov::Tensor input_image_embeds{ov::element::f32, {}}, image_attention_mask{ov::element::f32, {}};
     int32_t image_height = 0, image_width = 0, num_img_tokens = 0;
 

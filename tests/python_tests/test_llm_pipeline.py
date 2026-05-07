@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal, Callable
 from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
+from optimum.intel.utils.import_utils import is_transformers_version
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -25,6 +26,7 @@ from utils.tokenizers import (
     model_tmp_path,  # noqa: F401
 )
 from utils.ov_genai_pipelines import (
+    ALL_PIPELINE_TYPES,
     LINEAR_ATTENTION_PIPELINE_TYPES,
     create_ov_pipeline,
     generate_and_compare,
@@ -47,22 +49,30 @@ def assert_hf_equals_genai(hf_reference, genai_output, **kwargs) -> None:
 # e2e work
 #
 
-INPUTS_TEST_CASES = [
+GREEDY_INPUTS_TEST_CASES = [
     (
         {"max_new_tokens": 20},
         "你好！ 你好嗎？",
     ),
-    (
-        {
-            "max_new_tokens": 30,
-            "num_beams": 15,
-            "num_beam_groups": 3,
-            "num_return_sequences": 15,
-            "diversity_penalty": 1.0,
-        },
-        "Why is the Sun yellow?",
-    ),
 ]
+
+if is_transformers_version("<", "5.0"):
+    # beam search fails with optimum-intel 423b423 and transformers>=5.0
+    # restore after fix of CVS-185790
+    INPUTS_TEST_CASES = [
+        (
+            {
+                "max_new_tokens": 30,
+                "num_beams": 15,
+                "num_beam_groups": 3,
+                "num_return_sequences": 15,
+                "diversity_penalty": 1.0,
+            },
+            "Why is the Sun yellow?",
+        ),
+    ]
+else:
+    INPUTS_TEST_CASES = [*GREEDY_INPUTS_TEST_CASES]
 
 PERF_METRICS_TEST_CASES = [
     ({"max_new_tokens": 20}, "table is made of"),
@@ -84,10 +94,15 @@ INPUT_TENSORS_LIST = [
     (np.array([[1, 4, 42]], dtype=np.int64), np.array([[1, 1, 1]], dtype=np.int64)),
 ]
 
-TEST_CONFIGS = [
-    {"max_new_tokens": 20},
-    {"max_new_tokens": 20, "num_beam_groups": 2, "num_beams": 6, "diversity_penalty": 1.0},
-]
+GREEDY_TEST_CONFIGS = [{"max_new_tokens": 20}]
+if is_transformers_version("<", "5.0"):
+    # beam search fails with optimum-intel 423b423 and transformers>=5.0
+    # restore after fix of CVS-185790
+    TEST_CONFIGS = [
+        {"max_new_tokens": 20, "num_beam_groups": 2, "num_beams": 6, "diversity_penalty": 1.0},
+    ]
+else:
+    TEST_CONFIGS = [*GREEDY_TEST_CONFIGS]
 
 BATCHED_PROMPTS = [
     ["table is made", "They sky is blue because", "Difference between Jupiter and Mars is that"],
@@ -146,6 +161,9 @@ def ov_pipe(llm_model: OVConvertedModelSchema) -> ov_genai.LLMPipeline:
     return create_ov_pipeline(llm_model.models_path)
 
 
+@pytest.mark.transformers_dependent(
+    reason="Some cases with beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
+)
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("generation_config_dict,prompt", INPUTS_TEST_CASES)
 @pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
@@ -163,8 +181,11 @@ def test_string_inputs(
     )
 
 
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("generation_config_dict,prompt", INPUTS_TEST_CASES[:1])  # exclude beam search case
+@pytest.mark.parametrize("generation_config_dict,prompt", GREEDY_INPUTS_TEST_CASES)  # exclude beam search case
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 def test_linear_attention_string_inputs(
     llm_model: OVConvertedModelSchema,
@@ -180,7 +201,17 @@ def test_linear_attention_string_inputs(
     )
 
 
-@pytest.mark.parametrize("llm_model", MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+ENCODED_INPUTS_MODELS_LIST = [*LINEAR_ATTENTION_MODELS_LIST]
+if is_transformers_version(">=", "5.0"):
+    # LINEAR_ATTENTION_MODELS_LIST depends on the tranformers version, but MODELS_LIST is the same
+    # to eliminate duplication of tests, MODELS_LIST will be added for transformers>=5.0 only
+    ENCODED_INPUTS_MODELS_LIST += MODELS_LIST
+
+
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
+@pytest.mark.parametrize("llm_model", ENCODED_INPUTS_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("inputs", INPUT_TENSORS_LIST)
 def test_encoded_inputs(
     llm_model: OVConvertedModelSchema,
@@ -201,7 +232,7 @@ def test_encoded_inputs(
         inputs_ov = ov.Tensor(input_ids)
 
     hf_output = llm_model.opt_model.generate(
-        **inputs_hf, generation_config=hf_generation_config, **extra_generate_kwargs()
+        **inputs_hf, generation_config=hf_generation_config, **extra_generate_kwargs(hf_generation_config)
     ).sequences[0]
     ov_output = ov_pipe.generate(inputs_ov, ov_generation_config)
 
@@ -225,6 +256,9 @@ def test_readonly_input_tensor(ov_pipe: ov_genai.LLMPipeline) -> None:
     ov_pipe.generate(readonly_tensor, max_new_tokens=5)
 
 
+@pytest.mark.transformers_dependent(
+    reason="Some cases with beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
+)
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("generation_config_dict", TEST_CONFIGS)
 @pytest.mark.parametrize("prompts", BATCHED_PROMPTS)
@@ -243,9 +277,12 @@ def test_batch_string_inputs(
     )
 
 
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
-@pytest.mark.parametrize("generation_config_dict", TEST_CONFIGS[:1])  # exclude beam search config
+@pytest.mark.parametrize("generation_config_dict", GREEDY_TEST_CONFIGS)  # exclude beam search config
 @pytest.mark.parametrize("prompts", BATCHED_PROMPTS)
 def test_linear_attention_batch_string_inputs(
     llm_model: OVConvertedModelSchema,
@@ -274,6 +311,7 @@ def test_empty_encoded_inputs_throw(ov_pipe: ov_genai.LLMPipeline) -> None:
         ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
 
 
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 def test_different_input_types_works_same_and_change_nothing(
     llm_model: OVConvertedModelSchema,
@@ -297,6 +335,9 @@ def test_different_input_types_works_same_and_change_nothing(
     assert res_string_input_1 == res_string_input_2
 
 
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 @pytest.mark.parametrize("prompt", [prompt for prompts in BATCHED_PROMPTS for prompt in prompts])
@@ -310,6 +351,9 @@ def test_linear_model_deterministic(
     assert result1 == result2
 
 
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 def test_linear_attention_batch_input_same_as_individual(
@@ -335,6 +379,7 @@ def test_linear_attention_batch_input_same_as_individual(
 #
 # Chat scenario
 #
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("inputs", CHAT_INPUTS)
 @pytest.mark.parametrize(
@@ -377,7 +422,7 @@ def test_chat_scenario(
         prompt_len = tokenized["input_ids"].numel()
 
         answer = llm_model.opt_model.generate(
-            **tokenized, generation_config=hf_generation_config, **extra_generate_kwargs()
+            **tokenized, generation_config=hf_generation_config, **extra_generate_kwargs(hf_generation_config)
         ).sequences[0]
         answer_str = llm_model.hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
         chat_history_hf.append({"role": "assistant", "content": answer_str})
@@ -425,6 +470,9 @@ def test_chat_scenario(
         assert_hf_equals_genai(chat_history_hf, chat_history_messages_ov)
 
 
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("inputs", CHAT_INPUTS[:1])  # exclude beam search config
 @pytest.mark.parametrize(
@@ -459,7 +507,7 @@ def test_linear_attention_chat_scenario(
         prompt_len = tokenized["input_ids"].numel()
 
         answer = llm_model.opt_model.generate(
-            **tokenized, generation_config=hf_generation_config, **extra_generate_kwargs()
+            **tokenized, generation_config=hf_generation_config, **extra_generate_kwargs(hf_generation_config)
         ).sequences[0]
         answer_str = llm_model.hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
         chat_history_hf.append({"role": "assistant", "content": answer_str})
@@ -485,6 +533,7 @@ def test_linear_attention_chat_scenario(
     assert_hf_equals_genai(chat_history_hf, chat_history_messages_ov)
 
 
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", [CHAT_MODELS_LIST[0]], indirect=True)
 def test_chat_scenario_several_chats_in_series(
     llm_model: OVConvertedModelSchema,
@@ -509,7 +558,7 @@ def test_chat_scenario_several_chats_in_series(
             prompt_len = tokenized["input_ids"].numel()
 
             answer = llm_model.opt_model.generate(
-                **tokenized, generation_config=hf_generation_config, **extra_generate_kwargs()
+                **tokenized, generation_config=hf_generation_config, **extra_generate_kwargs(hf_generation_config)
             ).sequences[0]
             answer_str = llm_model.hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
             chat_history_hf.append({"role": "assistant", "content": answer_str})
@@ -522,6 +571,9 @@ def test_chat_scenario_several_chats_in_series(
         assert_hf_equals_genai(chat_history_hf, chat_history_ov)
 
 
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 def test_chat_scenario_several_chats_in_series_linear_cache(
@@ -548,7 +600,7 @@ def test_chat_scenario_several_chats_in_series_linear_cache(
             prompt_len = tokenized["input_ids"].numel()
 
             answer = llm_model.opt_model.generate(
-                **tokenized, generation_config=hf_generation_config, **extra_generate_kwargs()
+                **tokenized, generation_config=hf_generation_config, **extra_generate_kwargs(hf_generation_config)
             ).sequences[0]
             answer_str = llm_model.hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
             chat_history_hf.append({"role": "assistant", "content": answer_str})
@@ -561,6 +613,7 @@ def test_chat_scenario_several_chats_in_series_linear_cache(
         assert_hf_equals_genai(chat_history_hf, chat_history_ov, chat_number=i)
 
 
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 def test_chat_scenario_several_start(ov_pipe: ov_genai.LLMPipeline) -> None:
     generation_config_kwargs, _ = CHAT_INPUTS[0]
@@ -572,6 +625,7 @@ def test_chat_scenario_several_start(ov_pipe: ov_genai.LLMPipeline) -> None:
     ov_pipe.finish_chat()
 
 
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 def test_generate_works_same_before_and_after_chat(ov_pipe: ov_genai.LLMPipeline) -> None:
     generation_config_kwargs, _ = CHAT_INPUTS[0]
@@ -589,6 +643,9 @@ def test_generate_works_same_before_and_after_chat(ov_pipe: ov_genai.LLMPipeline
     assert res_after_chat == res_before_chat
 
 
+@pytest.mark.transformers_dependent(
+    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
+)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
 @pytest.mark.parametrize("questions", [QUESTIONS[:2]])
@@ -709,7 +766,17 @@ def test_callback_terminate_by_status(ov_pipe: ov_genai.LLMPipeline) -> None:
     assert len(ov_output.tokens[0]) < max_new_tokens
 
 
-@pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST + LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+CHAT_CALLBACK_MODELS_LIST = [*LINEAR_ATTENTION_MODELS_LIST]
+if is_transformers_version("<", "5.0"):
+    # LINEAR_ATTENTION_MODELS_LIST depends on the tranformers version
+    # CHAT_MODELS_LIST is supported on transformers<5.0
+    CHAT_CALLBACK_MODELS_LIST += CHAT_MODELS_LIST
+
+
+@pytest.mark.transformers_dependent(
+    reason="Accuracy drop with optimum-intel 423b423 with transformers>=5.0, CVS-185788"
+)
+@pytest.mark.parametrize("llm_model", CHAT_CALLBACK_MODELS_LIST, indirect=True)
 def test_chat_scenario_callback_cancel(
     llm_model: OVConvertedModelSchema,
     ov_pipe: ov_genai.LLMPipeline,
@@ -743,7 +810,7 @@ def test_chat_scenario_callback_cancel(
             prompt_len = tokenized["input_ids"].numel()
 
             answer = llm_model.opt_model.generate(
-                **tokenized, generation_config=hf_generation_config, **extra_generate_kwargs()
+                **tokenized, generation_config=hf_generation_config, **extra_generate_kwargs(hf_generation_config)
             ).sequences[0]
             answer_str = llm_model.hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
             chat_history_hf.append({"role": "assistant", "content": answer_str})
@@ -1141,4 +1208,72 @@ def test_llm_pipeline_add_extension(
     )
     assert result_extension_obj.texts[0].strip() == result_ref.texts[0].strip(), (
         "Result should be the same for model with extension 'CustomAdd' and reference model."
+    )
+
+
+# Speculative decoding and prompt lookup require extra GenerationConfig params;
+# exclude them from generic RNG-seed tests.
+_NON_ASSISTANT_PIPELINE_TYPES = tuple(
+    pt
+    for pt in ALL_PIPELINE_TYPES
+    if pt not in (PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING)
+)
+
+
+def _extract_texts(result) -> list[str]:
+    """Return a flat list of generated strings from either str, DecodedResults, or list[GenerationResult]."""
+    if isinstance(result, str):
+        # LLMPipeline.generate(str, ...) returns a plain str for STATEFUL/PA/AUTO pipelines
+        return [result]
+    if isinstance(result, list):
+        # ContinuousBatchingPipeline.generate() returns list[GenerationResult]
+        return [gen_id for r in result for gen_id in r.m_generation_ids]
+    return list(result.texts)
+
+
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+@pytest.mark.parametrize("pipeline_type", _NON_ASSISTANT_PIPELINE_TYPES)
+def test_same_rng_seed_produces_identical_output(
+    llm_model: OVConvertedModelSchema, pipeline_type: PipelineType
+) -> None:
+    """Two generate() calls with the same rng_seed must produce identical output text."""
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
+    config = ov_genai.GenerationConfig(do_sample=True, temperature=1.0, max_new_tokens=20, rng_seed=42)
+    prompt = "Which season is better, summer or winter?"
+
+    texts1 = _extract_texts(ov_pipe.generate(prompt, generation_config=config))
+    texts2 = _extract_texts(ov_pipe.generate(prompt, generation_config=config))
+
+    assert texts1 == texts2, (
+        f"generate() with rng_seed=42 must be reproducible.\nFirst call:  {texts1}\nSecond call: {texts2}"
+    )
+
+
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+@pytest.mark.parametrize("pipeline_type", _NON_ASSISTANT_PIPELINE_TYPES)
+def test_different_rng_seed_produces_different_output(
+    llm_model: OVConvertedModelSchema, pipeline_type: PipelineType
+) -> None:
+    """Different rng_seeds must produce at least one distinct output across multiple seeds."""
+    ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
+    rng_seeds = [42, 123, 777, 2024]
+    prompt = "Which season is better, summer or winter?"
+
+    text_tuples = [
+        tuple(
+            _extract_texts(
+                ov_pipe.generate(
+                    prompt,
+                    generation_config=ov_genai.GenerationConfig(
+                        do_sample=True, temperature=1.3, max_new_tokens=40, rng_seed=seed
+                    ),
+                )
+            )
+        )
+        for seed in rng_seeds
+    ]
+
+    assert len(set(text_tuples)) > 1, (
+        f"generate() with different rng_seeds {rng_seeds} must produce at least one distinct output, "
+        f"but all produced: {text_tuples[0]!r}"
     )

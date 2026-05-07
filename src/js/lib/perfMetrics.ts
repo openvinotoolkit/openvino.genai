@@ -161,3 +161,39 @@ export interface Text2SpeechPerfMetrics extends PerfMetrics {
    */
   add(other: Text2SpeechPerfMetrics): this;
 }
+
+/** Raw performance metrics for image generation pipelines. */
+export type RawImageGenerationPerfMetrics = {
+  /** UNet inference duration for each denoising step, milliseconds. */
+  unetInferenceDurations: number[];
+  /** Transformer inference duration for each denoising step, milliseconds. */
+  transformerInferenceDurations: number[];
+  /** Total iteration duration for each denoising step, milliseconds. */
+  iterationDurations: number[];
+};
+
+/**
+ * Holds performance metrics for each Text2Image generate call.
+ */
+export interface Text2ImagePerfMetrics {
+  /** Returns model load time in milliseconds. */
+  getLoadTime(): number;
+  /** Returns total generate call duration in milliseconds. */
+  getGenerateDuration(): number;
+  /** Returns mean/std duration of one denoising iteration in milliseconds. */
+  getIterationDuration(): MeanStdPair;
+  /** Returns mean/std duration of UNet inference in milliseconds. */
+  getUnetInferDuration(): MeanStdPair;
+  /** Returns mean/std duration of transformer inference in milliseconds. */
+  getTransformerInferDuration(): MeanStdPair;
+  /** Returns VAE encoder inference duration in milliseconds. */
+  getVaeEncoderInferDuration(): number;
+  /** Returns VAE decoder inference duration in milliseconds. */
+  getVaeDecoderInferDuration(): number;
+  /** Returns text encoder durations keyed by encoder name, milliseconds. */
+  getTextEncoderInferDuration(): { [key: string]: number };
+  /** Returns total model inference duration in milliseconds. */
+  getInferenceDuration(): number;
+  /** Raw image-generation-specific metrics. */
+  rawMetrics: RawImageGenerationPerfMetrics;
+}

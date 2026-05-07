@@ -9,7 +9,7 @@ description: Node.js bindings provide JavaScript/TypeScript API.
 OpenVINO GenAI provides Node.js bindings that enable you to use generative AI pipelines in JavaScript and TypeScript applications.
 
 :::warning API Coverage
-Node.js bindings currently provide a subset of the full OpenVINO GenAI API available in C++ and Python. The focus is on core text generation (`LLMPipeline`), vision language models (`VLMPipeline`), text embedding (`TextEmbeddingPipeline`), text reranking (`TextRerankPipeline`), speech recognition (`WhisperPipeline`), and speech generation (`Text2SpeechPipeline`) functionality.
+Node.js bindings currently provide a subset of the full OpenVINO GenAI API available in C++ and Python. The focus is on core text generation (`LLMPipeline`), vision language models (`VLMPipeline`), text embedding (`TextEmbeddingPipeline`), text reranking (`TextRerankPipeline`), speech recognition (`WhisperPipeline`), speech generation (`Text2SpeechPipeline`), and image generation (`Text2ImagePipeline`) functionality.
 :::
 
 ## Supported Pipelines and Features
@@ -36,6 +36,10 @@ Node.js bindings currently support:
 - `Text2SpeechPipeline`: Speech generation from text
   - Optional speaker embedding support
   - Batch generation
+- `Text2ImagePipeline`: Image generation from text prompts using diffusion models
+  - Configurable width, height, inference steps, and guidance scale
+  - Batch image generation via `num_images_per_prompt`
+  - Callback support for monitoring or stopping generation early
 - `Tokenizer`: Fast tokenization / detokenization and chat prompt formatting
   - Encode strings into token id and attention mask tensors
   - Decode token sequences
