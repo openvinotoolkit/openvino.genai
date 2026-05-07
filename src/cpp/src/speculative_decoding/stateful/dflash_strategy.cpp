@@ -22,6 +22,13 @@ void copy_bytes(const ov::Tensor& src, ov::Tensor& dst) {
     std::memcpy(dst.data(), src.data(), src.get_byte_size());
 }
 
+bool has_compiled_input(const ov::CompiledModel& model, const std::string& name) {
+    const auto inputs = model.inputs();
+    return std::find_if(inputs.begin(), inputs.end(), [&](const ov::Output<const ov::Node>& port) {
+        return port.get_names().count(name) != 0;
+    }) != inputs.end();
+}
+
 }  // namespace
 
 void DFlashHiddenStateProvider::reset() {
@@ -281,6 +288,13 @@ DFlashInferenceOutput DFlashTargetWrapper::infer(const ov::Tensor& input_ids,
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.set_tensor("position_ids", position_ids);
+    // CPU KV-cache attention uses beam_idx to map each batch item to its cache state.
+    // This DFlash POC currently supports a single sequence only, so all active rows map to state 0.
+    if (has_compiled_input(m_request.get_compiled_model(), "beam_idx")) {
+        ov::Tensor beam_idx(ov::element::i32, {input_ids.get_shape()[0]});
+        std::fill_n(beam_idx.data<int32_t>(), beam_idx.get_size(), 0);
+        m_request.set_tensor("beam_idx", beam_idx);
+    }
     update_inference_time(execute_inference());
     return {get_logits(), get_hidden_features()};
 }
@@ -531,11 +545,20 @@ EncodedResults StatefulDFlashLLMPipeline::generate_tokens(const EncodedInputs& i
     results.finish_reasons = {finish_reason};
 
     generate_timer.end();
+    const size_t actual_generated_tokens = results.tokens.empty() ? 0 : results.tokens.front().size();
     m_sd_perf_metrics.num_input_tokens = m_prompt_length;
+    m_sd_perf_metrics.num_generated_tokens = actual_generated_tokens;
     m_sd_perf_metrics.load_time = m_load_time_ms;
     m_sd_perf_metrics.num_accepted_tokens = total_draft_accepted;
+    m_sd_perf_metrics.raw_metrics.m_durations.clear();
+    m_sd_perf_metrics.raw_metrics.m_durations.emplace_back(generate_timer.get_duration_microsec());
+    m_sd_perf_metrics.raw_metrics.m_batch_sizes.clear();
+    m_sd_perf_metrics.raw_metrics.m_batch_sizes.emplace_back(actual_generated_tokens);
     m_sd_perf_metrics.raw_metrics.generate_durations.clear();
     m_sd_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_timer.get_duration_microsec());
+    m_sd_perf_metrics.m_evaluated = false;
+    m_sd_perf_metrics.main_model_metrics.m_evaluated = false;
+    m_sd_perf_metrics.draft_model_metrics.m_evaluated = false;
     m_sd_perf_metrics.main_model_metrics.raw_metrics = m_target->get_raw_perf_metrics();
     m_sd_perf_metrics.draft_model_metrics.raw_metrics = m_draft->get_raw_perf_metrics();
     if (total_draft_generated > 0) {
