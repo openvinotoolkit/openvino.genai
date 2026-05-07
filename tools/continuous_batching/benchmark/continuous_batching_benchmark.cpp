@@ -81,7 +81,12 @@ struct Dataset {
     }
 };
 
-Dataset filtered_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_input_len, const size_t max_output_len) {
+Dataset filtered_dataset(const std::string& models_path,
+                         const std::string& dataset_path,
+                         const size_t num_prompts,
+                         const size_t max_input_len,
+                         const size_t max_output_len,
+                         const size_t max_total_tokens) {
     std::ifstream json_file(dataset_path.c_str());
     OPENVINO_ASSERT(json_file.is_open(), "Cannot open dataset file");
 
@@ -117,7 +122,7 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
         if (input_len < 4 || output_len < 4)
             continue;
         // Prune too long sequences.
-        if (input_len > max_input_len || (input_len + output_len) > 2048)
+        if (input_len > max_input_len || (max_total_tokens > 0 && (input_len + output_len) > max_total_tokens))
             continue;
 
         ov::genai::GenerationConfig greedy_search;
@@ -127,6 +132,14 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
         dataset.push_data(human_question, greedy_search);
         dataset.push_lens(input_len, output_len);
     }
+
+    if (num_prompts == 0) {
+        return sampled_dataset;
+    }
+
+    OPENVINO_ASSERT(!dataset.empty(),
+                    "No valid prompts found in dataset after filtering. "
+                    "Adjust --max_input_len or --max_total_tokens, or provide a dataset with shorter prompt/answer pairs.");
 
     // sample dataset
     srand(42);
@@ -440,11 +453,15 @@ int main(int argc, char* argv[]) try {
     ("dataset", "Path to dataset .json file", cxxopts::value<std::string>()->default_value("./ShareGPT_V3_unfiltered_cleaned_split.json"))
     ("max_input_len", "Max input length take from dataset", cxxopts::value<size_t>()->default_value("1024"))
     ("max_output_len", "Max output length", cxxopts::value<size_t>()->default_value("2048"))
+    ("max_total_tokens", "Max total number of input and output tokens accepted from dataset entries. Use 0 to disable this filter.", cxxopts::value<size_t>()->default_value("2048"))
     ("request_rate", "Number of requests per second. If this is inf, then all the requests are sent at time 0. Otherwise, we use Poisson process to synthesize the request arrival times.", cxxopts::value<std::string>()->default_value("inf"))
     ("cache_size", "Size of memory used for KV cache in GB. Default: 16", cxxopts::value<size_t>()->default_value("16"))
     ("device", "Target device to run the model. Default: CPU", cxxopts::value<std::string>()->default_value("CPU"))
     ("device_config", "Plugin configuration JSON. Example: '{\"MODEL_DISTRIBUTION_POLICY\":\"TENSOR_PARALLEL\",\"PERF_COUNT\":true}' Default: {\"PERF_COUNT\":true}", cxxopts::value<std::string>()->default_value("{\"PERF_COUNT\":true}"))
     ("use_cache_eviction", "Whether to use cache eviction", cxxopts::value<bool>()->default_value("false"))
+    ("use_xattention", "Whether to enable sparse prefill in XATTENTION mode", cxxopts::value<bool>()->default_value("false"))
+    ("xattention_threshold", "XATTENTION cumulative importance score threshold", cxxopts::value<float>()->default_value("100.0"))
+    ("xattention_block_size", "XATTENTION block size in tokens", cxxopts::value<size_t>()->default_value("64"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -469,16 +486,20 @@ int main(int argc, char* argv[]) try {
     const std::string dataset_path = result["dataset"].as<std::string>();
     const size_t max_input_len = result["max_input_len"].as<size_t>();
     const size_t max_output_len = result["max_output_len"].as<size_t>();
+    const size_t max_total_tokens = result["max_total_tokens"].as<size_t>();
     const std::string request_rate = result["request_rate"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
     const std::string device_config = result["device_config"].as<std::string>();
     const size_t cache_size = result["cache_size"].as<size_t>();
     const bool use_cache_eviction = result["use_cache_eviction"].as<bool>();
+    const bool use_xattention = result["use_xattention"].as<bool>();
+    const float xattention_threshold = result["xattention_threshold"].as<float>();
+    const size_t xattention_block_size = result["xattention_block_size"].as<size_t>();
 
     bool is_speculative_decoding_enabled = !draft_model_path.empty();
 
     // Create requests for generation
-    Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
+    Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len, max_total_tokens);
 
     // Perform the first inference
     ov::genai::SchedulerConfig scheduler_config;
@@ -490,10 +511,23 @@ int main(int argc, char* argv[]) try {
         scheduler_config.use_cache_eviction = true;
         scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(32, 32, 128, ov::genai::AggregationMode::NORM_SUM, false, 8, ov::genai::KVCrushConfig(0, ov::genai::KVCrushAnchorPointMode::MEAN));
     }
+    if (use_xattention) {
+        OPENVINO_ASSERT(xattention_threshold >= 0.0f, "xattention_threshold must be greater than or equal to 0");
+        OPENVINO_ASSERT(xattention_block_size > 0, "xattention_block_size must be greater than 0");
+        scheduler_config.use_sparse_attention = true;
+        scheduler_config.sparse_attention_config.mode = ov::genai::SparseAttentionMode::XATTENTION;
+        scheduler_config.sparse_attention_config.xattention_threshold = xattention_threshold;
+        scheduler_config.sparse_attention_config.xattention_block_size = xattention_block_size;
+    }
 
     std::cout << "Benchmarking parameters: " << std::endl;
     std::cout << "\tMax number of batched tokens: " << scheduler_config.max_num_batched_tokens << std::endl;
     std::cout << "\tScheduling type: " << (scheduler_config.dynamic_split_fuse ? "dynamic split-fuse" : "vLLM") << std::endl;
+    std::cout << "\tUse XATTENTION sparse prefill: " << std::boolalpha << use_xattention << std::endl;
+    if (use_xattention) {
+        std::cout << "\tXATTENTION threshold: " << xattention_threshold << std::endl;
+        std::cout << "\tXATTENTION block size: " << xattention_block_size << std::endl;
+    }
     if (!scheduler_config.dynamic_split_fuse) {
         std::cout << "\tMax number of batched sequences: " << scheduler_config.max_num_seqs << std::endl;
     }
@@ -501,6 +535,12 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tNum prompts: " << num_prompts << std::endl;
     std::cout << "\tMax input length: " << max_input_len << std::endl;
     std::cout << "\tMax output length: " << max_output_len << std::endl;
+    std::cout << "\tMax total tokens: ";
+    if (max_total_tokens == 0) {
+        std::cout << "disabled" << std::endl;
+    } else {
+        std::cout << max_total_tokens << std::endl;
+    }
     std::cout << "\tTarget device: " << device << std::endl;
     std::cout << "\tPlugin configuration JSON: " << device_config << std::endl;
 
