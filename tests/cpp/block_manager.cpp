@@ -17,10 +17,9 @@ TEST(TestBlockManager, general_test) {
     ov::genai::SequenceGroup::Ptr sequence_group =
         std::make_shared<ov::genai::SequenceGroup>(0,
                                                    ov::Tensor(ov::element::i64, {prompt_ids.size()}, prompt_ids.data()),
-                                                   ov::genai::utils::get_beam_search_config(),
-                                                   4);
+                                                   ov::genai::utils::get_beam_search_config());
     auto sequence = sequence_group->get_not_finished_sequences()[0];
-    bm.allocate(sequence, 6);
+    bm.allocate_tokens(sequence, sequence_group, 24, prompt_ids.size());
     auto seq_id = sequence->get_id();
     EXPECT_TRUE(bm.has_block_table(seq_id));
     EXPECT_EQ(bm.get_block_table(seq_id, 0).size(), 6);
@@ -34,7 +33,7 @@ TEST(TestBlockManager, general_test) {
     EXPECT_FALSE(bm.has_block_table(seq_id));
     EXPECT_EQ(bm.num_free_blocks(), 6);
 
-    bm.allocate(sequence, 2);
+    bm.allocate_tokens(sequence, sequence_group, 8, prompt_ids.size());
     bm.fork_sequence(seq_id, 1);
     EXPECT_TRUE(bm.has_block_table(1));
     EXPECT_EQ(bm.get_block_table(1, 0).back()->get_references_count(), 2);
@@ -49,8 +48,7 @@ TEST(TestBlockManager, required_blocks_count) {
     ov::genai::SequenceGroup::Ptr sequence_group =
         std::make_shared<ov::genai::SequenceGroup>(0,
                                                    ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                   ov::genai::utils::get_beam_search_config(),
-                                                   4);
+                                                   ov::genai::utils::get_beam_search_config());
     sequence_group->schedule_tokens(5);
     auto required_blocks = bm.required_blocks_count(sequence_group);
     EXPECT_EQ(required_blocks, 2);
@@ -97,8 +95,7 @@ TEST(TestBlockManager, CanFreeBlocksFromSequence) {
     ov::genai::SequenceGroup::Ptr sequence_group =
         std::make_shared<ov::genai::SequenceGroup>(0,
                                                    ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                   ov::genai::utils::get_beam_search_config(),
-                                                   BLOCK_SIZE);
+                                                   ov::genai::utils::get_beam_search_config());
     sequence_group->schedule_tokens(5);
     bm.append_slots(sequence_group);
     ASSERT_EQ(bm.num_free_blocks(), 5);
