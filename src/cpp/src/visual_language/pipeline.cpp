@@ -385,6 +385,7 @@ public:
             encoded_videos,
             image_sequence,
             video_sequence,
+            m_history_vision_count,
             generation_config,
             perf_metrics,
             streamer,
@@ -556,6 +557,7 @@ public:
             videos_embeds,
             image_seq,
             video_seq,
+            processed_chat_data.vision_counts,
             generation_config,
             perf_metrics,
             streamer,
@@ -709,6 +711,7 @@ private:
         const std::vector<ov::genai::EncodedVideo>& encoded_videos,
         const std::vector<size_t>& image_sequence,
         const std::vector<size_t>& video_sequence,
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count,
         GenerationConfig& generation_config,
         VLMPerfMetrics& perf_metrics,
         const StreamerVariant& streamer,
@@ -729,7 +732,7 @@ private:
                     recalculate_merged_embeddings,
                     image_sequence,
                     video_sequence,
-                    m_history_vision_count
+                    history_vision_count
                 );
         } else {
             inputs_embeds = m_inputs_embedder->get_inputs_embeds(
@@ -740,7 +743,7 @@ private:
                 recalculate_merged_embeddings,
                 image_sequence,
                 video_sequence,
-                m_history_vision_count
+                history_vision_count
             );
         }
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
