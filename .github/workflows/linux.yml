@@ -35,7 +35,11 @@ env:
   BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
-  HF_TOKEN_PATH: /home/runner/secrets/huggingface/token-primary
+  # To switch to the primary HF token, change the filename from `token-secondary` to `token-primary`:
+  #   HF_TOKEN_PATH_LIN: /home/runner/secrets/huggingface/token-primary
+  #   HF_TOKEN_PATH_WIN: "C:\\mount\\secrets\\huggingface\\token-primary"
+  HF_TOKEN_PATH_LIN: /home/runner/secrets/huggingface/token-secondary
+  HF_TOKEN_PATH_WIN: "C:\\mount\\secrets\\huggingface\\token-secondary"
 
 jobs:
   smart_ci:
@@ -723,6 +727,10 @@ jobs:
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -827,6 +835,10 @@ jobs:
       OPENVINO_LOG_LEVEL: 1
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -925,6 +937,10 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -1023,6 +1039,10 @@ jobs:
       NODE_VERSION: 21
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
