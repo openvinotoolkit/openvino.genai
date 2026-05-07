@@ -218,6 +218,47 @@ TEST(TestCacheOrchestratorHybrid, SharedLinearAttentionRegistersSingleBlockTable
     orchestrator->free_sequence(sequence->get_id());
 }
 
+TEST(TestCacheOrchestratorHybrid, CreateAcceptsCacheIntervalDivisibleByKvBlockSize) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(get_dummy_hybrid_model(core,
+                                                                         /*kv_num_layers=*/3,
+                                                                         /*la_num_layers=*/3))
+                                      .create_infer_request();
+
+    SchedulerConfig config;
+    config.num_kv_blocks = 4;
+    config.num_linear_attention_blocks = 2;
+    config.enable_prefix_caching = true;
+    config.cache_interval = 64;
+
+    EXPECT_NO_THROW(CacheOrchestrator::create(request,
+                                              config,
+                                              [](const std::string&, size_t) {
+                                                  return std::numeric_limits<size_t>::max();
+                                              }));
+}
+
+TEST(TestCacheOrchestratorHybrid, CreateRejectsCacheIntervalNotDivisibleByKvBlockSize) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(get_dummy_hybrid_model(core,
+                                                                         /*kv_num_layers=*/3,
+                                                                         /*la_num_layers=*/3))
+                                      .create_infer_request();
+
+    SchedulerConfig config;
+    config.num_kv_blocks = 4;
+    config.num_linear_attention_blocks = 2;
+    config.enable_prefix_caching = true;
+    config.cache_interval = 33;
+
+    EXPECT_THROW(CacheOrchestrator::create(request,
+                                           config,
+                                           [](const std::string&, size_t) {
+                                               return std::numeric_limits<size_t>::max();
+                                           }),
+                 ov::Exception);
+}
+
 /// @test RequiredTokens_UsesMax
 /// Verify that required_tokens_count() returns the maximum deficit across all cache types.
 ///

@@ -1095,7 +1095,7 @@ TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_paged_linear_attent
     SchedulerConfig scheduler_config;
     scheduler_config.num_kv_blocks = 10;
     scheduler_config.enable_prefix_caching = true;
-    scheduler_config.cache_interval = 16;
+    scheduler_config.cache_interval = context.kv_block_size;
 
     auto orchestrator = CacheOrchestrator::create(context.request, scheduler_config, get_available_memory);
 
@@ -1145,7 +1145,7 @@ TEST(TestScheduler, hybrid_create_cache_size_budget_derives_paged_linear_attenti
     SchedulerConfig scheduler_config;
     scheduler_config.cache_size = 1;
     scheduler_config.enable_prefix_caching = true;
-    scheduler_config.cache_interval = 16;
+    scheduler_config.cache_interval = context.kv_block_size;
 
     const size_t total_budget_in_bytes = scheduler_config.cache_size * 1024ULL * 1024ULL * 1024ULL;
     const auto bytes_for_token_target = [&](size_t token_target) {

@@ -687,6 +687,16 @@ private:
                             "SchedulerConfig cache_interval can be set only for models with linear attention cache inputs");
         }
 
+        if (kv_manager && la_manager && config.enable_prefix_caching) {
+            const size_t kv_block_size = kv_manager->get_block_size();
+            OPENVINO_ASSERT(config.cache_interval % kv_block_size == 0,
+                            "SchedulerConfig cache_interval must be divisible by KV cache block size "
+                            "for hybrid models. cache_interval: ",
+                            config.cache_interval,
+                            ", KV cache block size: ",
+                            kv_block_size);
+        }
+
         return {std::move(kv_manager), std::move(la_manager)};
     }
 

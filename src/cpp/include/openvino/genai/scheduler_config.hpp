@@ -36,6 +36,7 @@ struct SchedulerConfig {
     // Linear-attention checkpoint interval used when interval-based paging is enabled.
     // Custom values are supported only for models with linear attention cache inputs.
     // Must be greater than 0 when prefix caching is enabled.
+    // Must be divisible by KV cache block size for hybrid attention models.
     std::size_t cache_interval = DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL;
 
     // whether to split prompt / generate to different scheduling phases

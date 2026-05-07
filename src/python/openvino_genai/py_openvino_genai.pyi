@@ -2642,6 +2642,7 @@ class SchedulerConfig:
         cache_interval:             linear-attention checkpoint interval used when interval-based paging is enabled.
                                     Custom values are supported only for models with linear attention cache inputs.
                                     Must be greater than 0 when prefix caching is enabled.
+                                    Must be divisible by KV cache block size for hybrid attention models.
         dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
     
         vLLM-like settings:
