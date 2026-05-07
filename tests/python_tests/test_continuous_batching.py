@@ -736,6 +736,7 @@ dynamic_split_fuse_prompt_cases = [
     (["Why is the Sun yellow?", "What's OpenVINO?", "Tell me something about Canada.", "Why is the grass green?"], 20),
 ]
 
+
 @pytest.mark.parametrize(
     "prompts,max_num_batched_tokens",
     dynamic_split_fuse_prompt_cases,
