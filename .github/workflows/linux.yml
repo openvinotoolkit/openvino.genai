@@ -35,8 +35,6 @@ env:
   BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
-  # To switch to the secondary HF token, replace `token-primary` with `token-secondary`:
-  #   HF_TOKEN_PATH: /home/runner/secrets/huggingface/token-secondary
   HF_TOKEN_PATH: /home/runner/secrets/huggingface/token-primary
 
 jobs:
