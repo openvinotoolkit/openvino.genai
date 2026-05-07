@@ -24,7 +24,6 @@ std::shared_ptr<ov::Model> create_dummy_la_paging_model() {
         auto p = std::make_shared<ov::op::v0::Parameter>(type, pshape);
         p->output(0).get_tensor().set_names({name});
         params.push_back(p);
-        return p;
     };
 
     add_input("input_ids", ov::element::i64, ov::PartialShape::dynamic(1));
