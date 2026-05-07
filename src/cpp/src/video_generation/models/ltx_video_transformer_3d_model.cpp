@@ -4,8 +4,8 @@
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
 
 #include <fstream>
-#include <numeric>
 
+#include "video_generation/compression_utils.hpp"
 #include "json_utils.hpp"
 #include "utils.hpp"
 #include "lora/helper.hpp"
@@ -21,15 +21,22 @@ std::pair<int64_t, int64_t> get_compression_ratio(const std::filesystem::path& c
     nlohmann::json data = nlohmann::json::parse(file);
 
     std::vector<bool> spatio_temporal_scaling;
-    int64_t patch_size, patch_size_t;
+    size_t patch_size = 0, patch_size_t = 0;
 
     utils::read_json_param(data, "spatio_temporal_scaling", spatio_temporal_scaling);
     utils::read_json_param(data, "patch_size", patch_size);
     utils::read_json_param(data, "patch_size_t", patch_size_t);
+    OPENVINO_ASSERT(patch_size > 0 && patch_size_t > 0,
+                    "Invalid VAE decoder config at ",
+                    config_path,
+                    ": 'patch_size' and 'patch_size_t' must be present and greater than 0");
 
-    const auto compression_factor = std::pow(2, std::accumulate(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
-    const int64_t spatial_compression_ratio = patch_size * compression_factor;
-    const int64_t temporal_compression_ratio = patch_size_t * compression_factor;
+    const std::pair<size_t, size_t> compression_ratios = utils::get_spatial_temporal_compression_ratios(
+        patch_size,
+        patch_size_t,
+        spatio_temporal_scaling);
+    const int64_t spatial_compression_ratio = static_cast<int64_t>(compression_ratios.first);
+    const int64_t temporal_compression_ratio = static_cast<int64_t>(compression_ratios.second);
 
     return {spatial_compression_ratio, temporal_compression_ratio};
 }
