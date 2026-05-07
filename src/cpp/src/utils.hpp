@@ -17,7 +17,6 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/generation_config.hpp"
-#include "visual_language/processor_config.hpp"
 
 #include "openvino/genai/streamer_base.hpp"
 
@@ -87,6 +86,9 @@ const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
 const std::string EXTENSIONS_ARG_NAME = "extensions";
+const std::string IMAGES_BATCHES_ARG_NAME = "images_batches";
+const std::string VIDEOS_BATCHES_ARG_NAME = "videos_batches";
+const std::string VIDEOS_METADATA_BATCHES_ARG_NAME = "videos_metadata_batches";
 
 template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
@@ -97,11 +99,6 @@ Config from_config_json_if_exists(const std::filesystem::path& models_path, cons
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
-
-ProcessorConfig from_any_map(
-    const ov::AnyMap& config_map,
-    const ProcessorConfig& initial
-);
 
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 

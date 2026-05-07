@@ -5,6 +5,7 @@ import os
 import pytest
 import sys
 
+from optimum.intel.utils.import_utils import is_transformers_version
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, convert_model
 from test_utils import run_sample
 
@@ -34,15 +35,30 @@ def _run_spec_case(convert_model, convert_draft_model, sample_args, env):
     )
 
 
+speculative_decoding_models = []
+if is_transformers_version("<", "5.0"):
+    # error: "Tokenizers for draft and main models are different" with optimum-intel 423b423 and transformers>=5.0, CVS-185605
+    speculative_decoding_models = [
+        pytest.param(
+            "SmolLM2-135M-GGUF",
+            "SmolLM2-135M",
+            "Alan Turing was a",
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="CVS-173467"),
+        ),
+    ]
+else:
+    speculative_decoding_models = [
+        pytest.param("SmolLM2-360M", "SmolLM2-135M", "Alan Turing was a"),
+    ]
+
+
 class TestSpeculativeDecodingLM:
     @pytest.mark.llm
     @pytest.mark.samples
+    @pytest.mark.transformers_dependent
     @pytest.mark.parametrize(
         "convert_model, convert_draft_model, sample_args",
-        [
-            pytest.param("SmolLM2-360M", "SmolLM2-135M", "Alan Turing was a"),
-            pytest.param("SmolLM2-135M-GGUF", "SmolLM2-135M", "Alan Turing was a", marks=pytest.mark.skipif(sys.platform == "win32", reason="CVS-173467")),
-        ],
+        speculative_decoding_models,
         indirect=["convert_model", "convert_draft_model"],
     )
     def test_sample_speculative_decoding_lm(self, convert_model, convert_draft_model, sample_args):

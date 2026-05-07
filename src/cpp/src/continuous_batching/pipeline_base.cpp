@@ -275,16 +275,34 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    // empty videos metadata batch size should match prompt batch size
+    const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(prompts.size());
+    return generate(prompts, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& images_vector,
              const std::vector<std::vector<ov::Tensor>>& videos_vector,
+             const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) {
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
 
-    OPENVINO_ASSERT(prompts.size() == sampling_params.size(), "Number of prompts should be equal to the number of generation configs.");
-    OPENVINO_ASSERT(prompts.size() == images_vector.size() && prompts.size() == videos_vector.size(), "Number of prompts should be equal to the number of images or video vectors.");
+    OPENVINO_ASSERT(prompts.size() == sampling_params.size(),
+        "Number of prompts should be equal to the number of generation configs.");
+    OPENVINO_ASSERT(prompts.size() == images_vector.size() && prompts.size() == videos_vector.size(),
+        "Number of prompts should be equal to the number of images and videos vectors.");
+    OPENVINO_ASSERT(prompts.size() == videos_metadata_vector.size(),
+        "Number of prompts should be equal to the number of videos metadata vector.");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
@@ -310,7 +328,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         encoded_images = m_inputs_embedder->encode_images(images_vector[0]);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
-        encoded_videos = m_inputs_embedder->encode_videos(videos_vector[0]);
+        encoded_videos = m_inputs_embedder->encode_videos(videos_vector[0], videos_metadata_vector[0]);
         m_history_videos.insert(m_history_videos.end(), encoded_videos.begin(), encoded_videos.end());
 
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
@@ -364,9 +382,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             auto start_get_inputs_embeds = std::chrono::steady_clock::now();
             
             auto images_to_encode = images_vector.size() > 0 ? images_vector[i] : std::vector<ov::Tensor>{};
-            auto videos_to_encode = videos_vector.size() > 0 ? videos_vector[i] : std::vector<ov::Tensor>{};
             const auto encoded_images = m_inputs_embedder->encode_images(images_to_encode);
-            const auto encoded_videos = m_inputs_embedder->encode_videos(videos_to_encode);
+
+            auto videos_to_encode = videos_vector.size() > 0 ? videos_vector[i] : std::vector<ov::Tensor>{};
+            auto videos_metadata = videos_metadata_vector.size() > 0 ? videos_metadata_vector[i] : std::vector<ov::genai::VideoMetadata>{};
+            const auto encoded_videos = m_inputs_embedder->encode_videos(videos_to_encode, videos_metadata);
 
             auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
@@ -456,28 +476,48 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-             const std::vector<ChatHistory>& histories,
-             const std::vector<std::vector<ov::Tensor>>& images_vector,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) {
-    // empty videos batch size should match prompt batch size
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    // empty videos batch size should match histories batch size
     const std::vector<std::vector<ov::Tensor>> empty_videos_vector(histories.size());
     return generate(histories, images_vector, empty_videos_vector, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-             const std::vector<ChatHistory>& histories,
-             const std::vector<std::vector<ov::Tensor>>& images_vector,
-             const std::vector<std::vector<ov::Tensor>>& videos_vector,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer)
-{
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    // empty videos metadata batch size should match histories batch size
+    const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(histories.size());
+    return generate(histories, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
     auto generate_start_time = std::chrono::steady_clock::now();
     m_is_chat_conversation = true;
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
-    OPENVINO_ASSERT(histories.size() == sampling_params.size(), "Number of chat histories should be equal to the number of generation configs.");
-    OPENVINO_ASSERT(histories.size() == images_vector.size() && histories.size() == videos_vector.size(), "Number of chat histories should be equal to the number of images or video vectors.");
+    OPENVINO_ASSERT(histories.size() == sampling_params.size(),
+        "Number of chat histories should be equal to the number of generation configs.");
+    OPENVINO_ASSERT(histories.size() == images_vector.size() && histories.size() == videos_vector.size(),
+        "Number of chat histories should be equal to the number of images and videos vectors."
+    );
+    OPENVINO_ASSERT(histories.size() == videos_metadata_vector.size(),
+        "Number of chat histories should be equal to the number of videos metadata vector.");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
@@ -506,7 +546,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         VLMChatContext chat_context(histories[i], m_vision_registry, *m_inputs_embedder);
         chat_contexts.push_back(std::move(chat_context));
     
-        auto processed_chat_data = chat_contexts[i].process(images_vector[i], videos_vector[i]);
+        auto processed_chat_data = chat_contexts[i].process(images_vector[i], videos_vector[i], videos_metadata_vector[i]);
     
         std::string templated_history = m_tokenizer.apply_chat_template(
             processed_chat_data.normalized_history,
@@ -623,7 +663,20 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
     const std::vector<ov::Tensor>& videos,
-    GenerationConfig sampling_params) {
+    GenerationConfig sampling_params
+) {
+    return add_request(request_id, prompt, images, videos, {}, sampling_params);
+}
+
+GenerationHandle
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata,
+    GenerationConfig sampling_params
+) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
@@ -636,7 +689,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
         const auto encoded_images = m_inputs_embedder->encode_images(images);
-        const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
+        const auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
 
         const auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, metrics, true, image_sequence, video_sequence);

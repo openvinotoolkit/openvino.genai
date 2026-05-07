@@ -53,7 +53,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@10d999b8d93ce104907890c54f85eb585112f751
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@a5247d3e30ec70f8027a38d64aa46136ec39bc44
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -574,7 +574,13 @@ jobs:
         test:
           - name: 'Whisper'
             # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
-            cmd: 'python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5" -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            timeout: 45
+          - name: 'Whisper Transformers under 5.0'
+            cmd: |
+              python -m pip install transformers==4.55.4
+              python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 45
           - name: 'Cacheopt E2E (Part 1)'
@@ -586,7 +592,14 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 360
           - name: 'LLM'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py --override-ini cache_dir=/mount/caches/pytest/'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
+            timeout: 90
+          - name: 'LLM with transformers under 5.0'
+            cmd: |
+              python -m pip install transformers==4.55.4
+              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
+              python -m pytest -v ./tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
             timeout: 90
           - name: 'VLM (match_optimum_with_resolutions)'
@@ -594,7 +607,14 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'VLM'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions and not eagle3" --override-ini cache_dir=/mount/caches/pytest/'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions and not eagle3" -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 90
+          - name: 'VLM with transformers under 5.0'
+            cmd: |
+              python -m pip install transformers==4.55.4
+              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
+              python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'Video Generation'
@@ -610,7 +630,14 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
             timeout: 60
           - name: 'API tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
+            timeout: 60
+          - name: 'API tests transformers under 5.0'
+            cmd: |
+              python -m pip install transformers==4.55.4
+              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
+              python -m pytest -v ./tests/python_tests/test_continuous_batching.py -m "transformers_lower_v5 or transformers_dependent" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
             timeout: 60
           - name: 'Rag tests'
@@ -618,11 +645,19 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
           - name: 'WWB tests'
-            cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava"'
+            cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava and not transformers_lower_v5"'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            timeout: 120
+          - name: 'WWB tests with transformers under 5.0'
+            cmd: |
+              python -m pip install transformers==4.57.0
+              python -m pytest -v ./tools/who_what_benchmark/tests -m "transformers_dependent or transformers_lower_v5"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
           - name: 'EAGLE3 speculative decoding tests'
             cmd: |
+              python -m pip install transformers==4.55.4
+              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
               python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
             timeout: 90
@@ -642,6 +677,7 @@ jobs:
             cmd: |
               # Temporary pin: depends on upstream PR #1637 (not merged yet).
               # TODO: replace with official release once available.
+              python -m pip install transformers==4.57.0
               python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@cba3f3157d18f309f87e3f50f47741582ee645d3
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "videochat"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
@@ -650,6 +686,22 @@ jobs:
             cmd: |
               python -m pip install transformers==4.57.0 git+https://github.com/huggingface/optimum-intel.git@8bec4a71e47ecaf1df11c495cbfaf52cee6bfb00
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl or eagle3"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 60
+          - name: 'VLM (qwen3.5)'
+            cmd: |
+              # TODO: replace with official release once available.
+              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@c656558f8288d44fe7ce0dd7c98753af0c740b15 # PR 1689
+              python -m pip install transformers==5.2.0
+              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3.5"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 60
+          - name: 'VLM (gemma4)'
+            cmd: |
+              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@39121884e050a32f9ded590f8597760d7e7ac205 # master with gemma4 support
+              python -m pip install transformers==5.5.0
+              pip show transformers optimum-intel openvino_tokenizers openvino_genai
+              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 60
     defaults:
@@ -707,7 +759,13 @@ jobs:
         build-type: [Release]
         test:
           - name: 'LLM'
-            marker: 'llm'
+            marker: 'llm and not transformers_lower_v5'
+            cmd: 'tests/python_tests/samples'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
+            runner: 'aks-linux-4-cores-16gb'
+          - name: 'LLM with transformers under 5.0'
+            extra_cmd: 'python -m pip install transformers==4.55.4 && python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76'
+            marker: 'llm and (transformers_dependent or transformers_lower_v5)'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
             runner: 'aks-linux-4-cores-16gb'
@@ -830,7 +888,9 @@ jobs:
 
       - name: Test Samples (Python and C++)
         if: ${{ matrix.test.run_condition }}
-        run: python -m pytest -vvs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+        run: |
+          ${{ matrix.test.extra_cmd }}
+          python -m pytest -vvs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           LD_LIBRARY_PATH: "${{ env.INSTALL_DIR }}/runtime/lib/intel64:${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/lib:$LD_LIBRARY_PATH" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
@@ -926,7 +986,15 @@ jobs:
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples"
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5"
+        env:
+          SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
+      - name: Test LLM Benchmark Tools transformers under 5.0
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pip install transformers==4.57.0
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and transformers_lower_v5"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
 
@@ -1074,7 +1142,14 @@ jobs:
           PYTHONPATH: "${{ env.BUILD_DIR }}:"
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -k "not test_perf_metrics_with_structured_output"
+          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -k "not test_perf_metrics_with_structured_output" -m "not transformers_lower_v5"
+      - name: Run test_llm_pipeline.py when -DENABLE_XGRAMMAR=OFF and transformers under 5.0
+        env:
+          PYTHONPATH: "${{ env.BUILD_DIR }}:"
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pip install transformers==4.55.4
+          python3 -m pytest -v ${{ env.SRC_DIR }}/tests/python_tests/test_llm_pipeline.py -m "transformers_lower_v5 or transformers_dependent"
 
   Overall_Status:
     name: ci/gha_overall_status_linux
