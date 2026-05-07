@@ -73,9 +73,7 @@ def _add_genai_draft_model_config(ov_config, device, **kwargs):
     draft_device = kwargs.get("draft_device") or device
     draft_cb_config = kwargs.get("draft_cb_config")
     draft_model_load_kwargs = (
-        {"scheduler_config": get_scheduler_config_genai(draft_cb_config)}
-        if draft_cb_config is not None
-        else {}
+        {"scheduler_config": get_scheduler_config_genai(draft_cb_config)} if draft_cb_config is not None else {}
     )
     ov_config["draft_model"] = openvino_genai.draft_model(
         draft_model_path,
