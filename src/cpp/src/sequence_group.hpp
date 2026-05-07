@@ -30,6 +30,14 @@ enum class SequenceGroupType {
 
 using TokenIds = std::vector<int64_t>;
 using LogProbs = std::vector<float>;
+
+struct TreeMetaData {
+    std::vector<std::vector<uint8_t>> tree_mask;
+    std::vector<std::vector<int64_t>> retrieve_indices;
+    std::vector<int64_t> tree_position_ids;
+    std::vector<size_t> validated_indices;
+};
+
 class SequenceGroup;
 
 class Sequence {
@@ -56,6 +64,7 @@ class Sequence {
     size_t m_hidden_size;
     std::vector<ov::Tensor> m_position_ids_list;
     int64_t m_rope_delta;
+    TreeMetaData m_tree_metadata;
 
     // Embeddings hash calculation params
     static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
@@ -80,7 +89,8 @@ class Sequence {
         m_prefix_hashes(seq.m_prefix_hashes),
         m_generated_ids_embeds(seq.m_generated_ids_embeds),
         m_position_ids_list(seq.m_position_ids_list),
-        m_rope_delta(seq.m_rope_delta)
+        m_rope_delta(seq.m_rope_delta),
+        m_tree_metadata(seq.m_tree_metadata)
          {
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
@@ -150,6 +160,14 @@ public:
 
     ov::Tensor get_hidden_state() const {
         return m_hidden_state;
+    }
+
+    void set_tree_metadata(TreeMetaData metadata) {
+        m_tree_metadata = std::move(metadata);
+    }
+
+    const TreeMetaData& get_tree_metadata() const {
+        return m_tree_metadata;
     }
 
     // removes n last tokens and updates cumulative log prob
@@ -804,6 +822,10 @@ public:
     }
 
     bool is_waiting() const {
+        // when in tree search advance step, depends on pause status only
+        if (m_sampling_params.is_tree_search() && m_num_validation_tokens == 0) {
+            return m_is_gen_paused;
+        }
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
                 return true;
@@ -876,7 +898,7 @@ public:
             if (has_finished()) {
                 push_outputs();
             }
-        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
+        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1) {

@@ -569,7 +569,22 @@ public:
                         input_ids_data[token_id] = position_id < prompt_len ?
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
-                        position_ids_data[position_ids_idx] = position_id;
+                        // Tree position IDs represent the depth/layer of each candidate token in the speculative decoding tree.
+                        // Example: [0, 1, 1, 2, 2, 2, 2] indicates:
+                        //   - token[0] is the root at tree layer 0
+                        //   - tokens[1-2] are direct children at tree layer 1 (branching from root)
+                        //   - tokens[3-6] are grandchildren at tree layer 2 (branching from layer 1 nodes)
+                        // These IDs compute relative position offsets for parallel evaluation in tree-based speculative decoding (e.g., EAGLE).
+                        const auto& tree_pos_ids = sequence->get_tree_metadata().tree_position_ids;
+                        if (!tree_pos_ids.empty()) {
+                            OPENVINO_ASSERT(position_ids_idx < tree_pos_ids.size(),
+                                           "position_ids_idx (", position_ids_idx,
+                                           ") is out of bounds for tree_position_ids.size() (", tree_pos_ids.size(), ")");
+                            size_t tree_pos_id = tree_pos_ids[position_ids_idx];
+                            position_ids_data[position_ids_idx] = group_position_id + static_cast<int64_t>(tree_pos_id);
+                        } else {
+                            position_ids_data[position_ids_idx] = position_id;
+                        }
                     } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
@@ -683,6 +698,9 @@ public:
         }
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
             m_request.set_tensor("hidden_states", hidden_state_input);
+        }
+        if (_is_hs_export_only()) {
+            _set_query_to_query_tensors(sequence_groups, scheduler_output);
         }
         if (position_ids.get_shape().size() == 3 && position_ids.get_shape()[0] == 3 &&
             position_ids.get_shape()[1] == 1) {
@@ -836,7 +854,102 @@ private:
     bool _is_hs_export()   const { return m_hidden_state_flags & HS_EXPORT; }
     bool _is_hs_import()   const { return m_hidden_state_flags & HS_IMPORT; }
     bool _is_hs_internal() const { return m_hidden_state_flags & HS_INTERNAL; }
+    bool _is_hs_export_only() const {
+        return (m_hidden_state_flags & (HS_EXPORT | HS_IMPORT | HS_INTERNAL)) == HS_EXPORT;
+    }
 
+    /**
+     * @brief Prepares query-to-query bias tensors for Eagle3 tree decoding.
+     *
+     * Fills two model inputs:
+     * - `qq_bias_begins`: prefix sums of flattened tree-mask lengths for scheduled sequence groups.
+     * - `qq_bias`: flattened tree-mask data for scheduled groups that are in tree-decoding stage
+     *   after the prompt has been fully processed.
+     *
+     * @param sequence_groups Full list of sequence groups; entries are accessed by scheduler IDs.
+     * @param scheduler_output Scheduler result with ordered `m_scheduled_sequence_groups_ids`.
+     */
+    void _set_query_to_query_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                     const Scheduler::Output& scheduler_output) {
+        static constexpr const char* k_qq_bias_name = "qq_bias";
+        static constexpr const char* k_qq_bias_begins_name = "qq_bias_begins";
+
+        const std::vector<uint64_t>& scheduled_ids = scheduler_output.m_scheduled_sequence_groups_ids;
+        const size_t num_sequence_groups = scheduled_ids.size();
+
+        size_t cumulative_mask_length = 0;
+        ov::Tensor qq_bias_begin_tensor = m_request.get_tensor(k_qq_bias_begins_name);
+        qq_bias_begin_tensor.set_shape({num_sequence_groups + 1});
+        int32_t* qq_bias_begin_data = qq_bias_begin_tensor.data<int32_t>();
+        qq_bias_begin_data[0] = 0;
+
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            const size_t seq_group_id = scheduled_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            OPENVINO_ASSERT(sequence_group->num_running_seqs() == 1, "only support 1 running sequence in eagle3 mode");
+
+            // only count speculated tokens after the prompt for qq bias
+            const size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
+            const auto& tree_mask = sequence_group->get_running_sequences()[0]->get_tree_metadata().tree_mask;
+            const bool is_tree_decoding = !tree_mask.empty();
+            if (is_tree_decoding && num_processed_tokens >= sequence_group->get_prompt_len()) {
+                const size_t scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+                const size_t tree_mask_size = tree_mask.size();
+                OPENVINO_ASSERT(scheduled_tokens == tree_mask_size,
+                               "Scheduled tokens (", scheduled_tokens,
+                               ") must match tree_mask size (", tree_mask_size, ")");
+                cumulative_mask_length += tree_mask_size * tree_mask_size;
+            }
+            qq_bias_begin_data[i + 1] = static_cast<int32_t>(cumulative_mask_length);
+        }
+
+        if (cumulative_mask_length == 0) {
+            return;
+        }
+
+        ov::Tensor qq_bias_tensor = m_request.get_tensor(k_qq_bias_name);
+        qq_bias_tensor.set_shape({cumulative_mask_length});
+        uint8_t* tree_mask_data = qq_bias_tensor.data<uint8_t>();
+
+        // fill in the tree mask tensor if speculative tokens exist
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            const size_t seq_group_id = scheduled_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            Sequence::CPtr sequence = sequence_group->get_running_sequences()[0];
+            const auto& tree_mask = sequence->get_tree_metadata().tree_mask;
+            const bool is_after_prompt = sequence_group->get_num_processed_tokens() >= sequence_group->get_prompt_len();
+            if (tree_mask.empty() || !is_after_prompt) {
+                continue;
+            }
+
+            const size_t tree_mask_rows = tree_mask.size();
+            OPENVINO_ASSERT(tree_mask_rows > 0 && tree_mask_rows == tree_mask[0].size(),
+                            "Eagle3 tree mask must be a non-empty square matrix. Got ",
+                            tree_mask_rows, "x", tree_mask.empty() ? 0 : tree_mask[0].size());
+
+            // Verify consistency with reservation phase
+            const size_t scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+            OPENVINO_ASSERT(scheduled_tokens == tree_mask_rows,
+                           "Scheduled tokens (", scheduled_tokens,
+                           ") must match tree_mask dimensions (", tree_mask_rows, "x", tree_mask_rows, ")");
+
+            const size_t offset = static_cast<size_t>(qq_bias_begin_data[i]);
+            const size_t expected_end = offset + tree_mask_rows * tree_mask_rows;
+            OPENVINO_ASSERT(expected_end <= cumulative_mask_length,
+                           "Tree mask fill would overflow qq_bias tensor: offset=", offset,
+                           ", mask_size=", tree_mask_rows, "x", tree_mask_rows,
+                           ", cumulative_length=", cumulative_mask_length);
+
+            for (size_t row = 0; row < tree_mask_rows; ++row) {
+                OPENVINO_ASSERT(tree_mask[row].size() == tree_mask_rows,
+                               "Row ", row, " has size ", tree_mask[row].size(),
+                               " but expected ", tree_mask_rows);
+                for (size_t col = 0; col < tree_mask_rows; ++col) {
+                    tree_mask_data[offset + row * tree_mask_rows + col] = tree_mask[row][col];
+                }
+            }
+        }
+    }
     /**
      * @brief Retrieves a slice of the hidden state tensor corresponding to a specific request and sequence group.
      *

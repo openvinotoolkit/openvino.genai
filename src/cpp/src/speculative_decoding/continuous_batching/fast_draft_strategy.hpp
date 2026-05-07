@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <future>
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
@@ -88,6 +89,11 @@ std::vector<EncodedGenerationResult> generate_common(
         self->stream_tokens(streamer_ptr, generation);
     }
     streamer_ptr->end();
+
+    // clear kv status if any
+    if (self->m_sync_future.valid()) {
+        self->m_sync_future.get();
+    }
 
     OPENVINO_ASSERT(self->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
 
@@ -202,7 +208,8 @@ public:
 
     Tokenizer& tokenizer() { return m_tokenizer; }
     const Tokenizer& tokenizer() const { return m_tokenizer; }
-
+    // extra sync point for main and draft pipelines, if valid
+    std::future<void> m_sync_future;
 };
 
 }  // namespace ov::genai
