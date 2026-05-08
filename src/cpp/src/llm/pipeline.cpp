@@ -20,6 +20,11 @@
 
 namespace {
 
+void log_paged_attention_fallback(const ov::Exception& exception) {
+    GENAI_WARN("Paged Attention backend initialization failed. Falling back to SDPA backend.");
+    GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
+}
+
 // This is a decorator function that wraps a generation callable to apply parsers and reset them before generation if needed.
 ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGenerationConfig& generation_config,
                  const ov::genai::StreamerVariant& streamer,
@@ -209,7 +214,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     utils::extract_extensions_to_core(properties);
 
-    const auto model = utils::read_model(models_path, properties);
+    std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (is_npu_requested) {
@@ -226,8 +231,8 @@ ov::genai::LLMPipeline::LLMPipeline(
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
 #endif
         } catch (const ov::Exception& exception) {
-            GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
-            OPENVINO_THROW("Paged Attention backend initialization failed. Initialize pipeline with explicit backend=\"SDPA\".");
+            log_paged_attention_fallback(exception);
+            model = utils::read_model(models_path, properties);
         }
     }
 
@@ -252,7 +257,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     utils::extract_extensions_to_core(properties);
 
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
-    const auto model = utils::read_model(models_path, properties);
+    std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
     const Tokenizer tokenizer(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
@@ -271,8 +276,8 @@ ov::genai::LLMPipeline::LLMPipeline(
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
 #endif
         } catch (const ov::Exception& exception) {
-            GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
-            OPENVINO_THROW("Paged Attention backend initialization failed. Initialize pipeline with explicit backend=\"SDPA\".");
+            log_paged_attention_fallback(exception);
+            model = utils::read_model(models_path, properties);
         }
     }
 
@@ -299,7 +304,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     utils::extract_extensions_to_core(properties);
 
-    const auto model = utils::singleton_core().read_model(model_str, weights_tensor);
+    std::shared_ptr<ov::Model> model = utils::singleton_core().read_model(model_str, weights_tensor);
 
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(
@@ -321,8 +326,8 @@ ov::genai::LLMPipeline::LLMPipeline(
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model->clone(), tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config);
 #endif
         } catch (const ov::Exception& exception) {
-            GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
-            OPENVINO_THROW("Paged Attention backend initialization failed. Initialize pipeline with explicit backend=\"SDPA\".");
+            log_paged_attention_fallback(exception);
+            model = utils::singleton_core().read_model(model_str, weights_tensor);
         }
     }
 

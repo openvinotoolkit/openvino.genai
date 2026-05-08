@@ -204,16 +204,14 @@ TEST(TestCacheOrchestratorHybrid, SharedLinearAttentionRegistersSingleBlockTable
     orchestrator->allocate_tokens(sequence, sequence_group, 1, sequence_group->get_prompt_len());
 
     const auto block_tables = orchestrator->get_block_tables(sequence->get_id());
-    ASSERT_EQ(block_tables.size(), 4);
+    ASSERT_EQ(block_tables.size(), 2);
     EXPECT_EQ(orchestrator->get_cache_type_for_layer(0), CacheType::KV_CACHE);
-    EXPECT_EQ(orchestrator->get_cache_type_for_layer(1), CacheType::KV_CACHE);
-    EXPECT_EQ(orchestrator->get_cache_type_for_layer(2), CacheType::KV_CACHE);
-    EXPECT_EQ(orchestrator->get_cache_type_for_layer(3), CacheType::LINEAR_ATTENTION_CACHE);
+    EXPECT_EQ(orchestrator->get_cache_type_for_layer(1), CacheType::LINEAR_ATTENTION_CACHE);
 
     const auto la_block_table = orchestrator->get_linear_attention_block_table(sequence->get_id());
     ASSERT_EQ(la_block_table.size(), 1);
-    ASSERT_EQ(block_tables[3].size(), 1);
-    EXPECT_EQ(block_tables[3][0]->get_index(), la_block_table[0]->get_index());
+    ASSERT_EQ(block_tables[1].size(), 1);
+    EXPECT_EQ(block_tables[1][0]->get_index(), la_block_table[0]->get_index());
 
     orchestrator->free_sequence(sequence->get_id());
 }

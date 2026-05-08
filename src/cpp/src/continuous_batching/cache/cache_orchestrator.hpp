@@ -106,6 +106,8 @@ public:
                 "Cache type is already registered");
         const size_t num_layers = block_mgr->get_num_layers();
         OPENVINO_ASSERT(num_layers > 0, "Cache type must register at least one block-table layer");
+        OPENVINO_ASSERT(per_layer_control || num_layers == 1,
+            "Cache types without per-layer block-table control must register exactly one shared block-table layer");
         const size_t layer_start = m_layer_to_cache_type.size();
         m_type_layer_start[type] = layer_start;
         m_cache_managers[type] = std::move(cache_mgr);
@@ -156,9 +158,15 @@ public:
     std::vector<BlocksPerLayer> get_block_tables(uint64_t seq_id) const {
         const size_t total_layers = m_layer_to_cache_type.size();
         std::vector<BlocksPerLayer> merged(total_layers);
+
+        std::map<CacheType, const std::vector<BlocksPerLayer>*> local_tables_by_type;
+        for (const auto& [type, block_mgr] : m_block_managers) {
+            local_tables_by_type[type] = &block_mgr->get_block_tables(seq_id);
+        }
+
         for (const auto& [global_layer_id, type] : m_layer_to_cache_type) {
             const size_t local_idx = m_per_layer_control.at(type) ? global_layer_id - m_type_layer_start.at(type) : 0;
-            const auto& local_tables = m_block_managers.at(type)->get_block_tables(seq_id);
+            const auto& local_tables = *local_tables_by_type.at(type);
             OPENVINO_ASSERT(local_idx < local_tables.size(), "Block table layer index is out of range");
             merged[global_layer_id] = local_tables[local_idx];
         }
@@ -799,14 +807,16 @@ private:
      */
     void register_kv_cache(std::unique_ptr<KVCacheManager> kv_manager,
                            const SchedulerConfig& config) {
+        const bool per_layer_control = config.use_cache_eviction;
+        const size_t num_block_table_layers = per_layer_control ? kv_manager->get_num_layers() : 1;
         auto block_manager = std::make_unique<BlockManager>(
             config.num_kv_blocks,
             config.enable_prefix_caching,
             kv_manager->get_block_size(),
-            kv_manager->get_num_layers());
+            num_block_table_layers);
 
         register_cache_type(CacheType::KV_CACHE, std::move(kv_manager), std::move(block_manager),
-                            config.use_cache_eviction);
+                            per_layer_control);
     }
 
     /**

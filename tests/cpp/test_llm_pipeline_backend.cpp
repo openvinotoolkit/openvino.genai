@@ -71,13 +71,14 @@ std::filesystem::path get_model_dir(const BackendModelParam& param) {
     return std::filesystem::path(base_dir) / model_name;
 }
 
-void skip_if_model_unavailable(const std::filesystem::path& model_dir) {
+bool is_model_available(const std::filesystem::path& model_dir) {
     if (model_dir.empty()) {
-        GTEST_SKIP() << "TEST_MODELS_BASE_DIR not set, skipping real-model tests";
+        return false;
     }
     if (!std::filesystem::exists(model_dir / "openvino_model.xml")) {
-        GTEST_SKIP() << "Model not found, skipping: " << model_dir;
+        return false;
     }
+    return true;
 }
 
 std::string make_test_name(const ::testing::TestParamInfo<BackendModelParam>& info) {
@@ -97,7 +98,9 @@ class LLMPipelineBackendRealModel : public ::testing::TestWithParam<BackendModel
 TEST_P(LLMPipelineBackendRealModel, ExplicitSdpaBypassesDefaultPa) {
     const auto& param = GetParam();
     const std::filesystem::path model_dir = get_model_dir(param);
-    skip_if_model_unavailable(model_dir);
+    if (!is_model_available(model_dir)) {
+        GTEST_SKIP() << "Model not found, skipping: " << model_dir;
+    }
 
     ov::AnyMap properties;
     properties["ATTENTION_BACKEND"] = ov::genai::SDPA_BACKEND;
@@ -106,25 +109,16 @@ TEST_P(LLMPipelineBackendRealModel, ExplicitSdpaBypassesDefaultPa) {
     }) << param.model_id;
 }
 
-TEST_P(LLMPipelineBackendRealModel, DefaultSelectsExpectedBackend) {
+TEST_P(LLMPipelineBackendRealModel, DefaultBackendInitializesWithFallback) {
     const auto& param = GetParam();
     const std::filesystem::path model_dir = get_model_dir(param);
-    skip_if_model_unavailable(model_dir);
-
-    try {
-        auto pipe = std::make_unique<ov::genai::LLMPipeline>(model_dir, "CPU");
-        SUCCEED() << "Default backend initialization succeeded for " << param.model_id;
-    } catch (const ov::Exception& ex) {
-        const std::string message = ex.what();
-        EXPECT_NE(message.find("explicit backend=\"SDPA\""), std::string::npos)
-            << "Unexpected error for model " << param.model_id << ": " << message;
-
-        ov::AnyMap sdpa_props;
-        sdpa_props["ATTENTION_BACKEND"] = ov::genai::SDPA_BACKEND;
-        EXPECT_NO_THROW({
-            auto sdpa_pipe = std::make_unique<ov::genai::LLMPipeline>(model_dir, "CPU", sdpa_props);
-        }) << param.model_id;
+    if (!is_model_available(model_dir)) {
+        GTEST_SKIP() << "Model not found, skipping: " << model_dir;
     }
+
+    EXPECT_NO_THROW({
+        auto pipe = std::make_unique<ov::genai::LLMPipeline>(model_dir, "CPU");
+    }) << param.model_id;
 }
 
 INSTANTIATE_TEST_SUITE_P(
