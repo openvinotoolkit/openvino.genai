@@ -261,9 +261,6 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(const std::shared_ptr<ov:
 namespace qwen2_vl_utils {
 
 ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
-    if (height < factor || width < factor) {
-        OPENVINO_THROW("Height (" + std::to_string(height) + ") and width (" + std::to_string(width) + ") must be greater than factor (" + std::to_string(factor) + ")");
-    }
     if (std::max(height, width) / std::min(height, width) > 200) {
         OPENVINO_THROW("Absolute aspect ratio must be smaller than 200");
     }
