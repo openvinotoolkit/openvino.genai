@@ -841,6 +841,12 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
     }
 
     if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() && !is_npu_requested) {
+        const auto draft_model = properties.at(utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
+        const bool is_dflash_mode = draft_model.properties.find("dflash_mode") != draft_model.properties.end() &&
+                                    draft_model.properties.at("dflash_mode").as<bool>();
+        if (is_dflash_mode) {
+            return false;
+        }
         if (is_paged_attention_available()) {
             return true;
         } else {
