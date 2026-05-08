@@ -13,22 +13,15 @@ namespace ov::genai {
 namespace {
 
 clip_image_f32 preprocess_clip_image_gemma3n(const clip_image_u8& image, const ProcessorConfig& config) {
-    // Resize using bilinear interpolation (same as Gemma3 / SigLIP)
     clip_image_u8 resized_image;
     bilinear_resize(image, resized_image, config.size_width, config.size_height);
 
-    // Gemma3n preprocessor_config.json has do_normalize=false.
-    // Only rescale pixel values to [0, 1] (divide by 255) without mean/std normalization.
-    clip_ctx ctx;
-    ctx.image_mean[0] = 0.0f;
-    ctx.image_mean[1] = 0.0f;
-    ctx.image_mean[2] = 0.0f;
-    ctx.image_std[0] = 1.0f;
-    ctx.image_std[1] = 1.0f;
-    ctx.image_std[2] = 1.0f;
-
-    clip_image_f32 rescaled_image = clip_image_preprocess(ctx, resized_image);
-    return rescaled_image;
+    // Gemma3n: only rescale pixel values to [0, 1], no mean/std normalization.
+    clip_ctx_double rescale_params;
+    rescale_params.image_std[0] = 255.0;
+    rescale_params.image_std[1] = 255.0;
+    rescale_params.image_std[2] = 255.0;
+    return normalize_and_convert_to_chw(resized_image, rescale_params);
 }
 
 ov::Tensor get_pixel_values_gemma3n(const ov::Tensor& image, const ProcessorConfig& config) {
