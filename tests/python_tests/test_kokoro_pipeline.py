@@ -27,6 +27,7 @@ import openvino_genai as ov_genai
 from optimum.intel import OVModelForTextToSpeechSeq2Seq
 from utils.atomic_download import AtomicDownloadManager
 from utils.constants import get_ov_cache_converted_models_dir
+from utils.network import retry_request
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,7 @@ KOKORO_REF_S_DIM = 256
 KOKORO_VOICE_PACK_LENGTHS = 510
 KOKORO_TINY_MODEL_SEED = 1337
 KOKORO_MAX_DUR = 10
+KOKORO_EXPORT_TIMEOUT_SECONDS = 300
 
 MULTILINGUAL_PROMPT_CASES = [
     ("Hello this is a short speech generation test.", "en-us"),
@@ -260,11 +262,25 @@ def export_model_to_openvino(local_model_path: Path, output_path: Path) -> Path:
     ]
 
     logger.info(f"Running export command: {' '.join(command)}")
-    result = subprocess.run(command, capture_output=True, text=True)  # nosec B603
-
-    if result.returncode != 0:
+    try:
+        retry_request(
+            lambda: subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=KOKORO_EXPORT_TIMEOUT_SECONDS,
+            )
+        )
+    except subprocess.TimeoutExpired as error:
         raise RuntimeError(
-            f"Export failed with return code {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
+            f"Export timed out after {KOKORO_EXPORT_TIMEOUT_SECONDS} seconds\n"
+            f"stdout: {error.stdout or ''}\nstderr: {error.stderr or ''}"
+        ) from error
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(
+            f"Export failed with return code {error.returncode}\n"
+            f"stdout: {error.stdout or ''}\nstderr: {error.stderr or ''}"
         )
 
     logger.info(f"Successfully exported model to {output_path}")
