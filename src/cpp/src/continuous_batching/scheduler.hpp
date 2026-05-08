@@ -4,7 +4,9 @@
 
 #pragma once
 
+#include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 #include "openvino/runtime/intel_gpu/properties.hpp"
@@ -602,10 +604,11 @@ private:
         const size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
         const size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
 
-        paging_data.past_length = static_cast<int32_t>(num_processed_tokens);
+        paging_data.past_length = checked_size_to_int32(num_processed_tokens, "past length", seq_id);
         if (!m_config.enable_prefix_caching) {
-            paging_data.block_indices.push_back(static_cast<int32_t>(la_blocks[0]->get_index()));
-            paging_data.block_indices.push_back(static_cast<int32_t>(la_blocks[0]->get_index()));
+            const int32_t block_index = checked_block_index_to_int32(la_blocks[0]->get_index(), seq_id);
+            paging_data.block_indices.push_back(block_index);
+            paging_data.block_indices.push_back(block_index);
             paging_data.cache_interval = 0;
             scheduler_output.m_linear_attention_paging_data[seq_id] = std::move(paging_data);
             return;
@@ -616,6 +619,7 @@ private:
         const size_t cache_interval = m_cache_orchestrator->get_block_size(CacheType::LINEAR_ATTENTION_CACHE);
         OPENVINO_ASSERT(cache_interval > 0,
             "Internal error: linear attention cache interval must be greater than 0 when prefix caching is enabled");
+        paging_data.cache_interval = checked_size_to_int32(cache_interval, "cache interval", seq_id);
         const size_t read_block_position = num_processed_tokens == 0 ? 0 : (num_processed_tokens - 1) / cache_interval;
         const size_t write_block_begin = num_processed_tokens / cache_interval;
         const size_t write_blocks_count = (num_processed_tokens % cache_interval + num_scheduled_tokens + cache_interval - 1) / cache_interval;
@@ -626,12 +630,28 @@ private:
                         ": expected at least ", write_block_end, ", got ", la_blocks.size());
 
         paging_data.block_indices.reserve(1 + write_blocks_count);
-        paging_data.block_indices.push_back(static_cast<int32_t>(la_blocks[read_block_position]->get_index()));
+        paging_data.block_indices.push_back(checked_block_index_to_int32(la_blocks[read_block_position]->get_index(), seq_id));
         for (size_t block_position = write_block_begin; block_position < write_block_end; ++block_position) {
-            paging_data.block_indices.push_back(static_cast<int32_t>(la_blocks[block_position]->get_index()));
+            paging_data.block_indices.push_back(checked_block_index_to_int32(la_blocks[block_position]->get_index(), seq_id));
         }
-        paging_data.cache_interval = static_cast<int32_t>(cache_interval);
         scheduler_output.m_linear_attention_paging_data[seq_id] = std::move(paging_data);
+    }
+
+    static int32_t checked_size_to_int32(size_t value, const char* value_name, uint64_t seq_id) {
+        OPENVINO_ASSERT(value <= static_cast<size_t>(std::numeric_limits<int32_t>::max()),
+                        "Linear attention paging ", value_name, " for sequence ", seq_id,
+                        " exceeds int32_t maximum: ", value);
+        return static_cast<int32_t>(value);
+    }
+
+    static int32_t checked_block_index_to_int32(int block_index, uint64_t seq_id) {
+        OPENVINO_ASSERT(block_index >= 0,
+                        "Linear attention paging block index for sequence ", seq_id,
+                        " must be non-negative: ", block_index);
+        OPENVINO_ASSERT(static_cast<uint64_t>(block_index) <= static_cast<uint64_t>(std::numeric_limits<int32_t>::max()),
+                        "Linear attention paging block index for sequence ", seq_id,
+                        " exceeds int32_t maximum: ", block_index);
+        return static_cast<int32_t>(block_index);
     }
 
     size_t _schedule_scores_to_aggregate(SequenceGroup::Ptr sequence_group) {

@@ -162,7 +162,7 @@ def ov_pipe(llm_model: OVConvertedModelSchema) -> ov_genai.LLMPipeline:
         is_transformers_version("<", "4.57") or is_transformers_version(">=", "5.0")
     ):
         # AUTO PA backend with linear attention models is not supported
-        # for transformers less then 4.57 and greater or equal to 5.0
+        # for transformers less than 4.57 and greater or equal to 5.0
         # should be explicitly set to STATEFUL to avoid init error
         return create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
     return create_ov_pipeline(llm_model.models_path)
