@@ -4,6 +4,7 @@ sidebar_position: 2
 
 # Low-Rank Adaptation (LoRA)
 
+
 LoRA, or [Low-Rank Adaptation](https://arxiv.org/abs/2106.09685), is a popular and lightweight training technique used for fine-tuning Large Language and Stable Diffusion Models without needing full model training.
 Full fine-tuning of larger models (consisting of billions of parameters) is inherently expensive and time-consuming.
 LoRA works by adding a smaller number of new weights to the model for training, rather than retraining the entire parameter space of the model.
