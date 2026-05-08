@@ -61,9 +61,6 @@ public:
         };
     }
 
-protected:
-    ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) override;
-
 private:
     // Per-layer text embeddings model
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_per_layer_embeddings_requests;
@@ -74,8 +71,6 @@ private:
     std::vector<size_t> m_pending_image_token_counts;
 
     ov::Tensor get_per_layer_embeddings(const ov::Tensor& input_ids);
-
-    std::string expand_image_placeholders(const std::string& text) const;
 };
 
 }  // namespace ov::genai

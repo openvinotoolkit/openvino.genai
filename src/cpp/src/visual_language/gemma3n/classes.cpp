@@ -113,11 +113,30 @@ NormalizedPrompt InputsEmbedderGemma3n::normalize_prompt(const std::string& prom
                                                          size_t base_id,
                                                          const std::vector<EncodedImage>& images) const {
     const std::string& image_token = m_vlm_config.image_soft_token;
+    const std::string& start_of_image = m_vlm_config.start_of_image;
+    const std::string& end_of_image = m_vlm_config.end_of_image;
 
-    // Use <image_soft_token> as the native tag (matches what the chat template outputs).
-    // Don't expand here — expansion happens in get_inputs_embeds after the chat template is applied,
-    // to avoid the template's | trim stripping leading newlines.
     auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
+
+    std::vector<ov::Tensor> image_embeds;
+    image_embeds.reserve(images_sequence.size());
+    size_t search_offset = 0;
+    for (size_t new_image_id : images_sequence) {
+        image_embeds.push_back(images.at(new_image_id - base_id).resized_source);
+
+        size_t num_image_tokens = image_embeds.back().get_shape().at(1);
+
+        std::string expanded_tag = "\n\n" + start_of_image;
+        for (size_t t = 0; t < num_image_tokens; ++t) {
+            expanded_tag += image_token;
+        }
+        expanded_tag += end_of_image + "\n\n";
+
+        size_t pos = unified_prompt.find(image_token, search_offset);
+        OPENVINO_ASSERT(pos != std::string::npos, "Failed to find image_soft_token in prompt during expansion");
+        unified_prompt.replace(pos, image_token.length(), expanded_tag);
+        search_offset = pos + expanded_tag.size();
+    }
 
     return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
@@ -166,56 +185,6 @@ ov::Tensor InputsEmbedderGemma3n::get_inputs_embeds(const std::string& prompt,
         utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 
     return inputs_embeds;
-}
-
-std::string InputsEmbedderGemma3n::expand_image_placeholders(const std::string& text) const {
-    if (m_pending_image_token_counts.empty()) {
-        return text;
-    }
-
-    const std::string& image_token = m_vlm_config.image_soft_token;
-    const std::string& start_of_image = m_vlm_config.start_of_image;
-    const std::string& end_of_image = m_vlm_config.end_of_image;
-
-    std::string result = text;
-    size_t search_offset = 0;
-    for (size_t i = 0; i < m_pending_image_token_counts.size(); ++i) {
-        const size_t num_tokens = m_pending_image_token_counts[i];
-
-        std::string expanded_tag = "\n\n" + start_of_image;
-        for (size_t t = 0; t < num_tokens; ++t) {
-            expanded_tag += image_token;
-        }
-        expanded_tag += end_of_image + "\n\n";
-
-        size_t pos = result.find(image_token, search_offset);
-        OPENVINO_ASSERT(pos != std::string::npos, "Failed to find image_soft_token in prompt during expansion");
-        result.replace(pos, image_token.length(), expanded_tag);
-        search_offset = pos + expanded_tag.size();
-    }
-    return result;
-}
-
-ov::Tensor InputsEmbedderGemma3n::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
-    bool add_special_tokens_val =
-        m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
-
-    std::string text_to_tokenize = prompt;
-
-    if (!m_is_chat_conversation && m_apply_chat_template) {
-        ChatHistory history({{{"role", "user"}, {"content", prompt}}});
-        text_to_tokenize = m_tokenizer.apply_chat_template(history, true);
-    }
-
-    text_to_tokenize = expand_image_placeholders(text_to_tokenize);
-
-    auto start_time = std::chrono::steady_clock::now();
-    ov::Tensor encoded =
-        m_tokenizer.encode(text_to_tokenize, ov::genai::add_special_tokens(add_special_tokens_val)).input_ids;
-    auto end_time = std::chrono::steady_clock::now();
-    metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_time - start_time));
-
-    return encoded;
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderGemma3n::get_position_ids(const size_t inputs_embeds_size,
