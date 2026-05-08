@@ -251,7 +251,7 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
                            f"num-samples will be updated to max available: {len(all_videos)}.")
             NUM_SAMPLES = len(all_videos)
 
-        video_samples = random.Random(42).sample(all_videos, NUM_SAMPLES)  # nosec
+        video_samples = random.Random(43).sample(all_videos, NUM_SAMPLES)  # nosec
         for sample in video_samples:
             tar.extract(sample, path=extract_dir)
 
