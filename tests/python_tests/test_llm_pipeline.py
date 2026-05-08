@@ -367,6 +367,8 @@ def test_linear_attention_batch_input_same_as_individual(
     llm_model: OVConvertedModelSchema,
     pipeline_type: PipelineType,
 ) -> None:
+    if llm_model.model_id == "optimum-intel-internal-testing/tiny-random-qwen3-next":
+        pytest.skip("CVS-186453")
     prompts = ["table is made", "They sky is blue because", "Difference between Jupiter and Mars is that"]
     generation_config = ov_genai.GenerationConfig(max_new_tokens=20)
 
