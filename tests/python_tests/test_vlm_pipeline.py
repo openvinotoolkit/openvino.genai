@@ -2423,8 +2423,9 @@ def test_cdpruner_functionality(ov_pipe_model: VlmModelInfo, cat_tensor: openvin
         generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
         generation_config.pruning_ratio = pruning_ratio
         result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
-        assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning should not be empty"
-        assert result.perf_metrics is not None, "Performance metrics should be available"
+
+    assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning should not be empty"
+    assert result.perf_metrics is not None, "Performance metrics should be available"
 
     if pruning_ratio > 0:
         # Verify pruning was actually applied: pruned run must process fewer input tokens than baseline
@@ -2599,8 +2600,8 @@ def test_cdpruner_with_video(
         result = ov_pipe.generate(
             PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=generation_config
         )
-        assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning on video should not be empty"
-        assert result.perf_metrics is not None, "Performance metrics should be available"
+    assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning on video should not be empty"
+    assert result.perf_metrics is not None, "Performance metrics should be available"
 
     if pruning_ratio > 0:
         # Verify pruning was actually applied: pruned run must process fewer input tokens than baseline
@@ -2623,8 +2624,24 @@ def test_cdpruner_with_video_and_images(
     car_tensor: openvino.Tensor,
     synthetic_video_32x32_tensor: openvino.Tensor,
 ):
-    """Test CDPruner with mixed video and image inputs."""
+    """Test CDPruner with mixed video and image inputs.
+    Verifies that pruning reduces input token count compared to the unpruned baseline."""
     ov_pipe = ov_pipe_model.pipeline
+
+    # Baseline run with pruning_ratio=0
+    baseline_config = _setup_generation_config(ov_pipe, max_new_tokens=25, do_sample=False)
+    baseline_config.pruning_ratio = 0
+    baseline_result = ov_pipe.generate(
+        "Describe these.",
+        images=[cat_tensor, car_tensor],
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=baseline_config,
+    )
+    assert baseline_result.texts[0].strip() != "", "Baseline result with mixed video and images should not be empty"
+    assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
+    baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
+
+    # Pruned run with pruning_ratio=30
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=25, do_sample=False)
     generation_config.pruning_ratio = 30
     result = ov_pipe.generate(
@@ -2634,7 +2651,17 @@ def test_cdpruner_with_video_and_images(
         generation_config=generation_config,
     )
     assert result.texts[0].strip() != "", "Result with mixed video and images should not be empty"
-    assert result.perf_metrics is not None
+    assert result.perf_metrics is not None, "Performance metrics should be available"
+
+    # Verify pruning was actually applied in the mixed-modality path.
+    # Note: pruning_ratio=30 prunes 30% of *visual* tokens only. get_num_input_tokens()
+    # returns the total token count (text + visual), so the total reduction percentage
+    # is less than pruning_ratio and depends on the visual-to-text token ratio of the model.
+    # A simple `<` check is therefore the correct bound here.
+    assert result.perf_metrics.get_num_input_tokens() < baseline_input_tokens, (
+        f"Pruned result (ratio=30) should have fewer input tokens than baseline, "
+        f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
+    )
 
 
 @pytest.fixture(scope="module")
