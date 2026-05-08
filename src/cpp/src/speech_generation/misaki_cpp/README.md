@@ -20,7 +20,7 @@ English backend requires all of:
 - `gb_gold.json`
 - `gb_silver.json`
 
-If auto-discovery is not enough, pass lexicon root via:
+Pass the lexicon root explicitly via:
 - env var: `MISAKI_DATA_DIR`
 - Python binding API: `engine.set_lexicon_data_root(...)`
 - parity CLI: `--lexicon-data-root <path>`
