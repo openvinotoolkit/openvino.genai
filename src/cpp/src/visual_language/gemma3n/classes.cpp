@@ -3,6 +3,9 @@
 
 #include "visual_language/gemma3n/classes.hpp"
 
+#include <iostream>
+
+#include "debug_utils.hpp"
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
 
@@ -14,13 +17,18 @@ clip_image_f32 preprocess_clip_image_gemma3n(const clip_image_u8& image, const P
     clip_image_u8 resized_image;
     bilinear_resize(image, resized_image, config.size_width, config.size_height);
 
-    // Normalize with mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5]
+    // Gemma3n preprocessor_config.json has do_normalize=false.
+    // Only rescale pixel values to [0, 1] (divide by 255) without mean/std normalization.
     clip_ctx ctx;
-    std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
-    std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
+    ctx.image_mean[0] = 0.0f;
+    ctx.image_mean[1] = 0.0f;
+    ctx.image_mean[2] = 0.0f;
+    ctx.image_std[0] = 1.0f;
+    ctx.image_std[1] = 1.0f;
+    ctx.image_std[2] = 1.0f;
 
-    clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
-    return normalized_image;
+    clip_image_f32 rescaled_image = clip_image_preprocess(ctx, resized_image);
+    return rescaled_image;
 }
 
 ov::Tensor get_pixel_values_gemma3n(const ov::Tensor& image, const ProcessorConfig& config) {
@@ -104,27 +112,13 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderGemma3n::encode_images(const 
 NormalizedPrompt InputsEmbedderGemma3n::normalize_prompt(const std::string& prompt,
                                                          size_t base_id,
                                                          const std::vector<EncodedImage>& images) const {
-    std::string start_of_image = m_vlm_config.start_of_image;
-    std::string image_token = m_vlm_config.image_soft_token;
-    std::string end_of_image = m_vlm_config.end_of_image;
+    const std::string& image_token = m_vlm_config.image_soft_token;
 
-    auto [unified_prompt, images_sequence] = normalize(prompt, start_of_image, start_of_image, base_id, images.size());
+    // Use <image_soft_token> as the native tag (matches what the chat template outputs).
+    // Don't expand here — expansion happens in get_inputs_embeds after the chat template is applied,
+    // to avoid the template's | trim stripping leading newlines.
+    auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
 
-    std::vector<ov::Tensor> image_embeds;
-    image_embeds.reserve(images_sequence.size());
-    for (size_t new_image_id : images_sequence) {
-        image_embeds.push_back(images.at(new_image_id - base_id).resized_source);
-
-        size_t num_image_tokens = image_embeds.back().get_shape().at(1);
-
-        std::string expanded_tag = "\n\n" + start_of_image;
-        for (size_t i = 0; i < num_image_tokens; i++) {
-            expanded_tag += image_token;
-        }
-        expanded_tag += end_of_image + "\n\n";
-
-        unified_prompt.replace(unified_prompt.find(start_of_image), start_of_image.length(), expanded_tag);
-    }
     return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
 
@@ -137,6 +131,12 @@ ov::Tensor InputsEmbedderGemma3n::get_inputs_embeds(const std::string& prompt,
     image_embeds.reserve(images_sequence.size());
     for (size_t new_image_id : images_sequence) {
         image_embeds.push_back(images.at(new_image_id).resized_source);
+    }
+
+    // Store per-image token counts for use by apply_chat_template_tokenize.
+    m_pending_image_token_counts.clear();
+    for (size_t i = 0; i < images_sequence.size(); ++i) {
+        m_pending_image_token_counts.push_back(images.at(images_sequence[i]).resized_source.get_shape().at(1));
     }
 
     ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
@@ -166,6 +166,56 @@ ov::Tensor InputsEmbedderGemma3n::get_inputs_embeds(const std::string& prompt,
         utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 
     return inputs_embeds;
+}
+
+std::string InputsEmbedderGemma3n::expand_image_placeholders(const std::string& text) const {
+    if (m_pending_image_token_counts.empty()) {
+        return text;
+    }
+
+    const std::string& image_token = m_vlm_config.image_soft_token;
+    const std::string& start_of_image = m_vlm_config.start_of_image;
+    const std::string& end_of_image = m_vlm_config.end_of_image;
+
+    std::string result = text;
+    size_t search_offset = 0;
+    for (size_t i = 0; i < m_pending_image_token_counts.size(); ++i) {
+        const size_t num_tokens = m_pending_image_token_counts[i];
+
+        std::string expanded_tag = "\n\n" + start_of_image;
+        for (size_t t = 0; t < num_tokens; ++t) {
+            expanded_tag += image_token;
+        }
+        expanded_tag += end_of_image + "\n\n";
+
+        size_t pos = result.find(image_token, search_offset);
+        OPENVINO_ASSERT(pos != std::string::npos, "Failed to find image_soft_token in prompt during expansion");
+        result.replace(pos, image_token.length(), expanded_tag);
+        search_offset = pos + expanded_tag.size();
+    }
+    return result;
+}
+
+ov::Tensor InputsEmbedderGemma3n::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
+    bool add_special_tokens_val =
+        m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
+
+    std::string text_to_tokenize = prompt;
+
+    if (!m_is_chat_conversation && m_apply_chat_template) {
+        ChatHistory history({{{"role", "user"}, {"content", prompt}}});
+        text_to_tokenize = m_tokenizer.apply_chat_template(history, true);
+    }
+
+    text_to_tokenize = expand_image_placeholders(text_to_tokenize);
+
+    auto start_time = std::chrono::steady_clock::now();
+    ov::Tensor encoded =
+        m_tokenizer.encode(text_to_tokenize, ov::genai::add_special_tokens(add_special_tokens_val)).input_ids;
+    auto end_time = std::chrono::steady_clock::now();
+    metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_time - start_time));
+
+    return encoded;
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderGemma3n::get_position_ids(const size_t inputs_embeds_size,

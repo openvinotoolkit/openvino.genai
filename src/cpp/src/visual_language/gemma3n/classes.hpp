@@ -61,13 +61,21 @@ public:
         };
     }
 
+protected:
+    ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) override;
+
 private:
-    // Per-layer text embeddings model (Gemma4-specific)
+    // Per-layer text embeddings model
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_per_layer_embeddings_requests;
 
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
 
+    // Number of image tokens per image for the current generate() call, set by get_inputs_embeds.
+    std::vector<size_t> m_pending_image_token_counts;
+
     ov::Tensor get_per_layer_embeddings(const ov::Tensor& input_ids);
+
+    std::string expand_image_placeholders(const std::string& text) const;
 };
 
 }  // namespace ov::genai
