@@ -2595,7 +2595,9 @@ def test_cdpruner_with_video(
     else:
         generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
         generation_config.pruning_ratio = pruning_ratio
-        result = ov_pipe.generate(PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=generation_config)
+        result = ov_pipe.generate(
+            PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=generation_config
+        )
         assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning on video should not be empty"
         assert result.perf_metrics is not None, "Performance metrics should be available"
 
