@@ -10,6 +10,7 @@
 #include "include/chat_history.hpp"
 #include "include/parser.hpp"
 #include "include/perf_metrics.hpp"
+#include "include/text2image_pipeline/perf_metrics.hpp"
 #include "include/text2speech_pipeline/perf_metrics.hpp"
 #include "include/vlm_pipeline/perf_metrics.hpp"
 #include "include/whisper_pipeline/perf_metrics.hpp"
@@ -767,6 +768,19 @@ ov::genai::SpeechGenerationConfig js_to_cpp<ov::genai::SpeechGenerationConfig>(c
 }
 
 template <>
+ov::genai::ImageGenerationConfig js_to_cpp<ov::genai::ImageGenerationConfig>(const Napi::Env& env,
+                                                                              const Napi::Value& value) {
+    ov::genai::ImageGenerationConfig config;
+    if (value.IsUndefined() || value.IsNull()) {
+        return config;
+    }
+    ov::AnyMap config_map = js_to_cpp<ov::AnyMap>(env, value);
+    config.update_generation_config(config_map);
+    config.validate();
+    return config;
+}
+
+template <>
 std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value) {
     std::vector<ov::Tensor> tensors;
     if (value.IsUndefined() || value.IsNull()) {
@@ -830,6 +844,18 @@ ov::genai::SpeechGenerationPerfMetrics& unwrap<ov::genai::SpeechGenerationPerfMe
     OPENVINO_ASSERT(obj.InstanceOf(prototype.Value().As<Napi::Function>()),
                     "Passed argument is not of type Text2SpeechPerfMetrics");
     const auto js_metrics = Napi::ObjectWrap<Text2SpeechPerfMetricsWrapper>::Unwrap(obj);
+    return js_metrics->get_value();
+}
+
+template <>
+ov::genai::ImageGenerationPerfMetrics& unwrap<ov::genai::ImageGenerationPerfMetrics>(const Napi::Env& env,
+                                                                                       const Napi::Value& value) {
+    const auto obj = value.As<Napi::Object>();
+    const auto& prototype = env.GetInstanceData<AddonData>()->text2image_perf_metrics;
+    OPENVINO_ASSERT(prototype, "Invalid pointer to prototype.");
+    OPENVINO_ASSERT(obj.InstanceOf(prototype.Value().As<Napi::Function>()),
+                    "Passed argument is not of type Text2ImagePerfMetrics");
+    const auto js_metrics = Napi::ObjectWrap<Text2ImagePerfMetricsWrapper>::Unwrap(obj);
     return js_metrics->get_value();
 }
 
@@ -926,6 +952,14 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env&
             return js_result;
         },
         embedding_result);
+}
+
+template <>
+Napi::Value cpp_to_js<std::optional<std::string>, Napi::Value>(const Napi::Env& env, const std::optional<std::string>& value) {
+    if (value.has_value()) {
+        return Napi::String::New(env, value.value());
+    }
+    return env.Undefined();
 }
 
 template <>
@@ -1458,6 +1492,62 @@ Napi::Value cpp_to_js<ov::genai::SpeechGenerationConfig, Napi::Value>(
     obj.Set("maxlenratio", cpp_to_js<float, Napi::Value>(env, config.maxlenratio));
     obj.Set("threshold", cpp_to_js<float, Napi::Value>(env, config.threshold));
     return obj;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::ImageGenerationConfig, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::ImageGenerationConfig& config) {
+    Napi::Object obj = Napi::Object::New(env);
+
+    obj.Set("prompt_2", cpp_to_js<std::optional<std::string>, Napi::Value>(env, config.prompt_2));
+    obj.Set("prompt_3", cpp_to_js<std::optional<std::string>, Napi::Value>(env, config.prompt_3));
+    obj.Set("negative_prompt", cpp_to_js<std::optional<std::string>, Napi::Value>(env, config.negative_prompt));
+    obj.Set("negative_prompt_2", cpp_to_js<std::optional<std::string>, Napi::Value>(env, config.negative_prompt_2));
+    obj.Set("negative_prompt_3", cpp_to_js<std::optional<std::string>, Napi::Value>(env, config.negative_prompt_3));
+    obj.Set("num_images_per_prompt", cpp_to_js<size_t, Napi::Value>(env, config.num_images_per_prompt));
+    obj.Set("rng_seed", cpp_to_js<size_t, Napi::Value>(env, config.rng_seed));
+    obj.Set("guidance_scale", cpp_to_js<float, Napi::Value>(env, config.guidance_scale));
+    obj.Set("height", cpp_to_js<int64_t, Napi::Value>(env, config.height));
+    obj.Set("width", cpp_to_js<int64_t, Napi::Value>(env, config.width));
+    obj.Set("num_inference_steps", cpp_to_js<size_t, Napi::Value>(env, config.num_inference_steps));
+    obj.Set("max_sequence_length", cpp_to_js<int64_t, Napi::Value>(env, static_cast<int64_t>(config.max_sequence_length)));
+    obj.Set("strength", cpp_to_js<float, Napi::Value>(env, config.strength));
+
+    return obj;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::RawImageGenerationPerfMetrics, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::RawImageGenerationPerfMetrics& metrics) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("unetInferenceDurations",
+            cpp_to_js<std::vector<float>, Napi::Value>(
+                env,
+                ov::genai::common_bindings::utils::get_ms(
+                    metrics,
+                    &ov::genai::RawImageGenerationPerfMetrics::unet_inference_durations)));
+    obj.Set("transformerInferenceDurations",
+            cpp_to_js<std::vector<float>, Napi::Value>(
+                env,
+                ov::genai::common_bindings::utils::get_ms(
+                    metrics,
+                    &ov::genai::RawImageGenerationPerfMetrics::transformer_inference_durations)));
+    obj.Set("iterationDurations",
+            cpp_to_js<std::vector<float>, Napi::Value>(
+                env,
+                ov::genai::common_bindings::utils::get_ms(
+                    metrics,
+                    &ov::genai::RawImageGenerationPerfMetrics::iteration_durations)));
+    return obj;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::ImageGenerationPerfMetrics, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::ImageGenerationPerfMetrics& metrics) {
+    return Text2ImagePerfMetricsWrapper::wrap(env, metrics);
 }
 
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num) {

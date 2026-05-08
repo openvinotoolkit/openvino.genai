@@ -10,6 +10,7 @@
     "test": "node tests/usage.test.js"
   },
   "dependencies": {
+    "bmp-js": "^0.1.0",
     "node-wav": "^0.0.2",
     "openvino-genai-node": "^2026.1.0",
     "openvino-node": "^2026.1.0",

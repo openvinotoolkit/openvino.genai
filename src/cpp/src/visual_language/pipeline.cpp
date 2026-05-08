@@ -96,10 +96,14 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     size_t m_image_id = 0;
     size_t m_video_id = 0;
     ChatHistory m_history;
+
     // if True, full history will be used as prompt on each chat generation
     bool m_use_full_chat_history = false;
-    // It stores encoded images in case when m_use_full_chat_history is true
+    // It stores encoded images, videos and vision count in case when m_use_full_chat_history is true
     std::vector<ov::genai::EncodedImage> m_encoded_images;
+    std::vector<ov::genai::EncodedVideo> m_encoded_videos;
+    std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
+
     std::string m_system_message;
     std::shared_ptr<VisionRegistry> m_vision_registry;
 private:
@@ -122,6 +126,10 @@ private:
         m_sampler.set_seed(m_generation_config.rng_seed);
 
         m_vision_registry = std::make_shared<VisionRegistry>();
+
+        // NPU does not support history, so use full chat history on each chat iteration.
+        // Linear attention forces full KV cache reset, need to provide all image/video embeddings.
+        m_use_full_chat_history = m_is_npu || cache_state.has_linear();
     }
 
     void initialize_from_model_and_dir(
@@ -183,8 +191,7 @@ private:
             : utils::pop_or_default<ov::AnyMap>(device_properties, embedder_device, {});
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
-        // NPU does not support history, so use full chat history on each chat iteration.
-        m_use_full_chat_history = m_is_npu;
+
         finalize_initialization(language_model, kv_pos);
     }
 
@@ -304,6 +311,17 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
+        return generate(prompt, images, videos, {}, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -325,7 +343,7 @@ public:
                                                            generation_config.relevance_weight);
 
         auto encoded_images = m_inputs_embedder->encode_images(images);
-        const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
+        auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
         if (m_is_chat_conversation) {
@@ -334,11 +352,20 @@ public:
             unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
 
             if (m_use_full_chat_history) {
+                m_history_vision_count.emplace_back(std::make_pair(video_sequence.size(), image_sequence.size()));
+
                 m_encoded_images.reserve(m_encoded_images.size() + encoded_images.size());
                 m_encoded_images.insert(m_encoded_images.end(), encoded_images.begin(), encoded_images.end());
                 image_sequence.resize(m_encoded_images.size());
                 std::iota(image_sequence.begin(), image_sequence.end(), 0);
                 encoded_images = m_encoded_images;
+
+                m_encoded_videos.reserve(m_encoded_videos.size() + encoded_videos.size());
+                m_encoded_videos.insert(m_encoded_videos.end(), encoded_videos.begin(), encoded_videos.end());
+                video_sequence.resize(m_encoded_videos.size());
+                std::iota(video_sequence.begin(), video_sequence.end(), 0);
+                encoded_videos = m_encoded_videos;
+
                 m_inputs_embedder->start_chat(m_system_message);
             } else {
                 for (size_t idx = 0; idx < image_sequence.size(); idx++) {
@@ -358,6 +385,7 @@ public:
             encoded_videos,
             image_sequence,
             video_sequence,
+            m_history_vision_count,
             generation_config,
             perf_metrics,
             streamer,
@@ -395,7 +423,7 @@ public:
                 // using here images.size() instead of encoded_images.size() since
                 // encoded_images could be overriden when m_use_full_chat_history is true
                 m_image_id += images.size();
-                m_video_id += encoded_videos.size();
+                m_video_id += videos.size();
                 // Tail of chat template is missing in KV cache.
                 // Find the tail to concatenate it with the next input prompt.
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
@@ -404,6 +432,11 @@ public:
                 if (m_use_full_chat_history) {
                     OPENVINO_ASSERT(images.size() <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
                     m_encoded_images.resize(m_encoded_images.size() - images.size());
+
+                    OPENVINO_ASSERT(videos.size() <= m_encoded_videos.size(), "Number of videos to remove is more than stored videos!");
+                    m_encoded_videos.resize(m_encoded_videos.size() - videos.size());
+
+                    m_history_vision_count.pop_back();
                 }
             }
         } else {
@@ -411,8 +444,11 @@ public:
             cache_state.reset_state();
         }
 
-        if (!(m_is_chat_conversation && m_use_full_chat_history))
+        if (!(m_is_chat_conversation && m_use_full_chat_history)) {
             m_encoded_images.clear();
+            m_encoded_videos.clear();
+            m_history_vision_count.clear();
+        }
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = encoded_result.perf_metrics;
@@ -455,6 +491,17 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
+        return generate(history, images, videos, {}, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        const ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -474,7 +521,7 @@ public:
 
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
-        auto processed_chat_data = chat_context.process(images, videos);
+        auto processed_chat_data = chat_context.process(images, videos, videos_metadata);
 
         bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
 
@@ -503,6 +550,9 @@ public:
         const auto& video_seq = use_full_history
             ? processed_chat_data.video_sequence
             : processed_chat_data.new_video_sequence;
+        const auto& vision_counts = use_full_history
+            ? processed_chat_data.vision_counts
+            : std::vector<std::pair<std::size_t, std::size_t>>{ {video_seq.size(), image_seq.size()} };
 
         generation_finish_info = prepare_inputs_and_generate(
             templated_history,
@@ -510,6 +560,7 @@ public:
             videos_embeds,
             image_seq,
             video_seq,
+            vision_counts,
             generation_config,
             perf_metrics,
             streamer,
@@ -587,6 +638,8 @@ public:
         m_inputs_embedder->finish_chat();
         m_history.clear();
         m_encoded_images.clear();
+        m_encoded_videos.clear();
+        m_history_vision_count.clear();
     }
 
     Tokenizer get_tokenizer() const override {
@@ -661,6 +714,7 @@ private:
         const std::vector<ov::genai::EncodedVideo>& encoded_videos,
         const std::vector<size_t>& image_sequence,
         const std::vector<size_t>& video_sequence,
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count,
         GenerationConfig& generation_config,
         VLMPerfMetrics& perf_metrics,
         const StreamerVariant& streamer,
@@ -673,15 +727,27 @@ private:
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         if (m_inputs_embedder->has_token_type_ids()) {
             std::tie(inputs_embeds, token_type_ids) =
-                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt,
-                                                                         encoded_images,
-                                                                         encoded_videos,
-                                                                         perf_metrics,
-                                                                         recalculate_merged_embeddings,
-                                                                         image_sequence,
-                                                                         video_sequence);
+                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(
+                    unified_prompt,
+                    encoded_images,
+                    encoded_videos,
+                    perf_metrics,
+                    recalculate_merged_embeddings,
+                    image_sequence,
+                    video_sequence,
+                    history_vision_count
+                );
         } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, perf_metrics, recalculate_merged_embeddings, image_sequence, video_sequence);
+            inputs_embeds = m_inputs_embedder->get_inputs_embeds(
+                unified_prompt,
+                encoded_images, 
+                encoded_videos,
+                perf_metrics,
+                recalculate_merged_embeddings,
+                image_sequence,
+                video_sequence,
+                history_vision_count
+            );
         }
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
@@ -776,8 +842,11 @@ bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     // TODO: remove it when GEMMA3 ticket-171180 is fixed
     return vlm_config.model_type == VLMModelType::GEMMA3
-           // ticket: 183493
-           || vlm_config.model_type == VLMModelType::GEMMA4;
+        // ticket: 183493
+        || vlm_config.model_type == VLMModelType::GEMMA4
+        // TODO: remove Qwen3.5 limitation once ticket-183791 is fixed
+        || vlm_config.model_type == VLMModelType::QWEN3_5
+        || vlm_config.model_type == VLMModelType::QWEN3_5_MOE;
 }
 
 VLMPipeline::VLMPipeline(
