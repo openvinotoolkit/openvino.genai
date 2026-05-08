@@ -9,21 +9,23 @@ import {
   TextRerankPipelineOptions,
 } from "./pipelines/textRerankPipeline.js";
 import { WhisperPipeline as Whisper } from "./pipelines/whisperPipeline.js";
+import { Text2ImagePipeline as Text2Image } from "./pipelines/text2ImagePipeline.js";
 import { Text2SpeechPipeline as Text2Speech } from "./pipelines/text2SpeechPipeline.js";
 import {
   LLMPipelineProperties,
   VLMPipelineProperties,
   WhisperPipelineProperties,
+  Text2ImagePipelineProperties,
   Text2SpeechPipelineProperties,
 } from "./utils.js";
 
 class PipelineFactory {
-  static async LLMPipeline(modelPath: string, device?: string): Promise<any>;
+  static async LLMPipeline(modelPath: string, device?: string): Promise<LLM>;
   static async LLMPipeline(
     modelPath: string,
     device: string,
     properties?: LLMPipelineProperties,
-  ): Promise<any>;
+  ): Promise<LLM>;
   static async LLMPipeline(
     modelPath: string,
     device?: string,
@@ -77,6 +79,17 @@ class PipelineFactory {
     return pipeline;
   }
 
+  static async Text2ImagePipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: Text2ImagePipelineProperties = {},
+  ) {
+    const pipeline = new Text2Image(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
   static async Text2SpeechPipeline(
     modelPath: string,
     device: string = "CPU",
@@ -95,6 +108,7 @@ export const {
   TextEmbeddingPipeline,
   TextRerankPipeline,
   WhisperPipeline,
+  Text2ImagePipeline,
   Text2SpeechPipeline,
 } = PipelineFactory;
 export {
@@ -108,6 +122,7 @@ export {
   PerfMetrics,
   VLMPerfMetrics,
   WhisperPerfMetrics,
+  Text2ImagePerfMetrics,
   Text2SpeechPerfMetrics,
 } from "./perfMetrics.js";
 export * from "./utils.js";

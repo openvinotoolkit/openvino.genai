@@ -8,6 +8,7 @@ import sys
 
 from pathlib import Path
 from shutil import rmtree
+from optimum.intel.utils.import_utils import is_transformers_version
 
 import openvino as ov
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason, ChatHistory
@@ -75,6 +76,9 @@ def model_facebook_opt_125m() -> OVConvertedModelSchema:
     return download_and_convert_model(model_id)
 
 
+@pytest.mark.transformers_dependent(
+    reason="Cases with group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
+)
 @pytest.mark.parametrize("llm_model", read_models_list(FILE_DIR_NAME / "models" / "lightweight"), indirect=True)
 def test_e2e_lightweight_models(llm_model: OVConvertedModelSchema):
     prompts, generation_configs = get_test_dataset()
@@ -154,6 +158,9 @@ def test_cb_streamer_vs_return_vs_stateful(model_facebook_opt_125m: OVConvertedM
     assert "".join(streamed) == reference
 
 
+@pytest.mark.transformers_lower_v5(
+    reason="group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
+)
 @pytest.mark.parametrize(
     "generation_config_kwargs", 
     [
@@ -226,6 +233,7 @@ def test_chat_scenario_vs_stateful(
             assert generated == reference
 
 
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 and transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize(
     "generation_config_kwargs",
@@ -271,6 +279,7 @@ def test_continuous_batching_add_request_health_check(
         for output in outputs:
             assert output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
 
+@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 and transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize(
     "generation_config_kwargs", 
     [
@@ -362,19 +371,32 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
     return generation_config
 
 
-@pytest.mark.parametrize(
-    "params", 
-    [
-        ({"num_kv_blocks": 2, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_greedy()),
-        ({"num_kv_blocks": 2, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_greedy()),
-        ({"num_kv_blocks": 10, "dynamic_split_fuse": True}, get_parallel_sampling_seq_len_300()),
-        ({"num_kv_blocks": 10, "dynamic_split_fuse": False}, get_parallel_sampling_seq_len_300()),
+if is_transformers_version("<", "5.0"):
+    # beam search fails with optimum-intel 423b423 and transformers>=5.0
+    # restore after fix of CVS-185790
+    preemption_params = [
         ({"num_kv_blocks": 34, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),
         ({"num_kv_blocks": 34, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),
         ({"num_kv_blocks": 100, "dynamic_split_fuse": True}, get_beam_search_seq_len_300()),
         ({"num_kv_blocks": 100, "dynamic_split_fuse": False}, get_beam_search_seq_len_300()),
     ]
-)
+else:
+    preemption_params = [
+        (
+            {"num_kv_blocks": 2, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256},
+            get_greedy(),
+        ),
+        (
+            {"num_kv_blocks": 2, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256},
+            get_greedy(),
+        ),
+        ({"num_kv_blocks": 10, "dynamic_split_fuse": True}, get_parallel_sampling_seq_len_300()),
+        ({"num_kv_blocks": 10, "dynamic_split_fuse": False}, get_parallel_sampling_seq_len_300()),
+    ]
+
+
+@pytest.mark.transformers_dependent
+@pytest.mark.parametrize("params", preemption_params)
 def test_preemption(model_facebook_opt_125m: OVConvertedModelSchema, params):
     scheduler_params = params[0]
     generation_config = params[1]
@@ -783,4 +805,42 @@ def test_continuous_batching_add_extension(
     )
     assert result_extension_obj[0].m_generation_ids[0].strip() == result_ref[0].m_generation_ids[0].strip(), (
         "Result should be the same for model with extension 'CustomAdd' and reference model."
+    )
+
+
+def _run_cb_requests(pipe: ContinuousBatchingPipeline, prompt: str, configs: list) -> list[list[int]]:
+    """Submit requests via add_request/step and return generated token IDs for each."""
+    handles = [pipe.add_request(idx, prompt, generation_config=cfg) for idx, cfg in enumerate(configs)]
+    while pipe.has_non_finished_requests():
+        pipe.step()
+    return [handle.read_all()[0].generated_ids for handle in handles]
+
+
+def test_cb_same_seed_produces_identical_output(model_facebook_opt_125m: OVConvertedModelSchema):
+    """Two requests with the same rng_seed must produce identical token sequences."""
+    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
+    config = GenerationConfig(do_sample=True, temperature=1.5, max_new_tokens=20, rng_seed=42)
+    prompt = "Tell me an interesting fact about space."
+
+    tokens_a, tokens_b = _run_cb_requests(pipe, prompt, [config, config])
+
+    assert tokens_a == tokens_b, (
+        f"Requests with the same rng_seed=42 must produce identical output.\nGot:\n  a: {tokens_a}\n  b: {tokens_b}"
+    )
+
+
+def test_cb_different_seed_produces_different_output(model_facebook_opt_125m: OVConvertedModelSchema):
+    """Requests with different rng_seeds must diverge for at least one trial."""
+    rng_seeds = [42, 123, 777, 2024]
+    configs = [
+        GenerationConfig(do_sample=True, temperature=2.0, max_new_tokens=30, rng_seed=seed) for seed in rng_seeds
+    ]
+    prompt = "Tell me an interesting fact about space."
+
+    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
+    token_seqs = _run_cb_requests(pipe, prompt, configs)
+
+    assert len(set(map(tuple, token_seqs))) > 1, (
+        f"Requests with different rng_seeds {rng_seeds} must produce at least one distinct output, "
+        f"but all produced identical token sequences: {token_seqs[0]}"
     )

@@ -68,8 +68,12 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
 
         auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
-        if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-            streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
+        if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
+            handle->cancel();
+        } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
+            handle->stop();
+        } else if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+            handle->stop(ov::genai::GenerationFinishReason::TOOL_CALL);
         }
     };
 
@@ -185,6 +189,12 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
     results.tokens.push_back(sequence->get_generated_ids());
     results.scores.push_back(score);
+    
+    ov::genai::GenerationFinishReason finish_reason = sequence->get_finish_reason();
+    if (sequence_group->handle_stopped() && finish_reason == ov::genai::GenerationFinishReason::NONE) {
+        finish_reason = sequence_group->get_generation_stream()->get_finish_reason();
+    }
+    results.finish_reasons.push_back(finish_reason);
 
     sampler.clear_request_info(sequence_group->get_request_id());
 

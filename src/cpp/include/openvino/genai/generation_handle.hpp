@@ -20,6 +20,12 @@ enum class GenerationStatus {
     STOP = 4, // Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
 };
 
+enum class GenerationFinishReason {
+    NONE = 0, // Default value, when generation is not yet finished
+    STOP = 1, // Generation finished due to an external stop request or by reaching EOS/stop-sequence
+    LENGTH = 2, // Generation finished by reaching max_new_tokens limit
+    TOOL_CALL = 3 // Generation stop invoked by tool calling parser
+};
 
 struct EncodedGenerationResult {
     // request ID - obsolete when handle API is approved as handle will connect results with prompts.
@@ -30,6 +36,8 @@ struct EncodedGenerationResult {
     std::vector<std::vector<int64_t>> m_generation_ids;
     // scores
     std::vector<float> m_scores;
+    // per-sequence finish reasons aligned with m_generation_ids / m_scores
+    std::vector<GenerationFinishReason> m_finish_reasons;
 
     // Status of generation
     GenerationStatus m_status = GenerationStatus::RUNNING;
@@ -44,12 +52,6 @@ struct EncodedGenerationResult {
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
 };
 
-enum class GenerationFinishReason {
-    NONE = 0, // Default value, when generation is not yet finished
-    STOP = 1, // Generation finished naturally, by reaching end of sequence token
-    LENGTH = 2 // Generation finished by reaching max_new_tokens limit
-};
-
 struct GenerationResult {
     // request ID - obsolete when handle API is approved as handle will connect results with prompts.
     uint64_t m_request_id = 0;
@@ -59,6 +61,8 @@ struct GenerationResult {
     std::vector<std::string> m_generation_ids;
     // scores
     std::vector<float> m_scores;
+    // per-sequence finish reasons aligned with m_generation_ids / m_scores
+    std::vector<GenerationFinishReason> m_finish_reasons;
 
     // Status of generation
     GenerationStatus m_status = GenerationStatus::RUNNING;
@@ -107,7 +111,7 @@ public:
 
     bool is_cancelled();
 
-    void stop();
+    void stop(GenerationFinishReason finish_reason = GenerationFinishReason::STOP);
 
     void cancel();
 
