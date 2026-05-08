@@ -36,26 +36,29 @@ def run_js_chat(
     command: list[str],
     input_data: str,
     env: dict[str, str] = os.environ,
+    timeout: int = 600,
 ):
-    print(f"Running JS sample command: {' '.join(map(str, command))}")
+    logger.info(f"Running JS sample command: {' '.join(map(str, command))}")
     inputs = input_data.split("\n")
-    print(f"Input data: {input_data}")
-    try:
-        proc = subprocess.Popen(
-            command,
-            text=True,
-            encoding="utf-8",
-            env=env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            bufsize=1,
-        )
+    logger.info(f"Input data: {input_data}")
+    proc = subprocess.Popen(
+        command,
+        text=True,
+        encoding="utf-8",
+        env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+    )
+    assert proc.stdout is not None
+    assert proc.stdin is not None
 
-        output_lines: list[str] = []
-        input_index = 0
+    stdout_chunks: list[str] = []
+    input_index = 0
+    try:
         for line in proc.stdout:
-            output_lines.append(line)
+            stdout_chunks.append(line)
             if "question:" in line:
                 if input_index < len(inputs):
                     proc.stdin.write(inputs[input_index])
@@ -66,9 +69,28 @@ def run_js_chat(
                     break
 
         proc.stdin.close()
-    except subprocess.CalledProcessError as error:
-        print(f"Sample returned {error.returncode}. Output:\n{error.output}")
+
+        # Collect any remaining output after the main interaction loop.
+        remaining_output = proc.stdout.read()
+        if remaining_output:
+            stdout_chunks.append(remaining_output)
+
+        return_code = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        stdout = "".join(stdout_chunks)
+        logger.error(f"JS sample timed out. Partial output:\n{stdout}")
         raise
-    stdout = "".join(output_lines)
-    print(f"Sample output: {stdout}")
+    except Exception:
+        proc.kill()
+        proc.wait()
+        raise
+
+    stdout = "".join(stdout_chunks)
+    if return_code != 0:
+        logger.error(f"JS sample returned {return_code}. Output:\n{stdout}")
+        raise subprocess.CalledProcessError(return_code, command, output=stdout)
+
+    logger.info(f"Sample output: {stdout}")
     return stdout

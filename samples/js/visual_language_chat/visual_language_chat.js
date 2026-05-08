@@ -1,12 +1,11 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { promises as fs } from "node:fs";
-import { basename } from "node:path";
+import fs from "node:fs/promises";
+import { basename, join } from "node:path";
 import readline from "node:readline/promises";
 import { addon as ov } from "openvino-node";
-import jpeg from "jpeg-js";
-import { PNG } from "pngjs";
+import sharp from "sharp";
 import { ChatHistory, VLMPipeline } from "openvino-genai-node";
 import { hideBin } from "yargs/helpers";
 import yargs from "yargs/yargs";
@@ -21,46 +20,20 @@ function streamer(chunk) {
 }
 
 /**
- * Converts an RGBA pixel buffer to an RGB Uint8Array.
- * @param {Uint8Array} rgba - Source RGBA pixel data.
- * @returns {Uint8Array} RGB pixel data.
- */
-function rgbaToRgb(rgba) {
-    const rgb = new Uint8Array((rgba.length / 4) * 3);
-    for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) {
-        rgb[j] = rgba[i];
-        rgb[j + 1] = rgba[i + 1];
-        rgb[j + 2] = rgba[i + 2];
-    }
-    return rgb;
-}
-
-/**
  * Reads one image file and converts it to an OpenVINO tensor in HWC RGB layout.
+ * Uses sharp (libvips/libjpeg-turbo) to produce pixel values equivalent to PIL Image.open().convert("RGB").
  * @param {string} filePath - Path to a .jpg/.jpeg or .png file.
  * @returns {Promise<ov.Tensor>} Tensor with shape [height, width, 3] and type u8.
  */
 async function readImage(filePath) {
-    const buf = await fs.readFile(filePath);
-    const lower = filePath.toLowerCase();
-
-    if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
-        const { width, height, data } = jpeg.decode(buf);
-        const rgb = rgbaToRgb(data);
-        const tensor = new ov.Tensor("u8", [height, width, 3], rgb);
-        tensor._buffer = rgb; // prevent GC from collecting the backing buffer
-        return tensor;
-    }
-
-    if (lower.endsWith(".png")) {
-        const { width, height, data } = PNG.sync.read(buf); // RGBA
-        const rgb = rgbaToRgb(data);
-        const tensor = new ov.Tensor("u8", [height, width, 3], rgb);
-        tensor._buffer = rgb; // prevent GC from collecting the backing buffer
-        return tensor;
-    }
-
-    throw new Error(`Unsupported image format: ${filePath}. Supported formats: .jpg, .jpeg, .png`);
+    const { data, info } = await sharp(filePath)
+        .toColourspace("srgb")
+        .toFormat("raw")
+        .toBuffer({ resolveWithObject: true });
+    const rgb = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    const tensor = new ov.Tensor("u8", [info.height, info.width, 3], rgb);
+    tensor._buffer = rgb; // prevent GC from collecting the backing buffer
+    return tensor;
 }
 
 /**
@@ -78,7 +51,7 @@ async function readImages(path) {
     const entries = await fs.readdir(path);
     const files = entries
         .filter((name) => supportedExtensions.has(name.slice(name.lastIndexOf(".")).toLowerCase()))
-        .map((name) => `${path}/${name}`);
+        .map((name) => join(path, name));
 
     files.sort((a, b) => a.localeCompare(b));
 
@@ -154,24 +127,41 @@ async function main() {
 
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
+    /**
+     * Reads the next user prompt or returns null when stdin is closed (EOF).
+     * @param {string} promptText - Prompt to display to the user.
+     * @returns {Promise<string|null>} User input or null on EOF.
+     */
+    async function readPrompt(promptText) {
+        try {
+            return await rl.question(promptText);
+        } catch {
+            return null;
+        }
+    }
+
     try {
         const chatHistory = new ChatHistory();
 
-        let prompt = await rl.question("question:\n");
+        let prompt = await readPrompt("question:\n");
+        if (!prompt) {
+            return;
+        }
         chatHistory.push({ role: "user", content: prompt });
-        const decodedResults = await pipe.generate(chatHistory, { generationConfig, streamer, images });
+        let decodedResults = await pipe.generate(chatHistory, { generationConfig, streamer, images });
         process.stdout.write("\n");
         chatHistory.push({ role: "assistant", content: decodedResults.texts[0] });
 
         while (true) {
-            prompt = await rl.question("----------\nquestion:\n");
+            prompt = await readPrompt("----------\nquestion:\n");
+            if (!prompt) {
+                break;
+            }
             chatHistory.push({ role: "user", content: prompt });
-            const decodedResults = await pipe.generate(chatHistory, { generationConfig, streamer });
+            decodedResults = await pipe.generate(chatHistory, { generationConfig, streamer });
             process.stdout.write("\n");
             chatHistory.push({ role: "assistant", content: decodedResults.texts[0] });
         }
-    } catch (error) {
-        console.log(error.message);
     } finally {
         rl.close();
     }

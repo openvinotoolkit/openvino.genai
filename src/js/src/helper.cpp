@@ -834,7 +834,7 @@ ov::genai::SpeechGenerationPerfMetrics& unwrap<ov::genai::SpeechGenerationPerfMe
 }
 
 template <>
-ov::genai::ChatHistory& unwrap<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value) {
+std::shared_ptr<ov::genai::ChatHistory>& unwrap<std::shared_ptr<ov::genai::ChatHistory>>(const Napi::Env& env, const Napi::Value& value) {
     OPENVINO_ASSERT(value.IsObject(), "Passed argument must be an object.");
     const auto obj = value.As<Napi::Object>();
     OPENVINO_ASSERT(is_chat_history(env, value), "Passed argument is not of type ChatHistory");
@@ -861,7 +861,7 @@ GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value
         } else if (value.IsArray()) {
             return js_to_cpp<std::vector<std::string>>(env, value);
         } else if (is_chat_history(env, value)) {
-            return &unwrap<ov::genai::ChatHistory>(env, value);
+            return unwrap<std::shared_ptr<ov::genai::ChatHistory>>(env, value);
         }
         OPENVINO_THROW("Passed argument must be a string, ChatHistory or an array of strings.");
     } catch (const ov::Exception& e) {
@@ -876,7 +876,7 @@ VLMGenerateInputs js_to_cpp<VLMGenerateInputs>(const Napi::Env& env, const Napi:
             return value.As<Napi::String>().Utf8Value();
         }
         if (is_chat_history(env, value)) {
-            return &unwrap<ov::genai::ChatHistory>(env, value);
+            return unwrap<std::shared_ptr<ov::genai::ChatHistory>>(env, value);
         }
         OPENVINO_THROW("Passed argument must be a string or ChatHistory.");
     } catch (const ov::Exception& e) {

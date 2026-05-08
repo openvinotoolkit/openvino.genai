@@ -90,11 +90,11 @@ Napi::Value TokenizerWrapper::apply_chat_template(const Napi::CallbackInfo& info
         OPENVINO_ASSERT(info[0].IsObject(), "The argument 'chatHistory' must be an object");
         OPENVINO_ASSERT(info[1].IsBoolean(), "The argument 'addGenerationPrompt' must be a boolean");
 
-        ov::genai::ChatHistory history;
+        std::shared_ptr<ov::genai::ChatHistory> history;
         if (is_chat_history(info.Env(), info[0])) {
-            history = unwrap<ov::genai::ChatHistory>(info.Env(), info[0]);
+            history = unwrap<std::shared_ptr<ov::genai::ChatHistory>>(info.Env(), info[0]);
         } else {
-            history = ov::genai::ChatHistory(js_to_cpp<ov::genai::JsonContainer>(info.Env(), info[0]));
+            history = std::make_shared<ov::genai::ChatHistory>(js_to_cpp<ov::genai::JsonContainer>(info.Env(), info[0]));
         }
 
         bool add_generation_prompt = info[1].ToBoolean();
@@ -110,7 +110,7 @@ Napi::Value TokenizerWrapper::apply_chat_template(const Napi::CallbackInfo& info
         if (!info[4].IsUndefined()) {
             extra_context = ov::genai::JsonContainer::from_json_string(json_stringify(info.Env(), info[4]));
         }
-        auto result = this->_tokenizer.apply_chat_template(history, add_generation_prompt, chat_template, tools, extra_context);
+        auto result = this->_tokenizer.apply_chat_template(*history, add_generation_prompt, chat_template, tools, extra_context);
         return Napi::String::New(info.Env(), result);
     } catch (std::exception& err) {
         Napi::Error::New(info.Env(), err.what()).ThrowAsJavaScriptException();
