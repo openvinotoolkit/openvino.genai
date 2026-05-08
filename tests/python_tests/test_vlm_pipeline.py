@@ -435,9 +435,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
-    if "tiny-random-qwen3.5" in ov_model and ov_backend == "PA":
-        pytest.xfail("Qwen3.5 does not support PA attention backend")
-
     if "gemma4" in ov_model and ov_backend == "PA":
         pytest.xfail("gemma4 does not support PA attention backend")
 
