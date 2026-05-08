@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
-from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
+from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config
 
@@ -953,7 +953,13 @@ def create_evaluator(base_model, args):
         elif task == "visual-text-chat":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
-            if processor is not None and processor.chat_template is None:
+            # If base_model/target_model is provided, wwb will generate data and the chat_template should be defined.
+            # If test_data only is provided, wwb will not generate data and the chat_template is not necessary.
+            if (
+                (args.base_model is not None or args.target_model is not None)
+                and getattr(processor, "chat_template", None) is None
+                and getattr(tokenizer, "chat_template", None) is None
+            ):
                 raise ValueError(
                     "Model has no 'chat_template' defined, but was run with model-type 'visual-text-chat'. "
                     "WWB can't start an evaluation in visual-text-chat mode, "

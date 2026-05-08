@@ -615,6 +615,15 @@ ov::Tensor merge_text_and_video_image_embeddings(
             }
         }
     }
+
+    OPENVINO_ASSERT(image_embed_idx == processed_image_embeds.get_shape().at(0),
+        "Image embeddings count (", processed_image_embeds.get_shape().at(0), 
+        ") does not match image pad tokens in prompt (", image_embed_idx, ")");
+
+    OPENVINO_ASSERT(video_embed_idx == processed_video_embeds.get_shape().at(0),
+        "Video embeddings count (", processed_video_embeds.get_shape().at(0), 
+        ") does not match video pad tokens in prompt (", video_embed_idx, ")");
+
     return merged_embeds;
 }
     
