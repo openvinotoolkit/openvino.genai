@@ -156,14 +156,6 @@ private:
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
         }
 
-        // Fix per_layer_inputs type: export may produce i64 input with immediate Convert to f32.
-        // Change the parameter type to f32 so we can directly set float tensors.
-        for (const auto& param : language_model->get_parameters()) {
-            if (param->get_friendly_name() == "per_layer_inputs" && param->get_element_type() == ov::element::i64) {
-                param->set_element_type(ov::element::f32);
-            }
-        }
-
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
         if (m_is_npu) {
@@ -223,13 +215,6 @@ private:
                 m_generation_config.adapters->get_tensor_name_prefix().value_or("base_model.model.")
             );
             m_adapter_controller = AdapterController(language_model, *m_generation_config.adapters, device);
-        }
-
-        // Fix per_layer_inputs type: export may produce i64 input with immediate Convert to f32.
-        for (const auto& param : language_model->get_parameters()) {
-            if (param->get_friendly_name() == "per_layer_inputs" && param->get_element_type() == ov::element::i64) {
-                param->set_element_type(ov::element::f32);
-            }
         }
 
         // Slice-before-matmul rewrites LM logits to be produced only for the last token.
