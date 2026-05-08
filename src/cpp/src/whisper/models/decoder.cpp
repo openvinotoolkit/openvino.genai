@@ -4,6 +4,7 @@
 #include "decoder.hpp"
 
 #include <filesystem>
+#include <limits>
 
 #include "statefull_decoder.hpp"
 #include "whisper/whisper_utils.hpp"
@@ -37,7 +38,7 @@ std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& enco
 
     auto logits_data = output_tensor.data<float>();
 
-    int64_t output_token;
+    int64_t output_token = -1;
     float max_prob = -std::numeric_limits<float>::infinity();
 
     for (auto [_, lang_token] : config.lang_to_id) {

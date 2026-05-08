@@ -4,6 +4,8 @@
 #include "whisper/pipeline_static.hpp"
 
 #include <chrono>
+#include <limits>
+#include <regex>
 #include <utility>
 
 #include "openvino/runtime/intel_npu/properties.hpp"

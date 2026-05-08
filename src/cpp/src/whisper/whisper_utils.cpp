@@ -3,7 +3,7 @@
 
 #include "whisper/whisper_utils.hpp"
 
-#include <regex>
+#include <algorithm>
 
 namespace {
 
@@ -100,7 +100,14 @@ std::string find_language_by_token_id(const std::map<std::string, int64_t>& lang
 
 std::string to_unescaped_language(const std::string& language) {
     // "<|en|>" -> "en"
-    return std::regex_replace(language, std::regex("[|<>]+"), "");
+    std::string result = language;
+    result.erase(std::remove_if(result.begin(),
+                                result.end(),
+                                [](char c) {
+                                    return c == '|' || c == '<' || c == '>';
+                                }),
+                 result.end());
+    return result;
 }
 
 }  // namespace utils
