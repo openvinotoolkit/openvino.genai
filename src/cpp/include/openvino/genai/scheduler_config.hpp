@@ -12,6 +12,8 @@
 
 namespace ov::genai {
 
+inline constexpr std::size_t DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER = 8;
+
 struct SchedulerConfig {
     // a maximum number of tokens to batch
     // (in contrast to max_batch_size which combines independent sequences, we consider total amount of tokens in a batch)
@@ -36,7 +38,7 @@ struct SchedulerConfig {
     // The internal cache interval is calculated as KV cache block size * cache_interval_multiplier.
     // Custom values are supported only for models with linear attention cache inputs.
     // 0 is valid only when prefix caching is disabled.
-    std::size_t cache_interval_multiplier = 8;
+    std::size_t cache_interval_multiplier = DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER;
 
     // whether to split prompt / generate to different scheduling phases
     // Allows to process prompt partially in case when batch size is limited. 
