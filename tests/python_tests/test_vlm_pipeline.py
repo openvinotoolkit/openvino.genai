@@ -2416,16 +2416,14 @@ def test_cdpruner_functionality(ov_pipe_model: VlmModelInfo, cat_tensor: openvin
     baseline_result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=baseline_config)
     assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
     baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
-
-    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-    generation_config.pruning_ratio = pruning_ratio
-    result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
-
-    # Verify result is non-empty
-    assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning should not be empty"
-
-    # Verify perf metrics are available
-    assert result.perf_metrics is not None, "Performance metrics should be available"
+    if pruning_ratio == 0:
+        result = baseline_result
+    else:
+        generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+        generation_config.pruning_ratio = pruning_ratio
+        result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+        assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning should not be empty"
+        assert result.perf_metrics is not None, "Performance metrics should be available"
 
     if pruning_ratio > 0:
         # Verify pruning was actually applied: pruned run must process fewer input tokens than baseline
@@ -2592,11 +2590,14 @@ def test_cdpruner_with_video(
     assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
     baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
 
-    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-    generation_config.pruning_ratio = pruning_ratio
-    result = ov_pipe.generate(PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=generation_config)
-    assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning on video should not be empty"
-    assert result.perf_metrics is not None, "Performance metrics should be available"
+    if pruning_ratio == 0:
+        result = baseline_result
+    else:
+        generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+        generation_config.pruning_ratio = pruning_ratio
+        result = ov_pipe.generate(PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=generation_config)
+        assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning on video should not be empty"
+        assert result.perf_metrics is not None, "Performance metrics should be available"
 
     if pruning_ratio > 0:
         # Verify pruning was actually applied: pruned run must process fewer input tokens than baseline
