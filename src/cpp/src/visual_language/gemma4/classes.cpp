@@ -90,7 +90,7 @@ void extract_patches(const clip_image_f32& float_image,
 namespace ov::genai {
 
 EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
     // 1. Convert input tensor (NHWC uint8) to clip_image_u8 (HWC uint8)
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
@@ -163,8 +163,12 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::string& device,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-    auto per_layer_model_path = model_dir / "openvino_text_embeddings_per_layer_model.xml";
+    // per-layer embeddings model is optional, large MOE models don't have it
+    if (!has_per_layer_embeddings()) {
+        return;
+    }
 
+    auto per_layer_model_path = model_dir / "openvino_text_embeddings_per_layer_model.xml";
     auto compiled = utils::singleton_core().compile_model(per_layer_model_path, device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
     m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -181,10 +185,14 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::string& device,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    // Per-layer embeddings model may be in models_map
-    auto it = models_map.find("text_embeddings_per_layer");
-    OPENVINO_ASSERT(it != models_map.end(), "Per-layer text embeddings model not found in models map");
+    // per-layer embeddings model is optional, large MOE models don't have it
+    if (!has_per_layer_embeddings()) {
+        return;
+    }
 
+    auto it = models_map.find("text_embeddings_per_layer");
+
+    OPENVINO_ASSERT(it != models_map.end(), "Per-layer text embeddings model not found in models map");
     const auto& [model_str, weights] = it->second;
     auto compiled = utils::singleton_core().compile_model(model_str, weights, device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
@@ -250,11 +258,11 @@ ov::Tensor InputsEmbedderGemma4::get_per_layer_embeddings(const ov::Tensor& inpu
     return result;
 }
 
-ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
-                                                   const std::vector<EncodedImage>& images,
-                                                   VLMPerfMetrics& metrics,
-                                                   bool recalculate_merged_embeddings,
-                                                   const std::vector<size_t>& images_sequence) {
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
+    const std::string& prompt,
+    const std::vector<EncodedImage>& images,
+    VLMPerfMetrics& metrics,
+    const std::vector<size_t>& images_sequence) {
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     for (size_t new_image_id : images_sequence) {
@@ -263,21 +271,59 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
 
     ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
 
-    m_lm_extra_inputs["per_layer_inputs"] = get_per_layer_embeddings(input_ids);
+    if (has_per_layer_embeddings()) {
+        m_lm_extra_inputs["per_layer_inputs"] = get_per_layer_embeddings(input_ids);
+    }
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
-    if (images.empty()) {
-        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
-        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
-        return inputs_embeds;
-    }
-
     encode_image_token_id();
 
-    return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, m_image_token_id);
+    if (images.empty()) {
+        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+        text_embeds.copy_to(inputs_embeds);
+        return {std::move(inputs_embeds), std::move(input_ids)};
+    }
+
+    ov::Tensor inputs_embeds =
+        utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, m_image_token_id);
+    return {std::move(inputs_embeds), std::move(input_ids)};
+}
+
+ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
+                                                   const std::vector<EncodedImage>& images,
+                                                   VLMPerfMetrics& metrics,
+                                                   bool recalculate_merged_embeddings,
+                                                   const std::vector<size_t>& images_sequence) {
+    return compute_inputs_embeds(prompt, images, metrics, images_sequence).first;
+}
+
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::get_inputs_embeds_with_token_type_ids(
+    const std::string& prompt,
+    const std::vector<EncodedImage>& images,
+    VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& images_sequence) {
+    auto [inputs_embeds, input_ids] = compute_inputs_embeds(prompt, images, metrics, images_sequence);
+    ov::Tensor token_type_ids = get_token_type_ids(input_ids);
+    return {std::move(inputs_embeds), std::move(token_type_ids)};
+}
+
+bool InputsEmbedderGemma4::has_token_type_ids() const {
+    return m_vlm_config.enable_moe_block;
+}
+
+ov::Tensor InputsEmbedderGemma4::get_token_type_ids(const ov::Tensor& input_ids) {
+    const int64_t* input_ids_data = input_ids.data<const int64_t>();
+    const size_t num_elements = input_ids.get_size();
+    ov::Tensor token_type_ids(ov::element::i64, input_ids.get_shape());
+    int64_t* token_type_data = token_type_ids.data<int64_t>();
+    for (size_t i = 0; i < num_elements; ++i) {
+        token_type_data[i] = (input_ids_data[i] == m_image_token_id) ? 1 : 0;
+    }
+    return token_type_ids;
 }
 
 void InputsEmbedderGemma4::encode_image_token_id() {

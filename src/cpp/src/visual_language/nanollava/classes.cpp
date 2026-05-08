@@ -4,7 +4,6 @@
 #include "visual_language/nanollava/classes.hpp"
 #include "visual_language/clip.hpp"
 #include "continuous_batching/timer.hpp"
-#include "utils.hpp"
 
 namespace ov::genai {
 
@@ -87,7 +86,7 @@ EncodedImage VisionEncoderNanoLLaVA::encode(const ov::Tensor& image, const ov::A
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
 
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
     // nanollava specific preprocess params
     config.image_mean = std::array<float, 3>{0.5f, 0.5f, 0.5f};
