@@ -114,10 +114,10 @@ auto scheduler_config_docstring = R"(
     cache_size:                 total size of cache in GB.
     num_linear_attention_blocks: total number of linear attention blocks available to scheduler logic. 
                                 Only applicable for models with linear attention cache inputs.
-    cache_interval:             linear-attention checkpoint interval used when interval-based paging is enabled.
+    cache_interval_multiplier:  multiplier used to derive the linear-attention checkpoint interval when interval-based paging is enabled.
+                                The internal interval is KV cache block size * cache_interval_multiplier.
                                 Custom values are supported only for models with linear attention cache inputs.
-                                Must be greater than 0 when prefix caching is enabled.
-                                Must be divisible by KV cache block size for hybrid attention models.
+                                0 is valid only when prefix caching is disabled.
     dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
 
     vLLM-like settings:
@@ -439,7 +439,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
         .def_readwrite("cache_size", &SchedulerConfig::cache_size)
         .def_readwrite("num_linear_attention_blocks", &SchedulerConfig::num_linear_attention_blocks)
-        .def_readwrite("cache_interval", &SchedulerConfig::cache_interval)
+        .def_readwrite("cache_interval_multiplier", &SchedulerConfig::cache_interval_multiplier)
         .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
         .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
         .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching)

@@ -216,7 +216,7 @@ TEST(TestCacheOrchestratorHybrid, SharedLinearAttentionRegistersSingleBlockTable
     orchestrator->free_sequence(sequence->get_id());
 }
 
-TEST(TestCacheOrchestratorHybrid, CreateAcceptsCacheIntervalDivisibleByKvBlockSize) {
+TEST(TestCacheOrchestratorHybrid, CreateAcceptsCacheIntervalMultiplierForHybridModel) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(get_dummy_hybrid_model(core,
                                                                          /*kv_num_layers=*/3,
@@ -227,7 +227,7 @@ TEST(TestCacheOrchestratorHybrid, CreateAcceptsCacheIntervalDivisibleByKvBlockSi
     config.num_kv_blocks = 4;
     config.num_linear_attention_blocks = 2;
     config.enable_prefix_caching = true;
-    config.cache_interval = 64;
+    config.cache_interval_multiplier = 4;
 
     EXPECT_NO_THROW(CacheOrchestrator::create(request,
                                               config,
@@ -236,18 +236,14 @@ TEST(TestCacheOrchestratorHybrid, CreateAcceptsCacheIntervalDivisibleByKvBlockSi
                                               }));
 }
 
-TEST(TestCacheOrchestratorHybrid, CreateRejectsCacheIntervalNotDivisibleByKvBlockSize) {
+TEST(TestCacheOrchestratorHybrid, CreateRejectsCustomCacheIntervalMultiplierWithoutLinearAttentionCache) {
     ov::Core core;
-    ov::InferRequest request = core.compile_model(get_dummy_hybrid_model(core,
-                                                                         /*kv_num_layers=*/3,
-                                                                         /*la_num_layers=*/3))
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, /*num_layers=*/3))
                                       .create_infer_request();
 
     SchedulerConfig config;
     config.num_kv_blocks = 4;
-    config.num_linear_attention_blocks = 2;
-    config.enable_prefix_caching = true;
-    config.cache_interval = 33;
+    config.cache_interval_multiplier = 4;
 
     EXPECT_THROW(CacheOrchestrator::create(request,
                                            config,

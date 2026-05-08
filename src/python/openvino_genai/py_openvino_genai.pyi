@@ -2639,10 +2639,10 @@ class SchedulerConfig:
         cache_size:                 total size of cache in GB.
         num_linear_attention_blocks: total number of linear attention blocks available to scheduler logic. 
                                     Only applicable for models with linear attention cache inputs.
-        cache_interval:             linear-attention checkpoint interval used when interval-based paging is enabled.
+        cache_interval_multiplier:  multiplier used to derive the linear-attention checkpoint interval when interval-based paging is enabled.
+                                    The internal interval is KV cache block size * cache_interval_multiplier.
                                     Custom values are supported only for models with linear attention cache inputs.
-                                    Must be greater than 0 when prefix caching is enabled.
-                                    Must be divisible by KV cache block size for hybrid attention models.
+                                    0 is valid only when prefix caching is disabled.
         dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
     
         vLLM-like settings:
@@ -2669,10 +2669,10 @@ class SchedulerConfig:
     def to_string(self) -> str:
         ...
     @property
-    def cache_interval(self) -> int:
+    def cache_interval_multiplier(self) -> int:
         ...
-    @cache_interval.setter
-    def cache_interval(self, arg0: typing.SupportsInt) -> None:
+    @cache_interval_multiplier.setter
+    def cache_interval_multiplier(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def cache_size(self) -> int:
