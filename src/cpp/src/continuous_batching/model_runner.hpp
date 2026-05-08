@@ -711,9 +711,8 @@ public:
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
             m_request.set_tensor("hidden_states", hidden_state_input);
         }
-        if (position_ids.get_shape().size() == 3 && position_ids.get_shape()[0] == 3 &&
-            position_ids.get_shape()[1] == 1) {
-            // M-RoPE: squeeze pseudo-batch dim [3, 1, total_token_num] -> [3, total_token_num]
+        if (position_ids.get_shape().size() == 3 && position_ids.get_shape()[1] == 1) {
+            // M-RoPE: squeeze pseudo-batch dim [dim, 1, total_token_num] -> [dim, total_token_num]
             const auto& position_ids_shape = position_ids.get_shape();
             position_ids.set_shape({position_ids_shape[0], position_ids_shape[2]});
         }
