@@ -9,7 +9,7 @@ This folder contains C++ examples for `ov::genai::Text2SpeechPipeline`.
 	- Usually uses a speaker embedding file.
 - **Kokoro**
 	- Uses a Kokoro model directory.
-	- Uses `--speaker_embedding_file_path` and `--language` options.
+	- Uses a speaker embedding file and language options.
 	- End-to-end Kokoro language support includes:
 		- `en-us` (English, United States)
 		- `en-gb` (English, United Kingdom)
