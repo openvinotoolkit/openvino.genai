@@ -116,14 +116,14 @@ private:
                                const ov::AnyMap& vision_encoder_properties = {});
 
     // Used by LLMPipeline's ContinuousBatchingAdapter when the language model is already loaded.
-    // model_config_dir_path keeps access to config.json for Eagle3 metadata and to a stable cache path.
+    // model_config_dir keeps access to config.json for Eagle3 metadata and to a stable cache path.
     ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
                                const ov::genai::Tokenizer& tokenizer,
                                const SchedulerConfig& scheduler_config,
                                const std::string& device,
                                const ov::AnyMap& properties,
                                const ov::genai::GenerationConfig& generation_config,
-                               const std::filesystem::path& model_config_dir_path = {});
+                               const std::filesystem::path& model_config_dir = {});
 
 public:
     ContinuousBatchingPipeline(const std::filesystem::path& models_path,

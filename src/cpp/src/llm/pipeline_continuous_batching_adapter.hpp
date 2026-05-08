@@ -50,12 +50,12 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config,
         const ov::genai::GenerationConfig& generation_config,
-        const std::filesystem::path& model_config_dir_path = {}
+        const std::filesystem::path& model_config_dir = {}
         ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
         set_attention_backend(PA_BACKEND);
         auto mutable_plugin_config = plugin_config;
         mutable_plugin_config["sampler_num_threads"] = 1;
-        m_impl.reset(new ContinuousBatchingPipeline(model, tokenizer, scheduler_config, device, mutable_plugin_config, generation_config, model_config_dir_path));
+        m_impl.reset(new ContinuousBatchingPipeline(model, tokenizer, scheduler_config, device, mutable_plugin_config, generation_config, model_config_dir));
         m_generation_config = m_impl->get_config();
     }
 
