@@ -42,17 +42,17 @@ struct PipelineMetrics {
     size_t scheduled_requests = 0;
 
     /**
-    * Percentage of KV cache usage in the last generation step.
+    * Maximum cache usage percentage across registered cache types in the last generation step.
     */
     float cache_usage = 0.0;
 
     /**
-    * Max KV cache usage during the last .generate() call in %
+    * Maximum cache usage percentage observed during the last .generate() call.
     */
     float max_cache_usage = 0.0;
 
     /**
-    * Running average of the KV cache usage during the last .generate() call, with max window size of 1000 internal model inferences
+    * Running average of cache usage percentage during the last .generate() call, with max window size of 1000 internal model inferences.
     */
     float avg_cache_usage = 0.0;
 
@@ -62,7 +62,7 @@ struct PipelineMetrics {
     float inference_duration = 0.0;
 
     /**
-     * Total allocated cache size in bytes, based on the total number of cache blocks.
+    * Total allocated cache size in bytes across registered cache types, based on the total number of cache blocks.
      * This value represents reserved/allocated memory for the cache and does not
      * distinguish between used and unused portions in dynamic cache configurations.
      */

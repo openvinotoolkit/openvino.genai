@@ -163,16 +163,16 @@ auto pipeline_metrics_docstring = R"(
     :param scheduled_requests:  Number of requests that were scheduled for processing at the previous step of the pipeline.
     :type scheduled_requests: int
 
-    :param cache_usage: Percentage of KV cache usage in the last generation step.
+    :param cache_usage: Maximum cache usage percentage across registered cache types in the last generation step.
     :type cache_usage: float
 
-    :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
+    :param max_cache_usage: Maximum cache usage percentage observed during the lifetime of the pipeline.
     :type max_cache_usage: float
 
-    :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
+    :param avg_cache_usage: Running average of cache usage percentage during the lifetime of the pipeline, with max window size of 1000 steps.
     :type avg_cache_usage: float
 
-    :param cache_size_in_bytes: Total allocated cache size in bytes, based on the total number of cache blocks.
+    :param cache_size_in_bytes: Total allocated cache size in bytes across registered cache types, based on the total number of cache blocks.
       This value represents reserved/allocated memory for the cache and does not
       distinguish between used and unused portions in dynamic cache configurations.
     :type cache_size_in_bytes: int

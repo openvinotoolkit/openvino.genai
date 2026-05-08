@@ -66,9 +66,9 @@ public:
         size_t m_total_num_scheduled_tokens = 0;
         // dedicated prompt phase
         bool is_prompt = false;
-        // current cache usage
+        // maximum cache usage across registered cache types
         float m_cache_usage = 0.0;
-        // cache usage size in bytes
+        // total allocated cache size in bytes across registered cache types
         size_t m_cache_size_in_bytes = 0;
 
         std::map<uint64_t, LinearAttentionPagingData> m_linear_attention_paging_data;
