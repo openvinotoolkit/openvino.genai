@@ -114,9 +114,10 @@ auto scheduler_config_docstring = R"(
     cache_size:                 total size of cache in GB.
     num_linear_attention_blocks: total number of linear attention blocks available to scheduler logic. 
                                 Only applicable for models with linear attention cache inputs.
-    cache_interval_multiplier:  multiplier used to derive the linear-attention checkpoint interval when interval-based paging is enabled.
+    cache_interval_multiplier:  optional multiplier used to derive the linear-attention checkpoint interval for prefix caching.
                                 The internal interval is KV cache block size * cache_interval_multiplier.
-                                Custom values are supported only for models with linear attention cache inputs.
+                                When unset, the default value 8 is used for hybrid models with prefix caching.
+                                Explicit values are supported only for models with linear attention cache inputs.
                                 0 is valid only when prefix caching is disabled.
     dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
 

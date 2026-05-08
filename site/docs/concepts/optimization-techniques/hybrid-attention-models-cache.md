@@ -54,6 +54,7 @@ Relevant settings:
 When `enable_prefix_caching=true`, linear-attention cache switches to paged checkpointing mode.
 Instead of allocating one fixed state block per sequence, the runtime stores checkpoints every derived cache interval.
 The interval is calculated as `kv_block_size * cache_interval_multiplier` tokens.
+If `cache_interval_multiplier` is unset, the default multiplier is `8` for hybrid models with prefix caching.
 
 Relevant settings:
 
@@ -136,7 +137,7 @@ Recommended settings:
 - keep `cache_size=0`
 - leave `num_linear_attention_blocks=0` unless manual control is needed
 - set `max_num_seqs` to the intended concurrency if `enable_prefix_caching=false`
-- set `cache_interval_multiplier` explicitly if `enable_prefix_caching=true`
+- leave `cache_interval_multiplier` unset to use the default, or set it explicitly when a different prefix-checkpoint granularity is needed
 
 Pros:
 
@@ -290,7 +291,7 @@ This is the safest default for hybrid models when the main goal is to respect a 
 - use explicit `num_kv_blocks`
 - keep `num_linear_attention_blocks=0`
 - set bounded `max_num_batched_tokens` and `max_num_seqs` for non-prefix mode
-- set `cache_interval_multiplier` intentionally for prefix mode
+- leave `cache_interval_multiplier` unset to use the default in prefix mode, or set it intentionally when tuning checkpoint granularity
 
 This is the better default when concurrency and token capacity have already been characterized.
 

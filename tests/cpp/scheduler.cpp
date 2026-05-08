@@ -1024,13 +1024,19 @@ TEST(TestScheduler, hybrid_prefix_caching_dynamic_allocation_honors_custom_cache
 TEST(TestScheduler, scheduler_config_zero_cache_interval_multiplier_requires_disabled_prefix_caching) {
     SchedulerConfig scheduler_config;
     scheduler_config.enable_prefix_caching = true;
+
+    EXPECT_FALSE(scheduler_config.cache_interval_multiplier.has_value());
+    EXPECT_NO_THROW(scheduler_config.validate());
+    EXPECT_EQ(get_test_cache_interval(scheduler_config), TEST_DEFAULT_CACHE_INTERVAL);
+
     scheduler_config.cache_interval_multiplier = 0;
 
     EXPECT_ANY_THROW(scheduler_config.validate());
 
     scheduler_config.enable_prefix_caching = false;
     EXPECT_NO_THROW(scheduler_config.validate());
-    EXPECT_EQ(scheduler_config.cache_interval_multiplier, 0);
+    ASSERT_TRUE(scheduler_config.cache_interval_multiplier.has_value());
+    EXPECT_EQ(scheduler_config.cache_interval_multiplier.value(), 0);
 }
 
 TEST(TestScheduler, scheduler_config_custom_cache_interval_multiplier_requires_linear_attention_model) {
@@ -1042,7 +1048,13 @@ TEST(TestScheduler, scheduler_config_custom_cache_interval_multiplier_requires_l
 
     SchedulerConfig default_config;
     default_config.num_kv_blocks = 64;
+    EXPECT_FALSE(default_config.cache_interval_multiplier.has_value());
     EXPECT_NO_THROW(CacheOrchestrator::create(request, default_config, get_available_memory));
+
+    SchedulerConfig explicit_default_config;
+    explicit_default_config.num_kv_blocks = 64;
+    explicit_default_config.cache_interval_multiplier = DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER;
+    EXPECT_ANY_THROW(CacheOrchestrator::create(request, explicit_default_config, get_available_memory));
 
     SchedulerConfig custom_interval_config;
     custom_interval_config.num_kv_blocks = 64;

@@ -691,11 +691,8 @@ private:
         OPENVINO_ASSERT(la_manager || config.num_linear_attention_blocks == 0,
                         "SchedulerConfig num_linear_attention_blocks can be set only for models with linear attention cache inputs");
 
-        if (!la_manager) {
-            OPENVINO_ASSERT(config.cache_interval_multiplier == DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER ||
-                                config.cache_interval_multiplier == 0,
-                            "SchedulerConfig cache_interval_multiplier can be set only for models with linear attention cache inputs");
-        }
+        OPENVINO_ASSERT(la_manager || !config.cache_interval_multiplier.has_value(),
+                        "SchedulerConfig cache_interval_multiplier can be set only for models with linear attention cache inputs");
 
         return {std::move(kv_manager), std::move(la_manager)};
     }

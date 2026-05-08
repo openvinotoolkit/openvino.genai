@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <limits>
+#include <optional>
 #include <sstream>
 
 #include "openvino/genai/cache_eviction.hpp"
@@ -34,11 +35,12 @@ struct SchedulerConfig {
     // When 0, automatically derived from max_num_seqs if linear attention layers are detected.
     std::size_t num_linear_attention_blocks = 0;
 
-    // Multiplier used to derive the linear-attention checkpoint interval for interval-based paging.
+    // Multiplier used to derive the linear-attention checkpoint interval for prefix caching.
     // The internal cache interval is calculated as KV cache block size * cache_interval_multiplier.
-    // Custom values are supported only for models with linear attention cache inputs.
+    // When unset, the default value 8 is used for hybrid models with prefix caching.
+    // Explicit values are supported only for models with linear attention cache inputs.
     // 0 is valid only when prefix caching is disabled.
-    std::size_t cache_interval_multiplier = DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER;
+    std::optional<std::size_t> cache_interval_multiplier = std::nullopt;
 
     // whether to split prompt / generate to different scheduling phases
     // Allows to process prompt partially in case when batch size is limited. 
@@ -84,17 +86,19 @@ struct SchedulerConfig {
     SparseAttentionConfig sparse_attention_config;
 
     std::size_t get_cache_interval(std::size_t kv_block_size) const {
-        OPENVINO_ASSERT(cache_interval_multiplier == 0 ||
-                            kv_block_size <= std::numeric_limits<std::size_t>::max() / cache_interval_multiplier,
+        const std::size_t effective_cache_interval_multiplier =
+            cache_interval_multiplier.value_or(DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER);
+        OPENVINO_ASSERT(effective_cache_interval_multiplier == 0 ||
+                            kv_block_size <= std::numeric_limits<std::size_t>::max() / effective_cache_interval_multiplier,
                         "SchedulerConfig cache_interval_multiplier is too large for KV cache block size. cache_interval_multiplier: ",
-                        cache_interval_multiplier,
+                        effective_cache_interval_multiplier,
                         ", KV cache block size: ",
                         kv_block_size);
-        return kv_block_size * cache_interval_multiplier;
+        return kv_block_size * effective_cache_interval_multiplier;
     }
 
     void validate() const {
-        OPENVINO_ASSERT(!enable_prefix_caching || cache_interval_multiplier > 0,
+        OPENVINO_ASSERT(!enable_prefix_caching || !cache_interval_multiplier.has_value() || cache_interval_multiplier.value() > 0,
                 "SchedulerConfig cache_interval_multiplier must be greater than 0 when prefix caching is enabled");
     }
 
@@ -120,7 +124,11 @@ struct SchedulerConfig {
         oss << "  num_kv_blocks: " << num_kv_blocks << "\n";
         oss << "  cache_size: " << cache_size << "\n";
         oss << "  num_linear_attention_blocks: " << num_linear_attention_blocks << "\n";
-        oss << "  cache_interval_multiplier: " << cache_interval_multiplier << "\n";
+        if (cache_interval_multiplier.has_value()) {
+            oss << "  cache_interval_multiplier: " << cache_interval_multiplier.value() << "\n";
+        } else {
+            oss << "  cache_interval_multiplier: unset\n";
+        }
         oss << "  dynamic_split_fuse: " << std::boolalpha << dynamic_split_fuse << "\n";
         oss << "  use_cache_eviction: " << std::boolalpha << use_cache_eviction << "\n";
         if (use_cache_eviction) {
