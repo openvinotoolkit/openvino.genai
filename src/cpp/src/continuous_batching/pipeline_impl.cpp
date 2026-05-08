@@ -74,13 +74,19 @@ void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
     const bool allow_adaptive_rkv = scheduler_config.use_cache_eviction &&
                                     scheduler_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV;
 
-    ov::pass::SDPAToPagedAttention(is_need_per_layer_cache_control,
-                                   is_need_per_layer_cache_control,
-                                   allow_score_aggregation,
-                                   allow_cache_rotation,
-                                   allow_xattention,
-                                   allow_adaptive_rkv)
-        .run_on_model(model);
+    try {
+        ov::pass::SDPAToPagedAttention(is_need_per_layer_cache_control,
+                                       is_need_per_layer_cache_control,
+                                       allow_score_aggregation,
+                                       allow_cache_rotation,
+                                       allow_xattention,
+                                       allow_adaptive_rkv)
+            .run_on_model(model);
+        // Fail fast if transformation leaves the graph in an invalid state.
+        model->validate_nodes_and_infer_types();
+    } catch (const ov::Exception& e) {
+        OPENVINO_THROW("Failed to prepare model for PagedAttention backend during SDPA-to-PA transformation: ", e.what());
+    }
     utils::apply_gather_before_matmul_transformation(model);
 }
 
