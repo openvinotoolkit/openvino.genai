@@ -80,7 +80,7 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 
   To download the LoRA adapter used in the example below:
   ```sh
-  huggingface-cli download svjack/ltx_video_pixel_early_lora ltx_pixel_pytorch_lora_weights.safetensors
+  hf download svjack/ltx_video_pixel_early_lora ltx_pixel_pytorch_lora_weights.safetensors
   ```
 
 - **Main Feature:** Apply a LoRA adapter to a text-to-video pipeline for customized generation.
