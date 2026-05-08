@@ -722,6 +722,7 @@ def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id,
     result_ref = ov_pipe_ref.generate(prompts, generation_config)
     result_gen = ov_pipe_target.generate(prompts, generation_config)
 
+    assert len(result_gen.texts) == len(result_ref.texts)
     for ref_text, gen_text in zip(result_ref.texts, result_gen.texts):
         assert gen_text == ref_text
 

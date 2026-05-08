@@ -178,20 +178,20 @@ public:
         m_block_manager->clear();
     }
 
-    void set_expected_num_scheduled_tokens(uint64_t seq_id, size_t num_tokens) {
-        m_expected_num_scheduled_tokens[seq_id] = num_tokens;
+    void set_expected_num_scheduled_tokens(uint64_t request_id, size_t num_tokens) {
+        m_expected_num_scheduled_tokens[request_id] = num_tokens;
     }
 
-    size_t get_expected_num_scheduled_tokens(uint64_t seq_id) const {
-        auto it = m_expected_num_scheduled_tokens.find(seq_id);
+    size_t get_expected_num_scheduled_tokens(uint64_t request_id) const {
+        auto it = m_expected_num_scheduled_tokens.find(request_id);
         if (it != m_expected_num_scheduled_tokens.end()) {
             return it->second;
         }
         return 0;
     }
 
-    void clear_expected_num_scheduled_tokens(uint64_t seq_id) {
-        m_expected_num_scheduled_tokens.erase(seq_id);
+    void clear_expected_num_scheduled_tokens(uint64_t request_id) {
+        m_expected_num_scheduled_tokens.erase(request_id);
     }
 
 private:
