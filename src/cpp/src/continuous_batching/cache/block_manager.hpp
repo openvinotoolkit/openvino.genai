@@ -538,7 +538,7 @@ class BlockManager {
     bool m_enable_prefix_caching;
     size_t m_block_size;
     size_t m_num_layers;
-    size_t m_fixed_blocks_per_sequence = 0;  ///< When > 0, each sequence gets exactly this many blocks.
+    size_t m_fixed_blocks_per_sequence = 0;  /// When > 0, each sequence gets exactly this many blocks.
     // TODO: caching time can probably be improved if we use the prefix tree
     std::map<uint64_t, BlocksPerLayer> m_prefix_hash_to_occupied_block_map;
 

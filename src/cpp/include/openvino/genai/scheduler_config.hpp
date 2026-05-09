@@ -27,7 +27,7 @@ struct SchedulerConfig {
 
     // total size of cache in GB
     // When both num_kv_blocks and cache_size are set, num_kv_blocks is used. 
-    // When both num_kv_blocks and cache_size are equal to zero dynamic KV-cache allocation is turned on.
+    // When both num_kv_blocks and cache_size are equal to zero dynamic cache allocation is turned on.
     std::size_t cache_size = 0;
 
     // total number of linear attention blocks available to scheduler logic.
