@@ -161,7 +161,7 @@ public:
     /**
      * @brief Convert visual features to CDPruner batch format.
      * @param vision_embeds Input embeddings [total_tokens, hidden_dim]
-     * @param chunk_count Number of chunks (1 for single batch, N for per-image)
+     * @param chunk_count Number of chunks (1 for single batch, N for per-vision-region)
      * @param tokens_per_region Token count for each vision region (when chunk_count > 1)
      * @return Vector of tensors, each [1, num_tokens, hidden_dim]
      */
@@ -173,8 +173,8 @@ public:
      * @brief Adjust position IDs after visual token pruning.
      * @param position_ids The position IDs to adjust (modified in-place)
      * @param input_ids The input token IDs for sequence traversal
-     * @param images_grid_thw Combined vision region grids (image and/or video) in prompt order
-     * @param images_sequence Combined vision region sequence indices
+     * @param combined_grid_thw Combined vision region grids (image and/or video) in prompt order
+     * @param combined_sequence Combined vision region sequence indices
      * @param image_pad_token_id Token ID for image padding
      * @param vision_start_token_id Token ID for vision start marker
      * @param spatial_merge_size Spatial merge size for coordinate conversion
@@ -183,8 +183,8 @@ public:
      */
     void adjust_position_ids(ov::Tensor& position_ids,
                              const ov::Tensor& input_ids,
-                             const std::vector<std::array<size_t, 3>>& images_grid_thw,
-                             const std::vector<size_t>& images_sequence,
+                             const std::vector<std::array<size_t, 3>>& combined_grid_thw,
+                             const std::vector<size_t>& combined_sequence,
                              int64_t image_pad_token_id,
                              int64_t vision_start_token_id,
                              size_t spatial_merge_size,
@@ -198,7 +198,7 @@ public:
                                       const ov::Tensor& input_ids,
                                       int64_t vision_start_token_id,
                                       int64_t image_pad_token_id,
-                                      const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
+                                      const std::vector<std::array<size_t, 3>>& reordered_combined_grid_thw,
                                       const std::vector<std::vector<size_t>>& kept_indices_per_image,
                                       size_t spatial_merge_size,
                                       std::vector<std::vector<bool>>& keep_flags_out,
@@ -211,7 +211,7 @@ public:
                                       const ov::Tensor& input_ids,
                                       int64_t vision_start_token_id,
                                       int64_t image_pad_token_id,
-                                      const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
+                                      const std::vector<std::array<size_t, 3>>& reordered_combined_grid_thw,
                                       const std::vector<std::vector<size_t>>& kept_indices_per_image,
                                       std::vector<std::vector<bool>>& keep_flags_out,
                                       int64_t video_pad_token_id = -1) const;

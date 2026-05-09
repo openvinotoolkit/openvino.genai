@@ -167,7 +167,7 @@ ov::Tensor VisionTokenPruningProcessor::extract_text_features(const ov::Tensor& 
     // Find instruction token positions (skip vision regions and pad tokens)
     std::vector<size_t> instruction_indices;
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
-    size_t seq_len = input_ids.get_shape()[1];  // [batch_size, seq_len]
+    const size_t seq_len = input_ids.get_shape()[1];  // [batch_size, seq_len]
     bool inside_vision_region = false;
 
     for (size_t i = 0; i < seq_len; ++i) {
@@ -197,7 +197,7 @@ ov::Tensor VisionTokenPruningProcessor::extract_text_features(const ov::Tensor& 
     }
 
     // Extract and average instruction token embeddings from text_embeds
-    size_t hidden_size = text_embeds.get_shape().back();
+    const size_t hidden_size = text_embeds.get_shape().back();
     ov::Tensor avg_embedding(ov::element::f32, {1, hidden_size});
     float* avg_data = avg_embedding.data<float>();
     const float* text_data = text_embeds.data<const float>();
@@ -213,7 +213,7 @@ ov::Tensor VisionTokenPruningProcessor::extract_text_features(const ov::Tensor& 
     }
 
     // Calculate average
-    float num_tokens = static_cast<float>(instruction_indices.size());
+    const float num_tokens = static_cast<float>(instruction_indices.size());
     for (size_t dim = 0; dim < hidden_size; ++dim) {
         avg_data[dim] /= num_tokens;
     }
@@ -281,7 +281,7 @@ ov::Tensor VisionTokenPruningProcessor::generate_pruned_input_ids(
     int64_t vision_start_token_id,
     int64_t vision_end_token_id,
     int64_t video_pad_token_id) const {
-    size_t original_seq_len = input_ids.get_shape().at(1);
+    const size_t original_seq_len = input_ids.get_shape().at(1);
 
     // Calculate total tokens to remove
     size_t tokens_to_remove = 0;
@@ -289,7 +289,7 @@ ov::Tensor VisionTokenPruningProcessor::generate_pruned_input_ids(
         tokens_to_remove += static_cast<size_t>(std::count(mask.begin(), mask.end(), false));
     }
 
-    size_t new_sequence_length = original_seq_len - tokens_to_remove;
+    const size_t new_sequence_length = original_seq_len - tokens_to_remove;
     ov::Tensor pruned_input_ids(ov::element::i64, {1, new_sequence_length});
 
     const int64_t* input_data = input_ids.data<const int64_t>();
@@ -299,7 +299,7 @@ ov::Tensor VisionTokenPruningProcessor::generate_pruned_input_ids(
     bool inside_vision_region = false;
     size_t region_idx = 0;
     size_t pad_index = 0;
-    size_t region_count = keep_flags_per_region.size();
+    const size_t region_count = keep_flags_per_region.size();
 
     for (size_t seq_idx = 0; seq_idx < original_seq_len; ++seq_idx) {
         int64_t token_id = input_data[seq_idx];
@@ -311,7 +311,7 @@ ov::Tensor VisionTokenPruningProcessor::generate_pruned_input_ids(
             pad_index = 0;
         }
 
-        bool is_vision_pad =
+        const bool is_vision_pad =
             (token_id == image_pad_token_id) || (video_pad_token_id >= 0 && token_id == video_pad_token_id);
         if (inside_vision_region && is_vision_pad) {
             OPENVINO_ASSERT(region_idx < region_count,
@@ -355,10 +355,10 @@ ov::Tensor VisionTokenPruningProcessor::generate_pruned_text_embeds(
     int64_t vision_end_token_id,
     const std::vector<std::vector<bool>>& keep_flags_per_region,
     int64_t video_pad_token_id) const {
-    auto text_embeds_shape = text_embeds.get_shape();
-    size_t batch_size = text_embeds_shape.at(0);
-    size_t original_seq_length = text_embeds_shape.at(1);
-    size_t hidden_size = text_embeds_shape.at(2);
+    const auto text_embeds_shape = text_embeds.get_shape();
+    const size_t batch_size = text_embeds_shape.at(0);
+    const size_t original_seq_length = text_embeds_shape.at(1);
+    const size_t hidden_size = text_embeds_shape.at(2);
 
     // Calculate new sequence length after removing filtered tokens
     size_t total_original_visual_tokens = 0;
@@ -367,8 +367,8 @@ ov::Tensor VisionTokenPruningProcessor::generate_pruned_text_embeds(
         total_original_visual_tokens += mask.size();
         total_kept_visual_tokens += static_cast<size_t>(std::count(mask.begin(), mask.end(), true));
     }
-    size_t tokens_removed = total_original_visual_tokens - total_kept_visual_tokens;
-    size_t new_seq_length = original_seq_length - tokens_removed;
+    const size_t tokens_removed = total_original_visual_tokens - total_kept_visual_tokens;
+    const size_t new_seq_length = original_seq_length - tokens_removed;
 
     ov::Tensor pruned_text_embeds(text_embeds.get_element_type(), {batch_size, new_seq_length, hidden_size});
 
@@ -394,10 +394,14 @@ ov::Tensor VisionTokenPruningProcessor::generate_pruned_text_embeds(
             }
 
             // Skip filtered vision pad tokens (both image_pad and video_pad)
-            bool is_vision_pad =
+            const bool is_vision_pad =
                 (token_id == image_pad_token_id) || (video_pad_token_id >= 0 && token_id == video_pad_token_id);
             if (inside_vision_region && is_vision_pad) {
+                OPENVINO_ASSERT(region_idx < region_count,
+                                "Vision region index exceeds metadata size while pruning text embeds");
                 const auto& keep_mask = keep_flags_per_region.at(region_idx);
+                OPENVINO_ASSERT(pad_index < keep_mask.size(),
+                                "Visual token index exceeds region token count while pruning text embeds");
                 if (!keep_mask[pad_index]) {
                     ++pad_index;
                     continue;  // Skip this token
@@ -406,6 +410,8 @@ ov::Tensor VisionTokenPruningProcessor::generate_pruned_text_embeds(
             }
 
             // Copy the embedding
+            OPENVINO_ASSERT(write_idx < new_seq_length,
+                            "Pruned text embeds index exceeds expected sequence length");
             size_t output_flat_idx = batch_idx * new_seq_length + write_idx;
             std::copy_n(text_embeds_data + input_flat_idx * hidden_size,
                         hidden_size,
@@ -428,28 +434,28 @@ ov::Tensor VisionTokenPruningProcessor::generate_pruned_text_embeds(
 
 void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids,
                                                       const ov::Tensor& input_ids,
-                                                      const std::vector<std::array<size_t, 3>>& images_grid_thw,
-                                                      const std::vector<size_t>& images_sequence,
+                                                      const std::vector<std::array<size_t, 3>>& combined_grid_thw,
+                                                      const std::vector<size_t>& combined_sequence,
                                                       int64_t image_pad_token_id,
                                                       int64_t vision_start_token_id,
                                                       size_t spatial_merge_size,
                                                       std::vector<std::vector<bool>>& keep_flags_per_region_out,
                                                       int64_t video_pad_token_id) const {
-    auto kept_indices_per_image = get_last_selected_tokens();
-    OPENVINO_ASSERT(!images_sequence.empty(), "Vision region sequence must not be empty when pruning visual tokens");
+    const auto kept_indices_per_image = get_last_selected_tokens();
+    OPENVINO_ASSERT(!combined_sequence.empty(), "Vision region sequence must not be empty when pruning visual tokens");
     OPENVINO_ASSERT(!kept_indices_per_image.empty(), "Kept token indices are missing after pruning");
 
     // Reorder images according to sequence
-    std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
-    reordered_images_grid_thw.reserve(images_sequence.size());
-    for (size_t new_image_id : images_sequence) {
-        OPENVINO_ASSERT(new_image_id < images_grid_thw.size(), "Vision region sequence index is out of range");
-        reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id));
+    std::vector<std::array<size_t, 3>> reordered_combined_grid_thw;
+    reordered_combined_grid_thw.reserve(combined_sequence.size());
+    for (size_t new_image_id : combined_sequence) {
+        OPENVINO_ASSERT(new_image_id < combined_grid_thw.size(), "Vision region sequence index is out of range");
+        reordered_combined_grid_thw.push_back(combined_grid_thw.at(new_image_id));
     }
 
     // Detect position encoding type from shape
     const ov::Shape& pos_shape = position_ids.get_shape();
-    bool is_3d_encoding = (pos_shape.size() == 3 && pos_shape[0] == 3);
+    const bool is_3d_encoding = (pos_shape.size() == 3 && pos_shape[0] == 3);
 
     if (is_3d_encoding) {
         // 3D RoPE position encoding (Qwen2VL style)
@@ -457,7 +463,7 @@ void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids,
                                               input_ids,
                                               vision_start_token_id,
                                               image_pad_token_id,
-                                              reordered_images_grid_thw,
+                                              reordered_combined_grid_thw,
                                               kept_indices_per_image,
                                               spatial_merge_size,
                                               keep_flags_per_region_out,
@@ -468,7 +474,7 @@ void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids,
                                               input_ids,
                                               vision_start_token_id,
                                               image_pad_token_id,
-                                              reordered_images_grid_thw,
+                                              reordered_combined_grid_thw,
                                               kept_indices_per_image,
                                               keep_flags_per_region_out,
                                               video_pad_token_id);
@@ -481,7 +487,7 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
     const ov::Tensor& input_ids,
     int64_t vision_start_token_id,
     int64_t image_pad_token_id,
-    const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
+    const std::vector<std::array<size_t, 3>>& reordered_combined_grid_thw,
     const std::vector<std::vector<size_t>>& kept_indices_per_image,
     size_t spatial_merge_size,
     std::vector<std::vector<bool>>& keep_flags_out,
@@ -491,7 +497,7 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
 
     const size_t batch_size = pos_shape[1];
     const size_t seq_len = pos_shape[2];
-    const size_t region_count = reordered_images_grid_thw.size();
+    const size_t region_count = reordered_combined_grid_thw.size();
 
     // Build region metadata
     struct RegionInfo {
@@ -502,8 +508,8 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
     regions.reserve(region_count);
     size_t cumulative_offset = 0;
 
-    for (size_t idx = 0; idx < reordered_images_grid_thw.size(); ++idx) {
-        const auto& [grid_t, grid_h, grid_w] = reordered_images_grid_thw[idx];
+    for (size_t idx = 0; idx < reordered_combined_grid_thw.size(); ++idx) {
+        const auto& [grid_t, grid_h, grid_w] = reordered_combined_grid_thw[idx];
         OPENVINO_ASSERT(grid_h % spatial_merge_size == 0 && grid_w % spatial_merge_size == 0,
                         "Grid dimensions must be divisible by spatial merge size");
 
@@ -600,7 +606,7 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
             int64_t token_id = input_ids_data[batch_offset + seq_idx];
 
             // Handle vision pad tokens (image_pad or video_pad) inside vision region
-            bool is_vision_pad =
+            const bool is_vision_pad =
                 (token_id == image_pad_token_id) || (video_pad_token_id >= 0 && token_id == video_pad_token_id);
             if (inside_vision && is_vision_pad) {
                 OPENVINO_ASSERT(image_idx < region_count, "Vision region index out of bounds");
@@ -663,7 +669,7 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
     const ov::Tensor& input_ids,
     int64_t vision_start_token_id,
     int64_t image_pad_token_id,
-    const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
+    const std::vector<std::array<size_t, 3>>& reordered_combined_grid_thw,
     const std::vector<std::vector<size_t>>& kept_indices_per_image,
     std::vector<std::vector<bool>>& keep_flags_out,
     int64_t video_pad_token_id) const {
@@ -672,14 +678,14 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
 
     const size_t batch_size = pos_shape[0];
     const size_t seq_len = pos_shape[1];
-    const size_t region_count = reordered_images_grid_thw.size();
+    const size_t region_count = reordered_combined_grid_thw.size();
 
     // Calculate tokens per image
     std::vector<size_t> tokens_per_image;
     tokens_per_image.reserve(region_count);
     size_t cumulative_offset = 0;
 
-    for (const auto& [grid_t, grid_h, grid_w] : reordered_images_grid_thw) {
+    for (const auto& [grid_t, grid_h, grid_w] : reordered_combined_grid_thw) {
         size_t tokens = grid_t * grid_h * grid_w;
         tokens_per_image.push_back(tokens);
         cumulative_offset += tokens;
@@ -751,7 +757,7 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
         for (size_t seq_idx = 0; seq_idx < seq_len; ++seq_idx) {
             int64_t token_id = input_ids_data[batch_offset + seq_idx];
 
-            bool is_vision_pad_1d =
+            const bool is_vision_pad_1d =
                 (token_id == image_pad_token_id) || (video_pad_token_id >= 0 && token_id == video_pad_token_id);
             if (inside_vision && is_vision_pad_1d) {
                 if (keep_flags_out[image_idx][visual_idx]) {
@@ -960,7 +966,7 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     result.original_visual_tokens = total_tokens;
 
     // ---- Step 1: Extract text features for relevance calculation ----
-    auto current_pruning_config = get_config();
+    const auto current_pruning_config = get_config();
     ov::Tensor text_features = extract_text_features(context.text_embeds,
                                                      context.input_ids,
                                                      context.image_pad_token_id,

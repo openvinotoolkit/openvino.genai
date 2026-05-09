@@ -2524,6 +2524,7 @@ def test_cdpruner_chat_history_api(
     # Verify all generations succeeded with pruning enabled
     assert len(history) == 6, "Should have 3 user messages and 3 assistant messages"
 
+    # Reset pipeline state so subsequent tests start with a clean cache.
     ov_pipe.finish_chat()
 
 
@@ -2806,6 +2807,7 @@ def test_cdpruner_continuous_batching_chat_history(
     )[0].texts[0]
     history.append({"role": "assistant", "content": result3})
 
+    # Reset pipeline state so subsequent tests start with a clean cache.
     ov_continuous_batching_pipe_qwen2vl.finish_chat()
 
     assert len(result1) > 0, "CDPruner chat turn 1 should produce non-empty output"
