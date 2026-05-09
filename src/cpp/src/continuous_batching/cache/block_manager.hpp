@@ -751,6 +751,11 @@ public:
         return victim_occupied > needed;
     }
 
+    /**
+     * Checks whether a victim sequence group can be partially preempted by this block manager.
+     * @param victim The sequence group to potentially free blocks from.
+     * @return Whether partial preemption is allowed for the victim.
+     */
     bool can_partially_preempt_victim(SequenceGroup::Ptr victim) {
         if (!m_fixed_blocks_per_sequence) {
             return true;
