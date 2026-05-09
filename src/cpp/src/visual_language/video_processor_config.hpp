@@ -25,18 +25,22 @@ public:
 
     VideoProcessorConfig() = default;
 
-    explicit VideoProcessorConfig(const std::filesystem::path& json_path)
-        : ProcessorConfig(json_path)
+    explicit VideoProcessorConfig(const nlohmann::json& parsed_json)
+        : ProcessorConfig(parsed_json)
     {
-        std::ifstream stream(json_path);
-        OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with video processor config");
-        nlohmann::json parsed = nlohmann::json::parse(stream);
         using ov::genai::utils::read_json_param;
-        read_json_param(parsed, "do_sample_frames", do_sample_frames);
-        read_json_param(parsed, "max_frames", max_frames);
-        read_json_param(parsed, "min_frames", min_frames);
-        read_json_param(parsed, "num_frames", num_frames);
-        read_json_param(parsed, "fps", fps);
+        read_json_param(parsed_json, "do_sample_frames", do_sample_frames);
+        read_json_param(parsed_json, "max_frames", max_frames);
+        read_json_param(parsed_json, "min_frames", min_frames);
+        read_json_param(parsed_json, "num_frames", num_frames);
+        read_json_param(parsed_json, "fps", fps);
     }
+
+    explicit VideoProcessorConfig(const std::filesystem::path& json_path)
+        : VideoProcessorConfig([&json_path] {
+            std::ifstream stream(json_path);
+            OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with video processor config");
+            return nlohmann::json::parse(stream);
+        }()) {}
 };
 }  // namespace ov::genai

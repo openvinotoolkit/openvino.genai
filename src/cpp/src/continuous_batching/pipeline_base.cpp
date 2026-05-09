@@ -90,37 +90,47 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     auto start_time = std::chrono::steady_clock::now();
 
     std::vector<MicroSeconds> tokenization_durations;
+    std::vector<std::optional<MicroSeconds>> template_durations;
+    tokenization_durations.reserve(prompts.size());
+    template_durations.reserve(prompts.size());
     static ManualTimer timer("tokenize");
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
         m_history.push_back({{"role", "user"}, {"content", prompts.at(0)}});
         constexpr bool add_generation_prompt = true;
+        const auto template_start = std::chrono::steady_clock::now();
         std::string history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-        timer.start();
         const auto encode_start = std::chrono::steady_clock::now();
+        timer.start();
         // ov::genai::add_special_tokens(false) is aligned with stateful pipeline
         input_ids.push_back(m_tokenizer.encode(history, ov::genai::add_special_tokens(false)).input_ids);
         tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
+        template_durations.emplace_back(PerfMetrics::get_microsec(encode_start - template_start));
         timer.end();
     } else {
         input_ids.reserve(prompts.size());
         timer.start();
         for (size_t i = 0; i < prompts.size(); i++) {
             const std::string& prompt = prompts.at(i);
-            const auto encode_start = std::chrono::steady_clock::now();
             ov::Tensor encoded_inputs;
             if (sampling_params.at(i).apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
                 ChatHistory history({{{"role", "user"}, {"content", prompt}}});
                 constexpr bool add_generation_prompt = true;
+                const auto template_start = std::chrono::steady_clock::now();
                 auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                const auto encode_start = std::chrono::steady_clock::now();
                 encoded_inputs = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
+                tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
+                template_durations.emplace_back(PerfMetrics::get_microsec(encode_start - template_start));
             } else {
                 // in case when chat_template was not found in tokenizer_config.json or set
                 std::string input_str(prompt);
+                const auto encode_start = std::chrono::steady_clock::now();
                 encoded_inputs = m_tokenizer.encode(input_str, ov::genai::add_special_tokens(true)).input_ids;
+                tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
+                template_durations.emplace_back(std::nullopt);
             }
             input_ids.push_back(encoded_inputs);
-            tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
         }
         timer.end();
     }
@@ -135,6 +145,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         auto& perf_metrics = res.perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
         raw_counters.tokenization_durations.emplace_back(tokenization_durations[i]);
+        if (template_durations[i].has_value()) {
+            raw_counters.chat_template_durations.emplace_back(*template_durations[i]);
+        }
 
         std::vector<std::string> generated;
         generated.reserve(res.m_generation_ids.size());
@@ -204,19 +217,31 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     input_ids.reserve(histories.size());
 
     std::vector<MicroSeconds> tokenization_durations;
+    std::vector<MicroSeconds> template_durations;
+    tokenization_durations.reserve(histories.size());
+    template_durations.reserve(histories.size());
+
     static ManualTimer timer("tokenize");
     timer.start();
 
     for (size_t i = 0; i < histories.size(); i++) {
         OPENVINO_ASSERT(sampling_params[i].apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
         OPENVINO_ASSERT(!histories[i].empty(), "Chat history must not be empty when using ChatHistory in generate method.");
-        const auto encode_start = std::chrono::steady_clock::now();
+        
         constexpr bool add_generation_prompt = true;
+        
+        const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(histories[i], add_generation_prompt);
+
+        const auto encode_start = std::chrono::steady_clock::now();
         input_ids.push_back(
             m_tokenizer.encode(templated_history, add_special_tokens(false)).input_ids
         );
-        tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
+        const auto encode_end = std::chrono::steady_clock::now();
+        
+        tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_end - encode_start));
+        // Store chat template duration for metrics tracking
+        template_durations.emplace_back(PerfMetrics::get_microsec(encode_start - template_start));
     }
     
     timer.end();
@@ -231,6 +256,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         auto& perf_metrics = encoded_result.perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
         raw_counters.tokenization_durations.emplace_back(tokenization_durations[i]);
+        raw_counters.chat_template_durations.emplace_back(template_durations[i]);
 
         std::vector<std::string> decoded_outputs;
         decoded_outputs.reserve(encoded_result.m_generation_ids.size());
@@ -275,16 +301,34 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    // empty videos metadata batch size should match prompt batch size
+    const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(prompts.size());
+    return generate(prompts, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& images_vector,
              const std::vector<std::vector<ov::Tensor>>& videos_vector,
+             const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) {
     auto generate_start_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
 
-    OPENVINO_ASSERT(prompts.size() == sampling_params.size(), "Number of prompts should be equal to the number of generation configs.");
-    OPENVINO_ASSERT(prompts.size() == images_vector.size() && prompts.size() == videos_vector.size(), "Number of prompts should be equal to the number of images or video vectors.");
+    OPENVINO_ASSERT(prompts.size() == sampling_params.size(),
+        "Number of prompts should be equal to the number of generation configs.");
+    OPENVINO_ASSERT(prompts.size() == images_vector.size() && prompts.size() == videos_vector.size(),
+        "Number of prompts should be equal to the number of images and videos vectors.");
+    OPENVINO_ASSERT(prompts.size() == videos_metadata_vector.size(),
+        "Number of prompts should be equal to the number of videos metadata vector.");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
@@ -310,7 +354,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         encoded_images = m_inputs_embedder->encode_images(images_vector[0]);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
-        encoded_videos = m_inputs_embedder->encode_videos(videos_vector[0]);
+        encoded_videos = m_inputs_embedder->encode_videos(videos_vector[0], videos_metadata_vector[0]);
         m_history_videos.insert(m_history_videos.end(), encoded_videos.begin(), encoded_videos.end());
 
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
@@ -320,7 +364,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_history_video_ids.insert(m_history_video_ids.end(), video_sequence.begin(), video_sequence.end());
         m_history_vision_count.emplace_back(std::make_pair(video_sequence.size(), image_sequence.size()));
 
+        const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
+        vlm_perf_metrics[0].raw_metrics.chat_template_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start)
+        );
 
         m_inputs_embedder->set_apply_chat_template_status(false);
 
@@ -353,7 +401,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[0].get_shape()[1], 0));
 
-        lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
+        lm_extra_inputs_list.push_back(m_inputs_embedder->get_lm_extra_inputs());
 
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
@@ -364,9 +412,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             auto start_get_inputs_embeds = std::chrono::steady_clock::now();
             
             auto images_to_encode = images_vector.size() > 0 ? images_vector[i] : std::vector<ov::Tensor>{};
-            auto videos_to_encode = videos_vector.size() > 0 ? videos_vector[i] : std::vector<ov::Tensor>{};
             const auto encoded_images = m_inputs_embedder->encode_images(images_to_encode);
-            const auto encoded_videos = m_inputs_embedder->encode_videos(videos_to_encode);
+
+            auto videos_to_encode = videos_vector.size() > 0 ? videos_vector[i] : std::vector<ov::Tensor>{};
+            auto videos_metadata = videos_metadata_vector.size() > 0 ? videos_metadata_vector[i] : std::vector<ov::genai::VideoMetadata>{};
+            const auto encoded_videos = m_inputs_embedder->encode_videos(videos_to_encode, videos_metadata);
 
             auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
@@ -414,6 +464,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
         gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;
+        gen_result.perf_metrics.raw_metrics.chat_template_durations = vlm_perf_metrics[i].raw_metrics.chat_template_durations;
         gen_result.perf_metrics.raw_metrics.detokenization_durations = vlm_perf_metrics[i].raw_metrics.detokenization_durations;
         
         auto decode_start_time = std::chrono::steady_clock::now();
@@ -455,28 +506,48 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-             const std::vector<ChatHistory>& histories,
-             const std::vector<std::vector<ov::Tensor>>& images_vector,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) {
-    // empty videos batch size should match prompt batch size
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    // empty videos batch size should match histories batch size
     const std::vector<std::vector<ov::Tensor>> empty_videos_vector(histories.size());
     return generate(histories, images_vector, empty_videos_vector, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-             const std::vector<ChatHistory>& histories,
-             const std::vector<std::vector<ov::Tensor>>& images_vector,
-             const std::vector<std::vector<ov::Tensor>>& videos_vector,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer)
-{
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    // empty videos metadata batch size should match histories batch size
+    const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(histories.size());
+    return generate(histories, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
     auto generate_start_time = std::chrono::steady_clock::now();
     m_is_chat_conversation = true;
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
-    OPENVINO_ASSERT(histories.size() == sampling_params.size(), "Number of chat histories should be equal to the number of generation configs.");
-    OPENVINO_ASSERT(histories.size() == images_vector.size() && histories.size() == videos_vector.size(), "Number of chat histories should be equal to the number of images or video vectors.");
+    OPENVINO_ASSERT(histories.size() == sampling_params.size(),
+        "Number of chat histories should be equal to the number of generation configs.");
+    OPENVINO_ASSERT(histories.size() == images_vector.size() && histories.size() == videos_vector.size(),
+        "Number of chat histories should be equal to the number of images and videos vectors."
+    );
+    OPENVINO_ASSERT(histories.size() == videos_metadata_vector.size(),
+        "Number of chat histories should be equal to the number of videos metadata vector.");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
@@ -505,11 +576,15 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         VLMChatContext chat_context(histories[i], m_vision_registry, *m_inputs_embedder);
         chat_contexts.push_back(std::move(chat_context));
     
-        auto processed_chat_data = chat_contexts[i].process(images_vector[i], videos_vector[i]);
+        auto processed_chat_data = chat_contexts[i].process(images_vector[i], videos_vector[i], videos_metadata_vector[i]);
     
+        const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(
             processed_chat_data.normalized_history,
             true
+        );
+        vlm_perf_metrics[i].raw_metrics.chat_template_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start)
         );
     
         m_inputs_embedder->set_apply_chat_template_status(false);
@@ -561,6 +636,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
         gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;
+        gen_result.perf_metrics.raw_metrics.chat_template_durations = vlm_perf_metrics[i].raw_metrics.chat_template_durations;
         gen_result.perf_metrics.raw_metrics.detokenization_durations = vlm_perf_metrics[i].raw_metrics.detokenization_durations;
         
         auto decode_start_time = std::chrono::steady_clock::now();
@@ -598,7 +674,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
     std::optional<ov::Tensor> token_type_ids;
     // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
     std::optional<ov::Tensor> prompt_ids;
-    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
@@ -610,9 +685,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
         } else {
             inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
         }
-        lm_extra_inputs = deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs());
+        return add_request(request_id, inputs, sampling_params, token_type_ids, prompt_ids, m_inputs_embedder->get_lm_extra_inputs());
     }
-    return add_request(request_id, inputs, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
 }
 
 GenerationHandle
@@ -621,7 +695,20 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
     const std::vector<ov::Tensor>& videos,
-    GenerationConfig sampling_params) {
+    GenerationConfig sampling_params
+) {
+    return add_request(request_id, prompt, images, videos, {}, sampling_params);
+}
+
+GenerationHandle
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata,
+    GenerationConfig sampling_params
+) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
@@ -629,18 +716,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     std::optional<ov::Tensor> token_type_ids;
     // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
     std::optional<ov::Tensor> prompt_ids;
-    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
         const auto encoded_images = m_inputs_embedder->encode_images(images);
-        const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
+        const auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
 
         const auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, metrics, true, image_sequence, video_sequence);
-        lm_extra_inputs = deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs());
+        return add_request(request_id, inputs, std::move(sampling_params), token_type_ids, prompt_ids, m_inputs_embedder->get_lm_extra_inputs());
     }
-    return add_request(request_id, inputs, std::move(sampling_params), token_type_ids, prompt_ids, lm_extra_inputs);
 }
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(

@@ -1,16 +1,13 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "processor_config.hpp"
-
 #include <fstream>
 
+#include "processor_config.hpp"
 #include "json_utils.hpp"
+#include "utils.hpp"
 
-ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path) {
-    std::ifstream stream(json_path);
-    OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
-    nlohmann::json parsed = nlohmann::json::parse(stream);
+ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     using ov::genai::utils::read_json_param;
     read_json_param(parsed, "image_size", image_size);
     read_json_param(parsed, "patch_size", patch_size); // For llava - stored in config.json vision_config
@@ -55,4 +52,29 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     // Setting gemma4 config params
     read_json_param(parsed, "pooling_kernel_size", pooling_kernel_size);
     read_json_param(parsed, "max_soft_tokens", max_soft_tokens);
+}
+
+ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path)
+    : ProcessorConfig([&json_path] {
+        std::ifstream stream(json_path);
+        OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
+        return nlohmann::json::parse(stream);
+    }()) {}
+
+ov::genai::ProcessorConfig ov::genai::ProcessorConfig::from_any_map(
+    const ov::AnyMap& config_map,
+    const ProcessorConfig& initial
+) {
+    auto iter = config_map.find("processor_config");
+    ProcessorConfig extracted_config = config_map.end() != iter ?
+        iter->second.as<ProcessorConfig>() : initial;
+    using ov::genai::utils::read_anymap_param;
+    read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
+    read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
+    read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
+    read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
+    read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
+    read_anymap_param(config_map, "pooling_kernel_size", extracted_config.pooling_kernel_size);
+    read_anymap_param(config_map, "max_soft_tokens", extracted_config.max_soft_tokens);
+    return extracted_config;
 }
