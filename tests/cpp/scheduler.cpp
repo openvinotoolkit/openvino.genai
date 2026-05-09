@@ -1136,6 +1136,13 @@ TEST(TestScheduler, expected_num_scheduled_tokens_overrides_default_schedule) {
     auto out = scheduler.schedule(requests);
     EXPECT_EQ(out.m_total_num_scheduled_tokens, 5);
     EXPECT_FALSE(out.m_scheduled_sequence_groups_ids.empty());
+
+    // Release scheduled sequences and acknowledge the iteration so that
+    // Scheduler / BlockManager state is consistent at destruction time.
+    for (auto& seq : sequence_group->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+    sequence_group->finish_iteration();
 }
 
 TEST(TestScheduler, expected_num_scheduled_tokens_does_not_override_if_greater_than_available) {
@@ -1163,6 +1170,11 @@ TEST(TestScheduler, expected_num_scheduled_tokens_does_not_override_if_greater_t
     // Default scheduling is min(max_num_batched_tokens, available_tokens) = min(8, 12) = 8.
     EXPECT_EQ(out.m_total_num_scheduled_tokens, 8);
     EXPECT_FALSE(out.m_scheduled_sequence_groups_ids.empty());
+
+    for (auto& seq : sequence_group->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+    sequence_group->finish_iteration();
 }
 
 TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedule) {
@@ -1196,4 +1208,9 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
     // 7 prompt tokens remain after the first scheduling; default scheduling should now apply.
     EXPECT_EQ(out2.m_total_num_scheduled_tokens, 7);
     EXPECT_FALSE(out2.m_scheduled_sequence_groups_ids.empty());
+
+    for (auto& seq : sequence_group->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+    sequence_group->finish_iteration();
 }
