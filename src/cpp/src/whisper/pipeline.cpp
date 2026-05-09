@@ -3,9 +3,8 @@
 
 #include <algorithm>
 #include <filesystem>
-#include <utility>
-
 #include <openvino/openvino.hpp>
+#include <utility>
 #include <variant>
 
 #include "openvino/genai/text_streamer.hpp"
@@ -20,6 +19,7 @@
 #include "whisper/pipeline_static.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/word_level_timestamps.hpp"
+#include "whisper_utils.hpp"
 
 namespace {
 ov::genai::OptionalWhisperGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
@@ -84,13 +84,15 @@ public:
         ov::Core core = utils::singleton_core();
         ov::CompiledModel compiled_model;
         if (device == "NPU") {
-            auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, std::as_const(properties_copy));
+            auto encoder_model =
+                core.read_model(models_path / "openvino_encoder_model.xml", {}, std::as_const(properties_copy));
             // NB: only batch_size == 1 is supported now for NPU
             reshape_to_static_encoder(encoder_model, 1, m_feature_extractor.feature_size);
             compiled_model = core.compile_model(encoder_model, "NPU", properties_copy);
 
             // WA: Push eos_token to NPUW to stop infer() if KVcache is full
-            auto eos_token = m_generation_config.eos_token_id == -1 ? m_tokenizer.get_eos_token_id() : m_generation_config.eos_token_id;
+            auto eos_token = m_generation_config.eos_token_id == -1 ? m_tokenizer.get_eos_token_id()
+                                                                    : m_generation_config.eos_token_id;
             properties_copy.insert({"WHISPER_EOS_TOKEN", eos_token});
 
             if (m_generation_config.word_timestamps) {
@@ -123,15 +125,7 @@ public:
                                    OptionalWhisperGenerationConfig generation_config,
                                    const std::shared_ptr<StreamerBase> streamer) override {
         auto start_time = std::chrono::steady_clock::now();
-        WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-
-        // If stop_token_ids were not provided, take value from default m_generation_config
-        if (config.stop_token_ids.empty())
-            config.stop_token_ids = m_generation_config.stop_token_ids;
-        // If eos_token_id was not provided, take value from default m_generation_config
-        if (config.eos_token_id == -1)
-            config.set_eos_token_id(m_generation_config.eos_token_id);
-        config.validate();
+        WhisperGenerationConfig config = utils::prepare_per_generate_config(m_generation_config, generation_config);
 
         auto [context_tokens, tokenization_duration_microseconds] = prepare_context_tokens(config, m_tokenizer);
 
@@ -150,6 +144,7 @@ public:
         generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
 
+        result.language = generate_result.language;
         result.words = generate_result.words;
 
         result.perf_metrics = generate_result.perf_metrics;
@@ -240,18 +235,9 @@ ov::genai::Tokenizer ov::genai::WhisperPipeline::get_tokenizer() {
 }
 
 void ov::genai::WhisperPipeline::set_generation_config(const WhisperGenerationConfig& config) {
-    int64_t default_eos_token_id = m_impl->m_generation_config.eos_token_id;
-    auto default_stop_token_ids = m_impl->m_generation_config.stop_token_ids;
-    m_impl->m_generation_config = config;
+    WhisperGenerationConfig _config = utils::prepare_per_generate_config(m_impl->m_generation_config, config);
 
-    // If stop_token_ids were not provided, take value from default config
-    if (config.stop_token_ids.empty())
-        m_impl->m_generation_config.stop_token_ids = default_stop_token_ids;
-    // if eos_token_id was not provided in config forward from default config
-    if (config.eos_token_id == -1)
-        m_impl->m_generation_config.set_eos_token_id(default_eos_token_id);
-
-    m_impl->m_generation_config.validate();
+    m_impl->m_generation_config = _config;
 }
 
 ov::genai::WhisperPipeline::~WhisperPipeline() = default;
