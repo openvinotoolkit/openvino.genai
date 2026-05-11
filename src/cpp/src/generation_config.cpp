@@ -86,6 +86,7 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "temperature", temperature);
     read_json_param(data, "top_p", top_p);
     read_json_param(data, "top_k", top_k);
+    read_json_param(data, "min_p", min_p);
 
     // assistant generation
     read_json_param(data, "assistant_confidence_threshold", assistant_confidence_threshold);
@@ -114,7 +115,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "stop_strings", stop_strings);
     read_anymap_param(properties, "include_stop_str_in_output", include_stop_str_in_output);
     read_anymap_param(properties, "stop_token_ids", stop_token_ids);
-    if (eos_token_id > 0) {
+    if (eos_token_id != -1) {
         set_eos_token_id(eos_token_id);
     }
 
@@ -143,6 +144,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "temperature", temperature);
     read_anymap_param(properties, "top_p", top_p);
     read_anymap_param(properties, "top_k", top_k);
+    read_anymap_param(properties, "min_p", min_p);
     // TODO: add support of 'generator' property similar to Image generation
     read_anymap_param(properties, "rng_seed", rng_seed);
 
@@ -316,6 +318,7 @@ void GenerationConfig::validate() const {
     if (is_multinomial()) {
         OPENVINO_ASSERT(top_p > 0 && top_p <= 1.0f, "When 'do_sample' is true, top_p must be a positive float > 0.0 and <= 1.0, but got ", top_p);
         OPENVINO_ASSERT(temperature > 0, "When 'do_sample' is true, temperature must be a strictly positive float, but got ", temperature);
+        OPENVINO_ASSERT(min_p >= 0.0f && min_p < 1.0f, "When 'do_sample' is true, min_p must be in [0.0, 1.0), but got ", min_p);
     } else {
         // parameters requiring multinomial
         // OPENVINO_ASSERT(top_k == std::numeric_limits<size_t>::max(), "When 'do_sample' is false, top_k must be max of size_t, but got ", top_k);

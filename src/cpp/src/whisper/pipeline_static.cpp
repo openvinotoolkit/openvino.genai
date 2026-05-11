@@ -4,6 +4,7 @@
 #include "whisper/pipeline_static.hpp"
 
 #include <chrono>
+#include <limits>
 #include <regex>
 #include <utility>
 
@@ -245,22 +246,25 @@ int64_t detect_language(ov::Tensor& encoder_hidden_state,
     return output_token;
 }
 
-std::vector<int64_t> prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
+ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
                                       ov::InferRequest& decoder,
                                       const ov::genai::WhisperGenerationConfig& config,
                                       ov::genai::RawPerfMetrics& raw_metrics) {
     if (!config.is_multilingual) {
-        return std::vector<int64_t>{config.decoder_start_token_id};
+        // non-multilingual whisper models are english-only
+        return {std::vector<int64_t>{config.decoder_start_token_id}, "en"};
     }
 
     int64_t language_token_id = 0;
+    std::string language;
     if (config.language.has_value()) {
-        std::string language = *config.language;
+        language = *config.language;
         if (config.lang_to_id.count(language)) {
             language_token_id = config.lang_to_id.at(language);
         }
     } else {
         language_token_id = detect_language(encoder_hidden_state, decoder, config, raw_metrics);
+        language = ov::genai::utils::find_language_by_token_id(config.lang_to_id, language_token_id);
     }
 
     int64_t task_token_id = config.transcribe_token_id;
@@ -268,7 +272,7 @@ std::vector<int64_t> prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
         task_token_id = config.translate_token_id;
     }
 
-    return std::vector<int64_t>{config.decoder_start_token_id, language_token_id, task_token_id};
+    return {std::vector<int64_t>{config.decoder_start_token_id, language_token_id, task_token_id}, ov::genai::utils::to_unescaped_language(language)};
 }
 
 void stream_generated_tokens(const std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
@@ -281,8 +285,12 @@ void stream_generated_tokens(const std::shared_ptr<ov::genai::StreamerBase> stre
     std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
 
     auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
-    if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-        streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
+    if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
+        handle->cancel();
+    } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
+        handle->stop();
+    } else if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+        handle->stop(ov::genai::GenerationFinishReason::TOOL_CALL);
     }
 }
 
@@ -334,11 +342,16 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
     results.scores.resize(1u);
     results.scores[0] = 0u;
     results.tokens.resize(1u);
+    results.finish_reasons.resize(1u, ov::genai::GenerationFinishReason::NONE);
 
     OPENVINO_ASSERT(sequence_group->get_finished_sequences().size() == 1u);
     auto sequence = sequence_group->get_finished_sequences().front();
     results.tokens[0] = sequence->get_generated_ids();
     results.scores[0] = sequence->get_cumulative_log_prob();
+    results.finish_reasons[0] = sequence->get_finish_reason();
+    if (results.finish_reasons[0] == ov::genai::GenerationFinishReason::NONE && sequence_group->handle_stopped()) {
+        results.finish_reasons[0] = sequence_group->get_generation_stream()->get_finish_reason();
+    }
 
     sampler.clear_request_info(sequence_group->get_request_id());
 
@@ -1109,15 +1122,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     OptionalWhisperGenerationConfig generation_config,
     const std::shared_ptr<StreamerBase> streamer_ptr) {
     auto start_time = std::chrono::steady_clock::now();
-    WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-    
-    // If stop_token_ids were not provided, take value from default m_generation_config
-    if (config.stop_token_ids.empty())
-        config.stop_token_ids = m_generation_config.stop_token_ids;
-    // If eos_token_id was not provided, take value from default m_generation_config
-    if (config.eos_token_id == -1)
-        config.set_eos_token_id(m_generation_config.eos_token_id);
-    config.validate();
+    WhisperGenerationConfig config = utils::prepare_per_generate_config(m_generation_config, generation_config);
 
     OPENVINO_ASSERT(!config.initial_prompt.has_value(), "'initial_prompt' parameter is not supported on NPU device.");
     OPENVINO_ASSERT(!config.hotwords.has_value(), "'hotwords' parameter is not supported on NPU device.");
@@ -1172,7 +1177,9 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
 
         // prepare sot_tokens just once for whole input
         if (sot_tokens.empty()) {
-            sot_tokens = prepare_sot_tokens(hidden_state_tensor, m_models.decoder, config, raw_metrics);
+            auto sot_result = prepare_sot_tokens(hidden_state_tensor, m_models.decoder, config, raw_metrics);
+            sot_tokens = std::move(sot_result.tokens);
+            result.language = sot_result.language;
         }
 
         std::vector<int64_t> chunk_sot_tokens = sot_tokens;

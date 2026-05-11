@@ -11,6 +11,9 @@
 
 namespace ov::genai {
 
+IncrementalParser::IncrementalParser() = default;
+IncrementalParser::~IncrementalParser() = default;
+
 class ReasoningIncrementalParser::ReasoningParserImpl {
 private:
     // Values initialized from constructor don't need default member initializer.

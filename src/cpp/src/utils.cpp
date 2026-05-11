@@ -3,10 +3,12 @@
 
 #include "utils.hpp"
 
+#include <algorithm>
 #include <variant>
 #include <fstream>
 #include <memory>
 
+#include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/gather.hpp"
@@ -106,6 +108,7 @@ void update_npu_config_whisper(ov::AnyMap& config,
     update_config(config, {"NPUW_LLM", "YES"});
     update_config(config, {"NPUW_WHISPER", "YES"});
     rename_key(config, "WHISPER_EOS_TOKEN", "NPUW_WHISPER_EOS_TOKEN");
+    rename_key(config, "WHISPER_DECOMPOSE_SDPA", "NPUW_WHISPER_DECOMPOSE_SDPA");
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
     update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
@@ -222,22 +225,6 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
         return config_map.at(CONFIG_ARG_NAME).as<ov::genai::GenerationConfig>();
     else
         return std::nullopt;
-}
-
-ProcessorConfig from_any_map(
-    const ov::AnyMap& config_map,
-    const ProcessorConfig& initial
-) {
-    auto iter = config_map.find("processor_config");
-    ProcessorConfig extracted_config = config_map.end() != iter ?
-        iter->second.as<ProcessorConfig>() : initial;
-    using utils::read_anymap_param;
-    read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
-    read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
-    read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
-    read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
-    read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
-    return extracted_config;
 }
 
 ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config) {
@@ -372,6 +359,37 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 }
 
 } // namespace
+
+const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
+
+// Merge global properties with per-role overrides. Type mismatches fall out
+// of .as<ov::AnyMap>() as a throw; empty or missing maps are treated as
+// "no overrides" rather than errors.
+ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model_role) {
+    ov::AnyMap result;
+    for (const auto& property : properties) {
+        if (property.first != PER_MODEL_PROPERTIES) {
+            result.insert(property);
+        }
+    }
+
+    auto it = properties.find(PER_MODEL_PROPERTIES);
+    if (it == properties.end()) {
+        return result;
+    }
+
+    const auto& model_map = it->second.as<ov::AnyMap>();
+    auto role_it = model_map.find(model_role);
+    if (role_it == model_map.end()) {
+        return result;
+    }
+
+    // Role-specific values win over globals.
+    for (const auto& property : role_it->second.as<ov::AnyMap>()) {
+        result.insert_or_assign(property.first, property.second);
+    }
+    return result;
+}
 
 std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
     bool enable_save_ov_model = false;
