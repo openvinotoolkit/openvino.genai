@@ -67,6 +67,13 @@ struct PipelineMetrics {
      * distinguish between used and unused portions in dynamic cache configurations.
      */
     size_t cache_size_in_bytes = 0;
+
+    /**
+     * Backward-compatible alias for cache_size_in_bytes.
+     */
+    size_t kv_cache_size_in_bytes() const {
+        return cache_size_in_bytes;
+    }
 };
 
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
