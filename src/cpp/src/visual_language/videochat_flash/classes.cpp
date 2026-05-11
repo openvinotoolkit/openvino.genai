@@ -122,12 +122,12 @@ ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8, ImageSize image_size, con
 std::string normalize_prompt_impl(
     const std::string& prompt, size_t base_id, size_t n_visuals, const std::regex& native_pattern, void(*write_native)(std::ostream& os, size_t idx)
 ) {
-    // Convert universal visual placeholders (image or video) into the shared native visual tags.
-    auto [normalized_prompt, visual_sequence] = universal_to_native(prompt, write_native, VisionType::IMAGE);
-    if (visual_sequence.empty()) {
-        // If no image tags, try video tags.
-        std::tie(normalized_prompt, visual_sequence) = universal_to_native(prompt, write_native, VisionType::VIDEO);
-    }
+    // Convert universal visual placeholders (image and video) into the shared native visual tags.
+    // Both types must be converted since a prompt may contain both <ov_genai_image_i> and <ov_genai_video_i>.
+    auto [image_normalized, image_ids] = universal_to_native(prompt, write_native, VisionType::IMAGE);
+    auto [normalized_prompt, video_ids] = universal_to_native(image_normalized, write_native, VisionType::VIDEO);
+    std::vector<size_t> visual_sequence = std::move(image_ids);
+    visual_sequence.insert(visual_sequence.end(), video_ids.begin(), video_ids.end());
     if (!visual_sequence.empty()) {
         OPENVINO_ASSERT(
             !std::regex_search(prompt, native_pattern),
@@ -777,7 +777,18 @@ EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, co
                     " and batch ", (img_shape.size() >= 1 ? img_shape[0] : 0), ".");
 
     // Replicate the single frame to mm_local_num_frames to match the static positional embedding shape.
-    ov::Tensor padded_video = sample_video_if_needed(image);
+    // Inline padding instead of sample_video_if_needed() to avoid misleading "Video frame_count" warnings
+    // on every image encode call -- single-frame images always require padding to mm_local_num_frames.
+    const size_t frames_group_size = m_mm_local_num_frames;
+    ov::Shape padded_shape = img_shape;
+    padded_shape[0] = frames_group_size;
+    ov::Tensor padded_video(image.get_element_type(), padded_shape);
+    const size_t frame_bytes = img_shape[1] * img_shape[2] * img_shape[3] * image.get_element_type().size();
+    const auto* src_ptr = static_cast<const uint8_t*>(image.data());
+    auto* dst_ptr = static_cast<uint8_t*>(padded_video.data());
+    for (size_t i = 0; i < frames_group_size; ++i) {
+        std::memcpy(dst_ptr + i * frame_bytes, src_ptr, frame_bytes);
+    }
 
     auto preprocessed = preprocess(padded_video, target_size,
                                    m_processor_config.image_mean,
@@ -901,7 +912,10 @@ NormalizedPrompt InputsEmbedderVideoChatFlashQwen::normalize_prompt(
     size_t base_video_id,
     const std::vector<EncodedImage>& images,
     const std::vector<EncodedVideo>& videos) const {
-    const size_t base_visual_id = images.empty() ? base_video_id : base_image_id;
+    // VideoChatFlash maps both images and videos to a unified <|image_i|> tag sequence.
+    // base_image_id and base_video_id track how many images/videos were consumed in prior turns.
+    // The combined base must equal their sum since get_inputs_embeds concatenates images then videos.
+    const size_t base_visual_id = base_image_id + base_video_id;
     const size_t total_visuals = images.size() + videos.size();
     return {normalize_prompt_impl(prompt, base_visual_id, total_visuals, NATIVE_PATTERN, write_native), {}};
 }

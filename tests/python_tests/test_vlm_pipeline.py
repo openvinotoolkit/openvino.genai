@@ -2806,6 +2806,35 @@ def test_videochatflash_qwen_chat_history_with_video(
     )
 
 
+def test_videochatflash_qwen_chat_history_mixed_turns(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """Multi-turn chat: turn 1 with video, turn 2 with image. Tests mixed modality ID tracking."""
+    generation_config = _setup_generation_config(
+        ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False
+    )
+
+    # Turn 1: video input
+    ov_videochatflash_qwen_pipe_raw.start_chat()
+    res1 = ov_videochatflash_qwen_pipe_raw.generate(
+        PROMPTS[0],
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res1.texts[0]) > 0
+
+    # Turn 2: image input (different modality from turn 1)
+    res2 = ov_videochatflash_qwen_pipe_raw.generate(
+        PROMPTS[0],
+        images=[cat_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res2.texts[0]) > 0
+    ov_videochatflash_qwen_pipe_raw.finish_chat()
+
+
 @pytest.mark.parametrize(
     "config",
     [
