@@ -7,7 +7,6 @@
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/vision_registry.hpp"
 
-#include "continuous_batching/cache_manager.hpp"
 #include "sampling/sampler.hpp"
 #include "continuous_batching/model_runner.hpp"
 #include "continuous_batching/scheduler.hpp"
