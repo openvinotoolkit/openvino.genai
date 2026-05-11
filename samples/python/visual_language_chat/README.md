@@ -73,6 +73,10 @@ wget -O openvino-overview-diagram.jpg \
 
 > You can run with multiple LoRA adapters by providing multiple `<LORA_SAFETENSORS> <ALPHA>` pairs.
 
+> You can optionally specify `--attention_backend` (`SDPA` or `PA`). Defaults to `SDPA`.
+>
+> `python visual_language_lora.py ./Qwen2.5-VL-7B-Instruct ./openvino-overview-diagram.jpg "What is shown in this diagram?" ./adapter_model.safetensors 4.0 --attention_backend PA`
+
 > [!NOTE]
 > ### LoRA `alpha` interpretation in OpenVINO GenAI
 > The OpenVINO GenAI implementation merges the traditional LoRA parameters into a **single effective scaling factor** used during inference.

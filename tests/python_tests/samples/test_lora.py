@@ -141,3 +141,20 @@ class TestLora:
         py_result = run_sample(py_command)
 
         assert py_result.stdout == cpp_result.stdout, "Multi-LoRA C++/Python results should match"
+
+    def test_sample_visual_language_lora_for_cb_pipeline(self, convert_model, download_test_content, prompt, alpha):
+        adapter_path, image_path = download_test_content
+        assert os.path.exists(image_path), f"Missing test image: {image_path}"
+
+        # Test CPP sample with PA backend
+        cpp_sample = SAMPLES_CPP_DIR / "visual_language_lora"
+        cpp_command = [cpp_sample, convert_model, image_path, prompt, adapter_path, alpha, "PA"]
+        cpp_result = run_sample(cpp_command)
+
+        # Test Python sample with PA backend
+        py_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_lora.py"
+        py_command = [sys.executable, py_script, convert_model, image_path, prompt, adapter_path, alpha, "--attention_backend", "PA"]
+        py_result = run_sample(py_command)
+
+        # Compare results
+        assert py_result.stdout == cpp_result.stdout, f"Results should match"
