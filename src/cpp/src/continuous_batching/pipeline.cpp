@@ -65,8 +65,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model).fork();
-        auto vision_props = utils::get_model_properties(non_adapter_properties, "vision_embeddings");
+        auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
+        auto vision_props = utils::get_model_properties(non_adapter_properties.fork(), "vision_embeddings");
         embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_props);
     }
 
@@ -118,8 +118,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
 
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
-        auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model).fork();
-        auto vision_props = utils::get_model_properties(non_adapter_properties, "vision_embeddings");
+        auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
+        auto vision_props = utils::get_model_properties(non_adapter_properties.fork(), "vision_embeddings");
         embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_props);
     }
 
