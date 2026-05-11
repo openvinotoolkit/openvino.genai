@@ -1,5 +1,27 @@
 schema_version: 1
 suite: python
+reporting:
+  label: Python
+  artifact_group: python
+  artifact_name_template: coverage-{suite}-{profile}-{lane}
+  selection_env: PY_TEST_NAMES
+  stats_file: python-coverage-stats.env
+  duration_file: python-test-durations.csv
+  coverage_file: python-coverage.xml
+  extra_files:
+    - coverage.info
+  debug_dirs:
+    - src: .tmp/cpp-coverage-parts
+      dest: native-cpp-debug
+  uploads:
+    - name_template: Python API, CPU
+      artifact_pattern: coverage-python-cpu-*
+      file: python-coverage.xml
+      flag: genai-python-cpu
+    - name_template: C++ runtime, Python suite, CPU
+      artifact_pattern: coverage-python-cpu-*
+      file: coverage.info
+      flag: genai-native-python-cpu
 tests:
   - name: whisper
     kind: command

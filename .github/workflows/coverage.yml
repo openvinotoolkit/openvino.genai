@@ -359,7 +359,9 @@ jobs:
           local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
 
       - name: Install coverage Python dependencies
-        run: python3 -m pip install -r .github/scripts/coverage/requirements-ci.txt
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: install-requirements
 
       - name: Convert models for cache types gtests
         run: |
@@ -373,33 +375,46 @@ jobs:
             fi
           done < "${BIN_DIR}/data/cache_types_models.csv"
 
-      - name: Run CPU C++ coverage tests
+      - name: Export OpenVINO runtime environment
         run: |
           source "${OV_INSTALL_DIR}/setupvars.sh"
-          python3 .github/scripts/coverage/coverage.py step run-cpp-tests
+          {
+            echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+            echo "OpenVINO_DIR=${OpenVINO_DIR:-}"
+            echo "INTEL_OPENVINO_DIR=${INTEL_OPENVINO_DIR:-}"
+            echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:-}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Run CPU C++ coverage tests
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: run-suite
+          suite: cpp
+          profile: cpu
+          lane: cpu
+          model-path: tests/cpp/data/cache_types_models.csv
 
       - name: Generate CPU native C/C++ coverage report
-        run: python3 .github/scripts/coverage/coverage.py step collect-cpp-coverage
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: collect-native
+          profile: cpu
 
       - name: Collect C++ CPU results
         id: cpu_artifact
         if: ${{ always() }}
-        run: |
-          dir="${RUNNER_TEMP}/coverage-cpp-cpu"
-          python3 .github/scripts/coverage/ci_reports.py collect-suite-results \
-            --workspace "${OV_WORKSPACE}" \
-            --suite cpp \
-            --profile cpu \
-            --lane cpu \
-            --artifact-name coverage-cpp-cpu \
-            --artifact-dir "${dir}"
-          echo "dir=${dir}" >> "${GITHUB_OUTPUT}"
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: collect-results
+          suite: cpp
+          profile: cpu
+          lane: cpu
 
       - name: Upload C++ CPU artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-cpp-cpu
+          name: ${{ steps.cpu_artifact.outputs['artifact-name'] }}
           path: ${{ steps.cpu_artifact.outputs.dir }}
           if-no-files-found: warn
           retention-days: 7
@@ -502,35 +517,52 @@ jobs:
           self-hosted-runner: 'true'
 
       - name: Install coverage Python dependencies
-        run: python3 -m pip install -r .github/scripts/coverage/requirements-ci.txt
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: install-requirements
 
-      - name: Run iGPU C++ coverage tests
+      - name: Export OpenVINO runtime environment
         run: |
           source "${OV_INSTALL_DIR}/setupvars.sh"
-          python3 .github/scripts/coverage/coverage.py step run-cpp-tests
+          {
+            echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+            echo "OpenVINO_DIR=${OpenVINO_DIR:-}"
+            echo "INTEL_OPENVINO_DIR=${INTEL_OPENVINO_DIR:-}"
+            echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:-}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Run iGPU C++ coverage tests
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: run-suite
+          suite: cpp
+          profile: gpu
+          lane: igpu-opencl
+          test-names: cdpruner_dpp_opencl
+          model-path: tests/cpp/data/cache_types_models.csv
 
       - name: Generate iGPU native C/C++ coverage report
-        run: python3 .github/scripts/coverage/coverage.py step collect-cpp-coverage
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: collect-native
+          profile: gpu
 
       - name: Collect C++ iGPU results
         id: igpu_artifact
         if: ${{ always() }}
-        run: |
-          dir="${RUNNER_TEMP}/coverage-cpp-igpu-opencl"
-          python3 .github/scripts/coverage/ci_reports.py collect-suite-results \
-            --workspace "${OV_WORKSPACE}" \
-            --suite cpp \
-            --profile gpu \
-            --lane igpu-opencl \
-            --artifact-name coverage-cpp-igpu-opencl \
-            --artifact-dir "${dir}"
-          echo "dir=${dir}" >> "${GITHUB_OUTPUT}"
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: collect-results
+          suite: cpp
+          profile: gpu
+          lane: igpu-opencl
+          test-names: cdpruner_dpp_opencl
 
       - name: Upload C++ iGPU artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-cpp-igpu-opencl
+          name: ${{ steps.igpu_artifact.outputs['artifact-name'] }}
           path: ${{ steps.igpu_artifact.outputs.dir }}
           if-no-files-found: warn
           retention-days: 7
@@ -691,38 +723,65 @@ jobs:
           local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
 
       - name: Install coverage Python dependencies
-        run: python3 -m pip install -r .github/scripts/coverage/requirements-ci.txt
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: install-requirements
 
-      - name: Run CPU Python coverage tests
+      - name: Export OpenVINO runtime environment
         run: |
           source "${OV_INSTALL_DIR}/setupvars.sh"
-          export LD_LIBRARY_PATH="${INSTALL_DIR}/runtime/lib/intel64:${INSTALL_DIR}/runtime/3rdparty/tbb/lib:${LD_LIBRARY_PATH:-}"
-          python3 .github/scripts/coverage/coverage.py step run-python-tests
+          {
+            echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+            echo "PYTHONPATH=${PYTHONPATH:-}"
+            echo "OpenVINO_DIR=${OpenVINO_DIR:-}"
+            echo "INTEL_OPENVINO_DIR=${INTEL_OPENVINO_DIR:-}"
+            echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:-}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Run CPU Python coverage tests
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: run-suite
+          suite: python
+          profile: cpu
+          lane: ${{ matrix.test.name }}
+          test-names: ${{ matrix.test.name }}
+          python-package: openvino_genai
+          python-source-dir: src/python/openvino_genai
+          python-path-alias: openvino_genai
+          python-coverage-omit: |
+            */tests/*
+            */thirdparty/*
+            */docs/*
+            */samples/*
+            */tools/*
+            */src/js/tests/*
+            *.pb.cc
+            *.pb.h
 
       - name: Generate CPU native C/C++ coverage report
-        run: python3 .github/scripts/coverage/coverage.py step collect-cpp-coverage
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: collect-native
+          profile: cpu
+          extra-cpp-coverage-dirs: ${{ env.EXTRA_CPP_COVERAGE_DIRS }}
 
       - name: Collect Python CPU results
         id: cpu_artifact
         if: ${{ always() }}
-        run: |
-          artifact_name="coverage-python-cpu-${PY_TEST_NAMES}"
-          dir="${RUNNER_TEMP}/${artifact_name}"
-          python3 .github/scripts/coverage/ci_reports.py collect-suite-results \
-            --workspace "${OV_WORKSPACE}" \
-            --suite python \
-            --profile cpu \
-            --lane "${PY_TEST_NAMES}" \
-            --artifact-name "${artifact_name}" \
-            --artifact-dir "${dir}"
-          echo "dir=${dir}" >> "${GITHUB_OUTPUT}"
-          echo "artifact_name=${artifact_name}" >> "${GITHUB_OUTPUT}"
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: collect-results
+          suite: python
+          profile: cpu
+          lane: ${{ matrix.test.name }}
+          test-names: ${{ matrix.test.name }}
 
       - name: Upload Python CPU artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ steps.cpu_artifact.outputs.artifact_name }}
+          name: ${{ steps.cpu_artifact.outputs['artifact-name'] }}
           path: ${{ steps.cpu_artifact.outputs.dir }}
           if-no-files-found: warn
           retention-days: 7
@@ -831,36 +890,51 @@ jobs:
           npm install --no-save c8
 
       - name: Install coverage Python dependencies
-        run: python3 -m pip install -r .github/scripts/coverage/requirements-ci.txt
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: install-requirements
 
-      - name: Run CPU Node.js coverage tests
+      - name: Export OpenVINO runtime environment
         run: |
           source "${OV_INSTALL_DIR}/setupvars.sh"
-          export LD_LIBRARY_PATH="${INSTALL_DIR}/runtime/lib/intel64:${INSTALL_DIR}/runtime/3rdparty/tbb/lib:${LD_LIBRARY_PATH:-}"
-          python3 .github/scripts/coverage/coverage.py step run-js-tests
+          {
+            echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+            echo "PYTHONPATH=${PYTHONPATH:-}"
+            echo "OpenVINO_DIR=${OpenVINO_DIR:-}"
+            echo "INTEL_OPENVINO_DIR=${INTEL_OPENVINO_DIR:-}"
+            echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:-}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Run CPU Node.js coverage tests
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: run-suite
+          suite: js
+          profile: cpu
+          lane: cpu
+          js-dir: src/js
 
       - name: Generate CPU native C/C++ coverage report
-        run: python3 .github/scripts/coverage/coverage.py step collect-cpp-coverage
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: collect-native
+          profile: cpu
 
       - name: Collect Node.js CPU results
         id: cpu_artifact
         if: ${{ always() }}
-        run: |
-          dir="${RUNNER_TEMP}/coverage-js-cpu"
-          python3 .github/scripts/coverage/ci_reports.py collect-suite-results \
-            --workspace "${OV_WORKSPACE}" \
-            --suite js \
-            --profile cpu \
-            --lane cpu \
-            --artifact-name coverage-js-cpu \
-            --artifact-dir "${dir}"
-          echo "dir=${dir}" >> "${GITHUB_OUTPUT}"
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: collect-results
+          suite: js
+          profile: cpu
+          lane: cpu
 
       - name: Upload Node.js CPU artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-js-cpu
+          name: ${{ steps.cpu_artifact.outputs['artifact-name'] }}
           path: ${{ steps.cpu_artifact.outputs.dir }}
           if-no-files-found: warn
           retention-days: 7
@@ -872,18 +946,18 @@ jobs:
     if: ${{ always() && needs.CoverageBuild.result == 'success' }}
     needs: [CoverageBuild, CoverageCpp, CoverageCppGpu, CoveragePython, CoverageJS]
     outputs:
-      cpp_cpu: ${{ steps.coverage_files.outputs.cpp_cpu }}
-      cpp_igpu_opencl: ${{ steps.coverage_files.outputs.cpp_igpu_opencl }}
-      python_cpu_xml: ${{ steps.coverage_files.outputs.python_cpu_xml }}
-      python_cpu_info: ${{ steps.coverage_files.outputs.python_cpu_info }}
-      js_cpu_lcov: ${{ steps.coverage_files.outputs.js_cpu_lcov }}
-      js_cpu_info: ${{ steps.coverage_files.outputs.js_cpu_info }}
+      upload_matrix_json: ${{ steps.coverage_files.outputs['upload-matrix-json'] || '[]' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           submodules: 'false'
+
+      - name: Install coverage Python dependencies
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: install-requirements
 
       - name: Download C++ artifacts
         uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
@@ -905,19 +979,18 @@ jobs:
 
       - name: Generate final summary
         if: ${{ always() }}
-        run: |
-          python3 .github/scripts/coverage/ci_reports.py render-summary \
-            --workspace "${{ github.workspace }}" \
-            --summary-file "${GITHUB_STEP_SUMMARY}" \
-            --selection cpu,gpu \
-            --selected-lanes cpu,igpu-opencl
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: render-summary
+          selection: cpu,gpu
+          selected-lanes: cpu,igpu-opencl
 
       - name: Merge duration reports
         if: ${{ always() }}
-        run: |
-          python3 .github/scripts/coverage/ci_reports.py merge-durations \
-            --workspace "${{ github.workspace }}" \
-            --output "${{ github.workspace }}/coverage-test-durations-all.csv"
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: merge-durations
+          duration-output: ${{ github.workspace }}/coverage-test-durations-all.csv
 
       - name: Upload merged duration artifact
         if: ${{ always() }}
@@ -933,74 +1006,47 @@ jobs:
       - name: Resolve Codecov upload files
         id: coverage_files
         if: ${{ always() }}
-        run: |
-          python3 .github/scripts/coverage/ci_reports.py resolve-uploads \
-            --workspace "${{ github.workspace }}" \
-            --output-file "${GITHUB_OUTPUT}"
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: resolve-uploads
 
   CoverageCodecovUploads:
     name: Coverage Codecov Upload (${{ matrix.upload.name }})
-    if: ${{ always() && needs.CoverageSummary.result != 'skipped' && needs.CoverageSummary.result != 'cancelled' }}
+    if: ${{ always() && needs.CoverageSummary.result == 'success' && needs.CoverageSummary.outputs.upload_matrix_json != '[]' }}
     needs: CoverageSummary
     runs-on: ubuntu-latest
-    env:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
-        upload:
-          - name: C++ runtime, C++ suite, CPU
-            artifact_name: coverage-cpp-cpu
-            output_key: cpp_cpu
-            flag: genai-cpp-cpu
-          - name: C++ runtime, C++ suite, iGPU OpenCL
-            artifact_name: coverage-cpp-igpu-opencl
-            output_key: cpp_igpu_opencl
-            flag: genai-cpp-igpu-opencl
-          - name: Python API, CPU
-            artifact_name: coverage-python-cpu-*
-            output_key: python_cpu_xml
-            flag: genai-python-cpu
-          - name: C++ runtime, Python suite, CPU
-            artifact_name: coverage-python-cpu-*
-            output_key: python_cpu_info
-            flag: genai-native-python-cpu
-          - name: Node.js bindings, CPU
-            artifact_name: coverage-js-cpu
-            output_key: js_cpu_lcov
-            flag: genai-js-cpu
-          - name: C++ runtime, Node.js suite, CPU
-            artifact_name: coverage-js-cpu
-            output_key: js_cpu_info
-            flag: genai-native-js-cpu
+        upload: ${{ fromJSON(needs.CoverageSummary.outputs.upload_matrix_json || '[]') }}
     steps:
       - name: Checkout sources
-        if: ${{ needs.CoverageSummary.outputs[matrix.upload.output_key] != '' }}
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           submodules: 'false'
 
-      - name: Download coverage artifact
-        if: ${{ needs.CoverageSummary.outputs[matrix.upload.output_key] != '' }}
+      - name: Download coverage artifacts
         uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
-          pattern: ${{ matrix.upload.artifact_name }}
-          path: ${{ github.workspace }}/artifacts/${{ matrix.upload.output_key }}
+          pattern: ${{ matrix.upload.artifact_pattern }}
+          path: ${{ github.workspace }}/artifacts/${{ matrix.upload.artifact_group }}
+          merge-multiple: false
 
-      - name: Resolve Codecov upload file
-        id: coverage_files
-        if: ${{ needs.CoverageSummary.outputs[matrix.upload.output_key] != '' }}
-        run: |
-          python3 .github/scripts/coverage/ci_reports.py resolve-uploads \
-            --workspace "${{ github.workspace }}" \
-            --output-file "${GITHUB_OUTPUT}"
+      - name: Resolve Codecov upload files
+        id: upload_files
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: resolve-upload-files
+          artifact-group: ${{ matrix.upload.artifact_group }}
+          artifact-names-json: ${{ toJSON(matrix.upload.artifact_names) }}
+          upload-key: ${{ matrix.upload.key }}
+          upload-file: ${{ matrix.upload.file }}
 
       - name: Upload Codecov (${{ matrix.upload.name }})
-        if: ${{ steps.coverage_files.outputs[matrix.upload.output_key] != '' }}
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ${{ steps.coverage_files.outputs[matrix.upload.output_key] }}
+          files: ${{ steps.upload_files.outputs.files }}
           disable_search: true
           plugins: noop
           flags: ${{ matrix.upload.flag }}
