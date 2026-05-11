@@ -8,12 +8,10 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from whowhatbench.model_loaders import load_model
 from whowhatbench.scenario.args_builder import build_args_namespace
 from whowhatbench.scenario.gt_cache import GTCache
 from whowhatbench.scenario.result_store import ResultStore, TaskResult
 from whowhatbench.scenario.schema import DatasetConfig, DatasetTypeEnum, ModelConfig, Scenario, TaskConfig
-from whowhatbench.wwb import create_evaluator
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +43,11 @@ class ScenarioRunner:
         return store
 
     def _run_one(self, task: TaskConfig, target_id: str) -> TaskResult:
+        # Deferred: importing the full evaluator stack (which pulls in openvino_genai)
+        # only happens when a task is actually executed, not at scenario load time.
+        from whowhatbench.model_loaders import load_model  # noqa: PLC0415
+        from whowhatbench.wwb import create_evaluator  # noqa: PLC0415
+
         base_model_cfg = self._scenario.models[task.base]
         dataset_cfg = self._scenario.datasets[task.dataset]
         task_out = self._output_dir / "tasks" / task.id / target_id
@@ -117,6 +120,10 @@ class ScenarioRunner:
             base_model_cfg.path,
         )
         args_for_gt = build_args_namespace(self._scenario, task, target_id, task_out, None)
+
+        # Deferred imports — same cache hit as in _run_one; free after first call.
+        from whowhatbench.model_loaders import load_model  # noqa: PLC0415
+        from whowhatbench.wwb import create_evaluator  # noqa: PLC0415
 
         # Base model always runs on CPU for GT to avoid device contention with
         # the target evaluation device, and to keep GT deterministic.

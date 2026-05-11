@@ -1,25 +1,15 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+# NOTE: All heavy imports (openvino, transformers, PIL, whowhatbench evaluators)
+# are deferred into the functions that need them. This keeps the module importable
+# without an openvino install, enabling `wwb run --dry-run` to work in any env.
+
 import argparse
 import difflib
-import numpy as np
 import logging
 import os
-
-from transformers import AutoTokenizer, AutoProcessor, AutoConfig
-import openvino as ov
-
-import pandas as pd
-from PIL import Image
-from datasets import load_dataset
 from typing import Any, Optional
-
-from whowhatbench.model_loaders import load_model
-from whowhatbench import EVALUATOR_REGISTRY
-from whowhatbench.utils import fix_phi3_v_eos_token_id
-from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
-from whowhatbench.utils import get_json_config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -395,6 +385,8 @@ def check_args(args):
 def load_prompts(args):
     if args.dataset is None:
         return None
+    from datasets import load_dataset  # noqa: PLC0415
+
     split = "validation"
     if args.split is not None:
         split = args.split
@@ -413,6 +405,8 @@ def load_prompts(args):
 
 
 def load_tokenizer(args):
+    from transformers import AutoTokenizer  # noqa: PLC0415
+
     # Define kwargs based on args attributes
     kwargs = {}
     if args.gguf_file:
@@ -459,6 +453,8 @@ def load_tokenizer(args):
 
 
 def load_processor(args):
+    from transformers import AutoConfig, AutoProcessor, AutoTokenizer  # noqa: PLC0415
+
     model_id = args.base_model if args.base_model is not None else args.target_model
     if model_id is None:
         return None, None
@@ -599,6 +595,8 @@ def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question,
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
+    from PIL import Image  # noqa: PLC0415
+
     kwargs = {}
     if empty_adapters:
         import openvino_genai
@@ -624,6 +622,10 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_ad
 
 
 def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
+    import numpy as np  # noqa: PLC0415
+    import openvino as ov  # noqa: PLC0415
+    from PIL import Image  # noqa: PLC0415
+
     image_data = ov.Tensor(np.array(image)[None])
     image_tensor = model.generate(
         prompt,
@@ -667,10 +669,15 @@ def genai_gen_text2video(
         generator=generator,
         **kwargs,
     )
+    from PIL import Image  # noqa: PLC0415
+
     return [Image.fromarray(frame) for frame in result.video.data[0]]
 
 
 def genai_gen_speech(model, prompt, speaker_embedding=None, voice=""):
+    import numpy as np  # noqa: PLC0415
+    import openvino as ov  # noqa: PLC0415
+
     if speaker_embedding is not None and not isinstance(speaker_embedding, ov.Tensor):
         speaker_embedding = ov.Tensor(np.array(speaker_embedding, dtype=np.float32).reshape(1, -1))
 
@@ -688,6 +695,10 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, voice=""):
 
 
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
+    import numpy as np  # noqa: PLC0415
+    import openvino as ov  # noqa: PLC0415
+    from PIL import Image  # noqa: PLC0415
+
     image_data = ov.Tensor(np.array(image)[None])
     mask_data = ov.Tensor(np.array(mask)[None])
     image_tensor = model.generate(
@@ -703,6 +714,10 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 def genai_gen_visual_text(
     model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, pruning_ratio, relevance_weight
 ):
+    import numpy as np  # noqa: PLC0415
+    import openvino as ov  # noqa: PLC0415
+    from whowhatbench.utils import fix_phi3_v_eos_token_id  # noqa: PLC0415
+
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if image is not None:
         kwargs['image'] = ov.Tensor(np.array(image)[None])
@@ -724,20 +739,24 @@ def genai_gen_visual_text(
 
 def genai_gen_visual_text_chat(
     model: Any,
-    inputs: list[VisualTextChatInput],
+    inputs: list,
     processor: Optional[Any],
     tokenizer: Optional[Any],
     max_new_tokens: int,
     pruning_ratio: Optional[float],
     relevance_weight: Optional[float],
 ):
+    import numpy as np  # noqa: PLC0415
+    import openvino as ov  # noqa: PLC0415
+    import openvino_genai  # noqa: PLC0415
+    from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput  # noqa: PLC0415
+    from whowhatbench.utils import fix_phi3_v_eos_token_id  # noqa: PLC0415
+
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if pruning_ratio is not None:
         kwargs["pruning_ratio"] = pruning_ratio
     if relevance_weight is not None:
         kwargs["relevance_weight"] = relevance_weight
-
-    import openvino_genai
 
     chat_history = openvino_genai.ChatHistory()
     answers: list[str] = []
@@ -777,8 +796,10 @@ def is_model_with_automatic_crop(config):
 
 
 def create_evaluator(base_model, args, test_data=None):
-    # config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-    # task = TasksManager.infer_task_from_model(config._name_or_path)
+    # Deferred: importing evaluator registry triggers all evaluator modules
+    # (some of which require openvino_genai). We defer until actual evaluation.
+    from whowhatbench import EVALUATOR_REGISTRY  # noqa: PLC0415
+
     # TODO: Add logic to auto detect task based on model_id (TaskManager does not work for locally saved models)
     task = args.model_type
 
@@ -1023,6 +1044,8 @@ def print_text_results(evaluator):
 
 
 def print_image_results(evaluator):
+    import pandas as pd  # noqa: PLC0415
+
     metric_of_interest = "similarity"
     pd.set_option('display.max_colwidth', None)
     worst_examples = evaluator.worst_examples(
@@ -1067,12 +1090,14 @@ def print_rag_results(evaluator):
 
 
 def _format_score(score):
+    import pandas as pd  # noqa: PLC0415
+
     if pd.isna(score):
         return "N/A"
     return f"{score:.5f}"
 
 
-def _log_speech_metrics_summary(all_metrics: pd.DataFrame) -> None:
+def _log_speech_metrics_summary(all_metrics) -> None:
     if all_metrics is None or all_metrics.empty:
         logger.info(all_metrics)
         return
@@ -1120,6 +1145,11 @@ def main():
 
 
 def _run_legacy():
+    import openvino as ov  # noqa: PLC0415
+    import pandas as pd  # noqa: PLC0415
+    from whowhatbench.model_loaders import load_model  # noqa: PLC0415
+    from whowhatbench.utils import get_json_config  # noqa: PLC0415
+
     args = parse_args()
     check_args(args)
 
