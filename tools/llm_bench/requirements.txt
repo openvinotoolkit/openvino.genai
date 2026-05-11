@@ -8,7 +8,7 @@ openvino_genai
 pillow==12.2.0
 torch>=2.1.0,<=2.11
 transformers[sentencepiece]>=4.40.0,<5.4.0
-diffusers>=0.22.0,<=0.37.1
+diffusers>=0.22.0,<=0.38.0
 # optimum is in dependency list of optimum-intel
 # last supported commit f50a0b326df82d4b05c461a9184a97f616bfa63a
 optimum-intel[nncf]>=1.25.0
@@ -41,3 +41,7 @@ torchaudio>=2.1.0,<=2.11.0
 torchcodec<=0.11.0; sys_platform == "linux"
 torchvision>=0.16,<=0.26.0
 soundfile==0.13.1
+# For OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
+av==16.1.0
+imageio==2.37.2
+decord==0.6.0; platform_system != "Darwin"

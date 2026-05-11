@@ -61,7 +61,12 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "tiny-random-ltx-video": {"name": "optimum-intel-internal-testing/tiny-random-ltx-video", "convert_args": []},
     "tiny-random-ltx-video-0.9.1": {
         "name": "creeper-hat/tiny-random-ltx-video-0.9.1",
-        "convert_args": ["--trust-remote-code"]},
+        "convert_args": ["--trust-remote-code"],
+    },
+    "tiny-videochat-flash-qwen": {
+        "name": "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
     "speecht5_tts": {
         "name": "microsoft/speecht5_tts",
         "convert_args": ["--model-kwargs", '{"vocoder": "microsoft/speecht5_hifigan"}'],

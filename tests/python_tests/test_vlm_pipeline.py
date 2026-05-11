@@ -1020,9 +1020,6 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id:
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
@@ -1201,9 +1198,6 @@ def test_vlm_pipeline_chat_with_video(
     system_message: str,
     iteration_images_and_videos,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -1412,9 +1406,6 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id:
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Explain in details 1+1=",
@@ -1809,9 +1800,6 @@ def test_model_tags_prepend_native(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
     vision_tag = ov_pipe_model.get_vision_tag(vision_type)
 
@@ -1852,9 +1840,6 @@ def test_model_tags_prepend_universal(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
 
     conversation_requests = request.getfixturevalue(
@@ -1894,9 +1879,6 @@ def test_model_tags_append(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
     vision_tag = ov_pipe_model.get_vision_tag(vision_type)
 
@@ -2931,3 +2913,43 @@ def test_video_metadata_sampling_continuous_batching(
             outputs_add_request_api.append(tokenizer.decode(result.generated_ids))
 
     _compare_outputs_for_video_sampling(*outputs_add_request_api)
+
+
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [("optimum-intel-internal-testing/tiny-random-qwen3-vl", b) for b in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+def test_vision_pos_embeds_modes_equivalence(ov_pipe_model: VlmModelInfo, cat_tensor):
+    """Test that VISION_POS_EMBEDS=CPP (CPU fallback) and default (patched model)
+    produce identical results for Qwen3-VL."""
+    # Default-mode pipeline comes from the module-scoped fixture (env var unset
+    # at construction time => patched model, device-side weighted sum).
+    ov_pipe_default = ov_pipe_model.pipeline
+
+    gen_config = GenerationConfig()
+    gen_config.max_new_tokens = 20
+    gen_config.do_sample = False
+
+    result_default = ov_pipe_default.generate(PROMPTS[0], images=[cat_tensor], generation_config=gen_config)
+
+    # CPP mode: CPU fallback weighted sum. Build a fresh pipeline with the env
+    # var set, since VISION_POS_EMBEDS is read in the InputsEmbedder constructor.
+    prev_val = os.environ.get("VISION_POS_EMBEDS")
+    os.environ["VISION_POS_EMBEDS"] = "CPP"
+    try:
+        model_path = _get_ov_model(ov_pipe_model.model_id)
+        ov_pipe_cpp = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_pipe_model.ov_backend)
+        result_cpp = ov_pipe_cpp.generate(PROMPTS[0], images=[cat_tensor], generation_config=gen_config)
+    finally:
+        if prev_val is None:
+            os.environ.pop("VISION_POS_EMBEDS", None)
+        else:
+            os.environ["VISION_POS_EMBEDS"] = prev_val
+
+    assert result_default.texts[0] == result_cpp.texts[0], (
+        f"VISION_POS_EMBEDS modes produced different results.\n"
+        f"Default (patched model): '{result_default.texts[0]}'\n"
+        f"CPP (CPU fallback):      '{result_cpp.texts[0]}'"
+    )
