@@ -142,6 +142,20 @@ class TestLora:
 
         assert py_result.stdout == cpp_result.stdout, "Multi-LoRA C++/Python results should match"
 
+    @pytest.mark.vlm
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model, download_test_content, prompt, alpha",
+        [
+            pytest.param(
+                "Qwen2-VL-2B-Instruct",
+                ("qwen2b_lora_100_adapter_model.safetensors", "monalisa.jpg"),
+                "Who drew this painting?",
+                "2.0",
+            ),
+        ],
+        indirect=["convert_model", "download_test_content"],
+    )
     def test_sample_visual_language_lora_for_cb_pipeline(self, convert_model, download_test_content, prompt, alpha):
         adapter_path, image_path = download_test_content
         assert os.path.exists(image_path), f"Missing test image: {image_path}"
