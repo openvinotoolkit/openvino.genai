@@ -312,7 +312,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::get_inputs_embeds_with_t
 }
 
 bool InputsEmbedderGemma4::has_token_type_ids() const {
-    return m_vlm_config.enable_moe_block;
+    return m_vlm_config.use_bidirectional_attention;
 }
 
 ov::Tensor InputsEmbedderGemma4::get_token_type_ids(const ov::Tensor& input_ids) {

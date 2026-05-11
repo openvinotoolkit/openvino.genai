@@ -110,6 +110,10 @@ public:
     /// @brief Enables Gemma4 MoE block inference path and related auxiliary inputs such as token_type_ids.
     bool enable_moe_block = false;
 
+    /// @brief Whether the model uses bidirectional attention for vision tokens (e.g. "vision").
+    /// When true, token_type_ids must be provided to build the correct attention mask.
+    bool use_bidirectional_attention = false;
+
     /// @brief Hidden size of Gemma4 per-layer embedding input used during inference.
     size_t hidden_size_per_layer_input = 0;
 

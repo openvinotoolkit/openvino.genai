@@ -83,6 +83,9 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // gemma4
     read_json_param(parsed, "text_config.enable_moe_block", enable_moe_block);
     read_json_param(parsed, "text_config.hidden_size_per_layer_input", hidden_size_per_layer_input);
+    std::string use_bidirectional_attention_str;
+    read_json_param(parsed, "text_config.use_bidirectional_attention", use_bidirectional_attention_str);
+    use_bidirectional_attention = !use_bidirectional_attention_str.empty();
 }
 
 }  // namespace ov::genai
