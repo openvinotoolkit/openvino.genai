@@ -1,0 +1,41 @@
+# Example scenario: compare a quantized VLM against the HF baseline.
+# Run: wwb run scenarios/vlm_quality.yaml --output /tmp/vlm_results
+
+schema_version: 1
+name: vlm-quality
+description: >
+  Compare an OpenVINO-quantized VLM against the HF baseline on visual question answering.
+
+defaults:
+  device: CPU
+  num_samples: 16
+  seed: 42
+
+models:
+  vlm_fp16:
+    path: llava-hf/llava-1.5-7b-hf
+    backend: hf
+
+  vlm_int4:
+    path: ./models/llava-1.5-7b-int4
+    backend: genai
+    device: CPU
+
+datasets:
+  visual_qa:
+    type: builtin
+    language: en
+
+tasks:
+  - id: visual_text_quality
+    type: visual-text
+    base: vlm_fp16
+    targets: [vlm_int4]
+    dataset: visual_qa
+    generation:
+      max_new_tokens: 128
+
+report:
+  formats: [markdown, json]
+  group_by: task
+  worst_examples_top_k: 5

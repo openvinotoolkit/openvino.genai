@@ -6,6 +6,7 @@ import subprocess  # nosec B404
 
 from pathlib import Path
 from typing import Any, Callable, Dict
+from unittest.mock import MagicMock
 
 from ov_utils import AtomicDownloadManager, get_ov_cache_dir, retry_request  # noqa
 
@@ -174,3 +175,43 @@ def run_wwb(args: list[str], env=None):
     except subprocess.CalledProcessError as error:
         logger.error(f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n{error.output}")
         raise
+
+
+# ── Scenario runner mock helpers ──────────────────────────────────────────────
+
+
+def make_evaluator_mock(tmp_path: Path) -> MagicMock:
+    """Return a mock evaluator whose score() produces minimal valid DataFrames."""
+    import pandas as pd
+
+    mock_eval = MagicMock()
+    mock_eval.score.return_value = (
+        pd.DataFrame({"prompt": ["q1"], "similarity": [0.9]}),
+        pd.DataFrame({"similarity_mean": [0.9]}),
+    )
+    mock_eval.get_generation_fn.return_value = None
+    mock_eval.dump_gt.side_effect = lambda path: Path(path).parent.mkdir(parents=True, exist_ok=True) or open(
+        path, "w"
+    ).write("prompt,answer\nq1,a1\n")
+    mock_eval.dump_predictions.side_effect = lambda path: Path(path).parent.mkdir(parents=True, exist_ok=True) or open(
+        path, "w"
+    ).write("prompt,prediction\nq1,p1\n")
+    return mock_eval
+
+
+@pytest.fixture
+def mocked_runner_deps(tmp_path: Path):
+    """
+    Patch load_model and create_evaluator on the runner module so no real
+    models are loaded. Yields (load_model_mock, create_evaluator_mock).
+    """
+    from unittest.mock import patch
+
+    eval_mock = make_evaluator_mock(tmp_path)
+    with (
+        patch("whowhatbench.scenario.runner.load_model") as lm_mock,
+        patch("whowhatbench.scenario.runner.create_evaluator") as ce_mock,
+    ):
+        lm_mock.return_value = MagicMock()
+        ce_mock.return_value = eval_mock
+        yield lm_mock, ce_mock

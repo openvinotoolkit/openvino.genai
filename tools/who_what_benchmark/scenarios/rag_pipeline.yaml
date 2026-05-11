@@ -1,0 +1,59 @@
+# Example scenario: RAG pipeline quality check — embeddings + reranking.
+# Run: wwb run scenarios/rag_pipeline.yaml --output /tmp/rag_results
+
+schema_version: 1
+name: rag-pipeline
+description: >
+  Validate an OpenVINO-quantized embedding model and reranker against HF baselines.
+  Both tasks are run in one scenario, sharing the same base dataset.
+
+defaults:
+  device: CPU
+  num_samples: 32
+  seed: 42
+
+models:
+  embed_fp16:
+    path: BAAI/bge-small-en-v1.5
+    backend: hf
+
+  embed_int8:
+    path: ./models/bge-small-int8
+    backend: genai
+
+  rerank_fp16:
+    path: cross-encoder/ms-marco-TinyBERT-L2-v2
+    backend: hf
+
+  rerank_int8:
+    path: ./models/ms-marco-reranker-int8
+    backend: genai
+
+datasets:
+  squad_questions:
+    type: huggingface
+    path: squad
+    split: validation[:32]
+    field: question
+
+tasks:
+  - id: embedding_quality
+    type: text-embedding
+    base: embed_fp16
+    targets: [embed_int8]
+    dataset: squad_questions
+    embeddings:
+      pooling_type: mean
+      normalize: true
+      padding_side: right
+
+  - id: reranking_quality
+    type: text-reranking
+    base: rerank_fp16
+    targets: [rerank_int8]
+    dataset: squad_questions
+
+report:
+  formats: [markdown, json]
+  group_by: task
+  worst_examples_top_k: 5

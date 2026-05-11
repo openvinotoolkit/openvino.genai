@@ -776,7 +776,7 @@ def is_model_with_automatic_crop(config):
     )
 
 
-def create_evaluator(base_model, args):
+def create_evaluator(base_model, args, test_data=None):
     # config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
     # task = TasksManager.infer_task_from_model(config._name_or_path)
     # TODO: Add logic to auto detect task based on model_id (TaskManager does not work for locally saved models)
@@ -784,7 +784,7 @@ def create_evaluator(base_model, args):
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
-        prompts = load_prompts(args)
+        prompts = load_prompts(args) if test_data is None else test_data
 
         if task == "text":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
@@ -975,6 +975,7 @@ def create_evaluator(base_model, args):
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
+                test_data=prompts,
                 tokenizer=tokenizer,
                 num_samples=args.num_samples,
                 similarity_model_id=args.data_encoder,
@@ -1110,6 +1111,15 @@ def print_speech_results(evaluator):
 
 
 def main():
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "run":
+        _run_scenario_cmd(sys.argv[2:])
+    else:
+        _run_legacy()
+
+
+def _run_legacy():
     args = parse_args()
     check_args(args)
 
@@ -1263,6 +1273,66 @@ def main():
             print_embeds_results(evaluator)
         elif args.model_type in ['text-reranking']:
             print_rag_results(evaluator)
+
+
+def _run_scenario_cmd(argv: list[str]) -> None:
+    import argparse as _ap
+
+    p = _ap.ArgumentParser(prog="wwb run", description="Run a WWB scenario YAML file.")
+    p.add_argument("scenario", help="Path to scenario YAML file.")
+    p.add_argument("--output", default=None, help="Override the scenario's output_dir.")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate scenario and print the planned execution matrix. No models loaded.",
+    )
+    p.add_argument(
+        "--only",
+        type=str,
+        default=None,
+        help="Comma-separated list of task IDs to run. Runs all tasks if not specified.",
+    )
+    p.add_argument("--quiet", action="store_true", help="Suppress verbose output.")
+    args = p.parse_args(argv)
+
+    from whowhatbench.scenario import load_scenario
+    from whowhatbench.scenario.runner import ScenarioRunner
+    from whowhatbench.scenario.reporting import write_reports
+    import datetime
+    from pathlib import Path
+
+    scenario = load_scenario(args.scenario)
+
+    # Resolve output directory
+    output_dir_str = args.output or scenario.defaults.output_dir
+    ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    output_dir_str = output_dir_str.replace("${scenario.name}", scenario.name)
+    output_dir_str = output_dir_str.replace("${timestamp}", ts)
+    output_dir = Path(output_dir_str)
+
+    only_ids = [t.strip() for t in args.only.split(",")] if args.only else None
+
+    if args.dry_run:
+        print(f"Scenario: {scenario.name}")
+        if scenario.description:
+            print(f"Description: {scenario.description}")
+        print("Planned execution matrix:")
+        for task in scenario.tasks:
+            if only_ids is not None and task.id not in only_ids:
+                continue
+            base_path = scenario.models[task.base].path
+            targets_str = ", ".join(task.targets)
+            print(f"  task: {task.id} (type: {task.type})")
+            print(f"    base: {base_path}")
+            print(f"    targets: {targets_str}")
+        print(f"Output dir: {output_dir}")
+        return
+
+    runner = ScenarioRunner(scenario, output_dir)
+    store = runner.run(only_task_ids=only_ids)
+    store.flush_csvs()
+    write_reports(store, scenario, output_dir, Path(args.scenario))
+    logger.info("Scenario complete. Reports written to: %s", output_dir)
 
 
 if __name__ == "__main__":

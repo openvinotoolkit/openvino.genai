@@ -1,6 +1,8 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+__version__ = "0.1.0"
+
 from .registry import register_evaluator, EVALUATOR_REGISTRY
 from .text_evaluator import TextEvaluator
 from .text_evaluator import TextEvaluator as Evaluator
@@ -14,6 +16,7 @@ from .text2video_evaluator import Text2VideoEvaluator
 from .chat_text_evaluator import ChatTextEvaluator
 from .speech_generation_evaluator import SpeechGenerationEvaluator
 from .chat_visualtext_evaluator import ChatVisualTextEvaluator
+from .scenario import Scenario, load_scenario
 
 
 __all__ = [
@@ -31,4 +34,6 @@ __all__ = [
     "SpeechGenerationEvaluator",
     "ChatVisualTextEvaluator",
     "EVALUATOR_REGISTRY",
+    "Scenario",
+    "load_scenario",
 ]
