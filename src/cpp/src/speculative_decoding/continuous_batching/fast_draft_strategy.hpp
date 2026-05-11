@@ -3,12 +3,14 @@
 
 #pragma once
 
+#include <future>
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 #include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "utils.hpp"
+#include "model_desc.hpp"
 
 namespace ov::genai {
 struct GenerateStrategy {
@@ -27,18 +29,16 @@ struct GenerateStrategy {
 
 template<class Impl>
 std::vector<EncodedGenerationResult> generate_common(
-        Impl* self,
-        const std::vector<ov::Tensor>& input_ids,
-        const std::vector<GenerationConfig>& sampling_params,
-        const StreamerVariant& streamer,
-        std::optional<std::vector<ov::Tensor>> token_type_ids,
-        std::optional<std::vector<ov::Tensor>> prompt_ids,
-        GenerateStrategy& strategy) {
-
-    OPENVINO_ASSERT(!token_type_ids.has_value());
-    OPENVINO_ASSERT(!prompt_ids.has_value());
-    self->perf_metrics() = ov::genai::SDPerModelsPerfMetrics();
-    self->draft_pipeline()->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
+    Impl* self,
+    const std::vector<ov::Tensor>& input_ids,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    std::optional<std::vector<ov::Tensor>> token_type_ids,
+    std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>> position_ids,
+    std::optional<std::vector<ov::Tensor>> prompt_ids,
+    const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list,
+    GenerateStrategy& strategy) {
+    self->reset_generate_metrics();
 
     OPENVINO_ASSERT(!self->has_non_finished_requests(),
                     "Generate cannot be called while ContinuousBatchingPipeline is already running");
@@ -56,21 +56,38 @@ std::vector<EncodedGenerationResult> generate_common(
     auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, self->tokenizer());
 
     strategy.check_streaming(streamer_ptr, input_ids, sampling_params);
+    if (position_ids.has_value()) {
+        OPENVINO_ASSERT(position_ids->size() == input_ids.size());
+    }
 
     std::vector<GenerationHandle> main_generations;
-    {
-        std::lock_guard<std::mutex> lock(self->m_draft_generations_mutex);
-        for (size_t rid = 0; rid < input_ids.size(); ++rid) {
-            GenerationConfig main_cfg = sampling_params[rid];
-            GenerationConfig draft_cfg = main_cfg;
-            ov::Tensor main_in, draft_in;
-            strategy.prepare_request(rid, input_ids[rid],
-                                    main_cfg, draft_cfg,
-                                    main_in, draft_in);
-            main_generations.push_back(self->main_pipeline()->add_request(rid, main_in, main_cfg));
-            self->m_draft_generations.insert({rid,
-                self->draft_pipeline()->add_request(rid, draft_in, draft_cfg)});
+    for (size_t rid = 0; rid < input_ids.size(); ++rid) {
+        GenerationConfig main_cfg = sampling_params[rid];
+        GenerationConfig draft_cfg = main_cfg;
+        ov::Tensor main_in, draft_in;
+        strategy.prepare_request(rid, input_ids[rid],
+                                main_cfg, draft_cfg,
+                                main_in, draft_in);
+
+        const bool has_valid_token_type_ids = token_type_ids.has_value() && rid < token_type_ids->size();
+        const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
+        const bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && rid < lm_extra_inputs_list->size();
+
+        if (position_ids.has_value() && self->m_inputs_embedder) {
+            const auto [position_ids_tensor, rope_delta] = (*position_ids)[rid];
+            self->m_inputs_embedder->set_position_ids(position_ids_tensor);
+            if (rope_delta.has_value()) {
+                self->m_inputs_embedder->set_rope_delta(*rope_delta);
+            }
         }
+
+        main_generations.push_back(self->add_request(
+            rid,
+            main_in,
+            main_cfg,
+            has_valid_token_type_ids ? std::make_optional((*token_type_ids)[rid]) : std::nullopt,
+            has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt,
+            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[rid]) : std::nullopt));
     }
 
     auto all_requests = self->get_awaiting_requests();
@@ -153,6 +170,13 @@ protected:
     std::mutex m_draft_generations_mutex;
     std::map<uint64_t, GenerationHandle> m_draft_generations;
 
+    void reset_generate_metrics() {
+        m_sd_metrics = SpeculativeDecodingMetrics();
+        m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
+        m_draft_pipeline->raw_perf_metrics = RawPerfMetrics{};
+        m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
+    }
+
     void drop_requests();
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
@@ -165,7 +189,9 @@ public:
             const std::vector<GenerationConfig>& sampling_params,
             const StreamerVariant& streamer,
             std::optional<std::vector<ov::Tensor>> token_type_ids,
+            std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>> position_ids,
             std::optional<std::vector<ov::Tensor>> prompt_ids,
+            const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list,
             GenerateStrategy& strategy);
 
     SpeculativeDecodingImpl() = default;
@@ -202,7 +228,8 @@ public:
 
     Tokenizer& tokenizer() { return m_tokenizer; }
     const Tokenizer& tokenizer() const { return m_tokenizer; }
-
+    // extra sync point for main and draft pipelines, if valid
+    std::future<void> m_sync_future;
 };
 
 }  // namespace ov::genai

@@ -30,6 +30,14 @@ enum class SequenceGroupType {
 
 using TokenIds = std::vector<int64_t>;
 using LogProbs = std::vector<float>;
+
+struct TreeMetaData {
+    std::vector<std::vector<uint8_t>> tree_mask;
+    std::vector<std::vector<int64_t>> retrieve_indices;
+    std::vector<int64_t> tree_position_ids;
+    std::vector<size_t> validated_indices;
+};
+
 class SequenceGroup;
 
 class Sequence {
@@ -56,6 +64,7 @@ class Sequence {
     size_t m_hidden_size;
     std::vector<ov::Tensor> m_position_ids_list;
     int64_t m_rope_delta;
+    TreeMetaData m_tree_metadata;
 
     // Embeddings hash calculation params
     static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
@@ -152,18 +161,30 @@ public:
         return m_hidden_state;
     }
 
+    void set_tree_metadata(const TreeMetaData& metadata) {
+        m_tree_metadata = metadata;
+    }
+
+    const TreeMetaData& get_tree_metadata() const {
+        return m_tree_metadata;
+    }
+
     // removes n last tokens and updates cumulative log prob
     // used to remove stop_string from the output
     void remove_last_tokens(int n) {
+        OPENVINO_ASSERT(n >= 0, "Number of tokens to remove must be greater than or equal to 0");
         OPENVINO_ASSERT(m_generated_ids.size() >= n, "Cannot remove more tokens than has been generated");
         for (int i = 0; i < n; i++) {
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
             m_generated_ids.pop_back();
-            if (m_type == SequenceGroupType::EMBEDDINGS) {
-                m_generated_ids_embeds.pop_back();
-                m_position_ids_list.pop_back();
-            }
+        }
+        if (m_type == SequenceGroupType::EMBEDDINGS) {
+            const size_t tokens_to_remove = static_cast<size_t>(n);
+            const size_t embeds_to_remove = std::min(tokens_to_remove, m_generated_ids_embeds.size());
+            const size_t position_ids_to_remove = std::min(tokens_to_remove, m_position_ids_list.size());
+            truncate_generated_ids_embeds(embeds_to_remove);
+            update_position_ids(position_ids_to_remove);
         }
     }
 
@@ -242,6 +263,22 @@ public:
             std::copy_n(generated_ids_embeds.data<float>() + idx * m_hidden_size, m_hidden_size, m_generated_ids_embeds[i].begin());
 
         }
+    }
+    void truncate_generated_ids_embeds(size_t num_tokens) {
+        OPENVINO_ASSERT(m_type == SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(num_tokens <= m_generated_ids_embeds.size());
+        auto current_embeds_size = m_generated_ids_embeds.size();
+        // remove the last num_tokens embeddings
+        if (num_tokens > 0)
+            m_generated_ids_embeds.erase(m_generated_ids_embeds.begin() + (current_embeds_size - num_tokens), m_generated_ids_embeds.end());
+    }
+
+    void update_position_ids(size_t num_tokens) {
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(num_tokens <= m_position_ids_list.size());
+        // remove the last num_tokens position ids
+        if (num_tokens > 0)
+            m_position_ids_list.erase(m_position_ids_list.begin() + m_position_ids_list.size() - num_tokens, m_position_ids_list.end());
     }
 
     void append_position_ids(const ov::Tensor& position_ids) {
@@ -787,6 +824,10 @@ public:
         return m_sampling_params;
     }
 
+    void set_sampling_parameters(const ov::genai::GenerationConfig& params) {
+        m_sampling_params = params;
+    }
+
     void set_out_of_memory() {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_running()) {
@@ -804,6 +845,10 @@ public:
     }
 
     bool is_waiting() const {
+        // when in tree search advance step, depends on pause status only
+        if (m_sampling_params.is_tree_search() && m_num_validation_tokens == 0) {
+            return m_is_gen_paused;
+        }
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
                 return true;
@@ -876,7 +921,7 @@ public:
             if (has_finished()) {
                 push_outputs();
             }
-        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
+        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1) {

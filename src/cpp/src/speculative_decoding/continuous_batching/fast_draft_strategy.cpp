@@ -35,16 +35,24 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(con
 
     auto main_scheduler_config = main_model_desc.scheduler_config;
     bool allow_score_aggregation = true;
+    bool allow_cache_rotation = false;
     bool allow_xattention = false;
+    bool allow_adaptive_rkv = false;
+    bool main_allow_qq_bias = main_model_desc.properties.count("query_to_query_bias") > 0 && main_model_desc.properties.at("query_to_query_bias").as<bool>();
 
     ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
                                    main_model_desc.scheduler_config.use_cache_eviction,
                                    allow_score_aggregation,
-                                   allow_xattention).run_on_model(main_model);
+                                   allow_cache_rotation,
+                                   allow_xattention,
+                                   allow_adaptive_rkv,
+                                   main_allow_qq_bias).run_on_model(main_model);
     ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
                                    main_model_desc.scheduler_config.use_cache_eviction,
                                    allow_score_aggregation,
-                                   allow_xattention).run_on_model(draft_model);
+                                   allow_cache_rotation,
+                                   allow_xattention,
+                                   allow_adaptive_rkv).run_on_model(draft_model);
 
     utils::apply_gather_before_matmul_transformation(main_model);
     utils::apply_gather_before_matmul_transformation(draft_model);
@@ -69,6 +77,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(con
             }
             return total_hidden_size;
         };
+
         float main_model_hidden_size = compute_total_hidden_size(main_model),
               draft_model_hidden_size = compute_total_hidden_size(draft_model);
         auto k = draft_model_hidden_size / (main_model_hidden_size + draft_model_hidden_size);
@@ -129,7 +138,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, token_type_ids, prompt_ids, lm_extra_inputs)});
+    // Draft Eagle3 inference only uses the language model path. Multimodal auxiliary inputs such as
+    // deepstack visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, token_type_ids, prompt_ids)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
 }
 
@@ -188,6 +199,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     for (const auto& candidate : m_draft_pipeline->get_generated_requests()) {
         auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
         update_sequence_info.insert({{candidate.first, update_result}});
+    }
+
+    // to ensure extras steps, if any, are finished before main model generation
+    if (m_sync_future.valid()) {
+        m_sync_future.wait();
     }
 
     const auto main_start = std::chrono::steady_clock::now();
@@ -287,7 +303,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
     };
 
-    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, prompt_ids, strategy);
+    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
 }
 
 SpeculativeDecodingMetrics

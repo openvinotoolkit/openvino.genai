@@ -5,6 +5,7 @@
 #include <filesystem>
 
 #include "load_image.hpp"
+#include <openvino/genai/speculative_decoding/perf_metrics.hpp>
 #include <openvino/genai/visual_language/pipeline.hpp>
 #include "../text_generation/read_prompt_from_file.h"
 
@@ -13,6 +14,10 @@ int main(int argc, char* argv[]) try {
 
     options.add_options()
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
+    ("dm,draft_model", "Path to draft model and tokenizers base directory", cxxopts::value<std::string>()->default_value(""))
+    ("nat,num_assistant_tokens", "Number of assistant tokens", cxxopts::value<size_t>()->default_value("5"))
+    ("bf,branching_factor", "Number of assistant tokens", cxxopts::value<size_t>()->default_value("1"))
+    ("td,tree_depth", "Number of assistant tokens", cxxopts::value<size_t>()->default_value("0"))
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
     ("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
     ("i,image", "Image", cxxopts::value<std::string>()->default_value("image.jpg"))
@@ -55,8 +60,15 @@ int main(int argc, char* argv[]) try {
     } 
 
     const std::string models_path = result["model"].as<std::string>();
+    const std::string draft_models_path = result["draft_model"].as<std::string>();
     const std::string image_path = result["image"].as<std::string>();
     std::string device = result["device"].as<std::string>();
+
+    if (device == "NPU" && !draft_models_path.empty()) {
+        std::cout << "--draft_model is not supported when --device is NPU" << std::endl;
+        return EXIT_FAILURE;
+    }
+
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
     std::vector<ov::Tensor> images = utils::load_images(image_path);
@@ -71,6 +83,14 @@ int main(int argc, char* argv[]) try {
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
     config.ignore_eos = true;
 
+     ov::AnyMap properties;
+    if (!draft_models_path.empty()) {
+        properties.insert(ov::genai::draft_model(draft_models_path, device));
+        config.num_assistant_tokens = result["num_assistant_tokens"].as<size_t>();
+        config.branching_factor = result["branching_factor"].as<size_t>();
+        config.tree_depth = result["tree_depth"].as<size_t>();
+    }
+
     std::cout << ov::get_openvino_version() << std::endl;
 
     std::unique_ptr<ov::genai::VLMPipeline> pipe;
@@ -81,7 +101,8 @@ int main(int argc, char* argv[]) try {
         ov::genai::SchedulerConfig scheduler_config;
         scheduler_config.enable_prefix_caching = false;
         scheduler_config.max_num_batched_tokens = std::numeric_limits<std::size_t>::max();
-        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
+        properties.insert(ov::genai::scheduler_config(scheduler_config));
+        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, properties);
     }
 
     auto input_data = pipe->get_tokenizer().encode(prompt);
@@ -108,6 +129,35 @@ int main(int argc, char* argv[]) try {
     std::cout << "TTFT: " << metrics.get_ttft().mean  << " ± " << metrics.get_ttft().std << " ms" << std::endl;
     std::cout << "TPOT: " << metrics.get_tpot().mean  << " ± " << metrics.get_tpot().std << " ms/token " << std::endl;
     std::cout << "Throughput: " << metrics.get_throughput().mean  << " ± " << metrics.get_throughput().std << " tokens/s" << std::endl;
+
+    auto sd_perf_metrics = std::dynamic_pointer_cast<ov::genai::SDPerModelsPerfMetrics>(res.extended_perf_metrics);
+    if (sd_perf_metrics) {
+        auto main_model_metrics = sd_perf_metrics->main_model_metrics;
+        std::cout << "\nMAIN MODEL " << std::endl;
+        std::cout << "  Generate time: " << main_model_metrics.get_generate_duration().mean << " ms" << std::endl;
+        std::cout << "  TTFT: " << main_model_metrics.get_ttft().mean  << " ± " << main_model_metrics.get_ttft().std << " ms" << std::endl;
+        std::cout << "  TTST: " << main_model_metrics.get_ttst().mean  << " ± " << main_model_metrics.get_ttst().std << " ms/token " << std::endl;
+        std::cout << "  TPOT: " << main_model_metrics.get_tpot().mean  << " ± " << main_model_metrics.get_tpot().std << " ms/iteration " << std::endl;
+        std::cout << "  AVG Latency: " << main_model_metrics.get_latency().mean  << " ± " << main_model_metrics.get_latency().std << " ms/token " << std::endl;
+        std::cout << "  Num generated token: " << main_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
+        std::cout << "  Total iteration number: " << main_model_metrics.raw_metrics.m_durations.size() << std::endl;
+        std::cout << "  Num accepted token: " << sd_perf_metrics->get_num_accepted_tokens() << " tokens" << std::endl;
+
+        auto draft_model_metrics = sd_perf_metrics->draft_model_metrics;
+        std::cout << "\nDRAFT MODEL " << std::endl;
+        std::cout << "  Generate time: " << draft_model_metrics.get_generate_duration().mean << " ms" << std::endl;
+        std::cout << "  TTFT: " << draft_model_metrics.get_ttft().mean  << " ms" << std::endl;
+        std::cout << "  TTST: " << draft_model_metrics.get_ttst().mean  << " ms/token " << std::endl;
+        std::cout << "  TPOT: " << draft_model_metrics.get_tpot().mean  << " ± " << draft_model_metrics.get_tpot().std << " ms/token " << std::endl;
+        std::cout << "  AVG Latency: " << draft_model_metrics.get_latency().mean  << " ± " << draft_model_metrics.get_latency().std << " ms/iteration " << std::endl;
+        std::cout << "  Num generated token: " << draft_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
+        std::cout << "  Total iteration number: " << draft_model_metrics.raw_metrics.m_durations.size() << std::endl;
+        const float accept_length = main_model_metrics.raw_metrics.m_durations.empty()
+            ? 0.f
+            : static_cast<float>(sd_perf_metrics->get_num_generated_tokens()) /
+                static_cast<float>(main_model_metrics.raw_metrics.m_durations.size());
+        std::cout << "  Accept length: " << accept_length << std::endl;
+    }
 
     return 0;
 } catch (const std::exception& error) {

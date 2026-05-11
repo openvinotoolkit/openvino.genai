@@ -24,6 +24,12 @@ int main(int argc, char* argv[]) try {
     // NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend.
     // config.assistant_confidence_threshold = 0.4;
 
+    // Add parameters to enable tree-based speculative decoding in EAGLE mode.
+    // If not set, the default values are `branching_factor=1` and `tree_depth=0`.
+    // Note: Tree-based speculative decoding is supported only in EAGLE mode, and requires `num_assistant_tokens` to be greater than or equal to `tree_depth`.
+    // config.branching_factor = 8; // Number of candidate tokens to consider at each tree level
+    // config.tree_depth = 3; // How deep to explore the token tree
+
     std::string main_model_path = argv[1];
     std::string draft_model_path = argv[2];
     std::string prompt = argv[3];

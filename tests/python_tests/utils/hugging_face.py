@@ -283,7 +283,7 @@ def sanitize_model_id(model_id: str) -> str:
     return model_id.replace("/", "_")
 
 
-TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
+TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3", "xf2022/tiny-random-qwen3-vl-eagle3")
 
 # Some models require optimum-cli export instead of the Python API path.
 # This maps model_id to the --task value used during export - CVS-183496
