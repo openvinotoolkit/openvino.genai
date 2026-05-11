@@ -147,8 +147,11 @@ class ScenarioRunner:
         # (hf/genai/llamacpp) reflect the model that actually produces GT.
         # Using the target id here would route the base model through the wrong
         # backend code path inside the evaluator.
+        # gt_data_path is set to the allocated cache path so evaluators that
+        # derive their reference directory from it (embeddings, reranking)
+        # can place per-sample artifacts alongside the GT CSV.
         task_out = self._output_dir / "tasks" / task.id / "_gt"
-        args_for_gt = build_args_namespace(self._scenario, task, task.base, task_out, None)
+        args_for_gt = build_args_namespace(self._scenario, task, task.base, task_out, str(gt_path))
 
         # Base model always runs on CPU for GT to avoid device contention with
         # the target evaluation device, and to keep GT deterministic.
