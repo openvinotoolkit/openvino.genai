@@ -153,7 +153,17 @@ class TestLora:
 
         # Test Python sample with PA backend
         py_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_lora.py"
-        py_command = [sys.executable, py_script, convert_model, image_path, prompt, adapter_path, alpha, "--attention_backend", "PA"]
+        py_command = [
+            sys.executable,
+            py_script,
+            convert_model,
+            image_path,
+            prompt,
+            adapter_path,
+            alpha,
+            "--attention_backend",
+            "PA",
+        ]
         py_result = run_sample(py_command)
 
         # Compare results
