@@ -614,3 +614,29 @@ def test_build_args_namespace_has_all_required_attributes(tmp_path: Path) -> Non
         f"Namespace is missing attributes listed in the DRIFT SENTINEL: {sorted(missing)}. "
         f"Either build_args_namespace() must set them or the sentinel comment must be updated."
     )
+
+
+def test_builder_registry_matches_evaluator_registry() -> None:
+    """Drift sentinel — every evaluator class must have a matching kwarg builder.
+
+    wwb.BUILDER_REGISTRY and whowhatbench.EVALUATOR_REGISTRY are two parallel
+    dispatch tables keyed on the same task-type strings. If a contributor adds
+    a new evaluator (via ``register_evaluator``) but forgets to add a builder
+    in ``wwb.py``, ``create_evaluator`` would raise at call time. This test
+    fails fast at suite time instead.
+    """
+    from whowhatbench import EVALUATOR_REGISTRY
+    from whowhatbench.wwb import BUILDER_REGISTRY
+
+    builder_keys = set(BUILDER_REGISTRY.keys())
+    evaluator_keys = set(EVALUATOR_REGISTRY.keys())
+
+    only_in_builders = builder_keys - evaluator_keys
+    only_in_evaluators = evaluator_keys - builder_keys
+
+    assert builder_keys == evaluator_keys, (
+        "BUILDER_REGISTRY and EVALUATOR_REGISTRY are out of sync. "
+        f"Tasks only in BUILDER_REGISTRY: {sorted(only_in_builders)}. "
+        f"Tasks only in EVALUATOR_REGISTRY: {sorted(only_in_evaluators)}. "
+        "Add the missing entries in wwb.py or whowhatbench/__init__.py."
+    )
