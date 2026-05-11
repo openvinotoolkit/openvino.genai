@@ -99,15 +99,13 @@ def main():
     parser.add_argument('prompt', help="Image file or dir with images")
     args = parser.parse_args()
 
-    model_name_to_file_map = {
-        ('language', 'openvino_language_model'),
-        ('resampler', 'openvino_resampler_model'),
-        ('text_embeddings', 'openvino_text_embeddings_model'),
-        ('vision_embeddings', 'openvino_vision_embeddings_model')}
-
     models_map = dict()
-    for model_name, file_name in model_name_to_file_map:
-        model, weights = decrypt_model(args.model_dir, file_name + '.xml', file_name + '.bin')
+    for xlm_file in Path(args.model_dir).glob("*.xml"):
+        bin_file = xlm_file.with_suffix(".bin")
+        if "tokenizer" in xlm_file.name or not bin_file.exists():
+            continue
+        model, weights = decrypt_model(args.model_dir, xlm_file.name, bin_file.name)
+        model_name = xlm_file.stem.removeprefix("openvino_").removesuffix("_model")
         models_map[model_name] = (model, weights)
 
     tokenizer = read_tokenizer(args.model_dir)
