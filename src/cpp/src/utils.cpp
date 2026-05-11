@@ -108,6 +108,7 @@ void update_npu_config_whisper(ov::AnyMap& config,
     update_config(config, {"NPUW_LLM", "YES"});
     update_config(config, {"NPUW_WHISPER", "YES"});
     rename_key(config, "WHISPER_EOS_TOKEN", "NPUW_WHISPER_EOS_TOKEN");
+    rename_key(config, "WHISPER_DECOMPOSE_SDPA", "NPUW_WHISPER_DECOMPOSE_SDPA");
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
     update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
@@ -224,24 +225,6 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
         return config_map.at(CONFIG_ARG_NAME).as<ov::genai::GenerationConfig>();
     else
         return std::nullopt;
-}
-
-ProcessorConfig from_any_map(
-    const ov::AnyMap& config_map,
-    const ProcessorConfig& initial
-) {
-    auto iter = config_map.find("processor_config");
-    ProcessorConfig extracted_config = config_map.end() != iter ?
-        iter->second.as<ProcessorConfig>() : initial;
-    using utils::read_anymap_param;
-    read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
-    read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
-    read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
-    read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
-    read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
-    read_anymap_param(config_map, "pooling_kernel_size", extracted_config.pooling_kernel_size);
-    read_anymap_param(config_map, "max_soft_tokens", extracted_config.max_soft_tokens);
-    return extracted_config;
 }
 
 ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config) {

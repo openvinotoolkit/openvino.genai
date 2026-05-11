@@ -54,11 +54,13 @@ TokenizedInputs StatefulSpeculativePipelineBase::tokenize(const std::string& pro
     encode_timer.start();
 
     TokenizedInputs tokenized_input;
+    std::optional<TimePoint> template_end_time;
     if (m_is_chat_active) {
         // In chat mode, append to history and apply template
         m_chat_history.push_back({{"role", "user"}, {"content", prompt}});
         constexpr bool add_generation_prompt = true;
         auto templated_prompt = m_tokenizer.apply_chat_template(m_chat_history, add_generation_prompt);
+        template_end_time = std::chrono::steady_clock::now();
         // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
         tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
     } else {
@@ -67,6 +69,7 @@ TokenizedInputs StatefulSpeculativePipelineBase::tokenize(const std::string& pro
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
             auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            template_end_time = std::chrono::steady_clock::now();
             tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
         } else {
             tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
@@ -74,7 +77,16 @@ TokenizedInputs StatefulSpeculativePipelineBase::tokenize(const std::string& pro
     }
 
     encode_timer.end();
-    m_sd_perf_metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
+    if (template_end_time.has_value()) {
+        m_sd_perf_metrics.raw_metrics.chat_template_durations.emplace_back(
+            PerfMetrics::get_microsec(*template_end_time - encode_timer.get_start_time())
+        );
+        m_sd_perf_metrics.raw_metrics.tokenization_durations.emplace_back(
+            PerfMetrics::get_microsec(encode_timer.get_end_time() - *template_end_time)
+        );
+    } else {
+        m_sd_perf_metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
+    }
 
     return tokenized_input;
 }
@@ -108,6 +120,7 @@ void StatefulSpeculativePipelineBase::update_decoded_results_with_perf_metrics(D
 
     // Copy tokenization_durations from m_sd_perf_metrics (set by tokenize() or encode_timer)
     raw_counters.tokenization_durations = m_sd_perf_metrics.raw_metrics.tokenization_durations;
+    raw_counters.chat_template_durations = m_sd_perf_metrics.raw_metrics.chat_template_durations;
 
     // Copy detokenization_durations from m_sd_perf_metrics (set by detokenize())
     raw_counters.detokenization_durations = m_sd_perf_metrics.raw_metrics.detokenization_durations;
@@ -188,10 +201,16 @@ DecodedResults StatefulSpeculativePipelineBase::generate(const ChatHistory& hist
     constexpr bool add_generation_prompt = true;
     // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
     auto templated_chat_history = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+    auto template_end_time = std::chrono::steady_clock::now();
     auto tokenized_inputs = m_tokenizer.encode(templated_chat_history, ov::genai::add_special_tokens(false));
 
     encode_timer.end();
-    m_sd_perf_metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
+    m_sd_perf_metrics.raw_metrics.chat_template_durations.emplace_back(
+        PerfMetrics::get_microsec(template_end_time - encode_timer.get_start_time())
+    );
+    m_sd_perf_metrics.raw_metrics.tokenization_durations.emplace_back(
+        PerfMetrics::get_microsec(encode_timer.get_end_time() - template_end_time)
+    );
 
     // Generate tokens
     auto encoded_results = generate_tokens(tokenized_inputs, config, streamer);

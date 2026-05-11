@@ -16,7 +16,7 @@ class VisionEncoderQwen3VL : public VisionEncoderQwen2VL {
 public:
     using VisionEncoderQwen2VL::VisionEncoderQwen2VL;
 
-    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
+    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) override;
 };
 
 class InputsEmbedderQwen3VL : public InputsEmbedderQwen2VL {
@@ -45,6 +45,11 @@ public:
         const std::vector<size_t>& videos_sequence = {},
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
 
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata = {}
+    ) override;
+        
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const override;
 
     void start_chat(const std::string& system_message) override;
@@ -54,12 +59,18 @@ public:
 protected:
     // Vision embeddings position model
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_pos;
-    
+    // By default the vision_embeddings_pos model is patched to perform the weighted sum on the
+    // device (faster, deterministic on GPU). Setting the VISION_POS_EMBEDS=CPP environment
+    // variable disables the patch and falls back to a C++ weighted sum on the host.
+    bool m_use_patched_pos_model = true;
+
     // Cached extra inputs for language model
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs{
         {"deepstack_visual_embeds", ov::Tensor()},
         {"visual_pos_masks", ov::Tensor()}
     };
+
+    bool has_lm_extra_input(const std::string& input_name) const;
 
     void expand_video_tags_in_prompt(
         std::string& unified_prompt,
@@ -78,12 +89,13 @@ protected:
         const std::vector<size_t>& videos_sequence) override;
 
     /**
-     * @brief Computes interpolated position embeddings.
+     * @brief Computes interpolated position embeddings and adds them in-place.
      * 
      * Calculates position interpolation indices and weights, runs vision_embeddings_pos model,
-     * applies bilinear interpolation weights, sums corners, permutes for spatial merge.
+     * applies bilinear interpolation weights, sums corners, permutes for spatial merge,
+     * and adds the result directly into concatenated_embeds (fused permute + addition).
      */
-    ov::Tensor get_interpolated_pos_embeds(const std::vector<std::array<size_t, 3>>& grids_thw);
+    void add_interpolated_pos_embeds(const std::vector<std::array<size_t, 3>>& grids_thw, ov::Tensor& concatenated_embeds);
 
     std::vector<std::array<size_t, 3>> get_vision_grid_thw_for_position_ids(
         const std::vector<std::array<size_t, 3>>& images_grid_thw,
