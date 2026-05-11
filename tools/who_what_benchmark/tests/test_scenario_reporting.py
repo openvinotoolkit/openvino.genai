@@ -59,7 +59,7 @@ def sample_store(tmp_path: Path) -> ResultStore:
         TaskResult(
             task_id="chat_quality",
             target_id="llama_int4",
-            metrics={"similarity_mean": 0.912, "fdt_mean": 0.041, "sdt_mean": 0.087},
+            metrics={"similarity": 0.912, "fdt_mean": 0.041, "sdt_mean": 0.087},
             per_question=[
                 {"prompt": "q1", "similarity": 0.91},
                 {"prompt": "q2", "similarity": 0.92},
@@ -73,7 +73,7 @@ def sample_store(tmp_path: Path) -> ResultStore:
         TaskResult(
             task_id="chat_quality",
             target_id="llama_int8",
-            metrics={"similarity_mean": 0.957, "fdt_mean": 0.018, "sdt_mean": 0.039},
+            metrics={"similarity": 0.957, "fdt_mean": 0.018, "sdt_mean": 0.039},
             per_question=[{"prompt": "q1", "similarity": 0.96}],
             runtime_s=78.1,
             output_dir=tmp_path / "tasks" / "chat_quality" / "llama_int8",
@@ -135,7 +135,7 @@ def test_render_json_metrics_correct(sample_store: ResultStore, sample_scenario:
     first_task = payload["tasks"][0]
 
     int4_result = next(r for r in first_task["results"] if r["target_id"] == "llama_int4")
-    assert int4_result["metrics"]["similarity_mean"] == pytest.approx(0.912)
+    assert int4_result["metrics"]["similarity"] == pytest.approx(0.912)
 
 
 def test_render_json_scenario_info(sample_store: ResultStore, sample_scenario: Scenario) -> None:
@@ -249,7 +249,7 @@ def test_group_by_target_changes_table_order(sample_scenario, tmp_path) -> None:
         TaskResult(
             task_id="task1",
             target_id="z_model",
-            metrics={"similarity_mean": 0.8},
+            metrics={"similarity": 0.8},
             per_question=[],
             runtime_s=1.0,
             output_dir=tmp_path / "z",
@@ -260,7 +260,7 @@ def test_group_by_target_changes_table_order(sample_scenario, tmp_path) -> None:
         TaskResult(
             task_id="task1",
             target_id="a_model",
-            metrics={"similarity_mean": 0.9},
+            metrics={"similarity": 0.9},
             per_question=[],
             runtime_s=1.0,
             output_dir=tmp_path / "a",
@@ -296,7 +296,7 @@ def test_render_markdown_escapes_html_in_description(tmp_path: Path) -> None:
         TaskResult(
             task_id="chat_quality",
             target_id="llama_int4",
-            metrics={"similarity_mean": 0.9},
+            metrics={"similarity": 0.9},
             per_question=[{"prompt": "q1", "similarity": 0.9}],
             runtime_s=1.0,
             output_dir=tmp_path / "tasks" / "chat_quality" / "llama_int4",

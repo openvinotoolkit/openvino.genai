@@ -45,7 +45,13 @@ setup(
     packages=find_packages(),
     install_requires=required,
     entry_points={"console_scripts": ["wwb=whowhatbench.wwb:main"]},
-    package_data={"whowhatbench": ["prompts/*.yaml", "prompts/*.json"]},
+    package_data={
+        "whowhatbench": [
+            "prompts/*.yaml",
+            "prompts/*.json",
+            "scenario/reporting/templates/*.j2",
+        ],
+    },
     extras_require={
         "minicpm-o-2_6": [
             "torch==2.10.0",
