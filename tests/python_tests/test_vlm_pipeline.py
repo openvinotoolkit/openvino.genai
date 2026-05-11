@@ -2710,9 +2710,7 @@ def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeli
     return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_backend)
 
 
-def test_videochatflash_qwen_image_input(
-    ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor
-):
+def test_videochatflash_qwen_image_input(ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor):
     generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
     result = ov_videochatflash_qwen_pipe_raw.generate(PROMPTS[0], image=cat_tensor, generation_config=generation_config)
     assert len(result.texts) > 0
@@ -2763,7 +2761,9 @@ def test_videochatflash_qwen_chat_history_with_video(
     synthetic_video_32x32_tensor: openvino.Tensor,
 ):
     """ChatHistory with video input must produce the same result as start_chat with video."""
-    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False)
+    generation_config = _setup_generation_config(
+        ov_videochatflash_qwen_pipe_raw, max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False
+    )
     videos = [synthetic_video_32x32_tensor]
     prompt = "Describe this video."
     follow_up = "Go on."
@@ -2800,15 +2800,9 @@ def test_videochatflash_qwen_chat_history_with_video(
     answer2_start_chat = res2_sc.texts[0]
     ov_videochatflash_qwen_pipe_raw.finish_chat()
 
-    assert answer1 == answer1_sc, (
-        f"First turn mismatch!\n"
-        f"ChatHistory: {answer1}\n"
-        f"start_chat: {answer1_sc}"
-    )
+    assert answer1 == answer1_sc, f"First turn mismatch!\nChatHistory: {answer1}\nstart_chat: {answer1_sc}"
     assert answer2_chat_history == answer2_start_chat, (
-        f"Second turn mismatch!\n"
-        f"ChatHistory: {answer2_chat_history}\n"
-        f"start_chat: {answer2_start_chat}"
+        f"Second turn mismatch!\nChatHistory: {answer2_chat_history}\nstart_chat: {answer2_start_chat}"
     )
 
 
