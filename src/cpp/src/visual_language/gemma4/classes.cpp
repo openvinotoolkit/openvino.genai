@@ -312,7 +312,9 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::get_inputs_embeds_with_t
 }
 
 bool InputsEmbedderGemma4::has_token_type_ids() const {
-    return m_vlm_config.enable_moe_block;
+    // Optimum-intel exports `token_type_ids` as an LM input when
+    // `text_config.use_bidirectional_attention == "vision"` (see Gemma4OpenVINOConfig.with_behavior).
+    return m_vlm_config.use_bidirectional_attention == "vision";
 }
 
 ov::Tensor InputsEmbedderGemma4::get_token_type_ids(const ov::Tensor& input_ids) {
