@@ -183,6 +183,23 @@ Image preprocessing parameters loaded from `preprocessor_config.json`:
 | `scale_resolution` | `size_t` | MiniCPM scale target |
 | `max_slice_nums` | `size_t` | Max image tiles |
 
+### Preprocessing Utilities (clip.hpp / clip.cpp)
+
+Reusable C++ image preprocessing primitives. Use these from a `VisionEncoder` subclass before composing model-specific pipelines.
+
+| Utility | Purpose |
+|---------|---------|
+| `bicubic_resize()` / `bilinear_resize()` | Pillow-style image resizing |
+| `center_crop()` | Center crop to target dimensions |
+| `resize_and_pad_image()` | Resize with center padding |
+| `get_image_patches()` | Extract grid patches for multi-resolution |
+| `select_best_resolution()` | Pick optimal resolution from candidates |
+| `clip_image_preprocess()` | Normalize and convert to CHW |
+| `normalize_and_convert_to_chw()` | Double-precision normalization |
+| `qwen2_vl_utils::smart_resize()` | Dynamic resolution with min/max pixel bounds (Qwen2VL-style); lives outside `clip.*` |
+
+Note: GenAI's Pillow-style bicubic and bilinear resize implementations may differ from `transformers` at the pixel level by small amounts. Exact token-level match against `transformers` is not expected for image-text mode.
+
 ## Model Directory Structure
 
 Expected layout of an exported model directory:

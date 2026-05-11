@@ -43,6 +43,7 @@ def log_header(args: argparse.Namespace, bench_task: str, wwb_task: str, work_di
     logger.info("  device:      %s", args.device)
     logger.info("  bench_task:  %s", bench_task)
     logger.info("  wwb_type:    %s", wwb_task)
+    logger.info("  wwb_base:    %s", args.wwb_base)
     logger.info("  work_dir:    %s", work_dir)
     logger.info("  log_file:    %s", log_file)
     logger.info("Python: %s", sys.version)
@@ -209,6 +210,30 @@ class HFWWBGroundTruthTool(ToolWrapper):
         return tool_result
 
 
+class OptimumWWBGroundTruthTool(ToolWrapper):
+    def __init__(self, model_dir: Path, task: str, work_dir: Path, num_samples: int, device: str):
+        cmd = [
+            "wwb",
+            "--base-model",
+            str(model_dir),
+            "--gt-data",
+            str(work_dir / "gt.csv"),
+            "--model-type",
+            task,
+            "--device",
+            device,
+            "--num-samples",
+            str(num_samples),
+            # Optimum backend used by default (no --hf flag)
+        ]
+        super().__init__(name="wwb_optimum_ground_truth", commands_list=cmd, work_dir=work_dir)
+
+    def _post_run_hook(self, result: subprocess.CompletedProcess) -> ToolResult:
+        tool_result = super()._post_run_hook(result)
+        _log_csv_listing(self.logger_prefix, self.work_dir)
+        return tool_result
+
+
 def parse_wwb_metrics_value(stdout: list[str]) -> float | None:
     # example output, parse similarity
     # INFO:whowhatbench.wwb:Metrics for model: model-check/model_ir
@@ -338,12 +363,15 @@ def _setup_logging(log_file: Path) -> None:
 def _get_arguments() -> argparse.Namespace:
     def model_id_validator(model_id: str) -> str:
         MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
-        if not MODEL_ID_PATTERN.match(model_id):
-            raise argparse.ArgumentTypeError(
-                f"Invalid model_id format: {model_id}\n"
-                "Expected format: org-name/model-name (alphanumeric, hyphens, dots, underscores)"
-            )
-        return model_id
+        if MODEL_ID_PATTERN.match(model_id):
+            return model_id
+        # Accept a path to an existing directory with OpenVINO IR model
+        if Path(model_id).is_dir():
+            return model_id
+        raise argparse.ArgumentTypeError(
+            f"Invalid model_id format: {model_id}\n"
+            "Expected: HuggingFace model ID (org/model) or path to existing OpenVINO IR directory"
+        )
 
     class _HelpFormatter(argparse.RawDescriptionHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
         pass
@@ -365,6 +393,10 @@ def _get_arguments() -> argparse.Namespace:
             "      --model-id tencent/HY-MT1.5-1.8B \\\n"
             "      --task text-generation-with-past \\\n"
             "      --work-dir /tmp/genai-model-check\n\n"
+            "  # Use a pre-converted local model (export is skipped automatically):\n"
+            "  python check_model.py \\\n"
+            "      --model-id /path/to/model_ir \\\n"
+            "      --task text-generation-with-past\n\n"
             "  # Reuse existing IR, skip accuracy check:\n"
             "  python check_model.py \\\n"
             "      --model-id tencent/HY-MT1.5-1.8B \\\n"
@@ -377,7 +409,7 @@ def _get_arguments() -> argparse.Namespace:
         "--model-id",
         type=model_id_validator,
         required=True,
-        help="HuggingFace model identifier (e.g. tencent/HY-MT1.5-1.8B)",
+        help="HuggingFace model identifier (e.g. tencent/HY-MT1.5-1.8B) or path to existing OpenVINO IR directory",
     )
     parser.add_argument(
         "--task",
@@ -393,6 +425,17 @@ def _get_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--skip-llm-bench", action="store_true", help="Skip llm_bench inference test")
     parser.add_argument("--skip-wwb", action="store_true", help="Skip who-what-benchmark accuracy check")
+    parser.add_argument(
+        "--wwb-base",
+        choices=["hf", "optimum"],
+        default="optimum",
+        help=(
+            "Ground truth baseline for WWB accuracy check. "
+            "'optimum': use Optimum model as base, evaluate GenAI (default). "
+            "'hf': use HuggingFace PyTorch model as base, evaluate both Optimum and GenAI. "
+            "'hf' requires a HuggingFace model ID (not a local path)."
+        ),
+    )
     parser.add_argument("--num-samples", type=int, default=4, help="Number of WWB samples")
     return parser.parse_args()
 
@@ -403,8 +446,16 @@ def main():
     bench_task, wwb_task = TASK_MAPPING[args.task]
 
     work_dir = Path(args.work_dir)
-    model_dir = work_dir / "model_ir"
     work_dir.mkdir(parents=True, exist_ok=True)
+
+    # Detect local model path: auto-skip export and use it as model_dir
+    model_path = Path(args.model_id)
+    if model_path.is_dir():
+        model_dir = model_path.resolve()
+        args.skip_export = True
+        logger.info("Local model path detected: %s. Skipping export.", model_dir)
+    else:
+        model_dir = work_dir / "model_ir"
 
     log_file = work_dir / "check_model.log"
     _setup_logging(log_file)
@@ -432,18 +483,39 @@ def main():
         logger.info("Skipping wwb accuracy check")
     else:
         wwb_work_dir = work_dir / "wwb"
-        hf_gt_result = HFWWBGroundTruthTool(args.model_id, wwb_task, wwb_work_dir, args.num_samples, args.device).run()
-        hf_gt_result.raise_if_failed()
+        is_local_model = Path(args.model_id).is_dir()
 
-        optimum_result = OptimumWWBTargetEvaluationTool(
-            model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
-        ).run()
-        optimum_result.raise_if_failed()
+        if args.wwb_base == "hf":
+            if is_local_model:
+                raise RuntimeError(
+                    "--wwb-base=hf requires a HuggingFace model ID for ground truth generation, "
+                    "but --model-id is a local path. Use --wwb-base=optimum (default) for local models."
+                )
+            hf_gt_result = HFWWBGroundTruthTool(
+                args.model_id, wwb_task, wwb_work_dir, args.num_samples, args.device
+            ).run()
+            hf_gt_result.raise_if_failed()
 
-        genai_result = GenAIWWBTargetEvaluationTool(
-            model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
-        ).run()
-        genai_result.raise_if_failed()
+            optimum_result = OptimumWWBTargetEvaluationTool(
+                model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
+            ).run()
+            optimum_result.raise_if_failed()
+
+            genai_result = GenAIWWBTargetEvaluationTool(
+                model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
+            ).run()
+            genai_result.raise_if_failed()
+        else:
+            # wwb_base == "optimum": use Optimum model as ground truth, evaluate GenAI only
+            optimum_gt_result = OptimumWWBGroundTruthTool(
+                model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
+            ).run()
+            optimum_gt_result.raise_if_failed()
+
+            genai_result = GenAIWWBTargetEvaluationTool(
+                model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
+            ).run()
+            genai_result.raise_if_failed()
 
 
 if __name__ == "__main__":

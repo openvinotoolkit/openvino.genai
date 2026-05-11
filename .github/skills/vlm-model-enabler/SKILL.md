@@ -10,9 +10,8 @@ Enables a new VLM model in the GenAI VLM pipeline. Follows a strict 4-step workf
 
 ## Input
 
-Either:
-- HuggingFace `model_id` and `task` (e.g. `google/gemma-3n-E2B-it image-text-to-text`)
-- Path to an already exported OpenVINO IR model directory
+- HuggingFace `model_id` and `task` (e.g. `google/gemma-3n-E2B-it image-text-to-text`), or path to an already exported OpenVINO IR directory.
+- **Recommended prerequisite**: `.model_analysis/<model_type>_analysis.md` produced by the `model-analysis` agent. If absent, the caller (or the user, if running this skill standalone) should invoke `model-analysis` first to avoid duplicating upstream inspection here. This skill does not invoke other agents itself.
 
 ## Working Directory
 
@@ -27,69 +26,42 @@ All intermediate assets go in `.model_enabler/`. Create it if it does not exist.
 ## Reference
 
 - [genai-vlm-architecture.md](genai-vlm-architecture.md) — GenAI VLM pipeline interfaces and new-model checklist. Read the "Adding a New Model — Checklist" section before Step 2.
-- [model-analysis.md](model-analysis.md) — Supplementary code samples for model analysis (Step 1).
 - [model-inference-text-to-text.md](model-inference-text-to-text.md) — Supplementary test templates and debugging tips for text-only mode (Step 2).
 - [model-inference-image-text.md](model-inference-image-text.md) — Supplementary test templates, preprocessing utilities list, and debugging tips for image-text mode (Step 3).
 
 ---
 
-## Step 1 — Model Analysis
+## Step 1 — GenAI Enablement Design
 
-**Goal:** Understand the model architecture and produce an enablement design.
+**Goal:** Map the model into the GenAI VLM pipeline using the upstream analysis report.
 
-### 1.1 Export (skip if model_dir provided)
+### 1.1 Obtain the analysis report
 
-```bash
-optimum-cli export openvino --model <model_id> --task <task> .model_enabler/model_ir
-```
+Read `.model_analysis/<model_type>_analysis.md`.
 
-### 1.2 Inspect exported IR models
+If it does not exist, prefer asking the caller to invoke the `model-analysis` agent first (it is the canonical source for upstream facts). If that is not possible — e.g. running this skill standalone without the agent available — produce an equivalent report yourself by following the procedure in [`.github/agents/model-analysis.agent.md`](../../agents/model-analysis.agent.md) and write the result to the same path. Do not skip this artifact; later steps depend on it.
 
-Create and run `.model_enabler/inspect_ir.py` to print all inputs/outputs of every `openvino_*.xml`:
+### 1.2 Design the mapping
 
-```python
-from openvino import Core
-from pathlib import Path
-core = Core()
-for xml in sorted(Path("<model_dir>").glob("openvino_*.xml")):
-    m = core.read_model(xml)
-    print(f"\n=== {xml.name} ===")
-    for i in m.inputs:  print(f"  IN  {i.any_name}: {i.partial_shape} {i.element_type}")
-    for o in m.outputs: print(f"  OUT {o.any_name}: {o.partial_shape} {o.element_type}")
-```
+Using the report, decide:
 
-### 1.3 Analyze transformers source
-
-Locate `transformers/models/<model_type>/` and identify:
-- Forward pass signature for each sub-model
-- Image preprocessing (resize method, normalization constants, tiling)
-- Special tokens for image/video placeholders
-- Position ID generation
-
-### 1.4 Analyze optimum-intel inference
-
-Locate `optimum/intel/openvino/modeling_visual_language.py` and identify how the model class maps sub-models to inference requests.
-
-### 1.5 Determine closest GenAI model
-
-Compare with existing VLM implementations in `src/cpp/src/visual_language/`. Pick the closest one to use as reference.
+- **Closest GenAI model**: compare the report's sub-model layout, preprocessing, and special tokens against existing implementations in `src/cpp/src/visual_language/*/classes.hpp`. Pick the closest one as the reference.
+- **Required changes**: list files to create or modify (enum in `vlm_config.hpp`, new `<model_type>/classes.{hpp,cpp}`, factory registrations, etc.). Use [genai-vlm-architecture.md](genai-vlm-architecture.md) "Adding a New Model — Checklist" as the structure.
+- **Gaps**: anything in the report that existing GenAI infrastructure does not cover (custom position IDs, extra LM inputs, dynamic image tiling, etc.).
 
 ### Checkpoint
 
-Write `.model_enabler/<model_type>_analysis.md` with this structure:
+Append a `## GenAI Enablement Design` section to `.model_analysis/<model_type>_analysis.md`:
 
 ```
-## Model: <model_id> (<model_type>)
-## Exported IR Models
-<table of file, purpose, inputs, outputs>
-## Preprocessing: <resize method>, normalize mean=<>, std=<>
-## Special Tokens: image_token=<>, boi=<>, eoi=<>
-## Closest GenAI Model: <name> — because <reason>
-## Required Changes: <list of files to create/modify>
-## Gaps: <anything not covered by existing infrastructure>
+## GenAI Enablement Design
+- Closest GenAI model: <name> — because <reason>
+- Required changes:
+  - <file>: <what changes>
+- Gaps: <items needing new infrastructure>
 ```
 
-**Do not proceed to Step 2 until this file exists.**
+**Do not proceed to Step 2 until this section exists.**
 
 ---
 
@@ -117,13 +89,11 @@ Fix all compilation errors.
 
 ### 2.3 Verify
 
-Create and run `.model_enabler/test_text_only.py` — basic smoke test.
 Create and run `.model_enabler/test_text_only_compare.py` — compare GenAI vs optimum-intel with `do_sample=False` on 3 prompts.
 
 ### Checkpoint
 
 - [ ] Build succeeds
-- [ ] `.model_enabler/test_text_only.py` runs without errors
 - [ ] `.model_enabler/test_text_only_compare.py` shows exact match on all prompts
 
 **Do not proceed to Step 3 until text-only output matches optimum-intel exactly.**
@@ -148,49 +118,17 @@ Update `get_inputs_embeds()` to handle the non-empty images case: insert vision 
 ### 3.3 Build and verify
 
 Rebuild, then create and run:
-- `.model_enabler/test_image_text.py` — smoke test with a real image (use URL from openvino_notebooks)
 - `.model_enabler/test_image_text_compare.py` — compare GenAI vs optimum-intel on 3 image prompts
 
 ### Checkpoint
 
 - [ ] Build succeeds
-- [ ] `.model_enabler/test_image_text.py` produces coherent image description
 - [ ] `.model_enabler/test_image_text_compare.py` shows semantically similar outputs
-
----
-
-## Step 4 — Accuracy Verification
-
-**Goal:** Validate accuracy across multiple samples using who-what-benchmark.
-
-```bash
-pip install tools/who_what_benchmark
-
-# HF baseline
-wwb --base-model <model_id_or_dir> --gt-data .model_enabler/wwb/gt.csv \
-    --model-type visual-text --num-samples 20 --hf
-
-# Optimum-intel evaluation
-wwb --target-model <model_dir> --gt-data .model_enabler/wwb/gt.csv \
-    --model-type visual-text --num-samples 20 --output .model_enabler/wwb/optimum
-
-# GenAI evaluation
-wwb --target-model <model_dir> --gt-data .model_enabler/wwb/gt.csv \
-    --model-type visual-text --genai --num-samples 20 --output .model_enabler/wwb/genai
-```
-
-### Checkpoint
-
-- [ ] Optimum similarity ≥ 0.95 (if below, this is a model/export issue, not GenAI)
-- [ ] GenAI similarity ≥ optimum similarity (GenAI should not be worse than optimum)
-- [ ] `.model_enabler/wwb/` contains `gt.csv`, `optimum/metrics.csv`, `genai/metrics.csv`
 
 ---
 
 ## Final Deliverables
 
 Before declaring the model enabled:
-- [ ] `.model_enabler/<model_type>_analysis.md` exists
-- [ ] All 4 test scripts exist and pass in `.model_enabler/`
-- [ ] WWB results in `.model_enabler/wwb/`
-- [ ] `tools/who_what_benchmark/whowhatbench/model_loaders.py` updated if needed
+- [ ] `.model_analysis/<model_type>_analysis.md` exists with the `## GenAI Enablement Design` section
+- [ ] All test scripts exist and pass in `.model_enabler/`
