@@ -3,9 +3,6 @@
 
 #include "visual_language/gemma3n/classes.hpp"
 
-#include <iostream>
-
-#include "debug_utils.hpp"
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
 
@@ -60,8 +57,9 @@ InputsEmbedderGemma3n::InputsEmbedderGemma3n(const VLMConfig& vlm_config,
     auto model = core.read_model(per_layer_model_path);
     auto compiled_model = core.compile_model(model, device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings per layer model");
-    m_per_layer_embeddings_requests =
-        std::make_unique<CircularBufferQueue<ov::InferRequest>>(1, [&compiled_model]() -> ov::InferRequest {
+    m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
 }
@@ -84,8 +82,9 @@ InputsEmbedderGemma3n::InputsEmbedderGemma3n(const VLMConfig& vlm_config,
     }
     auto compiled_model = core.compile_model(model, device, device_config);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings per layer model");
-    m_per_layer_embeddings_requests =
-        std::make_unique<CircularBufferQueue<ov::InferRequest>>(1, [&compiled_model]() -> ov::InferRequest {
+    m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
 }
@@ -143,12 +142,6 @@ ov::Tensor InputsEmbedderGemma3n::get_inputs_embeds(const std::string& prompt,
     image_embeds.reserve(images_sequence.size());
     for (size_t new_image_id : images_sequence) {
         image_embeds.push_back(images.at(new_image_id).resized_source);
-    }
-
-    // Store per-image token counts for use by apply_chat_template_tokenize.
-    m_pending_image_token_counts.clear();
-    for (size_t i = 0; i < images_sequence.size(); ++i) {
-        m_pending_image_token_counts.push_back(images.at(images_sequence[i]).resized_source.get_shape().at(1));
     }
 
     ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
