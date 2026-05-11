@@ -41,6 +41,10 @@ int main(int argc, char* argv[]) try {
     pipeline_properties.insert({ov::genai::adapters(adapter_config)});
 
     const std::string attention_backend = has_attention_backend ? argv[argc - 1] : "SDPA";
+    OPENVINO_ASSERT(attention_backend == "PA" || attention_backend == "SDPA",
+                     "Usage: ", argv[0],
+                     " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...] [ATTENTION_BACKEND]\n",
+                     "ATTENTION_BACKEND must be either \"PA\" or \"SDPA\", got: ", attention_backend);
     pipeline_properties.insert({"ATTENTION_BACKEND", attention_backend});
 
     ov::genai::VLMPipeline pipe(argv[1], device, pipeline_properties);
