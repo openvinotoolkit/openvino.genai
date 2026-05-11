@@ -93,6 +93,8 @@ updates:
       # huggingface-hub is installed for who_what_benchmark only if "llm-test-openvino" extras option is specified
       # newest version of huggingface-hub cause conflict with transformers 4.57.6, which is also defined for this extras
       - dependency-name: "huggingface-hub"
+      # update transformers version is dependent on optimum-intel for now and required more precise changes in repo
+      - dependency-name: "transformers"
     groups:
       pip-dependencies:
         patterns:
