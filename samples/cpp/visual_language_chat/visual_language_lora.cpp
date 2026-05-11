@@ -17,12 +17,9 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
 }
 int main(int argc, char* argv[]) try {
     // At least one LoRA adapter must be provided.
-    // The last argument may optionally be ATTENTION_BACKEND ("SDPA" or "PA").
-    bool has_attention_backend = (argc >= 7) && ((argc - 4) % 2 != 0);
-    int lora_argc = has_attention_backend ? argc - 1 : argc;
-    OPENVINO_ASSERT(lora_argc >= 6 && ((lora_argc - 4) % 2) == 0,
+    OPENVINO_ASSERT(argc >= 6 && ((argc - 4) % 2) == 0,
                    "Usage: ", argv[0],
-                   " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...] [ATTENTION_BACKEND]");
+                   " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...]");
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
 
@@ -33,19 +30,12 @@ int main(int argc, char* argv[]) try {
 
     // LoRA args parsed as pairs: <LORA_SAFETENSORS> <ALPHA>
     ov::genai::AdapterConfig adapter_config;
-    for (int idx = 4; idx + 1 < lora_argc; idx += 2) {
+    for (int idx = 4; idx + 1 < argc; idx += 2) {
         ov::genai::Adapter adapter(argv[idx]);
         float alpha = std::stof(argv[idx + 1]);
         adapter_config.add(adapter, alpha);
     }
     pipeline_properties.insert({ov::genai::adapters(adapter_config)});
-
-    const std::string attention_backend = has_attention_backend ? argv[argc - 1] : "SDPA";
-    OPENVINO_ASSERT(attention_backend == "PA" || attention_backend == "SDPA",
-                     "Usage: ", argv[0],
-                     " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT> <LORA_SAFETENSORS> <ALPHA> [<LORA_SAFETENSORS> <ALPHA> ...] [ATTENTION_BACKEND]\n",
-                     "ATTENTION_BACKEND must be either \"PA\" or \"SDPA\", got: ", attention_backend);
-    pipeline_properties.insert({"ATTENTION_BACKEND", attention_backend});
 
     ov::genai::VLMPipeline pipe(argv[1], device, pipeline_properties);
 

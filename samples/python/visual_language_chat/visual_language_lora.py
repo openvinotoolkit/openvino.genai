@@ -80,12 +80,6 @@ def main() -> int:
         metavar="LORA_ALPHA",
         help="Pairs: <LORA_SAFETENSORS> <ALPHA> ...",
     )
-    p.add_argument(
-        "--attention_backend",
-        default="SDPA",
-        choices=["SDPA", "PA"],
-        help="Attention backend to use (default: SDPA)",
-    )
 
     args = p.parse_args()
     prompt = args.prompt
@@ -95,7 +89,7 @@ def main() -> int:
 
     device = "CPU"  # GPU can be used as well
 
-    pipe_kwargs = {"ATTENTION_BACKEND": args.attention_backend}
+    pipe_kwargs = {}
 
     # Configure LoRA adapters with weights (alphas)
     if loras:
