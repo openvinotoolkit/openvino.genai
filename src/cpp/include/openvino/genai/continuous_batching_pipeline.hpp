@@ -69,10 +69,54 @@ struct PipelineMetrics {
     size_t cache_size_in_bytes = 0;
 
     /**
-     * Backward-compatible alias for cache_size_in_bytes.
+     * @deprecated Use cache_size_in_bytes instead. Kept for backward compatibility.
+     * Reference alias that always points to cache_size_in_bytes.
      */
-    size_t kv_cache_size_in_bytes() const {
-        return cache_size_in_bytes;
+    size_t& kv_cache_size_in_bytes{cache_size_in_bytes};
+
+    PipelineMetrics() = default;
+    ~PipelineMetrics() = default;
+
+    PipelineMetrics(const PipelineMetrics& other)
+        : requests{other.requests},
+          scheduled_requests{other.scheduled_requests},
+          cache_usage{other.cache_usage},
+          max_cache_usage{other.max_cache_usage},
+          avg_cache_usage{other.avg_cache_usage},
+          inference_duration{other.inference_duration},
+          cache_size_in_bytes{other.cache_size_in_bytes},
+          kv_cache_size_in_bytes{cache_size_in_bytes} {}
+
+    PipelineMetrics& operator=(const PipelineMetrics& other) {
+        requests = other.requests;
+        scheduled_requests = other.scheduled_requests;
+        cache_usage = other.cache_usage;
+        max_cache_usage = other.max_cache_usage;
+        avg_cache_usage = other.avg_cache_usage;
+        inference_duration = other.inference_duration;
+        cache_size_in_bytes = other.cache_size_in_bytes;
+        return *this;
+    }
+
+    PipelineMetrics(PipelineMetrics&& other) noexcept
+        : requests{std::move(other.requests)},
+          scheduled_requests{std::move(other.scheduled_requests)},
+          cache_usage{std::move(other.cache_usage)},
+          max_cache_usage{std::move(other.max_cache_usage)},
+          avg_cache_usage{std::move(other.avg_cache_usage)},
+          inference_duration{std::move(other.inference_duration)},
+          cache_size_in_bytes{std::move(other.cache_size_in_bytes)},
+          kv_cache_size_in_bytes{cache_size_in_bytes} {}
+
+    PipelineMetrics& operator=(PipelineMetrics&& other) noexcept {
+        requests = std::move(other.requests);
+        scheduled_requests = std::move(other.scheduled_requests);
+        cache_usage = std::move(other.cache_usage);
+        max_cache_usage = std::move(other.max_cache_usage);
+        avg_cache_usage = std::move(other.avg_cache_usage);
+        inference_duration = std::move(other.inference_duration);
+        cache_size_in_bytes = std::move(other.cache_size_in_bytes);
+        return *this;
     }
 };
 

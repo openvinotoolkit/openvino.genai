@@ -29,7 +29,7 @@ using namespace ov::genai;
 namespace {
 void log_paged_attention_fallback(const ov::Exception& exception) {
     GENAI_WARN("Paged Attention backend initialization failed. Falling back to SDPA backend. "
-                "Use explicit backend=\"SDPA\" to skip Paged Attention initialization.");
+                "Set ATTENTION_BACKEND=\"SDPA\" to skip Paged Attention initialization.");
     GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
 }
 
