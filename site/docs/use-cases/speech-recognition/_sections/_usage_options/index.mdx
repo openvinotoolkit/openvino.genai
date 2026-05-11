@@ -146,7 +146,7 @@ Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master
 
 ### Transcription
 
-Whisper models can automatically detect the language of the input audio, or you can specify the language to improve accuracy:
+Whisper models can automatically detect the language of the input audio, or you can specify the language to improve accuracy. The detected (or specified) language is always available in the result via the `language` field:
 
 <LanguageTabs>
     <TabItemPython>
@@ -156,13 +156,16 @@ Whisper models can automatically detect the language of the input audio, or you 
         # Automatic language detection
         raw_speech = read_wav("speech_sample.wav")
         result = pipe.generate(raw_speech)
+        print(result.language)  # e.g. "en", "fr", "de"
 
         # Explicitly specify language (English)
         result = pipe.generate(raw_speech, language="<|en|>")
+        print(result.language)  # "en"
 
         # French speech sample
         raw_speech = read_wav("french_sample.wav")
         result = pipe.generate(raw_speech, language="<|fr|>")
+        print(result.language)  # "fr"
         ```
     </TabItemPython>
     <TabItemCpp>
@@ -172,13 +175,16 @@ Whisper models can automatically detect the language of the input audio, or you 
 
             // Automatic language detection
             auto result = pipe.generate(raw_speech);
+            std::cout << result.language << "\n";  // e.g. "en", "fr", "de"
 
             // Explicitly specify language (English)
             result = pipe.generate(raw_speech, ov::genai::language("<|en|>"));
+            std::cout << result.language << "\n";  // "en"
 
             // French speech sample
             raw_speech = utils::audio::read_wav("french_sample.wav");
             result = pipe.generate(raw_speech, ov::genai::language("<|fr|>"));
+            std::cout << result.language << "\n";  // "fr"
         }
         ```
     </TabItemCpp>

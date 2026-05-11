@@ -349,7 +349,9 @@ public:
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
 
+            const auto template_start = std::chrono::steady_clock::now();
             unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
+            raw_counters.chat_template_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start));
 
             if (m_use_full_chat_history) {
                 m_history_vision_count.emplace_back(std::make_pair(video_sequence.size(), image_sequence.size()));
@@ -460,6 +462,7 @@ public:
         res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
         res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
         res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
+        res_raw_counters.chat_template_durations.insert(res_raw_counters.chat_template_durations.end(), raw_counters.chat_template_durations.begin(), raw_counters.chat_template_durations.end());
 
         // VLM specific perf metrics
         decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.insert(
@@ -531,10 +534,12 @@ public:
             m_inputs_embedder->start_chat("");
         }
 
+        const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(
             processed_chat_data.normalized_history,
             true
         );
+        raw_counters.chat_template_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start));
 
         ov::genai::utils::GenerationFinishInfo generation_finish_info;
 
@@ -601,6 +606,7 @@ public:
         res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
         res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
         res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
+        res_raw_counters.chat_template_durations.insert(res_raw_counters.chat_template_durations.end(), raw_counters.chat_template_durations.begin(), raw_counters.chat_template_durations.end());
 
         // VLM specific perf metrics
         decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.insert(

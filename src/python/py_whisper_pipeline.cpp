@@ -61,10 +61,11 @@ auto whisper_decoded_results_docstring = R"(
     Structure to store resulting text outputs and scores.
 
     Parameters:
-    texts:      vector of resulting sequences.
-    scores:     scores for each sequence.
-    metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
-    shunks:     optional chunks of resulting sequences with timestamps
+    texts:              vector of resulting sequences.
+    scores:             scores for each sequence.
+    language:           detected language for the input audio, e.g. "en".
+    perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::WhisperPerfMetrics.
+    chunks:             optional chunks of resulting sequences with timestamps
 )";
 
 auto whisper_decoded_result_chunk = R"(
@@ -329,6 +330,7 @@ void init_whisper_pipeline(py::module_& m) {
                                    return pyutils::handle_utf8((std::vector<std::string>)dr);
                                })
         .def_readonly("scores", &WhisperDecodedResults::scores)
+        .def_readonly("language", &WhisperDecodedResults::language)
         .def_readonly("chunks", &WhisperDecodedResults::chunks)
         .def_readonly("words", &WhisperDecodedResults::words)
         .def_readonly("perf_metrics", &WhisperDecodedResults::perf_metrics)
