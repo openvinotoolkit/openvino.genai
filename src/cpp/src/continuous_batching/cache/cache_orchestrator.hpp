@@ -128,6 +128,10 @@ public:
         for (auto& [type, block_mgr] : m_block_managers) {
             m_cache_managers.at(type)->allocate_cache_if_needed(block_mgr->get_total_number_of_kv_blocks());
         }
+        for (auto& [type, block_indices] : m_pending_zero_blocks) {
+            m_cache_managers.at(type)->zero_blocks(block_indices);
+        }
+        m_pending_zero_blocks.clear();
     }
 
     void copy_blocks(const std::map<CacheType, std::map<size_t, std::list<size_t>>>& per_type_copy_map) {
@@ -183,6 +187,7 @@ public:
     void allocate_tokens(Sequence::Ptr sequence, SequenceGroup::CPtr seq_group, size_t num_tokens, size_t prompt_size = 0) {
         for (auto& [type, block_mgr] : m_block_managers) {
             block_mgr->allocate_tokens(sequence, seq_group, num_tokens, prompt_size);
+            queue_linear_attention_initial_state_zero(type, *block_mgr, seq_group);
         }
     }
 
@@ -203,6 +208,7 @@ public:
         std::map<CacheType, std::map<size_t, std::list<size_t>>> per_type;
         for (auto& [type, block_mgr] : m_block_managers) {
             auto copy_map = block_mgr->append_slots(seq_group);
+            queue_linear_attention_initial_state_zero(type, *block_mgr, seq_group);
             if (!copy_map.empty()) {
                 per_type[type] = std::move(copy_map);
             }
@@ -856,6 +862,27 @@ private:
     std::map<size_t, CacheType> m_layer_to_cache_type;
     std::map<CacheType, size_t> m_type_layer_start;  ///< first global layer ID for each registered cache type
     std::map<CacheType, bool> m_per_layer_control;   ///< per-type flag: layers managed individually or as one
+    std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
+
+    void queue_linear_attention_initial_state_zero(CacheType type,
+                                                   BlockManager& block_mgr,
+                                                   SequenceGroup::CPtr seq_group) {
+        if (type != CacheType::LINEAR_ATTENTION_CACHE || seq_group->get_num_processed_tokens() != 0) {
+            return;
+        }
+
+        auto& pending_blocks = m_pending_zero_blocks[type];
+        for (const auto& sequence : seq_group->get_running_sequences()) {
+            if (!block_mgr.has_block_table(sequence->get_id())) {
+                continue;
+            }
+            const auto& block_tables = block_mgr.get_block_tables(sequence->get_id());
+            if (block_tables.empty() || block_tables[0].empty()) {
+                continue;
+            }
+            pending_blocks.insert(block_tables[0].front()->get_index());
+        }
+    }
 };
 
 }  // namespace ov::genai

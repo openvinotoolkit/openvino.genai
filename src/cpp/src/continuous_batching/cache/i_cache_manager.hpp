@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <list>
 #include <map>
+#include <set>
 #include <string>
 
 namespace ov::genai {
@@ -33,6 +34,13 @@ public:
      * @param block_copy_map Map of source block index -> list of destination block indices.
      */
     virtual void copy_blocks(const std::map<size_t, std::list<size_t>>& block_copy_map) = 0;
+
+    /**
+     * @brief Zero physical cache blocks before their first use by a new sequence.
+     * Cache types that do not read recycled blocks as initial state can keep the default no-op.
+     * @param block_indices Physical block indices to zero.
+     */
+    virtual void zero_blocks(const std::set<size_t>& block_indices) {}
 
     /**
      * @brief Clear all cache storage, resetting to an empty state.

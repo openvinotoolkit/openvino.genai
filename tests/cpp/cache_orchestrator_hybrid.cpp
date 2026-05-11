@@ -3,6 +3,7 @@
 //
 
 #include <gtest/gtest.h>
+#include <cstring>
 #include <numeric>
 #include <limits>
 
@@ -12,6 +13,7 @@
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
+#include "continuous_batching/scheduler.hpp"
 #include "sequence_group.hpp"
 #include "utils.hpp"
 #include "helper.hpp"
@@ -179,6 +181,77 @@ TEST(TestLinearAttentionCacheManager, ConstructorAcceptsLargeStateTableSuffixes)
     EXPECT_EQ(manager.get_num_cache_tensors(), 2);
     EXPECT_EQ(request.get_tensor("conv_state_table.878332661264156340").get_shape(), (ov::Shape{3, 256, 128}));
     EXPECT_EQ(request.get_tensor("conv_state_table.0").get_shape(), (ov::Shape{3, 256, 128}));
+}
+
+TEST(TestLinearAttentionCacheManager, ZeroBlocksClearsOnlyRequestedPhysicalBlocks) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(create_state_table_model(core, {"conv_state_table.0"}))
+                                      .create_infer_request();
+
+    LinearAttentionCacheManager manager(request);
+    manager.allocate_cache_if_needed(2);
+
+    ov::Tensor tensor = request.get_tensor("conv_state_table.0");
+    std::memset(tensor.data(), 0x7f, tensor.get_byte_size());
+
+    manager.zero_blocks({1});
+
+    const size_t block_size_in_bytes = tensor.get_byte_size() / tensor.get_shape()[0];
+    const uint8_t* data = static_cast<const uint8_t*>(tensor.data());
+    EXPECT_TRUE(std::all_of(data, data + block_size_in_bytes, [](uint8_t value) { return value == 0x7f; }));
+    EXPECT_TRUE(std::all_of(data + block_size_in_bytes,
+                            data + 2 * block_size_in_bytes,
+                            [](uint8_t value) { return value == 0; }));
+}
+
+TEST(TestCacheOrchestratorHybrid, AppendSlotsZerosReusedLinearAttentionBlockForNewSequence) {
+    ov::Core core;
+    ov::InferRequest request = core.compile_model(create_hybrid_model(core, TEST_NUM_DECODER_LAYERS))
+                                      .create_infer_request();
+
+    auto kv_manager = std::make_unique<KVCacheManager>(request);
+    auto kv_block_manager = std::make_unique<BlockManager>(4, false, TEST_BLOCK_SIZE, 1);
+    auto la_manager = std::make_unique<LinearAttentionCacheManager>(request);
+    auto la_block_manager = std::make_unique<BlockManager>(1, false, 1, 1, 1);
+
+    auto orchestrator = std::make_shared<CacheOrchestrator>();
+    orchestrator->register_cache_type(CacheType::KV_CACHE, std::move(kv_manager), std::move(kv_block_manager));
+    orchestrator->register_cache_type(CacheType::LINEAR_ATTENTION_CACHE,
+                                      std::move(la_manager),
+                                      std::move(la_block_manager));
+
+    SchedulerConfig config;
+    config.max_num_batched_tokens = 16;
+    config.dynamic_split_fuse = false;
+    config.max_num_seqs = 1;
+    Scheduler scheduler(orchestrator, config);
+
+    std::vector<int64_t> first_tokens = {1, 2, 3, 4};
+    auto first_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {first_tokens.size()}, first_tokens.data()),
+        utils::get_greedy_config());
+    const auto first_seq_id = first_group->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> first_requests = {first_group};
+    std::ignore = scheduler.schedule(first_requests);
+
+    ov::Tensor tensor = request.get_tensor("conv_state_table.0");
+    std::memset(tensor.data(), 0x7f, tensor.get_byte_size());
+    scheduler.free_sequence(first_seq_id);
+
+    std::vector<int64_t> second_tokens = {5, 6, 7, 8};
+    auto second_group = std::make_shared<SequenceGroup>(
+        1,
+        ov::Tensor(ov::element::i64, {second_tokens.size()}, second_tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> second_requests = {second_group};
+    std::ignore = scheduler.schedule(second_requests);
+
+    const uint8_t* data = static_cast<const uint8_t*>(tensor.data());
+    EXPECT_TRUE(std::all_of(data, data + tensor.get_byte_size(), [](uint8_t value) { return value == 0; }));
+
+    const auto second_seq_id = second_group->get_running_sequences()[0]->get_id();
+    scheduler.free_sequence(second_seq_id);
 }
 
 TEST(TestCacheOrchestratorHybrid, SharedLinearAttentionRegistersSingleBlockTableLayer) {

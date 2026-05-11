@@ -27,7 +27,7 @@ namespace ov::genai {
  *        (CausalConv1D, GatedDeltaNet, and similar ops).
  *
  * Discovers all model inputs matching the "<prefix>_state_table.N" naming
- * convention and manages their allocation, zero-initialization, and block
+ * convention and manages their allocation, explicit block zeroing, and block
  * copies uniformly.  Each state table prefix (e.g. "conv_state_table",
  * "gated_delta_state_table") forms a separate tensor group, but they all
  * share one logical block pool.
@@ -211,19 +211,10 @@ public:
 
                 if (m_context) {
                     ov::Tensor new_tensor = m_context.create_tensor(info.precision, shape);
-                    const size_t rank = shape.size();
-                    ov::Coordinate full_start(rank, 0);
 
-                    // Zero-initialize all blocks via a CPU staging tensor.
-                    // Unlike KV cache, linear attention state is read unconditionally on every
-                    // step, so new blocks must contain zeros before first use.
-                    ov::Tensor zeros(info.precision, shape);
-                    std::memset(zeros.data(), 0, zeros.get_byte_size());
-                    ov::RemoteTensor dst_full(new_tensor, full_start, shape);
-                    dst_full.copy_from(zeros);
-
-                    // Preserve existing (old) blocks by overwriting their range.
                     if (info.tensor) {
+                        const size_t rank = shape.size();
+                        ov::Coordinate full_start(rank, 0);
                         const ov::Shape& old_shape = info.tensor.get_shape();
                         ov::RemoteTensor dst_old(new_tensor, full_start, old_shape);
                         dst_old.copy_from(info.tensor);
@@ -233,13 +224,9 @@ public:
                 } else {
                     ov::Tensor new_tensor(info.precision, shape);
 
-                    // Preserve existing data first, then zero only the newly added blocks.
-                    const size_t old_bytes = info.tensor ? info.tensor.get_byte_size() : 0;
                     if (info.tensor) {
-                        std::memcpy(new_tensor.data(), info.tensor.data(), old_bytes);
+                        std::memcpy(new_tensor.data(), info.tensor.data(), info.tensor.get_byte_size());
                     }
-                    std::memset(static_cast<uint8_t*>(new_tensor.data()) + old_bytes, 0,
-                                new_tensor.get_byte_size() - old_bytes);
 
                     info.tensor = new_tensor;
                 }
@@ -270,6 +257,38 @@ public:
                         ov::Tensor dst_roi(info.tensor, dst_start, dst_end);
                         src_roi.copy_to(dst_roi);
                     }
+                }
+            }
+        }
+    }
+
+    void zero_blocks(const std::set<size_t>& block_indices) override {
+        if (block_indices.empty()) {
+            return;
+        }
+
+        for (const auto& group : m_groups) {
+            for (size_t layer_idx : group.sorted_indices) {
+                const auto& info = group.layers.at(layer_idx);
+                OPENVINO_ASSERT(info.tensor, "Linear attention state tensor is not allocated");
+                const ov::Shape& shape = info.tensor.get_shape();
+                const size_t rank = shape.size();
+                ov::Shape block_shape = shape;
+                block_shape[0] = 1;
+
+                ov::Tensor zero_block(info.precision, block_shape);
+                std::memset(zero_block.data(), 0, zero_block.get_byte_size());
+
+                for (size_t block_index : block_indices) {
+                    OPENVINO_ASSERT(block_index < shape[0],
+                                    "Linear attention block index ", block_index,
+                                    " is out of allocated range ", shape[0]);
+                    ov::Coordinate dst_start(rank, 0), dst_end = shape;
+                    dst_start[0] = block_index;
+                    dst_end[0] = block_index + 1;
+
+                    ov::Tensor dst_roi(info.tensor, dst_start, dst_end);
+                    zero_block.copy_to(dst_roi);
                 }
             }
         }
