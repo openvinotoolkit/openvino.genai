@@ -277,3 +277,35 @@ def test_group_by_target_changes_table_order(sample_scenario, tmp_path) -> None:
     assert a_pos < z_pos, (
         f"Expected a_model (pos {a_pos}) before z_model (pos {z_pos}) with group_by=target, but order was reversed"
     )
+
+
+def test_render_markdown_escapes_html_in_description(tmp_path: Path) -> None:
+    """Scenario.description must be escaped before being written to report.md.
+
+    A scenario author (or someone interpolating values via ``${env.*}``) should
+    not be able to inject raw HTML/script tags into the rendered Markdown.
+    Reports are commonly rendered by web tooling (GitHub, GitLab, dashboards),
+    so unescaped ``<script>`` and ``&`` are a stored-XSS vector.
+    """
+    scenario_data = copy.deepcopy(_BASE_SCENARIO)
+    scenario_data["description"] = "<script>alert(1)</script> & foo"
+    scenario = Scenario.model_validate(scenario_data)
+
+    store = ResultStore()
+    store.add(
+        TaskResult(
+            task_id="chat_quality",
+            target_id="llama_int4",
+            metrics={"similarity_mean": 0.9},
+            per_question=[{"prompt": "q1", "similarity": 0.9}],
+            runtime_s=1.0,
+            output_dir=tmp_path / "tasks" / "chat_quality" / "llama_int4",
+            gt_cache_hit=False,
+        )
+    )
+
+    md = render_markdown(store, scenario)
+
+    assert "<script>" not in md, "Raw <script> tag must be escaped in rendered markdown"
+    assert "</script>" not in md, "Raw </script> tag must be escaped in rendered markdown"
+    assert "&amp;" in md or "&#38;" in md, "Ampersand in description must be HTML-escaped"

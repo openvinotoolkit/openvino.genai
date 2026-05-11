@@ -32,10 +32,9 @@ class GTCache:
             base_model.path,
             base_model.backend.value,
             base_model.tokenizer or "",
-            task.type,
             _dataset_repr(dataset),
             str(task.num_samples or ""),
-            str(task.seed if task.seed is not None else scenario.defaults.seed),
+            str(task.generation.seed),
             str(task.generation.max_new_tokens),
             str(task.generation.long_prompt),
             dataset.language,
@@ -45,7 +44,18 @@ class GTCache:
 
     def get(self, key: str) -> Optional[Path]:
         p = self._dir / f"{key}.csv"
-        return p if p.exists() else None
+        # Reject partial writes: a CSV without a sibling meta.json was never
+        # fully committed (e.g. the process was killed during dump_gt).
+        if not p.exists() or not self.meta_path(key).exists():
+            return None
+        return p
+
+    def allocate_path(self, key: str) -> Path:
+        """Return the path where a GT CSV should be written for this key.
+
+        Callers write to this path, then call put() to register it in the cache.
+        """
+        return self._dir / f"{key}.csv"
 
     def put(self, key: str, gt_path: Path) -> None:
         dest = self._dir / f"{key}.csv"

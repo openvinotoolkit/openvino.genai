@@ -39,6 +39,32 @@ except ImportError as _e:
     Text2VideoEvaluator = None  # type: ignore[assignment,misc]
     SpeechGenerationEvaluator = None  # type: ignore[assignment,misc]
 
+    # Register stub evaluators so callers get a helpful ImportError instead of
+    # a KeyError on the registry lookup or a TypeError("'NoneType' is not callable")
+    # at instantiation time.
+    def _make_genai_stub(_task_type: str, _exc: ImportError) -> type:
+        class _GenAIStub:
+            def __init__(self, *_args, **_kwargs) -> None:
+                raise ImportError(
+                    f"Task type {_task_type!r} requires openvino_genai. "
+                    f"Install with: pip install openvino-genai. Original error: {_exc}"
+                ) from _exc
+
+        _GenAIStub.__name__ = f"_Stub_{_task_type.replace('-', '_')}"
+        return _GenAIStub
+
+    for _task in (
+        "text-to-image",
+        "text-to-video",
+        "image-to-image",
+        "image-inpainting",
+        "speech-generation",
+    ):
+        # Guard against partial-import races: if a module managed to register
+        # before failing on a deeper openvino_genai dependency, leave it alone.
+        if _task not in EVALUATOR_REGISTRY:
+            register_evaluator(_task)(_make_genai_stub(_task, _e))
+
 
 __all__ = [
     "Evaluator",

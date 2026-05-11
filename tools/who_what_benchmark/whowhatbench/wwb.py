@@ -1306,9 +1306,7 @@ def _run_legacy():
 
 
 def _run_scenario_cmd(argv: list[str]) -> None:
-    import argparse as _ap
-
-    p = _ap.ArgumentParser(prog="wwb run", description="Run a WWB scenario YAML file.")
+    p = argparse.ArgumentParser(prog="wwb run", description="Run a WWB scenario YAML file.")
     p.add_argument("scenario", help="Path to scenario YAML file.")
     p.add_argument("--output", default=None, help="Override the scenario's output_dir.")
     p.add_argument(
@@ -1325,22 +1323,30 @@ def _run_scenario_cmd(argv: list[str]) -> None:
     p.add_argument("--quiet", action="store_true", help="Suppress verbose output.")
     args = p.parse_args(argv)
 
-    from whowhatbench.scenario import load_scenario
-    from whowhatbench.scenario.runner import ScenarioRunner
-    from whowhatbench.scenario.reporting import write_reports
-    import datetime
-    from pathlib import Path
+    import datetime  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    from whowhatbench.scenario import load_scenario  # noqa: PLC0415
+    from whowhatbench.scenario.reporting import write_reports  # noqa: PLC0415
+    from whowhatbench.scenario.runner import ScenarioRunner  # noqa: PLC0415
 
     scenario = load_scenario(args.scenario)
 
     # Resolve output directory
     output_dir_str = args.output or scenario.defaults.output_dir
-    ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
     output_dir_str = output_dir_str.replace("${scenario.name}", scenario.name)
     output_dir_str = output_dir_str.replace("${timestamp}", ts)
     output_dir = Path(output_dir_str)
 
     only_ids = [t.strip() for t in args.only.split(",")] if args.only else None
+
+    if only_ids is not None:
+        known = {t.id for t in scenario.tasks}
+        unknown = sorted(set(only_ids) - known)
+        if unknown:
+            logger.error("Unknown task IDs: %s. Available: %s", unknown, sorted(known))
+            raise SystemExit(1)
 
     if args.dry_run:
         print(f"Scenario: {scenario.name}")

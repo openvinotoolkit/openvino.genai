@@ -80,17 +80,14 @@ def build_args_namespace(
     draft_cb_config = _to_json(draft.cb_config) if draft else None
 
     # LoRA adapters — use target model's adapters
-    adapters = target_model_cfg.adapters if target_model_cfg.adapters else None
-    alphas = target_model_cfg.alphas if target_model_cfg.alphas else None
+    adapters = target_model_cfg.adapters or None
+    alphas = target_model_cfg.alphas or None
 
     # Language: from dataset (builtin) or default "en"
     language = dataset_cfg.language if dataset_cfg.type == DatasetTypeEnum.builtin else "en"
 
     # data_encoder: task-level or scenario default
     data_encoder = task.data_encoder or scenario.defaults.data_encoder
-
-    # effective seed: task.seed (already merged from defaults by loader)
-    seed = task.seed if task.seed is not None else scenario.defaults.seed
 
     return argparse.Namespace(
         # Models
@@ -110,7 +107,7 @@ def build_args_namespace(
         # Inference settings
         device=target_model_cfg.device,
         num_samples=task.num_samples,
-        seed=seed,
+        seed=task.generation.seed,
         verbose=False,  # controlled by runner, never by scenario
         language=language,
         data_encoder=data_encoder,

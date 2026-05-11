@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import html
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -35,7 +36,9 @@ def render_markdown(store: ResultStore, scenario: Scenario) -> str:
     lines.append(f"# WWB Scenario Report — {scenario.name}")
     lines.append("")
     if scenario.description:
-        lines.append(f"> {scenario.description}")
+        escaped = html.escape(scenario.description)
+        for desc_line in escaped.splitlines():
+            lines.append(f"> {desc_line}")
         lines.append("")
 
     lines.append("## Summary")

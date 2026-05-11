@@ -11,10 +11,13 @@ The assertions encode the contract from the plan.
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
+import re
 from pathlib import Path
 from typing import Any
 
+from whowhatbench.scenario import args_builder as args_builder_module
 from whowhatbench.scenario.args_builder import build_args_namespace
 from whowhatbench.scenario.schema import Scenario
 
@@ -339,7 +342,7 @@ def test_speech_params_propagated(tmp_path: Path) -> None:
         tasks=[
             {
                 "id": "t1",
-                "type": "speech",
+                "type": "speech-generation",
                 "base": "base",
                 "targets": ["target_genai"],
                 "dataset": "ds_builtin",
@@ -562,3 +565,52 @@ def test_csv_dataset_clears_dataset_arg() -> None:
     task = scenario.tasks[0]
     ns = build_args_namespace(scenario, task, "target", Path("/out"), None)
     assert ns.dataset is None
+
+
+def _parse_drift_sentinel(source: str) -> set[str]:
+    """Extract attribute names from the DRIFT SENTINEL block in args_builder.py.
+
+    The sentinel is a comment block that lists every attribute the namespace
+    must expose. Parsing it here (instead of duplicating the list in the test)
+    is what makes this an enforcement mechanism: if the comment and the code
+    drift apart, the test fails.
+    """
+    sentinel_match = re.search(
+        r"#\s*DRIFT SENTINEL.*?\n(?P<body>(?:#.*\n)+)",
+        source,
+    )
+    assert sentinel_match is not None, "DRIFT SENTINEL block not found in args_builder.py"
+    body = sentinel_match.group("body")
+
+    # Strip the lead-in line ("Attributes that must be set:") if present, then
+    # collect every comma-separated identifier across the remaining comment lines.
+    body = re.sub(r"Attributes that must be set:\s*", "", body)
+    text = " ".join(line.lstrip("#").strip() for line in body.splitlines())
+    return {token.strip() for token in text.split(",") if re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", token.strip())}
+
+
+def test_build_args_namespace_has_all_required_attributes(tmp_path: Path) -> None:
+    """Drift sentinel enforcement — every attribute named in the sentinel comment
+    must actually be present on the Namespace returned by build_args_namespace.
+
+    The list is parsed live from args_builder.py rather than duplicated here, so
+    any change to the sentinel is immediately reflected in the test's expectation.
+    Catches the case where parse_args() in wwb.py or the schema gains a new field
+    that the sentinel acknowledges but build_args_namespace forgets to set.
+    """
+    source = inspect.getsource(args_builder_module)
+    sentinel_attrs = _parse_drift_sentinel(source)
+
+    # Sanity: the sentinel itself must list a non-trivial number of attributes,
+    # otherwise the regex parsed nothing and the test would silently pass.
+    assert len(sentinel_attrs) >= 40, f"Parsed sentinel only yielded {len(sentinel_attrs)} attrs — regex likely broken"
+
+    scenario = make_scenario()
+    ns = _build(scenario, output_dir=tmp_path)
+    actual_attrs = set(vars(ns).keys())
+
+    missing = sentinel_attrs - actual_attrs
+    assert not missing, (
+        f"Namespace is missing attributes listed in the DRIFT SENTINEL: {sorted(missing)}. "
+        f"Either build_args_namespace() must set them or the sentinel comment must be updated."
+    )

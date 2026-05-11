@@ -10,12 +10,14 @@ plan: GT-affecting parameters change the key, target-only parameters do not.
 
 from __future__ import annotations
 
+import inspect
 import json
 import string
 from pathlib import Path
 from typing import Any
 
 from whowhatbench.scenario.gt_cache import GTCache
+from whowhatbench.scenario.runner import ScenarioRunner
 from whowhatbench.scenario.schema import Scenario
 
 
@@ -92,7 +94,10 @@ def test_key_differs_on_base_path(tmp_path: Path) -> None:
     assert _key(cache, scenario_a) != _key(cache, scenario_b)
 
 
-def test_key_differs_on_task_type(tmp_path: Path) -> None:
+def test_key_same_for_different_task_types(tmp_path: Path) -> None:
+    # GT is produced by the base model running on the dataset — task type only
+    # affects how the target model is evaluated, not what ground truth looks like.
+    # Two tasks sharing the same base + dataset should share the same GT cache key.
     cache = GTCache(tmp_path)
     scenario_a = make_scenario()
     scenario_b = make_scenario(
@@ -106,7 +111,7 @@ def test_key_differs_on_task_type(tmp_path: Path) -> None:
             }
         ]
     )
-    assert _key(cache, scenario_a) != _key(cache, scenario_b)
+    assert _key(cache, scenario_a) == _key(cache, scenario_b)
 
 
 def test_key_differs_on_dataset(tmp_path: Path) -> None:
@@ -241,3 +246,42 @@ def test_cache_dir_created_if_not_exists(tmp_path: Path) -> None:
     GTCache(sub)
     assert sub.exists()
     assert sub.is_dir()
+
+
+def test_get_rejects_csv_without_meta(tmp_path: Path) -> None:
+    # F5: a partial CSV (e.g. left over by a killed process mid-write) must not
+    # be treated as a cache hit. The cache only owns rows that also have a
+    # corresponding meta JSON, which is written last under the put() contract.
+    cache = GTCache(tmp_path)
+    key = "abc123def456abcd"
+
+    partial_csv = tmp_path / f"{key}.csv"
+    partial_csv.write_text("prompt,answer\nhello,wor", encoding="utf-8")
+    # Intentionally do NOT write the meta JSON — this simulates a crash between
+    # the CSV copy and the meta write.
+    assert not (tmp_path / f"{key}.meta.json").exists()
+
+    assert cache.get(key) is None
+
+
+def test_gtcache_allocate_path_returns_correct_path(tmp_path: Path) -> None:
+    # F13: GTCache must expose a public allocate_path() so callers don't have
+    # to reach into the private _dir attribute. allocate_path is a pure path
+    # computation — it must not create the file.
+    cache = GTCache(tmp_path)
+    key = "abc123def456abcd"
+
+    allocated = cache.allocate_path(key)
+
+    assert allocated == tmp_path / f"{key}.csv"
+    assert not allocated.exists(), "allocate_path must not create the file"
+
+
+def test_runner_prepare_gt_uses_public_api() -> None:
+    # F13: The runner must not reach into GTCache's private _dir attribute.
+    # Once allocate_path() exists and _prepare_gt is refactored, the private
+    # access disappears from the source.
+    source = inspect.getsource(ScenarioRunner._prepare_gt)
+    assert "_gt_cache._dir" not in source, (
+        "ScenarioRunner._prepare_gt must use the public GTCache API, not access the private _dir attribute"
+    )

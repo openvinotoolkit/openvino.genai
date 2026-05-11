@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 from pydantic import ValidationError
-from whowhatbench.scenario.loader import load_scenario
+from whowhatbench.scenario.loader import _interpolate, load_scenario
 
 # Mirrors the fixture in test_scenario_schema.py; duplicated to keep loader
 # tests self-contained when run in isolation.
@@ -160,3 +160,28 @@ def test_path_as_string_or_path_object(tmp_path):
 
     assert from_str.name == "my-test"
     assert from_path.name == "my-test"
+
+
+def test_interpolate_rejects_newline_in_env_value(monkeypatch):
+    """Env var values containing newlines must not be silently substituted into raw YAML.
+
+    Without validation, a value like ``foo\\nname: injected`` would let an attacker
+    inject arbitrary YAML keys via an environment variable, since interpolation
+    happens before parsing. The loader must reject such values explicitly.
+    """
+    monkeypatch.setenv("EVIL_VAR", "foo\nname: injected")
+    text = (
+        "schema_version: 1\n"
+        "name: orig-name\n"
+        "description: ${env.EVIL_VAR}\n"
+        "models:\n"
+        "  base: {path: org/model, backend: hf}\n"
+        "  target: {path: /ov/model, backend: genai}\n"
+        "datasets:\n"
+        "  ds1: {type: builtin}\n"
+        "tasks:\n"
+        "  - {id: t1, type: text, base: base, targets: [target], dataset: ds1}\n"
+    )
+
+    with pytest.raises(Exception):
+        _interpolate(text)

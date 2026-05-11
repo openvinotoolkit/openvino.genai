@@ -34,7 +34,7 @@ def render_json(
             csv_base = f"tasks/{r.task_id}/{r.target_id}"
             task_out["results"].append(
                 {
-                    "target": r.target_id,
+                    "target_id": r.target_id,
                     "metrics": r.metrics,
                     "n_samples": len(r.per_question),
                     "runtime_s": round(r.runtime_s, 3),
