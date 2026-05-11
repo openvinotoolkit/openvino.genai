@@ -101,7 +101,6 @@ VIDEOCHAT_FLASH_QWEN_MODEL_ID = "optimum-intel-internal-testing/tiny-videochat-f
 
 
 VIDEO_MODELS_WITH_UNSUPPORTED_IMAGE_INPUTS: list[str] = [
-    VIDEOCHAT_FLASH_QWEN_MODEL_ID,
 ]
 
 
@@ -2711,12 +2710,106 @@ def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeli
     return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_backend)
 
 
-def test_videochatflash_qwen_rejects_image_input(
+def test_videochatflash_qwen_image_input(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor
 ):
     generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
-    with pytest.raises(RuntimeError):
-        ov_videochatflash_qwen_pipe_raw.generate(PROMPTS[0], image=cat_tensor, generation_config=generation_config)
+    result = ov_videochatflash_qwen_pipe_raw.generate(PROMPTS[0], image=cat_tensor, generation_config=generation_config)
+    assert len(result.texts) > 0
+
+
+def test_videochatflash_qwen_multiple_images(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+):
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+    result = ov_videochatflash_qwen_pipe_raw.generate(
+        PROMPTS[0], images=[cat_tensor, car_tensor], generation_config=generation_config
+    )
+    assert len(result.texts) > 0
+
+
+def test_videochatflash_qwen_multiple_videos(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+    result = ov_videochatflash_qwen_pipe_raw.generate(
+        PROMPTS[0],
+        videos=[synthetic_video_32x32_tensor, synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(result.texts) > 0
+
+
+def test_videochatflash_qwen_mixed_image_and_video(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+    result = ov_videochatflash_qwen_pipe_raw.generate(
+        PROMPTS[0],
+        images=[cat_tensor],
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(result.texts) > 0
+
+
+def test_videochatflash_qwen_chat_history_with_video(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """ChatHistory with video input must produce the same result as start_chat with video."""
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False)
+    videos = [synthetic_video_32x32_tensor]
+    prompt = "Describe this video."
+    follow_up = "Go on."
+
+    # ChatHistory-based flow
+    history = ChatHistory()
+    history.append({"role": "user", "content": prompt})
+    res1 = ov_videochatflash_qwen_pipe_raw.generate(
+        history,
+        videos=videos,
+        generation_config=generation_config,
+    )
+    answer1 = res1.texts[0]
+    history.append({"role": "assistant", "content": answer1})
+    history.append({"role": "user", "content": follow_up})
+    res2 = ov_videochatflash_qwen_pipe_raw.generate(
+        history,
+        generation_config=generation_config,
+    )
+    answer2_chat_history = res2.texts[0]
+
+    # start_chat-based flow
+    ov_videochatflash_qwen_pipe_raw.start_chat()
+    res1_sc = ov_videochatflash_qwen_pipe_raw.generate(
+        prompt,
+        videos=videos,
+        generation_config=generation_config,
+    )
+    answer1_sc = res1_sc.texts[0]
+    res2_sc = ov_videochatflash_qwen_pipe_raw.generate(
+        follow_up,
+        generation_config=generation_config,
+    )
+    answer2_start_chat = res2_sc.texts[0]
+    ov_videochatflash_qwen_pipe_raw.finish_chat()
+
+    assert answer1 == answer1_sc, (
+        f"First turn mismatch!\n"
+        f"ChatHistory: {answer1}\n"
+        f"start_chat: {answer1_sc}"
+    )
+    assert answer2_chat_history == answer2_start_chat, (
+        f"Second turn mismatch!\n"
+        f"ChatHistory: {answer2_chat_history}\n"
+        f"start_chat: {answer2_start_chat}"
+    )
 
 
 @pytest.mark.parametrize(

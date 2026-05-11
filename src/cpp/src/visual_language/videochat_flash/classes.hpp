@@ -40,7 +40,7 @@ protected:
     /// @brief A config to follow.
     VLMConfig m_vlm_config;
 
-    /// @brief pos_emb Tensor.
+    /// @brief 3D sin-cos positional embedding tensor for video frames.
     ov::Tensor m_pos_emb;
 
 private:
@@ -58,6 +58,8 @@ private:
     /// @brief Pads frames if frame count is not divisible by mm_local_num_frames.
     // TODO Override InputsEmbedder::sample_video_if_needed instead
     ov::Tensor sample_video_if_needed(const ov::Tensor& video) const;
+    /// @brief Encodes preprocessed NCHW frames through vision encoder, merge, and projection.
+    ov::Tensor encode_preprocessed_frames(const ov::Tensor& preprocessed_nchw, const ov::Tensor& pos_emb, size_t merge_target_num_token);
     /// @brief Initializes 3D sin-cos positional embedding tensor for vision encoder input.
     void initialize_positional_embedding();
     /// @brief Builds and prepares infer request queue for token merge model.

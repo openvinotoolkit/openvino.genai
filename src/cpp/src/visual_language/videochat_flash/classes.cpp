@@ -122,21 +122,16 @@ ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8, ImageSize image_size, con
 std::string normalize_prompt_impl(
     const std::string& prompt, size_t base_id, size_t n_visuals, const std::regex& native_pattern, void(*write_native)(std::ostream& os, size_t idx)
 ) {
-    // Reject unsupported universal image placeholders early to keep the text+video contract explicit.
-    std::smatch universal_image_match;
-    std::regex_search(prompt, universal_image_match, UNIVERSAL_IMAGE_PATTERN);
-    OPENVINO_ASSERT(
-        universal_image_match.empty(),
-        "VideoChat-Flash supports only text+video inputs now. "
-        "Use <ov_genai_video_i> or native visual tags (<|image_i|>) for visuals."
-    );
-
-    // Convert universal video placeholders into the shared native visual tags.
-    auto [normalized_prompt, visual_sequence] = universal_to_native(prompt, write_native, VisionType::VIDEO);
+    // Convert universal visual placeholders (image or video) into the shared native visual tags.
+    auto [normalized_prompt, visual_sequence] = universal_to_native(prompt, write_native, VisionType::IMAGE);
+    if (visual_sequence.empty()) {
+        // If no image tags, try video tags.
+        std::tie(normalized_prompt, visual_sequence) = universal_to_native(prompt, write_native, VisionType::VIDEO);
+    }
     if (!visual_sequence.empty()) {
         OPENVINO_ASSERT(
             !std::regex_search(prompt, native_pattern),
-            "Prompt cannot mix universal video tags (<ov_genai_video_i>) with native visual tags (<|image_i|>)."
+            "Prompt cannot mix universal visual tags (<ov_genai_image_i> / <ov_genai_video_i>) with native visual tags (<|image_i|>)."
         );
         verify_ids(visual_sequence, base_id, n_visuals);
         return normalized_prompt;
@@ -690,9 +685,9 @@ void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
         "."
     );
 
-    // Accelerate model by using static rope shape.
+    // Use static rope shape for acceleration.
     std::map<std::string, ov::PartialShape> input_shapes;
-    input_shapes["rotary_pos_emb"] = pos_emb_shape;  // it's a fixed shape: { 1, 1025, 1408 }
+    input_shapes["rotary_pos_emb"] = pos_emb_shape;
     model->reshape(input_shapes);
 
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
@@ -748,10 +743,52 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     initialize_merge_model_queue();
 }
 
+ov::Tensor VisionEncoderVideoChatFlashQwen::encode_preprocessed_frames(
+    const ov::Tensor& preprocessed_nchw,
+    const ov::Tensor& pos_emb,
+    size_t merge_target_num_token) {
+
+    auto transpose_features = transpose_video_features(preprocessed_nchw, m_mm_local_num_frames);
+
+    CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(m_ireq_queue_vision_encoder.get());
+    CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(m_ireq_queue_merge_model.get());
+    CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(m_ireq_queue_vision_projection.get());
+
+    ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get(), pos_emb);
+    ov::Tensor clipped_vision_embeds = remove_second_dim_first_element(processed_vision_embeds);
+    ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_guard.get(), merge_target_num_token);
+    projection_guard.get().set_input_tensor(merged_vision_features);
+    projection_guard.get().infer();
+    ov::Tensor proj_features = projection_guard.get().get_output_tensor();
+    return efficient_flatten(proj_features);
+}
+
 EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    (void)image;
+    EncodedImage encoded_image;
     (void)config_map;
-    OPENVINO_THROW("VideoChat-Flash currently does not support image inference. Please use video input.");
+    OPENVINO_ASSERT(m_processor_config.image_size > 0, "image_size must be greater than 0.");
+    ImageSize target_size{m_processor_config.image_size, m_processor_config.image_size};
+
+    // Image is [1, H, W, C] u8 (batch=1). The vision encoder uses a static rotary_pos_emb shape
+    // requiring mm_local_num_frames frames, so the image is padded to match.
+    const ov::Shape& img_shape = image.get_shape();
+    OPENVINO_ASSERT(img_shape.size() == 4 && img_shape[0] == 1,
+                    "Input image must be 4D [1, H, W, C], got rank ", img_shape.size(),
+                    " and batch ", (img_shape.size() >= 1 ? img_shape[0] : 0), ".");
+
+    // Replicate the single frame to mm_local_num_frames to match the static positional embedding shape.
+    ov::Tensor padded_video = sample_video_if_needed(image);
+
+    auto preprocessed = preprocess(padded_video, target_size,
+                                   m_processor_config.image_mean,
+                                   m_processor_config.image_std);
+
+    // Reuse the video positional embedding since the padded image has the same frame count.
+    ov::Tensor final_features = encode_preprocessed_frames(preprocessed, m_pos_emb, m_target_num_token);
+
+    encoded_image.images_features_projection = final_features;
+    encoded_image.resized_source = {};
+    return encoded_image;
 }
 
 ov::Tensor VisionEncoderVideoChatFlashQwen::sample_video_if_needed(const ov::Tensor& video) const {
@@ -811,20 +848,8 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
     auto preprocessed_video = preprocess(sampled_video, target_size, m_processor_config.image_mean, m_processor_config.image_std);
     encoded_video.resized_source_size = target_size;
     encoded_video.frame_num = preprocessed_video.get_shape()[0];
-    const size_t mm_local_num_frames = m_mm_local_num_frames;
-    auto transpose_features = transpose_video_features(preprocessed_video, mm_local_num_frames);
 
-    CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(m_ireq_queue_vision_encoder.get());
-    CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(m_ireq_queue_merge_model.get());
-    CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(m_ireq_queue_vision_projection.get());
-
-    ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get(), m_pos_emb);
-    ov::Tensor clipped_vision_embeds = remove_second_dim_first_element(processed_vision_embeds);
-    ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_guard.get(), m_target_num_token);
-    projection_guard.get().set_input_tensor(merged_vision_features);
-    projection_guard.get().infer();
-    ov::Tensor proj_features = projection_guard.get().get_output_tensor();
-    ov::Tensor final_features = efficient_flatten(proj_features);
+    ov::Tensor final_features = encode_preprocessed_frames(preprocessed_video, m_pos_emb, m_target_num_token);
 
     encoded_video.video_features = final_features;
     encoded_video.num_video_tokens = final_features.get_shape()[1];
@@ -876,12 +901,7 @@ NormalizedPrompt InputsEmbedderVideoChatFlashQwen::normalize_prompt(
     size_t base_video_id,
     const std::vector<EncodedImage>& images,
     const std::vector<EncodedVideo>& videos) const {
-    OPENVINO_ASSERT(
-        images.empty(),
-        "VideoChat-Flash does not support image inputs. Please provide video inputs only."
-    );
-
-    const size_t base_visual_id = std::max(base_video_id, base_image_id + images.size());
+    const size_t base_visual_id = images.empty() ? base_video_id : base_image_id;
     const size_t total_visuals = images.size() + videos.size();
     return {normalize_prompt_impl(prompt, base_visual_id, total_visuals, NATIVE_PATTERN, write_native), {}};
 }
