@@ -10,6 +10,8 @@ namespace genai {
 std::mutex Sequence::m_counter_mutex;
 
 size_t Sequence::_make_hash(size_t content_length, size_t block_size) {
+    OPENVINO_ASSERT(content_length > 0, "Hash computation requires positive content length");
+    OPENVINO_ASSERT(block_size > 0, "Hash computation requires positive block size");
         auto sequence_group = get_sequence_group_ptr();
         size_t block_start_idx = content_length - (content_length % block_size);
         if (block_start_idx == content_length) {
@@ -83,6 +85,8 @@ size_t Sequence::get_hash(size_t content_length, size_t block_size) {
 
     auto sequence_group = get_sequence_group_ptr();
     OPENVINO_ASSERT(sequence_group, "Hash computation requires setting of sequence_group ptr.");
+    OPENVINO_ASSERT(content_length > 0, "Hash computation requires positive content length");
+    OPENVINO_ASSERT(block_size > 0, "Hash computation requires positive block size");
     size_t cur_content = block_size * (m_prefix_hashes.size() + 1);
     while (cur_content <= content_length)
     {

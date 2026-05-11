@@ -12,6 +12,7 @@
 #include <numeric>
 #include <set>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "openvino/runtime/infer_request.hpp"
@@ -509,15 +510,16 @@ public:
     }
 
     /**
-     * @brief Ensures each variable-size cache type's block pool has capacity for at least the given total number of tokens.
-     * Fixed-size-per-sequence managers (e.g. linear attention state) are skipped: their pool
-     * grows on demand via grow_fixed_size_capacity(), not by token count.
-     * @param num_tokens Total number of tokens the pools should accommodate.
+     * @brief Ensures variable-size cache pools have sequence-aware capacity for the given token targets.
+     * Each target is rounded independently to account for per-sequence block allocation.
+     * Fixed-size-per-sequence managers are skipped.
+     * @param sequence_token_targets Pairs of tokens per sequence and number of sequences with that target.
      */
-    void ensure_token_capacity(size_t num_tokens) {
+    void ensure_sequence_token_capacity(const std::vector<std::pair<size_t, size_t>>& sequence_token_targets) {
         for (auto& [type, block_mgr] : m_block_managers) {
-            if (!block_mgr->is_fixed_size_per_sequence())
-                block_mgr->ensure_token_capacity(num_tokens);
+            if (!block_mgr->is_fixed_size_per_sequence()) {
+                block_mgr->ensure_sequence_token_capacity(sequence_token_targets);
+            }
         }
     }
 

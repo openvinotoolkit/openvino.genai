@@ -387,8 +387,8 @@ TEST(TestCacheOrchestratorHybrid, GrowFixedSize_OnlyAffectsFixed) {
     EXPECT_EQ(final_la_blocks, initial_la_blocks + 3);
 }
 
-/// @test EnsureTokenCapacity_SkipsFixed
-/// Verify that ensure_token_capacity() only affects variable-size cache types,
+/// @test EnsureSequenceTokenCapacity_SkipsFixed
+/// Verify that ensure_sequence_token_capacity() only affects variable-size cache types,
 /// not fixed-size types like LinearAttention.
 ///
 /// Setup: Create a hybrid orchestrator with:
@@ -397,13 +397,14 @@ TEST(TestCacheOrchestratorHybrid, GrowFixedSize_OnlyAffectsFixed) {
 ///
 /// Scenario:
 ///   1. Record initial block counts for both cache types.
-///   2. Call ensure_token_capacity(100) to ensure the KV cache can hold 100 tokens.
+///   2. Call ensure_sequence_token_capacity({{100, 1}}) to ensure the KV cache can hold one
+///      sequence with 100 tokens.
 ///   3. Verify that:
 ///      - KV block count increases to accommodate 100 tokens / block_size.
 ///      - LA block count remains 2 (fixed-size cache is not affected by token capacity).
 ///
 /// Expected: KV cache grows; LA cache remains unchanged.
-TEST(TestCacheOrchestratorHybrid, EnsureTokenCapacity_SkipsFixed) {
+TEST(TestCacheOrchestratorHybrid, EnsureSequenceTokenCapacity_SkipsFixed) {
     auto orchestrator = create_hybrid_orchestrator(
         /*num_kv_blocks=*/4,
         /*num_la_blocks=*/2,
@@ -417,8 +418,8 @@ TEST(TestCacheOrchestratorHybrid, EnsureTokenCapacity_SkipsFixed) {
     size_t initial_kv_blocks = kv_bm.get_total_number_of_kv_blocks();
     size_t initial_la_blocks = la_bm.get_total_number_of_kv_blocks();
 
-    // Ensure token capacity for 100 tokens.
-    orchestrator->ensure_token_capacity(100);
+    // Ensure sequence-aware token capacity for one sequence with 100 tokens.
+    orchestrator->ensure_sequence_token_capacity({{100, 1}});
 
     size_t final_kv_blocks = kv_bm.get_total_number_of_kv_blocks();
     size_t final_la_blocks = la_bm.get_total_number_of_kv_blocks();

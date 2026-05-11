@@ -330,6 +330,13 @@ TEST(TestBlockManager, PrefixCachingCompleteCheckpointReuseAllocatesOwnedWriteBl
     block_manager.free_sequence(second_seq_id);
 }
 
+TEST(TestBlockManager, SequenceHashRejectsZeroContentLength) {
+    auto sequence_group = create_sequence_group();
+    auto sequence = sequence_group->get_running_sequences().at(0);
+
+    EXPECT_THROW(sequence->get_hash(0, 4), ov::Exception);
+}
+
 TEST(TestBlockManager, PrefixCachingIncompleteCheckpointUsesCopyOnWritePerSequence) {
     constexpr size_t block_size = 4;
     ov::genai::BlockManager block_manager(

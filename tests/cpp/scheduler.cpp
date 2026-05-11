@@ -448,6 +448,37 @@ TEST(TestScheduler, hybrid_initialize_cache_grows_fixed_size_by_total_concurrent
     }
 }
 
+TEST(TestScheduler, initialize_cache_uses_sequence_aware_block_rounding) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 0;
+    scheduler_config.cache_size = 0;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 8;
+
+    std::vector<SequenceGroup::Ptr> requests;
+    for (size_t request_id = 0; request_id < 4; ++request_id) {
+        std::vector<uint64_t> tokens = {request_id};
+        requests.push_back(std::make_shared<SequenceGroup>(
+            request_id,
+            ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+            utils::get_greedy_config()));
+    }
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+
+    std::ignore = scheduler.schedule(requests);
+
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_number_of_kv_blocks(), requests.size());
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
 TEST(TestScheduler, linear_attention_only_initializes_fixed_size_capacity) {
     SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;

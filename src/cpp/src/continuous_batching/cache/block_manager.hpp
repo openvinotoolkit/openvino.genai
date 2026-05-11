@@ -10,6 +10,9 @@
 #include <algorithm>
 #include <fstream>
 #include <chrono>
+#include <limits>
+#include <utility>
+#include <vector>
 
 #include "logger.hpp"
 #include "sequence_group.hpp"
@@ -817,11 +820,22 @@ public:
     }
 
     /**
-     * Ensures the block pool has capacity for at least the given total number of tokens.
-     * @param num_tokens Total number of tokens the pool should accommodate.
+     * Ensures the block pool has capacity for sequence-aware token targets.
+     * @param sequence_token_targets Pairs of tokens per sequence and number of sequences with that target.
      */
-    void ensure_token_capacity(size_t num_tokens) {
-        size_t required_blocks = (num_tokens + m_block_size - 1) / m_block_size;
+    void ensure_sequence_token_capacity(const std::vector<std::pair<size_t, size_t>>& sequence_token_targets) {
+        size_t required_blocks = 0;
+        for (const auto& [tokens_per_sequence, num_sequences] : sequence_token_targets) {
+            if (tokens_per_sequence == 0 || num_sequences == 0) {
+                continue;
+            }
+            const size_t blocks_per_sequence = (tokens_per_sequence + m_block_size - 1) / m_block_size;
+            OPENVINO_ASSERT(blocks_per_sequence <= std::numeric_limits<size_t>::max() / num_sequences,
+                            "Requested sequence token capacity exceeds size_t range");
+            OPENVINO_ASSERT(required_blocks <= std::numeric_limits<size_t>::max() - blocks_per_sequence * num_sequences,
+                            "Requested sequence token capacity exceeds size_t range");
+            required_blocks += blocks_per_sequence * num_sequences;
+        }
         if (required_blocks > get_total_number_of_kv_blocks()) {
             increase_kv_blocks_number(required_blocks);
         }
