@@ -136,6 +136,28 @@ TEST(TestBlockManager, CanFreeBlocksFromSequence) {
     }
 }
 
+TEST(TestBlockManager, CannotFreeLogicalBlockPastTableEnd) {
+    constexpr size_t block_size = 2;
+    constexpr size_t num_layers = 3;
+    ov::genai::BlockManager block_manager = ov::genai::BlockManager(8, false, block_size, num_layers);
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4};
+    ov::genai::SequenceGroup::Ptr sequence_group =
+        std::make_shared<ov::genai::SequenceGroup>(0,
+                                                   ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                   ov::genai::utils::get_beam_search_config());
+    sequence_group->schedule_tokens(tokens.size());
+    block_manager.append_slots(sequence_group);
+
+    const size_t seq_id = sequence_group->get_sequences()[0]->get_id();
+    ASSERT_EQ(block_manager.get_block_table(seq_id, 0).size(), 3);
+    EXPECT_THROW(block_manager.free_blocks_from_sequence(seq_id, {{3}, {3}, {3}}), ov::Exception);
+
+    for (auto& sequence : sequence_group->get_sequences()) {
+        block_manager.free_sequence(sequence->get_id());
+    }
+}
+
 // Linear Attention with fixed-size blocks tests
 
 TEST(TestBlockManager, FixedSizeCanAllocateCumulativeDeficitFails) {

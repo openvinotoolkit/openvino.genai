@@ -8,7 +8,6 @@
 #include <map>
 #include <set>
 #include <algorithm>
-#include <fstream>
 #include <chrono>
 #include <limits>
 #include <utility>
@@ -26,8 +25,6 @@ class CacheBlock {
     std::chrono::time_point<std::chrono::steady_clock> m_timestamp;
 public:
     using Ptr = std::shared_ptr<CacheBlock>;
-    using CPtr = std::shared_ptr<const CacheBlock>;
-
     explicit CacheBlock(int index)
         : m_ref_count(0),
           m_index(index),
@@ -583,8 +580,8 @@ public:
     /**
      * Gets the block table for a given sequence.
      * @param seq_id The identifier of an ov::genai::Sequence.
-     * @return A vector of per-layer blocks occupied by this sequence.
-     * Per-layer blocks are themselves each a vector with one KV cache block per layer.
+     * @return A vector of per-layer block tables occupied by this sequence.
+     * Each per-layer table contains cache blocks for the corresponding block-table layer.
      */
     const std::vector<BlocksPerLayer>& get_block_tables(uint64_t seq_id) const {
         return m_block_table.at(seq_id);
@@ -1071,9 +1068,9 @@ public:
                 auto& per_layer_block_table = m_block_table[seq_id][layer_idx];
                 size_t block_table_size = per_layer_block_table.size();
                 size_t logical_block_idx = *(logical_block_indices_to_free[layer_idx].begin() + block_idx);
-                    OPENVINO_ASSERT(logical_block_idx <= block_table_size,
-                                    "cannot free logical block ", logical_block_idx,
-                                    "from sequence ", seq_id, " since it only has ", block_table_size, "logical blocks");
+                OPENVINO_ASSERT(logical_block_idx < block_table_size,
+                                "cannot free logical block ", logical_block_idx,
+                                " from sequence ", seq_id, " since it only has ", block_table_size, " logical blocks");
                 auto block = per_layer_block_table[logical_block_idx];
                 per_layer_cache_blocks_to_free.push_back(block);
             }
