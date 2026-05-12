@@ -2839,15 +2839,69 @@ def test_videochatflash_qwen_chat_history_mixed_turns(
     ov_videochatflash_qwen_pipe_raw.finish_chat()
 
 
+def test_videochatflash_qwen_chat_history_mixed_modalities(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """ChatHistory mode with mixed modalities across turns must produce the same result as start_chat."""
+    generation_config = _setup_generation_config(
+        ov_videochatflash_qwen_pipe_raw, max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False
+    )
+    prompt1 = "Describe this video."
+    prompt2 = "And this image?"
+
+    # ChatHistory-based flow (full-history reconstruction)
+    history = ChatHistory()
+    history.append({"role": "user", "content": prompt1})
+    res1_ch = ov_videochatflash_qwen_pipe_raw.generate(
+        history,
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res1_ch.texts) > 0
+    answer1 = res1_ch.texts[0]
+    history.append({"role": "assistant", "content": answer1})
+    history.append({"role": "user", "content": prompt2})
+    res2_ch = ov_videochatflash_qwen_pipe_raw.generate(
+        history,
+        images=[cat_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res2_ch.texts) > 0
+    answer2_chat_history = res2_ch.texts[0]
+
+    # start_chat-based flow (incremental KV cache)
+    ov_videochatflash_qwen_pipe_raw.start_chat()
+    res1_sc = ov_videochatflash_qwen_pipe_raw.generate(
+        prompt1,
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res1_sc.texts) > 0
+    answer1_sc = res1_sc.texts[0]
+    res2_sc = ov_videochatflash_qwen_pipe_raw.generate(
+        prompt2,
+        images=[cat_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res2_sc.texts) > 0
+    answer2_start_chat = res2_sc.texts[0]
+    ov_videochatflash_qwen_pipe_raw.finish_chat()
+
+    assert answer1 == answer1_sc, f"First turn mismatch!\nChatHistory: {answer1}\nstart_chat: {answer1_sc}"
+    assert answer2_chat_history == answer2_start_chat, (
+        f"Second turn mismatch!\nChatHistory: {answer2_chat_history}\nstart_chat: {answer2_start_chat}"
+    )
+
+
 def test_videochatflash_qwen_universal_tags_mixed(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
     cat_tensor: openvino.Tensor,
     synthetic_video_32x32_tensor: openvino.Tensor,
 ):
     """Universal tags with mixed image+video must remap indices to the unified visual ID space."""
-    generation_config = _setup_generation_config(
-        ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False
-    )
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
 
     # Prompt with explicit universal tags for both image and video.
     # Without index remapping, video_0 would conflict with image_0 in the native tag space.

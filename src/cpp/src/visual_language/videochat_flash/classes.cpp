@@ -903,6 +903,14 @@ NormalizedPrompt InputsEmbedderVideoChatFlashQwen::normalize_prompt(
     const size_t base_visual_id = base_image_id + base_video_id;
     const size_t total_visuals = images.size() + videos.size();
 
+    // Build per-modality sequences so pipeline can track per-turn counts via history_vision_count.
+    // The actual values are not used by get_inputs_embeds (which uses regex-extracted tag IDs),
+    // but the sizes are needed for correct interleaving in full-history mode.
+    std::vector<size_t> images_seq(images.size());
+    std::iota(images_seq.begin(), images_seq.end(), base_image_id);
+    std::vector<size_t> videos_seq(videos.size());
+    std::iota(videos_seq.begin(), videos_seq.end(), base_video_id);
+
     // Universal tags use separate counters (<ov_genai_image_i>, <ov_genai_video_j>) but the unified visual
     // stream in get_inputs_embeds concatenates images then videos. Remap indices accordingly:
     //   image index i  ->  unified visual (i + base_video_id)
@@ -932,10 +940,10 @@ NormalizedPrompt InputsEmbedderVideoChatFlashQwen::normalize_prompt(
             "Prompt cannot mix universal visual tags (<ov_genai_image_i> / <ov_genai_video_i>) with native visual tags (<|image_i|>)."
         );
         verify_ids(visual_sequence, base_visual_id, total_visuals);
-        return {tag_normalized, {}};
+        return {tag_normalized, images_seq, videos_seq};
     }
 
-    return {normalize_prompt_impl(prompt, base_visual_id, total_visuals, NATIVE_PATTERN, write_native), {}};
+    return {normalize_prompt_impl(prompt, base_visual_id, total_visuals, NATIVE_PATTERN, write_native), images_seq, videos_seq};
 }
 
 ov::Tensor InputsEmbedderVideoChatFlashQwen::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
@@ -999,19 +1007,32 @@ ov::Tensor InputsEmbedderVideoChatFlashQwen::get_inputs_embeds(
     const std::vector<size_t>& image_sequence,
     const std::vector<size_t>& videos_sequence,
     const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
-    if (!videos_sequence.empty()) {
-         static std::once_flag videos_sequence_warning_once;
-         std::call_once(videos_sequence_warning_once, [&videos_sequence]() {
-             GENAI_WARN("VideoChat-Flash ignores separate video sequence in this path. videos_sequence size=%zu.", videos_sequence.size());
-         });
-    }
-
-    std::vector<ov::genai::EncodedImage> combined_images = images;
+    std::vector<ov::genai::EncodedImage> combined_images;
     combined_images.reserve(images.size() + videos.size());
-    for (const auto& video : videos) {
-        ov::genai::EncodedImage as_image;
-        as_image.images_features_projection = video.video_features;
-        combined_images.emplace_back(std::move(as_image));
+
+    if (!history_vision_count.empty()) {
+        // Full-history mode: interleave images and videos per-turn to match
+        // the order of <|image_N|> tags in the reconstructed prompt.
+        // Within each turn, normalize_prompt assigns lower IDs to images, higher to videos.
+        size_t img_idx = 0, vid_idx = 0;
+        for (const auto& [vid_count, img_count] : history_vision_count) {
+            for (size_t i = 0; i < img_count && img_idx < images.size(); ++i) {
+                combined_images.push_back(images.at(img_idx++));
+            }
+            for (size_t j = 0; j < vid_count && vid_idx < videos.size(); ++j) {
+                ov::genai::EncodedImage as_image;
+                as_image.images_features_projection = videos.at(vid_idx++).video_features;
+                combined_images.emplace_back(std::move(as_image));
+            }
+        }
+    } else {
+        // Single-turn or start_chat mode: images then videos (matches normalize_prompt order).
+        combined_images.insert(combined_images.end(), images.begin(), images.end());
+        for (const auto& video : videos) {
+            ov::genai::EncodedImage as_image;
+            as_image.images_features_projection = video.video_features;
+            combined_images.emplace_back(std::move(as_image));
+        }
     }
 
     return get_inputs_embeds(prompt, combined_images, metrics, recalculate_merged_embeddings, image_sequence);
