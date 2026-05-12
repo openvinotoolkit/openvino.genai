@@ -96,7 +96,7 @@ public:
         void set_score_aggregation_window(uint64_t seq_id, size_t score_aggregation_window) {
             KVPagedAttentionData& kv_data = m_kv_paged_attention_data[seq_id];
             kv_data.score_aggregation_window = score_aggregation_window;
-            kv_data.has_score_aggregation_window = true;
+            kv_data.has_score_aggregation_window = score_aggregation_window > 0;
         }
 
         void set_kv_paged_attention_global_data(const std::shared_ptr<const KVPagedAttentionGlobalData>& global_data) {

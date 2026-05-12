@@ -160,6 +160,23 @@ TEST(TestScheduler, adaptive_rkv_zero_size_is_not_marked_available) {
     EXPECT_EQ(output.get_adaptive_rkv_evictable_size(seq_id), 0);
 }
 
+TEST(TestScheduler, ZeroScoreAggregationWindowIsNotMarkedAvailable) {
+    Scheduler::Output output;
+    const uint64_t seq_id = 42;
+
+    EXPECT_FALSE(output.has_score_aggregation_window(seq_id));
+
+    output.set_score_aggregation_window(seq_id, 0);
+    EXPECT_FALSE(output.has_score_aggregation_window(seq_id));
+
+    output.set_score_aggregation_window(seq_id, 3);
+    EXPECT_TRUE(output.has_score_aggregation_window(seq_id));
+    EXPECT_EQ(output.get_score_aggregation_window(seq_id), 3);
+
+    output.set_score_aggregation_window(seq_id, 0);
+    EXPECT_FALSE(output.has_score_aggregation_window(seq_id));
+}
+
 TEST(TestScheduler, output_keeps_shared_kv_global_data_alive) {
     Scheduler::Output output;
     auto mutable_global_data = std::make_shared<Scheduler::KVPagedAttentionGlobalData>();
