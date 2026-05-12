@@ -25,6 +25,7 @@ env:
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/
   NODE_EXTRA_CA_CERTS: /usr/local/share/ca-certificates/IntelProxyRootCA-Base64.crt
   OPENVINO_LOG_LEVEL: 4
+  BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
   ENABLE_BRANCH_COVERAGE: 'false'
   LCOV_CAPTURE_TIMEOUT_SECONDS: '3600'
   IGPU_DRIVER_PACKAGES: |-
@@ -132,6 +133,79 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
+          path: ${{ env.INSTALL_DIR }}
+          if-no-files-found: 'error'
+
+  genai_build_genai_wheel:
+    name: Build GenAI Wheel - Python ${{ matrix.python-version }}
+    needs: [openvino_download]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11']
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-8-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
+    env:
+      CMAKE_GENERATOR: Ninja
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/install
+      WHEELS_DIR: ${{ github.workspace }}/install/wheels
+      SRC_DIR: ${{ github.workspace }}/src
+      OpenVINODeveloperPackage_DIR: ${{ github.workspace }}/ov/developer_package/cmake
+    steps:
+      - name: Checkout openvino.genai
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Set CI environment
+        id: create_manifest
+        uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
+        with:
+          repos: ${{ env.SRC_DIR }}
+          product_type: ${{ env.BASE_PRODUCT_TYPE }}_Release
+          target_arch: 'x86_64'
+          build_type: Release
+          save_to: ${{ github.workspace }}
+
+      - name: Clean sccache stats
+        run: ${SCCACHE_PATH} --zero-stats
+
+      - name: Build GenAI Wheel
+        run: |
+          python_exec_path=$(python${{ matrix.python-version }} -c "import sys; print(sys.executable)")
+          $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
+              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+              ${{ env.SRC_DIR }}
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Show sccache stats
+        run: ${SCCACHE_PATH} --show-stats
+
+      - name: Upload GenAI Wheel
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: genai_wheel_python_${{ matrix.python-version }}
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
 
@@ -571,7 +645,7 @@ jobs:
 
   CoveragePythonTests:
     name: Coverage Python Tests ${{ matrix.test.name }} (CPU)
-    needs: [openvino_download, genai_build_wheels, CoverageBuild]
+    needs: [openvino_download, genai_build_wheels, genai_build_genai_wheel, CoverageBuild]
     timeout-minutes: 720
     runs-on: ${{ matrix.test.runner }}
     strategy:
@@ -580,15 +654,23 @@ jobs:
         test:
           - name: whisper
             runner: aks-linux-8-cores-32gb
+          - name: whisper_transformers_under_5
+            runner: aks-linux-8-cores-32gb
           - name: cacheopt_e2e_part_1
             runner: aks-linux-8-cores-32gb
           - name: cacheopt_e2e_part_2
             runner: aks-linux-8-cores-32gb
-          - name: llm_image_structured_output
+          - name: cacheopt_e2e_xattention
+            runner: aks-linux-8-cores-32gb
+          - name: llm
+            runner: aks-linux-8-cores-32gb
+          - name: llm_transformers_under_5
             runner: aks-linux-8-cores-32gb
           - name: vlm_match_optimum_with_resolutions
             runner: aks-linux-8-cores-32gb
           - name: vlm
+            runner: aks-linux-8-cores-32gb
+          - name: vlm_transformers_under_5
             runner: aks-linux-8-cores-32gb
           - name: video_generation
             runner: aks-linux-8-cores-32gb
@@ -598,22 +680,30 @@ jobs:
             runner: aks-linux-8-cores-32gb
           - name: api
             runner: aks-linux-8-cores-32gb
+          - name: api_transformers_under_5
+            runner: aks-linux-8-cores-32gb
           - name: rag
             runner: aks-linux-8-cores-32gb
           - name: wwb
+            runner: aks-linux-8-cores-32gb
+          - name: wwb_transformers_under_5
             runner: aks-linux-8-cores-32gb
           - name: eagle3_speculative_decoding
             runner: aks-linux-8-cores-32gb
           - name: wwb_nanollava
             runner: aks-linux-8-cores-32gb
+          - name: wwb_videochat
+            runner: aks-linux-8-cores-32gb
           - name: vlm_minicpm_o_2_6
             runner: aks-linux-8-cores-32gb
           - name: vlm_videochat
             runner: aks-linux-8-cores-32gb
-          - name: vlm_qwen3_vl
+          - name: vlm_qwen3_vl_and_qwen3_next
             runner: aks-linux-8-cores-32gb
-          - name: xgrammar_off
-            runner: aks-linux-4-cores-16gb
+          - name: vlm_qwen3_5
+            runner: aks-linux-8-cores-32gb
+          - name: vlm_gemma4
+            runner: aks-linux-8-cores-32gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -633,8 +723,6 @@ jobs:
       BIN_DIR: ${{ github.workspace }}/install/tests
       BUILD_DIR: ${{ github.workspace }}/build
       BUILD_JS_DIR: ${{ github.workspace }}/build_js
-      XGRAMMAR_BUILD_DIR: ${{ github.workspace }}/build_xgrammar
-      EXTRA_CPP_COVERAGE_DIRS: ${{ github.workspace }}/build_xgrammar
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
       PYTHONPATH: ${{ github.workspace }}/install/python
       PY_TEST_NAMES: ${{ matrix.test.name }}
@@ -667,15 +755,8 @@ jobs:
       - name: Download Python wheels
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
+          pattern: "{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},genai_wheel_python_${{ env.PYTHON_VERSION }}}"
           path: ${{ env.OV_INSTALL_DIR }}
-          merge-multiple: true
-
-      - name: Download xgrammar-off build package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
-        with:
-          name: ${{ env.GENAI_COVERAGE_XGRAMMAR_ARTIFACT }}
-          path: ${{ env.XGRAMMAR_BUILD_DIR }}/openvino_genai
           merge-multiple: true
 
       - name: Download coverage build notes
@@ -688,19 +769,16 @@ jobs:
       - name: Restore coverage notes
         run: |
           rm -rf "${BUILD_DIR}" "${BUILD_JS_DIR}"
-          mkdir -p "${BUILD_DIR}" "${BUILD_JS_DIR}" "${XGRAMMAR_BUILD_DIR}"
+          mkdir -p "${BUILD_DIR}" "${BUILD_JS_DIR}"
           cp -a coverage_notes/main-build/. "${BUILD_DIR}/"
           if [[ -d coverage_notes/js-build ]]; then
             cp -a coverage_notes/js-build/. "${BUILD_JS_DIR}/"
-          fi
-          if [[ -d coverage_notes/xgrammar-build ]]; then
-            cp -a coverage_notes/xgrammar-build/. "${XGRAMMAR_BUILD_DIR}/"
           fi
 
       - name: Install GenAI Python dependencies
         uses: ./.github/actions/install_wheel
         with:
-          packages: "openvino;openvino_tokenizers[transformers];whowhatbench"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
           requirements_files: "${{ github.workspace }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
 
@@ -746,7 +824,6 @@ jobs:
         with:
           command: collect-native
           profile: cpu
-          extra-cpp-coverage-dirs: ${{ env.EXTRA_CPP_COVERAGE_DIRS }}
 
       - name: Collect Python CPU results
         id: cpu_artifact
@@ -772,7 +849,7 @@ jobs:
 
   CoveragePythonSamples:
     name: Coverage Python Samples ${{ matrix.test.name }} (CPU)
-    needs: [openvino_download, genai_build_wheels, CoverageBuild]
+    needs: [openvino_download, genai_build_wheels, genai_build_genai_wheel, CoverageBuild]
     timeout-minutes: 720
     runs-on: ${{ matrix.test.runner }}
     strategy:
@@ -780,6 +857,8 @@ jobs:
       matrix:
         test:
           - name: samples_llm
+            runner: aks-linux-4-cores-16gb
+          - name: samples_llm_transformers_under_5
             runner: aks-linux-4-cores-16gb
           - name: samples_whisper
             runner: aks-linux-4-cores-16gb
@@ -851,7 +930,7 @@ jobs:
       - name: Download Python wheels
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
+          pattern: "{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},genai_wheel_python_${{ env.PYTHON_VERSION }}}"
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
@@ -879,7 +958,7 @@ jobs:
       - name: Install GenAI Python dependencies
         uses: ./.github/actions/install_wheel
         with:
-          packages: "openvino;openvino_tokenizers[transformers]"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
           requirements_files: "${{ github.workspace }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
 
@@ -964,7 +1043,7 @@ jobs:
 
   CoveragePythonTools:
     name: Coverage Python Tools ${{ matrix.test.name }} (CPU)
-    needs: [openvino_download, genai_build_wheels, CoverageBuild]
+    needs: [openvino_download, genai_build_wheels, genai_build_genai_wheel, CoverageBuild]
     timeout-minutes: 720
     runs-on: aks-linux-4-cores-16gb
     strategy:
@@ -973,6 +1052,7 @@ jobs:
         test:
           - name: continuous_batching_tools
           - name: llm_benchmark_tools
+          - name: llm_benchmark_tools_transformers_under_5
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -1023,7 +1103,7 @@ jobs:
       - name: Download Python wheels
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
+          pattern: "{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},genai_wheel_python_${{ env.PYTHON_VERSION }}}"
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
@@ -1052,7 +1132,7 @@ jobs:
       - name: Install GenAI Python dependencies
         uses: ./.github/actions/install_wheel
         with:
-          packages: "openvino;openvino_tokenizers[transformers]"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
           requirements_files: "${{ github.workspace }}/samples/requirements.txt;${{ github.workspace }}/tools/llm_bench/requirements.txt"
           local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
 
@@ -1134,9 +1214,175 @@ jobs:
           compression-level: 0
           overwrite: true
 
+  CoveragePythonXgrammarOff:
+    name: Coverage Python XGrammar Off ${{ matrix.test.name }} (CPU)
+    needs: [openvino_download, genai_build_wheels, CoverageBuild]
+    timeout-minutes: 720
+    runs-on: ${{ matrix.test.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - name: xgrammar_off
+            runner: aks-linux-4-cores-16gb
+          - name: xgrammar_off_transformers_under_5
+            runner: aks-linux-4-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e HF_TOKEN
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ github.workspace }}
+    env:
+      TEST_PROFILE: cpu
+      OV_WORKSPACE: ${{ github.workspace }}
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/install
+      INSTALL_PKG_DIR: ${{ github.workspace }}/install
+      BIN_DIR: ${{ github.workspace }}/install/tests
+      BUILD_DIR: ${{ github.workspace }}/build
+      BUILD_JS_DIR: ${{ github.workspace }}/build_js
+      XGRAMMAR_BUILD_DIR: ${{ github.workspace }}/build_xgrammar
+      EXTRA_CPP_COVERAGE_DIRS: ${{ github.workspace }}/build_xgrammar
+      EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
+      PYTHONPATH: ${{ github.workspace }}/build_xgrammar:${{ github.workspace }}/install/python
+      PY_TEST_NAMES: ${{ matrix.test.name }}
+      COVERAGE_WRITE_STEP_SUMMARY: 'false'
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          submodules: recursive
+
+      - name: Install native coverage tools
+        run: |
+          apt update
+          apt install -y lcov
+
+      - name: Download OpenVINO package
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Download GenAI coverage install
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          name: ${{ env.GENAI_COVERAGE_INSTALL_ARTIFACT }}
+          path: ${{ env.INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Download Python wheels
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Download xgrammar-off build package
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          name: ${{ env.GENAI_COVERAGE_XGRAMMAR_ARTIFACT }}
+          path: ${{ env.XGRAMMAR_BUILD_DIR }}/openvino_genai
+          merge-multiple: true
+
+      - name: Download coverage build notes
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          name: ${{ env.GENAI_COVERAGE_NOTES_ARTIFACT }}
+          path: ${{ github.workspace }}/coverage_notes
+          merge-multiple: true
+
+      - name: Restore coverage notes
+        run: |
+          rm -rf "${BUILD_DIR}" "${BUILD_JS_DIR}"
+          mkdir -p "${BUILD_DIR}" "${BUILD_JS_DIR}" "${XGRAMMAR_BUILD_DIR}"
+          cp -a coverage_notes/main-build/. "${BUILD_DIR}/"
+          if [[ -d coverage_notes/xgrammar-build ]]; then
+            cp -a coverage_notes/xgrammar-build/. "${XGRAMMAR_BUILD_DIR}/"
+          fi
+
+      - name: Install GenAI Python dependencies
+        uses: ./.github/actions/install_wheel
+        with:
+          packages: "openvino;openvino_tokenizers[transformers]"
+          requirements_files: "${{ github.workspace }}/tests/python_tests/requirements.txt"
+          local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
+
+      - name: Install coverage Python dependencies
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: install-requirements
+
+      - name: Export OpenVINO runtime environment
+        run: |
+          source "${OV_INSTALL_DIR}/setupvars.sh"
+          {
+            echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+            echo "PYTHONPATH=${PYTHONPATH:-}"
+            echo "OpenVINO_DIR=${OpenVINO_DIR:-}"
+            echo "INTEL_OPENVINO_DIR=${INTEL_OPENVINO_DIR:-}"
+            echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:-}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Run CPU Python xgrammar-off coverage tests
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: run-suite
+          suite: python
+          profile: cpu
+          lane: ${{ matrix.test.name }}
+          test-names: ${{ matrix.test.name }}
+          python-package: openvino_genai
+          python-source-dir: src/python/openvino_genai
+          python-path-alias: openvino_genai
+          python-coverage-omit: |
+            */tests/*
+            */thirdparty/*
+            */docs/*
+            */samples/*
+            */tools/*
+            */src/js/tests/*
+            *.pb.cc
+            *.pb.h
+
+      - name: Generate CPU native C/C++ coverage report
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: collect-native
+          profile: cpu
+          extra-cpp-coverage-dirs: ${{ env.EXTRA_CPP_COVERAGE_DIRS }}
+
+      - name: Collect Python xgrammar-off CPU results
+        id: cpu_artifact
+        if: ${{ always() }}
+        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        with:
+          command: collect-results
+          suite: python
+          profile: cpu
+          lane: ${{ matrix.test.name }}
+          test-names: ${{ matrix.test.name }}
+
+      - name: Upload Python xgrammar-off CPU artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.cpu_artifact.outputs['artifact-name'] }}
+          path: ${{ steps.cpu_artifact.outputs.dir }}
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 0
+          overwrite: true
+
   CoverageJS:
     name: Coverage Node.js (CPU)
-    needs: [openvino_download, genai_build_wheels, CoverageBuild]
+    needs: [openvino_download, genai_build_wheels, genai_build_genai_wheel, CoverageBuild]
     timeout-minutes: 90
     runs-on: aks-linux-4-cores-16gb
     container:
@@ -1195,7 +1441,7 @@ jobs:
       - name: Download Python wheels
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
+          pattern: "{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},genai_wheel_python_${{ env.PYTHON_VERSION }}}"
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
@@ -1223,7 +1469,7 @@ jobs:
       - name: Install GenAI Python dependencies
         uses: ./.github/actions/install_wheel
         with:
-          packages: "openvino;openvino_tokenizers[transformers]"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai"
           requirements_files: "${{ github.workspace }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
 
@@ -1290,7 +1536,7 @@ jobs:
   CoverageSummary:
     name: Coverage Summary
     if: ${{ always() && needs.CoverageBuild.result == 'success' }}
-    needs: [CoverageBuild, CoverageCpp, CoverageCppGpu, CoveragePythonTests, CoveragePythonSamples, CoveragePythonTools, CoverageJS]
+    needs: [CoverageBuild, CoverageCpp, CoverageCppGpu, CoveragePythonTests, CoveragePythonSamples, CoveragePythonTools, CoveragePythonXgrammarOff, CoverageJS]
     outputs:
       upload_matrix_json: ${{ steps.coverage_files.outputs['upload-matrix-json'] || '[]' }}
     runs-on: ubuntu-latest
