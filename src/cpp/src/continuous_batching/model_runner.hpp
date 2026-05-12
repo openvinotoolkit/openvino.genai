@@ -259,8 +259,8 @@ public:
      * @param collect_attention_scores If true, then after each `forward` call the ModelRunner will collect and make
      * available the per-token attention scores for each decoder layer, so that these can be used in per-step cache
      * optimizations (such as cache eviction algorithm).
-    * @param use_per_layer_kv_block_indices If true, then the runner will pass KV block index input tensors to the model
-    * on a per-attention-layer basis.
+     * @param use_per_layer_kv_block_indices If true, then the runner will pass KV block index input tensors to the model
+     * on a per-attention-layer basis.
      * @param is_use_rotation_inputs If true, then the runner will pass cache rotation input tensors to the model
      * on a per-attention layer basis.
      * @param is_aggregate_attention_scores If true, then the runner will pass the input tensors containing per-sequence
@@ -1320,9 +1320,8 @@ private:
             for (size_t k = 0; k < num_running_sequences; ++k) {
                 Sequence::CPtr sequence = running_sequences[k];
                 size_t seq_id = sequence->get_id();
-                float threshold = 0.0;
 
-                threshold = scheduler_output.get_xattention_threshold(seq_id);
+                float threshold = scheduler_output.get_xattention_threshold(seq_id);
                 *xattention_threshold_data = threshold;
                 xattention_threshold_data += 1;
             }

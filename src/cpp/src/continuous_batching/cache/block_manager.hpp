@@ -209,11 +209,11 @@ class BlockAllocator {
 public:
     /**
      * Constructs the BlockAllocator.
-    * @param num_blocks Number of cache blocks in the free block pool to be owned by this allocator.
+     * @param num_blocks Number of cache blocks in the free block pool to be owned by this allocator.
      * @param enable_prefix_caching Whether prefix caching should be enabled for this allocator.
      * See also the equivalent parameter in ov::genai::ContinuousBatchingPipeline
-    * @param num_layers The number of separate block-table layers associated with the allocator.
-    * Blocks returned will be vectors with this size, each vector entry to be associated with a separate cache layer.
+     * @param num_layers The number of separate block-table layers associated with the allocator.
+     * Blocks returned will be vectors with this size, each vector entry to be associated with a separate cache layer.
      */
     BlockAllocator(size_t num_blocks, bool enable_prefix_caching, size_t num_layers = 1) :
             m_total_num_blocks(num_blocks), m_num_layers(num_layers), m_enable_prefix_caching(enable_prefix_caching), m_overwriteable_blocks(num_layers) {
@@ -222,7 +222,7 @@ public:
         if (num_blocks > 0) {
             m_free_blocks_num = std::vector<size_t>(num_layers, num_blocks);
             for (auto& per_layer_block_list : m_free_blocks) {
-                for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
+                for (size_t block_id = 0; block_id < m_total_num_blocks; ++block_id) {
                     per_layer_block_list.push_back(std::make_shared<CacheBlock>(block_id));
                 }
             }
@@ -250,7 +250,7 @@ public:
             m_free_blocks_num[idx] += added_blocks;
         }
         for (auto& per_layer_block_list : m_free_blocks) {
-            for (int block_id = m_total_num_blocks; block_id < new_block_count; ++block_id) {
+            for (size_t block_id = m_total_num_blocks; block_id < new_block_count; ++block_id) {
                 per_layer_block_list.push_back(std::make_shared<CacheBlock>(block_id));
             }
         }
