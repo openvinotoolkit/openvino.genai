@@ -96,7 +96,7 @@ public:
         void set_score_aggregation_window(uint64_t seq_id, size_t score_aggregation_window) {
             KVPagedAttentionData& kv_data = m_kv_paged_attention_data[seq_id];
             kv_data.score_aggregation_window = score_aggregation_window;
-            kv_data.has_score_aggregation_window = score_aggregation_window > 0;
+            kv_data.has_score_aggregation_window = true;
         }
 
         void set_kv_paged_attention_global_data(const std::shared_ptr<const KVPagedAttentionGlobalData>& global_data) {
@@ -733,7 +733,10 @@ private:
 
         scheduler_output.set_kv_block_tables(seq_id, m_cache_orchestrator->get_kv_block_tables(seq_id));
         scheduler_output.set_score_aggregation_window(seq_id, _schedule_scores_to_aggregate(sequence_group));
-        if (m_kv_paged_attention_global_data->apply_sparse_attention_mask) {
+        const size_t num_processed_tokens_after_chunk = sequence_group->get_num_processed_tokens() +
+                                                        sequence_group->get_num_scheduled_tokens();
+        if (m_kv_paged_attention_global_data->apply_sparse_attention_mask &&
+            num_processed_tokens_after_chunk <= sequence_group->get_prompt_len()) {
             TriShapeSparseAttentionTokenSkipper skipper(get_block_size(CacheType::KV_CACHE),
                     m_config.sparse_attention_config.num_last_dense_tokens_in_prefill,
                     m_config.sparse_attention_config.num_retained_start_tokens_in_cache,
