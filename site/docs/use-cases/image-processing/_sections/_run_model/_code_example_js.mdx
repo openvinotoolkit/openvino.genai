@@ -5,7 +5,6 @@ import CodeBlock from '@theme/CodeBlock';
 import { extname, join } from "node:path";
 import { addon as ov } from "openvino-node";
 import { VLMPipeline } from "openvino-genai-node";
-import { stat, readdir } from "node:fs/promises";
 import jpegJs from "jpeg-js";
 import { PNG } from "pngjs";
 import path from "node:path";
@@ -32,9 +31,9 @@ async function readImage(imagePath) {
 }
 
 async function readImages(imagePath) {
-    const stats = await stat(imagePath);
+    const stats = await fs.stat(imagePath);
     if (stats.isDirectory()) {
-        const files = await readdir(imagePath);
+        const files = await fs.readdir(imagePath);
         return Promise.all(files.sort().map((file) => readImage(path.join(imagePath, file))));
     }
     return [await readImage(imagePath)];

@@ -35,17 +35,17 @@ def run_sample(
 def run_js_chat(
     command: list[str],
     input_data: str,
-    env: dict[str, str] = os.environ,
+    env: dict[str, str] | None = None,
     timeout: int = 600,
 ):
     logger.info(f"Running JS sample command: {' '.join(map(str, command))}")
-    inputs = input_data.split("\n")
+    inputs = [s for s in input_data.splitlines() if s]
     logger.info(f"Input data: {input_data}")
     proc = subprocess.Popen(
         command,
         text=True,
         encoding="utf-8",
-        env=env,
+        env=env or os.environ,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

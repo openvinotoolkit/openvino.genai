@@ -92,7 +92,7 @@ Napi::Value TokenizerWrapper::apply_chat_template(const Napi::CallbackInfo& info
 
         std::shared_ptr<ov::genai::ChatHistory> history;
         if (is_chat_history(info.Env(), info[0])) {
-            history = unwrap<std::shared_ptr<ov::genai::ChatHistory>>(info.Env(), info[0]);
+            history = unwrap_chat_history(info.Env(), info[0]);
         } else {
             history = std::make_shared<ov::genai::ChatHistory>(js_to_cpp<ov::genai::JsonContainer>(info.Env(), info[0]));
         }

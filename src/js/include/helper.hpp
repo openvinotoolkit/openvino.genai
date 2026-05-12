@@ -170,8 +170,7 @@ template <>
 ov::genai::ImageGenerationPerfMetrics& unwrap<ov::genai::ImageGenerationPerfMetrics>(const Napi::Env& env,
                                                                                        const Napi::Value& value);
 
-template <>
-std::shared_ptr<ov::genai::ChatHistory>& unwrap<std::shared_ptr<ov::genai::ChatHistory>>(const Napi::Env& env, const Napi::Value& value);
+std::shared_ptr<ov::genai::ChatHistory> unwrap_chat_history(const Napi::Env& env, const Napi::Value& value);
 
 /**
  * @brief  Template function to convert C++ data types into Javascript data types

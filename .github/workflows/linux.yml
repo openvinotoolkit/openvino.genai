@@ -888,7 +888,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
-          ln -s ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          rm -rf node_modules/openvino-node/bin && ln -sfn ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Install NPM dependencies for samples
@@ -896,7 +896,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/samples/js
         run: |
           npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* ${{ env.SRC_DIR }}/src/js --ignore-scripts
-          ln -s ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          rm -rf node_modules/openvino-node/bin && ln -sfn ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Test Samples (Python and C++)
@@ -1082,7 +1082,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           npm install ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
-          ln -s ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          rm -rf node_modules/openvino-node/bin && ln -sfn ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Check lint

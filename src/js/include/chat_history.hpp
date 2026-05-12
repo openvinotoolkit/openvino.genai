@@ -14,7 +14,7 @@ public:
     
     ChatHistoryWrap(const Napi::CallbackInfo& info);
     
-    std::shared_ptr<ov::genai::ChatHistory>& get_value();
+    std::shared_ptr<ov::genai::ChatHistory> get_value();
 
 private:
     Napi::Value push_back(const Napi::CallbackInfo& info);

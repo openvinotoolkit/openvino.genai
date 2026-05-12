@@ -38,7 +38,7 @@ ChatHistoryWrap::ChatHistoryWrap(const Napi::CallbackInfo& info)
     }
 }
 
-std::shared_ptr<ov::genai::ChatHistory>& ChatHistoryWrap::get_value() {
+std::shared_ptr<ov::genai::ChatHistory> ChatHistoryWrap::get_value() {
     return m_chat_history;
 }
 
