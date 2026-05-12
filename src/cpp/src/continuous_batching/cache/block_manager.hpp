@@ -774,21 +774,6 @@ public:
     }
 
     /**
-     * @param seq_group The sequence group.
-     * @return Approximate number of tokens cached by this sequence group (blocks * block_size).
-     */
-    size_t tokens_occupied_by_sequence(SequenceGroup::Ptr seq_group) {
-        return get_number_of_blocks_occupied_by_sequence(seq_group) * m_block_size;
-    }
-
-    /**
-     * @return Total token capacity of this block manager (total_blocks * block_size).
-     */
-    size_t total_token_capacity() const {
-        return get_total_number_of_kv_blocks() * m_block_size;
-    }
-
-    /**
      * @return Whether any blocks have been allocated (capacity > 0).
      */
     bool has_token_capacity() const {

@@ -297,14 +297,6 @@ public:
         return max_usage;
     }
 
-    size_t get_total_number_of_kv_blocks() const {
-        size_t min_total = std::numeric_limits<size_t>::max();
-        for (const auto& [type, block_mgr] : m_block_managers) {
-            min_total = std::min(min_total, block_mgr->get_total_number_of_kv_blocks());
-        }
-        return min_total;
-    }
-
     /// @return Block size in tokens for the given cache type.
     size_t get_block_size(CacheType type) const {
         return m_block_managers.at(type)->get_block_size();
@@ -488,17 +480,6 @@ public:
     }
 
     /**
-     * @return Total token capacity (minimum across all cache types).
-     */
-    size_t total_token_capacity() const {
-        size_t min_capacity = std::numeric_limits<size_t>::max();
-        for (const auto& [type, block_mgr] : m_block_managers) {
-            min_capacity = std::min(min_capacity, block_mgr->total_token_capacity());
-        }
-        return min_capacity;
-    }
-
-    /**
      * @brief Grows each variable-size cache type's block pool to accommodate the given number of additional tokens.
      * Fixed-size-per-sequence managers (e.g. linear attention state) are skipped: their capacity
      * is sequence-count-driven, not token-count-driven.
@@ -585,26 +566,10 @@ public:
         return first_cache_manager.get_device();
     }
 
-    size_t get_num_layers() const {
-        size_t total = 0;
-        for (const auto& [type, cache_mgr] : m_cache_managers) {
-            total += cache_mgr->get_num_layers();
-        }
-        return total;
-    }
-
     size_t get_num_cache_tensors() const {
         size_t total = 0;
         for (const auto& [type, cache_mgr] : m_cache_managers) {
             total += cache_mgr->get_num_cache_tensors();
-        }
-        return total;
-    }
-
-    size_t get_block_size_in_bytes() const {
-        size_t total = 0;
-        for (const auto& [type, cache_mgr] : m_cache_managers) {
-            total += cache_mgr->get_block_size_in_bytes();
         }
         return total;
     }
@@ -623,10 +588,6 @@ public:
 
     const BlockManager& get_block_manager(CacheType type) const {
         return *m_block_managers.at(type);
-    }
-
-    const std::map<size_t, CacheType>& get_layer_to_cache_type_map() const {
-        return m_layer_to_cache_type;
     }
 
     CacheType get_cache_type_for_layer(size_t layer_id) const {
