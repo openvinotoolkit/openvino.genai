@@ -192,8 +192,7 @@ class OverwritableBlocksHashStore {
 class CacheStateDumper;
 
 /**
- * @brief Maintains a pool of KV cache block descriptors (layered as configured at initialization), freeing or allocating
- * them as requested.
+ * @brief Maintains a layered pool of cache block descriptors, freeing or allocating them as requested.
  */
 class BlockAllocator {
     std::vector<std::list<CacheBlock::Ptr>> m_free_blocks;
@@ -209,11 +208,11 @@ class BlockAllocator {
 public:
     /**
      * Constructs the BlockAllocator.
-     * @param num_blocks Number of KV cache blocks in the free block pool to be owned by this allocator.
+    * @param num_blocks Number of cache blocks in the free block pool to be owned by this allocator.
      * @param enable_prefix_caching Whether prefix caching should be enabled for this allocator.
      * See also the equivalent parameter in ov::genai::ContinuousBatchingPipeline
-     * @param num_layers The number of separate attention layers with KV caches in the LLM associated with the pipeline.
-     * Blocks returned will be vectors with this size, each vector entry to be associated with a separate layer's KV cache.
+    * @param num_layers The number of separate block-table layers associated with the allocator.
+    * Blocks returned will be vectors with this size, each vector entry to be associated with a separate cache layer.
      */
     BlockAllocator(size_t num_blocks, bool enable_prefix_caching, size_t num_layers = 1) :
             m_total_num_blocks(num_blocks), m_num_layers(num_layers), m_enable_prefix_caching(enable_prefix_caching), m_overwriteable_blocks(num_layers) {
@@ -243,18 +242,18 @@ public:
         }
     }
 
-    void increase_kv_blocks_number(size_t new_kv_blocks_count) {
-        OPENVINO_ASSERT(new_kv_blocks_count > m_total_num_blocks, "New blocks number should be more than previous blocks number.");
-        size_t added_blocks = new_kv_blocks_count - m_total_num_blocks;
+    void increase_block_count(size_t new_block_count) {
+        OPENVINO_ASSERT(new_block_count > m_total_num_blocks, "New blocks number should be more than previous blocks number.");
+        size_t added_blocks = new_block_count - m_total_num_blocks;
         for (auto idx = 0; idx < m_free_blocks_num.size(); idx++) {
             m_free_blocks_num[idx] += added_blocks;
         }
         for (auto& per_layer_block_list : m_free_blocks) {
-            for (int block_id = m_total_num_blocks; block_id < new_kv_blocks_count; ++block_id) {
+            for (int block_id = m_total_num_blocks; block_id < new_block_count; ++block_id) {
                 per_layer_block_list.push_back(std::make_shared<CacheBlock>(block_id));
             }
         }
-        m_total_num_blocks = new_kv_blocks_count;
+        m_total_num_blocks = new_block_count;
     }
 
 
@@ -513,9 +512,9 @@ public:
     }
 
     /**
-     * @return The total number of KV blocks .
+    * @return The total number of blocks.
      */
-    size_t get_total_number_of_kv_blocks() const {
+    size_t get_total_block_count() const {
         return m_total_num_blocks;
     }
 
@@ -530,9 +529,9 @@ public:
 };
 
 /**
- * @brief Works with `ov::genai::SequenceGroup`s and individual `ov::genai::Sequence`s to assign KV cache blocks to these
+ * @brief Works with `ov::genai::SequenceGroup`s and individual `ov::genai::Sequence`s to assign cache blocks to these
  * at each pipeline generation step. A block table is kept for each sequence, storing the indices of "physical"
- * KV cache blocks currently allocated to a given sequence. Each block table defines a linear "logical" block space, with positions of
+ * cache blocks currently allocated to a given sequence. Each block table defines a linear "logical" block space, with positions of
  * blocks within the block table being associated with "logical" block indices.
  */
 class BlockManager {
@@ -553,11 +552,11 @@ class BlockManager {
 public:
     /**
      * Constructs the BlockManager.
-     * @param num_blocks Number of KV cache blocks available for assignment to the sequences.
+    * @param num_blocks Number of cache blocks available for assignment to the sequences.
      * @param enable_prefix_caching Whether prefix caching should be enabled for this allocator.
      * See also the equivalent parameter in ov::genai::ContinuousBatchingPipeline
-     * @param block_size The size of an individual KV cache block in tokens.
-     * @param num_layers The number of separate attention layers with KV caches in the LLM associated with the pipeline.
+    * @param block_size The size of an individual cache block in tokens.
+    * @param num_layers The number of separate block-table layers associated with the manager.
      * In current implementation each layer must have the same number of logical blocks allocated at all times.
      * @param fixed_blocks_per_sequence When > 0, each sequence is allocated exactly this many blocks
      *        regardless of context length. Used for fixed-size caches (e.g. CausalConv1D state).
@@ -777,7 +776,7 @@ public:
      * @return Whether any blocks have been allocated (capacity > 0).
      */
     bool has_token_capacity() const {
-        return get_total_number_of_kv_blocks() > 0;
+        return get_total_block_count() > 0;
     }
 
     /**
@@ -801,7 +800,7 @@ public:
      */
     void grow_capacity_by_tokens(size_t num_tokens) {
         size_t additional_blocks = (num_tokens + m_block_size - 1) / m_block_size;
-        increase_kv_blocks_number(get_total_number_of_kv_blocks() + additional_blocks);
+        increase_block_count(get_total_block_count() + additional_blocks);
     }
 
     /**
@@ -821,8 +820,8 @@ public:
                             "Requested sequence token capacity exceeds size_t range");
             required_blocks += blocks_per_sequence * num_sequences;
         }
-        if (required_blocks > get_total_number_of_kv_blocks()) {
-            increase_kv_blocks_number(required_blocks);
+        if (required_blocks > get_total_block_count()) {
+            increase_block_count(required_blocks);
         }
     }
 
@@ -836,7 +835,7 @@ public:
     }
 
     /**
-     * @return The number of KV cache blocks available to be assigned to new sequences.
+    * @return The number of cache blocks available to be assigned to new sequences.
      */
     size_t num_free_blocks() const {
         return m_allocator.num_free_blocks(0); // relying on the invariant that all layers have identical number of blocks
@@ -872,7 +871,7 @@ public:
     }
 
     /**
-     * Checks whether enough KV cache blocks can be allocated to accommodate the given number of tokens,
+    * Checks whether enough cache blocks can be allocated to accommodate the given number of tokens,
      * accounting for unused slots in already-allocated blocks.
      * @param seq_group The sequence group to check allocation feasibility for.
      * @param num_tokens The number of additional tokens to accommodate.
@@ -901,7 +900,7 @@ public:
     }
 
     /**
-     * Allocates KV cache blocks to accommodate the given number of additional tokens for a sequence,
+    * Allocates cache blocks to accommodate the given number of additional tokens for a sequence,
      * accounting for unused slots in already-allocated blocks.
      * @param sequence The sequence to allocate blocks for.
      * @param seq_group The sequence group to which this sequence belongs.
@@ -932,25 +931,25 @@ public:
     }
 
     /**
-     * @return Percentage of KV cache used by all sequences.
+    * @return Percentage of cache blocks used by all sequences.
      */
     float get_used_percentage() const {
         return m_allocator.get_used_percentage();
     }
 
     /**
-     * Increases the number of KV blocks.
-     * @param num_blocks The new number of KV-blocks.
+    * Increases the number of blocks.
+    * @param num_blocks The new number of blocks.
      */
-    void increase_kv_blocks_number(size_t num_blocks) {
-        m_allocator.increase_kv_blocks_number(num_blocks);
+    void increase_block_count(size_t num_blocks) {
+        m_allocator.increase_block_count(num_blocks);
     }
 
     /**
-     * @return The total number of KV blocks .
+    * @return The total number of blocks.
      */
-    size_t get_total_number_of_kv_blocks() const {
-        return m_allocator.get_total_number_of_kv_blocks();
+    size_t get_total_block_count() const {
+        return m_allocator.get_total_block_count();
     }
 
     /**
@@ -1102,7 +1101,7 @@ public:
 
     /**
      * @param seq_group Pointer to a sequence group.
-     * @return Whether enough KV cache blocks are available to host the sequences in the group.
+    * @return Whether enough cache blocks are available to host the sequences in the group.
      */
     bool can_append_slots(SequenceGroup::CPtr seq_group) {
         return required_blocks_count(std::move(seq_group)) <= m_allocator.num_free_blocks(0);
@@ -1176,7 +1175,7 @@ public:
     }
 
     /**
-     * Clean up not busy physical KV cache blocks in a sequence group.
+    * Clean up not busy physical cache blocks in a sequence group.
      * @param seq_group Pointer to a sequence group.
      */
     void free_empty_physical_blocks(SequenceGroup::Ptr seq_group) {
@@ -1200,7 +1199,7 @@ public:
 
 
     /**
-     * Allocates just enough physical KV cache blocks to a sequence group to be enough for the sequences in it. If the sequences
+    * Allocates just enough physical cache blocks to a sequence group to be enough for the sequences in it. If the sequences
      * in the group were forked before and their last block is a copy-on-write, then the block contents will have to be copied separately
      * into the freshly allocated block copies as reported in the returned map.
      * @param seq_group Pointer to a sequence group.

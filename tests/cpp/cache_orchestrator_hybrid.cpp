@@ -444,14 +444,14 @@ TEST(TestCacheOrchestratorHybrid, GrowFixedSize_OnlyAffectsFixed) {
     const auto& kv_bm = orchestrator->get_block_manager(CacheType::KV_CACHE);
     const auto& la_bm = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
 
-    size_t initial_kv_blocks = kv_bm.get_total_number_of_kv_blocks();
-    size_t initial_la_blocks = la_bm.get_total_number_of_kv_blocks();
+    size_t initial_kv_blocks = kv_bm.get_total_block_count();
+    size_t initial_la_blocks = la_bm.get_total_block_count();
 
     // Grow fixed-size capacity by 3 sequences.
     orchestrator->grow_fixed_size_capacity(3);
 
-    size_t final_kv_blocks = kv_bm.get_total_number_of_kv_blocks();
-    size_t final_la_blocks = la_bm.get_total_number_of_kv_blocks();
+    size_t final_kv_blocks = kv_bm.get_total_block_count();
+    size_t final_la_blocks = la_bm.get_total_block_count();
 
     // KV should be unchanged.
     EXPECT_EQ(final_kv_blocks, initial_kv_blocks);
@@ -488,14 +488,14 @@ TEST(TestCacheOrchestratorHybrid, EnsureSequenceTokenCapacity_SkipsFixed) {
     const auto& kv_bm = orchestrator->get_block_manager(CacheType::KV_CACHE);
     const auto& la_bm = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
 
-    size_t initial_kv_blocks = kv_bm.get_total_number_of_kv_blocks();
-    size_t initial_la_blocks = la_bm.get_total_number_of_kv_blocks();
+    size_t initial_kv_blocks = kv_bm.get_total_block_count();
+    size_t initial_la_blocks = la_bm.get_total_block_count();
 
     // Ensure sequence-aware token capacity for one sequence with 100 tokens.
     orchestrator->ensure_sequence_token_capacity({{100, 1}});
 
-    size_t final_kv_blocks = kv_bm.get_total_number_of_kv_blocks();
-    size_t final_la_blocks = la_bm.get_total_number_of_kv_blocks();
+    size_t final_kv_blocks = kv_bm.get_total_block_count();
+    size_t final_la_blocks = la_bm.get_total_block_count();
 
     // KV blocks should increase (at least 100 / TEST_BLOCK_SIZE = 25 blocks).
     EXPECT_GE(final_kv_blocks, (100 + TEST_BLOCK_SIZE - 1) / TEST_BLOCK_SIZE);
@@ -533,8 +533,8 @@ TEST(TestCacheOrchestratorHybrid, TotalCacheBytes_IncludesAll) {
     const auto& la_bm = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
     const auto& la_cm = orchestrator->get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE);
 
-    size_t expected_kv_bytes = kv_bm.get_total_number_of_kv_blocks() * kv_cm.get_block_size_in_bytes();
-    size_t expected_la_bytes = la_bm.get_total_number_of_kv_blocks() * la_cm.get_block_size_in_bytes();
+    size_t expected_kv_bytes = kv_bm.get_total_block_count() * kv_cm.get_block_size_in_bytes();
+    size_t expected_la_bytes = la_bm.get_total_block_count() * la_cm.get_block_size_in_bytes();
     size_t expected_total = expected_kv_bytes + expected_la_bytes;
 
     size_t actual_total = orchestrator->get_total_cache_size_in_bytes();

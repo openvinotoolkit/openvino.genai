@@ -437,9 +437,9 @@ TEST(TestScheduler, hybrid_initialize_cache_grows_fixed_size_by_total_concurrent
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
     Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
 
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 0);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 0);
     std::ignore = scheduler.schedule(requests);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 2);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 2);
 
     for (auto& req : requests) {
         for (auto& seq : req->get_sequences()) {
@@ -470,7 +470,7 @@ TEST(TestScheduler, initialize_cache_uses_sequence_aware_block_rounding) {
 
     std::ignore = scheduler.schedule(requests);
 
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_number_of_kv_blocks(), requests.size());
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count(), requests.size());
 
     for (auto& req : requests) {
         for (auto& seq : req->get_sequences()) {
@@ -503,7 +503,7 @@ TEST(TestScheduler, linear_attention_only_initializes_fixed_size_capacity) {
 
     EXPECT_EQ(out.m_scheduled_sequence_groups_ids.size(), 1);
     EXPECT_TRUE(out.has_linear_attention_paging_data(seq_id));
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 1);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 1);
 
     scheduler.free_sequence(seq_id);
 }
@@ -528,7 +528,7 @@ TEST(TestScheduler, hybrid_runtime_arrival_beyond_initial_fixed_capacity_schedul
 
     std::vector<SequenceGroup::Ptr> requests = {seq_group1};
     std::ignore = scheduler.schedule(requests);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 1);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 1);
 
     auto running = seq_group1->get_running_sequences();
     running[0]->append_token(42, 0.9f);
@@ -1110,8 +1110,8 @@ TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_single_fixed_linear
 
     ASSERT_EQ(scheduler_config.num_kv_blocks, 64);
     EXPECT_EQ(scheduler_config.num_linear_attention_blocks, 1);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_number_of_kv_blocks(), 64);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 1);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count(), 64);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 1);
 }
 
 TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_fixed_linear_attention_capacity_from_max_num_seqs_for_bounded_batching) {
@@ -1131,8 +1131,8 @@ TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_fixed_linear_attent
 
     ASSERT_EQ(scheduler_config.num_kv_blocks, 64);
     EXPECT_EQ(scheduler_config.num_linear_attention_blocks, scheduler_config.max_num_seqs);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_number_of_kv_blocks(), 64);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(),
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count(), 64);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(),
               scheduler_config.max_num_seqs);
 }
 
@@ -1155,7 +1155,7 @@ TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_paged_linear_attent
 
     ASSERT_EQ(scheduler_config.num_kv_blocks, 10);
     EXPECT_EQ(scheduler_config.num_linear_attention_blocks, expected_la_blocks);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(),
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(),
               expected_la_blocks);
 }
 
@@ -1245,8 +1245,8 @@ TEST(TestScheduler, hybrid_create_zero_budget_keeps_all_cache_pools_dynamic) {
 
     EXPECT_EQ(scheduler_config.num_kv_blocks, 0);
     EXPECT_EQ(scheduler_config.num_linear_attention_blocks, 0);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_number_of_kv_blocks(), 0);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 0);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count(), 0);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 0);
 }
 
 TEST(TestScheduler, scheduler_config_explicit_linear_attention_blocks_require_linear_attention_model) {

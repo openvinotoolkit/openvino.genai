@@ -126,7 +126,7 @@ public:
 
     void allocate_cache_if_needed() {
         for (auto& [type, block_mgr] : m_block_managers) {
-            m_cache_managers.at(type)->allocate_cache_if_needed(block_mgr->get_total_number_of_kv_blocks());
+            m_cache_managers.at(type)->allocate_cache_if_needed(block_mgr->get_total_block_count());
         }
         for (auto& [type, block_indices] : m_pending_zero_blocks) {
             m_cache_managers.at(type)->zero_blocks(block_indices);
@@ -519,8 +519,8 @@ public:
         for (auto& [type, block_mgr] : m_block_managers) {
             if (block_mgr->is_fixed_size_per_sequence()) {
                 const size_t additional_blocks = num_seqs * block_mgr->get_fixed_blocks_per_sequence();
-                block_mgr->increase_kv_blocks_number(
-                    block_mgr->get_total_number_of_kv_blocks() + additional_blocks);
+                block_mgr->increase_block_count(
+                    block_mgr->get_total_block_count() + additional_blocks);
             }
         }
     }
@@ -540,8 +540,8 @@ public:
             const size_t required_blocks = block_mgr->required_blocks_count(seq_group);
             const size_t free_blocks = block_mgr->num_free_blocks();
             if (required_blocks > free_blocks) {
-                block_mgr->increase_kv_blocks_number(
-                    block_mgr->get_total_number_of_kv_blocks() + required_blocks - free_blocks);
+                block_mgr->increase_block_count(
+                    block_mgr->get_total_block_count() + required_blocks - free_blocks);
                 grew_capacity = true;
             }
         }
@@ -555,7 +555,7 @@ public:
     size_t get_total_cache_size_in_bytes() const {
         size_t total = 0;
         for (const auto& [type, block_mgr] : m_block_managers) {
-            total += block_mgr->get_total_number_of_kv_blocks() * m_cache_managers.at(type)->get_block_size_in_bytes();
+            total += block_mgr->get_total_block_count() * m_cache_managers.at(type)->get_block_size_in_bytes();
         }
         return total;
     }
