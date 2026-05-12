@@ -1,11 +1,10 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""RED-phase tests for ``whowhatbench.scenario.gt_cache``.
+"""Tests for whowhatbench.scenario.gt_cache.GTCache.
 
-The module under test does not exist yet — these tests are expected to fail
-until ``GTCache`` is implemented. They encode the cache-key contract from the
-plan: GT-affecting parameters change the key, target-only parameters do not.
+The cache-key contract: GT-affecting parameters change the key,
+target-only parameters do not.
 """
 
 from __future__ import annotations
@@ -249,7 +248,7 @@ def test_cache_dir_created_if_not_exists(tmp_path: Path) -> None:
 
 
 def test_get_rejects_csv_without_meta(tmp_path: Path) -> None:
-    # F5: a partial CSV (e.g. left over by a killed process mid-write) must not
+    # A partial CSV (e.g. left over by a killed process mid-write) must not
     # be treated as a cache hit. The cache only owns rows that also have a
     # corresponding meta JSON, which is written last under the put() contract.
     cache = GTCache(tmp_path)
@@ -265,7 +264,7 @@ def test_get_rejects_csv_without_meta(tmp_path: Path) -> None:
 
 
 def test_gtcache_allocate_path_returns_correct_path(tmp_path: Path) -> None:
-    # F13: GTCache must expose a public allocate_path() so callers don't have
+    # GTCache must expose a public allocate_path() so callers don't have
     # to reach into the private _dir attribute. allocate_path is a pure path
     # computation — it must not create the file.
     cache = GTCache(tmp_path)
@@ -278,7 +277,7 @@ def test_gtcache_allocate_path_returns_correct_path(tmp_path: Path) -> None:
 
 
 def test_runner_prepare_gt_uses_public_api() -> None:
-    # F13: The runner must not reach into GTCache's private _dir attribute.
+    # The runner must not reach into GTCache's private _dir attribute.
     # Once allocate_path() exists and _prepare_gt is refactored, the private
     # access disappears from the source.
     source = inspect.getsource(ScenarioRunner._prepare_gt)

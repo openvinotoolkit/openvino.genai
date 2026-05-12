@@ -1,19 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""RED-phase tests for the multi-task ``ScenarioRunner`` behaviour.
-
-The runner module does not exist yet — these tests are expected to fail
-(import errors / attribute errors) until production code is implemented.
-The assertions encode the multi-task contract from the implementation plan:
-
-    * GT is generated once per (base + dataset + seed) cache key, even when
-      multiple tasks reuse the same key.
-    * Different bases produce different cache keys → GT generated per base.
-    * ``run(only_task_ids=...)`` filters tasks; unknown IDs raise.
-    * Pre-existing ``gt_data`` skips loading the base model for that task.
-    * Each (task, target) result lands in ``tasks/<task_id>/<target_id>/``.
-"""
+"""Tests for ScenarioRunner multi-task GT reuse, ordering, and filtering."""
 
 from __future__ import annotations
 
@@ -23,7 +11,6 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
-from whowhatbench.scenario.result_store import ResultStore  # noqa: F401 — RED import
 from whowhatbench.scenario.runner import ScenarioRunner
 from whowhatbench.scenario.schema import Scenario
 

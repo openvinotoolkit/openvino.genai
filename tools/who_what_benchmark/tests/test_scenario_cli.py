@@ -1,20 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""RED-phase tests for the ``wwb run`` subcommand.
-
-The ``run`` subcommand does not exist yet — these tests are expected to fail
-until the production CLI dispatch is implemented. They encode the contract
-from the implementation plan:
-
-    * ``wwb [flags...]`` continues to work (legacy behaviour preserved).
-    * ``wwb run <scenario.yaml>`` enters the scenario runner path, dispatched
-      by ``sys.argv[1] == "run"``.
-    * ``wwb run --help`` shows scenario-related help.
-    * ``wwb run <yaml> --dry-run`` validates the scenario and prints the
-      planned execution matrix without loading any models.
-    * ``--only`` filters tasks; unknown task ids fail; ``--output`` overrides
-      the output directory.
+"""Tests for the ``wwb run`` subcommand (CLI surface).
 
 Tests run ``wwb`` as a subprocess and inspect exit codes / stdout / stderr.
 No models are loaded — only ``--help`` and ``--dry-run`` paths are exercised.

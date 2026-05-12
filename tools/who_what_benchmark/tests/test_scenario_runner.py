@@ -1,13 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""RED-phase tests for ``whowhatbench.scenario.runner`` and
-``whowhatbench.scenario.result_store``.
-
-The modules under test do not exist yet — these tests are expected to fail
-(import errors / attribute errors) until production code is implemented.
-The assertions encode the contract described in the implementation plan.
-"""
+"""Tests for whowhatbench.scenario.runner.ScenarioRunner and ResultStore."""
 
 from __future__ import annotations
 
@@ -263,9 +257,6 @@ def test_target_csv_written_per_target(tmp_path: Path, simple_scenario: Scenario
     for target_id in ["t1", "t2"]:
         target_csv = tmp_path / "tasks" / "chat" / target_id / "target.csv"
         assert target_csv.exists(), f"target.csv missing for target {target_id!r} at {target_csv}"
-
-
-# ── F7: missing openvino_genai must surface as a clear ImportError ────────────
 
 
 def test_text_to_image_evaluator_raises_import_error_when_unavailable() -> None:

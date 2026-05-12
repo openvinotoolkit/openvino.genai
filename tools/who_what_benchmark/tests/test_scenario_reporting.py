@@ -1,12 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""RED-phase tests for ``whowhatbench.scenario.reporting``.
-
-The reporting modules do not exist yet — these tests are expected to fail
-(import errors / attribute errors) until production code is implemented.
-The assertions encode the contract from the implementation plan.
-"""
+"""Tests for whowhatbench.scenario.reporting (markdown, JSON, manifest)."""
 
 from __future__ import annotations
 
@@ -83,9 +78,7 @@ def sample_store(tmp_path: Path) -> ResultStore:
     return store
 
 
-# ---------------------------------------------------------------------------
 # Markdown rendering
-# ---------------------------------------------------------------------------
 
 
 def test_render_markdown_contains_summary_table(sample_store: ResultStore, sample_scenario: Scenario) -> None:
@@ -112,9 +105,7 @@ def test_render_markdown_both_targets_in_table(sample_store: ResultStore, sample
     assert "llama_int8" in md
 
 
-# ---------------------------------------------------------------------------
 # JSON rendering
-# ---------------------------------------------------------------------------
 
 
 def test_render_json_has_tasks_key(sample_store: ResultStore, sample_scenario: Scenario) -> None:
@@ -143,9 +134,7 @@ def test_render_json_scenario_info(sample_store: ResultStore, sample_scenario: S
     assert payload["scenario"]["name"] == "test-report"
 
 
-# ---------------------------------------------------------------------------
 # Manifest
-# ---------------------------------------------------------------------------
 
 
 def test_build_manifest_has_required_keys(sample_store: ResultStore, sample_scenario: Scenario) -> None:
@@ -188,9 +177,7 @@ def test_build_manifest_env_has_python_and_wwb(sample_store, sample_scenario) ->
     assert "wwb" in env or "whowhatbench" in env
 
 
-# ---------------------------------------------------------------------------
 # Aggregate report writer
-# ---------------------------------------------------------------------------
 
 
 def test_write_reports_creates_files(sample_store: ResultStore, sample_scenario: Scenario, tmp_path: Path) -> None:

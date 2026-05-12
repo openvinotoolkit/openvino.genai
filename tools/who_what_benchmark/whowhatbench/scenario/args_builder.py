@@ -15,20 +15,6 @@ from whowhatbench.scenario.schema import (
     TaskConfig,
 )
 
-# DRIFT SENTINEL — if parse_args() gains a new flag, add it here too.
-# Attributes that must be set: base_model, target_model, tokenizer,
-# omit_chat_template, gt_data, target_data, model_type, data_encoder,
-# dataset, dataset_field, split, output, num_samples, verbose, device,
-# ov_config, language, hf, genai, cb_config, llamacpp, from_onnx,
-# image_size, num_inference_steps, seed, taylorseer_config, adapters,
-# alphas, long_prompt, empty_adapters, embeds_pooling_type, embeds_normalize,
-# embeds_padding_side, embeds_batch_size, rag_config, gguf_file,
-# draft_model, draft_device, draft_cb_config, num_assistant_tokens,
-# assistant_confidence_threshold, video_frames_num, speaker_embeddings,
-# tts_eval_whisper_model, vocoder_path, pruning_ratio, relevance_weight,
-# max_new_tokens
-
-
 def build_args_namespace(
     scenario: Scenario,
     task: TaskConfig,

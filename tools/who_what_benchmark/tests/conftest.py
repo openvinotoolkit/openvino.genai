@@ -177,7 +177,7 @@ def run_wwb(args: list[str], env=None):
         raise
 
 
-# ── Scenario runner mock helpers ──────────────────────────────────────────────
+# Scenario runner mock helpers
 
 
 def make_evaluator_mock(tmp_path: Path) -> MagicMock:

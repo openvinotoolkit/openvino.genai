@@ -1016,9 +1016,9 @@ def _build_visual_text_chat_evaluator(base_model, args, prompts, evaluator_cls):
     )
 
 
-# Per-task evaluator-construction builders. Each entry MUST have a matching
-# task type in EVALUATOR_REGISTRY — the drift-sentinel test in
-# tests/test_scenario_args_builder.py enforces this.
+# Per-task evaluator-construction builders. Each entry must have a matching
+# task type in EVALUATOR_REGISTRY; test_builder_registry_matches_evaluator_registry
+# enforces this.
 BUILDER_REGISTRY: dict[str, Callable[..., Any]] = {
     "text": _build_text_evaluator,
     "text-chat": _build_text_chat_evaluator,
