@@ -71,7 +71,7 @@ private:
     /// @return Tuple of (padded_feature, padded_mask_after_cnn, aftercnn_lens, cu_seqlens).
     std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> preprocess_audio(const ov::Tensor& audio_raw);
 
-    /// @brief Compute CNN output length after 3x stride-2 conv2d downsampling (8x total).
+    /// @brief Compute CNN output length after 8x total downsampling (three stride-2 Conv2d stages).
     static constexpr size_t get_feat_extract_output_length(size_t input_length) {
         // Three Conv2d layers with kernel=3, stride=2, padding=1: out = ceil(in / 2)
         size_t len = input_length;
