@@ -799,17 +799,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
         }
         auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
         std::set<size_t> skip_set;
-        if (scheduler_output.m_apply_sparse_attention_mask) {
-            const auto& skip_map = scheduler_output.m_sparse_attention_skipped_logical_blocks;
-            auto it = skip_map.find(seq_id);
-            if (it != skip_map.end()) {
-                skip_set = it->second;
-            }
+        if (scheduler_output.apply_sparse_attention_mask) {
+            skip_set = scheduler_output.get_sparse_attention_skipped_logical_blocks(seq_id);
         }
 
         if (skip_set.empty()) {
             // For now, will only register token scores from the dense attention stages
-            cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set, scheduler_output.m_score_aggregation_windows.at(seq_id));
+            cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set, scheduler_output.get_score_aggregation_window(seq_id));
         }
 
         auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });
