@@ -5,6 +5,17 @@ import os
 import subprocess # nosec B404
 import time
 
+PA_FALLBACK_WARNING = (
+    "[WARNING] Paged Attention backend initialization failed. Falling back to SDPA backend. "
+    'Set ATTENTION_BACKEND="SDPA" to skip Paged Attention initialization.'
+)
+
+
+def normalize_sample_output(output: str) -> str:
+    if PA_FALLBACK_WARNING not in output:
+        return output
+    return output.replace(PA_FALLBACK_WARNING, "").strip()
+
 def run_sample(
     command: list[str],
     input_data: str | None = None,
@@ -29,6 +40,7 @@ def run_sample(
     except subprocess.CalledProcessError as error:
         logger.error(f"Sample returned {error.returncode}. Output:\n{error.output}")
         raise
+    result.stdout = normalize_sample_output(result.stdout)
     logger.info(f"Sample output: {result.stdout}")
     return result
 

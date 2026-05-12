@@ -17,6 +17,7 @@ from openvino_genai import (
     StreamerBase, 
     DecodedResults,
 )
+from optimum.intel.utils.import_utils import is_transformers_version
 
 from utils.constants import get_default_llm_properties
 from utils.comparation import compare_generation_results, compare_generation_results_vs_ref
@@ -64,10 +65,14 @@ MAIN_PIPELINE_TYPES = (
     PipelineType.PROMPT_LOOKUP_DECODING,
 )
 
-LINEAR_ATTENTION_PIPELINE_TYPES = (
-    PipelineType.STATEFUL,
-    PipelineType.AUTO,
-)
+
+if is_transformers_version("<", "4.57") or is_transformers_version(">=", "5.0"):
+    LINEAR_ATTENTION_PIPELINE_TYPES = (PipelineType.STATEFUL,)
+else:  # transformers==4.57.*
+    LINEAR_ATTENTION_PIPELINE_TYPES = (
+        PipelineType.STATEFUL,
+        PipelineType.PAGED_ATTENTION,
+    )
 
 ALL_PIPELINE_TYPES = (
     *MAIN_PIPELINE_TYPES,
