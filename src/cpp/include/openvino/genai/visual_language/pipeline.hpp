@@ -18,7 +18,6 @@ namespace ov::genai {
 
 class OPENVINO_GENAI_EXPORTS VLMDecodedResults : public DecodedResults{
 public:
-    GenerationStatus m_status = GenerationStatus::RUNNING;
     VLMPerfMetrics perf_metrics;
 };
 
