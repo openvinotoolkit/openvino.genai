@@ -8,7 +8,6 @@
 #include <filesystem>
 
 #include "openvino/genai/llm_pipeline.hpp"
-#include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
