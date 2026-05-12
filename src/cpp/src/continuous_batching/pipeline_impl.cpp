@@ -66,7 +66,7 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
                                        const SchedulerConfig& scheduler_config) {
-    const bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
+    const bool need_per_layer_kv_cache_control = scheduler_config.use_cache_eviction;
     const bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
     const bool allow_xattention = scheduler_config.use_sparse_attention &&
                                   scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
@@ -74,8 +74,8 @@ void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
     const bool allow_adaptive_rkv = scheduler_config.use_cache_eviction &&
                                     scheduler_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV;
 
-    ov::pass::SDPAToPagedAttention(is_need_per_layer_cache_control,
-                                   is_need_per_layer_cache_control,
+    ov::pass::SDPAToPagedAttention(need_per_layer_kv_cache_control,
+                                   need_per_layer_kv_cache_control,
                                    allow_score_aggregation,
                                    allow_cache_rotation,
                                    allow_xattention,
@@ -193,7 +193,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     // Scheduler and Model Runner instantiation
     bool is_use_xattention = scheduler_config.use_sparse_attention && scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
     bool is_use_cache_eviction = scheduler_config.use_cache_eviction;
-    bool is_use_per_layer_cache_control = cache_orchestrator->needs_per_layer_block_indices();
+    bool is_use_per_layer_kv_block_indices = cache_orchestrator->needs_per_layer_kv_block_indices();
     const size_t kv_block_size = cache_orchestrator->get_block_size(CacheType::KV_CACHE);
     if (is_use_cache_eviction) {
         const auto& eviction_config = scheduler_config.cache_eviction_config;
@@ -205,7 +205,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                                                        kv_block_size,
                                                        m_num_decoder_layers,
                                                        /* collect_attention_scores = */ true,
-                                                       is_use_per_layer_cache_control,
+                                                       is_use_per_layer_kv_block_indices,
                                                        /* is_use_rotation_inputs = */ is_apply_rotation,
                                                        /* is_aggregate_attention_scores = */ true,
                                                        is_use_xattention,
@@ -219,7 +219,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         m_model_runner =
             std::make_shared<ModelRunner>(infer_request, kv_block_size, m_num_decoder_layers,
                                                        /* collect_attention_scores = */ false,
-                                                       is_use_per_layer_cache_control,
+                                                       is_use_per_layer_kv_block_indices,
                                                        /* is_use_rotation_inputs = */ false,
                                                        /* is_aggregate_attention_scores = */ false,
                                                        is_use_xattention,
@@ -719,7 +719,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
 
         for (size_t i = 0; i < num_running_sequences; ++i) {
             Sequence::CPtr sequence = running_sequences[i];
-            size_t num_blocks = m_scheduler->get_num_logical_blocks(sequence_group);
+            size_t num_blocks = m_scheduler->get_num_kv_logical_blocks(sequence_group);
             size_t seq_id = sequence->get_id();
             OPENVINO_ASSERT(live_seq_ids_to_num_occupied_blocks.find(seq_id) == live_seq_ids_to_num_occupied_blocks.end(),
                     "duplicate seq_id ", seq_id, " among sequence groups");
@@ -825,7 +825,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
             }
         }
 
-        m_previous_num_blocks_before_eviction_per_sequence[seq_id] = m_scheduler->get_num_logical_blocks(seq_group_ptr);
+        m_previous_num_blocks_before_eviction_per_sequence[seq_id] = m_scheduler->get_num_kv_logical_blocks(seq_group_ptr);
 
         auto logical_blocks_to_evict = cache_eviction_algo.evict_logical_blocks();
         m_previous_evicted_block_logical_indices_per_sequence[seq_id] = logical_blocks_to_evict;

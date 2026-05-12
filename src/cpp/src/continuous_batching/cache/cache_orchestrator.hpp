@@ -279,7 +279,7 @@ public:
     }
 
     /// @return Number of KV cache blocks currently allocated for the given sequence group or 0 if model does not have KV cache.
-    size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
+    size_t get_num_kv_logical_blocks(SequenceGroup::CPtr seq_group) const {
         auto it = m_block_managers.find(CacheType::KV_CACHE);
         return it != m_block_managers.end() ? it->second->get_num_logical_blocks(seq_group) : 0;
     }
@@ -602,7 +602,7 @@ public:
      * has per-layer control enabled. Cache types with their own dedicated inputs
      * (e.g. LINEAR_ATTENTION_CACHE with paged_conv_ / paged_gdn. inputs) do not contribute.
      */
-    bool needs_per_layer_block_indices() const {
+    bool needs_per_layer_kv_block_indices() const {
         return m_use_per_layer_kv_block_indices;
     }
 

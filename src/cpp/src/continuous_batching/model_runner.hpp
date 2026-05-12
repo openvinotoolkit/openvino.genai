@@ -207,7 +207,7 @@ class ModelRunner {
     size_t m_block_size;
     size_t m_num_decoder_layers;
     bool m_collect_attention_scores;
-    bool m_is_use_per_layer_cache_control;
+    bool m_use_per_layer_kv_block_indices;
 
     bool m_is_use_rotation_inputs;
     std::vector<std::map<size_t, std::vector<size_t>>> m_rotated_block_logical_indices_per_sequence_for_each_layer;
@@ -259,8 +259,8 @@ public:
      * @param collect_attention_scores If true, then after each `forward` call the ModelRunner will collect and make
      * available the per-token attention scores for each decoder layer, so that these can be used in per-step cache
      * optimizations (such as cache eviction algorithm).
-     * @param is_use_per_layer_cache_control If true, then the runner will pass cache control input tensors to the model
-     * on a per-attention layer basis.
+    * @param use_per_layer_kv_block_indices If true, then the runner will pass KV block index input tensors to the model
+    * on a per-attention-layer basis.
      * @param is_use_rotation_inputs If true, then the runner will pass cache rotation input tensors to the model
      * on a per-attention layer basis.
      * @param is_aggregate_attention_scores If true, then the runner will pass the input tensors containing per-sequence
@@ -273,7 +273,7 @@ public:
                 size_t block_size,
                 size_t num_decoder_layers = 1,
                 bool collect_attention_scores = false,
-                bool is_use_per_layer_cache_control = false,
+                bool use_per_layer_kv_block_indices = false,
                 bool is_use_rotation_inputs = false,
                 bool is_aggregate_attention_scores = false,
                 bool is_use_xattention_inputs = false,
@@ -282,7 +282,7 @@ public:
           m_block_size(block_size),
           m_num_decoder_layers(num_decoder_layers),
           m_collect_attention_scores(collect_attention_scores),
-          m_is_use_per_layer_cache_control(is_use_per_layer_cache_control),
+          m_use_per_layer_kv_block_indices(use_per_layer_kv_block_indices),
           m_is_use_rotation_inputs(is_use_rotation_inputs),
           m_rotated_block_logical_indices_per_sequence_for_each_layer(num_decoder_layers),
           m_is_aggregate_attention_scores(is_aggregate_attention_scores),
@@ -999,7 +999,7 @@ private:
         const Scheduler::Output& scheduler_output,
         const std::vector<std::map<size_t, std::vector<size_t>>>& seq_id_to_select_logical_idx_maps) {
         OPENVINO_ASSERT(seq_id_to_select_logical_idx_maps.size() == dst_tensor_names.size() ||
-                        (dst_tensor_names.size() == 1 && !m_is_use_per_layer_cache_control) ||
+                        (dst_tensor_names.size() == 1 && !m_use_per_layer_kv_block_indices) ||
                         seq_id_to_select_logical_idx_maps.empty());
         bool is_fill_all = seq_id_to_select_logical_idx_maps.empty();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
@@ -1066,7 +1066,7 @@ private:
         const Scheduler::Output& scheduler_output,
         const std::vector<std::map<size_t, std::vector<size_t>>>& seq_id_to_select_logical_idx_maps) {
         OPENVINO_ASSERT(seq_id_to_select_logical_idx_maps.size() == dst_tensor_names.size() ||
-                        (dst_tensor_names.size() == 1 && !m_is_use_per_layer_cache_control) ||
+                        (dst_tensor_names.size() == 1 && !m_use_per_layer_kv_block_indices) ||
                         seq_id_to_select_logical_idx_maps.empty());
         std::vector<size_t> filled_blocks_per_layer(dst_tensor_names.size(), 0);
 
@@ -1103,7 +1103,7 @@ private:
         std::vector<std::string> tensor_names = {"block_indices"};
 
         size_t num_layers = 1;
-        if (m_is_use_per_layer_cache_control) {
+        if (m_use_per_layer_kv_block_indices) {
             num_layers = m_num_decoder_layers;
             tensor_names.resize(m_num_decoder_layers);
             for (size_t i = 0; i < tensor_names.size(); i++) {

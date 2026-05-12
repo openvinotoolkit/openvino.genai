@@ -251,8 +251,8 @@ public:
         return m_cache_orchestrator->get_block_size(type);
     }
 
-    size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
-        return m_cache_orchestrator->get_num_logical_blocks(seq_group);
+    size_t get_num_kv_logical_blocks(SequenceGroup::CPtr seq_group) const {
+        return m_cache_orchestrator->get_num_kv_logical_blocks(seq_group);
     }
 
     const std::vector<BlocksPerLayer>& get_kv_block_tables(size_t seq_id) const {
@@ -796,9 +796,9 @@ private:
         }
 
         size_t non_evictable_size = m_config.cache_eviction_config.get_max_cache_size() - m_config.cache_eviction_config.get_evictable_size();
-        OPENVINO_ASSERT(get_num_logical_blocks(sequence_group) * kv_block_size >= non_evictable_size);
+        OPENVINO_ASSERT(get_num_kv_logical_blocks(sequence_group) * kv_block_size >= non_evictable_size);
 
-        return get_num_logical_blocks(sequence_group) * kv_block_size - non_evictable_size;
+        return get_num_kv_logical_blocks(sequence_group) * kv_block_size - non_evictable_size;
     }
 };
 
