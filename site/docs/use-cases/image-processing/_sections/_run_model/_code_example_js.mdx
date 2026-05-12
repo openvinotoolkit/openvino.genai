@@ -7,7 +7,6 @@ import { addon as ov } from "openvino-node";
 import { VLMPipeline } from "openvino-genai-node";
 import jpegJs from "jpeg-js";
 import { PNG } from "pngjs";
-import path from "node:path";
 
 async function readImage(imagePath) {
     const buffer = await fs.readFile(imagePath);
@@ -34,7 +33,7 @@ async function readImages(imagePath) {
     const stats = await fs.stat(imagePath);
     if (stats.isDirectory()) {
         const files = await fs.readdir(imagePath);
-        return Promise.all(files.sort().map((file) => readImage(path.join(imagePath, file))));
+        return Promise.all(files.sort().map((file) => readImage(join(imagePath, file))));
     }
     return [await readImage(imagePath)];
 }

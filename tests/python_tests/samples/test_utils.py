@@ -3,6 +3,7 @@
 from conftest import logger
 import os
 import subprocess # nosec B404
+import time
 
 def run_sample(
     command: list[str],
@@ -56,6 +57,7 @@ def run_js_chat(
 
     stdout_chunks: list[str] = []
     input_index = 0
+    start_time = time.monotonic()
     try:
         for line in proc.stdout:
             stdout_chunks.append(line)
@@ -70,12 +72,15 @@ def run_js_chat(
 
         proc.stdin.close()
 
-        # Collect any remaining output after the main interaction loop.
-        remaining_output = proc.stdout.read()
+        # Collect any remaining output and wait for the process with a timeout.
+        # proc.communicate() is used instead of proc.stdout.read() + proc.wait()
+        # to ensure the timeout covers both the read and the wait.
+        elapsed = time.monotonic() - start_time
+        remaining_timeout = max(1, timeout - int(elapsed))
+        remaining_output, _ = proc.communicate(timeout=remaining_timeout)
         if remaining_output:
             stdout_chunks.append(remaining_output)
-
-        return_code = proc.wait(timeout=timeout)
+        return_code = proc.returncode
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()

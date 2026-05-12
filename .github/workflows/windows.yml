@@ -1117,6 +1117,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") --ignore-scripts
+          Remove-Item -Recurse -Force node_modules/openvino-node/bin -ErrorAction SilentlyContinue
           New-Item -ItemType Junction -Path node_modules/openvino-node/bin -Target ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin | Out-Null
           npm install --verbose
 
