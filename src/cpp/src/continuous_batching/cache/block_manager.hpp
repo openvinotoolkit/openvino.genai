@@ -246,7 +246,7 @@ public:
     void increase_block_count(size_t new_block_count) {
         OPENVINO_ASSERT(new_block_count > m_total_num_blocks, "New blocks number should be more than previous blocks number.");
         size_t added_blocks = new_block_count - m_total_num_blocks;
-        for (auto idx = 0; idx < m_free_blocks_num.size(); idx++) {
+        for (size_t idx = 0; idx < m_free_blocks_num.size(); ++idx) {
             m_free_blocks_num[idx] += added_blocks;
         }
         for (auto& per_layer_block_list : m_free_blocks) {

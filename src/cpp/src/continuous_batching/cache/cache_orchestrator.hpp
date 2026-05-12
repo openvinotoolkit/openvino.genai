@@ -284,8 +284,38 @@ public:
             return;
         }
 
-        for (auto& [type, block_mgr] : m_block_managers) {
-            block_mgr->restore_cached_blocks(sequence_group);
+        if (m_block_managers.size() == 1) {
+            m_block_managers.begin()->second->restore_cached_blocks(sequence_group);
+            return;
+        }
+
+        std::map<CacheType, BlockManager::PrefixRestorePlan> restore_plans;
+        size_t common_cache_token_position = sequence_group->get_prompt_len();
+        while (common_cache_token_position > 0) {
+            restore_plans.clear();
+            size_t next_common_cache_token_position = std::numeric_limits<size_t>::max();
+            for (auto& [type, block_mgr] : m_block_managers) {
+                auto plan = block_mgr->get_prefix_restore_plan(sequence_group, common_cache_token_position);
+                if (plan.empty()) {
+                    return;
+                }
+                next_common_cache_token_position = std::min(next_common_cache_token_position, plan.cache_token_position);
+                restore_plans[type] = std::move(plan);
+            }
+
+            if (next_common_cache_token_position == common_cache_token_position) {
+                break;
+            }
+            common_cache_token_position = next_common_cache_token_position;
+        }
+
+        size_t common_processed_tokens = std::numeric_limits<size_t>::max();
+        for (auto& [type, plan] : restore_plans) {
+            m_block_managers.at(type)->restore_cached_blocks(sequence_group, plan);
+            common_processed_tokens = std::min(common_processed_tokens, plan.processed_tokens);
+        }
+        if (common_processed_tokens != std::numeric_limits<size_t>::max()) {
+            sequence_group->update_processed_tokens_num(common_processed_tokens);
         }
     }
 

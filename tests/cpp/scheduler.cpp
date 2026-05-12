@@ -140,6 +140,44 @@ ov::Tensor embeds_matrix_to_tensor(std::vector<std::vector<float>> vec) {
     return res;
 }
 
+TEST(TestScheduler, adaptive_rkv_zero_size_is_not_marked_available) {
+    Scheduler::Output output;
+    const uint64_t seq_id = 42;
+
+    EXPECT_FALSE(output.has_adaptive_rkv_evictable_size(seq_id));
+    EXPECT_EQ(output.get_adaptive_rkv_evictable_size(seq_id), 0);
+
+    output.set_adaptive_rkv_evictable_size(seq_id, 0);
+    EXPECT_FALSE(output.has_adaptive_rkv_evictable_size(seq_id));
+    EXPECT_EQ(output.get_adaptive_rkv_evictable_size(seq_id), 0);
+
+    output.set_adaptive_rkv_evictable_size(seq_id, 3);
+    EXPECT_TRUE(output.has_adaptive_rkv_evictable_size(seq_id));
+    EXPECT_EQ(output.get_adaptive_rkv_evictable_size(seq_id), 3);
+
+    output.set_adaptive_rkv_evictable_size(seq_id, 0);
+    EXPECT_FALSE(output.has_adaptive_rkv_evictable_size(seq_id));
+    EXPECT_EQ(output.get_adaptive_rkv_evictable_size(seq_id), 0);
+}
+
+TEST(TestScheduler, output_keeps_shared_kv_global_data_alive) {
+    Scheduler::Output output;
+    auto mutable_global_data = std::make_shared<Scheduler::KVPagedAttentionGlobalData>();
+    mutable_global_data->xattention_block_size = 17;
+    mutable_global_data->xattention_stride = 5;
+    mutable_global_data->adaptive_rkv_start_size = 3;
+
+    std::shared_ptr<const Scheduler::KVPagedAttentionGlobalData> global_data = mutable_global_data;
+    output.set_kv_paged_attention_global_data(global_data);
+    mutable_global_data.reset();
+    global_data.reset();
+
+    const Scheduler::KVPagedAttentionGlobalData& output_global_data = output.get_kv_paged_attention_global_data();
+    EXPECT_EQ(output_global_data.xattention_block_size, 17);
+    EXPECT_EQ(output_global_data.xattention_stride, 5);
+    EXPECT_EQ(output_global_data.adaptive_rkv_start_size, 3);
+}
+
 TEST(TestScheduler, general_test) {
     std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).max_num_batched_tokens = 32;

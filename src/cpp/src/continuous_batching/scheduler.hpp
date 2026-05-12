@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -42,7 +43,7 @@ private:
     bool m_can_use_partial_preemption;
 
     SchedulerConfig m_config;
-    const KVPagedAttentionGlobalData m_kv_paged_attention_global_data;
+    std::shared_ptr<const KVPagedAttentionGlobalData> m_kv_paged_attention_global_data;
     std::shared_ptr<CacheOrchestrator> m_cache_orchestrator;
     friend class CacheStateDumper;
 
@@ -77,7 +78,7 @@ public:
         std::vector<uint64_t> m_scheduled_sequence_groups_ids;
         std::map<uint64_t, KVPagedAttentionData> m_kv_paged_attention_data;
         std::map<uint64_t, LinearAttentionPagingData> linear_attention_paging_data;
-        const KVPagedAttentionGlobalData* m_kv_paged_attention_global_data = nullptr;
+        std::shared_ptr<const KVPagedAttentionGlobalData> m_kv_paged_attention_global_data;
 
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
@@ -98,8 +99,8 @@ public:
             kv_data.has_score_aggregation_window = true;
         }
 
-        void set_kv_paged_attention_global_data(const KVPagedAttentionGlobalData& global_data) {
-            m_kv_paged_attention_global_data = &global_data;
+        void set_kv_paged_attention_global_data(const std::shared_ptr<const KVPagedAttentionGlobalData>& global_data) {
+            m_kv_paged_attention_global_data = global_data;
         }
 
         void set_sparse_attention_skipped_logical_blocks(uint64_t seq_id, const std::set<size_t>& skipped_logical_blocks) {
@@ -114,7 +115,7 @@ public:
         void set_adaptive_rkv_evictable_size(uint64_t seq_id, size_t evictable_size) {
             KVPagedAttentionData& kv_data = m_kv_paged_attention_data[seq_id];
             kv_data.adaptive_rkv_evictable_size = evictable_size;
-            kv_data.has_adaptive_rkv_evictable_size = true;
+            kv_data.has_adaptive_rkv_evictable_size = evictable_size > 0;
         }
 
         void set_linear_attention_paging_data(uint64_t seq_id, LinearAttentionPagingData&& paging_data) {
@@ -184,7 +185,7 @@ public:
     Scheduler(std::shared_ptr<CacheOrchestrator> cache_orchestrator, const SchedulerConfig & config = {}, bool can_use_partial_preemption = true, size_t snapkv_window_size = 1) :
         m_can_use_partial_preemption(can_use_partial_preemption),
         m_config(config),
-        m_kv_paged_attention_global_data(config),
+        m_kv_paged_attention_global_data(std::make_shared<const KVPagedAttentionGlobalData>(config)),
         m_cache_orchestrator(std::move(cache_orchestrator)),
         m_snapkv_window_size(snapkv_window_size) {
     }
@@ -732,7 +733,7 @@ private:
 
         scheduler_output.set_kv_block_tables(seq_id, m_cache_orchestrator->get_kv_block_tables(seq_id));
         scheduler_output.set_score_aggregation_window(seq_id, _schedule_scores_to_aggregate(sequence_group));
-        if (m_kv_paged_attention_global_data.apply_sparse_attention_mask) {
+        if (m_kv_paged_attention_global_data->apply_sparse_attention_mask) {
             TriShapeSparseAttentionTokenSkipper skipper(get_block_size(CacheType::KV_CACHE),
                     m_config.sparse_attention_config.num_last_dense_tokens_in_prefill,
                     m_config.sparse_attention_config.num_retained_start_tokens_in_cache,
