@@ -630,7 +630,7 @@ public:
                 const size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
                 size_t num_past_blocks_to_ignore = 0;
 
-                if (scheduler_output.apply_sparse_attention_mask) {
+                if (scheduler_output.get_kv_paged_attention_global_data().apply_sparse_attention_mask) {
                     const auto& skipped_blocks = scheduler_output.get_sparse_attention_skipped_logical_blocks(sequence->get_id());
                     if (!skipped_blocks.empty()) {
                         seq_id_to_skipped_blocks_map[sequence->get_id()] = skipped_blocks;
@@ -1207,7 +1207,7 @@ private:
                 Sequence::CPtr sequence = running_sequences[seq_idx];
                 size_t global_sequence_id = sequence->get_id();
                 size_t subsequence_length = sequence_group->get_context_len() - sequence_group->get_num_evicted_tokens();
-                if (scheduler_output.apply_sparse_attention_mask) {
+                if (scheduler_output.get_kv_paged_attention_global_data().apply_sparse_attention_mask) {
                     size_t num_past_blocks_to_discard = 0;
                     num_past_blocks_to_discard = scheduler_output.get_sparse_attention_skipped_logical_blocks(global_sequence_id).size();
                     subsequence_length -= num_past_blocks_to_discard * m_block_size;
@@ -1305,8 +1305,9 @@ private:
                                  size_t batch_size_in_sequences) {
         ov::Tensor xattention_block_size(ov::element::i32, {});
         ov::Tensor xattention_stride(ov::element::i32, {});
-        xattention_block_size.data<int32_t>()[0] = scheduler_output.xattention_block_size;
-        xattention_stride.data<int32_t>()[0] = scheduler_output.xattention_stride;
+        const Scheduler::KVPagedAttentionGlobalData& kv_global_data = scheduler_output.get_kv_paged_attention_global_data();
+        xattention_block_size.data<int32_t>()[0] = kv_global_data.xattention_block_size;
+        xattention_stride.data<int32_t>()[0] = kv_global_data.xattention_stride;
         m_request.set_tensor("xattention_block_size", xattention_block_size);
         m_request.set_tensor("xattention_stride", xattention_stride);
 
@@ -1339,7 +1340,8 @@ private:
                                    const Scheduler::Output& scheduler_output,
                                    size_t batch_size_in_sequences) {
         ov::Tensor adaptive_rkv_start_size(ov::element::i32, {});
-        adaptive_rkv_start_size.data<int32_t>()[0] = scheduler_output.adaptive_rkv_start_size;
+        const Scheduler::KVPagedAttentionGlobalData& kv_global_data = scheduler_output.get_kv_paged_attention_global_data();
+        adaptive_rkv_start_size.data<int32_t>()[0] = kv_global_data.adaptive_rkv_start_size;
         m_request.set_tensor("adaptive_rkv_start_size", adaptive_rkv_start_size);
 
         ov::Tensor adaptive_rkv_evictable_sizes(ov::element::i32, {batch_size_in_sequences});
@@ -1367,8 +1369,16 @@ private:
 
         m_request.set_tensor("adaptive_rkv_evictable_sizes", adaptive_rkv_evictable_sizes);
 
+        bool has_diversity_block_sets = false;
+        for (size_t seq_id : running_seq_ids) {
+            if (!scheduler_output.get_adaptive_rkv_diversity_block_sets(seq_id).empty()) {
+                has_diversity_block_sets = true;
+                break;
+            }
+        }
+
         std::vector<size_t> num_diversity_set_blocks_per_layer(m_num_decoder_layers, 0);
-        if (scheduler_output.adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence.empty()) {
+        if (!has_diversity_block_sets) {
             // Set the auxiliary tensors to zero-shape if the scheduler did not provide information on which blocks of the
             // evictable area belong to the diversity subset
             for (size_t i = 0; i < m_num_decoder_layers; i++) {
@@ -1392,10 +1402,12 @@ private:
                 begins_data += 1;
 
                 auto begins_name = std::string("adaptive_rkv_diversity_block_set_indices_begins.") + std::to_string(i);
-                const auto& adaptive_rkv_diversity_block_map = scheduler_output.adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence[i];
                 for (size_t seq_id : running_seq_ids) {
-                    OPENVINO_ASSERT(adaptive_rkv_diversity_block_map.find(seq_id) != adaptive_rkv_diversity_block_map.end());
-                    size_t num_blocks = adaptive_rkv_diversity_block_map.at(seq_id).size();
+                    const auto& diversity_block_sets = scheduler_output.get_adaptive_rkv_diversity_block_sets(seq_id);
+                    OPENVINO_ASSERT(diversity_block_sets.size() == m_num_decoder_layers,
+                                    "Adaptive R-KV diversity block sets for sequence ", seq_id,
+                                    " must contain data for ", m_num_decoder_layers, " decoder layers, got ", diversity_block_sets.size());
+                    size_t num_blocks = diversity_block_sets[i].size();
                     num_diversity_set_blocks_per_layer[i] += num_blocks;
                     *begins_data  = num_diversity_set_blocks_per_layer[i];
                     begins_data += 1;
@@ -1410,9 +1422,28 @@ private:
                 auto indices_tensor = m_request.get_tensor(indices_name);
                 indices_tensor.set_shape({num_diversity_set_blocks_per_layer[i]});
             }
-            _fill_select_indices_from_block_tables(indices_tensor_names,
-                                                   scheduler_output,
-                                                   scheduler_output.adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence);
+
+            std::vector<size_t> filled_blocks_per_layer(m_num_decoder_layers, 0);
+            for (size_t layer_idx = 0; layer_idx < m_num_decoder_layers; layer_idx++) {
+                auto indices_tensor = m_request.get_tensor(indices_tensor_names[layer_idx]);
+                int32_t* indices_data = indices_tensor.data<int32_t>();
+                for (size_t seq_id : running_seq_ids) {
+                    const auto& diversity_block_sets = scheduler_output.get_adaptive_rkv_diversity_block_sets(seq_id);
+                    const auto& selected_logical_blocks = diversity_block_sets[layer_idx];
+                    const auto& block_table = scheduler_output.get_kv_block_tables(seq_id)[layer_idx];
+                    const size_t block_table_size = block_table.size();
+                    for (size_t block_id = 0; block_id < selected_logical_blocks.size(); ++block_id) {
+                        const size_t logical_block_idx = selected_logical_blocks[block_id];
+                        OPENVINO_ASSERT(logical_block_idx < block_table_size);
+                        indices_data[block_id] = block_table[logical_block_idx]->get_index();
+                    }
+                    indices_data += selected_logical_blocks.size();
+                    filled_blocks_per_layer[layer_idx] += selected_logical_blocks.size();
+                }
+                OPENVINO_ASSERT(indices_tensor.get_size() == filled_blocks_per_layer[layer_idx],
+                                "did not fill tensor ", indices_tensor_names[layer_idx], " completely, tensor size in elements ",
+                                indices_tensor.get_size(), ", last filled idx ", filled_blocks_per_layer[layer_idx]);
+            }
         }
     }
 

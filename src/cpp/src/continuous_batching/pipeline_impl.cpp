@@ -799,7 +799,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
         }
         auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
         std::set<size_t> skip_set;
-        if (scheduler_output.apply_sparse_attention_mask) {
+        if (scheduler_output.get_kv_paged_attention_global_data().apply_sparse_attention_mask) {
             skip_set = scheduler_output.get_sparse_attention_skipped_logical_blocks(seq_id);
         }
 
