@@ -122,22 +122,8 @@ ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8, ImageSize image_size, con
 std::string normalize_prompt_impl(
     const std::string& prompt, size_t base_id, size_t n_visuals, const std::regex& native_pattern, void(*write_native)(std::ostream& os, size_t idx)
 ) {
-    // Convert universal visual placeholders (image and video) into the shared native visual tags.
-    // Both types must be converted since a prompt may contain both <ov_genai_image_i> and <ov_genai_video_i>.
-    auto [image_normalized, image_ids] = universal_to_native(prompt, write_native, VisionType::IMAGE);
-    auto [normalized_prompt, video_ids] = universal_to_native(image_normalized, write_native, VisionType::VIDEO);
-    std::vector<size_t> visual_sequence = std::move(image_ids);
-    visual_sequence.insert(visual_sequence.end(), video_ids.begin(), video_ids.end());
-    if (!visual_sequence.empty()) {
-        OPENVINO_ASSERT(
-            !std::regex_search(prompt, native_pattern),
-            "Prompt cannot mix universal visual tags (<ov_genai_image_i> / <ov_genai_video_i>) with native visual tags (<|image_i|>)."
-        );
-        verify_ids(visual_sequence, base_id, n_visuals);
-        return normalized_prompt;
-    }
-
     // Preserve user-specified native tag ordering when the prompt already contains native visuals.
+    std::vector<size_t> visual_sequence;
     for (std::sregex_iterator iter(prompt.begin(), prompt.end(), native_pattern), end;
          iter != end;
          ++iter) {
@@ -916,6 +902,39 @@ NormalizedPrompt InputsEmbedderVideoChatFlashQwen::normalize_prompt(
     // The combined base must equal their sum since get_inputs_embeds concatenates images then videos.
     const size_t base_visual_id = base_image_id + base_video_id;
     const size_t total_visuals = images.size() + videos.size();
+
+    // Universal tags use separate counters (<ov_genai_image_i>, <ov_genai_video_j>) but the unified visual
+    // stream in get_inputs_embeds concatenates images then videos. Remap indices accordingly:
+    //   image index i  ->  unified visual (i + base_video_id)
+    //   video index j  ->  unified visual (base_image_id + images.size() + j)
+    const size_t n_images = images.size();
+    auto image_write = [base_video_id](std::ostream& os, size_t idx) {
+        write_native(os, idx + base_video_id);
+    };
+    auto [image_normalized, image_ids] = universal_to_native(prompt, image_write, VisionType::IMAGE);
+
+    auto video_write = [base_image_id, n_images](std::ostream& os, size_t idx) {
+        write_native(os, base_image_id + n_images + idx);
+    };
+    auto [tag_normalized, video_ids] = universal_to_native(image_normalized, video_write, VisionType::VIDEO);
+
+    std::vector<size_t> visual_sequence;
+    visual_sequence.reserve(image_ids.size() + video_ids.size());
+    for (size_t id : image_ids) {
+        visual_sequence.push_back(id + base_video_id);
+    }
+    for (size_t id : video_ids) {
+        visual_sequence.push_back(base_image_id + n_images + id);
+    }
+    if (!visual_sequence.empty()) {
+        OPENVINO_ASSERT(
+            !std::regex_search(prompt, NATIVE_PATTERN),
+            "Prompt cannot mix universal visual tags (<ov_genai_image_i> / <ov_genai_video_i>) with native visual tags (<|image_i|>)."
+        );
+        verify_ids(visual_sequence, base_visual_id, total_visuals);
+        return {tag_normalized, {}};
+    }
+
     return {normalize_prompt_impl(prompt, base_visual_id, total_visuals, NATIVE_PATTERN, write_native), {}};
 }
 

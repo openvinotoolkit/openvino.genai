@@ -2825,6 +2825,7 @@ def test_videochatflash_qwen_chat_history_mixed_turns(
         videos=[synthetic_video_32x32_tensor],
         generation_config=generation_config,
     )
+    assert len(res1.texts) > 0
     assert len(res1.texts[0]) > 0
 
     # Turn 2: image input (different modality from turn 1)
@@ -2833,8 +2834,32 @@ def test_videochatflash_qwen_chat_history_mixed_turns(
         images=[cat_tensor],
         generation_config=generation_config,
     )
+    assert len(res2.texts) > 0
     assert len(res2.texts[0]) > 0
     ov_videochatflash_qwen_pipe_raw.finish_chat()
+
+
+def test_videochatflash_qwen_universal_tags_mixed(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """Universal tags with mixed image+video must remap indices to the unified visual ID space."""
+    generation_config = _setup_generation_config(
+        ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False
+    )
+
+    # Prompt with explicit universal tags for both image and video.
+    # Without index remapping, video_0 would conflict with image_0 in the native tag space.
+    prompt = "<ov_genai_image_0><ov_genai_video_0>Describe what you see."
+    res = ov_videochatflash_qwen_pipe_raw.generate(
+        prompt,
+        images=[cat_tensor],
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res.texts) > 0
+    assert len(res.texts[0]) > 0
 
 
 @pytest.mark.parametrize(
