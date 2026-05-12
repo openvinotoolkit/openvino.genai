@@ -2776,6 +2776,7 @@ def test_videochatflash_qwen_chat_history_with_video(
         videos=videos,
         generation_config=generation_config,
     )
+    assert len(res1.texts) > 0
     answer1 = res1.texts[0]
     history.append({"role": "assistant", "content": answer1})
     history.append({"role": "user", "content": follow_up})
@@ -2783,6 +2784,7 @@ def test_videochatflash_qwen_chat_history_with_video(
         history,
         generation_config=generation_config,
     )
+    assert len(res2.texts) > 0
     answer2_chat_history = res2.texts[0]
 
     # start_chat-based flow
@@ -2792,11 +2794,13 @@ def test_videochatflash_qwen_chat_history_with_video(
         videos=videos,
         generation_config=generation_config,
     )
+    assert len(res1_sc.texts) > 0
     answer1_sc = res1_sc.texts[0]
     res2_sc = ov_videochatflash_qwen_pipe_raw.generate(
         follow_up,
         generation_config=generation_config,
     )
+    assert len(res2_sc.texts) > 0
     answer2_start_chat = res2_sc.texts[0]
     ov_videochatflash_qwen_pipe_raw.finish_chat()
 
@@ -2812,9 +2816,7 @@ def test_videochatflash_qwen_chat_history_mixed_turns(
     synthetic_video_32x32_tensor: openvino.Tensor,
 ):
     """Multi-turn chat: turn 1 with video, turn 2 with image. Tests mixed modality ID tracking."""
-    generation_config = _setup_generation_config(
-        ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False
-    )
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
 
     # Turn 1: video input
     ov_videochatflash_qwen_pipe_raw.start_chat()

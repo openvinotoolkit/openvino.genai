@@ -776,23 +776,22 @@ EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, co
                     "Input image must be 4D [1, H, W, C], got rank ", img_shape.size(),
                     " and batch ", (img_shape.size() >= 1 ? img_shape[0] : 0), ".");
 
-    // Replicate the single frame to mm_local_num_frames to match the static positional embedding shape.
-    // Inline padding instead of sample_video_if_needed() to avoid misleading "Video frame_count" warnings
-    // on every image encode call -- single-frame images always require padding to mm_local_num_frames.
+    // Preprocess the single frame once, then tile the f32 result to mm_local_num_frames.
+    // This avoids running resize+normalize mm_local_num_frames times on identical data.
+    auto preprocessed_single = preprocess(image, target_size,
+                                          m_processor_config.image_mean,
+                                          m_processor_config.image_std);
     const size_t frames_group_size = m_mm_local_num_frames;
-    ov::Shape padded_shape = img_shape;
-    padded_shape[0] = frames_group_size;
-    ov::Tensor padded_video(image.get_element_type(), padded_shape);
-    const size_t frame_bytes = img_shape[1] * img_shape[2] * img_shape[3] * image.get_element_type().size();
-    const auto* src_ptr = static_cast<const uint8_t*>(image.data());
-    auto* dst_ptr = static_cast<uint8_t*>(padded_video.data());
+    const ov::Shape& pp_shape = preprocessed_single.get_shape();  // [1, C, tH, tW]
+    ov::Shape tiled_shape = pp_shape;
+    tiled_shape[0] = frames_group_size;
+    ov::Tensor preprocessed(ov::element::f32, tiled_shape);
+    const size_t frame_elems = pp_shape[1] * pp_shape[2] * pp_shape[3];
+    const auto* src_ptr = preprocessed_single.data<const float>();
+    auto* dst_ptr = preprocessed.data<float>();
     for (size_t i = 0; i < frames_group_size; ++i) {
-        std::memcpy(dst_ptr + i * frame_bytes, src_ptr, frame_bytes);
+        std::memcpy(dst_ptr + i * frame_elems, src_ptr, frame_elems * sizeof(float));
     }
-
-    auto preprocessed = preprocess(padded_video, target_size,
-                                   m_processor_config.image_mean,
-                                   m_processor_config.image_std);
 
     // Reuse the video positional embedding since the padded image has the same frame count.
     ov::Tensor final_features = encode_preprocessed_frames(preprocessed, m_pos_emb, m_target_num_token);
