@@ -14,7 +14,8 @@
 #    include <sys/sysinfo.h>
 #endif
 
-#include "continuous_batching/cache_state_dumper.hpp"
+#include "continuous_batching/cache/cache_orchestrator.hpp"
+#include "continuous_batching/cache/cache_state_dumper.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "lora/helper.hpp"

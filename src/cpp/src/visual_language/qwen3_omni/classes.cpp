@@ -108,9 +108,7 @@ EncodedImage VisionEncoderQwen3Omni::encode(const ov::Tensor& image, const ov::A
     return encoded_img;
 }
 
-EncodedVideo VisionEncoderQwen3Omni::encode_frames(const std::vector<ov::Tensor>& frames,
-                                                   const ov::AnyMap& config_map) {
-    (void)config_map;  // Required by interface but not used in this implementation
+EncodedVideo VisionEncoderQwen3Omni::encode_frames(const std::vector<ov::Tensor>& frames) {
     EncodedVideo encoded_video;
     const auto& config = m_video_processor_config;
 

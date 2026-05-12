@@ -117,6 +117,15 @@ protected:
      */
     void add_interpolated_pos_embeds(const std::vector<std::array<size_t, 3>>& grids_thw, ov::Tensor& concatenated_embeds);
 
+    /**
+     * @brief Computes interpolated position embeddings and returns them as a new tensor.
+     *
+     * Like add_interpolated_pos_embeds, but returns the permuted pos_embeds tensor instead of
+     * fusing it into concatenated_embeds. Used by subclasses whose vision model accepts
+     * pos_embeds as a separate input (e.g. Qwen3-Omni's merged vision model).
+     */
+    ov::Tensor get_interpolated_pos_embeds(const std::vector<std::array<size_t, 3>>& grids_thw);
+
     std::vector<std::array<size_t, 3>> get_vision_grid_thw_for_position_ids(
         const std::vector<std::array<size_t, 3>>& images_grid_thw,
         const std::vector<size_t>& images_sequence,
