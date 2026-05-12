@@ -28,9 +28,8 @@ struct overloaded : Ts... {
 template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
-using GenerateInputs = std::variant<ov::genai::StringInputs, std::shared_ptr<ov::genai::ChatHistory>>;
-/** VLM generate first argument: prompt string or shared ChatHistory owned by the JS wrapper */
-using VLMGenerateInputs = std::variant<std::string, std::shared_ptr<ov::genai::ChatHistory>>;
+using GenerateInputs = std::variant<ov::genai::StringInputs, ov::genai::ChatHistory>;
+using VLMGenerateInputs = std::variant<std::string, ov::genai::ChatHistory>;
 
 #define VALIDATE_ARGS_COUNT(info, expected_count, method_name)                                 \
     if (info.Length() != expected_count) {                                                     \
@@ -171,7 +170,7 @@ template <>
 ov::genai::ImageGenerationPerfMetrics& unwrap<ov::genai::ImageGenerationPerfMetrics>(const Napi::Env& env,
                                                                                        const Napi::Value& value);
 
-std::shared_ptr<ov::genai::ChatHistory> unwrap_chat_history(const Napi::Env& env, const Napi::Value& value);
+ov::genai::ChatHistory unwrap_chat_history(const Napi::Env& env, const Napi::Value& value);
 
 /**
  * @brief  Template function to convert C++ data types into Javascript data types

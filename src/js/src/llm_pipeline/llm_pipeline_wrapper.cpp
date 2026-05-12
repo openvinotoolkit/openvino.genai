@@ -95,8 +95,8 @@ void performInferenceThread(TsfnContext* context) {
         std::visit(overloaded{[context, config, streamer, &result](ov::genai::StringInputs& inputs) {
                                   result = context->pipe->generate(inputs, config, streamer);
                               },
-                              [context, config, streamer, &result](std::shared_ptr<ov::genai::ChatHistory>& inputs) {
-                                  result = context->pipe->generate(*inputs, config, streamer);
+                              [context, config, streamer, &result](ov::genai::ChatHistory& inputs) {
+                                  result = context->pipe->generate(inputs, config, streamer);
                               },
                               [&](auto&) {
                                   OPENVINO_THROW("Unsupported type for generate inputs.");

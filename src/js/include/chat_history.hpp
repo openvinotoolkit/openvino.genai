@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <memory>
-
 #include <napi.h>
 #include "openvino/genai/chat_history.hpp"
 
@@ -14,7 +12,7 @@ public:
     
     ChatHistoryWrap(const Napi::CallbackInfo& info);
     
-    std::shared_ptr<ov::genai::ChatHistory> get_value();
+    ov::genai::ChatHistory get_value();
 
 private:
     Napi::Value push_back(const Napi::CallbackInfo& info);
@@ -29,5 +27,5 @@ private:
     Napi::Value set_extra_context(const Napi::CallbackInfo& info);
     Napi::Value get_extra_context(const Napi::CallbackInfo& info);
     
-    std::shared_ptr<ov::genai::ChatHistory> m_chat_history;
+    ov::genai::ChatHistory m_chat_history;
 };

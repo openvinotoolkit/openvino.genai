@@ -859,13 +859,14 @@ ov::genai::ImageGenerationPerfMetrics& unwrap<ov::genai::ImageGenerationPerfMetr
     return js_metrics->get_value();
 }
 
-std::shared_ptr<ov::genai::ChatHistory> unwrap_chat_history(const Napi::Env& env, const Napi::Value& value) {
+ov::genai::ChatHistory unwrap_chat_history(const Napi::Env& env, const Napi::Value& value) {
     OPENVINO_ASSERT(value.IsObject(), "Passed argument must be an object.");
     const auto obj = value.As<Napi::Object>();
     OPENVINO_ASSERT(is_chat_history(env, value), "Passed argument is not of type ChatHistory");
 
-    const auto chat_history = Napi::ObjectWrap<ChatHistoryWrap>::Unwrap(obj);
-    return chat_history->get_value();
+    const auto chat_history_wrap = Napi::ObjectWrap<ChatHistoryWrap>::Unwrap(obj);
+    OPENVINO_ASSERT(chat_history_wrap != nullptr, "Failed to unwrap native ChatHistory instance.");
+    return chat_history_wrap->get_value();
 }
 
 template <>

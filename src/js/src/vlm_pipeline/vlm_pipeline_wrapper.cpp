@@ -96,9 +96,9 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
             overloaded{[context, &config, &streamer, &result](const std::string& prompt) {
                            result = context->pipe->generate(prompt, context->images, context->videos, config, streamer);
                        },
-                       [context, &config, &streamer, &result](const std::shared_ptr<ov::genai::ChatHistory>& history) {
+                       [context, &config, &streamer, &result](const ov::genai::ChatHistory& history) {
                            result =
-                               context->pipe->generate(*history, context->images, context->videos, config, streamer);
+                               context->pipe->generate(history, context->images, context->videos, config, streamer);
                        }},
             context->inputs);
 
