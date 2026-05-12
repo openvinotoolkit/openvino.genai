@@ -77,6 +77,12 @@ public:
     PipelineMetrics get_metrics() const;
     Tokenizer get_tokenizer();
 
+    void encode_audios(const std::vector<ov::Tensor>& audios) {
+        if (m_inputs_embedder) {
+            m_inputs_embedder->encode_audios(audios);
+        }
+    }
+
     /**
      * Adds requests to awaiting queue using encoded inputs
      */
