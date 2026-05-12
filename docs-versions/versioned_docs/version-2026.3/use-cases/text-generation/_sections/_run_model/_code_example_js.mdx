@@ -1,0 +1,10 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="javascript" showLineNumbers>
+{`import { LLMPipeline } from "openvino-genai-node";
+
+const pipe = await LLMPipeline(model_path, "${props.device || 'CPU'}");
+const result = await pipe.generate("What is OpenVINO?", { max_new_tokens: 100 });
+console.log(result);
+`}
+</CodeBlock>

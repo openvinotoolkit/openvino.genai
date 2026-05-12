@@ -1,0 +1,16 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="python" showLineNumbers>
+{`import openvino_genai as ov_genai
+
+pipeline = ov_genai.TextEmbeddingPipeline(
+    models_path,
+    "${props.device || 'CPU'}",
+    pooling_type = ov_genai.TextEmbeddingPipeline.PoolingType.MEAN,
+    normalize = True
+)
+
+documents_embeddings = pipeline.embed_documents(documents)
+query_embeddings = pipeline.embed_query("What is the capital of France?")
+`}
+</CodeBlock>

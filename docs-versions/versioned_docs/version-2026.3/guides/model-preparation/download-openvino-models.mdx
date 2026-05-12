@@ -1,0 +1,53 @@
+---
+sidebar_position: 1
+description: How to get pre-converted OpenVINO models
+---
+
+import UseCasesNote from './_use_cases_note.mdx';
+
+# Download Pre-Converted OpenVINO Models
+
+OpenVINO GenAI allows to run different generative AI models (see [Supported Models](../../supported-models/index.mdx)).
+While you can convert models from other frameworks (see [Convert Models to OpenVINO Format](./convert-to-openvino.mdx)), using pre-converted models from [Hugging Face](https://huggingface.co/) and [ModelScope](https://modelscope.cn/) can save time and effort.
+
+## Download from Hugging Face
+
+The simplest way to download models is using the `huggingface_hub` package:
+1. Install the package:
+    ```bash
+    pip install huggingface_hub
+    ```
+2. Download the model, specifying model id (e.g. [`OpenVINO/phi-2-fp16-ov`](https://huggingface.co/OpenVINO/phi-2-fp16-ov)) and output directory `model_path`:
+    ```bash
+    huggingface-cli download "OpenVINO/phi-2-fp16-ov" --local-dir model_path
+    ```
+    :::info
+    The `-ov` suffix in model id usually defines OpenVINO pre-converted model.
+    :::
+
+:::tip Available Model Collections
+OpenVINO offers collections of pre-converted and pre-optimized models available on Hugging Face under the [OpenVINO Toolkit](https://huggingface.co/OpenVINO) organization:
+
+- [Large Language Models](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd)
+- [Image Generation](https://huggingface.co/collections/OpenVINO/image-generation-67697d9952fb1eee4a252aa8)
+- [Speech-to-Text](https://huggingface.co/collections/OpenVINO/speech-to-text-672321d5c070537a178a8aeb)
+- [Visual Language Models](https://huggingface.co/collections/OpenVINO/visual-language-models-6792248a0eed57085d2b094b)
+- [Speculative Decoding Draft Models Collection](https://huggingface.co/collections/OpenVINO/speculative-decoding-draft-models-673f5d944d58b29ba6e94161)
+- and others.
+
+These models are ready to use with OpenVINO GenAI.
+:::
+
+
+## Download from ModelScope
+
+1. Install the package:
+    ```bash
+    pip install modelscope
+    ```
+2. Download the model, specifying model id (e.g. [`OpenVINO/phi-2-fp16-ov`](https://modelscope.cn/models/OpenVINO/phi-2-fp16-ov)) and output directory `model_path`:
+    ```bash
+    modelscope download --model "OpenVINO/phi-2-fp16-ov" --local_dir model_path
+    ```
+
+<UseCasesNote />

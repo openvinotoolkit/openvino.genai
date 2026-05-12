@@ -1,0 +1,27 @@
+.pipelineExample {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+
+  .pipelineHeader {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+
+    .pipelineTitle {
+      margin: 0;
+      color: var(--genai-color-text-white);
+      font-weight: 500;
+      font-size: 14px;
+    }
+  }
+
+  .pipelineCode {
+    font-size: 0.75rem;
+
+    pre code {
+      padding: 0.5rem;
+    }
+  }
+}

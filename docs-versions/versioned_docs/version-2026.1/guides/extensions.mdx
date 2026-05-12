@@ -1,0 +1,119 @@
+---
+sidebar_position: 9
+title: Extensions
+---
+
+# Extensions Property
+
+## Overview
+
+The `extensions` property allows OpenVINO GenAI pipelines to register custom operations for models that OpenVINO™ does not support out of the box.
+Use it when a model requires custom operations or when you want to provide operations through OpenVINO extension mechanisms.
+
+Custom operations can be implemented in both C++ and Python. To define a custom operation class, refer to the [Custom Operation Guide](https://docs.openvino.ai/2026/documentation/openvino-extensibility/custom-openvino-operations.html).
+You can also create a shared library that contains custom operations implemented in C++. Refer to [Create library with extensions](https://docs.openvino.ai/2026/documentation/openvino-extensibility.html#create-a-library-with-extensions) for more details on library creation.
+
+You can pass extensions to pipeline constructors in both Python and C++.
+
+## Using the `extensions` Property
+
+<LanguageTabs>
+    <TabItemPython>
+        Accepted item types in the Python `extensions` list:
+
+        - `str`, `bytes`, or `pathlib.Path` pointing to a compiled extension library
+        - `openvino.Extension` objects such as `ov.OpExtension(...)`
+        - Python custom operation classes, which are automatically wrapped as `openvino.OpExtension(...)`
+
+        ```python
+        from pathlib import Path
+
+        import openvino as ov
+        import openvino_genai as ov_genai
+
+        # Minimal custom operation stub for registration through ov.OpExtension.
+        # Replace the type info and implementation with the actual custom operation.
+        class CustomAdd(ov.Op):
+            class_type_info = ov.DiscreteTypeInfo("CustomAdd", "extension")
+
+        model_path = "path/to/model_with_custom_ops"
+
+        # Option 1: pass extension library paths
+        llm_pipe_path = ov_genai.LLMPipeline(
+            model_path,
+            "CPU",
+            extensions=[Path("/path/to/libopenvino_custom_extension.so")],
+        )
+
+        # Option 2: register a Python custom operation.
+        llm_pipe_obj = ov_genai.LLMPipeline(
+            model_path,
+            "CPU",
+            extensions=[ov.OpExtension(CustomAdd)],
+        )
+
+        # Generate with custom ops via extension library path registration
+        llm_pipe_path.generate("Generate story about", max_new_tokens=100)
+
+        # Generate with custom ops via extension object registration
+        llm_pipe_obj.generate("Generate story about", max_new_tokens=100)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        Include `openvino/genai/extensions.hpp` and use the `ov::genai::extensions(...)` helper to build the `extensions` property.
+
+        Accepted C++ forms:
+
+        - `ov::genai::ExtensionList`
+        - `std::vector<std::filesystem::path>`
+        - `std::vector<std::shared_ptr<ov::Extension>>`
+
+        ```cpp
+        #include <filesystem>
+        #include <memory>
+        #include <vector>
+
+        #include "openvino/core/op_extension.hpp"
+        #include "openvino/genai/extensions.hpp"
+        #include "openvino/genai/llm_pipeline.hpp"
+
+        // Replace with your custom operation definition/include.
+        class CustomAdd;
+
+        int main() {
+            const std::filesystem::path model_path = "path/to/model_with_custom_ops";
+
+            // Option 1: pass extension library paths
+            ov::genai::LLMPipeline llm_pipe_path(
+                model_path,
+                "CPU",
+                ov::genai::extensions(std::vector<std::filesystem::path>{
+                    "/path/to/libopenvino_custom_extension.so"
+                })
+            );
+
+            // Option 2: register a C++ custom operation.
+            ov::genai::LLMPipeline llm_pipe_obj(
+                model_path,
+                "CPU",
+                ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{
+                    std::make_shared<ov::OpExtension<CustomAdd>>()
+                })
+            );
+
+            // Generate with custom ops via extension library path registration
+            llm_pipe_path.generate("Generate story about", ov::genai::max_new_tokens(100));
+
+            // Generate with custom ops via extension object registration
+            llm_pipe_obj.generate("Generate story about", ov::genai::max_new_tokens(100));
+
+            return 0;
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+## Notes
+
+- Extensions are loaded into the underlying OpenVINO `Core` before the pipeline loads the model.
+- If you use Python custom ops, register them through `ov.OpExtension(...)` or pass the custom operation class directly where supported.

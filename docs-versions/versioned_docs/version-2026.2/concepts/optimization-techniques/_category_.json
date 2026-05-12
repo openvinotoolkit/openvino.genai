@@ -1,0 +1,8 @@
+{
+  "label": "Optimization techniques",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "description": "Optimization techniques to OpenVINO GenAI."
+  }
+}

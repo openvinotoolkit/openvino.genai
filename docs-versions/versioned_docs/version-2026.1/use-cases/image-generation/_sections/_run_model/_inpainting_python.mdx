@@ -1,0 +1,23 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="python" showLineNumbers>
+{`import openvino_genai as ov_genai
+import openvino as ov
+from PIL import Image
+import numpy as np
+
+def read_image(path: str) -> ov.Tensor:
+    pic = Image.open(path).convert("RGB")
+    image_data = np.array(pic)[None]
+    return ov.Tensor(image_data)
+
+input_image_data = read_image("input_image.jpg")
+mask_image = read_image("mask.jpg")
+
+pipe = ov_genai.InpaintingPipeline(model_path, "${props.device || 'CPU'}")
+image_tensor = pipe.generate(prompt, image=input_image_data, mask_image=mask_image)
+
+image = Image.fromarray(image_tensor.data[0])
+image.save("image.bmp")
+`}
+</CodeBlock>

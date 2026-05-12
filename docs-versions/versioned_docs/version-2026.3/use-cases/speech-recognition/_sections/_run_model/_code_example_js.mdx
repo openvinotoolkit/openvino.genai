@@ -1,0 +1,14 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="javascript" showLineNumbers>
+{`import { WhisperPipeline } from 'openvino-genai-node';
+import { readAudio } from './wav_utils.js';
+
+const rawSpeech = readAudio('sample.wav');
+
+const pipeline = await WhisperPipeline(modelPath, "${props.device || 'CPU'}");
+const generationConfig = { max_new_tokens: 100 };
+const result = await pipeline.generate(rawSpeech, { generationConfig });
+console.log(result.texts[0]);
+`}
+</CodeBlock>

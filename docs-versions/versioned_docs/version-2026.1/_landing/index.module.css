@@ -1,0 +1,65 @@
+/**
+ * CSS files with the .module.css suffix will be treated as CSS modules
+ * and scoped locally.
+ */
+
+.banner {
+  padding-top: 2rem;
+  padding-bottom: 1.8rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  background-color: transparent;
+}
+
+.titleContainer {
+  margin-bottom: 1rem;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.genAITitle {
+  font-size: 4rem;
+  padding-bottom: 1rem;
+  background: linear-gradient(101deg, #91ffed 0.16%, #3094ff 36.93%, #b57cff 73.71%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 500;
+  filter: drop-shadow(2px 2px 2px rgba(23, 20, 98, 0.86));
+}
+
+.subTitle {
+  font-size: 1.5rem;
+  color: var(--genai-color-text-white);
+  margin-bottom: 1rem;
+}
+
+.description {
+  font-size: 1rem;
+  width: 600px;
+  text-align: center;
+  color: var(--genai-color-text-white);
+  margin: 0 auto;
+  margin-bottom: 2rem;
+}
+
+.mainContainer {
+  background-image: url('../../static/img/background.webp');
+  background-size: cover;
+  background-position: center;
+  height: 530px;
+}
+
+.contentContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3rem;
+  padding: 5rem 10rem;
+}

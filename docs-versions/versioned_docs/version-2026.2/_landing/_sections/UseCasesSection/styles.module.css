@@ -1,0 +1,26 @@
+.useCasesSection {
+  composes: section from '../section-styles.module.css';
+
+  background-color: var(--genai-color-section-bg);
+}
+
+.sectionTitle {
+  composes: sectionTitle from '../section-styles.module.css';
+}
+
+.sectionContent {
+  composes: sectionContent from '../section-styles.module.css';
+
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.useCasesFooter {
+  margin-top: 1.5rem;
+  font-size: 1rem;
+
+  strong {
+    font-weight: 600;
+  }
+}

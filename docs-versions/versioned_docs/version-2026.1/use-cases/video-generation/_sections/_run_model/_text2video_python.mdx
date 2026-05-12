@@ -1,0 +1,34 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="python" showLineNumbers>
+{`import openvino_genai as ov_genai
+import cv2
+
+def save_video(filename: str, video_tensor, fps: int = 25):
+    batch_size, num_frames, height, width, _ = video_tensor.shape
+    video_data = video_tensor.data
+
+    for b in range(batch_size):
+        if batch_size == 1:
+            output_path = filename
+        else:
+            base, ext = filename.rsplit(".", 1) if "." in filename else (filename, "avi")
+            output_path = f"{base}_b{b}.{ext}"
+
+        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+        writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+        for f in range(num_frames):
+            frame_bgr = cv2.cvtColor(video_data[b, f], cv2.COLOR_RGB2BGR)
+            writer.write(frame_bgr)
+
+        writer.release()
+        print(f"Wrote {output_path} ({num_frames} frames, {width}x{height} @ {fps} fps)")
+
+
+pipe = ov_genai.Text2VideoPipeline(model_path, "${props.device || 'CPU'}")
+video = pipe.generate(prompt).video
+
+save_video("genai_video.avi", video)
+`}
+</CodeBlock>
