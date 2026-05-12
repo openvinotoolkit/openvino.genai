@@ -115,8 +115,6 @@ void fill_video_metadata(EncodedVideo& encoded_video,
 
 namespace {
 
-namespace {
-
 /**
  * @brief Computes indices and weights for bilinear position embedding interpolation.
  * @return Pair of:
@@ -658,6 +656,8 @@ std::pair<ov::Tensor, int64_t> InputsEmbedderQwen3VL::create_position_ids(
     const auto* input_ids = input_ids_tensor.data<int64_t>();
     size_t batch_size = input_ids_tensor.get_shape().at(0);
     size_t seq_len = input_ids_tensor.get_shape().at(1);
+
+    OPENVINO_ASSERT(batch_size == 1, "create_position_ids currently supports only batch_size == 1");
 
     std::vector<size_t> vision_start_indices;
     for (size_t i = 0; i < seq_len; ++i) {

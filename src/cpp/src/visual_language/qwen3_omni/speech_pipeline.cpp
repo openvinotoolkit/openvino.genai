@@ -7,9 +7,11 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <numeric>
 #include <random>
+#include <sstream>
 
 #include "json_utils.hpp"
 #include "logger.hpp"
@@ -108,7 +110,8 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
     m_code2wav = load_model("openvino_code2wav_model");
 
     // All speech models must be present for speech generation
-    m_talker_available = m_talker && m_talker_text_embeddings && m_talker_projections && m_code_predictor && m_code2wav;
+    m_talker_available = m_talker && m_talker_text_embeddings && m_talker_projections && m_code_predictor &&
+                         m_code2wav && m_thinker_text_embeddings;
 
     if (m_talker_available) {
         auto output_pshape = m_talker_projections.get_compiled_model().output("text_projection").get_partial_shape();
@@ -180,7 +183,9 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
             npy_file.read(reinterpret_cast<char*>(&minor_version), 1);
             OPENVINO_ASSERT(major_version == 1 && minor_version == 0,
                             "Only NumPy format v1.0 supported, got v",
-                            (int)major_version, ".", (int)minor_version);
+                            (int)major_version,
+                            ".",
+                            (int)minor_version);
             unsigned short header_len;
             npy_file.read(reinterpret_cast<char*>(&header_len), sizeof(header_len));
             std::string header(header_len, ' ');
@@ -191,8 +196,7 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
             OPENVINO_ASSERT(shape_start != std::string::npos, "No shape in npy header");
             shape_start += 10;
             auto shape_end = header.find(')', shape_start);
-            OPENVINO_ASSERT(shape_end != std::string::npos,
-                            "Malformed npy header: no closing parenthesis for shape");
+            OPENVINO_ASSERT(shape_end != std::string::npos, "Malformed npy header: no closing parenthesis for shape");
             auto shape_str = header.substr(shape_start, shape_end - shape_start);
 
             ov::Shape shape;
@@ -208,11 +212,16 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
             auto shape_product = ov::shape_size(shape);
             auto data_size = shape_product * sizeof(float);
             OPENVINO_ASSERT(data_size <= 1024ULL * 1024 * 1024,
-                            "NPY file shape too large: ", data_size / (1024 * 1024), " MB");
+                            "NPY file shape too large: ",
+                            data_size / (1024 * 1024),
+                            " MB");
             m_cp_codec_embeddings = ov::Tensor(ov::element::f32, shape);
             npy_file.read(reinterpret_cast<char*>(m_cp_codec_embeddings.data()), data_size);
             OPENVINO_ASSERT(npy_file.gcount() == static_cast<std::streamsize>(data_size),
-                            "NPY file truncated: expected ", data_size, " bytes, read ", npy_file.gcount());
+                            "NPY file truncated: expected ",
+                            data_size,
+                            " bytes, read ",
+                            npy_file.gcount());
             m_cp_vocab_size = shape[1];
             m_cp_hidden_size = shape[2];
 
@@ -231,10 +240,14 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
 int64_t Qwen3OmniSpeechPipeline::resolve_speaker_id(const std::string& speaker) const {
     if (!speaker.empty() && !m_config.speaker_ids.empty()) {
         std::string lower_speaker = speaker;
-        std::transform(lower_speaker.begin(), lower_speaker.end(), lower_speaker.begin(), ::tolower);
+        std::transform(lower_speaker.begin(), lower_speaker.end(), lower_speaker.begin(), [](unsigned char c) {
+            return std::tolower(c);
+        });
         for (const auto& [name, id] : m_config.speaker_ids) {
             std::string lower_name = name;
-            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::tolower);
+            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), [](unsigned char c) {
+                return std::tolower(c);
+            });
             if (lower_name == lower_speaker) {
                 return id;
             }
@@ -344,6 +357,9 @@ int64_t Qwen3OmniSpeechPipeline::sample_top_k(const float* logits,
                                               const std::vector<int64_t>& generated_tokens,
                                               const std::vector<int64_t>& suppress_tokens) {
     OPENVINO_ASSERT(vocab_size > 0, "Logits tensor has zero vocab dimension");
+    OPENVINO_ASSERT(temperature > 0.0f, "sample_top_k: temperature must be > 0");
+    OPENVINO_ASSERT(top_k > 0, "sample_top_k: top_k must be > 0");
+    OPENVINO_ASSERT(static_cast<size_t>(top_k) <= vocab_size, "sample_top_k: top_k exceeds logits size");
 
     // Thread-local scratch buffers to avoid heap allocation per call
     static thread_local std::vector<float> scaled;
@@ -406,6 +422,7 @@ int64_t Qwen3OmniSpeechPipeline::sample_top_k(const float* logits,
         topk_probs[i] = std::exp(scaled[topk_indices[i]] - max_val);
         sum += topk_probs[i];
     }
+    OPENVINO_ASSERT(sum > 0.0f, "sample_top_k: sum of probabilities is zero");
     for (size_t i = 0; i < topk_probs.size(); i++) {
         topk_probs[i] /= sum;
     }
@@ -857,12 +874,12 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
         auto vocab_size = logits.get_shape().back();
         const auto* logits_data = logits.data<float>() + (logits.get_size() - vocab_size);
         auto first_code = sample_top_k(logits_data,
-                                          vocab_size,
-                                          talker_temp,
-                                          talker_top_k,
-                                          talker_rep_penalty,
-                                          generated_first_codes,
-                                          suppress_tokens);
+                                       vocab_size,
+                                       talker_temp,
+                                       talker_top_k,
+                                       talker_rep_penalty,
+                                       generated_first_codes,
+                                       suppress_tokens);
 
         if (step < 3 || step % 100 == 0) {
             GENAI_DEBUG("Speech: step %zu, code=%lld", step, (long long)first_code);
