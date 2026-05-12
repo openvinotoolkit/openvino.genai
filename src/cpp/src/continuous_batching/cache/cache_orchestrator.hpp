@@ -234,20 +234,58 @@ public:
     }
 
     void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group) {
-        const size_t initial_processed_tokens = sequence_group->get_num_processed_tokens();
-        size_t common_processed_tokens = std::numeric_limits<size_t>::max();
-        for (auto& [type, block_mgr] : m_block_managers) {
-            sequence_group->update_processed_tokens_num(initial_processed_tokens);
-            block_mgr->restore_cached_blocks(sequence_group);
-            common_processed_tokens = std::min(common_processed_tokens, sequence_group->get_num_processed_tokens());
-        }
-        if (common_processed_tokens == std::numeric_limits<size_t>::max()) {
+        if (m_block_managers.empty()) {
             return;
         }
 
-        sequence_group->update_processed_tokens_num(common_processed_tokens);
+        auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
+        auto la_it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
+            auto& kv_block_mgr = *kv_it->second;
+            auto& la_block_mgr = *la_it->second;
+
+            auto kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group);
+            if (kv_plan.empty()) {
+                return;
+            }
+
+            auto la_plan = la_block_mgr.get_prefix_restore_plan(sequence_group, kv_plan.cache_token_position);
+            if (la_plan.empty()) {
+                return;
+            }
+
+            kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group, la_plan.cache_token_position);
+            if (kv_plan.empty()) {
+                return;
+            }
+
+            if (kv_plan.cache_token_position < la_plan.cache_token_position) {
+                la_plan = la_block_mgr.get_prefix_restore_plan(sequence_group, kv_plan.cache_token_position);
+                if (la_plan.empty()) {
+                    return;
+                }
+                kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group, la_plan.cache_token_position);
+                if (kv_plan.empty()) {
+                    return;
+                }
+            }
+
+            const size_t common_cache_token_position = std::min(kv_plan.cache_token_position,
+                                                               la_plan.cache_token_position);
+            kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group, common_cache_token_position);
+            la_plan = la_block_mgr.get_prefix_restore_plan(sequence_group, common_cache_token_position);
+            if (kv_plan.empty() || la_plan.empty()) {
+                return;
+            }
+
+            kv_block_mgr.restore_cached_blocks(sequence_group, kv_plan);
+            la_block_mgr.restore_cached_blocks(sequence_group, la_plan);
+            sequence_group->update_processed_tokens_num(std::min(kv_plan.processed_tokens, la_plan.processed_tokens));
+            return;
+        }
+
         for (auto& [type, block_mgr] : m_block_managers) {
-            block_mgr->free_empty_physical_blocks(sequence_group);
+            block_mgr->restore_cached_blocks(sequence_group);
         }
     }
 
@@ -589,6 +627,11 @@ public:
         return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_tables(seq_id)[0];
     }
 
+    size_t get_linear_attention_block_table_logical_start(uint64_t seq_id) const {
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_table_logical_start(seq_id);
+    }
+
     /// @return Number of KV attention layers only (excluding other cache types).
     size_t get_num_kv_layers() const {
         auto it = m_cache_managers.find(CacheType::KV_CACHE);
@@ -776,7 +819,9 @@ private:
                 config.num_linear_attention_blocks,
                 true,
                 cache_interval,
-                1);
+                1,
+                0,
+                true);
         } else {
             la_block_manager = std::make_unique<BlockManager>(
                 config.num_linear_attention_blocks,

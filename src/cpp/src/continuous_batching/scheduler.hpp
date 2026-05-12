@@ -424,7 +424,8 @@ private:
                         // fill linear attention block tables if registered
                         if (m_cache_orchestrator->has_linear_attention_cache()) {
                             const auto& la_blocks = m_cache_orchestrator->get_linear_attention_block_table(seq_id);
-                            _set_linear_attention_paging_data(scheduler_output, sequence_group, seq_id, la_blocks);
+                            const size_t la_block_logical_start = m_cache_orchestrator->get_linear_attention_block_table_logical_start(seq_id);
+                            _set_linear_attention_paging_data(scheduler_output, sequence_group, seq_id, la_blocks, la_block_logical_start);
                         }
                     }
                 }
@@ -507,7 +508,8 @@ private:
                         for (const auto& seq : sequence_group->get_running_sequences()) {
                             size_t sid = seq->get_id();
                             const auto& la_blocks = m_cache_orchestrator->get_linear_attention_block_table(sid);
-                            _set_linear_attention_paging_data(scheduler_output, sequence_group, sid, la_blocks);
+                            const size_t la_block_logical_start = m_cache_orchestrator->get_linear_attention_block_table_logical_start(sid);
+                            _set_linear_attention_paging_data(scheduler_output, sequence_group, sid, la_blocks, la_block_logical_start);
                         }
                     }
                 }
@@ -585,7 +587,8 @@ private:
                         // fill linear attention block tables if registered
                         if (m_cache_orchestrator->has_linear_attention_cache()) {
                             const auto& la_blocks = m_cache_orchestrator->get_linear_attention_block_table(seq_id);
-                            _set_linear_attention_paging_data(scheduler_output, sequence_group, seq_id, la_blocks);
+                            const size_t la_block_logical_start = m_cache_orchestrator->get_linear_attention_block_table_logical_start(seq_id);
+                            _set_linear_attention_paging_data(scheduler_output, sequence_group, seq_id, la_blocks, la_block_logical_start);
                         }
                     }
 
@@ -668,7 +671,8 @@ private:
     void _set_linear_attention_paging_data(Output& scheduler_output,
                                            SequenceGroup::CPtr sequence_group,
                                            uint64_t seq_id,
-                                           const BlocksPerLayer& la_blocks) {
+                                           const BlocksPerLayer& la_blocks,
+                                           size_t block_table_logical_start) {
         OPENVINO_ASSERT(!la_blocks.empty(), "Linear attention block table empty for sequence ", seq_id);
 
         Output::LinearAttentionPagingData paging_data;
@@ -696,13 +700,24 @@ private:
         const size_t write_blocks_count = (num_processed_tokens % cache_interval + num_scheduled_tokens + cache_interval - 1) / cache_interval;
         const size_t write_block_end = write_block_begin + write_blocks_count;
 
-        OPENVINO_ASSERT(write_block_end <= la_blocks.size(),
+        OPENVINO_ASSERT(read_block_position >= block_table_logical_start,
+                        "Linear attention read block precedes restored block table for sequence ", seq_id,
+                        ": read position ", read_block_position, ", table starts at ", block_table_logical_start);
+        OPENVINO_ASSERT(write_block_begin >= block_table_logical_start,
+                        "Linear attention write blocks precede restored block table for sequence ", seq_id,
+                        ": write position ", write_block_begin, ", table starts at ", block_table_logical_start);
+        const size_t read_block_table_position = read_block_position - block_table_logical_start;
+        const size_t write_block_table_begin = write_block_begin - block_table_logical_start;
+        const size_t write_block_table_end = write_block_end - block_table_logical_start;
+
+        OPENVINO_ASSERT(write_block_table_end <= la_blocks.size(),
                         "Linear attention block table has insufficient blocks for sequence ", seq_id,
-                        ": expected at least ", write_block_end, ", got ", la_blocks.size());
+                        ": expected at least ", write_block_table_end, " blocks from logical start ",
+                        block_table_logical_start, ", got ", la_blocks.size());
 
         paging_data.block_indices.reserve(1 + write_blocks_count);
-        paging_data.block_indices.push_back(checked_block_index_to_int32(la_blocks[read_block_position]->get_index(), seq_id));
-        for (size_t block_position = write_block_begin; block_position < write_block_end; ++block_position) {
+        paging_data.block_indices.push_back(checked_block_index_to_int32(la_blocks[read_block_table_position]->get_index(), seq_id));
+        for (size_t block_position = write_block_table_begin; block_position < write_block_table_end; ++block_position) {
             paging_data.block_indices.push_back(checked_block_index_to_int32(la_blocks[block_position]->get_index(), seq_id));
         }
         scheduler_output.set_linear_attention_paging_data(seq_id, std::move(paging_data));
