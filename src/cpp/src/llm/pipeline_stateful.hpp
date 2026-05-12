@@ -86,7 +86,9 @@ public:
         TokenizedInputs encoded_input,
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer,
-        std::chrono::steady_clock::time_point start_time
+        std::chrono::steady_clock::time_point start_time,
+        std::chrono::steady_clock::time_point tokenization_start_time,
+        std::optional<float> chat_template_duration_us = std::nullopt
     );
 
     void start_chat(const std::string& system_message) override;

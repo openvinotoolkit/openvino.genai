@@ -6,8 +6,8 @@
   "devDependencies": {
     "bmp-js": "^0.1.0",
     "node-wav": "^0.0.2",
-    "openvino-genai-node": "^2026.1.0",
-    "openvino-node": "^2026.1.0",
+    "openvino-genai-node": "^2026.2.0",
+    "openvino-node": "^2026.2.0",
     "yargs": "^18.0.0",
     "zod": "^4.1.13"
   },
