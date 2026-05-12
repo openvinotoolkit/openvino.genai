@@ -94,18 +94,18 @@ def get_config_for_cache_encryption():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
-    parser.add_argument('image_dir', help="Image file or dir with images")
-    parser.add_argument('prompt', help="Prompt text")
+    parser.add_argument("model_dir")
+    parser.add_argument("image_dir", help="Image file or dir with images")
+    parser.add_argument("prompt", help="Prompt text")
     args = parser.parse_args()
 
     models_map = dict()
-    for xlm_file in Path(args.model_dir).glob("*.xml"):
-        bin_file = xlm_file.with_suffix(".bin")
-        if "tokenizer" in xlm_file.name or not bin_file.exists():
+    for xml_file in Path(args.model_dir).glob("*.xml"):
+        bin_file = xml_file.with_suffix(".bin")
+        if "tokenizer" in xml_file.name or not bin_file.exists():
             continue
-        model, weights = decrypt_model(args.model_dir, xlm_file.name, bin_file.name)
-        model_name = xlm_file.stem.removeprefix("openvino_").removesuffix("_model")
+        model, weights = decrypt_model(args.model_dir, xml_file.name, bin_file.name)
+        model_name = xml_file.stem.removeprefix("openvino_").removesuffix("_model")
         models_map[model_name] = (model, weights)
 
     tokenizer = read_tokenizer(args.model_dir)
