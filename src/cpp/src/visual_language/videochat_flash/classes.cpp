@@ -913,26 +913,26 @@ NormalizedPrompt InputsEmbedderVideoChatFlashQwen::normalize_prompt(
 
     // Universal tags use separate counters (<ov_genai_image_i>, <ov_genai_video_j>) but the unified visual
     // stream in get_inputs_embeds concatenates images then videos. Remap indices accordingly:
-    //   image index i  ->  unified visual (i + base_video_id)
-    //   video index j  ->  unified visual (base_image_id + images.size() + j)
+    //   image index i  ->  unified visual (base_visual_id + i)
+    //   video index j  ->  unified visual (base_visual_id + images.size() + j)
     const size_t n_images = images.size();
-    auto image_write = [base_video_id](std::ostream& os, size_t idx) {
-        write_native(os, idx + base_video_id);
+    auto image_write = [base_visual_id](std::ostream& os, size_t idx) {
+        write_native(os, base_visual_id + idx);
     };
     auto [image_normalized, image_ids] = universal_to_native(prompt, image_write, VisionType::IMAGE);
 
-    auto video_write = [base_image_id, n_images](std::ostream& os, size_t idx) {
-        write_native(os, base_image_id + n_images + idx);
+    auto video_write = [base_visual_id, n_images](std::ostream& os, size_t idx) {
+        write_native(os, base_visual_id + n_images + idx);
     };
     auto [tag_normalized, video_ids] = universal_to_native(image_normalized, video_write, VisionType::VIDEO);
 
     std::vector<size_t> visual_sequence;
     visual_sequence.reserve(image_ids.size() + video_ids.size());
     for (size_t id : image_ids) {
-        visual_sequence.push_back(id + base_video_id);
+        visual_sequence.push_back(base_visual_id + id);
     }
     for (size_t id : video_ids) {
-        visual_sequence.push_back(base_image_id + n_images + id);
+        visual_sequence.push_back(base_visual_id + n_images + id);
     }
     if (!visual_sequence.empty()) {
         OPENVINO_ASSERT(
@@ -1025,6 +1025,10 @@ ov::Tensor InputsEmbedderVideoChatFlashQwen::get_inputs_embeds(
                 combined_images.emplace_back(std::move(as_image));
             }
         }
+        OPENVINO_ASSERT(img_idx == images.size(),
+                        "Full-history interleave consumed ", img_idx, " images but expected ", images.size(), ".");
+        OPENVINO_ASSERT(vid_idx == videos.size(),
+                        "Full-history interleave consumed ", vid_idx, " videos but expected ", videos.size(), ".");
     } else {
         // Single-turn or start_chat mode: images then videos (matches normalize_prompt order).
         combined_images.insert(combined_images.end(), images.begin(), images.end());

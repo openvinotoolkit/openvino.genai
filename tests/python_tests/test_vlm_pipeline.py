@@ -2789,20 +2789,22 @@ def test_videochatflash_qwen_chat_history_with_video(
 
     # start_chat-based flow
     ov_videochatflash_qwen_pipe_raw.start_chat()
-    res1_sc = ov_videochatflash_qwen_pipe_raw.generate(
-        prompt,
-        videos=videos,
-        generation_config=generation_config,
-    )
-    assert len(res1_sc.texts) > 0
-    answer1_sc = res1_sc.texts[0]
-    res2_sc = ov_videochatflash_qwen_pipe_raw.generate(
-        follow_up,
-        generation_config=generation_config,
-    )
-    assert len(res2_sc.texts) > 0
-    answer2_start_chat = res2_sc.texts[0]
-    ov_videochatflash_qwen_pipe_raw.finish_chat()
+    try:
+        res1_sc = ov_videochatflash_qwen_pipe_raw.generate(
+            prompt,
+            videos=videos,
+            generation_config=generation_config,
+        )
+        assert len(res1_sc.texts) > 0
+        answer1_sc = res1_sc.texts[0]
+        res2_sc = ov_videochatflash_qwen_pipe_raw.generate(
+            follow_up,
+            generation_config=generation_config,
+        )
+        assert len(res2_sc.texts) > 0
+        answer2_start_chat = res2_sc.texts[0]
+    finally:
+        ov_videochatflash_qwen_pipe_raw.finish_chat()
 
     assert answer1 == answer1_sc, f"First turn mismatch!\nChatHistory: {answer1}\nstart_chat: {answer1_sc}"
     assert answer2_chat_history == answer2_start_chat, (
@@ -2820,23 +2822,25 @@ def test_videochatflash_qwen_chat_history_mixed_turns(
 
     # Turn 1: video input
     ov_videochatflash_qwen_pipe_raw.start_chat()
-    res1 = ov_videochatflash_qwen_pipe_raw.generate(
-        PROMPTS[0],
-        videos=[synthetic_video_32x32_tensor],
-        generation_config=generation_config,
-    )
-    assert len(res1.texts) > 0
-    assert len(res1.texts[0]) > 0
+    try:
+        res1 = ov_videochatflash_qwen_pipe_raw.generate(
+            PROMPTS[0],
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res1.texts) > 0
+        assert len(res1.texts[0]) > 0
 
-    # Turn 2: image input (different modality from turn 1)
-    res2 = ov_videochatflash_qwen_pipe_raw.generate(
-        PROMPTS[0],
-        images=[cat_tensor],
-        generation_config=generation_config,
-    )
-    assert len(res2.texts) > 0
-    assert len(res2.texts[0]) > 0
-    ov_videochatflash_qwen_pipe_raw.finish_chat()
+        # Turn 2: image input (different modality from turn 1)
+        res2 = ov_videochatflash_qwen_pipe_raw.generate(
+            PROMPTS[0],
+            images=[cat_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res2.texts) > 0
+        assert len(res2.texts[0]) > 0
+    finally:
+        ov_videochatflash_qwen_pipe_raw.finish_chat()
 
 
 def test_videochatflash_qwen_chat_history_mixed_modalities(
@@ -2873,21 +2877,23 @@ def test_videochatflash_qwen_chat_history_mixed_modalities(
 
     # start_chat-based flow (incremental KV cache)
     ov_videochatflash_qwen_pipe_raw.start_chat()
-    res1_sc = ov_videochatflash_qwen_pipe_raw.generate(
-        prompt1,
-        videos=[synthetic_video_32x32_tensor],
-        generation_config=generation_config,
-    )
-    assert len(res1_sc.texts) > 0
-    answer1_sc = res1_sc.texts[0]
-    res2_sc = ov_videochatflash_qwen_pipe_raw.generate(
-        prompt2,
-        images=[cat_tensor],
-        generation_config=generation_config,
-    )
-    assert len(res2_sc.texts) > 0
-    answer2_start_chat = res2_sc.texts[0]
-    ov_videochatflash_qwen_pipe_raw.finish_chat()
+    try:
+        res1_sc = ov_videochatflash_qwen_pipe_raw.generate(
+            prompt1,
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res1_sc.texts) > 0
+        answer1_sc = res1_sc.texts[0]
+        res2_sc = ov_videochatflash_qwen_pipe_raw.generate(
+            prompt2,
+            images=[cat_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res2_sc.texts) > 0
+        answer2_start_chat = res2_sc.texts[0]
+    finally:
+        ov_videochatflash_qwen_pipe_raw.finish_chat()
 
     assert answer1 == answer1_sc, f"First turn mismatch!\nChatHistory: {answer1}\nstart_chat: {answer1_sc}"
     assert answer2_chat_history == answer2_start_chat, (
