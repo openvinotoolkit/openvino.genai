@@ -1,5 +1,6 @@
 import Text2ImageCPP from './_text2image_cpp.mdx';
 import Text2ImagePython from './_text2image_python.mdx';
+import Text2ImageJS from './_text2image_js.mdx';
 
 import Image2ImageCPP from './_image2image_cpp.mdx';
 import Image2ImagePython from './_image2image_python.mdx';
@@ -44,6 +45,16 @@ OpenVINO GenAI supports the following diffusion model pipelines:
             </TabItem>
         </Tabs>
     </TabItemCpp>
+    <TabItemJS>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <Text2ImageJS device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <Text2ImageJS device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemJS>
 </LanguageTabs>
 
 :::tip

@@ -67,6 +67,10 @@ struct WhisperDecodedResultChunk {
 struct WhisperDecodedResults {
     std::vector<std::string> texts;
     std::vector<float> scores;
+    // Detected or explicitly provided language for the transcribed audio.
+    // Always populated. Format: plain language code, e.g. "en", "fr", "de".
+    // For English-only models always "en".
+    std::string language;
     std::optional<std::vector<WhisperDecodedResultChunk>> chunks = std::nullopt;
     std::optional<std::vector<WhisperWordTiming>> words = std::nullopt;
     WhisperPerfMetrics perf_metrics;
