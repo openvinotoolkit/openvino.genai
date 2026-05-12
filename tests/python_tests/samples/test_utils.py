@@ -84,14 +84,12 @@ def run_js_chat(
 
         proc.stdin.close()
 
-        # Collect any remaining output and wait for the process with a timeout.
-        # proc.communicate() is used instead of proc.stdout.read() + proc.wait()
-        # to ensure the timeout covers both the read and the wait.
-        elapsed = time.monotonic() - start_time
-        remaining_timeout = max(1, timeout - int(elapsed))
+        remaining_timeout = timeout - int(time.monotonic() - start_time)
+        if remaining_timeout <= 0:
+            raise subprocess.TimeoutExpired(command, timeout)
         remaining_output, _ = proc.communicate(timeout=remaining_timeout)
         if remaining_output:
-            stdout_chunks.append(remaining_output)
+            stdout_chunks.append(normalize_sample_output(remaining_output))
         return_code = proc.returncode
     except subprocess.TimeoutExpired:
         proc.kill()

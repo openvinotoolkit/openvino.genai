@@ -42,7 +42,7 @@ async function readImage(filePath) {
     const pixelCount = width * height;
     const rgb = new Uint8Array(pixelCount * 3);
     for (let i = 0; i < pixelCount; i++) {
-        rgb[i * 3]     = rgbaData[i * 4];
+        rgb[i * 3] = rgbaData[i * 4];
         rgb[i * 3 + 1] = rgbaData[i * 4 + 1];
         rgb[i * 3 + 2] = rgbaData[i * 4 + 2];
     }
@@ -64,10 +64,10 @@ async function readImages(path) {
     }
 
     const supportedExtensions = new Set([".jpg", ".jpeg", ".png"]);
-    const entries = await fs.readdir(path);
+    const entries = await fs.readdir(path, { withFileTypes: true });
     const files = entries
-        .filter((name) => supportedExtensions.has(name.slice(name.lastIndexOf(".")).toLowerCase()))
-        .map((name) => join(path, name));
+        .filter((entry) => entry.isFile() && supportedExtensions.has(extname(entry.name).toLowerCase()))
+        .map((entry) => join(path, entry.name));
 
     files.sort((a, b) => a.localeCompare(b));
 
