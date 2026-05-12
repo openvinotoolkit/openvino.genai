@@ -260,10 +260,10 @@ TEST(TestScheduler, hybrid_output_fills_linear_attention_block_table_in_prompt_a
 
     EXPECT_EQ(orchestrator->get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE).get_num_layers(), 3);
     EXPECT_EQ(orchestrator->get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE).get_num_cache_tensors(), 6);
-    ASSERT_EQ(prompt_out.get_kv_block_tables(seq_id1).size(), 2);
-    ASSERT_EQ(prompt_out.get_kv_block_tables(seq_id2).size(), 2);
-    EXPECT_EQ(prompt_out.get_kv_block_tables(seq_id1)[1].size(), 1);
-    EXPECT_EQ(prompt_out.get_kv_block_tables(seq_id2)[1].size(), 1);
+    ASSERT_EQ(prompt_out.get_kv_block_tables(seq_id1).size(), 1);
+    ASSERT_EQ(prompt_out.get_kv_block_tables(seq_id2).size(), 1);
+    EXPECT_EQ(prompt_out.get_kv_block_tables(seq_id1)[0].size(), 1);
+    EXPECT_EQ(prompt_out.get_kv_block_tables(seq_id2)[0].size(), 1);
     EXPECT_TRUE(prompt_out.has_linear_attention_paging_data(seq_id1));
     EXPECT_TRUE(prompt_out.has_linear_attention_paging_data(seq_id2));
     EXPECT_EQ(prompt_out.get_linear_attention_paging_data(seq_id1).block_indices.size(), 2);
@@ -1547,8 +1547,8 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
 
     std::vector<uint64_t> ref_ids = {0};
     EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
-    auto block_table1 = scheduler.get_block_tables(*(*sequence_group1)[0])[0];
-    auto block_table2 = scheduler.get_block_tables(*(*sequence_group2)[0])[0];
+    auto block_table1 = scheduler.get_kv_block_tables(*(*sequence_group1)[0])[0];
+    auto block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0];
     EXPECT_EQ(block_table1.size(), 4);
     EXPECT_EQ(block_table1[0]->get_index(), 0);
     EXPECT_EQ(block_table1[1]->get_index(), 1);
@@ -1579,7 +1579,7 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
     EXPECT_EQ(out3.get_kv_block_tables(idx1)[0][1]->get_index(), 4);
     EXPECT_EQ(out3.get_kv_block_tables(idx1)[0][2]->get_index(), 0);
 
-    block_table2 = scheduler.get_block_tables(*(*sequence_group2)[0])[0];
+    block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0];
     EXPECT_EQ(block_table2.size(), 3);
     EXPECT_EQ(block_table2[0]->get_index(), 3);
     EXPECT_EQ(block_table2[1]->get_index(), 4);
@@ -1678,11 +1678,11 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
 
         EXPECT_EQ(sequence_group->get_num_processed_tokens(), 8);
         auto seqs = sequence_group->get_sequences();
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[0])[0].size(), 2);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[1])[0].size(), 2);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[2])[0].size(), 2);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[3])[0].size(), 2);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[4])[0].size(), 2);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[0])[0].size(), 2);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[1])[0].size(), 2);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[2])[0].size(), 2);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[3])[0].size(), 2);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[4])[0].size(), 2);
 
         // append another 20 tokens to greedy group, this should result in usage of all free blocks and
         // another partial preemption of beam search group
@@ -1694,11 +1694,11 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
 
         EXPECT_EQ(sequence_group->get_num_processed_tokens(), 4);
         seqs = sequence_group->get_sequences();
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[0])[0].size(), 1);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[1])[0].size(), 1);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[2])[0].size(), 1);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[3])[0].size(), 1);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[4])[0].size(), 1);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[0])[0].size(), 1);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[1])[0].size(), 1);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[2])[0].size(), 1);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[3])[0].size(), 1);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[4])[0].size(), 1);
 
         for (auto& req : new_requests) {
             for (auto& seq : req->get_sequences()) {
@@ -1742,7 +1742,7 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         auto out2 = scheduler.schedule(requests);
 
         // check that sequence_group1 has one more allocated block
-        auto block_tables_for_all_layers = scheduler.get_block_tables(*(*sequence_group1)[0]);
+        auto block_tables_for_all_layers = scheduler.get_kv_block_tables(*(*sequence_group1)[0]);
         auto block_table1 = block_tables_for_all_layers[0];
         EXPECT_EQ(block_table1.size(), 4);
         EXPECT_EQ(block_table1[0]->get_index(), 0);
@@ -1762,7 +1762,7 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         if (scheduler_config.dynamic_split_fuse) {
             // for dynamic_split_fuse sequence_group2 is preemted partially, part of prompt is left
             EXPECT_TRUE(scheduler.has_block_table(idx1));
-            auto block_table2 = scheduler.get_block_tables(*(*sequence_group2)[0])[0];
+            auto block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0];
             EXPECT_EQ(block_table2.size(), 2); // full prompt requires 3 blocks, 2 are left in scheduler
 
         } else {
@@ -1797,7 +1797,7 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         EXPECT_EQ(out3.get_kv_block_tables(idx1)[0][1]->get_index(), 4);
         EXPECT_EQ(out3.get_kv_block_tables(idx1)[0][2]->get_index(), 0);
 
-        auto block_table2 = scheduler.get_block_tables(*(*sequence_group2)[0])[0];
+        auto block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0];
         EXPECT_EQ(block_table2.size(), 3);
         EXPECT_EQ(block_table2[0]->get_index(), 3);
         EXPECT_EQ(block_table2[1]->get_index(), 4);
@@ -2035,7 +2035,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
     auto out2 = scheduler.schedule(requests);
 
     // check that sequence_group1 has one more allocated block
-    auto block_table1 = scheduler.get_block_tables(*(*sequence_group1)[0]);
+    auto block_table1 = scheduler.get_kv_block_tables(*(*sequence_group1)[0]);
     ASSERT_EQ(block_table1[0].size(), 4);
     ASSERT_EQ(block_table1[0][0]->get_index(), 0);
     ASSERT_EQ(block_table1[0][1]->get_index(), 1);
@@ -2072,7 +2072,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
     ASSERT_EQ(out3.get_kv_block_tables(idx1)[0][1]->get_index(), 5);
     ASSERT_EQ(out3.get_kv_block_tables(idx1)[0][2]->get_index(), 0);
 
-    auto block_table2 = scheduler.get_block_tables(*(*sequence_group2)[0]);
+    auto block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0]);
     ASSERT_EQ(block_table2[0].size(), 3);
     ASSERT_EQ(block_table2[0][0]->get_index(), 4);
     ASSERT_EQ(block_table2[0][1]->get_index(), 5);
@@ -2129,7 +2129,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
     auto out2 = scheduler.schedule(requests);
 
     // check that sequence_group1 has one more allocated block
-    auto block_table1 = scheduler.get_block_tables(*(*sequence_group1)[0]);
+    auto block_table1 = scheduler.get_kv_block_tables(*(*sequence_group1)[0]);
     ASSERT_EQ(block_table1[0].size(), 4);
     ASSERT_EQ(block_table1[0][0]->get_index(), 0);
     ASSERT_EQ(block_table1[0][1]->get_index(), 1);
@@ -2166,7 +2166,7 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
     ASSERT_EQ(out3.get_kv_block_tables(idx1)[0][1]->get_index(), 5);
     ASSERT_EQ(out3.get_kv_block_tables(idx1)[0][2]->get_index(), 0);
 
-    auto block_table2 = scheduler.get_block_tables(*(*sequence_group2)[0]);
+    auto block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0]);
     ASSERT_EQ(block_table2[0].size(), 3);
     ASSERT_EQ(block_table2[0][0]->get_index(), 4);
     ASSERT_EQ(block_table2[0][1]->get_index(), 5);
@@ -2253,8 +2253,8 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     }
 
     // ensure we are in expected cache state just before preemption
-    auto block_table1 = _get_indices(scheduler.get_block_tables(*(*sequence_group1)[0])[0]);
-    auto block_table2 = _get_indices(scheduler.get_block_tables(*(*sequence_group2)[0])[0]);
+    auto block_table1 = _get_indices(scheduler.get_kv_block_tables(*(*sequence_group1)[0])[0]);
+    auto block_table2 = _get_indices(scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0]);
 
     const std::vector<size_t> ref_block_table1{0, 1, 2};
     EXPECT_EQ(block_table1, ref_block_table1);
@@ -2266,7 +2266,7 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     // Should ensure that the 2-nd sequence can only be preempted completely
     out = _schedule_one_mock_generation_token_for_each_sequence_group(scheduler, requests);
 
-    block_table1 = _get_indices(scheduler.get_block_tables(*(*sequence_group1)[0])[0]);
+    block_table1 = _get_indices(scheduler.get_kv_block_tables(*(*sequence_group1)[0])[0]);
 
     const std::vector<size_t> ref_block_table1_after_preemption{0, 1, 2, 3};  // 3 was the first to be freed after preemption
     EXPECT_EQ(block_table1, ref_block_table1_after_preemption);
@@ -2283,7 +2283,7 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     // last token should be recomputed
     EXPECT_FALSE(scheduler.has_block_table(idx1));
     EXPECT_TRUE(scheduler.has_block_table(idx2));
-    block_table2 = _get_indices(scheduler.get_block_tables(*(*sequence_group2)[0])[0]);
+    block_table2 = _get_indices(scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0]);
     const std::vector<size_t> ref_block_table2_after_recompute{4, 5, 0, 1, 2};  // should restore the old state before first eviction in terms of block count
     EXPECT_EQ(block_table2, ref_block_table2_after_recompute);
 

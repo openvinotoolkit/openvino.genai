@@ -36,7 +36,6 @@ namespace ov::genai {
  * Adding a new cache type requires:
  *   1. Implementing ICacheManager for the new type.
  *   2. Calling register_cache_type() with the new type, its manager and block manager.
- *      Layer IDs are assigned contiguously in registration order, starting from 0.
  */
 class CacheOrchestrator {
 public:
@@ -110,13 +109,10 @@ public:
         OPENVINO_ASSERT(num_layers > 0, "Cache type must register at least one block-table layer");
         OPENVINO_ASSERT(per_layer_control || num_layers == 1,
             "Cache types without per-layer block-table control must register exactly one shared block-table layer");
-        const size_t layer_start = m_layer_to_cache_type.size();
-        m_type_layer_start[type] = layer_start;
         m_cache_managers[type] = std::move(cache_mgr);
         m_block_managers[type] = std::move(block_mgr);
-        m_per_layer_control[type] = per_layer_control;
-        for (size_t local_idx = 0; local_idx < num_layers; ++local_idx) {
-            m_layer_to_cache_type[layer_start + local_idx] = type;
+        if (type == CacheType::KV_CACHE) {
+            m_use_per_layer_kv_block_indices = per_layer_control;
         }
     }
 
@@ -153,30 +149,10 @@ public:
     //  Block management  (applies to all registered types)
     // -----------------------------------------------------------------------
 
-    /**
-     * @brief Compose a unified per-layer block table for a sequence by merging block tables
-     *        from all registered block managers.
-     *
-     * Each block manager stores block tables using local (0-based) layer indices.
-     * This method maps them back to global layer positions so the returned vector
-     * is indexed by global layer ID.
-     */
-    std::vector<BlocksPerLayer> get_block_tables(uint64_t seq_id) const {
-        const size_t total_layers = m_layer_to_cache_type.size();
-        std::vector<BlocksPerLayer> merged(total_layers);
-
-        std::map<CacheType, const std::vector<BlocksPerLayer>*> local_tables_by_type;
-        for (const auto& [type, block_mgr] : m_block_managers) {
-            local_tables_by_type[type] = &block_mgr->get_block_tables(seq_id);
-        }
-
-        for (const auto& [global_layer_id, type] : m_layer_to_cache_type) {
-            const size_t local_idx = m_per_layer_control.at(type) ? global_layer_id - m_type_layer_start.at(type) : 0;
-            const auto& local_tables = *local_tables_by_type.at(type);
-            OPENVINO_ASSERT(local_idx < local_tables.size(), "Block table layer index is out of range");
-            merged[global_layer_id] = local_tables[local_idx];
-        }
-        return merged;
+    const std::vector<BlocksPerLayer>& get_kv_block_tables(uint64_t seq_id) const {
+        auto it = m_block_managers.find(CacheType::KV_CACHE);
+        OPENVINO_ASSERT(it != m_block_managers.end(), "No KV cache registered");
+        return it->second->get_block_tables(seq_id);
     }
 
     bool has_block_table(uint64_t seq_id) const {
@@ -590,13 +566,14 @@ public:
         return *m_block_managers.at(type);
     }
 
-    CacheType get_cache_type_for_layer(size_t layer_id) const {
-        return m_layer_to_cache_type.at(layer_id);
-    }
-
     // -----------------------------------------------------------------------
     //  Linear attention cache helpers
     // -----------------------------------------------------------------------
+
+    /// @return Whether a KV cache type is registered.
+    bool has_kv_cache() const {
+        return m_cache_managers.count(CacheType::KV_CACHE) > 0;
+    }
 
     /// @return Whether a linear attention cache type is registered.
     bool has_linear_attention_cache() const {
@@ -607,7 +584,7 @@ public:
      * @brief Returns the linear attention block table for a sequence (first layer).
      * All linear attention layers share the same block allocation, so a single layer suffices.
      */
-    BlocksPerLayer get_linear_attention_block_table(uint64_t seq_id) const {
+    const BlocksPerLayer& get_linear_attention_block_table(uint64_t seq_id) const {
         OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
         return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_tables(seq_id)[0];
     }
@@ -626,11 +603,7 @@ public:
      * (e.g. LINEAR_ATTENTION_CACHE with paged_conv_ / paged_gdn. inputs) do not contribute.
      */
     bool needs_per_layer_block_indices() const {
-        return std::any_of(m_per_layer_control.begin(), m_per_layer_control.end(),
-            [](const auto& pair) {
-                // Only KV_CACHE uses block_indices / block_indices.N inputs
-                return pair.first == CacheType::KV_CACHE && pair.second;
-            });
+        return m_use_per_layer_kv_block_indices;
     }
 
 private:
@@ -791,7 +764,6 @@ private:
 
     /**
      * @brief Create a BlockManager for linear attention cache and register it with this orchestrator.
-     *        Layer IDs are assigned contiguously after any previously registered types.
      */
     void register_linear_attention_cache(std::unique_ptr<LinearAttentionCacheManager> la_manager,
                                          const SchedulerConfig& config,
@@ -820,9 +792,7 @@ private:
 
     std::map<CacheType, std::unique_ptr<ICacheManager>> m_cache_managers;
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
-    std::map<size_t, CacheType> m_layer_to_cache_type;
-    std::map<CacheType, size_t> m_type_layer_start;  ///< first global layer ID for each registered cache type
-    std::map<CacheType, bool> m_per_layer_control;   ///< per-type flag: layers managed individually or as one
+    bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
 
     void queue_linear_attention_initial_state_zero(CacheType type,
