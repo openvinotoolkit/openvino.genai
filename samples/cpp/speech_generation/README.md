@@ -79,7 +79,7 @@ This sample demonstrates how to use an OpenVINO-based fallback model for phonemi
 
 **Why use a fallback model instead of `espeak-ng`?**
 
-While `espeak-ng` provides robust phonemization, it is licensed under GPLv3, which can introduce complications for redistribution in certain applications. Using an OpenVINO-based fallback model avoids this dependency entirely, enabling a more self-contained and permissively licensed deployment.
+While `espeak-ng` provides robust phonemization, using an OpenVINO-based fallback model avoids the need for external dependencies and consideration of their associated licensing requirements, enabling a more self-contained and uniformly licensed deployment.
 
 #### Export OV fallback models:
 
