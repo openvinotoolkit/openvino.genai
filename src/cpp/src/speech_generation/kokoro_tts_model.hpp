@@ -30,18 +30,20 @@ public:
                                        const ov::Tensor& speaker_embedding,
                                        const SpeechGenerationConfig& generation_config) override;
 
-    ov::Shape get_speaker_embedding_shape() const override;
+    ov::Shape get_speaker_embedding_shape() const override {
+        // Matches the native Kokoro voice pack shape: 510 length-indexed rows,
+        // one per possible phoneme sequence length (1-510), each a [1, 256] style vector.
+        return ov::Shape{510, 1, 256};
+    }
 
+#if OPENVINO_GENAI_HAS_MISAKI_CPP
 private:
     Text2SpeechDecodedResults synthesize_from_phoneme_chunks(const std::vector<std::vector<std::string>>& all_phoneme_chunks,
                                                              const ov::Tensor& speaker_embedding,
                                                              const SpeechGenerationConfig& generation_config);
 
-#if OPENVINO_GENAI_HAS_MISAKI_CPP
     void ensure_g2p_initialized(const SpeechGenerationConfig& generation_config);
-#endif
 
-private:
     std::filesystem::path m_models_path;
     ov::InferRequest m_request;
     std::string m_input_ids_name;
@@ -50,7 +52,6 @@ private:
     size_t m_static_input_ids_length = 0;
     bool m_has_pred_dur_output = false;
     std::shared_ptr<KokoroRuntime> m_runtime;
-#if OPENVINO_GENAI_HAS_MISAKI_CPP
     std::unique_ptr<misaki::G2P> m_g2p;
     bool m_fallback_initialized = false;
     std::optional<std::filesystem::path> m_phonemize_fallback_model_dir;

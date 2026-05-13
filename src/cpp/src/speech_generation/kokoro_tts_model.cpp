@@ -3,6 +3,7 @@
 
 #include "kokoro_tts_model.hpp"
 
+#if OPENVINO_GENAI_HAS_MISAKI_CPP
 #include <algorithm>
 #include <chrono>
 #include <codecvt>
@@ -21,7 +22,6 @@
 #include "utils.hpp"
 #include "logger.hpp"
 
-#if OPENVINO_GENAI_HAS_MISAKI_CPP
 #include "misaki/g2p.hpp"
 #include "misaki/fallbacks.hpp"
 
@@ -275,7 +275,6 @@ void configure_misaki_lexicon_data_root_from_model_dir(const std::filesystem::pa
 
     misaki::set_english_lexicon_data_root(model_lexicon_root.string());
 }
-#endif
 
 namespace {
 
@@ -555,7 +554,6 @@ std::vector<std::string> split_non_english_chunks(const std::string& graphemes, 
     return chunks;
 }
 
-#if OPENVINO_GENAI_HAS_MISAKI_CPP
 void install_fallback_if_available(std::unique_ptr<misaki::G2P>& g2p,
                                    const std::string& language_variant,
                                    const ov::genai::SpeechGenerationConfig& generation_config) {
@@ -781,8 +779,6 @@ std::vector<std::string> phonemize_single_text(misaki::G2P& g2p,
     return phoneme_chunks;
 }
 
-#endif
-
 }  // namespace
 
 namespace ov {
@@ -845,12 +841,6 @@ private:
 KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
                              const std::string& device,
                              const ov::AnyMap& properties) {
-#if !OPENVINO_GENAI_HAS_MISAKI_CPP
-    (void)models_path;
-    (void)device;
-    (void)properties;
-    OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
-#else
     m_models_path = models_path;
     ov::Core core = ov::genai::utils::singleton_core();
     const bool npu_requested = device == "NPU";
@@ -893,10 +883,8 @@ KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
     if (m_speed_name.empty() && compiled.inputs().size() >= 3) {
         m_speed_name = compiled.input(2).get_any_name();
     }
-#endif
 }
 
-#if OPENVINO_GENAI_HAS_MISAKI_CPP
 void KokoroTTSImpl::ensure_g2p_initialized(const SpeechGenerationConfig& generation_config) {
     const std::string language_variant = normalize_language_variant(generation_config.language);
 
@@ -924,17 +912,15 @@ void KokoroTTSImpl::ensure_g2p_initialized(const SpeechGenerationConfig& generat
         m_phonemize_fallback_model_dir.reset();
     }
 }
-#endif
 
 Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>& texts,
                                                    const ov::Tensor& speaker_embedding,
                                                    const SpeechGenerationConfig& generation_config) {
-#if !OPENVINO_GENAI_HAS_MISAKI_CPP
-    (void)texts;
-    (void)speaker_embedding;
-    (void)generation_config;
-    OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
-#else
+    OPENVINO_ASSERT(static_cast<bool>(speaker_embedding),
+                    "Kokoro backend requires speaker_embedding tensor. Prepare the embedding in the application "
+                    "and pass the final ov::Tensor to generate().");
+    OPENVINO_ASSERT(speaker_embedding.get_element_type() == ov::element::f32,
+                    "Kokoro backend expects speaker_embedding element type f32");
     ensure_g2p_initialized(generation_config);
     const std::string language_variant = normalize_language_variant(generation_config.language);
     if (!is_english_variant(language_variant) && !m_g2p->backend_available()) {
@@ -955,25 +941,12 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
     auto result = synthesize_from_phoneme_chunks(all_phoneme_chunks, speaker_embedding, generation_config);
     m_perf_metrics = result.perf_metrics;
     return result;
-#endif
 }
 
 Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
     const std::vector<std::vector<std::string>>& all_phoneme_chunks,
     const ov::Tensor& speaker_embedding,
     const SpeechGenerationConfig& generation_config) {
-#if !OPENVINO_GENAI_HAS_MISAKI_CPP
-    (void)all_phoneme_chunks;
-    (void)speaker_embedding;
-    (void)generation_config;
-    OPENVINO_THROW("Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
-#else
-    OPENVINO_ASSERT(static_cast<bool>(speaker_embedding),
-                    "Kokoro backend requires speaker_embedding tensor. Prepare the embedding in the application "
-                    "and pass the final ov::Tensor to generate().");
-    OPENVINO_ASSERT(speaker_embedding.get_element_type() == ov::element::f32,
-                    "Kokoro backend expects speaker_embedding element type f32");
-
     Text2SpeechDecodedResults result;
     result.output_sample_rate = 24000;
     const auto generation_start = std::chrono::steady_clock::now();
@@ -1082,14 +1055,35 @@ Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
         MicroSeconds(std::chrono::steady_clock::now() - generation_start));
     result.perf_metrics.evaluate_statistics();
     return result;
-#endif
-}
-
-ov::Shape KokoroTTSImpl::get_speaker_embedding_shape() const {
-    // Matches the native Kokoro voice pack shape: 510 length-indexed rows,
-    // one per possible phoneme sequence length (1-510), each a [1, 256] style vector.
-    return ov::Shape{510, 1, 256};
 }
 
 }  // namespace genai
 }  // namespace ov
+#else // OPENVINO_GENAI_HAS_MISAKI_CPP
+namespace ov {
+namespace genai {
+
+KokoroTTSImpl::KokoroTTSImpl(const std::filesystem::path& models_path,
+                             const std::string& device,
+                             const ov::AnyMap& properties) {
+    (void)models_path;
+    (void)device;
+    (void)properties;
+    OPENVINO_THROW(
+        "Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
+}
+
+Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>& texts,
+                                                  const ov::Tensor& speaker_embedding,
+                                                  const SpeechGenerationConfig& generation_config) {
+    (void)texts;
+    (void)speaker_embedding;
+    (void)generation_config;
+    OPENVINO_THROW(
+        "Kokoro backend requires misaki-cpp. Configure with ENABLE_MISAKI_CPP=ON and provide misaki-cpp sources.");
+}
+
+}  // namespace genai
+}  // namespace ov
+#endif // OPENVINO_GENAI_HAS_MISAKI_CPP
+
