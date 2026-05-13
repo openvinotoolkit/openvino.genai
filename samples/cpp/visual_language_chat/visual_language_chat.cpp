@@ -22,6 +22,9 @@ int main(int argc, char* argv[]) try {
     std::string device = (argc >= 4) ? argv[3] : "CPU";
     std::string lookup = (argc >= 5) ? argv[4] : "false";
     std::string draft_model_dir = (argc == 6) ? argv[5] : "";
+    if (device == "NPU" && !draft_model_dir.empty()) {
+        throw std::runtime_error("DRAFT_MODEL_DIR is not supported when DEVICE is NPU");
+    }
     bool prompt_lookup = (lookup == "true");
     // Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
     ov::AnyMap properties = {ov::genai::prompt_lookup(prompt_lookup)};

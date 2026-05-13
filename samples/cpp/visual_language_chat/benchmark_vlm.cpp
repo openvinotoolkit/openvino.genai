@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) try {
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
     config.ignore_eos = true;
 
-     ov::AnyMap properties;
+    ov::AnyMap properties;
     if (!draft_models_path.empty()) {
         properties.insert(ov::genai::draft_model(draft_models_path, device));
     }
