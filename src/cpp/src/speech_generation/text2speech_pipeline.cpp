@@ -45,8 +45,6 @@ SpeechBackend resolve_backend(const std::filesystem::path& root_dir,
     }
 
     const bool has_openvino_model = std::filesystem::exists(root_dir / "openvino_model.xml");
-    const bool has_voices_dir = std::filesystem::exists(root_dir / "voices") &&
-                                std::filesystem::is_directory(root_dir / "voices");
     const bool architecture_mentions_kokoro = class_name.find("Kokoro") != std::string::npos;
 
     bool has_kokoro_vocab = false;
@@ -59,7 +57,7 @@ SpeechBackend resolve_backend(const std::filesystem::path& root_dir,
         }
     }
 
-    if (has_openvino_model && (architecture_mentions_kokoro || (has_voices_dir && has_kokoro_vocab))) {
+    if (has_openvino_model && (architecture_mentions_kokoro || has_kokoro_vocab)) {
         return SpeechBackend::Kokoro;
     }
 
