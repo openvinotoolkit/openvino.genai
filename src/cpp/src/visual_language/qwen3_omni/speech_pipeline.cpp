@@ -130,7 +130,9 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
             m_talker_available = false;
         }
 
-        // Load talker generation parameters from generation_config.json
+        // Load talker and CodePredictor generation parameters from generation_config.json.
+        // CP defaults (1.0 / 50 / 1.0) match the reference Qwen3-Omni implementation; json keys
+        // cp_temperature / cp_top_k / cp_repetition_penalty may override them if present.
         auto gen_config_path = model_dir / "generation_config.json";
         if (std::filesystem::exists(gen_config_path)) {
             std::ifstream f(gen_config_path);
@@ -139,11 +141,18 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
             utils::read_json_param(gen_data, "talker_top_k", m_config.talker_top_k);
             utils::read_json_param(gen_data, "talker_repetition_penalty", m_config.talker_repetition_penalty);
             utils::read_json_param(gen_data, "talker_max_new_tokens", m_config.talker_max_new_tokens);
+            utils::read_json_param(gen_data, "cp_temperature", m_config.cp_temperature);
+            utils::read_json_param(gen_data, "cp_top_k", m_config.cp_top_k);
+            utils::read_json_param(gen_data, "cp_repetition_penalty", m_config.cp_repetition_penalty);
             GENAI_INFO("Speech: talker params: temp=%.2f, top_k=%zu, rep_penalty=%.2f, max_tokens=%zu",
                        m_config.talker_temperature,
                        m_config.talker_top_k,
                        m_config.talker_repetition_penalty,
                        m_config.talker_max_new_tokens);
+            GENAI_INFO("Speech: code_predictor params: temp=%.2f, top_k=%zu, rep_penalty=%.2f",
+                       m_config.cp_temperature,
+                       m_config.cp_top_k,
+                       m_config.cp_repetition_penalty);
         }
 
         // Detect vocab_size from talker logits output and build suppress_tokens list
@@ -361,16 +370,15 @@ int64_t Qwen3OmniSpeechPipeline::sample_top_k(const float* logits,
     OPENVINO_ASSERT(top_k > 0, "sample_top_k: top_k must be > 0");
     OPENVINO_ASSERT(static_cast<size_t>(top_k) <= vocab_size, "sample_top_k: top_k exceeds logits size");
 
-    // Thread-local scratch buffers to avoid heap allocation per call
-    static thread_local std::vector<float> scaled;
-    static thread_local std::vector<size_t> indices;
-    scaled.assign(logits, logits + vocab_size);
-    indices.resize(vocab_size);
+    // Per-instance scratch buffers — not thread-safe, matching the contract of the rest of the
+    // pipeline (single-threaded per Qwen3OmniSpeechPipeline instance).
+    m_sample_scaled.assign(logits, logits + vocab_size);
+    m_sample_indices.resize(vocab_size);
 
     // Suppress forbidden tokens (set to -inf before any other processing)
     for (auto token_id : suppress_tokens) {
         if (token_id >= 0 && static_cast<size_t>(token_id) < vocab_size) {
-            scaled[token_id] = -std::numeric_limits<float>::infinity();
+            m_sample_scaled[token_id] = -std::numeric_limits<float>::infinity();
         }
     }
 
@@ -379,58 +387,58 @@ int64_t Qwen3OmniSpeechPipeline::sample_top_k(const float* logits,
         for (auto token_id : generated_tokens) {
             if (token_id < 0 || static_cast<size_t>(token_id) >= vocab_size)
                 continue;
-            if (scaled[token_id] >= 0.0f) {
-                scaled[token_id] /= repetition_penalty;
+            if (m_sample_scaled[token_id] >= 0.0f) {
+                m_sample_scaled[token_id] /= repetition_penalty;
             } else {
-                scaled[token_id] *= repetition_penalty;
+                m_sample_scaled[token_id] *= repetition_penalty;
             }
         }
     }
 
     // Apply temperature
     for (size_t i = 0; i < vocab_size; i++) {
-        scaled[i] /= temperature;
+        m_sample_scaled[i] /= temperature;
     }
 
     // Find top-k threshold using nth_element (O(n) vs O(n + k log k) for partial_sort)
     size_t k = std::min(top_k, vocab_size);
-    std::iota(indices.begin(), indices.end(), 0);
-    auto* scaled_ptr = scaled.data();
-    std::nth_element(indices.begin(), indices.begin() + k - 1, indices.end(), [scaled_ptr](size_t a, size_t b) {
-        return scaled_ptr[a] > scaled_ptr[b];
-    });
-    float threshold = scaled[indices[k - 1]];
+    std::iota(m_sample_indices.begin(), m_sample_indices.end(), 0);
+    auto* scaled_ptr = m_sample_scaled.data();
+    std::nth_element(m_sample_indices.begin(),
+                     m_sample_indices.begin() + k - 1,
+                     m_sample_indices.end(),
+                     [scaled_ptr](size_t a, size_t b) {
+                         return scaled_ptr[a] > scaled_ptr[b];
+                     });
+    float threshold = m_sample_scaled[m_sample_indices[k - 1]];
 
     // Collect top-k indices (values >= threshold) and compute softmax only over them
-    static thread_local std::vector<size_t> topk_indices;
-    static thread_local std::vector<float> topk_probs;
-    topk_indices.clear();
+    m_sample_topk_indices.clear();
     for (size_t i = 0; i < vocab_size; i++) {
-        if (scaled[i] >= threshold) {
-            topk_indices.push_back(i);
+        if (m_sample_scaled[i] >= threshold) {
+            m_sample_topk_indices.push_back(i);
         }
     }
 
-    float max_val = scaled[topk_indices[0]];
-    for (size_t i = 1; i < topk_indices.size(); i++) {
-        max_val = std::max(max_val, scaled[topk_indices[i]]);
+    float max_val = m_sample_scaled[m_sample_topk_indices[0]];
+    for (size_t i = 1; i < m_sample_topk_indices.size(); i++) {
+        max_val = std::max(max_val, m_sample_scaled[m_sample_topk_indices[i]]);
     }
 
-    topk_probs.resize(topk_indices.size());
+    m_sample_topk_probs.resize(m_sample_topk_indices.size());
     float sum = 0.0f;
-    for (size_t i = 0; i < topk_indices.size(); i++) {
-        topk_probs[i] = std::exp(scaled[topk_indices[i]] - max_val);
-        sum += topk_probs[i];
+    for (size_t i = 0; i < m_sample_topk_indices.size(); i++) {
+        m_sample_topk_probs[i] = std::exp(m_sample_scaled[m_sample_topk_indices[i]] - max_val);
+        sum += m_sample_topk_probs[i];
     }
     OPENVINO_ASSERT(sum > 0.0f, "sample_top_k: sum of probabilities is zero");
-    for (size_t i = 0; i < topk_probs.size(); i++) {
-        topk_probs[i] /= sum;
+    for (size_t i = 0; i < m_sample_topk_probs.size(); i++) {
+        m_sample_topk_probs[i] /= sum;
     }
 
-    // Multinomial sampling over top-k entries only
-    static thread_local std::mt19937 gen(std::random_device{}());
-    std::discrete_distribution<size_t> dist(topk_probs.begin(), topk_probs.end());
-    return static_cast<int64_t>(topk_indices[dist(gen)]);
+    // Multinomial sampling over top-k entries using the pipeline's seeded RNG
+    std::discrete_distribution<size_t> dist(m_sample_topk_probs.begin(), m_sample_topk_probs.end());
+    return static_cast<int64_t>(m_sample_topk_indices[dist(m_rng)]);
 }
 
 std::pair<ov::Tensor, ov::Tensor> Qwen3OmniSpeechPipeline::build_talker_input(
@@ -685,7 +693,12 @@ std::pair<std::vector<int64_t>, ov::Tensor> Qwen3OmniSpeechPipeline::predict_cod
 
         auto vocab_size = logits.get_shape().back();
         const auto* logits_data = logits.data<float>() + (logits.get_size() - vocab_size);
-        auto code = sample_top_k(logits_data, vocab_size, 1.0f, 50, 1.0f, {});
+        auto code = sample_top_k(logits_data,
+                                 vocab_size,
+                                 m_config.cp_temperature,
+                                 m_config.cp_top_k,
+                                 m_config.cp_repetition_penalty,
+                                 {});
         codes.push_back(code);
 
         accumulate_cp_embed(0, code, true);
@@ -722,7 +735,12 @@ std::pair<std::vector<int64_t>, ov::Tensor> Qwen3OmniSpeechPipeline::predict_cod
 
         auto vocab_size = logits.get_shape().back();
         const auto* logits_data = logits.data<float>() + (logits.get_size() - vocab_size);
-        auto code = sample_top_k(logits_data, vocab_size, 1.0f, 50, 1.0f, {});
+        auto code = sample_top_k(logits_data,
+                                 vocab_size,
+                                 m_config.cp_temperature,
+                                 m_config.cp_top_k,
+                                 m_config.cp_repetition_penalty,
+                                 {});
         codes.push_back(code);
 
         bool need_next_input = step < m_config.num_code_groups - 2;
@@ -752,7 +770,8 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
                                                     const AudioStreamerVariant& audio_streamer,
                                                     size_t chunk_frames,
                                                     const std::string& speaker,
-                                                    size_t max_new_tokens) {
+                                                    size_t max_new_tokens,
+                                                    size_t rng_seed) {
     bool streaming = is_audio_streamer_active(audio_streamer) && chunk_frames > 0;
 
     if (!m_talker_available) {
@@ -761,6 +780,11 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
             end_audio_streamer(audio_streamer);
         return ov::Tensor();
     }
+
+    // Reseed at every entry so output depends only on inputs + seed, not prior call history.
+    // Single shared stream across talker first-code sampling and all CodePredictor steps — one
+    // seed fully reproduces the generated audio. Matches the reference torch.Generator contract.
+    m_rng.seed(static_cast<std::mt19937::result_type>(rng_seed));
 
     GENAI_DEBUG("Speech: tokens=%zu, hidden_states=%zu, intermediate=%zu",
                 full_token_ids.size(),

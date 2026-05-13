@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <list>
 #include <map>
+#include <random>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -50,6 +51,12 @@ struct Qwen3OmniSpeechConfig {
     // Token IDs in [vocab_size-1024, vocab_size) except codec_eos are suppressed
     std::vector<int64_t> talker_suppress_tokens;
 
+    // CodePredictor sampling parameters (defaults match reference Qwen3-Omni;
+    // overridable via generation_config.json keys: cp_temperature, cp_top_k, cp_repetition_penalty)
+    float cp_temperature = 1.0f;
+    size_t cp_top_k = 50;
+    float cp_repetition_penalty = 1.0f;
+
     /// @brief Initialize from VLMConfig.
     static Qwen3OmniSpeechConfig from_vlm_config(const VLMConfig& config);
 };
@@ -76,14 +83,19 @@ public:
     /// @param chunk_frames Number of codec frames per streaming chunk (0 = no streaming).
     /// @param speaker Speaker name (e.g., "f245", "m02").
     /// @param max_new_tokens Maximum number of codec tokens to generate.
+    /// @param rng_seed Seed for the internal RNG. Reseeded on every call — the same seed with
+    ///                 the same thinker outputs produces byte-identical audio. Default 0.
     /// @return Waveform tensor [1, 1, audio_samples] or empty tensor on failure.
+    /// @note Not thread-safe per instance — shares the pipeline's owned std::mt19937 and
+    ///       ov::InferRequests across talker and CodePredictor sampling.
     ov::Tensor generate_speech(const std::vector<int64_t>& full_token_ids,
                                const std::vector<ov::Tensor>& all_hidden_states,
                                const std::vector<ov::Tensor>& all_intermediate_hidden_states,
                                const AudioStreamerVariant& audio_streamer = std::monostate{},
                                size_t chunk_frames = 0,
                                const std::string& speaker = "",
-                               size_t max_new_tokens = 4096);
+                               size_t max_new_tokens = 4096,
+                               size_t rng_seed = 0);
 
 private:
     Qwen3OmniSpeechConfig m_config;
@@ -116,6 +128,18 @@ private:
     std::vector<float> m_talker_buf;
     ov::Tensor m_cp_embed_sum;
     ov::Tensor m_stack_codes_buf;
+
+    // Owned RNG for deterministic sampling. Reseeded at generate_speech() entry from the
+    // caller-supplied rng_seed; shared across talker first-code sampling and all CodePredictor
+    // steps so a single seed fully reproduces the audio output.
+    std::mt19937 m_rng{0};
+
+    // Per-instance scratch buffers for sample_top_k(). Previously thread_local statics inside
+    // the function; now members because the function is no longer static (needs m_rng).
+    std::vector<float> m_sample_scaled;
+    std::vector<size_t> m_sample_indices;
+    std::vector<size_t> m_sample_topk_indices;
+    std::vector<float> m_sample_topk_probs;
 
     /// @brief Resolve speaker name to codec token ID.
     int64_t resolve_speaker_id(const std::string& speaker) const;
@@ -169,13 +193,15 @@ private:
     void reset_code_predictor();
 
     /// @brief Sample from logits with temperature, top-k, repetition penalty, and token suppression.
-    static int64_t sample_top_k(const float* logits,
-                                size_t vocab_size,
-                                float temperature,
-                                size_t top_k,
-                                float repetition_penalty,
-                                const std::vector<int64_t>& generated_tokens,
-                                const std::vector<int64_t>& suppress_tokens = {});
+    /// @note Member function (mutates m_rng and scratch buffers). Uses this instance's RNG so
+    ///       talker and CodePredictor draws come from a single seeded stream.
+    int64_t sample_top_k(const float* logits,
+                         size_t vocab_size,
+                         float temperature,
+                         size_t top_k,
+                         float repetition_penalty,
+                         const std::vector<int64_t>& generated_tokens,
+                         const std::vector<int64_t>& suppress_tokens = {});
 };
 
 }  // namespace ov::genai
