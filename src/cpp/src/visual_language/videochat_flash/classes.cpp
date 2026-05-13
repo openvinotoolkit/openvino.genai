@@ -908,16 +908,19 @@ NormalizedPrompt InputsEmbedderVideoChatFlashQwen::normalize_prompt(
     std::iota(videos_seq.begin(), videos_seq.end(), base_video_id);
 
     // Map universal indices (global per modality) to unified per-prompt offsets.
-    auto image_write = [base_visual_id, base_image_id](std::ostream& os, size_t idx) {
-        OPENVINO_ASSERT(idx >= base_image_id,
-                        "Universal image tag index ", idx, " is below base_image_id ", base_image_id, ".");
+    const size_t n_videos = videos.size();
+    auto image_write = [base_visual_id, base_image_id, n_images](std::ostream& os, size_t idx) {
+        OPENVINO_ASSERT(idx >= base_image_id && idx < base_image_id + n_images,
+                        "Universal image tag index ", idx, " out of range [",
+                        base_image_id, ", ", base_image_id + n_images, ").");
         write_native(os, base_visual_id + (idx - base_image_id));
     };
     auto [image_normalized, image_ids] = universal_to_native(prompt, image_write, VisionType::IMAGE);
 
-    auto video_write = [base_visual_id, base_video_id, n_images](std::ostream& os, size_t idx) {
-        OPENVINO_ASSERT(idx >= base_video_id,
-                        "Universal video tag index ", idx, " is below base_video_id ", base_video_id, ".");
+    auto video_write = [base_visual_id, base_video_id, n_images, n_videos](std::ostream& os, size_t idx) {
+        OPENVINO_ASSERT(idx >= base_video_id && idx < base_video_id + n_videos,
+                        "Universal video tag index ", idx, " out of range [",
+                        base_video_id, ", ", base_video_id + n_videos, ").");
         write_native(os, base_visual_id + n_images + (idx - base_video_id));
     };
     auto [tag_normalized, video_ids] = universal_to_native(image_normalized, video_write, VisionType::VIDEO);

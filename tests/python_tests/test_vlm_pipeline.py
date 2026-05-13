@@ -2953,6 +2953,39 @@ def test_videochatflash_qwen_universal_tags_multiturn(
         ov_videochatflash_qwen_pipe_raw.finish_chat()
 
 
+def test_videochatflash_qwen_universal_tags_out_of_range(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """Universal image/video tag indices exceeding the per-modality count must fail fast.
+
+    Without an upper-bound check, an image tag with idx >= n_images can silently
+    remap into the video portion of the unified visual stream (verify_ids only checks
+    the combined total). This test asserts the pipeline rejects such prompts.
+    """
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+
+    # 1 image + 1 video. <ov_genai_image_1> is OOB (only image_0 exists);
+    # without bounds check it silently maps to the video slot.
+    with pytest.raises(RuntimeError, match="out of range"):
+        ov_videochatflash_qwen_pipe_raw.generate(
+            "<ov_genai_image_1>Describe.",
+            images=[cat_tensor],
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+
+    # Symmetric: <ov_genai_video_1> is OOB (only video_0 exists).
+    with pytest.raises(RuntimeError, match="out of range"):
+        ov_videochatflash_qwen_pipe_raw.generate(
+            "<ov_genai_video_1>Describe.",
+            images=[cat_tensor],
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+
+
 @pytest.mark.parametrize(
     "config",
     [
