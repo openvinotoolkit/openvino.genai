@@ -3,6 +3,7 @@
 
 #include "include/helper.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <typeindex>
 
