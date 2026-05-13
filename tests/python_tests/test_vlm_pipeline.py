@@ -2918,6 +2918,41 @@ def test_videochatflash_qwen_universal_tags_mixed(
     assert len(res.texts[0]) > 0
 
 
+def test_videochatflash_qwen_universal_tags_multiturn(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """Universal tags across multiple turns must use global indices and remap correctly when base offsets are non-zero."""
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+
+    ov_videochatflash_qwen_pipe_raw.start_chat()
+    try:
+        # Turn 1: image_0 + video_0 (base_image_id=0, base_video_id=0, base_visual_id=0)
+        res1 = ov_videochatflash_qwen_pipe_raw.generate(
+            "<ov_genai_image_0><ov_genai_video_0>Describe.",
+            images=[cat_tensor],
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res1.texts) > 0
+        assert len(res1.texts[0]) > 0
+
+        # Turn 2: image_1 + video_1 (global indices; base_image_id=1, base_video_id=1, base_visual_id=2).
+        # Without (idx - base_*_id) relative remap, the emitted native tags exceed the unified
+        # visual range and verify_ids() fails.
+        res2 = ov_videochatflash_qwen_pipe_raw.generate(
+            "<ov_genai_image_1><ov_genai_video_1>Continue.",
+            images=[cat_tensor],
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res2.texts) > 0
+        assert len(res2.texts[0]) > 0
+    finally:
+        ov_videochatflash_qwen_pipe_raw.finish_chat()
+
+
 @pytest.mark.parametrize(
     "config",
     [

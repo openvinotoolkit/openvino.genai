@@ -897,42 +897,38 @@ NormalizedPrompt InputsEmbedderVideoChatFlashQwen::normalize_prompt(
     size_t base_video_id,
     const std::vector<EncodedImage>& images,
     const std::vector<EncodedVideo>& videos) const {
-    // VideoChatFlash maps both images and videos to a unified <|image_i|> tag sequence.
-    // base_image_id and base_video_id track how many images/videos were consumed in prior turns.
-    // The combined base must equal their sum since get_inputs_embeds concatenates images then videos.
+    // Images and videos share a single <|image_i|> sequence: concatenated as [images..., videos...].
+    const size_t n_images = images.size();
     const size_t base_visual_id = base_image_id + base_video_id;
-    const size_t total_visuals = images.size() + videos.size();
+    const size_t total_visuals = images.size()+ videos.size();
 
-    // Build per-modality sequences so pipeline can track per-turn counts via history_vision_count.
-    // The actual values are not used by get_inputs_embeds (which uses regex-extracted tag IDs),
-    // but the sizes are needed for correct interleaving in full-history mode.
-    std::vector<size_t> images_seq(images.size());
+    std::vector<size_t> images_seq(n_images);
     std::iota(images_seq.begin(), images_seq.end(), base_image_id);
     std::vector<size_t> videos_seq(videos.size());
     std::iota(videos_seq.begin(), videos_seq.end(), base_video_id);
 
-    // Universal tags use separate counters (<ov_genai_image_i>, <ov_genai_video_j>) but the unified visual
-    // stream in get_inputs_embeds concatenates images then videos. Remap indices accordingly:
-    //   image index i  ->  unified visual (base_visual_id + i)
-    //   video index j  ->  unified visual (base_visual_id + images.size() + j)
-    const size_t n_images = images.size();
-    auto image_write = [base_visual_id](std::ostream& os, size_t idx) {
-        write_native(os, base_visual_id + idx);
+    // Map universal indices (global per modality) to unified per-prompt offsets.
+    auto image_write = [base_visual_id, base_image_id](std::ostream& os, size_t idx) {
+        OPENVINO_ASSERT(idx >= base_image_id,
+                        "Universal image tag index ", idx, " is below base_image_id ", base_image_id, ".");
+        write_native(os, base_visual_id + (idx - base_image_id));
     };
     auto [image_normalized, image_ids] = universal_to_native(prompt, image_write, VisionType::IMAGE);
 
-    auto video_write = [base_visual_id, n_images](std::ostream& os, size_t idx) {
-        write_native(os, base_visual_id + n_images + idx);
+    auto video_write = [base_visual_id, base_video_id, n_images](std::ostream& os, size_t idx) {
+        OPENVINO_ASSERT(idx >= base_video_id,
+                        "Universal video tag index ", idx, " is below base_video_id ", base_video_id, ".");
+        write_native(os, base_visual_id + n_images + (idx - base_video_id));
     };
     auto [tag_normalized, video_ids] = universal_to_native(image_normalized, video_write, VisionType::VIDEO);
 
     std::vector<size_t> visual_sequence;
     visual_sequence.reserve(image_ids.size() + video_ids.size());
     for (size_t id : image_ids) {
-        visual_sequence.push_back(base_visual_id + id);
+        visual_sequence.push_back(base_visual_id + (id - base_image_id));
     }
     for (size_t id : video_ids) {
-        visual_sequence.push_back(base_visual_id + n_images + id);
+        visual_sequence.push_back(base_visual_id + n_images + (id - base_video_id));
     }
     if (!visual_sequence.empty()) {
         OPENVINO_ASSERT(
