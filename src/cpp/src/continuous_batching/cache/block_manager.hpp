@@ -570,11 +570,11 @@ public:
 
     /**
      * Constructs the BlockManager.
-    * @param num_blocks Number of cache blocks available for assignment to the sequences.
+     * @param num_blocks Number of cache blocks available for assignment to the sequences.
      * @param enable_prefix_caching Whether prefix caching should be enabled for this allocator.
      * See also the equivalent parameter in ov::genai::ContinuousBatchingPipeline
-    * @param block_size The size of an individual cache block in tokens.
-    * @param num_layers The number of separate block-table layers associated with the manager.
+     * @param block_size The size of an individual cache block in tokens.
+     * @param num_layers The number of separate block-table layers associated with the manager.
      * In current implementation each layer must have the same number of logical blocks allocated at all times.
      * @param fixed_blocks_per_sequence When > 0, each sequence is allocated exactly this many blocks
      *        regardless of context length. Used for fixed-size caches (e.g. CausalConv1D state).

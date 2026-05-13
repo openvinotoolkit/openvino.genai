@@ -77,7 +77,7 @@ public:
         // IDs of scheduled groups
         std::vector<uint64_t> m_scheduled_sequence_groups_ids;
         std::map<uint64_t, KVPagedAttentionData> m_kv_paged_attention_data;
-        std::map<uint64_t, LinearAttentionPagingData> linear_attention_paging_data;
+        std::map<uint64_t, LinearAttentionPagingData> m_linear_attention_paging_data;
         std::shared_ptr<const KVPagedAttentionGlobalData> m_kv_paged_attention_global_data;
 
         // total number of scheduled tokens
@@ -119,7 +119,7 @@ public:
         }
 
         void set_linear_attention_paging_data(uint64_t seq_id, LinearAttentionPagingData&& paging_data) {
-            linear_attention_paging_data[seq_id] = std::move(paging_data);
+            m_linear_attention_paging_data[seq_id] = std::move(paging_data);
         }
 
         const std::vector<BlocksPerLayer>& get_kv_block_tables(uint64_t seq_id) const {
@@ -170,15 +170,15 @@ public:
         }
 
         bool has_linear_attention_paging_data() const {
-            return !linear_attention_paging_data.empty();
+            return !m_linear_attention_paging_data.empty();
         }
 
         bool has_linear_attention_paging_data(uint64_t seq_id) const {
-            return linear_attention_paging_data.find(seq_id) != linear_attention_paging_data.end();
+            return m_linear_attention_paging_data.find(seq_id) != m_linear_attention_paging_data.end();
         }
 
         const LinearAttentionPagingData& get_linear_attention_paging_data(uint64_t seq_id) const {
-            return linear_attention_paging_data.at(seq_id);
+            return m_linear_attention_paging_data.at(seq_id);
         }
     };
 
