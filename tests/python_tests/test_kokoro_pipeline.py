@@ -370,12 +370,10 @@ def tiny_kokoro_model_path() -> Path:
     # Atomic manager moves temp dir itself to final path, so files are under model/.
     nested_model_path = model_path / "model"
     if nested_model_path.exists() and (nested_model_path / "config.json").exists():
-        if (model_path / "config.json").exists():
-            shutil.rmtree(nested_model_path, ignore_errors=True)
-        else:
+        if not (model_path / "config.json").exists():
             for item in nested_model_path.iterdir():
                 shutil.move(str(item), str(model_path / item.name))
-            shutil.rmtree(nested_model_path, ignore_errors=True)
+        shutil.rmtree(nested_model_path, ignore_errors=True)
 
     return model_path
 
