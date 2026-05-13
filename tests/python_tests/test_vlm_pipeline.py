@@ -439,9 +439,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
-    if "tiny-random-qwen3.5" in ov_model and ov_backend == "PA":
-        pytest.xfail("Qwen3.5 does not support PA attention backend")
-
     if "gemma4" in ov_model and ov_backend == "PA":
         pytest.xfail("gemma4 does not support PA attention backend")
 
@@ -2845,6 +2842,9 @@ def test_video_metadata_sampling(
 ):
     if "tiny-videochat-flash-qwen" in ov_pipe_model.model_id:
         pytest.xfail("Implement proper video sampling for VideoChat-Flash-Qwen. Ticket - CVS-183520.")
+
+    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and ov_pipe_model.prompt_lookup:
+        pytest.xfail("Qwen3.5 with prompt_lookup does not currently support video metadata sampling.")
 
     ov_pipe = ov_pipe_model.pipeline
 
