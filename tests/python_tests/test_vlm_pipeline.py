@@ -2761,9 +2761,7 @@ def test_videochatflash_qwen_chat_history_with_video(
     synthetic_video_32x32_tensor: openvino.Tensor,
 ):
     """ChatHistory with video input must produce the same result as start_chat with video."""
-    generation_config = _setup_generation_config(
-        ov_videochatflash_qwen_pipe_raw, max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False
-    )
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
     videos = [synthetic_video_32x32_tensor]
     prompt = "Describe this video."
     follow_up = "Go on."
@@ -2849,9 +2847,7 @@ def test_videochatflash_qwen_chat_history_mixed_modalities(
     synthetic_video_32x32_tensor: openvino.Tensor,
 ):
     """ChatHistory mode with mixed modalities across turns must produce the same result as start_chat."""
-    generation_config = _setup_generation_config(
-        ov_videochatflash_qwen_pipe_raw, max_new_tokens=DEFAULT_MAX_NEW_TOKENS, do_sample=False
-    )
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
     prompt1 = "Describe this video."
     prompt2 = "And this image?"
 

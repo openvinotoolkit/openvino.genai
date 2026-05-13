@@ -59,7 +59,7 @@ private:
     // TODO Override InputsEmbedder::sample_video_if_needed instead
     ov::Tensor sample_video_if_needed(const ov::Tensor& video) const;
     /// @brief Encodes preprocessed NCHW frames through vision encoder, merge, and projection.
-    ov::Tensor encode_preprocessed_frames(const ov::Tensor& preprocessed_nchw, const ov::Tensor& pos_emb, size_t merge_target_num_token);
+    ov::Tensor encode_preprocessed_frames(const ov::Tensor& preprocessed_nchw, const ov::Tensor& pos_emb, size_t merge_target_num_tokens);
     /// @brief Initializes 3D sin-cos positional embedding tensor for vision encoder input.
     void initialize_positional_embedding();
     /// @brief Builds and prepares infer request queue for token merge model.

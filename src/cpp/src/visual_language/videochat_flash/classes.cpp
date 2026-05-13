@@ -732,7 +732,7 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
 ov::Tensor VisionEncoderVideoChatFlashQwen::encode_preprocessed_frames(
     const ov::Tensor& preprocessed_nchw,
     const ov::Tensor& pos_emb,
-    size_t merge_target_num_token) {
+    size_t merge_target_num_tokens) {
 
     auto transpose_features = transpose_video_features(preprocessed_nchw, m_mm_local_num_frames);
 
@@ -742,7 +742,7 @@ ov::Tensor VisionEncoderVideoChatFlashQwen::encode_preprocessed_frames(
 
     ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get(), pos_emb);
     ov::Tensor clipped_vision_embeds = remove_second_dim_first_element(processed_vision_embeds);
-    ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_guard.get(), merge_target_num_token);
+    ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_guard.get(), merge_target_num_tokens);
     projection_guard.get().set_input_tensor(merged_vision_features);
     projection_guard.get().infer();
     ov::Tensor proj_features = projection_guard.get().get_output_tensor();
@@ -1016,10 +1016,16 @@ ov::Tensor InputsEmbedderVideoChatFlashQwen::get_inputs_embeds(
         // Within each turn, normalize_prompt assigns lower IDs to images, higher to videos.
         size_t img_idx = 0, vid_idx = 0;
         for (const auto& [vid_count, img_count] : history_vision_count) {
-            for (size_t i = 0; i < img_count && img_idx < images.size(); ++i) {
+            OPENVINO_ASSERT(img_idx + img_count <= images.size(),
+                            "history_vision_count requests ", img_count,
+                            " images but only ", images.size() - img_idx, " remaining.");
+            OPENVINO_ASSERT(vid_idx + vid_count <= videos.size(),
+                            "history_vision_count requests ", vid_count,
+                            " videos but only ", videos.size() - vid_idx, " remaining.");
+            for (size_t i = 0; i < img_count; ++i) {
                 combined_images.push_back(images.at(img_idx++));
             }
-            for (size_t j = 0; j < vid_count && vid_idx < videos.size(); ++j) {
+            for (size_t j = 0; j < vid_count; ++j) {
                 ov::genai::EncodedImage as_image;
                 as_image.images_features_projection = videos.at(vid_idx++).video_features;
                 combined_images.emplace_back(std::move(as_image));
