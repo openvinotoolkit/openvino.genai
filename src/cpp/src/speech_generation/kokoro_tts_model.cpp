@@ -1086,4 +1086,3 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
 }  // namespace genai
 }  // namespace ov
 #endif // OPENVINO_GENAI_HAS_MISAKI_CPP
-
