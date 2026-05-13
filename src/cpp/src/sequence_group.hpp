@@ -293,7 +293,7 @@ public:
         ov::Coordinate end;
         if (position_ids_elem_shape.size() == 3) {
             begin = ov::Coordinate{0, 0, idx};
-            end = ov::Coordinate{3, 1, idx + 1};
+            end = ov::Coordinate{position_ids_elem_shape[0], 1, idx + 1};
         }
         else if (position_ids_elem_shape.size() == 2) {
             if (need_batch_dimention) {
