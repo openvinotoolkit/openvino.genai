@@ -925,19 +925,22 @@ NormalizedPrompt InputsEmbedderVideoChatFlashQwen::normalize_prompt(
     };
     auto [tag_normalized, video_ids] = universal_to_native(image_normalized, video_write, VisionType::VIDEO);
 
-    std::vector<size_t> visual_sequence;
-    visual_sequence.reserve(image_ids.size() + video_ids.size());
-    for (size_t id : image_ids) {
-        visual_sequence.push_back(base_visual_id + (id - base_image_id));
-    }
-    for (size_t id : video_ids) {
-        visual_sequence.push_back(base_visual_id + n_images + (id - base_video_id));
-    }
-    if (!visual_sequence.empty()) {
+    if (!image_ids.empty() || !video_ids.empty()) {
         OPENVINO_ASSERT(
             !std::regex_search(prompt, NATIVE_PATTERN),
             "Prompt cannot mix universal visual tags (<ov_genai_image_i> / <ov_genai_video_i>) with native visual tags (<|image_i|>)."
         );
+        // Build visual_sequence by scanning tag_normalized in encounter order, matching the
+        // native-path behavior in normalize_prompt_impl (write_native emits idx+1, so subtract 1).
+        std::vector<size_t> visual_sequence;
+        visual_sequence.reserve(image_ids.size() + video_ids.size());
+        for (std::sregex_iterator it(tag_normalized.begin(), tag_normalized.end(), NATIVE_PATTERN), end;
+             it != end;
+             ++it) {
+            size_t visual_id = std::stoul(it->str(1));
+            OPENVINO_ASSERT(visual_id != 0, "Image tags must be greater than 0");
+            visual_sequence.push_back(visual_id - 1);
+        }
         verify_ids(visual_sequence, base_visual_id, total_visuals);
         return {tag_normalized, images_seq, videos_seq};
     }
