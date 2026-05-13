@@ -4,6 +4,7 @@
 #include "visual_language/qwen3_omni/speech_pipeline.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -243,23 +244,45 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
         } else {
             GENAI_INFO("Speech: codec_embedding.npy not found, using talker embeddings as fallback");
         }
+
+        // Pre-compute constant embeddings. These depend only on model weights and
+        // static config, so hoisting them out of generate_speech() saves ~12 inference
+        // calls per call at the cost of a one-shot warm-up during pipeline construction.
+        if (m_talker_available) {
+            m_tts_bos_embed = project_text(embed_thinker_token(m_config.tts_bos_token_id));
+            m_tts_eos_embed = project_text(embed_thinker_token(m_config.tts_eos_token_id));
+            m_tts_pad_embed = project_text(embed_thinker_token(m_config.tts_pad_token_id));
+
+            const std::array<int64_t, 5> codec_specials{m_config.codec_nothink_id,
+                                                        m_config.codec_think_bos_id,
+                                                        m_config.codec_think_eos_id,
+                                                        m_config.codec_pad_id,
+                                                        m_config.codec_bos_id};
+            for (auto id : codec_specials) {
+                m_codec_special_embed.emplace(id, embed_talker_token(id));
+            }
+
+            for (const auto& [name, id] : m_config.speaker_ids) {
+                m_speaker_embed.emplace(id, embed_talker_token(id));
+                std::string lower_name = name;
+                std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), [](unsigned char c) {
+                    return std::tolower(c);
+                });
+                m_lower_speaker_ids.emplace(std::move(lower_name), id);
+            }
+        }
     }
 }
 
 int64_t Qwen3OmniSpeechPipeline::resolve_speaker_id(const std::string& speaker) const {
-    if (!speaker.empty() && !m_config.speaker_ids.empty()) {
+    if (!speaker.empty() && !m_lower_speaker_ids.empty()) {
         std::string lower_speaker = speaker;
         std::transform(lower_speaker.begin(), lower_speaker.end(), lower_speaker.begin(), [](unsigned char c) {
             return std::tolower(c);
         });
-        for (const auto& [name, id] : m_config.speaker_ids) {
-            std::string lower_name = name;
-            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), [](unsigned char c) {
-                return std::tolower(c);
-            });
-            if (lower_name == lower_speaker) {
-                return id;
-            }
+        auto it = m_lower_speaker_ids.find(lower_speaker);
+        if (it != m_lower_speaker_ids.end()) {
+            return it->second;
         }
     }
     // Fallback: use first available speaker
@@ -461,10 +484,10 @@ std::pair<ov::Tensor, ov::Tensor> Qwen3OmniSpeechPipeline::build_talker_input(
 
     auto hidden_size = m_config.talker_hidden_size;
 
-    // Pre-compute TTS special embeddings in talker space
-    auto tts_bos_embed = project_text(embed_thinker_token(m_config.tts_bos_token_id));
-    auto tts_eos_embed = project_text(embed_thinker_token(m_config.tts_eos_token_id));
-    auto tts_pad_embed = project_text(embed_thinker_token(m_config.tts_pad_token_id));
+    // TTS special embeddings were pre-computed at pipeline construction (see ctor).
+    const auto& tts_bos_embed = m_tts_bos_embed;
+    const auto& tts_eos_embed = m_tts_eos_embed;
+    const auto& tts_pad_embed = m_tts_pad_embed;
 
     // Reuse pre-allocated member buffer (avoids heap allocation per call)
     m_talker_buf.clear();
@@ -572,17 +595,17 @@ std::pair<ov::Tensor, ov::Tensor> Qwen3OmniSpeechPipeline::build_talker_input(
             }
 
             // Positions 3-6: tts_pad + codec token embeddings
-            add_embeddings(tts_pad_embed, embed_talker_token(m_config.codec_nothink_id));
-            add_embeddings(tts_pad_embed, embed_talker_token(m_config.codec_think_bos_id));
-            add_embeddings(tts_pad_embed, embed_talker_token(m_config.codec_think_eos_id));
-            add_embeddings(tts_pad_embed, embed_talker_token(speaker_codec_id));
+            add_embeddings(tts_pad_embed, m_codec_special_embed.at(m_config.codec_nothink_id));
+            add_embeddings(tts_pad_embed, m_codec_special_embed.at(m_config.codec_think_bos_id));
+            add_embeddings(tts_pad_embed, m_codec_special_embed.at(m_config.codec_think_eos_id));
+            add_embeddings(tts_pad_embed, m_speaker_embed.at(speaker_codec_id));
 
             // Position 7: tts_bos + codec_pad
-            add_embeddings(tts_bos_embed, embed_talker_token(m_config.codec_pad_id));
+            add_embeddings(tts_bos_embed, m_codec_special_embed.at(m_config.codec_pad_id));
 
             // Position 8: first text token + codec_bos
             if (assistant_projected.size() > 3) {
-                add_embeddings(assistant_projected[3], embed_talker_token(m_config.codec_bos_id));
+                add_embeddings(assistant_projected[3], m_codec_special_embed.at(m_config.codec_bos_id));
             }
 
             // Build trailing_text_hidden: remaining projected text tokens (positions 4+)
@@ -855,8 +878,8 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
     auto num_quantizers = m_config.num_code_groups;
     bool early_stop = false;
 
-    // Pre-compute tts_pad embedding in talker space for padding
-    auto tts_pad_proj = project_text(embed_thinker_token(m_config.tts_pad_token_id));
+    // Reuse the pre-computed tts_pad embedding (talker space) for per-step padding below.
+    const auto& tts_pad_proj = m_tts_pad_embed;
 
     // Pre-allocate codes stacking buffer at max possible size, then use set_shape per call
     m_stack_codes_buf = ov::Tensor(ov::element::i64, {1, num_quantizers, talker_max_tokens});
