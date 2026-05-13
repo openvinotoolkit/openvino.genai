@@ -433,7 +433,9 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLatestBlockWithLogical
 
     const auto producer_seq_id = producer_group->get_running_sequences().at(0)->get_id();
     ASSERT_EQ(block_manager.get_block_table(producer_seq_id, 0).size(), 2);
+    const auto older_checkpoint = block_manager.get_block_table(producer_seq_id, 0).at(0);
     const auto latest_checkpoint_idx = block_manager.get_block_table(producer_seq_id, 0).at(1)->get_index();
+    const auto latest_checkpoint = block_manager.get_block_table(producer_seq_id, 0).at(1);
     block_manager.free_sequence(producer_seq_id);
 
     auto consumer_group = create_sequence_group(tokens, 27);
@@ -441,18 +443,62 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLatestBlockWithLogical
 
     const auto consumer_seq = consumer_group->get_running_sequences().at(0);
     const auto consumer_seq_id = consumer_seq->get_id();
-    ASSERT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 1);
-    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(0)->get_index(), latest_checkpoint_idx);
-    EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 1);
+    ASSERT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 2);
+    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(1)->get_index(), latest_checkpoint_idx);
+    EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 0);
+    EXPECT_EQ(older_checkpoint->get_references_count(), 1);
+    EXPECT_EQ(latest_checkpoint->get_references_count(), 1);
     EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
 
     consumer_seq->append_token(8, 0.9f);
     consumer_group->update_processed_tokens_num(tokens.size());
     consumer_group->schedule_tokens(1);
     block_manager.append_slots(consumer_group);
-    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 2);
-    EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 1);
+    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 3);
+    EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 0);
 
+    block_manager.free_sequence(consumer_seq_id);
+}
+
+TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLogicalOffsetWhenOlderBlocksAreMissing) {
+    constexpr size_t block_size = 4;
+    ov::genai::BlockManager block_manager(
+        /*num_blocks=*/2,
+        /*enable_prefix_caching=*/true,
+        block_size,
+        /*num_layers=*/1,
+        /*fixed_blocks_per_sequence=*/0,
+        /*restore_latest_prefix_block_only=*/true);
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto producer_group = create_sequence_group(tokens, 28);
+    producer_group->schedule_tokens(tokens.size());
+    block_manager.append_slots(producer_group);
+    producer_group->finish_iteration();
+
+    const auto producer_seq_id = producer_group->get_running_sequences().at(0)->get_id();
+    ASSERT_EQ(block_manager.get_block_table(producer_seq_id, 0).size(), 2);
+    const auto older_checkpoint_idx = block_manager.get_block_table(producer_seq_id, 0).at(0)->get_index();
+    const auto latest_checkpoint_idx = block_manager.get_block_table(producer_seq_id, 0).at(1)->get_index();
+    block_manager.free_sequence(producer_seq_id);
+
+    std::vector<int64_t> pressure_tokens = {10, 11, 12, 13};
+    auto pressure_group = create_sequence_group(pressure_tokens, 29);
+    pressure_group->schedule_tokens(pressure_tokens.size());
+    block_manager.append_slots(pressure_group);
+    const auto pressure_seq_id = pressure_group->get_running_sequences().at(0)->get_id();
+    ASSERT_EQ(block_manager.get_block_table(pressure_seq_id, 0).at(0)->get_index(), older_checkpoint_idx);
+
+    auto consumer_group = create_sequence_group(tokens, 30);
+    block_manager.restore_cached_blocks(consumer_group);
+
+    const auto consumer_seq_id = consumer_group->get_running_sequences().at(0)->get_id();
+    ASSERT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 1);
+    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(0)->get_index(), latest_checkpoint_idx);
+    EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 1);
+    EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
+
+    block_manager.free_sequence(pressure_seq_id);
     block_manager.free_sequence(consumer_seq_id);
 }
 

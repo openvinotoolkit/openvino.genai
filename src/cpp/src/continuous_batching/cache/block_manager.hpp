@@ -1344,54 +1344,10 @@ public:
         auto sequence = sequences[0];
 
         if (m_restore_latest_prefix_block_only) {
-            size_t interval_end = capped_token_position;
-            while (interval_end > 0 && plan.empty()) {
-                const size_t interval_start = ((interval_end - 1) / m_block_size) * m_block_size;
-                for (size_t content_len = interval_end; content_len > interval_start; --content_len) {
-                    if (m_allocator.has_cached_block(sequence->get_hash(content_len, m_block_size),
-                                                     m_prefix_hash_to_occupied_block_map)) {
-                        plan.block_content_lengths.push_back(content_len);
-                        plan.cache_token_position = content_len;
-                        plan.processed_tokens = get_processed_tokens_after_restore(content_len, prompt_len);
-                        plan.logical_block_start = (content_len - 1) / m_block_size;
-                        break;
-                    }
-                }
-                interval_end = interval_start;
-            }
-            return plan;
+            return get_latest_prefix_restore_plan(sequence, capped_token_position, prompt_len);
         }
 
-        size_t content_len = 0;
-        while (content_len < capped_token_position) {
-            size_t prev_iteration_content_len = content_len;
-            content_len += m_block_size;
-            if (content_len > capped_token_position) {
-                content_len = capped_token_position;
-            }
-            const auto full_block_hash = sequence->get_hash(content_len, m_block_size);
-            if (m_allocator.has_cached_block(full_block_hash, m_prefix_hash_to_occupied_block_map)) {
-                plan.block_content_lengths.push_back(content_len);
-                plan.cache_token_position = content_len;
-                plan.processed_tokens = get_processed_tokens_after_restore(content_len, prompt_len);
-            } else {
-                for (size_t i = 1; i < m_block_size; i++) {
-                    if (prev_iteration_content_len + i > capped_token_position) {
-                        break;
-                    }
-                    const size_t partial_content_len = prev_iteration_content_len + i;
-                    const auto hash = sequence->get_hash(partial_content_len, m_block_size);
-                    if (m_allocator.has_cached_block(hash, m_prefix_hash_to_occupied_block_map)) {
-                        plan.block_content_lengths.push_back(partial_content_len);
-                        plan.cache_token_position = partial_content_len;
-                        plan.processed_tokens = get_processed_tokens_after_restore(partial_content_len, prompt_len);
-                        break;
-                    }
-                }
-                break;
-            }
-        }
-        return plan;
+        return get_full_prefix_restore_plan(sequence, capped_token_position, prompt_len);
     }
 
     void restore_cached_blocks(SequenceGroup::Ptr group, const PrefixRestorePlan& plan) {
@@ -1442,6 +1398,91 @@ public:
     }
 
 private:
+    PrefixRestorePlan get_full_prefix_restore_plan(const Sequence::Ptr& sequence,
+                                                   size_t capped_token_position,
+                                                   size_t prompt_len) const {
+        PrefixRestorePlan plan;
+        size_t content_len = 0;
+        while (content_len < capped_token_position) {
+            size_t prev_iteration_content_len = content_len;
+            content_len += m_block_size;
+            if (content_len > capped_token_position) {
+                content_len = capped_token_position;
+            }
+            const auto full_block_hash = sequence->get_hash(content_len, m_block_size);
+            if (m_allocator.has_cached_block(full_block_hash, m_prefix_hash_to_occupied_block_map)) {
+                plan.block_content_lengths.push_back(content_len);
+                plan.cache_token_position = content_len;
+                plan.processed_tokens = get_processed_tokens_after_restore(content_len, prompt_len);
+            } else {
+                for (size_t i = 1; i < m_block_size; i++) {
+                    if (prev_iteration_content_len + i > capped_token_position) {
+                        break;
+                    }
+                    const size_t partial_content_len = prev_iteration_content_len + i;
+                    const auto hash = sequence->get_hash(partial_content_len, m_block_size);
+                    if (m_allocator.has_cached_block(hash, m_prefix_hash_to_occupied_block_map)) {
+                        plan.block_content_lengths.push_back(partial_content_len);
+                        plan.cache_token_position = partial_content_len;
+                        plan.processed_tokens = get_processed_tokens_after_restore(partial_content_len, prompt_len);
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+        return plan;
+    }
+
+    PrefixRestorePlan get_latest_prefix_restore_plan(const Sequence::Ptr& sequence,
+                                                     size_t capped_token_position,
+                                                     size_t prompt_len) const {
+        PrefixRestorePlan plan;
+        size_t latest_content_len = 0;
+        size_t interval_end = capped_token_position;
+        while (interval_end > 0) {
+            size_t content_len = 0;
+            if (!find_latest_cached_content_len(sequence, interval_end, content_len)) {
+                if (!plan.empty()) {
+                    break;
+                }
+                interval_end = get_interval_start(interval_end);
+                continue;
+            }
+            if (latest_content_len == 0) {
+                latest_content_len = content_len;
+            }
+            plan.block_content_lengths.push_back(content_len);
+            interval_end = get_interval_start(content_len);
+        }
+
+        if (plan.empty()) {
+            return plan;
+        }
+
+        std::reverse(plan.block_content_lengths.begin(), plan.block_content_lengths.end());
+        plan.cache_token_position = latest_content_len;
+        plan.processed_tokens = get_processed_tokens_after_restore(latest_content_len, prompt_len);
+        plan.logical_block_start = (plan.block_content_lengths.front() - 1) / m_block_size;
+        return plan;
+    }
+
+    bool find_latest_cached_content_len(const Sequence::Ptr& sequence, size_t interval_end, size_t& content_len) const {
+        const size_t interval_start = get_interval_start(interval_end);
+        for (size_t candidate_len = interval_end; candidate_len > interval_start; --candidate_len) {
+            if (m_allocator.has_cached_block(sequence->get_hash(candidate_len, m_block_size),
+                                             m_prefix_hash_to_occupied_block_map)) {
+                content_len = candidate_len;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    size_t get_interval_start(size_t interval_end) const {
+        return ((interval_end - 1) / m_block_size) * m_block_size;
+    }
+
     static size_t get_processed_tokens_after_restore(size_t content_len, size_t prompt_len) {
         return content_len == prompt_len ? content_len - 1 : content_len;
     }
