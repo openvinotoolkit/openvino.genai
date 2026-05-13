@@ -78,6 +78,7 @@ int main(int argc, char* argv[]) try {
     std::filesystem::path models_path = argv[1];
     ov::genai::ModelsMap models_map;
 
+    static const std::regex model_name_regex = std::regex("^openvino_|_model$");
     for (const auto& entry : std::filesystem::directory_iterator(models_path)) {
         if (entry.path().extension() != ".xml")
             continue;
@@ -88,7 +89,7 @@ int main(int argc, char* argv[]) try {
         if (!std::filesystem::exists(bin_file))
             continue;
 
-        std::string model_name = std::regex_replace(stem, std::regex("^openvino_|_model$"), "");
+        std::string model_name = std::regex_replace(stem, model_name_regex, "");
         models_map.emplace(model_name, decrypt_model(models_path, stem + ".xml", stem + ".bin"));
     }
 
