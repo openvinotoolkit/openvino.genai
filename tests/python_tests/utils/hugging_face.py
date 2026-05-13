@@ -102,7 +102,7 @@ def generation_config_to_hf(
         kwargs["do_sample"] = generation_config.do_sample
     else:
         # greedy
-        pass
+        kwargs["do_sample"] = generation_config.do_sample
 
     hf_generation_config = HFGenerationConfig(**kwargs)
     return hf_generation_config

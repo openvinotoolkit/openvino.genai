@@ -181,6 +181,7 @@ else:
         "qnguyen3/nanoLLaVA",
         "optimum-intel-internal-testing/tiny-random-gemma4",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+        "optimum-intel-internal-testing/tiny-random-gemma4-31B",
         *VIDEO_MODEL_IDS,
     ]
 
@@ -206,6 +207,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|image|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
@@ -264,6 +266,7 @@ NPU_UNSUPPORTED_MODELS = {
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
     "optimum-intel-internal-testing/tiny-random-gemma4",
     "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+    "optimum-intel-internal-testing/tiny-random-gemma4-31B",
 }
 
 DEFAULT_NPUW_PROPERTIES = {
@@ -347,6 +350,7 @@ def _get_ov_model(model_id: str) -> str:
     if model_id in [
         "optimum-intel-internal-testing/tiny-random-gemma4",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+        "optimum-intel-internal-testing/tiny-random-gemma4-31B",
     ] and is_transformers_version("<", "5.5.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
@@ -449,9 +453,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
-
-    if "tiny-random-qwen3.5" in ov_model and ov_backend == "PA":
-        pytest.xfail("Qwen3.5 does not support PA attention backend")
 
     if "gemma4" in ov_model and ov_backend == "PA":
         pytest.xfail("gemma4 does not support PA attention backend")
@@ -1035,9 +1036,6 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id:
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
@@ -1216,9 +1214,6 @@ def test_vlm_pipeline_chat_with_video(
     system_message: str,
     iteration_images_and_videos,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -1427,9 +1422,6 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id:
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Explain in details 1+1=",
@@ -1683,6 +1675,7 @@ else:
         ("qnguyen3/nanoLLaVA", "PA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-moe", "SDPA"),
+        ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
     ]
 
@@ -1824,9 +1817,6 @@ def test_model_tags_prepend_native(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
     vision_tag = ov_pipe_model.get_vision_tag(vision_type)
 
@@ -1867,9 +1857,6 @@ def test_model_tags_prepend_universal(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
 
     conversation_requests = request.getfixturevalue(
@@ -1909,9 +1896,6 @@ def test_model_tags_append(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
     vision_tag = ov_pipe_model.get_vision_tag(vision_type)
 
@@ -2836,6 +2820,79 @@ def test_vlm_pipeline_add_extension(cat_tensor, tmp_path: Path) -> None:
     )
 
 
+def test_vlm_eagle3(cat_tensor):
+    model_path, draft_model_path = _get_vlm_eagle3_model_paths()
+
+    ov_pipe = VLMPipeline(model_path, "CPU")
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    result_without_draft = ov_pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
+
+    ov_draft = draft_model(draft_model_path, "CPU")
+    ov_pipe_with_draft = VLMPipeline(model_path, "CPU", draft_model=ov_draft)
+    generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
+    result_with_draft = ov_pipe_with_draft.generate(
+        PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_draft
+    )
+
+    assert result_without_draft.texts[0].strip() == result_with_draft.texts[0].strip(), (
+        "Result should be the same when Eagle3 draft model is enabled and disabled."
+    )
+
+
+def test_vlm_eagle3_chat_with_videos(
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    model_path, draft_model_path = _get_vlm_eagle3_model_paths()
+
+    first_prompt = "Describe the image and the video together."
+    second_prompt = "What did you see across both inputs?"
+
+    ov_pipe = VLMPipeline(model_path, "CPU")
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+
+    history_without_draft = ChatHistory()
+    history_without_draft.append({"role": "user", "content": first_prompt})
+    first_result_without_draft = ov_pipe.generate(
+        history_without_draft,
+        images=[cat_tensor],
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    history_without_draft.append({"role": "assistant", "content": first_result_without_draft.texts[0]})
+    history_without_draft.append({"role": "user", "content": second_prompt})
+    second_result_without_draft = ov_pipe.generate(
+        history_without_draft,
+        generation_config=generation_config,
+    )
+
+    ov_draft = draft_model(draft_model_path, "CPU")
+    ov_pipe_with_draft = VLMPipeline(model_path, "CPU", draft_model=ov_draft)
+    generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
+
+    history_with_draft = ChatHistory()
+    history_with_draft.append({"role": "user", "content": first_prompt})
+    first_result_with_draft = ov_pipe_with_draft.generate(
+        history_with_draft,
+        images=[cat_tensor],
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config_with_draft,
+    )
+    history_with_draft.append({"role": "assistant", "content": first_result_with_draft.texts[0]})
+    history_with_draft.append({"role": "user", "content": second_prompt})
+    second_result_with_draft = ov_pipe_with_draft.generate(
+        history_with_draft,
+        generation_config=generation_config_with_draft,
+    )
+
+    assert first_result_without_draft.texts[0].strip() == first_result_with_draft.texts[0].strip(), (
+        "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
+    )
+    assert second_result_without_draft.texts[0].strip() == second_result_with_draft.texts[0].strip(), (
+        "Second mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
+    )
+
+
 @pytest.fixture(scope="module")
 def video_sampling_inputs(synthetic_video_32x32) -> list[tuple[openvino.Tensor, VideoMetadata | None]]:
     video_tensor = openvino.Tensor(synthetic_video_32x32)
@@ -2873,6 +2930,9 @@ def test_video_metadata_sampling(
 ):
     if "tiny-videochat-flash-qwen" in ov_pipe_model.model_id:
         pytest.xfail("Implement proper video sampling for VideoChat-Flash-Qwen. Ticket - CVS-183520.")
+
+    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and ov_pipe_model.prompt_lookup:
+        pytest.xfail("Qwen3.5 with prompt_lookup does not currently support video metadata sampling.")
 
     ov_pipe = ov_pipe_model.pipeline
 
@@ -2948,74 +3008,41 @@ def test_video_metadata_sampling_continuous_batching(
     _compare_outputs_for_video_sampling(*outputs_add_request_api)
 
 
-def test_vlm_eagle3(cat_tensor):
-    model_path, draft_model_path = _get_vlm_eagle3_model_paths()
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [("optimum-intel-internal-testing/tiny-random-qwen3-vl", b) for b in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+def test_vision_pos_embeds_modes_equivalence(ov_pipe_model: VlmModelInfo, cat_tensor):
+    """Test that VISION_POS_EMBEDS=CPP (CPU fallback) and default (patched model)
+    produce identical results for Qwen3-VL."""
+    # Default-mode pipeline comes from the module-scoped fixture (env var unset
+    # at construction time => patched model, device-side weighted sum).
+    ov_pipe_default = ov_pipe_model.pipeline
 
-    ov_pipe = VLMPipeline(model_path, "CPU")
-    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-    result_without_draft = ov_pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
+    gen_config = GenerationConfig()
+    gen_config.max_new_tokens = 20
+    gen_config.do_sample = False
 
-    ov_draft = draft_model(draft_model_path, "CPU")
-    ov_pipe_with_draft = VLMPipeline(model_path, "CPU", draft_model=ov_draft)
-    generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
-    result_with_draft = ov_pipe_with_draft.generate(
-        PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_draft
-    )
+    result_default = ov_pipe_default.generate(PROMPTS[0], images=[cat_tensor], generation_config=gen_config)
 
-    assert result_without_draft.texts[0].strip() == result_with_draft.texts[0].strip(), (
-        "Result should be the same when Eagle3 draft model is enabled and disabled."
-    )
+    # CPP mode: CPU fallback weighted sum. Build a fresh pipeline with the env
+    # var set, since VISION_POS_EMBEDS is read in the InputsEmbedder constructor.
+    prev_val = os.environ.get("VISION_POS_EMBEDS")
+    os.environ["VISION_POS_EMBEDS"] = "CPP"
+    try:
+        model_path = _get_ov_model(ov_pipe_model.model_id)
+        ov_pipe_cpp = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_pipe_model.ov_backend)
+        result_cpp = ov_pipe_cpp.generate(PROMPTS[0], images=[cat_tensor], generation_config=gen_config)
+    finally:
+        if prev_val is None:
+            os.environ.pop("VISION_POS_EMBEDS", None)
+        else:
+            os.environ["VISION_POS_EMBEDS"] = prev_val
 
-
-def test_vlm_eagle3_chat_with_videos(
-    cat_tensor: openvino.Tensor,
-    synthetic_video_32x32_tensor: openvino.Tensor,
-):
-    model_path, draft_model_path = _get_vlm_eagle3_model_paths()
-
-    first_prompt = "Describe the image and the video together."
-    second_prompt = "What did you see across both inputs?"
-
-    ov_pipe = VLMPipeline(model_path, "CPU")
-    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-
-    history_without_draft = ChatHistory()
-    history_without_draft.append({"role": "user", "content": first_prompt})
-    first_result_without_draft = ov_pipe.generate(
-        history_without_draft,
-        images=[cat_tensor],
-        videos=[synthetic_video_32x32_tensor],
-        generation_config=generation_config,
-    )
-    history_without_draft.append({"role": "assistant", "content": first_result_without_draft.texts[0]})
-    history_without_draft.append({"role": "user", "content": second_prompt})
-    second_result_without_draft = ov_pipe.generate(
-        history_without_draft,
-        generation_config=generation_config,
-    )
-
-    ov_draft = draft_model(draft_model_path, "CPU")
-    ov_pipe_with_draft = VLMPipeline(model_path, "CPU", draft_model=ov_draft)
-    generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
-
-    history_with_draft = ChatHistory()
-    history_with_draft.append({"role": "user", "content": first_prompt})
-    first_result_with_draft = ov_pipe_with_draft.generate(
-        history_with_draft,
-        images=[cat_tensor],
-        videos=[synthetic_video_32x32_tensor],
-        generation_config=generation_config_with_draft,
-    )
-    history_with_draft.append({"role": "assistant", "content": first_result_with_draft.texts[0]})
-    history_with_draft.append({"role": "user", "content": second_prompt})
-    second_result_with_draft = ov_pipe_with_draft.generate(
-        history_with_draft,
-        generation_config=generation_config_with_draft,
-    )
-
-    assert first_result_without_draft.texts[0].strip() == first_result_with_draft.texts[0].strip(), (
-        "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
-    )
-    assert second_result_without_draft.texts[0].strip() == second_result_with_draft.texts[0].strip(), (
-        "Second mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
+    assert result_default.texts[0] == result_cpp.texts[0], (
+        f"VISION_POS_EMBEDS modes produced different results.\n"
+        f"Default (patched model): '{result_default.texts[0]}'\n"
+        f"CPP (CPU fallback):      '{result_cpp.texts[0]}'"
     )

@@ -11,8 +11,13 @@ from typing import Literal, Any, Union
 
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
-from .utils import get_ignore_parameters_flag, prepare_default_data_image, prepare_default_data_video
-from .visual_utils import fix_phi3_v_eos_token_id, MODEL_TYPE_TO_CLS_MAPPING
+from .utils import (
+    get_ignore_parameters_flag,
+    prepare_default_data_image,
+    prepare_default_data_video,
+    fix_phi3_v_eos_token_id,
+)
+from .inputs_preprocessors import MODEL_TYPE_TO_CLS_MAPPING
 
 DEF_VIDEO_FRAMES_AMOUNT = 10
 
@@ -126,6 +131,10 @@ class VisualTextEvaluator(TextEvaluator):
 
                 preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING_OPT[model.config.model_type].preprocess_inputs
             inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config, video=video)
+            input_ids_len = inputs["input_ids"].shape[-1]
+            # videochat_flash_qwen expects "inputs" instead of "input_ids" and requires "modalities" field to be set
+            if model.config.model_type == "videochat_flash_qwen":
+                inputs["inputs"] = inputs.pop("input_ids")
             tokens = model.generate(
                 **inputs,
                 **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
@@ -139,7 +148,7 @@ class VisualTextEvaluator(TextEvaluator):
                 # The output tuple has format (<list of decoded outputs without question/prompt>, <GenerateDecoderOnlyOutput>)
                 return tokens[0][0]
             if crop_question:
-                tokens = tokens[:, inputs["input_ids"].shape[-1] :]
+                tokens = tokens[:, input_ids_len:]
 
             answer = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
             return answer
