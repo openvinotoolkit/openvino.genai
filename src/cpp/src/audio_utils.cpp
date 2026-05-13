@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <openvino/core/except.hpp>
+#include <thread>
 #include <vector>
 
 namespace ov::genai::audio_utils {
@@ -32,9 +34,14 @@ float mel_to_hertz(float mel) {
 }
 
 std::vector<float> hann_window(size_t length) {
+    // Double-precision 2*PI*i/length matches the pre-refactor Whisper form; all-float drifts
+    // by 1-2 ULPs per coefficient, which accumulates through FFT/log into ~1e-6 error at the
+    // highest mel bin on long (30 s) windows and breaks the byte-for-byte regression against
+    // whisper_mel_reference.bin.
     std::vector<float> output(length);
     for (size_t i = 0; i < length; i++) {
-        output[i] = 0.5f * (1.0f - cosf((2.0f * static_cast<float>(M_PI) * i) / length));
+        const double theta = (2.0 * M_PI * i) / length;
+        output[i] = 0.5 * (1.0 - cosf(theta));
     }
     return output;
 }
@@ -177,7 +184,14 @@ void mel_worker(int ith,
     std::vector<float> fft_out(2 * frame_size);
     const int n_fft = 1 + (frame_size / 2);
 
-    for (int i = ith; i < static_cast<int>(n_frames); i += n_threads) {
+    // Skip FFT for frames whose window sits entirely past n_samples — the fft_in would be
+    // all zeros and the mel sum collapses to log10(1e-10). Matches the pre-refactor Whisper
+    // worker which short-circuits these frames as silence.
+    const int n_real_frames = std::min(n_samples / frame_step + 1, static_cast<int>(n_frames));
+    const auto silence = static_cast<float>(log10(1e-10));
+
+    int i = ith;
+    for (; i < n_real_frames; i += n_threads) {
         const auto offset = i * frame_step;
 
         // Apply Hanning window
@@ -205,6 +219,139 @@ void mel_worker(int ith,
             output[j * n_frames + i] = static_cast<float>(log10(std::max(sum, 1e-10)));
         }
     }
+
+    for (; i < static_cast<int>(n_frames); i += n_threads) {
+        for (size_t j = 0; j < feature_size; j++) {
+            output[j * n_frames + i] = silence;
+        }
+    }
+}
+
+MelSpectrogramExtractor::MelSpectrogramExtractor(size_t num_mel_bins,
+                                                 size_t sampling_rate,
+                                                 size_t n_fft,
+                                                 size_t hop_length)
+    : m_num_mel_bins(num_mel_bins),
+      m_sampling_rate(sampling_rate),
+      m_n_fft(n_fft),
+      m_hop_length(hop_length),
+      m_sin_vals(build_sin_table(n_fft)),
+      m_cos_vals(build_cos_table(n_fft)),
+      m_mel_filter(build_mel_filter(1 + n_fft / 2, num_mel_bins, sampling_rate)) {}
+
+std::vector<float> MelSpectrogramExtractor::pad_with_reflect(const std::vector<float>& raw_speech,
+                                                             size_t min_length) const {
+    const size_t reflect_pad_size = m_n_fft / 2;
+    // Reflect padding copies raw tail samples symmetrically; if raw is shorter than the
+    // reflect window, the copy would read into zero-padded slots and bake silence into
+    // the reflected head/tail. Reject that configuration explicitly instead of producing
+    // subtly wrong features.
+    OPENVINO_ASSERT(raw_speech.size() > reflect_pad_size,
+                    "raw_speech too short for reflect padding: size=",
+                    raw_speech.size(),
+                    " required > ",
+                    reflect_pad_size);
+
+    const size_t total_pad_length = std::max(raw_speech.size(), min_length) + 2 * reflect_pad_size;
+    std::vector<float> padded(total_pad_length, 0.0f);
+
+    std::copy(raw_speech.begin(), raw_speech.end(), padded.begin() + reflect_pad_size);
+
+    std::reverse_copy(padded.begin() + reflect_pad_size + 1,
+                      padded.begin() + reflect_pad_size + 1 + reflect_pad_size,
+                      padded.begin());
+
+    std::reverse_copy(padded.end() - reflect_pad_size - 1 - reflect_pad_size,
+                      padded.end() - reflect_pad_size - 1,
+                      padded.end() - reflect_pad_size);
+
+    return padded;
+}
+
+std::vector<float> MelSpectrogramExtractor::compute_mel(const std::vector<float>& padded,
+                                                        size_t n_samples,
+                                                        size_t n_frames) const {
+    std::vector<float> output(m_num_mel_bins * n_frames, 0.0f);
+
+    const size_t n_threads =
+        std::max(size_t{1}, std::min(size_t{4}, static_cast<size_t>(std::thread::hardware_concurrency())));
+
+    const auto hann = hann_window(m_n_fft);
+
+    // n_samples is the logical sample count the worker treats as "real" data: raw + front
+    // reflect pad only. Everything past that (the tail reflect and any zero-fill between
+    // raw and min_length) is zeroed inside the FFT frame. Matches the pre-refactor Whisper
+    // form bit-for-bit - without this, tail-of-signal frames would pick up the reflected
+    // tail samples instead of log10(1e-10) silence.
+    std::vector<std::thread> workers(n_threads - 1);
+    for (size_t iw = 0; iw < n_threads - 1; ++iw) {
+        workers[iw] = std::thread(mel_worker,
+                                  static_cast<int>(iw + 1),
+                                  std::cref(hann),
+                                  std::cref(padded),
+                                  static_cast<int>(n_samples),
+                                  static_cast<int>(m_n_fft),
+                                  static_cast<int>(m_hop_length),
+                                  static_cast<int>(n_threads),
+                                  std::cref(m_mel_filter),
+                                  m_num_mel_bins,
+                                  n_frames,
+                                  std::ref(output),
+                                  std::cref(m_sin_vals),
+                                  std::cref(m_cos_vals));
+    }
+
+    mel_worker(0,
+               hann,
+               padded,
+               static_cast<int>(n_samples),
+               static_cast<int>(m_n_fft),
+               static_cast<int>(m_hop_length),
+               static_cast<int>(n_threads),
+               m_mel_filter,
+               m_num_mel_bins,
+               n_frames,
+               output,
+               m_sin_vals,
+               m_cos_vals);
+
+    for (auto& w : workers) {
+        w.join();
+    }
+
+    // Whisper-style clamping and normalization: clamp below (max - 8), then (x + 4) / 4.
+    float mmax = -1e20f;
+    for (const auto val : output) {
+        mmax = std::max(mmax, val);
+    }
+    mmax -= 8.0f;
+    for (auto& val : output) {
+        val = std::max(val, mmax);
+        val = (val + 4.0f) / 4.0f;
+    }
+
+    return output;
+}
+
+std::vector<float> MelSpectrogramExtractor::extract(const std::vector<float>& raw_speech,
+                                                    size_t& n_frames,
+                                                    size_t min_length,
+                                                    size_t* n_active_frames) const {
+    OPENVINO_ASSERT(!raw_speech.empty(), "Cannot extract mel spectrogram from empty audio input");
+
+    const size_t reflect_pad_size = m_n_fft / 2;
+    auto padded = pad_with_reflect(raw_speech, min_length);
+    n_frames = (padded.size() - m_n_fft) / m_hop_length;
+    if (n_active_frames != nullptr) {
+        *n_active_frames = raw_speech.size() / m_hop_length;
+    }
+    if (n_frames == 0) {
+        return {};
+    }
+    // n_samples excludes the tail reflect pad so frames past the real signal zero-fill
+    // with log10(1e-10) silence via mel_worker's short-circuit. For min_length == 0 the
+    // last 1-2 frames therefore differ by a tiny amount from a reflect-tail reference
+    return compute_mel(padded, raw_speech.size() + reflect_pad_size, n_frames);
 }
 
 }  // namespace ov::genai::audio_utils

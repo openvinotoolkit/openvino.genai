@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <thread>
 #include <vector>
 
 #include "audio_utils.hpp"
@@ -13,101 +12,6 @@
 #include "utils.hpp"
 
 namespace ov::genai {
-
-// --- MelSpectrogramExtractor ---
-
-MelSpectrogramExtractor::MelSpectrogramExtractor(size_t num_mel_bins,
-                                                 size_t sampling_rate,
-                                                 size_t n_fft,
-                                                 size_t hop_length)
-    : m_num_mel_bins(num_mel_bins),
-      m_sampling_rate(sampling_rate),
-      m_n_fft(n_fft),
-      m_hop_length(hop_length),
-      m_sin_vals(audio_utils::build_sin_table(n_fft)),
-      m_cos_vals(audio_utils::build_cos_table(n_fft)),
-      m_mel_filter(audio_utils::build_mel_filter(1 + n_fft / 2, num_mel_bins, sampling_rate)) {}
-
-std::vector<float> MelSpectrogramExtractor::extract(const std::vector<float>& raw_speech, size_t& n_frames) const {
-    OPENVINO_ASSERT(!raw_speech.empty(), "Cannot extract mel spectrogram from empty audio input");
-
-    const size_t reflect_pad_size = m_n_fft / 2;
-    const size_t padded_size = raw_speech.size() + 2 * reflect_pad_size;
-    std::vector<float> padded(padded_size, 0.0f);
-
-    std::copy(raw_speech.begin(), raw_speech.end(), padded.begin() + reflect_pad_size);
-
-    for (size_t i = 0; i < reflect_pad_size && i < raw_speech.size(); i++) {
-        padded[reflect_pad_size - 1 - i] = raw_speech[i + 1 < raw_speech.size() ? i + 1 : 0];
-    }
-    for (size_t i = 0; i < reflect_pad_size; i++) {
-        size_t src_idx = raw_speech.size() >= 2 + i ? raw_speech.size() - 2 - i : 0;
-        padded[reflect_pad_size + raw_speech.size() + i] = raw_speech[src_idx];
-    }
-
-    n_frames = (padded.size() - m_n_fft) / m_hop_length;
-    if (n_frames == 0) {
-        return {};
-    }
-
-    std::vector<float> output(m_num_mel_bins * n_frames, 0.0f);
-
-    const size_t n_threads =
-        std::max(size_t{1}, std::min(size_t{4}, static_cast<size_t>(std::thread::hardware_concurrency())));
-
-    const auto hann = audio_utils::hann_window(m_n_fft);
-
-    std::vector<std::thread> workers(n_threads - 1);
-    for (size_t iw = 0; iw < n_threads - 1; ++iw) {
-        workers[iw] = std::thread(audio_utils::mel_worker,
-                                  static_cast<int>(iw + 1),
-                                  std::cref(hann),
-                                  std::cref(padded),
-                                  static_cast<int>(padded.size()),
-                                  static_cast<int>(m_n_fft),
-                                  static_cast<int>(m_hop_length),
-                                  static_cast<int>(n_threads),
-                                  std::cref(m_mel_filter),
-                                  m_num_mel_bins,
-                                  n_frames,
-                                  std::ref(output),
-                                  std::cref(m_sin_vals),
-                                  std::cref(m_cos_vals));
-    }
-
-    audio_utils::mel_worker(0,
-                            hann,
-                            padded,
-                            static_cast<int>(padded.size()),
-                            static_cast<int>(m_n_fft),
-                            static_cast<int>(m_hop_length),
-                            static_cast<int>(n_threads),
-                            m_mel_filter,
-                            m_num_mel_bins,
-                            n_frames,
-                            output,
-                            m_sin_vals,
-                            m_cos_vals);
-
-    for (auto& w : workers) {
-        w.join();
-    }
-
-    // Whisper-style clamping and normalization
-    float mmax = -1e20f;
-    for (const auto val : output) {
-        mmax = std::max(mmax, val);
-    }
-    mmax -= 8.0f;
-    for (auto& val : output) {
-        val = std::max(val, mmax);
-        val = (val + 4.0f) / 4.0f;
-    }
-
-    return output;
-}
-
-// --- AudioEncoderQwen3Omni ---
 
 AudioEncoderQwen3Omni::AudioEncoderQwen3Omni(const std::filesystem::path& model_dir,
                                              const VLMConfig& config,
@@ -189,7 +93,8 @@ std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> AudioEncoderQwen3Omni
     // because it uses data-dependent loops that can't be traced)
     const size_t window_aftercnn = max_aftercnn_len * (n_window_infer / (n_window * 2));
     std::vector<int32_t> cu_chunk_lens = {0};
-    OPENVINO_ASSERT(window_aftercnn > 0, "Audio encoder: window_aftercnn is zero — check config values n_window_infer and n_window");
+    OPENVINO_ASSERT(window_aftercnn > 0,
+                    "Audio encoder: window_aftercnn is zero — check config values n_window_infer and n_window");
     for (size_t c = 0; c < num_chunks; c++) {
         const auto cnn_len = static_cast<size_t>(acl_data[c]);
         const size_t full_windows = cnn_len / window_aftercnn;
