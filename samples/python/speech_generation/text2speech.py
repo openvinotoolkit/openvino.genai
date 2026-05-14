@@ -29,6 +29,7 @@ def main():
         help="Path to the binary file with a speaker embedding. Required for Kokoro.",
     )
     parser.add_argument("--language", default="", help="Optional language, e.g. en-us, en-gb, es, fr-fr, hi, it, pt-br")
+    parser.add_argument("--speed", type=float, default=1.0, help="Optional speech speed multiplier (default: 1.0)")
     parser.add_argument("--device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
     args = parser.parse_args()
 
@@ -46,6 +47,9 @@ def main():
 
     if language:
         generation_properties["language"] = language
+
+    if args.speed != 1.0:
+        generation_properties["speed"] = args.speed
 
     result = pipe.generate(args.text, speaker_embedding, **generation_properties)
 

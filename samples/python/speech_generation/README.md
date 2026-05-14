@@ -91,6 +91,11 @@ Kokoro (non-English):
 python text2speech.py --speaker_embedding_file_path ov_Kokoro-82M/voices/ef_dora.bin --language es ov_Kokoro-82M "Hola y bienvenidos a la generación de voz utilizando OpenVINO GenAI."
 ```
 
+Text2speech with speed control:
+```
+python text2speech.py --speaker_embedding_file_path ov_Kokoro-82M/voices/af_heart.bin --language en-us --speed 1.15 ov_Kokoro-82M "Hello from OpenVINO GenAI with a faster speaking rate."
+```
+
 ### 2) `kokoro_phonemize_fallback.py` (Kokoro only)
 
 This sample demonstrates how to use an OpenVINO-based fallback model for phonemization, allowing you to avoid relying on `espeak-ng` when working with English languages.

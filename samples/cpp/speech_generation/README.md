@@ -79,6 +79,11 @@ Kokoro (non-English):
 text2speech ov_Kokoro-82M "Hola y bienvenidos a la generación de voz utilizando OpenVINO GenAI." ov_Kokoro-82M/voices/ef_dora.bin --language es
 ```
 
+Text2speech with speed control:
+```
+text2speech ov_Kokoro-82M "Hello from OpenVINO GenAI with a faster speaking rate." ov_Kokoro-82M/voices/af_heart.bin --language en-us --speed 1.15
+```
+
 ### 2) `kokoro_phonemize_fallback` (Kokoro only)
 
 This sample demonstrates how to use an OpenVINO-based fallback model for phonemization, allowing you to avoid relying on `espeak-ng` when working with English languages.
