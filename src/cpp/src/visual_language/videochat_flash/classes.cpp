@@ -763,7 +763,7 @@ EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, co
                     " and batch ", (img_shape.size() >= 1 ? img_shape[0] : 0), ".");
 
     // Preprocess the single frame once, then tile the f32 result to mm_local_num_frames.
-    // This avoids running resize+normalize mm_local_num_frames times on identical data.
+    // Tiling avoids running resize+normalize mm_local_num_frames times on identical data.
     auto preprocessed_single = preprocess(image, target_size,
                                           m_processor_config.image_mean,
                                           m_processor_config.image_std);
@@ -900,7 +900,7 @@ NormalizedPrompt InputsEmbedderVideoChatFlashQwen::normalize_prompt(
     // Images and videos share a single <|image_i|> sequence: concatenated as [images..., videos...].
     const size_t n_images = images.size();
     const size_t base_visual_id = base_image_id + base_video_id;
-    const size_t total_visuals = images.size()+ videos.size();
+    const size_t total_visuals = images.size() + videos.size();
 
     std::vector<size_t> images_seq(n_images);
     std::iota(images_seq.begin(), images_seq.end(), base_image_id);
