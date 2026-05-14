@@ -671,9 +671,9 @@ void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
         "."
     );
 
-    // Use static rope shape for acceleration.
+    // Accelerate model by using static rope shape.
     std::map<std::string, ov::PartialShape> input_shapes;
-    input_shapes["rotary_pos_emb"] = pos_emb_shape;
+    input_shapes["rotary_pos_emb"] = pos_emb_shape;  // it's a fixed shape: { 1, 1025, 1408 }
     model->reshape(input_shapes);
 
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);

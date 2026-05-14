@@ -40,7 +40,7 @@ protected:
     /// @brief A config to follow.
     VLMConfig m_vlm_config;
 
-    /// @brief 3D sin-cos positional embedding tensor for video frames.
+    /// @brief pos_emb Tensor.
     ov::Tensor m_pos_emb;
 
 private:
