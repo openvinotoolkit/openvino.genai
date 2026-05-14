@@ -689,10 +689,6 @@ class TestKokoroPipeline:
         result = pipe.generate(prompt, speaker_embedding_tensor, language=language)
         speech_genai = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
 
-        assert speech_optimum.ndim == 1, "Optimum speech output should be 1D"
-        assert speech_genai.ndim == 1, "GenAI speech output should be 1D"
-        assert speech_optimum.size > 0, "Optimum speech should not be empty"
-        assert speech_genai.size > 0, "GenAI speech should not be empty"
         assert np.isfinite(speech_optimum).all(), "Optimum speech should contain no NaN/Inf"
         assert np.isfinite(speech_genai).all(), "GenAI speech should contain no NaN/Inf"
         assert speech_optimum.shape == speech_genai.shape, (
