@@ -1334,6 +1334,11 @@ def test_perf_metrics(
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
 
+    # Test image_slice_count metrics
+    assert perf_metrics.get_image_slice_count() > 0
+    assert len(vlm_raw_metrics.image_slice_counts) > 0
+    assert all(count > 0 for count in vlm_raw_metrics.image_slice_counts)
+
 
 @pytest.mark.transformers_dependent(
     reason="minicpmv, minicpmo is not supported by transformers>=v5; gemma3, llava-next, llava - CVS-186059"

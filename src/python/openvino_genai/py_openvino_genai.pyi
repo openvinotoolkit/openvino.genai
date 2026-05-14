@@ -4234,6 +4234,9 @@ class VLMPerfMetrics(PerfMetrics):
     
         :param get_prepare_embeddings_duration: Returns mean and standard deviation of embeddings preparation duration in milliseconds
         :type get_prepare_embeddings_duration: MeanStdPair
+
+        :param get_image_slice_count: Returns total number of image slices produced for the request
+        :type get_image_slice_count: int
     
         :param vlm_raw_metrics: VLM specific raw metrics
         :type VLMRawPerfMetrics:
@@ -4241,6 +4244,8 @@ class VLMPerfMetrics(PerfMetrics):
     def __init__(self) -> None:
         ...
     def get_prepare_embeddings_duration(self) -> MeanStdPair:
+        ...
+    def get_image_slice_count(self) -> int:
         ...
     @property
     def vlm_raw_metrics(self) -> VLMRawPerfMetrics:
@@ -4529,11 +4534,17 @@ class VLMRawPerfMetrics:
     
         :param prepare_embeddings_durations: Durations of embeddings preparation.
         :type prepare_embeddings_durations: list[MicroSeconds]
+
+        :param image_slice_counts: Number of image slices produced for each input image.
+        :type image_slice_counts: list[int]
     """
     def __init__(self) -> None:
         ...
     @property
     def prepare_embeddings_durations(self) -> list[float]:
+        ...
+    @property
+    def image_slice_counts(self) -> list[int]:
         ...
 class VideoGenerationConfig:
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None

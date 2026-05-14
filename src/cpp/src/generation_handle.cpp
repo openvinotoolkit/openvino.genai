@@ -77,3 +77,22 @@ std::vector<GenerationOutput> GenerationHandleImpl::read_all() {
     results.resize(std::min(m_sampling_params.num_return_sequences, results.size()));
     return results;
 }
+
+PerfMetrics GenerationHandleImpl::get_perf_metrics() {
+    return m_generation_stream->get_perf_metrics();
+}
+
+VLMPerfMetrics GenerationHandleImpl::get_vlm_perf_metrics() {
+    auto base_metrics = get_perf_metrics();
+    VLMPerfMetrics metrics(base_metrics);
+    if (m_vlm_perf_metrics.has_value()) {
+        metrics.vlm_raw_metrics = m_vlm_perf_metrics->vlm_raw_metrics;
+    }
+    metrics.m_evaluated = false;
+    metrics.evaluate_statistics();
+    return metrics;
+}
+
+void GenerationHandleImpl::set_vlm_perf_metrics(VLMPerfMetrics vlm_perf_metrics) {
+    m_vlm_perf_metrics = std::move(vlm_perf_metrics);
+}
