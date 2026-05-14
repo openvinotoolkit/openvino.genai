@@ -508,6 +508,29 @@ std::vector<std::string> split_non_english_chunks(const std::string& graphemes, 
         return chunks;
     }
 
+    // Helper to split a string by UTF-8 code points safely.
+    auto split_by_codepoints = [](const std::string& text, size_t max_codepoints) -> std::vector<std::string> {
+        std::vector<std::string> result;
+        const auto codepoints = from_utf8(text);
+
+        if (codepoints.empty()) {
+            return result;
+        }
+
+        std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> convert;
+
+        for (size_t i = 0; i < codepoints.size(); i += max_codepoints) {
+            const size_t end = std::min(i + max_codepoints, codepoints.size());
+            const auto segment = convert.to_bytes(codepoints.data() + i, codepoints.data() + end);
+            if (!segment.empty()) {
+                result.push_back(segment);
+            }
+        }
+
+        return result;
+    };
+
+    // Split text into sentences on punctuation marks.
     std::vector<std::string> sentences;
     std::string current;
     auto is_sentence_punct = [](char c) {
@@ -529,28 +552,41 @@ std::vector<std::string> split_non_english_chunks(const std::string& graphemes, 
         sentences.push_back(current);
     }
 
+    // Bundle sentences into chunks, respecting chunk_size.
+    // If a single sentence exceeds chunk_size, split it by code points.
     std::string chunk;
     for (const auto& sentence : sentences) {
         if (chunk.size() + sentence.size() <= chunk_size) {
+            // Sentence fits in current chunk
             chunk += sentence;
         } else {
+            // Sentence doesn't fit; push current chunk if non-empty
             if (!chunk.empty()) {
                 chunks.push_back(chunk);
+                chunk.clear();
             }
-            chunk = sentence;
+
+            // If the sentence itself exceeds chunk_size, split it by code points
+            if (sentence.size() > chunk_size) {
+                const auto sentence_chunks = split_by_codepoints(sentence, chunk_size);
+                for (size_t i = 0; i < sentence_chunks.size(); ++i) {
+                    if (i == sentence_chunks.size() - 1) {
+                        // Last subchunk might be continued with next sentence
+                        chunk = sentence_chunks[i];
+                    } else {
+                        chunks.push_back(sentence_chunks[i]);
+                    }
+                }
+            } else {
+                // Sentence fits within chunk_size; start a new chunk with it
+                chunk = sentence;
+            }
         }
     }
     if (!chunk.empty()) {
         chunks.push_back(chunk);
     }
 
-    if (!chunks.empty()) {
-        return chunks;
-    }
-
-    for (size_t i = 0; i < graphemes.size(); i += chunk_size) {
-        chunks.push_back(graphemes.substr(i, chunk_size));
-    }
     return chunks;
 }
 
