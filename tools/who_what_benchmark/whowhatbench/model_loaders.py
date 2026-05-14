@@ -43,9 +43,17 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 if Version(__version__) >= Version("4.56"):
-    PYTORCH_MODEL_DTYPE_KWARG = {"dtype": torch.float32}
+    PYTORCH_MODEL_DTYPE_KWARG = {"dtype": "auto"}
 else:
     PYTORCH_MODEL_DTYPE_KWARG = {"torch_dtype": torch.float32}
+
+
+def _normalize_hf_device_map(device: str) -> str:
+    normalized = str(device).strip().lower()
+    # Transformers device_map does not recognize "gpu".
+    if normalized == "gpu":
+        return "cuda:0"
+    return normalized
 
 
 def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=False):
@@ -70,6 +78,7 @@ class GenAIModelWrapper:
 
     def __init__(self, model, model_dir, model_type):
         self.model = model
+        self.model_dir = model_dir
         self.model_type = model_type
 
         if model_type in (
@@ -192,19 +201,39 @@ def load_text_llamacpp_pipeline(model_dir):
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {**PYTORCH_MODEL_DTYPE_KWARG}
-    is_cpu = not torch.cuda.is_available or device.lower() == "cpu"
+    hf_device_map = _normalize_hf_device_map(device)
+    is_cpu = not torch.cuda.is_available() or hf_device_map == "cpu"
     trust_remote_code = False
     config = None
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
-    if is_cpu:
-        if not kwargs.get('gguf_file'):
+    else:
+        try:
+            config = AutoConfig.from_pretrained(model_id)
+        except Exception:
+            trust_remote_code = True
             try:
-                config = AutoConfig.from_pretrained(model_id)
-            except Exception:
                 config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-                trust_remote_code = True
-
+            except Exception as e:
+                # Some very new model types are unknown to the installed Transformers.
+                # Keep loading path alive and let model.from_pretrained with trust_remote_code decide.
+                logger.warning(
+                    "AutoConfig probing failed for '%s'; proceeding with trust_remote_code=True. Details: %s",
+                    model_id,
+                    e,
+                    exc_info=True,
+                )
+                config = None
+        # MoE weights of gpt_oss models post-trained with MXFP4 quantization
+        # they are dequantized with torch.bfloat16 https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/integrations/mxfp4.py#L104
+        # forcing the model to any other type will cause a type mismatch error
+        # https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/gpt_oss/modeling_gpt_oss.py#L117
+        if getattr(config, "model_type", None) == "gpt_oss":
+            # Do not force float32 for gpt_oss: MXFP4 experts dequantize to bf16.
+            model_kwargs.pop("dtype", None)
+            model_kwargs.pop("torch_dtype", None)
+            model_kwargs["torch_dtype"] = "auto"
+    if is_cpu:
         is_gptq = False
         is_awq = False
         if not kwargs.get('gguf_file'):
@@ -218,11 +247,11 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
     else:
         try:
             model = AutoModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=False, device_map=device.lower(), **model_kwargs
+                model_id, trust_remote_code=False, device_map=hf_device_map, **model_kwargs
             )
         except Exception:
             model = AutoModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
+                model_id, trust_remote_code=True, device_map=hf_device_map, **model_kwargs
             )
 
     if kwargs.get("adapters") is not None:
@@ -390,6 +419,7 @@ def load_visual_text_model(
 ):
     if use_hf:
         logger.info("Using HF Transformers API")
+        hf_device_map = _normalize_hf_device_map(device)
 
         trust_remote_code = False
         try:
@@ -420,7 +450,7 @@ def load_visual_text_model(
 
                 model_cls = AutoModelForImageTextToText
 
-            model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
+            model = model_cls.from_pretrained(model_id, device_map=hf_device_map, **model_kwargs)
         except ValueError:
             try:
                 model_cls = AutoModel
@@ -431,7 +461,7 @@ def load_visual_text_model(
                 elif config.model_type in ["gemma3"]:
                     model_cls = AutoModelForCausalLM
 
-                model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
+                model = model_cls.from_pretrained(model_id, device_map=hf_device_map, **model_kwargs)
             except ValueError:
                 if config.model_type == "phi4mm" or config.model_type == "llava-qwen2":
                     if hasattr(config, "audio_processor") and "activation_checkpointing" in config.audio_processor["config"]:
@@ -443,7 +473,7 @@ def load_visual_text_model(
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
-                    device_map=device.lower(),
+                    device_map=hf_device_map,
                     **from_pretrained_kwargs,
                     **model_kwargs,
                 )

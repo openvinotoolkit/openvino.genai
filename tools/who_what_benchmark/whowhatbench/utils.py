@@ -325,15 +325,11 @@ def disable_diffusers_model_progress_bar(model):
     if hasattr(model, "set_progress_bar_config"):
         model.set_progress_bar_config(disable=True)
 
-def is_json_dataset(dataset: str) -> bool:
-    """Check if the dataset path has a .json or .jsonl extension."""
-    if dataset is None:
-        return False
-    return dataset.lower().endswith((".json", ".jsonl"))
-
-
 def resolve_json_dataset_path(dataset_path: str) -> str:
     """Resolve JSON dataset path, checking local filesystem first, then whowhatbench.prompts resources."""
+    if dataset_path is None or not dataset_path.lower().endswith((".json", ".jsonl")):
+        raise ValueError("Dataset path must be a .json or .jsonl file")
+
     if os.path.exists(dataset_path):
         logger.info(f"JSON dataset found at local path: {dataset_path}")
         return dataset_path
