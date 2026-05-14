@@ -4,7 +4,7 @@ sentence-transformers>=2.2.2,<=5.3.0
 openvino-genai
 # last supported commit f50a0b326df82d4b05c461a9184a97f616bfa63a
 optimum-intel[nncf]>=1.19.0
-pandas>=2.0.3,<=3.0.2
+pandas>=2.0.3,<=3.0.3
 numpy>=1.23.5,<=2.4.4
 tqdm>=4.66.1,<=4.67.3
 diffusers>=0.22.0,<=0.38.0
@@ -21,13 +21,13 @@ scikit-image<=0.26.0
 soundfile==0.13.1
 librosa==0.11.0
 vocos==0.1.0
-vector-quantize-pytorch==1.28.2
+vector-quantize-pytorch==1.29.0
 torchaudio>=2.1.0,<=2.11.0
 torchvision>=0.16,<=0.27.0
 # For LoRA adapters
 peft==0.19.1
 # For OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
-timm==1.0.26
+timm==1.0.27
 decord==0.6.0; platform_system != "Darwin"
 # For speech generation evaluation
 jiwer>=3.0.0,<=4.0.0
