@@ -23,7 +23,7 @@ librosa==0.11.0
 vocos==0.1.0
 vector-quantize-pytorch==1.28.2
 torchaudio>=2.1.0,<=2.11.0
-torchvision>=0.16,<=0.26.0
+torchvision>=0.16,<=0.27.0
 # For LoRA adapters
 peft==0.19.1
 # For OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
