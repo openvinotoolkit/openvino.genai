@@ -716,7 +716,7 @@ public:
 
         latent = postprocess_latents(latent);
 
-        // support timestep_conditioning for AutoencoderKLLTX
+        // TODO: support timestep_conditioning for AutoencoderKLLTX
         OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
                         "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, "
                         "contact OpenVINO GenAI developers.");
