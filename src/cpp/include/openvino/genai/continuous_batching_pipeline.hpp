@@ -24,6 +24,8 @@
 
 namespace ov::genai {
 
+class ContinuousBatchingAdapter;
+
 /**
  * @brief Contains general pipeline metrics, either aggregated throughout the lifetime of the generation pipeline
  * or measured at the previous generation step.
@@ -40,17 +42,17 @@ struct PipelineMetrics {
     size_t scheduled_requests = 0;
 
     /**
-    * Percentage of KV cache usage in the last generation step.
+    * Maximum cache usage percentage across registered cache types in the last generation step.
     */
     float cache_usage = 0.0;
 
     /**
-    * Max KV cache usage during the last .generate() call in %
+    * Maximum cache usage percentage observed during the last .generate() call.
     */
     float max_cache_usage = 0.0;
 
     /**
-    * Running average of the KV cache usage during the last .generate() call, with max window size of 1000 internal model inferences
+    * Running average of cache usage percentage during the last .generate() call, with max window size of 1000 internal model inferences.
     */
     float avg_cache_usage = 0.0;
 
@@ -60,11 +62,62 @@ struct PipelineMetrics {
     float inference_duration = 0.0;
 
     /**
-     * Total allocated KV cache size in bytes, based on the total number of KV blocks.
-     * This value represents reserved/allocated memory for the KV cache and does not
-     * distinguish between used and unused portions in dynamic KV cache configurations.
+    * Total allocated cache size in bytes across registered cache types, based on the total number of cache blocks.
+     * This value represents reserved/allocated memory for the cache and does not
+     * distinguish between used and unused portions in dynamic cache configurations.
      */
-    size_t kv_cache_size_in_bytes = 0;
+    size_t cache_size_in_bytes = 0;
+
+    /**
+     * @deprecated Use cache_size_in_bytes instead. Kept for backward compatibility.
+     * Reference alias that always points to cache_size_in_bytes.
+     */
+    size_t& kv_cache_size_in_bytes{cache_size_in_bytes};
+
+    PipelineMetrics() = default;
+    ~PipelineMetrics() = default;
+
+    PipelineMetrics(const PipelineMetrics& other)
+        : requests{other.requests},
+          scheduled_requests{other.scheduled_requests},
+          cache_usage{other.cache_usage},
+          max_cache_usage{other.max_cache_usage},
+          avg_cache_usage{other.avg_cache_usage},
+          inference_duration{other.inference_duration},
+          cache_size_in_bytes{other.cache_size_in_bytes},
+          kv_cache_size_in_bytes{cache_size_in_bytes} {}
+
+    PipelineMetrics& operator=(const PipelineMetrics& other) {
+        requests = other.requests;
+        scheduled_requests = other.scheduled_requests;
+        cache_usage = other.cache_usage;
+        max_cache_usage = other.max_cache_usage;
+        avg_cache_usage = other.avg_cache_usage;
+        inference_duration = other.inference_duration;
+        cache_size_in_bytes = other.cache_size_in_bytes;
+        return *this;
+    }
+
+    PipelineMetrics(PipelineMetrics&& other) noexcept
+        : requests{std::move(other.requests)},
+          scheduled_requests{std::move(other.scheduled_requests)},
+          cache_usage{std::move(other.cache_usage)},
+          max_cache_usage{std::move(other.max_cache_usage)},
+          avg_cache_usage{std::move(other.avg_cache_usage)},
+          inference_duration{std::move(other.inference_duration)},
+          cache_size_in_bytes{std::move(other.cache_size_in_bytes)},
+          kv_cache_size_in_bytes{cache_size_in_bytes} {}
+
+    PipelineMetrics& operator=(PipelineMetrics&& other) noexcept {
+        requests = std::move(other.requests);
+        scheduled_requests = std::move(other.scheduled_requests);
+        cache_usage = std::move(other.cache_usage);
+        max_cache_usage = std::move(other.max_cache_usage);
+        avg_cache_usage = std::move(other.avg_cache_usage);
+        inference_duration = std::move(other.inference_duration);
+        cache_size_in_bytes = std::move(other.cache_size_in_bytes);
+        return *this;
+    }
 };
 
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
@@ -87,6 +140,7 @@ protected:
     friend class Eagle3DecodingImpl;
     friend class PromptLookupImpl;
     friend class VLMPipeline;
+    friend class ContinuousBatchingAdapter;
 
     std::shared_ptr<IContinuousBatchingPipeline> m_impl;
 
@@ -111,6 +165,16 @@ private:
                                const ov::AnyMap& properties = {},
                                const ov::AnyMap& tokenizer_properties = {},
                                const ov::AnyMap& vision_encoder_properties = {});
+
+    // Used by LLMPipeline's ContinuousBatchingAdapter when the language model is already loaded.
+    // model_config_dir keeps access to config.json for Eagle3 metadata and to a stable cache path.
+    ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
+                               const ov::genai::Tokenizer& tokenizer,
+                               const SchedulerConfig& scheduler_config,
+                               const std::string& device,
+                               const ov::AnyMap& properties,
+                               const ov::genai::GenerationConfig& generation_config,
+                               const std::filesystem::path& model_config_dir = {});
 
 public:
     ContinuousBatchingPipeline(const std::filesystem::path& models_path,
