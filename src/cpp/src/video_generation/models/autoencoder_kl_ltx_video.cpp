@@ -284,7 +284,7 @@ ov::Tensor AutoencoderKLLTXVideo::encode(const ov::Tensor& video, std::shared_pt
             "A generator is not required when encoder output is 'latent_sample'.");
         latent = DiagonalGaussianDistribution(output).sample(generator);
     } else {
-        OPENVINO_THROW("Unexpected output name for AutoencoderKLLTXVideo encoder '", output_name, "'");
+        OPENVINO_ASSERT(false, "Unexpected output name for AutoencoderKLLTXVideo encoder '", output_name, "'");
     }
 
     // inverse of denormalize_latents used in the decode path

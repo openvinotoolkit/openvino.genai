@@ -300,7 +300,7 @@ class TestAutoEncoderKLLTXVideoEncoder:
         generator = ov_genai.CppStdGenerator(42)
         dummy = ov.Tensor(np.zeros([1, 3, 9, 32, 32], dtype=np.float32))
 
-        with pytest.raises(Exception, match="must be compiled first"):
+        with pytest.raises(RuntimeError, match="must be compiled first"):
             vae.encode(dummy, generator)
 
     def test_encode_without_encoder_raises(self, video_generation_model):
@@ -312,7 +312,7 @@ class TestAutoEncoderKLLTXVideoEncoder:
         generator = ov_genai.CppStdGenerator(42)
         dummy = ov.Tensor(np.zeros([1, 3, 9, 32, 32], dtype=np.float32))
 
-        with pytest.raises(Exception, match="without 'VAE encoder' capability"):
+        with pytest.raises(RuntimeError, match="without 'VAE encoder' capability"):
             vae.encode(dummy, generator)
 
     def test_encode_output_shape(self, video_generation_model, require_encoder):
