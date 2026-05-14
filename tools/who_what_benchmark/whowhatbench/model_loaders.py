@@ -45,11 +45,19 @@ logger = logging.getLogger(__name__)
 <<<<<<< HEAD
 =======
 if Version(__version__) >= Version("4.56"):
-    PYTORCH_MODEL_DTYPE_KWARG = {"dtype": torch.float32}
+    PYTORCH_MODEL_DTYPE_KWARG = {"dtype": "auto"}
 else:
     PYTORCH_MODEL_DTYPE_KWARG = {"torch_dtype": torch.float32}
 
 >>>>>>> e44f79b2 (feat: WWB - add new agent evaluator)
+
+def _normalize_hf_device_map(device: str) -> str:
+    normalized = str(device).strip().lower()
+    # Transformers device_map does not recognize "gpu".
+    if normalized == "gpu":
+        return "cuda:0"
+    return normalized
+
 
 def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=False):
     import openvino_genai
@@ -195,7 +203,6 @@ def load_text_llamacpp_pipeline(model_dir):
 
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
-
     model_kwargs = {}
 
     trust_remote_code = False
@@ -223,11 +230,11 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
     else:
         try:
             model = AutoModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=False, device_map=device.lower(), **model_kwargs
+                model_id, trust_remote_code=False, device_map=hf_device_map, **model_kwargs
             )
         except Exception:
             model = AutoModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
+                model_id, trust_remote_code=True, device_map=hf_device_map, **model_kwargs
             )
 
     if kwargs.get("adapters") is not None:
@@ -395,6 +402,7 @@ def load_visual_text_model(
 ):
     if use_hf:
         logger.info("Using HF Transformers API")
+        hf_device_map = _normalize_hf_device_map(device)
 
         trust_remote_code = False
         try:
@@ -425,7 +433,7 @@ def load_visual_text_model(
 
                 model_cls = AutoModelForImageTextToText
 
-            model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
+            model = model_cls.from_pretrained(model_id, device_map=hf_device_map, **model_kwargs)
         except ValueError:
             try:
                 model_cls = AutoModel
@@ -436,7 +444,7 @@ def load_visual_text_model(
                 elif config.model_type in ["gemma3"]:
                     model_cls = AutoModelForCausalLM
 
-                model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
+                model = model_cls.from_pretrained(model_id, device_map=hf_device_map, **model_kwargs)
             except ValueError:
                 if config.model_type == "phi4mm" or config.model_type == "llava-qwen2":
                     if hasattr(config, "audio_processor") and "activation_checkpointing" in config.audio_processor["config"]:
@@ -448,7 +456,7 @@ def load_visual_text_model(
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
-                    device_map=device.lower(),
+                    device_map=hf_device_map,
                     **from_pretrained_kwargs,
                     **model_kwargs,
                 )

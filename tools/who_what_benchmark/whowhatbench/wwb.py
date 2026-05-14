@@ -22,37 +22,13 @@ from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import (
     get_json_config,
-    is_json_dataset,
     resolve_json_dataset_path,
-    read_json_dataset,
-    get_json_config)
+    read_json_dataset)
 
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-def _log_prompts_summary(prompts, source, verbose=False):
-    if not prompts:
-        raise ValueError(f"No prompts loaded from source: {source}")
-    prompt_list = []
-    if isinstance(prompts, dict):
-        raw_prompt_list = prompts.get("prompts")
-        if raw_prompt_list is None:
-            raise ValueError(f"'prompts' key missing in prompts source: {source}")
-        if not isinstance(raw_prompt_list, list):
-            raise ValueError(f"'prompts' field must be a list in prompts source: {source}")
-        if len(raw_prompt_list) == 0:
-            raise ValueError(f"No prompts found in 'prompts' list from source: {source}")
-        prompt_list = raw_prompt_list
-    logger.info("Prompts summary (%s): count=%d", source, len(prompt_list))
-    if verbose:
-        for idx, prompt in enumerate(prompt_list):
-            prompt_str = str(prompt).replace("\r", " ").replace("\n", " ")
-            preview = prompt_str[:200]
-            last_chars = prompt_str[-200:] if len(prompt_str) > 200 else ""
-            logger.info("Prompt %d: %s ... (last 200 chars: %s)", idx, preview, last_chars)
 
 
 def pruning_ratio_type(value: str) -> int:
@@ -452,7 +428,7 @@ def check_args(args):
         raise ValueError(f"--output must be a directory path, not a file: '{args.output}'")
 
 
-def load_prompts(args, tokenizer=None):
+def load_prompts(args):
     if args.dataset is None:
         return None
 
@@ -467,23 +443,18 @@ def load_prompts(args, tokenizer=None):
 
     res = data[args.dataset_field]
     prompts = {"prompts": list(res)}
-    _log_prompts_summary(prompts, f"dataset:{path}:{dataset_split}", verbose=args.verbose)
+    logger.info("Prompts source path %s name %s split %s: count=%d", path, name, dataset_split, len(res))
     return prompts
 
 
 def load_agent_dataset(args):
     if args.dataset is None:
-        dataset_name = "messages_long.jsonl" if args.long_prompt else "messages_short.jsonl"
+        dataset_name = "messages_20k.jsonl" if args.long_prompt else "messages_500.jsonl"
         resolved_path = resolve_json_dataset_path(dataset_name)
     else:
-        if not is_json_dataset(args.dataset):
-            raise ValueError("text-agent model type requires --dataset to be a .json/.jsonl file")
         resolved_path = resolve_json_dataset_path(args.dataset)
 
     data = read_json_dataset(resolved_path)
-    if args.num_samples is not None:
-        data = data[: args.num_samples]
-    logger.info("Agent dataset summary (json:%s): count=%d", resolved_path, len(data))
     return data
 
 
@@ -893,7 +864,7 @@ def create_evaluator(base_model, args):
 
         if task == "text":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
-            prompts = load_prompts(args, tokenizer=tokenizer)
+            prompts = load_prompts(args)
 
             if args.genai:
                 gen_answer_fn = genai_gen_text
@@ -949,7 +920,6 @@ def create_evaluator(base_model, args):
                     if args.assistant_confidence_threshold is not None else 0.0
                 ),
                 is_genai_backend=args.genai,
-                omit_chat_template=args.omit_chat_template,
             )
         elif task == "text-to-image":
             prompts = load_prompts(args)
@@ -966,11 +936,10 @@ def create_evaluator(base_model, args):
                 seed=args.seed,
             )
         elif task == "text-to-video":
-            prompts = load_prompts(args)
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=None,
                 num_samples=args.num_samples,
                 num_inference_steps=args.num_inference_steps,
                 num_frames=args.video_frames_num,
