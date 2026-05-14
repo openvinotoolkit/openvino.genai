@@ -53,7 +53,7 @@ optimum-cli export openvino -m hexgrad/Kokoro-82M ov_Kokoro-82M --trust-remote-c
 ```
 
 > **Note:**
-> After export is complete. you will find the available speaker embedding `.bin` files in `ov_Kokoro-82M/voices`.
+> After export is complete, you will find the available speaker embedding `.bin` files in `ov_Kokoro-82M/voices`.
 
 ## Use of `espeak-ng` within the Kokoro Pipeline
 
