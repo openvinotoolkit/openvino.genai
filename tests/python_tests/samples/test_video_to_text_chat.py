@@ -43,6 +43,7 @@ class TestVisualLanguageChat:
         [pytest.param("tiny-videochat-flash-qwen", "video0.mp4", "Describe this video.\nGo on.")],
         indirect=["convert_model", "download_test_content"],
     )
+    @pytest.mark.transformers_lower_v5(reason="tiny-videochat-flash-qwen export requires transformers<5.0")
     def test_sample_video_to_text_chat_videochat_flash(self, convert_model, download_test_content, questions):
         # Test CPP sample
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, "video_to_text_chat")
@@ -64,6 +65,7 @@ class TestVisualLanguageChat:
         [pytest.param("tiny-videochat-flash-qwen", "video0.mp4", "Describe these videos.\nGo on.")],
         indirect=["convert_model", "download_test_content"],
     )
+    @pytest.mark.transformers_lower_v5(reason="tiny-videochat-flash-qwen export requires transformers<5.0")
     def test_sample_video_to_text_chat_videochat_flash_multiple_videos(
         self, convert_model, download_test_content, questions, tmp_path
     ):
