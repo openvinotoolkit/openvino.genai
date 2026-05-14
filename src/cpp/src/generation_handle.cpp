@@ -83,3 +83,36 @@ std::vector<GenerationOutput> GenerationHandleImpl::read_all() {
     results.resize(std::min(m_sampling_params.num_return_sequences, results.size()));
     return results;
 }
+
+PerfMetrics GenerationHandleImpl::get_perf_metrics() const {
+    return m_generation_stream->get_perf_metrics();
+}
+
+VLMPerfMetrics GenerationHandleImpl::get_vlm_perf_metrics() const {
+    const auto request_setup_metrics = m_generation_stream->get_vlm_perf_metrics();
+    OPENVINO_ASSERT(request_setup_metrics.has_value(),
+                    "VLM performance metrics are only available for VLM requests.");
+
+    auto base_metrics = get_perf_metrics();
+    VLMPerfMetrics metrics(std::move(base_metrics));
+    metrics.vlm_raw_metrics = request_setup_metrics->vlm_raw_metrics;
+
+    const auto& request_setup_raw_metrics = request_setup_metrics->raw_metrics;
+    auto& result_raw_metrics = metrics.raw_metrics;
+    result_raw_metrics.tokenization_durations.insert(
+        result_raw_metrics.tokenization_durations.end(),
+        request_setup_raw_metrics.tokenization_durations.begin(),
+        request_setup_raw_metrics.tokenization_durations.end());
+    result_raw_metrics.chat_template_durations.insert(
+        result_raw_metrics.chat_template_durations.end(),
+        request_setup_raw_metrics.chat_template_durations.begin(),
+        request_setup_raw_metrics.chat_template_durations.end());
+    result_raw_metrics.detokenization_durations.insert(
+        result_raw_metrics.detokenization_durations.end(),
+        request_setup_raw_metrics.detokenization_durations.begin(),
+        request_setup_raw_metrics.detokenization_durations.end());
+
+    metrics.m_evaluated = false;
+    metrics.evaluate_statistics();
+    return metrics;
+}

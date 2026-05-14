@@ -58,6 +58,9 @@ struct SamplerOutput {
     std::unordered_map<uint64_t, std::list<uint64_t>> m_forked_sequences;
     // store number of generated_tokens
     size_t num_generated_tokens = 0;
+    // Number of tokens actually generated for each request in this sampling step.
+    // Requests in a chunked-prefill step are present with a zero count.
+    std::unordered_map<uint64_t, size_t> num_generated_tokens_per_request;
 };
 
 struct AssistingPipelineInfo {

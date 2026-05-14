@@ -141,7 +141,12 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
     // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
     // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, token_type_ids, prompt_ids)});
-    return m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
+    return m_main_pipeline->add_request(request_id,
+                                        input_ids,
+                                        sampling_params,
+                                        token_type_ids,
+                                        prompt_ids,
+                                        lm_extra_inputs);
 }
 
 GenerationHandle
