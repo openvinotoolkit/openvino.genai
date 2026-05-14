@@ -522,6 +522,7 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
       BUILD_JS_DIR: ${{ github.workspace }}/build_js
       COVERAGE_WRITE_STEP_SUMMARY: 'false'
+      PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - name: Install iGPU coverage dependencies
         run: |
