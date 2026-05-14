@@ -50,6 +50,8 @@ public:
 
     AutoencoderKLLTXVideo& compile(const std::string& device, const ov::AnyMap& properties = {});
 
+    ov::Tensor encode(const ov::Tensor& video, std::shared_ptr<Generator> generator);
+
     ov::Tensor decode(const ov::Tensor& latent);
 
     const Config& get_config() const;
