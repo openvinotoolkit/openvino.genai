@@ -19,7 +19,7 @@ void configure_utf8_console() {
 }
 } // namespace
 
-int main() {
+int main() try {
   configure_utf8_console();
 
   auto engine = misaki::make_engine("en", "en-us");
@@ -40,4 +40,10 @@ int main() {
   }
 
   return 0;
+} catch (const std::exception& error) {
+  std::cerr << "[Error] " << error.what() << "\n";
+  return 3;
+} catch (...) {
+  std::cerr << "[Error] Unknown exception\n";
+  return 3;
 }

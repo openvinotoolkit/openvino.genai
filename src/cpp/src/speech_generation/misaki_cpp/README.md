@@ -10,7 +10,6 @@ This directory contains the embedded C++ Misaki G2P implementation used by the O
 - `python/misaki_cpp_py.cpp` — optional Python bindings for parity runs
 - `samples/` — small usage examples
 - `tools/run_parity_dataset_misaki_cpp_vs_python.py` — primary parity benchmark
-- `data/` — required English lexicon data (`us_*`, `gb_*`)
 
 ## Required Lexicon Data
 
@@ -19,6 +18,13 @@ English backend requires all of:
 - `us_silver.json`
 - `gb_gold.json`
 - `gb_silver.json`
+
+Download these files from the official Misaki repository data directory:
+https://github.com/hexgrad/misaki/tree/main/misaki/data
+
+Place them in any local directory, then point Misaki to that directory (the directory containing those files), for example:
+- `MISAKI_DATA_DIR=<path-to-misaki-data>`
+- `--lexicon-data-root <path-to-misaki-data>`
 
 Pass the lexicon root explicitly via:
 - env var: `MISAKI_DATA_DIR`

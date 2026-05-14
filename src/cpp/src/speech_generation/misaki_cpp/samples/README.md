@@ -16,7 +16,20 @@ Small API examples for the C++ Misaki port.
 
 ## Build and run
 
-From `cpp/`:
+Prerequisite: English samples require Misaki lexicon JSON files (`us_gold.json`,
+`us_silver.json`, `gb_gold.json`, `gb_silver.json`) and `MISAKI_DATA_DIR` must
+point to the directory containing those files.
+
+Download source for these JSON files:
+https://github.com/hexgrad/misaki/tree/main/misaki/data
+
+From `misaki_cpp/`:
+
+```powershell
+cmake -S . -B build
+```
+
+Then build:
 
 ```powershell
 cmake --build build --config Debug
@@ -28,7 +41,7 @@ Or build sample targets directly:
 cmake --build build --config Debug --target sample_basic_usage sample_fallback_and_unknown
 ```
 
-Run from `cpp/build/Debug` on Windows:
+Run from `build/Debug` on Windows:
 
 ```powershell
 .\sample_basic_usage.exe
