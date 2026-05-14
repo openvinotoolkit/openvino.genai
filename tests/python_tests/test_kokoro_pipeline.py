@@ -88,6 +88,22 @@ MULTILINGUAL_PROMPT_CASES = [
 ]
 MULTILINGUAL_CASE_IDS = [f"multilingual-{language}" for _, language in MULTILINGUAL_PROMPT_CASES]
 
+TINY_G2P_SEED = 42
+TINY_G2P_EXPORT_TIMEOUT_SECONDS = 120
+
+# Grapheme and phoneme character sets that exactly match the
+# graphemes_to_phonemes_en_us BART model.  The C++ OpenVINOFallbackNetwork
+# reads these strings from config.json to build its token↔character tables,
+# so the tiny random test model must carry the same vocabulary.
+_G2P_GRAPHEME_CHARS = "____AIOWYbdfhijklmnpstuvwz'-.BCDEFGHJKLMNPQRSTUVXZacegoqrxy"
+_G2P_PHONEME_CHARS = (
+    "____AIOWYbdfhijklmnpstuvwz"
+    "\u00e6\u00f0\u014b\u0251\u0254\u0259\u025b\u025c\u0261\u026a"
+    "\u0279\u027e\u0283\u028a\u028c\u0292\u0294\u02a4\u02a7\u02c8"
+    "\u02cc\u03b8\u1d4a\u1d7b"
+)
+_G2P_VOCAB_SIZE = 63  # shared encoder/decoder embedding table size
+
 
 def _to_optimum_lang_code(language: str) -> str:
     """Map GenAI language variants to Kokoro KPipeline lang_code values."""
@@ -348,6 +364,134 @@ def generate_speaker_embedding(shape: Tuple[int, ...]) -> np.ndarray:
     raise ValueError(f"Unsupported speaker embedding shape: {shape}")
 
 
+def generate_tiny_g2p_model(output_dir: Path) -> Path:
+    """
+    Generate a tiny random BART G2P model in Hugging Face format.
+
+    The model carries the same grapheme/phoneme vocabulary as the real
+    graphemes_to_phonemes_en_us checkpoint so the C++ OpenVINOFallbackNetwork
+    can construct its character↔token lookup tables from the saved config.json.
+
+    Args:
+        output_dir: Directory in which to save the model artefacts.
+
+    Returns:
+        Path to the directory that was just populated.
+    """
+    try:
+        from transformers import BartConfig, BartForConditionalGeneration
+    except ImportError as e:
+        pytest.skip(f"Required transformers dependency not available: {e}")
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Reproducible tiny weights.
+    random.seed(TINY_G2P_SEED)
+    np.random.seed(TINY_G2P_SEED)
+    torch.manual_seed(TINY_G2P_SEED)
+
+    config = BartConfig(
+        d_model=16,
+        encoder_layers=1,
+        decoder_layers=1,
+        encoder_attention_heads=2,
+        decoder_attention_heads=2,
+        encoder_ffn_dim=32,
+        decoder_ffn_dim=32,
+        vocab_size=_G2P_VOCAB_SIZE,
+        max_position_embeddings=16,
+        bos_token_id=1,
+        eos_token_id=2,
+        decoder_start_token_id=1,
+        pad_token_id=0,
+        forced_eos_token_id=2,
+        scale_embedding=False,
+        dropout=0.0,
+        attention_dropout=0.0,
+        activation_dropout=0.0,
+        activation_function="gelu",
+        use_cache=True,
+    )
+
+    # Custom fields required by OpenVINOFallbackNetwork::ctor in kokoro_tts_model.cpp.
+    config.grapheme_chars = _G2P_GRAPHEME_CHARS
+    config.phoneme_chars = _G2P_PHONEME_CHARS
+
+    model = BartForConditionalGeneration(config)
+    model.eval()
+    model.save_pretrained(str(output_dir))
+
+    generation_config = {
+        "_from_model_config": True,
+        "bos_token_id": 1,
+        "decoder_start_token_id": 1,
+        "eos_token_id": 2,
+        "forced_eos_token_id": 2,
+        "pad_token_id": 0,
+    }
+    with open(output_dir / "generation_config.json", "w", encoding="utf-8") as fh:
+        json.dump(generation_config, fh, indent=2)
+
+    logger.info("Generated tiny G2P model at %s", output_dir)
+    return output_dir
+
+
+def export_g2p_model_to_openvino(local_model_path: Path, output_path: Path) -> Path:
+    """
+    Export a tiny G2P BART model to OpenVINO IR (encoder + decoder split).
+
+    Uses ``optimum-cli export openvino --task text2text-generation`` which
+    produces the non-stateful ``openvino_encoder_model.xml`` and
+    ``openvino_decoder_model.xml`` files expected by OpenVINOFallbackNetwork.
+
+    Args:
+        local_model_path: Directory containing the Hugging Face model artefacts.
+        output_path: Directory in which to write the OpenVINO IR files.
+
+    Returns:
+        Path to the populated OpenVINO model directory.
+    """
+    output_path = Path(output_path)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    command = [
+        "optimum-cli",
+        "export",
+        "openvino",
+        "-m",
+        str(local_model_path),
+        str(output_path),
+        "--task",
+        "text2text-generation",
+    ]
+
+    logger.info("Running G2P export command: %s", " ".join(command))
+    try:
+        retry_request(
+            lambda: subprocess.run(  # nosec B603
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=TINY_G2P_EXPORT_TIMEOUT_SECONDS,
+            )
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(
+            f"G2P export timed out after {TINY_G2P_EXPORT_TIMEOUT_SECONDS} seconds\n"
+            f"stdout: {error.stdout or ''}\nstderr: {error.stderr or ''}"
+        ) from error
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(
+            f"G2P export failed with return code {error.returncode}\n"
+            f"stdout: {error.stdout or ''}\nstderr: {error.stderr or ''}"
+        )
+
+    logger.info("Successfully exported G2P model to %s", output_path)
+    return output_path
+
+
 @pytest.fixture(scope="module")
 def tiny_kokoro_model_path() -> Path:
     """
@@ -423,6 +567,58 @@ def speaker_embedding_tensor(tiny_kokoro_ov_path: Path):
         )
 
     return ov.Tensor(embedding_array.reshape(shape))
+
+
+@pytest.fixture(scope="module")
+def tiny_g2p_model_path() -> Path:
+    """
+    Generate a tiny random BART G2P model and cache it across the test session.
+
+    Follows the same AtomicDownloadManager pattern used for the Kokoro model
+    so parallel test workers do not race on the output directory.
+    """
+    models_dir = get_ov_cache_converted_models_dir()
+    model_path = models_dir / "tiny-random-g2p"
+
+    manager = AtomicDownloadManager(model_path)
+
+    def _create_model_in_temp(temp_path: Path) -> None:
+        generate_tiny_g2p_model(temp_path / "model")
+
+    manager.execute(_create_model_in_temp)
+
+    # AtomicDownloadManager moves the temp dir itself, so files land under
+    # model/.  Flatten the one extra nesting level when needed.
+    nested = model_path / "model"
+    if nested.exists() and (nested / "config.json").exists():
+        if not (model_path / "config.json").exists():
+            for item in nested.iterdir():
+                shutil.move(str(item), str(model_path / item.name))
+        shutil.rmtree(nested, ignore_errors=True)
+
+    return model_path
+
+
+@pytest.fixture(scope="module")
+def tiny_g2p_ov_path(tiny_g2p_model_path: Path) -> Path:
+    """
+    Export the tiny G2P BART model to OpenVINO IR and cache the result.
+
+    Produces ``openvino_encoder_model.xml`` and ``openvino_decoder_model.xml``
+    in a sibling directory to ``tiny_g2p_model_path``.
+    """
+    models_dir = get_ov_cache_converted_models_dir()
+    ov_path = models_dir / "tiny-random-g2p-ov"
+
+    encoder_xml = ov_path / "openvino_encoder_model.xml"
+    decoder_xml = ov_path / "openvino_decoder_model.xml"
+
+    if not encoder_xml.exists() or not decoder_xml.exists():
+        if ov_path.exists():
+            shutil.rmtree(ov_path, ignore_errors=True)
+        export_g2p_model_to_openvino(tiny_g2p_model_path, ov_path)
+
+    return ov_path
 
 
 @pytest.mark.speech_generation
@@ -517,3 +713,88 @@ class TestKokoroPipeline:
                 f"genai={speech_genai[first_diff] if first_diff >= 0 else 'n/a'}, "
                 f"max_diff={max_diff:.6f}, mean_diff={mean_diff:.6f}"
             )
+
+
+@pytest.mark.speech_generation
+class TestKokoroFallback:
+    """
+    Tests for the OpenVINO G2P fallback mechanism (``phonemize_fallback_model_dir``).
+
+    The fallback lets callers supply a small BART-based grapheme-to-phoneme model
+    that is invoked for out-of-vocabulary tokens the primary misaki G2P engine
+    cannot handle.  These tests exercise that code path using a tiny random
+    model whose predicted phonemes are nonsensical but whose inference must
+    complete without errors.
+
+    Because the fallback is only wired for English variants, all prompts here
+    use ``language="en-us"``.
+    """
+
+    def test_fallback_produces_valid_speech(
+        self,
+        tiny_kokoro_ov_path: Path,
+        tiny_g2p_ov_path: Path,
+        speaker_embedding_tensor: ov.Tensor,
+    ):
+        """
+        Smoke test: configure the OV G2P fallback and verify the pipeline
+        produces a finite, non-empty waveform.
+
+        The tiny random G2P model returns garbage phonemes for any token it
+        processes, but the end-to-end pipeline must complete without errors
+        and the resulting audio must pass basic sanity checks.
+
+        Note: optimum-intel currently does not support this fallback mechanism,
+        so this is why we don't perform a direct optimum-vs-GenAI check here.
+        """
+        pipe = ov_genai.Text2SpeechPipeline(str(tiny_kokoro_ov_path), "CPU")
+        result = pipe.generate(
+            # Fictional words are absent from the misaki English lexicon
+            # and will therefore trigger the OV fallback.
+            "Vellorin traded copperchimes for rainmint at Candlehaven.",
+            speaker_embedding_tensor,
+            language="en-us",
+            phonemize_fallback_model_dir=str(tiny_g2p_ov_path),
+        )
+
+        speech_array = np.array(result.speeches[0].data, dtype=np.float32).reshape(-1)
+
+        assert speech_array.ndim == 1
+        assert speech_array.size > 0, "Speech output should not be empty"
+        assert np.isfinite(speech_array).all(), "Speech output should contain no NaN or Inf"
+
+    def test_fallback_does_not_change_in_vocab_output(
+        self,
+        tiny_kokoro_ov_path: Path,
+        tiny_g2p_ov_path: Path,
+        speaker_embedding_tensor: ov.Tensor,
+    ):
+        """
+        Verify that configuring the OV fallback does not alter the output for
+        text whose tokens are all handled by misaki's built-in English lexicon.
+
+        The fallback hook is only invoked for OOV tokens.  For fully in-vocabulary
+        text the phoneme sequence is identical regardless of fallback configuration,
+        so the synthesised waveforms must be bit-exact.
+        """
+        prompt = "The quick brown fox."
+
+        pipe_no_fb = ov_genai.Text2SpeechPipeline(str(tiny_kokoro_ov_path), "CPU")
+        result_no_fb = pipe_no_fb.generate(prompt, speaker_embedding_tensor, language="en-us")
+        speech_no_fb = np.array(result_no_fb.speeches[0].data, dtype=np.float32).reshape(-1)
+
+        pipe_fb = ov_genai.Text2SpeechPipeline(str(tiny_kokoro_ov_path), "CPU")
+        result_fb = pipe_fb.generate(
+            prompt, speaker_embedding_tensor, language="en-us", phonemize_fallback_model_dir=str(tiny_g2p_ov_path),
+        )
+        speech_fb = np.array(result_fb.speeches[0].data, dtype=np.float32).reshape(-1)
+
+        assert speech_no_fb.size > 0
+        assert speech_fb.size > 0
+        assert np.isfinite(speech_no_fb).all()
+        assert np.isfinite(speech_fb).all()
+        assert np.array_equal(speech_no_fb, speech_fb), (
+            "Speech output should be bit-exact for in-vocabulary text "
+            "regardless of whether the OV G2P fallback is configured"
+        )
+
