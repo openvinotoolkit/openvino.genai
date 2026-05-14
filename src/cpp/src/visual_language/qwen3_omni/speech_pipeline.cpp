@@ -124,6 +124,34 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
         OPENVINO_ASSERT(m_config.talker_hidden_size > 0,
                         "Failed to detect talker hidden size from text projection model");
 
+        {
+            auto cp_inputs = m_code_predictor.get_compiled_model().inputs();
+            auto has_cp_input = [&](const std::string& name) {
+                return std::any_of(cp_inputs.begin(), cp_inputs.end(), [&](const ov::Output<const ov::Node>& port) {
+                    return port.get_any_name() == name;
+                });
+            };
+            auto cp_outputs = m_code_predictor.get_compiled_model().outputs();
+            auto has_cp_output = [&](const std::string& name) {
+                return std::any_of(cp_outputs.begin(), cp_outputs.end(), [&](const ov::Output<const ov::Node>& port) {
+                    return port.get_any_name() == name;
+                });
+            };
+
+            OPENVINO_ASSERT(has_cp_input("inputs_embeds"),
+                            "CodePredictor: missing 'inputs_embeds' input");
+            OPENVINO_ASSERT(has_cp_input("temperature"),
+                            "CodePredictor: missing 'temperature' input (expected unrolled API)");
+            OPENVINO_ASSERT(has_cp_input("top_k"),
+                            "CodePredictor: missing 'top_k' input");
+            OPENVINO_ASSERT(has_cp_input("seeds"),
+                            "CodePredictor: missing 'seeds' input");
+            OPENVINO_ASSERT(has_cp_output("codes"),
+                            "CodePredictor: missing 'codes' output");
+            OPENVINO_ASSERT(has_cp_output("codec_hiddens_sum"),
+                            "CodePredictor: missing 'codec_hiddens_sum' output");
+        }
+
         // Pre-allocate scratch buffers that are reused across generate_speech() calls
         m_cp_embed_sum = ov::Tensor(ov::element::f32, {1, 1, m_config.talker_hidden_size});
 
@@ -368,14 +396,6 @@ ov::Tensor Qwen3OmniSpeechPipeline::project_hidden(const ov::Tensor& hidden_stat
 void Qwen3OmniSpeechPipeline::reset_talker() {
     if (m_talker) {
         for (auto& state : m_talker.query_state()) {
-            state.reset();
-        }
-    }
-}
-
-void Qwen3OmniSpeechPipeline::reset_code_predictor() {
-    if (m_code_predictor) {
-        for (auto& state : m_code_predictor.query_state()) {
             state.reset();
         }
     }
@@ -646,134 +666,61 @@ std::pair<std::vector<int64_t>, ov::Tensor> Qwen3OmniSpeechPipeline::predict_cod
     std::vector<int64_t> codes;
     codes.reserve(m_config.num_code_groups - 1);
 
-    auto hidden_size = m_config.talker_hidden_size;
-
-    // Zero-fill the pre-allocated accumulator instead of allocating a new tensor
-    auto* sum_data = m_cp_embed_sum.data<float>();
-    std::fill_n(sum_data, hidden_size, 0.0f);
-
-    reset_code_predictor();
-
+    // Build inputs_embeds: [1, 2, hidden_size] = [talker_hidden_state, embed(first_code)]
     auto hs_size = talker_hidden_state.get_shape().back();
-    // Reusable decode input tensor (written each step)
-    ov::Tensor cp_input(ov::element::f32, {1, 1, hs_size});
-    size_t cp_history_len = 0;
+    auto first_code_embed = embed_talker_token(first_code);
+    ov::Tensor cp_embeds(ov::element::f32, {1, 2, hs_size});
+    auto* embeds_data = cp_embeds.data<float>();
+    std::memcpy(embeds_data, talker_hidden_state.data<float>(), hs_size * sizeof(float));
+    std::memcpy(embeds_data + hs_size, first_code_embed.data<float>(), hs_size * sizeof(float));
 
-    // Pre-allocate attention mask at max size (2 prefill + 14 decode = 16)
-    auto cp_max_len = m_config.num_code_groups + 1;
-    ov::Tensor cp_attn_mask(ov::element::i64, {1, cp_max_len});
-    std::fill_n(cp_attn_mask.data<int64_t>(), cp_max_len, 1);
+    m_code_predictor.set_tensor("inputs_embeds", cp_embeds);
 
-    ov::Tensor beam_idx(ov::element::i32, {1});
-    beam_idx.data<int32_t>()[0] = 0;
+    // Temperature scalar (f32, shape {})
+    ov::Tensor temp_tensor(ov::element::f32, {});
+    temp_tensor.data<float>()[0] = m_config.cp_temperature;
+    m_code_predictor.set_tensor("temperature", temp_tensor);
 
-    // Helper: accumulate embedding into sum and write to cp_input
-    auto accumulate_cp_embed = [&](size_t step, int64_t code, bool write_input) {
-        if (m_has_cp_embeds) {
-            const auto* weights = cp_token_weights(step, code);
-            for (size_t i = 0; i < hidden_size; i++)
-                sum_data[i] += weights[i];
-            if (write_input) {
-                std::memcpy(cp_input.data<float>(), weights, hidden_size * sizeof(float));
-            }
-        } else {
-            auto embed = embed_talker_token(code);
-            auto* emb_data = embed.data<float>();
-            for (size_t i = 0; i < hidden_size; i++)
-                sum_data[i] += emb_data[i];
-            if (write_input) {
-                std::memcpy(cp_input.data<float>(), emb_data, hidden_size * sizeof(float));
-            }
-        }
-    };
+    // Top-k scalar (i64, shape {})
+    ov::Tensor topk_tensor(ov::element::i64, {});
+    topk_tensor.data<int64_t>()[0] = static_cast<int64_t>(m_config.cp_top_k);
+    m_code_predictor.set_tensor("top_k", topk_tensor);
 
-    // Prefill: 2 tokens [talker_hidden, talker_embed(first_code)]
-    {
-        auto first_code_embed = embed_talker_token(first_code);
-        ov::Tensor prefill_input(ov::element::f32, {1, 2, hs_size});
-        auto* prefill_data = prefill_input.data<float>();
-        std::memcpy(prefill_data, talker_hidden_state.data<float>(), hs_size * sizeof(float));
-        std::memcpy(prefill_data + hs_size, first_code_embed.data<float>(), hs_size * sizeof(float));
+    // Seeds: [num_code_groups - 1] = 15 sequential seeds derived from m_rng
+    // Use a single base draw, then S, S+1, ..., S+14 for reproducibility.
+    const size_t num_cp_steps = m_config.num_code_groups - 1;
+    auto base_seed = static_cast<int64_t>(m_rng());
+    ov::Tensor seeds_tensor(ov::element::i64, {num_cp_steps});
+    auto* seeds_data = seeds_tensor.data<int64_t>();
+    for (size_t i = 0; i < num_cp_steps; i++) {
+        seeds_data[i] = base_seed + static_cast<int64_t>(i);
+    }
+    m_code_predictor.set_tensor("seeds", seeds_tensor);
 
-        m_code_predictor.set_tensor("inputs_embeds", prefill_input);
+    // Single inference call
+    m_code_predictor.infer();
 
-        cp_attn_mask.set_shape({1, 2});
-        m_code_predictor.set_tensor("attention_mask", cp_attn_mask);
+    // Read outputs
+    auto codes_tensor = m_code_predictor.get_tensor("codes");
+    auto hiddens_sum_tensor = m_code_predictor.get_tensor("codec_hiddens_sum");
 
-        ov::Tensor pos_ids(ov::element::i64, {1, 2});
-        pos_ids.data<int64_t>()[0] = 0;
-        pos_ids.data<int64_t>()[1] = 1;
-        m_code_predictor.set_tensor("position_ids", pos_ids);
-
-        ov::Tensor gen_steps(ov::element::i64, {});
-        gen_steps.data<int64_t>()[0] = 0;
-        m_code_predictor.set_tensor("generation_steps", gen_steps);
-        m_code_predictor.set_tensor("beam_idx", beam_idx);
-        m_code_predictor.infer();
-
-        auto logits = m_code_predictor.get_tensor("logits");
-        auto hidden = m_code_predictor.get_tensor("hidden_states");
-
-        auto vocab_size = logits.get_shape().back();
-        const auto* logits_data = logits.data<float>() + (logits.get_size() - vocab_size);
-        auto code = sample_top_k(logits_data,
-                                 vocab_size,
-                                 m_config.cp_temperature,
-                                 m_config.cp_top_k,
-                                 m_config.cp_repetition_penalty,
-                                 {});
-        codes.push_back(code);
-
-        accumulate_cp_embed(0, code, true);
-
-        if (!m_has_cp_embeds) {
-            const auto* hs_data = hidden.data<float>() + (hidden.get_size() - hs_size);
-            std::memcpy(cp_input.data<float>(), hs_data, hs_size * sizeof(float));
-        }
-        cp_history_len = 2;
+    // codes_tensor shape: [1, 15] or [15] — extract int64 values
+    const auto* codes_data = codes_tensor.data<int64_t>();
+    auto codes_count = codes_tensor.get_size();
+    OPENVINO_ASSERT(codes_count == m_config.num_code_groups - 1,
+                    "CodePredictor returned ", codes_count, " codes, expected ", m_config.num_code_groups - 1);
+    for (size_t i = 0; i < codes_count; i++) {
+        codes.push_back(codes_data[i]);
     }
 
-    // Reusable tensors for decode steps
-    ov::Tensor cp_pos_ids(ov::element::i64, {1, 1});
-    ov::Tensor cp_gen_steps(ov::element::i64, {});
-
-    // Generate remaining codes (steps 1..14)
-    for (size_t step = 1; step < m_config.num_code_groups - 1; step++) {
-        cp_history_len++;
-        m_code_predictor.set_tensor("inputs_embeds", cp_input);
-
-        cp_attn_mask.set_shape({1, cp_history_len});
-        m_code_predictor.set_tensor("attention_mask", cp_attn_mask);
-
-        cp_pos_ids.data<int64_t>()[0] = static_cast<int64_t>(cp_history_len - 1);
-        m_code_predictor.set_tensor("position_ids", cp_pos_ids);
-
-        cp_gen_steps.data<int64_t>()[0] = static_cast<int64_t>(step);
-        m_code_predictor.set_tensor("generation_steps", cp_gen_steps);
-        m_code_predictor.set_tensor("beam_idx", beam_idx);
-        m_code_predictor.infer();
-
-        auto logits = m_code_predictor.get_tensor("logits");
-        auto hidden = m_code_predictor.get_tensor("hidden_states");
-
-        auto vocab_size = logits.get_shape().back();
-        const auto* logits_data = logits.data<float>() + (logits.get_size() - vocab_size);
-        auto code = sample_top_k(logits_data,
-                                 vocab_size,
-                                 m_config.cp_temperature,
-                                 m_config.cp_top_k,
-                                 m_config.cp_repetition_penalty,
-                                 {});
-        codes.push_back(code);
-
-        bool need_next_input = step < m_config.num_code_groups - 2;
-        accumulate_cp_embed(step, code, need_next_input);
-
-        if (need_next_input && !m_has_cp_embeds) {
-            const auto* hs_data = hidden.data<float>() + (hidden.get_size() - hs_size);
-            std::memcpy(cp_input.data<float>(), hs_data, hs_size * sizeof(float));
-        }
-    }
+    // codec_hiddens_sum shape: [1, 1, hidden_size] — copy to pre-allocated m_cp_embed_sum
+    auto* sum_data = m_cp_embed_sum.data<float>();
+    const auto* hs_out = hiddens_sum_tensor.data<float>();
+    auto hidden_size = m_config.talker_hidden_size;
+    OPENVINO_ASSERT(hiddens_sum_tensor.get_size() >= hidden_size,
+                    "codec_hiddens_sum size ", hiddens_sum_tensor.get_size(),
+                    " less than hidden_size ", hidden_size);
+    std::memcpy(sum_data, hs_out, hidden_size * sizeof(float));
 
     return {codes, m_cp_embed_sum};
 }

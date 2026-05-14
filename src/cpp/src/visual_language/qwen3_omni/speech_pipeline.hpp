@@ -202,9 +202,6 @@ private:
     /// @brief Reset talker KV cache state.
     void reset_talker();
 
-    /// @brief Reset code predictor KV cache state.
-    void reset_code_predictor();
-
     /// @brief Sample from logits with temperature, top-k, repetition penalty, and token suppression.
     /// @note Member function (mutates m_rng and scratch buffers). Uses this instance's RNG so
     ///       talker and CodePredictor draws come from a single seeded stream.
