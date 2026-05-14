@@ -646,6 +646,9 @@ class TestKokoroPipeline:
         speech = result.speeches[0]
         speech_array = np.array(speech.data, dtype=np.float32).reshape(-1)
 
+        assert result.output_sample_rate == SAMPLE_RATE, (
+            f"Expected sample rate {SAMPLE_RATE}, got {result.output_sample_rate}"
+        )
         assert speech_array.ndim == 1, "Speech output should be 1D array"
         assert speech_array.size > 0, "Speech should not be empty"
         assert np.isfinite(speech_array).all(), "Speech should contain no NaN or Inf"
