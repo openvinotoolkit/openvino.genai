@@ -781,7 +781,10 @@ class TestKokoroFallback:
 
         pipe_fb = ov_genai.Text2SpeechPipeline(str(tiny_kokoro_ov_path), "CPU")
         result_fb = pipe_fb.generate(
-            prompt, speaker_embedding_tensor, language="en-us", phonemize_fallback_model_dir=str(tiny_g2p_ov_path),
+            prompt,
+            speaker_embedding_tensor,
+            language="en-us",
+            phonemize_fallback_model_dir=str(tiny_g2p_ov_path),
         )
         speech_fb = np.array(result_fb.speeches[0].data, dtype=np.float32).reshape(-1)
 
@@ -793,4 +796,3 @@ class TestKokoroFallback:
             "Speech output should be bit-exact for in-vocabulary text "
             "regardless of whether the OV G2P fallback is configured"
         )
-
