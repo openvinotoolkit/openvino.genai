@@ -280,7 +280,40 @@ VLM_EAGLE3_MAIN_MODEL_ID = "xf2022/tiny-random-qwen3-vl-layer10"
 VLM_EAGLE3_DRAFT_MODEL_ID = "xf2022/tiny-random-qwen3-vl-eagle3"
 
 
+def _maybe_skip_unsupported_model_export(model_id: str) -> None:
+    if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
+        pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
+    if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
+        pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
+    if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(
+        ">", "4.51.3"
+    ):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
+        )
+    if "qwen3-vl" in model_id and is_transformers_version("<", "4.57.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
+        )
+    if "optimum-intel-internal-testing/tiny-random-qwen3.5" == model_id and is_transformers_version("<", "5.2.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
+        )
+    if model_id in [
+        "optimum-intel-internal-testing/tiny-random-gemma4",
+        "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+        "optimum-intel-internal-testing/tiny-random-gemma4-31B",
+    ] and is_transformers_version("<", "5.5.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
+        )
+    if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
+        pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
+
+
 def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:
+    _maybe_skip_unsupported_model_export(VLM_EAGLE3_MAIN_MODEL_ID)
+    _maybe_skip_unsupported_model_export(VLM_EAGLE3_DRAFT_MODEL_ID)
     draft_model_path = download_and_convert_model(
         VLM_EAGLE3_DRAFT_MODEL_ID,
         model_kwargs={"task": "image-text-to-text"},
@@ -329,34 +362,7 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
 
 
 def _get_ov_model(model_id: str) -> str:
-    if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
-        pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
-    if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
-        pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
-    if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(
-        ">", "4.51.3"
-    ):
-        pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
-        )
-    if "optimum-intel-internal-testing/tiny-random-qwen3-vl" == model_id and is_transformers_version("<", "4.57.0"):
-        pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
-        )
-    if "optimum-intel-internal-testing/tiny-random-qwen3.5" == model_id and is_transformers_version("<", "5.2.0"):
-        pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
-        )
-    if model_id in [
-        "optimum-intel-internal-testing/tiny-random-gemma4",
-        "optimum-intel-internal-testing/tiny-random-gemma4-moe",
-        "optimum-intel-internal-testing/tiny-random-gemma4-31B",
-    ] and is_transformers_version("<", "5.5.0"):
-        pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
-        )
-    if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
-        pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
+    _maybe_skip_unsupported_model_export(model_id)
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")

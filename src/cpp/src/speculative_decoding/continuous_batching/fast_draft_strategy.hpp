@@ -56,7 +56,20 @@ std::vector<EncodedGenerationResult> generate_common(
 
     strategy.check_streaming(streamer_ptr, input_ids, sampling_params);
     if (position_ids.has_value()) {
-        OPENVINO_ASSERT(position_ids->size() == input_ids.size());
+        OPENVINO_ASSERT(position_ids->size() == input_ids.size(),
+                        "position_ids size must match input_ids size.");
+    }
+    if (token_type_ids.has_value()) {
+        OPENVINO_ASSERT(token_type_ids->size() == input_ids.size(),
+                        "token_type_ids size must match input_ids size.");
+    }
+    if (prompt_ids.has_value()) {
+        OPENVINO_ASSERT(prompt_ids->size() == input_ids.size(),
+                        "prompt_ids size must match input_ids size.");
+    }
+    if (lm_extra_inputs_list.has_value()) {
+        OPENVINO_ASSERT(lm_extra_inputs_list->size() == input_ids.size(),
+                        "lm_extra_inputs_list size must match input_ids size.");
     }
 
     std::vector<GenerationHandle> main_generations;
@@ -67,10 +80,6 @@ std::vector<EncodedGenerationResult> generate_common(
         strategy.prepare_request(rid, input_ids[rid],
                                 main_cfg, draft_cfg,
                                 main_in, draft_in);
-
-        const bool has_valid_token_type_ids = token_type_ids.has_value() && rid < token_type_ids->size();
-        const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();
-        const bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && rid < lm_extra_inputs_list->size();
 
         if (position_ids.has_value() && self->m_inputs_embedder) {
             const auto [position_ids_tensor, rope_delta] = (*position_ids)[rid];
@@ -84,9 +93,9 @@ std::vector<EncodedGenerationResult> generate_common(
             rid,
             main_in,
             main_cfg,
-            has_valid_token_type_ids ? std::make_optional((*token_type_ids)[rid]) : std::nullopt,
-            has_valid_prompt_ids ? std::make_optional((*prompt_ids)[rid]) : std::nullopt,
-            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[rid]) : std::nullopt));
+            token_type_ids.has_value() ? std::make_optional((*token_type_ids)[rid]) : std::nullopt,
+            prompt_ids.has_value() ? std::make_optional((*prompt_ids)[rid]) : std::nullopt,
+            lm_extra_inputs_list.has_value() ? std::make_optional((*lm_extra_inputs_list)[rid]) : std::nullopt));
     }
 
     auto all_requests = self->get_awaiting_requests();
