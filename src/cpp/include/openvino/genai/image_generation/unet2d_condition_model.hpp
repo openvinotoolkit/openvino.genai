@@ -48,6 +48,12 @@ public:
                          const std::string& device,
                          const ov::AnyMap& properties = {});
 
+    UNet2DConditionModel(const Tensor& blob_tensor,
+                         const Config& config,
+                         const size_t vae_scale_factor,
+                         const std::string& device,
+                         const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     UNet2DConditionModel(const std::filesystem::path& root_dir,
@@ -115,6 +121,7 @@ private:
     size_t m_vae_scale_factor;
 
     void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties = {});
+    void import_model(const ov::Tensor& blob_tensor, const std::string& device, const ov::AnyMap& properties = {});
 
     class UNetInferenceDynamic;
     class UNetInferenceStaticBS1;

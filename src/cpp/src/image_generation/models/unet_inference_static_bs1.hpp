@@ -210,6 +210,21 @@ public:
         }
     }
 
+    virtual void import_model(const ov::Tensor& blob_tensor, const std::string& device, const ov::AnyMap& properties) override {
+        auto compiled_model = utils::import_model(blob_tensor, device, properties);
+
+        m_is_blob = true;
+
+        m_native_batch_size = compiled_model.input("sample").get_shape()[0];
+        m_requests.resize(m_native_batch_size);
+
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition batch-1 model");
+
+        for (size_t i = 0; i < m_native_batch_size; i++) {
+            m_requests[i] = compiled_model.create_infer_request();
+        }
+    }
+
 private:
     std::vector<ov::InferRequest> m_requests;
     size_t m_native_batch_size = 0;
