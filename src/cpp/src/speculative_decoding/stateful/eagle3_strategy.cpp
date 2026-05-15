@@ -310,7 +310,7 @@ void Eagle3TargetWrapper::initialize_sequence(const ov::Tensor& input_ids, const
     OPENVINO_ASSERT(seq_len > 0, "Empty prompt");
 
     TokenIds prompt_ids(ids_data, ids_data + seq_len);
-    m_sequence_group = std::make_shared<SequenceGroup>(0, prompt_ids, config, 0);
+    m_sequence_group = std::make_shared<SequenceGroup>(0, prompt_ids, config);
 
     OPENVINO_ASSERT(m_sequence_group->num_total_seqs() == 1,
                     "Expected single sequence after initialization, got ",
@@ -376,7 +376,7 @@ void Eagle3DraftWrapper::initialize_sequence(const ov::Tensor& input_ids, const 
 
     // Draft model uses tokens[1:] (Eagle3 specific behavior)
     TokenIds draft_prompt_ids(ids_data + 1, ids_data + total_len);
-    m_sequence_group = std::make_shared<SequenceGroup>(1, draft_prompt_ids, config, 0);
+    m_sequence_group = std::make_shared<SequenceGroup>(1, draft_prompt_ids, config);
 
     OPENVINO_ASSERT(m_sequence_group->num_total_seqs() == 1,
                     "Expected single sequence after initialization, got ",
@@ -604,6 +604,17 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     EncodedResults results;
     results.tokens = {m_target->get_generated_tokens()};
     results.scores = {0.0f};
+    auto sequence_group = m_target->get_sequence_group();
+    OPENVINO_ASSERT(sequence_group, "Target sequence group must be initialized before collecting Eagle3 results");
+
+    auto sequence = m_target->get_current_sequence();
+    OPENVINO_ASSERT(sequence, "Target sequence must be initialized before collecting Eagle3 results");
+
+    auto finish_reason = sequence->get_finish_reason();
+    if (finish_reason == GenerationFinishReason::NONE && sequence_group->handle_stopped()) {
+        finish_reason = sequence_group->get_generation_stream()->get_finish_reason();
+    }
+    results.finish_reasons = {finish_reason};
 
     generate_timer.end();
 
