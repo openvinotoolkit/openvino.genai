@@ -204,27 +204,25 @@ def test_misaki_cpp_vs_python_with_tokens() -> None:
 
     cpp_norm = _normalize_phonemes_for_parity(cpp_result["phonemes"])
     py_norm = _normalize_phonemes_for_parity(py_phonemes)
-    assert cpp_norm == py_norm, \
-        (
-            "Phoneme mismatch after normalization:\n"
-            f"C++ raw: {cpp_result['phonemes']}\n"
-            f"Python raw: {py_phonemes}\n"
-            f"C++ norm: {cpp_norm}\n"
-            f"Python norm: {py_norm}"
-        )
+    assert cpp_norm == py_norm, (
+        "Phoneme mismatch after normalization:\n"
+        f"C++ raw: {cpp_result['phonemes']}\n"
+        f"Python raw: {py_phonemes}\n"
+        f"C++ norm: {cpp_norm}\n"
+        f"Python norm: {py_norm}"
+    )
 
     cpp_token_phonemes = [(token.get("phonemes") or "") for token in cpp_result["tokens"]]
     py_token_phonemes = [((token.phonemes or "") if token is not None else "") for token in py_tokens]
     cpp_token_norm = [_normalize_phonemes_for_parity(p) for p in cpp_token_phonemes]
     py_token_norm = [_normalize_phonemes_for_parity(p) for p in py_token_phonemes]
-    assert cpp_token_norm == py_token_norm, \
-        (
-            "Token phoneme stream mismatch after normalization:\n"
-            f"C++ raw: {cpp_token_phonemes}\n"
-            f"Python raw: {py_token_phonemes}\n"
-            f"C++ norm: {cpp_token_norm}\n"
-            f"Python norm: {py_token_norm}"
-        )
+    assert cpp_token_norm == py_token_norm, (
+        "Token phoneme stream mismatch after normalization:\n"
+        f"C++ raw: {cpp_token_phonemes}\n"
+        f"Python raw: {py_token_phonemes}\n"
+        f"C++ norm: {cpp_token_norm}\n"
+        f"Python norm: {py_token_norm}"
+    )
 
 
 @pytest.mark.skipif(not HAS_MISAKI_PYTHON, reason="misaki Python module not available")
@@ -241,15 +239,14 @@ def test_misaki_cpp_vs_python_multilingual(text: str, language: str) -> None:
 
     cpp_norm = _normalize_phonemes_for_parity(cpp_phonemes)
     py_norm = _normalize_phonemes_for_parity(py_phonemes)
-    assert cpp_norm == py_norm, \
-        (
-            f"Phoneme mismatch for {language} after normalization:\n"
-            f"Text: {text}\n"
-            f"C++ raw: {cpp_phonemes}\n"
-            f"Python raw: {py_phonemes}\n"
-            f"C++ norm: {cpp_norm}\n"
-            f"Python norm: {py_norm}"
-        )
+    assert cpp_norm == py_norm, (
+        f"Phoneme mismatch for {language} after normalization:\n"
+        f"Text: {text}\n"
+        f"C++ raw: {cpp_phonemes}\n"
+        f"Python raw: {py_phonemes}\n"
+        f"C++ norm: {cpp_norm}\n"
+        f"Python norm: {py_norm}"
+    )
 
 
 @pytest.mark.skipif(not HAS_MISAKI_PYTHON, reason="misaki Python module not available")
@@ -270,25 +267,23 @@ def test_misaki_cpp_vs_python_english_with_tokens(text: str, language: str) -> N
 
     cpp_norm = _normalize_phonemes_for_parity(cpp_result["phonemes"])
     py_norm = _normalize_phonemes_for_parity(py_phonemes)
-    assert cpp_norm == py_norm, \
-        (
-            f"Phoneme mismatch for {language} after normalization:\n"
-            f"Text: {text}\n"
-            f"C++ raw: {cpp_result['phonemes']}\n"
-            f"Python raw: {py_phonemes}\n"
-            f"C++ norm: {cpp_norm}\n"
-            f"Python norm: {py_norm}"
-        )
+    assert cpp_norm == py_norm, (
+        f"Phoneme mismatch for {language} after normalization:\n"
+        f"Text: {text}\n"
+        f"C++ raw: {cpp_result['phonemes']}\n"
+        f"Python raw: {py_phonemes}\n"
+        f"C++ norm: {cpp_norm}\n"
+        f"Python norm: {py_norm}"
+    )
 
     cpp_token_phonemes = [(token.get("phonemes") or "") for token in cpp_result["tokens"]]
     py_token_phonemes = [((token.phonemes or "") if token is not None else "") for token in py_tokens]
     cpp_token_norm = [_normalize_phonemes_for_parity(p) for p in cpp_token_phonemes]
     py_token_norm = [_normalize_phonemes_for_parity(p) for p in py_token_phonemes]
-    assert cpp_token_norm == py_token_norm, \
-        (
-            f"Token phoneme stream mismatch for {language} after normalization:\n"
-            f"C++ raw: {cpp_token_phonemes}\n"
-            f"Python raw: {py_token_phonemes}\n"
-            f"C++ norm: {cpp_token_norm}\n"
-            f"Python norm: {py_token_norm}"
-        )
+    assert cpp_token_norm == py_token_norm, (
+        f"Token phoneme stream mismatch for {language} after normalization:\n"
+        f"C++ raw: {cpp_token_phonemes}\n"
+        f"Python raw: {py_token_phonemes}\n"
+        f"C++ norm: {cpp_token_norm}\n"
+        f"Python norm: {py_token_norm}"
+    )
