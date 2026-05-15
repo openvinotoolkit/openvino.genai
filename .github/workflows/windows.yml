@@ -850,6 +850,12 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        if: ${{ matrix.test.name == 'Misaki C++ Parity' }}
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.42 # v2022
+
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
