@@ -304,7 +304,6 @@ def print_whisper_genai_latency(iter_str, metrics, prompt_idx=-1):
         f"features_extraction={_fmt(metrics['features_extraction_ms'])}, "
         f"encode={_fmt(metrics['encode_first_ms'])}, "
         f"decode={_fmt(metrics['decode_first_ms'])} | "
-        f"Second token: decode={_fmt(metrics['decode_second_ms'])} | "
         f"Other tokens: decode={_fmt(metrics['decode_other_avg_ms'])}/token | "
         f"Sampling avg={_fmt(metrics['sampling_avg_ms'])}/token | "
         f"Detokenization={_fmt(metrics['detokenization_ms'])}"
