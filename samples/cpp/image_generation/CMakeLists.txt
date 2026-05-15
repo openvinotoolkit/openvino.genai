@@ -12,6 +12,7 @@ file(DOWNLOAD https://raw.githubusercontent.com/nothings/stb/f75e8d1cad7d90d72ef
      EXPECTED_HASH MD5=27932e6fb3a2f26aee2fc33f2cb4e696)
 
 include(FetchContent)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../fetch_opencv.cmake)
 
 if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
@@ -34,6 +35,34 @@ set_target_properties(text2image PROPERTIES
     INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS text2image
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
+# create denoising_process sample executable
+
+add_executable(denoising_process denoising_process.cpp ../video_generation/imwrite_video.cpp)
+
+target_include_directories(denoising_process PRIVATE
+    ${CMAKE_BINARY_DIR}
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../video_generation")
+ov_genai_link_opencv(denoising_process core imgproc videoio imgcodecs)
+target_link_libraries(denoising_process PRIVATE openvino::genai indicators::indicators)
+
+if(UNIX AND NOT APPLE)
+    set_target_properties(denoising_process PROPERTIES
+        INSTALL_RPATH "$ORIGIN/../lib")
+elseif(APPLE)
+    set_target_properties(denoising_process PROPERTIES
+        INSTALL_RPATH "@loader_path/../lib")
+endif()
+
+set_target_properties(denoising_process PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS denoising_process
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)

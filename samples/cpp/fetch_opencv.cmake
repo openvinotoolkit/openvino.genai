@@ -77,6 +77,36 @@ function(ov_genai_link_opencv target_name)
                 INSTALL_RPATH "@loader_path/../lib"
                 INSTALL_RPATH_USE_LINK_PATH ON)
         endif()
+
+        # Windows: deploy fetched OpenCV runtime DLLs alongside sample executables
+        # in samples_bin/. Windows has no rpath, so install/samples_bin/<exe> can
+        # only resolve its OpenCV dependencies via the loader search path. The
+        # function is invoked by multiple sample CMakeLists.txt files; guard with
+        # a GLOBAL property so the install rules are emitted exactly once.
+        if(WIN32)
+            get_property(_ov_genai_opencv_dlls_installed GLOBAL
+                PROPERTY OV_GENAI_OPENCV_RUNTIME_DLLS_INSTALLED)
+            if(NOT _ov_genai_opencv_dlls_installed)
+                foreach(component IN LISTS required_components)
+                    install(FILES "$<TARGET_FILE:opencv_${component}>"
+                            DESTINATION samples_bin/
+                            COMPONENT samples_bin
+                            EXCLUDE_FROM_ALL)
+                endforeach()
+                # FFmpeg backend plugin: prebuilt DLL OpenCV places next to
+                # opencv_videoio with no CMake target. TARGET_FILE_DIR keeps the
+                # path tied to the OpenCV build layout and config, with no
+                # version-suffix or absolute-path assumptions.
+                install(FILES
+                            "$<TARGET_FILE_DIR:opencv_videoio>/opencv_videoio_ffmpeg_64.dll"
+                        DESTINATION samples_bin/
+                        COMPONENT samples_bin
+                        EXCLUDE_FROM_ALL
+                        OPTIONAL)
+                set_property(GLOBAL PROPERTY
+                    OV_GENAI_OPENCV_RUNTIME_DLLS_INSTALLED TRUE)
+            endif()
+        endif()
     else()
         set(opencv_targets ${OpenCV_LIBS})
         if(OpenCV_INCLUDE_DIRS)
