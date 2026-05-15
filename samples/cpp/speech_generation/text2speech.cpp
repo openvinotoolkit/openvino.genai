@@ -73,10 +73,10 @@ int main(int argc, char* argv[]) try {
         args.size() >= 3,
         "Usage: ",
         args[0],
-        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>] [--language <en-us|en-gb|es|fr-fr|hi|it|pt-br>] [--speed <FLOAT>]");
+        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>] [--language <en-us|en-gb|es|fr-fr|hi|it|pt-br>] [--speed <FLOAT>] [--device <DEVICE>]");
 
     const std::string models_path = args[1], prompt = args[2];
-    const std::string device = "CPU";
+    std::string device = "CPU";
 
     std::optional<std::string> speaker_embedding_path;
     std::string language;
@@ -96,6 +96,8 @@ int main(int argc, char* argv[]) try {
             language = value;
         } else if (option == "--speed") {
             speed = std::stof(value);
+        } else if (option == "--device") {
+            device = value;
         } else {
             OPENVINO_THROW("Unknown option: ", option);
         }
