@@ -607,6 +607,7 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param temperature the value used to modulate token probabilities for random sampling.
  * @param top_p - if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
  * @param top_k the number of highest probability vocabulary tokens to keep for top-k-filtering.
+ * @param min_p minimum probability threshold relative to the most likely token. Tokens whose probability is below min_p * p_max are removed from the candidate set. 0.0 (default) disables the filter. Typical values: 0.05–0.1. Valid range: [0.0, 1.0).
  * @param rng_seed initializes random generator.
  *
  * CDPruner configuration:
@@ -672,6 +673,7 @@ public:
     float temperature = 1.0f;
     float top_p = 1.0f;
     size_t top_k = std::numeric_limits<size_t>::max();
+    float min_p = 0.0f;
     bool do_sample = false;
     size_t rng_seed = 0;
 
@@ -749,6 +751,7 @@ static constexpr ov::Property<StopCriteria> stop_criteria{"stop_criteria"};
 static constexpr ov::Property<float> temperature{"temperature"};
 static constexpr ov::Property<float> top_p{"top_p"};
 static constexpr ov::Property<size_t> top_k{"top_k"};
+static constexpr ov::Property<float> min_p{"min_p"};
 static constexpr ov::Property<bool> do_sample{"do_sample"};
 static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
 static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};

@@ -17,10 +17,10 @@ Install [../../export-requirements.txt](../../export-requirements.txt) if model 
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --model <model> <output_folder>
 ```
-If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.
+If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via hf.
 ```sh
 pip install huggingface-hub
-huggingface-cli download <model> --local-dir <output_folder>
+hf download <model> --local-dir <output_folder>
 ```
 
 ### Using GGUF models

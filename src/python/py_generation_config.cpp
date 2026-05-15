@@ -436,6 +436,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("temperature", &GenerationConfig::temperature)
         .def_readwrite("top_p", &GenerationConfig::top_p)
         .def_readwrite("top_k", &GenerationConfig::top_k)
+        .def_readwrite("min_p", &GenerationConfig::min_p)
         .def_readwrite("do_sample", &GenerationConfig::do_sample)
         .def_readwrite("repetition_penalty", &GenerationConfig::repetition_penalty)
         .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id)
