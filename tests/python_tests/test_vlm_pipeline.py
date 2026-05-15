@@ -2359,8 +2359,6 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
     resized_image = None
     resized_video = None
     if has_image:
-        if _is_videochat_flash_qwen_model(ov_pipe_model.model_id):
-            pytest.skip("videochat_flash_qwen does not support image input")
         resized_image = request.getfixturevalue("cat_image")
         resized_image = resized_image.resize(image_input_resolution)
 
@@ -2710,52 +2708,6 @@ def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeli
     ov_backend = request.param
     model_path = _get_ov_model(VIDEOCHAT_FLASH_QWEN_MODEL_ID)
     return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_backend)
-
-
-def test_videochatflash_qwen_image_input(ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor):
-    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
-    result = ov_videochatflash_qwen_pipe_raw.generate(PROMPTS[0], image=cat_tensor, generation_config=generation_config)
-    assert len(result.texts) > 0
-
-
-def test_videochatflash_qwen_multiple_images(
-    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
-    cat_tensor: openvino.Tensor,
-    car_tensor: openvino.Tensor,
-):
-    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
-    result = ov_videochatflash_qwen_pipe_raw.generate(
-        PROMPTS[0], images=[cat_tensor, car_tensor], generation_config=generation_config
-    )
-    assert len(result.texts) > 0
-
-
-def test_videochatflash_qwen_multiple_videos(
-    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
-    synthetic_video_32x32_tensor: openvino.Tensor,
-):
-    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
-    result = ov_videochatflash_qwen_pipe_raw.generate(
-        PROMPTS[0],
-        videos=[synthetic_video_32x32_tensor, synthetic_video_32x32_tensor],
-        generation_config=generation_config,
-    )
-    assert len(result.texts) > 0
-
-
-def test_videochatflash_qwen_mixed_image_and_video(
-    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
-    cat_tensor: openvino.Tensor,
-    synthetic_video_32x32_tensor: openvino.Tensor,
-):
-    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
-    result = ov_videochatflash_qwen_pipe_raw.generate(
-        PROMPTS[0],
-        images=[cat_tensor],
-        videos=[synthetic_video_32x32_tensor],
-        generation_config=generation_config,
-    )
-    assert len(result.texts) > 0
 
 
 def test_videochatflash_qwen_chat_history_with_video(
