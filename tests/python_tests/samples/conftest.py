@@ -185,6 +185,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/stable-diffusion-3-tiny-random",
         "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
     },
+    "tiny-random-qwen3-vl": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
 }
 
 TEST_FILES = {
