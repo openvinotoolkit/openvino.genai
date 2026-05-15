@@ -64,7 +64,7 @@ size_t get_available_cpu_memory() {
 // Workaround: sets correct per-layer sliding_window on PagedAttention nodes for hybrid attention models (e.g., Gemma3).
 //
 // Since transformers 5 the attention mask uses Select instead of Slice, which the
-// SDPAToPagedAttention pass does not recognize - it sets sliding_window=0 for all layers bz default.
+// SDPAToPagedAttention pass does not recognize - it sets sliding_window=0 for all layers by default.
 // This function reads sliding_window and layer_types from config.json and patches the PA constants.
 void apply_sliding_window_to_pa_nodes(const std::shared_ptr<ov::Model>& model) {
     // Find config.json
