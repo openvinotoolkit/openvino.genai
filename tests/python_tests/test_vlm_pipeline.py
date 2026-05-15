@@ -282,7 +282,9 @@ VLM_EAGLE3_DRAFT_MODEL_ID = "xf2022/tiny-random-qwen3-vl-eagle3"
 
 def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
-        pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4"
+        )
     if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
     if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(
