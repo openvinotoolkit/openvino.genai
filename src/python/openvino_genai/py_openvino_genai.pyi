@@ -389,7 +389,7 @@ class AutoencoderKLLTXVideo:
                         latent (ov.Tensor): Latent video tensor.
                         Returns: Decoded video tensor.
         """
-    def encode(self, video: openvino._pyopenvino.Tensor, generator: Generator = None) -> openvino._pyopenvino.Tensor:
+    def encode(self, video: openvino._pyopenvino.Tensor, generator: Generator | None = None) -> openvino._pyopenvino.Tensor:
         """
                         Encodes a video tensor to latent space.
                         video (ov.Tensor): Input video tensor [B, C, F, H, W].

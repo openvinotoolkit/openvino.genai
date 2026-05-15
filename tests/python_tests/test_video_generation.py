@@ -362,6 +362,19 @@ class TestAutoEncoderKLLTXVideoEncoder:
         else:
             pytest.skip(f"Unexpected encoder output name '{output_name}'")
 
+    def test_encode_none_generator_raises_for_stochastic_encoder(self, video_generation_model, require_encoder):
+        encoder_path = Path(video_generation_model) / "vae_encoder"
+        decoder_path = Path(video_generation_model) / "vae_decoder"
+        vae = ov_genai.AutoencoderKLLTXVideo(str(encoder_path), str(decoder_path), "CPU")
+
+        output_name = ov.Core().read_model(str(encoder_path / "openvino_model.xml")).outputs[0].get_any_name()
+        if output_name != "latent_parameters":
+            pytest.skip("Encoder is deterministic (latent_sample) — generator=None is valid")
+
+        video = ov.Tensor(np.ones([1, 3, 9, 32, 32], dtype=np.float32) * 0.5)
+        with pytest.raises(RuntimeError, match="requires a non-null generator"):
+            vae.encode(video, None)
+
 
 class TestText2VideoPipelineAdvanced:
     def test_reshape(self, video_generation_model):
