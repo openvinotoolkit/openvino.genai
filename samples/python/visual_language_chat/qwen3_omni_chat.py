@@ -5,208 +5,82 @@
 """
 Qwen3-Omni multimodal chat sample.
 
-Demonstrates:
-- Text + image input -> text output
-- Text + audio input -> text output
-- Text -> text + speech output
-- Multi-turn chat with mixed modalities
+Demonstrates text + image -> text + speech output using the ChatHistory API.
 
 Usage:
-    # Text-only:
-    python qwen3_omni_chat.py model_dir
-
-    # With image:
-    python qwen3_omni_chat.py model_dir --image cat.jpg
-
-    # With audio input:
-    python qwen3_omni_chat.py model_dir --audio recording.wav
-
-    # With speech output:
-    python qwen3_omni_chat.py model_dir --enable-speech --speaker f245 --output-wav output.wav
-
-    # With streaming speech output (audio chunks arrive during generation):
-    python qwen3_omni_chat.py model_dir --enable-speech --stream-audio --audio-chunk-frames 5
-
-    # Full omni (audio input + speech output):
-    python qwen3_omni_chat.py model_dir --audio recording.wav --enable-speech
+    python qwen3_omni_chat.py <MODEL_DIR> <IMAGE_FILE_OR_DIR>
 """
 
 import argparse
-import sys
+from pathlib import Path
 
 import numpy as np
-import openvino as ov
-import openvino_genai as ov_genai
+import openvino_genai
+from openvino import Tensor
+from PIL import Image
 
 
-def load_image(image_path: str) -> ov.Tensor:
-    """Load image from file and convert to OpenVINO tensor."""
-    from PIL import Image
-
-    image = Image.open(image_path).convert("RGB")
-    image_array = np.array(image, dtype=np.uint8)
-    # Add batch dimension if needed: [H, W, C] -> [1, H, W, C]
-    if image_array.ndim == 3:
-        image_array = np.expand_dims(image_array, axis=0)
-    return ov.Tensor(image_array)
-
-
-def load_audio(audio_path: str, target_sr: int = 16000) -> ov.Tensor:
-    """Load audio from WAV file and convert to float32 tensor at target sample rate."""
-    try:
-        import soundfile as sf
-    except ImportError:
-        print("Error: soundfile package required for audio input. Install with: pip install soundfile")
-        sys.exit(1)
-
-    audio_data, sample_rate = sf.read(audio_path, dtype="float32")
-
-    if audio_data.ndim > 1:
-        audio_data = audio_data.mean(axis=1)
-
-    if sample_rate != target_sr:
-        try:
-            import librosa
-
-            audio_data = librosa.resample(audio_data, orig_sr=sample_rate, target_sr=target_sr)
-        except ImportError:
-            print(
-                f"Warning: Audio sample rate is {sample_rate}Hz, expected {target_sr}Hz. "
-                f"Install librosa for resampling: pip install librosa"
-            )
-
-    return ov.Tensor(audio_data.astype(np.float32))
-
-
-def save_wav(tensor: ov.Tensor, output_path: str, sample_rate: int = 24000) -> None:
-    """Save waveform tensor to WAV file."""
-    try:
-        import soundfile as sf
-    except ImportError:
-        print("Error: soundfile package required. Install with: pip install soundfile")
-        return
-
-    waveform = np.array(tensor.data).flatten()
-    sf.write(output_path, waveform, sample_rate)
-    print(f"Speech saved to: {output_path}")
-
-
-def streamer_callback(text: str) -> bool:
+def streamer(subword: str) -> openvino_genai.StreamingStatus:
     """Stream text tokens to stdout."""
-    print(text, end="", flush=True)
-    return False  # Don't stop generation
+    print(subword, end="", flush=True)
+    return openvino_genai.StreamingStatus.RUNNING
+
+
+def read_image(path: str) -> Tensor:
+    pic = Image.open(path).convert("RGB")
+    image_data = np.array(pic)
+    return Tensor(image_data)
+
+
+def read_images(path: str) -> list[Tensor]:
+    entry = Path(path)
+    if entry.is_dir():
+        return [read_image(str(file)) for file in sorted(entry.iterdir())]
+    return [read_image(path)]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Qwen3-Omni multimodal chat")
-    parser.add_argument("model_dir", type=str, help="Path to OpenVINO model directory")
-    parser.add_argument("--image", type=str, default=None, help="Path to input image")
-    parser.add_argument("--audio", type=str, default=None, help="Path to input audio WAV file")
-    parser.add_argument("--enable-speech", action="store_true", help="Enable speech output generation")
-    parser.add_argument("--speaker", type=str, default="m02", help="Speaker name for speech (e.g., m02, f245)")
-    parser.add_argument("--output-wav", type=str, default="output.wav", help="Output WAV file path")
-    parser.add_argument(
-        "--stream-audio", action="store_true", help="Enable audio streaming (receive chunks during generation)"
-    )
-    parser.add_argument(
-        "--audio-chunk-frames",
-        type=int,
-        default=5,
-        help="Number of codec frames per streaming chunk (default 5 = ~400ms)",
-    )
-    parser.add_argument("--device", type=str, default="CPU", help="Inference device")
-    parser.add_argument("--max-new-tokens", type=int, default=256, help="Maximum tokens to generate")
-    parser.add_argument("--system-prompt", type=str, default="", help="System prompt for speech language control")
+    parser.add_argument("model_dir", help="Path to the OpenVINO model directory")
+    parser.add_argument("image_dir", help="Image file or directory with images")
     args = parser.parse_args()
 
-    print(f"Loading model from: {args.model_dir}")
-    pipe = ov_genai.VLMPipeline(args.model_dir, args.device)
+    rgbs = read_images(args.image_dir)
 
-    config = ov_genai.GenerationConfig()
-    config.max_new_tokens = args.max_new_tokens
+    pipe = openvino_genai.VLMPipeline(args.model_dir, "CPU")
 
-    if args.enable_speech:
-        config.return_audio = True
-        config.speaker = args.speaker
+    # Speech output is hardcoded here to show the multimodal path.
+    # Set return_audio = False to get text-only responses.
+    config = openvino_genai.GenerationConfig()
+    config.max_new_tokens = 256
+    config.return_audio = True
+    # Leaving speaker empty selects the model's default voice. Available voices vary by checkpoint
+    # (e.g. MoE exposes "Ethan", "Chelsie", "Aiden", "Cherry"); the full list is in
+    # talker_config.speaker_id of the model's config.json.
+    config.speaker = ""
 
-    audio_chunks: list = []
+    history = openvino_genai.ChatHistory()
+    prompt = input("question:\n")
+    history.append({"role": "user", "content": prompt})
+    decoded_results = pipe.generate(history, images=rgbs, generation_config=config, streamer=streamer)
+    history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
-    def audio_streamer_callback(audio_chunk: ov.Tensor) -> ov_genai.StreamingStatus:
-        """Receive audio chunks during speech generation."""
-        chunk_data = np.array(audio_chunk.data).flatten()
-        audio_chunks.append(chunk_data)
-        total_samples = sum(len(c) for c in audio_chunks)
-        duration_ms = total_samples / 24  # 24kHz = 24 samples/ms
-        print(f"\r  [audio: {len(audio_chunks)} chunks, {duration_ms:.0f}ms]", end="", flush=True)
-        return ov_genai.StreamingStatus.RUNNING
-
-    generate_kwargs: dict = {}
-
-    if args.stream_audio and args.enable_speech:
-        generate_kwargs["audio_streamer"] = audio_streamer_callback
-        config.audio_chunk_frames = args.audio_chunk_frames
-
-    if args.image:
-        print(f"Loading image: {args.image}")
-        image_tensor = load_image(args.image)
-        generate_kwargs["images"] = [image_tensor]
-
-    if args.audio:
-        print(f"Loading audio: {args.audio}")
-        audio_tensor = load_audio(args.audio)
-        generate_kwargs["audios"] = [audio_tensor]
-
-    pipe.start_chat(args.system_prompt)
-    print("\nQwen3-Omni Chat (type 'quit' to exit)")
-    print("-" * 40)
+    if decoded_results.speech_outputs:
+        print(f"\n[Speech output: {decoded_results.speech_outputs[0].get_size()} samples at 24kHz]")
 
     while True:
         try:
-            prompt = input("\nYou: ").strip()
-        except (EOFError, KeyboardInterrupt):
+            prompt = input("\n----------\nquestion:\n")
+        except EOFError:
             break
 
-        if prompt.lower() in ("quit", "exit", "q"):
-            break
+        history.append({"role": "user", "content": prompt})
+        # New images can be passed at each turn; here we only pass them on turn 1.
+        decoded_results = pipe.generate(history, generation_config=config, streamer=streamer)
+        history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
-        if not prompt:
-            continue
-
-        print("Assistant: ", end="", flush=True)
-        if args.enable_speech:
-            # Speech generation happens after text, can take minutes on CPU
-            print("[speech will be generated after text completes]", file=sys.stderr, flush=True)
-        result = pipe.generate(
-            prompt,
-            generation_config=config,
-            streamer=streamer_callback,
-            **generate_kwargs,
-        )
-        print()  # Newline after streamed output
-
-        # Save speech output if available
-        if args.enable_speech:
-            if args.stream_audio and audio_chunks:
-                # Concatenate streamed chunks and save
-                print()  # Newline after streaming progress
-                waveform = np.concatenate(audio_chunks)
-                try:
-                    import soundfile as sf
-
-                    sf.write(args.output_wav, waveform, 24000)
-                    print(f"Streamed speech saved to: {args.output_wav} ({len(audio_chunks)} chunks)")
-                except ImportError:
-                    print("Error: soundfile package required. Install with: pip install soundfile")
-                audio_chunks.clear()
-            elif result.speech_outputs:
-                save_wav(result.speech_outputs[0], args.output_wav)
-
-        # Clear media after first turn (subsequent turns are text-only)
-        generate_kwargs.pop("images", None)
-        generate_kwargs.pop("audios", None)
-
-    pipe.finish_chat()
-    print("\nChat ended.")
+        if decoded_results.speech_outputs:
+            print(f"\n[Speech output: {decoded_results.speech_outputs[0].get_size()} samples at 24kHz]")
 
 
 if __name__ == "__main__":

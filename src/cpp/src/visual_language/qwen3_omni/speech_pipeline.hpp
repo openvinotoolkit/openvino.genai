@@ -80,8 +80,8 @@ public:
     /// @param all_hidden_states Accumulated final hidden states [one tensor per step].
     /// @param all_intermediate_hidden_states Accumulated layer-14 hidden states [one tensor per step].
     /// @param audio_streamer Callback or AudioStreamerBase for streaming (monostate = batch mode).
-    /// @param chunk_frames Number of codec frames per streaming chunk (0 = no streaming).
-    /// @param speaker Speaker name (e.g., "f245", "m02").
+    /// @param chunk_frames Codec frames per streaming chunk (>= 1). Used only when audio_streamer is active.
+    /// @param speaker Speaker name from `talker_config.speaker_id` in config.json; empty selects the default.
     /// @param max_new_tokens Maximum number of codec tokens to generate.
     /// @param rng_seed Seed for the internal RNG. Reseeded on every call — the same seed with
     ///                 the same thinker outputs produces byte-identical audio. Default 0.
@@ -92,7 +92,7 @@ public:
                                const std::vector<ov::Tensor>& all_hidden_states,
                                const std::vector<ov::Tensor>& all_intermediate_hidden_states,
                                const AudioStreamerVariant& audio_streamer = std::monostate{},
-                               size_t chunk_frames = 0,
+                               size_t chunk_frames = 1,
                                const std::string& speaker = "",
                                size_t max_new_tokens = 4096,
                                size_t rng_seed = 0);
@@ -184,7 +184,6 @@ private:
     /// @brief Build the talker input embeddings from thinker outputs.
     /// @return Pair of (talker_input_embeds, trailing_text_hidden).
     std::pair<ov::Tensor, ov::Tensor> build_talker_input(const std::vector<int64_t>& full_token_ids,
-                                                         const std::vector<ov::Tensor>& all_hidden_states,
                                                          const std::vector<ov::Tensor>& all_intermediate_hidden_states,
                                                          int64_t speaker_codec_id);
 

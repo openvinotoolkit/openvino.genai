@@ -86,3 +86,16 @@ install(TARGETS video_to_text_chat
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
+
+add_executable(qwen3_omni_chat qwen3_omni_chat.cpp load_image.cpp)
+target_include_directories(qwen3_omni_chat PRIVATE "${CMAKE_BINARY_DIR}")
+target_link_libraries(qwen3_omni_chat PRIVATE openvino::genai)
+
+set_target_properties(qwen3_omni_chat PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS qwen3_omni_chat
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)

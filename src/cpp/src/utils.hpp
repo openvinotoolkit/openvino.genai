@@ -114,6 +114,7 @@ const std::string EXTENSIONS_ARG_NAME = "extensions";
 const std::string IMAGES_BATCHES_ARG_NAME = "images_batches";
 const std::string VIDEOS_BATCHES_ARG_NAME = "videos_batches";
 const std::string VIDEOS_METADATA_BATCHES_ARG_NAME = "videos_metadata_batches";
+const std::string AUDIOS_BATCHES_ARG_NAME = "audios_batches";
 
 template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {

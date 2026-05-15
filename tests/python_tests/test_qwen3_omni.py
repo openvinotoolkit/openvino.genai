@@ -15,8 +15,6 @@ import pytest
 
 import openvino as ov
 
-# The tiny-random model will be uploaded to HuggingFace after CI infrastructure is ready
-QWEN3_OMNI_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 REAL_MODEL_DIR = "temp/qwen3omni_ov"
 
 
@@ -51,6 +49,10 @@ class TestQwen3OmniRealModel:
     @pytest.fixture(scope="class")
     def pipe(self):
         import openvino_genai as ov_genai
+        from pathlib import Path
+
+        if not Path(REAL_MODEL_DIR).exists():
+            pytest.skip(f"Real model directory not found: {REAL_MODEL_DIR}")
 
         return ov_genai.VLMPipeline(REAL_MODEL_DIR, "CPU")
 
@@ -178,6 +180,10 @@ class TestQwen3OmniEdgeCases:
     @pytest.fixture(scope="class")
     def pipe(self):
         import openvino_genai as ov_genai
+        from pathlib import Path
+
+        if not Path(REAL_MODEL_DIR).exists():
+            pytest.skip(f"Real model directory not found: {REAL_MODEL_DIR}")
 
         return ov_genai.VLMPipeline(REAL_MODEL_DIR, "CPU")
 
@@ -245,15 +251,50 @@ class TestQwen3OmniEdgeCases:
         )
         assert len(result.texts) > 0
 
-    def test_audio_chunk_frames_zero_disables_streaming(self, pipe):
-        """Setting audio_chunk_frames=0 should disable streaming (batch mode)."""
+    def test_no_audio_streamer_runs_in_batch_mode(self, pipe):
+        """Without audio_streamer callback, speech generation runs in batch mode."""
         import openvino_genai as ov_genai
 
         config = ov_genai.GenerationConfig()
         config.max_new_tokens = 10
         config.return_audio = True
         config.speaker = "f245"
-        config.audio_chunk_frames = 0
 
         result = pipe.generate("Say hello", generation_config=config)
         assert len(result.texts) > 0
+
+    def test_audio_chunk_frames_zero_rejected(self, pipe):
+        """audio_chunk_frames=0 with an active streamer must raise — invariant is >= 1."""
+        import openvino_genai as ov_genai
+        import pytest
+
+        config = ov_genai.GenerationConfig()
+        config.max_new_tokens = 10
+        config.return_audio = True
+        config.speaker = ""
+        config.audio_chunk_frames = 0
+
+        def audio_cb(chunk):
+            return ov_genai.StreamingStatus.RUNNING
+
+        with pytest.raises(RuntimeError):
+            pipe.generate("Say hello", generation_config=config, audio_streamer=audio_cb)
+
+    def test_audio_streamer_callback_invoked(self, pipe):
+        """audio_streamer callback should be invoked during speech generation."""
+        import openvino_genai as ov_genai
+
+        config = ov_genai.GenerationConfig()
+        config.max_new_tokens = 10
+        config.return_audio = True
+        config.speaker = ""
+
+        chunk_count = [0]
+
+        def audio_cb(chunk: ov.Tensor) -> ov_genai.StreamingStatus:
+            chunk_count[0] += 1
+            return ov_genai.StreamingStatus.RUNNING
+
+        result = pipe.generate("Say hello", generation_config=config, audio_streamer=audio_cb)
+        assert len(result.texts) > 0
+        assert chunk_count[0] > 0, "audio_streamer callback was never invoked"

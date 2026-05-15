@@ -13,6 +13,7 @@ namespace {
 
 using ov::genai::audio_utils::MelSpectrogramExtractor;
 
+constexpr float kPi = M_PI;
 constexpr size_t kWhisperBins = 80;
 constexpr size_t kQwen3OmniBins = 128;
 constexpr size_t kSamplingRate = 16000;
@@ -22,7 +23,7 @@ constexpr size_t kWhisperMinLength = kSamplingRate * 30;  // 480000
 
 std::vector<float> make_sine_wave(size_t num_samples, float freq_hz, float sample_rate) {
     std::vector<float> out(num_samples);
-    const float two_pi = 2.0f * static_cast<float>(M_PI);
+    const float two_pi = 2.0f * kPi;
     for (size_t i = 0; i < num_samples; ++i) {
         const float t = static_cast<float>(i) / sample_rate;
         const float envelope = 1.0f - static_cast<float>(i) / static_cast<float>(num_samples);

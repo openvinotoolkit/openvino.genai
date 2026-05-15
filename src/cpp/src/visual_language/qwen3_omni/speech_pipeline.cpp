@@ -26,7 +26,7 @@ ov::genai::StreamingStatus invoke_audio_streamer(const ov::genai::AudioStreamerV
     return std::visit(
         [&chunk](auto&& arg) -> ov::genai::StreamingStatus {
             using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, std::function<ov::genai::StreamingStatus(ov::Tensor)>>) {
+            if constexpr (std::is_same_v<T, std::function<ov::genai::StreamingStatus(const ov::Tensor&)>>) {
                 return arg(chunk);
             } else if constexpr (std::is_same_v<T, std::shared_ptr<ov::genai::AudioStreamerBase>>) {
                 return arg->write(chunk);
@@ -138,18 +138,13 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
                 });
             };
 
-            OPENVINO_ASSERT(has_cp_input("inputs_embeds"),
-                            "CodePredictor: missing 'inputs_embeds' input");
+            OPENVINO_ASSERT(has_cp_input("inputs_embeds"), "CodePredictor: missing 'inputs_embeds' input");
             OPENVINO_ASSERT(has_cp_input("temperature"),
                             "CodePredictor: missing 'temperature' input (expected unrolled API)");
-            OPENVINO_ASSERT(has_cp_input("top_k"),
-                            "CodePredictor: missing 'top_k' input");
-            OPENVINO_ASSERT(has_cp_input("seeds"),
-                            "CodePredictor: missing 'seeds' input");
-            OPENVINO_ASSERT(has_cp_output("codes"),
-                            "CodePredictor: missing 'codes' output");
-            OPENVINO_ASSERT(has_cp_output("codec_hiddens_sum"),
-                            "CodePredictor: missing 'codec_hiddens_sum' output");
+            OPENVINO_ASSERT(has_cp_input("top_k"), "CodePredictor: missing 'top_k' input");
+            OPENVINO_ASSERT(has_cp_input("seeds"), "CodePredictor: missing 'seeds' input");
+            OPENVINO_ASSERT(has_cp_output("codes"), "CodePredictor: missing 'codes' output");
+            OPENVINO_ASSERT(has_cp_output("codec_hiddens_sum"), "CodePredictor: missing 'codec_hiddens_sum' output");
         }
 
         // Pre-allocate scratch buffers that are reused across generate_speech() calls
@@ -486,7 +481,6 @@ int64_t Qwen3OmniSpeechPipeline::sample_top_k(const float* logits,
 
 std::pair<ov::Tensor, ov::Tensor> Qwen3OmniSpeechPipeline::build_talker_input(
     const std::vector<int64_t>& full_token_ids,
-    const std::vector<ov::Tensor>& all_hidden_states,
     const std::vector<ov::Tensor>& all_intermediate_hidden_states,
     int64_t speaker_codec_id) {
     // Find <|im_start|> positions to identify segments
@@ -708,7 +702,10 @@ std::pair<std::vector<int64_t>, ov::Tensor> Qwen3OmniSpeechPipeline::predict_cod
     const auto* codes_data = codes_tensor.data<int64_t>();
     auto codes_count = codes_tensor.get_size();
     OPENVINO_ASSERT(codes_count == m_config.num_code_groups - 1,
-                    "CodePredictor returned ", codes_count, " codes, expected ", m_config.num_code_groups - 1);
+                    "CodePredictor returned ",
+                    codes_count,
+                    " codes, expected ",
+                    m_config.num_code_groups - 1);
     for (size_t i = 0; i < codes_count; i++) {
         codes.push_back(codes_data[i]);
     }
@@ -718,8 +715,10 @@ std::pair<std::vector<int64_t>, ov::Tensor> Qwen3OmniSpeechPipeline::predict_cod
     const auto* hs_out = hiddens_sum_tensor.data<float>();
     auto hidden_size = m_config.talker_hidden_size;
     OPENVINO_ASSERT(hiddens_sum_tensor.get_size() >= hidden_size,
-                    "codec_hiddens_sum size ", hiddens_sum_tensor.get_size(),
-                    " less than hidden_size ", hidden_size);
+                    "codec_hiddens_sum size ",
+                    hiddens_sum_tensor.get_size(),
+                    " less than hidden_size ",
+                    hidden_size);
     std::memcpy(sum_data, hs_out, hidden_size * sizeof(float));
 
     return {codes, m_cp_embed_sum};
@@ -742,7 +741,9 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
                                                     const std::string& speaker,
                                                     size_t max_new_tokens,
                                                     size_t rng_seed) {
-    bool streaming = is_audio_streamer_active(audio_streamer) && chunk_frames > 0;
+    // chunk_frames only controls chunk granularity; streaming is gated solely by audio_streamer.
+    OPENVINO_ASSERT(chunk_frames >= 1, "audio_chunk_frames must be >= 1 (got ", chunk_frames, ")");
+    bool streaming = is_audio_streamer_active(audio_streamer);
 
     if (!m_talker_available) {
         GENAI_WARN("Speech: talker not available");
@@ -764,7 +765,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
     int64_t speaker_codec_id = resolve_speaker_id(speaker);
 
     auto [talker_input, trailing_text_hidden] =
-        build_talker_input(full_token_ids, all_hidden_states, all_intermediate_hidden_states, speaker_codec_id);
+        build_talker_input(full_token_ids, all_intermediate_hidden_states, speaker_codec_id);
 
     if (talker_input.get_shape()[1] == 0) {
         GENAI_WARN("Speech: build_talker_input returned empty, cannot generate speech");

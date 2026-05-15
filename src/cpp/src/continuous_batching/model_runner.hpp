@@ -10,6 +10,7 @@
 #include <openvino/runtime/infer_request.hpp>
 
 #include "visual_language/embedding_model.hpp"
+#include "visual_language/inputs_embedder.hpp"
 #include "sequence_group.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "continuous_batching/timer.hpp"

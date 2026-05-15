@@ -88,10 +88,12 @@ public:
 };
 
 class ConstructableAudioStreamer : public ov::genai::AudioStreamerBase {
-    ov::genai::StreamingStatus write(ov::Tensor audio_chunk) override {
+    ov::genai::StreamingStatus write(const ov::Tensor& audio_chunk) override {
+        py::gil_scoped_acquire acquire;
         PYBIND11_OVERRIDE_PURE(ov::genai::StreamingStatus, ov::genai::AudioStreamerBase, write, audio_chunk);
     }
     void end() override {
+        py::gil_scoped_acquire acquire;
         PYBIND11_OVERRIDE_PURE(void, ov::genai::AudioStreamerBase, end);
     }
 };
