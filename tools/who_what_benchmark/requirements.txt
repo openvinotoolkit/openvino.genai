@@ -8,7 +8,7 @@ pandas>=2.0.3,<=3.0.2
 numpy>=1.23.5,<=2.4.4
 tqdm>=4.66.1,<=4.67.3
 diffusers>=0.22.0,<=0.38.0
-datasets>=3.6.0,<=4.8.4
+datasets>=3.6.0,<=4.8.5
 jinja2>=3.1.0,<=3.1.6
 scipy>=1.3.2,<=1.17.1
 # For video-to-text VLM sample/VideoGen
@@ -23,7 +23,7 @@ librosa==0.11.0
 vocos==0.1.0
 vector-quantize-pytorch==1.28.2
 torchaudio>=2.1.0,<=2.11.0
-torchvision>=0.16,<=0.26.0
+torchvision>=0.16,<=0.27.0
 # For LoRA adapters
 peft==0.19.1
 # For OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
