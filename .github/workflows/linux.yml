@@ -631,7 +631,7 @@ jobs:
             timeout: 60
           - name: 'Misaki C++ Parity'
             cmd: |
-              cmake -S ./src/cpp/src/speech_generation/misaki_cpp -B ./build/misaki_cpp_ci -DMISAKI_CPP_BUILD_PYTHON_BINDINGS=ON -DCMAKE_BUILD_TYPE=Release
+              cmake -S ./src/cpp/src/speech_generation/misaki_cpp -B ./build/misaki_cpp_ci -DMISAKI_CPP_BUILD_PYTHON_BINDINGS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER= -DCMAKE_C_COMPILER_LAUNCHER=
               cmake --build ./build/misaki_cpp_ci --target misaki_cpp_py --parallel
               export PYTHONPATH="./build/misaki_cpp_ci:./build/misaki_cpp_ci/Release:${PYTHONPATH}"
               python -m pytest -s -v src/cpp/src/speech_generation/misaki_cpp/tests/test_misaki_cpp_parity.py
