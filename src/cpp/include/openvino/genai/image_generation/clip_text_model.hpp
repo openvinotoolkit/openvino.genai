@@ -46,6 +46,12 @@ public:
                   const std::string& device,
                   const ov::AnyMap& properties = {});
 
+    CLIPTextModel(const Tensor& blob_tensor,
+                  const Config& config,
+                  const Tokenizer& clip_tokenizer,
+                  const std::string& device,
+                  const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     CLIPTextModel(const std::filesystem::path& root_dir,
@@ -110,6 +116,7 @@ protected:
     std::shared_ptr<ov::Model> m_model;
 
     void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties);
+    void import_model(const ov::Tensor& blob_tensor, const std::string& device, const ov::AnyMap& properties);
 };
 
 } // namespace genai
