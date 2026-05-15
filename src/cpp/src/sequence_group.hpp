@@ -167,7 +167,7 @@ public:
             const size_t embeds_to_remove = std::min(tokens_to_remove, m_generated_ids_embeds.size());
             const size_t position_ids_to_remove = std::min(tokens_to_remove, m_position_ids_list.size());
             truncate_generated_ids_embeds(embeds_to_remove);
-            update_position_ids(position_ids_to_remove);
+            truncate_position_ids(position_ids_to_remove);
         }
     }
 
@@ -256,12 +256,12 @@ public:
             m_generated_ids_embeds.erase(m_generated_ids_embeds.begin() + (current_embeds_size - num_tokens), m_generated_ids_embeds.end());
     }
 
-    void update_position_ids(size_t num_tokens) {
+    void truncate_position_ids(size_t num_tokens) {
         OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
         OPENVINO_ASSERT(num_tokens <= m_position_ids_list.size());
         // remove the last num_tokens position ids
         if (num_tokens > 0)
-            m_position_ids_list.erase(m_position_ids_list.begin() + m_position_ids_list.size() - num_tokens, m_position_ids_list.end());
+            m_position_ids_list.resize(m_position_ids_list.size() - num_tokens);
     }
 
     void append_position_ids(const ov::Tensor& position_ids) {
