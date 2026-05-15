@@ -716,6 +716,14 @@ jobs:
             cmd: 'python -m pytest -s -v tests/python_tests/test_kokoro_pipeline.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speech_generation.test }}
             timeout: 60
+          - name: 'Misaki C++ Parity'
+            cmd: |
+              cmake -S ./src/cpp/src/speech_generation/misaki_cpp -B ./build/misaki_cpp_ci -DMISAKI_CPP_BUILD_PYTHON_BINDINGS=ON
+              cmake --build ./build/misaki_cpp_ci --config Release --parallel
+              $env:PYTHONPATH = "$(Get-Location)/build/misaki_cpp_ci/Release;$env:PYTHONPATH"
+              python -m pytest -q src/cpp/src/speech_generation/misaki_cpp/tests/test_misaki_cpp_parity.py
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speech_generation.test }}
+            timeout: 30
           - name: 'GGUF Reader tests'
             cmd: 'python -m pytest -s -v tests/python_tests/test_gguf_reader.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
