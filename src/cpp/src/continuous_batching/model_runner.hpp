@@ -370,7 +370,6 @@ public:
         size_t total_num_tokens = 0;
         size_t max_context_len_val = 0;
         size_t hidden_size = 0;
-        size_t hidden_size_eagle3 = 0;
         bool have_token_type_ids = false;
 
         OPENVINO_ASSERT(sequence_groups.size() > 0);
@@ -415,7 +414,7 @@ public:
         ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
             {batch_size_in_sequences}, ov::element::i32);
 
-        ov::Tensor hidden_state_input = _prepare_hidden_state_input(total_num_tokens, hidden_size_eagle3);
+        ov::Tensor hidden_state_input = _prepare_hidden_state_input(total_num_tokens, hidden_size);
         float* hidden_state_data = nullptr;
         if (hidden_state_input) {
             hidden_state_data = hidden_state_input.data<float>();
@@ -563,7 +562,7 @@ public:
                     size_t stored_seq_len = stored_shape[0];
                     size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
 
-                    OPENVINO_ASSERT(stored_hidden_size == hidden_size_eagle3, "Target state hidden size does not match the expected size for Eagle3 draft model inference.");
+                    OPENVINO_ASSERT(stored_hidden_size == hidden_size, "Target state hidden size does not match the expected size for Eagle3 draft model inference.");
                     OPENVINO_ASSERT(stored_seq_len == total_num_tokens, "Target state sequence length does not match the expected length for Eagle3 draft model inference.");
 
                     // fill the draft model hidden state input with the target hidden state
@@ -572,19 +571,19 @@ public:
                     // fill hidden_state_data with m_hidden_states
                     if (hidden_state_data) {
                         OPENVINO_ASSERT(num_scheduled_tokens == 1, "unexpected num_scheduled_tokens in speculative drafting stage in eagle3 mode");
-                        std::memset(hidden_state_data + current_token_idx * hidden_size_eagle3,
+                        std::memset(hidden_state_data + current_token_idx * hidden_size,
                                     0,
-                                    num_scheduled_tokens * hidden_size_eagle3 * sizeof(float));
+                                    num_scheduled_tokens * hidden_size * sizeof(float));
                         auto hidden_state = running_sequences[seq_idx]->get_hidden_state();
                         if (hidden_state.get_size() > 0) {
                             auto shape = hidden_state.get_shape();
-                            if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_size_eagle3) {
+                            if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_size) {
                                 size_t seq_len = shape[0];
                                 size_t copy_length = std::min(seq_len, num_scheduled_tokens);
 
                                 size_t src_start_idx = seq_len >= copy_length ? seq_len - copy_length : 0;
-                                auto target_shape = ov::Shape{num_scheduled_tokens, 1, hidden_size_eagle3};
-                                ov::Tensor target_base(ov::element::f32, target_shape, hidden_state_data + current_token_idx * hidden_size_eagle3);
+                                auto target_shape = ov::Shape{num_scheduled_tokens, 1, hidden_size};
+                                ov::Tensor target_base(ov::element::f32, target_shape, hidden_state_data + current_token_idx * hidden_size);
                                 _copy_roi_between_tensors(hidden_state, src_start_idx, copy_length, target_base, 0);
                             }
                         }
