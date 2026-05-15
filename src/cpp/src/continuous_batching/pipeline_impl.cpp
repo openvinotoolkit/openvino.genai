@@ -101,6 +101,7 @@ void apply_sliding_window_to_pa_nodes(const std::shared_ptr<ov::Model>& model) {
     } else if (config.contains("_sliding_window_pattern")) {
         // Fallback: use pattern (every Nth layer is full attention)
         int pattern = config["_sliding_window_pattern"].get<int>();
+        OPENVINO_ASSERT(pattern > 0, "`_sliding_window_pattern` must be greater than 0");
         int num_layers = config.value("num_hidden_layers", 0);
         for (int i = 0; i < num_layers; ++i) {
             is_sliding_layer.push_back(((i + 1) % pattern) != 0);
