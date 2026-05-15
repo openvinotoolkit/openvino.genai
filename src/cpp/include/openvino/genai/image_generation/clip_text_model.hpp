@@ -74,6 +74,19 @@ public:
                         device,
                         ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    CLIPTextModel(const Tensor& blob_tensor,
+                  const Config& config,
+                  const Tokenizer& clip_tokenizer,
+                  const std::string& device,
+                  Properties&&... properties)
+        : CLIPTextModel(blob_tensor,
+                        config,
+                        clip_tokenizer,
+                        device,
+                        ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
     CLIPTextModel(const CLIPTextModel&);
 
     std::shared_ptr<CLIPTextModel> clone();

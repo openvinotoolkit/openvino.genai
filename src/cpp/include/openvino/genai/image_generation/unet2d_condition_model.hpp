@@ -76,6 +76,19 @@ public:
                                device,
                                ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    UNet2DConditionModel(const Tensor& blob_tensor,
+                         const Config& config,
+                         const size_t vae_scale_factor,
+                         const std::string& device,
+                         Properties&&... properties)
+        : UNet2DConditionModel(blob_tensor,
+                               config,
+                               vae_scale_factor,
+                               device,
+                               ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
     UNet2DConditionModel(const UNet2DConditionModel&);
 
     UNet2DConditionModel clone();

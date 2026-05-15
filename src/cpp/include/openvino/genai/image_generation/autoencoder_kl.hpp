@@ -125,6 +125,30 @@ public:
                         device,
                         ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    AutoencoderKL(const Tensor& vae_decoder_blob_tensor,
+                  const Config& vae_decoder_config,
+                  const std::string& device,
+                  Properties&&... properties)
+        : AutoencoderKL(vae_decoder_blob_tensor,
+                        vae_decoder_config,
+                        device,
+                        ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    AutoencoderKL(const Tensor& vae_encoder_blob_tensor,
+                  const Tensor& vae_decoder_blob_tensor,
+                  const Config& vae_decoder_config,
+                  const std::string& device,
+                  Properties&&... properties)
+        : AutoencoderKL(vae_encoder_blob_tensor,
+                        vae_decoder_blob_tensor,
+                        vae_decoder_config,
+                        device,
+                        ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
     AutoencoderKL(const AutoencoderKL&);
 
     AutoencoderKL clone();
