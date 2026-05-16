@@ -32,6 +32,7 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import inspect
+import shutil
 from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,6 +74,19 @@ from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 import logging
 logger = logging.getLogger(__name__)
+
+VLM_REQUIRED_CACHE_ARTIFACTS = (
+    "openvino_language_model.xml",
+    "openvino_language_model.bin",
+    "openvino_tokenizer.xml",
+    "openvino_tokenizer.bin",
+    "openvino_detokenizer.xml",
+    "openvino_detokenizer.bin",
+)
+
+
+def _get_missing_vlm_cache_artifacts(model_dir: Path) -> list[str]:
+    return [artifact for artifact in VLM_REQUIRED_CACHE_ARTIFACTS if not (model_dir / artifact).exists()]
 
 
 class VisionType(Enum):
@@ -348,8 +362,22 @@ def _get_ov_model(model_id: str) -> str:
     model_dir = ov_cache_converted_dir / dir_name
     manager = AtomicDownloadManager(model_dir)
 
-    if manager.is_complete() or (model_dir / "openvino_language_model.xml").exists():
+    missing_artifacts = _get_missing_vlm_cache_artifacts(model_dir)
+    if not missing_artifacts:
         return model_dir
+    if model_dir.exists():
+        logger.warning(
+            "Incomplete VLM cache for %s at %s. Missing artifacts: %s. Re-running conversion.",
+            model_id,
+            model_dir,
+            ", ".join(missing_artifacts),
+        )
+        try:
+            shutil.rmtree(model_dir)
+        except OSError as error:
+            pytest.fail(f"Failed to remove incomplete VLM cache at {model_dir}: {error}")
+    else:
+        logger.info("VLM cache for %s is not present at %s. Running conversion.", model_id, model_dir)
 
     def convert_to_temp(temp_dir: Path) -> None:
         model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
@@ -416,6 +444,12 @@ def _get_ov_model(model_id: str) -> str:
         model.save_pretrained(temp_dir)
 
     manager.execute(convert_to_temp)
+    missing_artifacts = _get_missing_vlm_cache_artifacts(model_dir)
+    if missing_artifacts:
+        pytest.fail(
+            f"Converted VLM cache is incomplete for {model_id} at {model_dir}. "
+            f"Missing artifacts: {', '.join(missing_artifacts)}"
+        )
     return model_dir
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
