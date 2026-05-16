@@ -46,6 +46,7 @@ install(DIRECTORY
         USE_SOURCE_PERMISSIONS)
 
 install(DIRECTORY
+        c/common
         c/text_generation
         c/whisper_speech_recognition
         c/visual_language_chat
