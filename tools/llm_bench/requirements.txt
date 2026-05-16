@@ -14,8 +14,8 @@ diffusers>=0.22.0,<=0.38.0
 optimum-intel[nncf]>=1.25.0
 packaging>=20.0,<=26.2
 psutil
-timm<=1.0.26
-tiktoken>=0.3.0,<=0.12.0
+timm<=1.0.27
+tiktoken>=0.3.0,<=0.13.0
 librosa==0.11.0 # For Whisper
 matplotlib>=3.3.4,<=3.10.9
 jinja2>=3.1.0,<=3.1.6
@@ -35,13 +35,13 @@ einops==0.8.2
 backoff==2.2.1
 # For openbmb/MiniCPM-o-2_6
 # Please, be advised that MiniCPM-o-2_6 requires transformers>=4.50,<=4.51.3
-vector-quantize-pytorch==1.28.2
+vector-quantize-pytorch==1.29.0
 vocos==0.1.0
 torchaudio>=2.1.0,<=2.11.0
 torchcodec<=0.11.1; sys_platform == "linux"
 torchvision>=0.16,<=0.27.0
 soundfile==0.13.1
 # For OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
-av==16.1.0
-imageio==2.37.2
+av==17.0.1
+imageio==2.37.3
 decord==0.6.0; platform_system != "Darwin"
