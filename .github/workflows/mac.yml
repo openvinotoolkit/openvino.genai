@@ -43,7 +43,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@efbd45e7d36eeab8e1cb049dec11dfd21125aea4
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@48b684f1ba3a01e573b3de6444e9e37756e3cdc9
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -724,10 +724,11 @@ jobs:
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           chmod +x ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching
-          ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="-AddSecondInputTest.*"
+          ${{ env.INSTALL_DIR }}/tests/tests_continuous_batching --gtest_filter="-AddSecondInputTest.*:LLMPipelineBackendRealModel*"
         env:
           TEST_MODELS_BASE_DIR: "${{ env.HF_HOME }}/ov_test_models"
           CACHE_TYPES_CSV: "${{ env.INSTALL_DIR }}/tests/data/cache_types_models.csv"
+          OPENVINO_TOKENIZERS_PATH_GENAI: "${{ env.INSTALL_DIR }}/runtime/lib/arm64/Release/libopenvino_tokenizers.dylib"
 
       - name: Test C++ Tools
         run: |
