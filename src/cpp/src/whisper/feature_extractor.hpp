@@ -4,8 +4,10 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <vector>
 
+#include "audio_utils.hpp"
 #include "openvino/genai/visibility.hpp"
 
 namespace ov {
@@ -57,11 +59,10 @@ public:
     WhisperFeatures extract(const std::vector<float>& raw_speech);
 
 private:
-    std::vector<float> sin_vals;
-    std::vector<float> cos_vals;
-    std::vector<float> mel_filter;
+    // Deferred construction: config values are loaded from JSON inside the constructor body,
+    // so the extractor cannot be built in the member initializer list.
+    std::optional<audio_utils::MelSpectrogramExtractor> m_extractor;
 
-    void init_mel_filter();
     void init_parameters(const std::filesystem::path& preprocessor_json_path);
 };
 

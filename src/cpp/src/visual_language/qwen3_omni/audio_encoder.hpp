@@ -4,42 +4,14 @@
 #pragma once
 
 #include <filesystem>
-#include <vector>
 
+#include "audio_utils.hpp"
 #include "circular_buffer_queue.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
-
-/// @brief Computes mel spectrogram from raw PCM audio for Qwen3-Omni audio encoder.
-/// Adapts the Whisper mel spectrogram logic for Qwen3-Omni's parameters.
-class MelSpectrogramExtractor {
-public:
-    /// @param num_mel_bins Number of mel filter bins (128 for Qwen3-Omni).
-    /// @param sampling_rate Audio sampling rate in Hz (16000).
-    /// @param n_fft FFT window size (400 for 25ms at 16kHz).
-    /// @param hop_length Hop between frames (160 for 10ms at 16kHz).
-    MelSpectrogramExtractor(size_t num_mel_bins = 128,
-                            size_t sampling_rate = 16000,
-                            size_t n_fft = 400,
-                            size_t hop_length = 160);
-
-    /// @brief Extract mel spectrogram from raw PCM float32 audio.
-    /// @param raw_speech PCM samples at the configured sampling rate.
-    /// @return Mel spectrogram with shape [num_mel_bins, n_frames], row-major.
-    std::vector<float> extract(const std::vector<float>& raw_speech, size_t& n_frames) const;
-
-private:
-    const size_t m_num_mel_bins;
-    const size_t m_sampling_rate;
-    const size_t m_n_fft;
-    const size_t m_hop_length;
-    const std::vector<float> m_sin_vals;
-    const std::vector<float> m_cos_vals;
-    const std::vector<float> m_mel_filter;  // [num_mel_bins * (1 + n_fft/2)]
-};
 
 /// @brief Audio encoder for Qwen3-Omni. Converts raw PCM audio into
 /// audio feature embeddings at the thinker's hidden dimension.
@@ -64,7 +36,7 @@ public:
 
 private:
     VLMConfig m_config;
-    MelSpectrogramExtractor m_mel_extractor;
+    audio_utils::MelSpectrogramExtractor m_mel_extractor;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue;
 
     /// @brief Preprocess audio: mel spectrogram -> chunk into windows -> pad.
