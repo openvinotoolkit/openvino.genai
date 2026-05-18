@@ -129,6 +129,19 @@ private:
     ov::Tensor m_cp_embed_sum;
     ov::Tensor m_stack_codes_buf;
 
+    // Constant embeddings pre-computed at pipeline construction. TTS specials are in
+    // talker space (thinker embed -> text projection). Codec specials and speaker IDs
+    // are in talker-embedding space. All are invariant for the life of the pipeline.
+    ov::Tensor m_tts_bos_embed;
+    ov::Tensor m_tts_eos_embed;
+    ov::Tensor m_tts_pad_embed;
+    std::unordered_map<int64_t, ov::Tensor> m_codec_special_embed;
+    std::unordered_map<int64_t, ov::Tensor> m_speaker_embed;
+
+    // Lowercased speaker name -> codec id. Built once at ctor time so resolve_speaker_id
+    // does not rescan-and-lowercase the whole map on every generate_speech() call.
+    std::unordered_map<std::string, int64_t> m_lower_speaker_ids;
+
     // Owned RNG for deterministic sampling. Reseeded at generate_speech() entry from the
     // caller-supplied rng_seed; shared across talker first-code sampling and all CodePredictor
     // steps so a single seed fully reproduces the audio output.
