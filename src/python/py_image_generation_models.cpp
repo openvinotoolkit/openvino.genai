@@ -253,6 +253,28 @@ void init_clip_text_model_with_projection(py::module_& m) {
             clip_tokenizer (Tokenizer): Tokenizer for text encoding.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
+        )")
+        .def(py::init([](
+            const ov::Tensor& blob_tensor,
+            const ov::genai::CLIPTextModelWithProjection::Config& config,
+            const ov::genai::Tokenizer& clip_tokenizer,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(blob_tensor, config, clip_tokenizer, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("blob_tensor"), "Pre-read compiled model blob tensor",
+        py::arg("config"), "CLIPTextModelWithProjection config",
+        py::arg("clip_tokenizer"), "Tokenizer for text encoding",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            CLIPTextModelWithProjection class constructor from blob tensor.
+            blob_tensor (ov.Tensor): Pre-read compiled model blob tensor.
+            config (CLIPTextModelWithProjection.Config): CLIPTextModelWithProjection configuration.
+            clip_tokenizer (Tokenizer): Tokenizer for text encoding.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
         )");
 }
 
