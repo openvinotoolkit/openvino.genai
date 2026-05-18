@@ -28,7 +28,7 @@ std::vector<std::string> windows_utf8_argv(int argc, char* argv[]) {
 
     std::vector<std::string> args;
     int wide_argc = 0;
-    std::unique_ptr<LPWSTR*, LocalFreeDeleter> wide_argv(CommandLineToArgvW(GetCommandLineW(), &wide_argc));
+    std::unique_ptr<LPWSTR, LocalFreeDeleter> wide_argv(CommandLineToArgvW(GetCommandLineW(), &wide_argc));
     if (wide_argv == nullptr || wide_argc <= 0) {
         args.reserve(static_cast<size_t>(argc));
         for (int i = 0; i < argc; ++i) {
