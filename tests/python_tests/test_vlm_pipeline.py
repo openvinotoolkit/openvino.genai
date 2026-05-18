@@ -323,6 +323,12 @@ def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:
     return Path(_get_ov_model(VLM_EAGLE3_MAIN_MODEL_ID)), draft_model_path
 
 
+def _get_vlm_eagle3_scheduler_config() -> SchedulerConfig:
+    scheduler_config = SchedulerConfig()
+    scheduler_config.enable_prefix_caching = False
+    return scheduler_config
+
+
 def _setup_generation_config(
     pipeline: VLMPipeline,
     max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
@@ -2830,13 +2836,19 @@ def test_vlm_pipeline_add_extension(cat_tensor, tmp_path: Path) -> None:
 
 def test_vlm_eagle3(cat_tensor):
     model_path, draft_model_path = _get_vlm_eagle3_model_paths()
+    scheduler_config = _get_vlm_eagle3_scheduler_config()
 
-    ov_pipe = VLMPipeline(model_path, "CPU")
+    ov_pipe = VLMPipeline(model_path, "CPU", scheduler_config=scheduler_config)
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     result_without_draft = ov_pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
 
     ov_draft = draft_model(draft_model_path, "CPU")
-    ov_pipe_with_draft = VLMPipeline(model_path, "CPU", draft_model=ov_draft)
+    ov_pipe_with_draft = VLMPipeline(
+        model_path,
+        "CPU",
+        draft_model=ov_draft,
+        scheduler_config=_get_vlm_eagle3_scheduler_config(),
+    )
     generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
     result_with_draft = ov_pipe_with_draft.generate(
         PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_draft
@@ -2852,11 +2864,12 @@ def test_vlm_eagle3_chat_with_videos(
     synthetic_video_32x32_tensor: openvino.Tensor,
 ):
     model_path, draft_model_path = _get_vlm_eagle3_model_paths()
+    scheduler_config = _get_vlm_eagle3_scheduler_config()
 
     first_prompt = "Describe the image and the video together."
     second_prompt = "What did you see across both inputs?"
 
-    ov_pipe = VLMPipeline(model_path, "CPU")
+    ov_pipe = VLMPipeline(model_path, "CPU", scheduler_config=scheduler_config)
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
 
     history_without_draft = ChatHistory()
@@ -2875,7 +2888,12 @@ def test_vlm_eagle3_chat_with_videos(
     )
 
     ov_draft = draft_model(draft_model_path, "CPU")
-    ov_pipe_with_draft = VLMPipeline(model_path, "CPU", draft_model=ov_draft)
+    ov_pipe_with_draft = VLMPipeline(
+        model_path,
+        "CPU",
+        draft_model=ov_draft,
+        scheduler_config=_get_vlm_eagle3_scheduler_config(),
+    )
     generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
 
     history_with_draft = ChatHistory()

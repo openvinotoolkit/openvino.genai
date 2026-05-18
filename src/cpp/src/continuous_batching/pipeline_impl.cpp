@@ -464,10 +464,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         candidates_timer.end();
     }
 
-    // append embeddings for generated tokens for draft model
-    if (!m_is_validation_mode_enabled) {
-        if (m_model_input_type == ModelInputType::EMBEDDINGS)
+    // Append embeddings for generated tokens.
+    // Validation mode usually skips this because it reuses/rewinds candidate tokens,
+    // but prompt_lookup appends validation candidates after sampling and must keep
+    // embeddings in sync before the next scheduling/hash step.
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        if (!m_is_validation_mode_enabled || should_sync_embeddings_after_candidate_generation()) {
             m_model_runner->append_embeddings(m_requests, scheduler_output);
+        }
     }
 
     // notify requests dropped by handle
