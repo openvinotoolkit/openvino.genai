@@ -219,9 +219,34 @@ void InputsEmbedderQwen3Omni::encode_audios(const std::vector<ov::Tensor>& audio
     size_t hidden_size = 0;
 
     for (const auto& audio : audios) {
+        // Empty audio tensors are silently skipped so callers can pass placeholders.
+        if (audio.get_size() == 0) {
+            continue;
+        }
+
         auto features = m_audio_encoder->encode(audio);
-        total_tokens += features.get_shape()[0];
-        hidden_size = features.get_shape()[1];
+
+        const ov::Shape& feature_shape = features.get_shape();
+        OPENVINO_ASSERT(feature_shape.size() == 2,
+                        "Audio encoder output must be rank-2 [num_tokens, hidden_size], got shape rank ",
+                        feature_shape.size());
+        OPENVINO_ASSERT(features.get_element_type() == ov::element::f32,
+                        "Audio encoder output element type must be f32, got ",
+                        features.get_element_type());
+
+        const size_t num_tokens = feature_shape[0];
+        const size_t current_hidden_size = feature_shape[1];
+        if (all_features.empty()) {
+            hidden_size = current_hidden_size;
+        } else {
+            OPENVINO_ASSERT(current_hidden_size == hidden_size,
+                            "All audio feature tensors must have the same hidden_size. Expected ",
+                            hidden_size,
+                            ", got ",
+                            current_hidden_size);
+        }
+
+        total_tokens += num_tokens;
         all_features.push_back(features);
     }
 

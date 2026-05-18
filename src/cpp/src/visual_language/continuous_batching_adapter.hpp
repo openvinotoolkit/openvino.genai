@@ -93,13 +93,13 @@ public:
                                const StreamerVariant& streamer) override {
         const auto speaker = generation_config.speaker;
         const auto rng_seed = generation_config.rng_seed;
-        m_impl.encode_audios(m_pending_audios);
         auto start_time = std::chrono::steady_clock::now();
         std::vector<ov::genai::GenerationConfig> generation_configs = {std::move(generation_config)};
         const auto decoded_results = m_impl.generate({prompt},
                                                      ov::genai::images_batches({images}),
                                                      ov::genai::videos_batches({videos}),
                                                      ov::genai::videos_metadata_batches({videos_metadata}),
+                                                     ov::genai::audios_batches({m_pending_audios}),
                                                      ov::genai::generation_config_batches(generation_configs),
                                                      ov::genai::streamer(streamer))[0];
         auto stop_time = std::chrono::steady_clock::now();
@@ -129,7 +129,6 @@ public:
                                const StreamerVariant& streamer) override {
         const auto speaker = generation_config.speaker;
         const auto rng_seed = generation_config.rng_seed;
-        m_impl.encode_audios(m_pending_audios);
         auto start_time = std::chrono::steady_clock::now();
         ChatHistoryInternalState::get_or_create(history);
         std::vector<ov::genai::GenerationConfig> generation_configs = {std::move(generation_config)};
@@ -137,6 +136,7 @@ public:
                                                      ov::genai::images_batches({images}),
                                                      ov::genai::videos_batches({videos}),
                                                      ov::genai::videos_metadata_batches({videos_metadata}),
+                                                     ov::genai::audios_batches({m_pending_audios}),
                                                      ov::genai::generation_config_batches(generation_configs),
                                                      ov::genai::streamer(streamer))[0];
         auto stop_time = std::chrono::steady_clock::now();

@@ -546,13 +546,29 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     }
     set_adapters(sampling_params[0].adapters);
 
+    // RAII guard so the flag is restored on every exit path (including exceptions).
+    struct HiddenStateExportGuard {
+        std::shared_ptr<ModelRunner>& m_runner;
+        explicit HiddenStateExportGuard(std::shared_ptr<ModelRunner>& runner) : m_runner(runner) {
+            if (m_runner)
+                m_runner->enable_hidden_state_export(true);
+        }
+        ~HiddenStateExportGuard() {
+            if (m_runner)
+                m_runner->enable_hidden_state_export(false);
+        }
+        HiddenStateExportGuard(const HiddenStateExportGuard&) = delete;
+        HiddenStateExportGuard& operator=(const HiddenStateExportGuard&) = delete;
+    };
+
     // Enable hidden state export if any request requires audio output (Qwen3-Omni speech)
     bool any_return_audio =
         std::any_of(sampling_params.begin(), sampling_params.end(), [](const GenerationConfig& cfg) {
             return cfg.return_audio;
         });
+    std::optional<HiddenStateExportGuard> hidden_state_guard;
     if (any_return_audio) {
-        m_model_runner->enable_hidden_state_export(true);
+        hidden_state_guard.emplace(m_model_runner);
     }
 
     const auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
@@ -611,9 +627,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
             }
         } catch (...) {
             drop_requests();  // remove all requests from pipeline state in case of exception
-            if (any_return_audio) {
-                m_model_runner->enable_hidden_state_export(false);
-            }
             streamer_ptr->end();
             std::rethrow_exception(std::current_exception());
         }
@@ -691,11 +704,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
     }
 
     OPENVINO_ASSERT(results.size() == input_ids.size());
-
-    // Disable hidden state export after generation completes
-    if (any_return_audio) {
-        m_model_runner->enable_hidden_state_export(false);
-    }
 
     generate_timer.end();
 

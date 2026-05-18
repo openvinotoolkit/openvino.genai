@@ -19,10 +19,14 @@ namespace ov::genai {
  * Thread safety: write() and end() are called sequentially on the thread that
  * runs generate(). No concurrent calls are made.
  *
- * Lifecycle:
+ * Lifecycle (for AudioStreamerBase implementations):
  *   1. write() is called zero or more times with audio chunks.
  *   2. end() is always called exactly once after the last write(), even if
  *      generation was stopped or cancelled early, or if an error occurred.
+ *
+ * Note: Plain function callbacks (std::function<StreamingStatus(const ov::Tensor&)>)
+ * accepted via AudioStreamerVariant have no end() hook — lifecycle applies only to
+ * AudioStreamerBase subclasses.
  *
  * Return values from write():
  *   - RUNNING  -- continue generating and streaming audio chunks.
@@ -37,7 +41,7 @@ public:
     /// @param audio_chunk Waveform tensor [1, 1, N_samples] float32 PCM at 24kHz.
     ///        The tensor is valid only for the duration of this call; copy if needed.
     /// @return StreamingStatus to continue (RUNNING), stop (STOP), or cancel (CANCEL).
-    virtual StreamingStatus write(ov::Tensor audio_chunk) = 0;
+    virtual StreamingStatus write(const ov::Tensor& audio_chunk) = 0;
 
     /// @brief Called exactly once when speech generation ends.
     ///        Always called, even on early stop/cancel or error.
@@ -47,11 +51,11 @@ public:
 };
 
 /// @brief Variant type for audio streaming callbacks.
-/// - Lambda: std::function<StreamingStatus(ov::Tensor)> — called with each audio chunk
+/// - Lambda: std::function<StreamingStatus(const ov::Tensor&)> — called with each audio chunk
 /// - AudioStreamerBase subclass via shared_ptr
 /// - monostate: no streaming (batch mode, default)
 using AudioStreamerVariant = std::variant<
-    std::function<StreamingStatus(ov::Tensor)>,
+    std::function<StreamingStatus(const ov::Tensor&)>,
     std::shared_ptr<AudioStreamerBase>,
     std::monostate>;
 

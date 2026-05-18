@@ -210,8 +210,8 @@ ov::genai::AudioStreamerVariant get_audio_streamer_from_map(const ov::AnyMap& co
         auto any_val = config_map.at(AUDIO_STREAMER_ARG_NAME);
         if (any_val.is<std::shared_ptr<ov::genai::AudioStreamerBase>>()) {
             streamer = any_val.as<std::shared_ptr<ov::genai::AudioStreamerBase>>();
-        } else if (any_val.is<std::function<StreamingStatus(ov::Tensor)>>()) {
-            streamer = any_val.as<std::function<StreamingStatus(ov::Tensor)>>();
+        } else if (any_val.is<std::function<StreamingStatus(const ov::Tensor&)>>()) {
+            streamer = any_val.as<std::function<StreamingStatus(const ov::Tensor&)>>();
         }
     }
     return streamer;

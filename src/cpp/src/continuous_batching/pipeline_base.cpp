@@ -348,6 +348,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     OPENVINO_ASSERT(!(generation_config.return_audio && generation_config.is_prompt_lookup()),
                     "return_audio and prompt_lookup cannot both be enabled");
+    OPENVINO_ASSERT(
+        !generation_config.return_audio ||
+            (generation_config.num_return_sequences == 1 &&
+             (generation_config.is_greedy_decoding() || generation_config.is_multinomial())),
+        "return_audio requires num_return_sequences==1 and greedy or multinomial sampling (no beam search)");
 
     // Shared helpers for prompt-ID extraction used in both chat-conversation and multi-prompt branches
     auto prepare_prompt_ids = [&](const std::string& prompt, const GenerationConfig& params) -> size_t {
@@ -575,6 +580,49 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     // empty videos metadata batch size should match histories batch size
     const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(histories.size());
     return generate(histories, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<std::vector<ov::Tensor>>& audios_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    // Audios must be encoded before tokenization so <|AUDIO|> placeholders resolve to fresh embeddings (Qwen3-Omni).
+    if (m_inputs_embedder) {
+        std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+        for (const auto& batch_audios : audios_vector) {
+            if (!batch_audios.empty()) {
+                m_inputs_embedder->encode_audios(batch_audios);
+            }
+        }
+    }
+    return generate(prompts, images_vector, videos_vector, videos_metadata_vector, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<std::vector<ov::Tensor>>& audios_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    if (m_inputs_embedder) {
+        std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+        for (const auto& batch_audios : audios_vector) {
+            if (!batch_audios.empty()) {
+                m_inputs_embedder->encode_audios(batch_audios);
+            }
+        }
+    }
+    return generate(histories, images_vector, videos_vector, videos_metadata_vector, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults>

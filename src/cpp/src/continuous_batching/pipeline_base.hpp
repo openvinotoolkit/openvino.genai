@@ -79,6 +79,7 @@ public:
 
     void encode_audios(const std::vector<ov::Tensor>& audios) {
         if (m_inputs_embedder) {
+            std::lock_guard<std::mutex> lock(m_embeddings_mutex);
             m_inputs_embedder->encode_audios(audios);
         }
     }
@@ -129,6 +130,18 @@ public:
                                  const std::vector<ov::Tensor>& images,
                                  const std::vector<ov::Tensor>& videos,
                                  const std::vector<VideoMetadata>& videos_metadata,
+                                 GenerationConfig sampling_params);
+
+    /**
+     * Overload accepting audios. Audios are encoded under m_embeddings_mutex before text tokenization so
+     * <|AUDIO|> placeholders resolve to fresh embeddings (Qwen3-Omni).
+     */
+    GenerationHandle add_request(uint64_t request_id,
+                                 const std::string& prompt,
+                                 const std::vector<ov::Tensor>& images,
+                                 const std::vector<ov::Tensor>& videos,
+                                 const std::vector<VideoMetadata>& videos_metadata,
+                                 const std::vector<ov::Tensor>& audios,
                                  GenerationConfig sampling_params);
 
     /**
@@ -186,7 +199,17 @@ public:
         const StreamerVariant& streamer
     );
 
-    
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<std::string>& prompts,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<std::vector<ov::Tensor>>& audios,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
+
+
     /**
      * Performs monolitic generation based on ChatHistory objects
      */
@@ -216,6 +239,16 @@ public:
         const std::vector<std::vector<ov::Tensor>>& images,
         const std::vector<std::vector<ov::Tensor>>& videos,
         const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
+
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<ChatHistory>& histories,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer
     );

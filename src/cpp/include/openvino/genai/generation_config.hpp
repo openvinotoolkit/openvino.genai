@@ -688,10 +688,13 @@ public:
     // Qwen3-Omni speech output parameters
     /// @brief Enable speech output generation (requires model with talker support).
     bool return_audio = false;
-    /// @brief Speaker name for speech output (e.g., "f245", "m02").
+    /// @brief Speaker name for speech output. Empty string selects the model's default speaker.
+    /// Available names are model-specific and listed under `talker_config.speaker_id` in the
+    /// model's config.json.
     std::string speaker;
     /// @brief Number of codec frames to accumulate before streaming each audio chunk.
-    /// Each frame is 80ms of audio at 24kHz (1920 samples). Default 1. Set 0 to disable streaming.
+    /// Each frame is 80ms of audio at 24kHz (1920 samples). Default 1.
+    /// Streaming is controlled by presence of an audio_streamer callback, not by this value.
     size_t audio_chunk_frames = 1;
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.

@@ -603,7 +603,7 @@ ov::genai::AudioStreamerVariant py_audio_streamer_to_streamer(const PyBindAudioS
                                       });
 
                               auto callback_wrapped = [shared_callback = std::move(shared_callback)](
-                                                          ov::Tensor audio_chunk) -> StreamingStatus {
+                                                          const ov::Tensor& audio_chunk) -> StreamingStatus {
                                   py::gil_scoped_acquire acquire;
                                   try {
                                       return map_py_status((*shared_callback)(audio_chunk));

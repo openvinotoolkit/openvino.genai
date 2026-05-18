@@ -51,7 +51,7 @@ protected:
         } else if (audios_it->second.is<ov::Tensor>()) {
             result = {audios_it->second.as<ov::Tensor>()};
         } else if (!audios_it->second.empty()) {
-            OPENVINO_THROW("Unknown audios type.");
+            OPENVINO_THROW("Property 'audios' must be ov::Tensor or std::vector<ov::Tensor>, got unsupported type.");
         }
         return result;
     }
