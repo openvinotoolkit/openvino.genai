@@ -261,8 +261,8 @@ class TestImageGenerationWithBlobTensorModels:
         return {"prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69}
 
     def _read_blob_tensor(self, model_dir, blob_dir, model_folder):
+        blob_path = model_dir / blob_dir / model_folder / "openvino_model.blob"
         try:
-            blob_path = model_dir / blob_dir / model_folder / "openvino_model.blob"
             with open(blob_path, "rb") as file:
                 binary_data = file.read()
             return ov.Tensor(np.frombuffer(binary_data, dtype=np.uint8).astype(np.uint8))
@@ -270,8 +270,8 @@ class TestImageGenerationWithBlobTensorModels:
             raise RuntimeError(f"Failed to read blob tensor from {blob_path}: {e}")
 
     def _read_tokenizer(self, model_dir, tokenizer_name="tokenizer"):
+        tokenizer_path = model_dir / tokenizer_name
         try:
-            tokenizer_path = model_dir / tokenizer_name
             return ov_genai.Tokenizer(str(tokenizer_path))
         except Exception as e:
             raise RuntimeError(f"Failed to read tokenizer from {tokenizer_path}: {e}")
