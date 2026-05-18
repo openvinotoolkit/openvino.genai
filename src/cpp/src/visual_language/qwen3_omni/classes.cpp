@@ -16,13 +16,17 @@ namespace ov::genai {
 VisionEncoderQwen3Omni::VisionEncoderQwen3Omni(const std::filesystem::path& model_dir,
                                                const std::string& device,
                                                const ov::AnyMap properties)
-    : VisionEncoderQwen3VL(model_dir, ConfigOnlyTag{}) {}
+    : VisionEncoderQwen3VL(model_dir, ConfigOnlyTag{}) {
+    // Unused: Qwen3Omni vision encoder only preprocesses, no inference (merged model handles vision inference)
+}
 
 VisionEncoderQwen3Omni::VisionEncoderQwen3Omni(const ModelsMap& models_map,
                                                const std::filesystem::path& config_dir_path,
                                                const std::string& device,
                                                const ov::AnyMap properties)
-    : VisionEncoderQwen3VL(models_map, config_dir_path, ConfigOnlyTag{}) {}
+    : VisionEncoderQwen3VL(models_map, config_dir_path, ConfigOnlyTag{}) {
+    // Unused: Qwen3Omni vision encoder only preprocesses, no inference (merged model handles vision inference)
+}
 
 void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>& images,
                                                    const ProcessorConfig& config,
@@ -93,6 +97,7 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
 }
 
 EncodedImage VisionEncoderQwen3Omni::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    (void)config_map;  // Required by interface but not used in this implementation
     EncodedImage encoded_img;
     preprocess_to_patches({image},
                           m_processor_config,
@@ -105,6 +110,7 @@ EncodedImage VisionEncoderQwen3Omni::encode(const ov::Tensor& image, const ov::A
 
 EncodedVideo VisionEncoderQwen3Omni::encode_frames(const std::vector<ov::Tensor>& frames,
                                                    const ov::AnyMap& config_map) {
+    (void)config_map;  // Required by interface but not used in this implementation
     EncodedVideo encoded_video;
     const auto& config = m_video_processor_config;
 
@@ -298,6 +304,15 @@ void InputsEmbedderQwen3Omni::merge_audio_embeddings(ov::Tensor& input_embeds, c
             audio_idx++;
         }
     }
+
+    OPENVINO_ASSERT(audio_idx == audio_total_tokens,
+                    "Audio token count mismatch: placed ",
+                    audio_idx,
+                    " embeddings but encoder produced ",
+                    audio_total_tokens,
+                    " tokens. Ensure the prompt contains exactly ",
+                    audio_total_tokens,
+                    " audio placeholder tokens.");
 }
 
 NormalizedPrompt InputsEmbedderQwen3Omni::normalize_prompt(const std::string& prompt,
@@ -368,8 +383,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3Omni::run_video_image_embed
         pos_embeds = get_interpolated_pos_embeds(combined_grid_thw);
     }
 
-    auto attention_mask =
-        qwen2_vl_utils::get_attention_mask(reordered_images_grid_thw, reordered_videos_grid_thw);
+    auto attention_mask = qwen2_vl_utils::get_attention_mask(reordered_images_grid_thw, reordered_videos_grid_thw);
     auto rotary_pos_emb = get_rotary_pos_emb(combined_grid_thw);
 
     CircularBufferQueueElementGuard<ov::InferRequest> guard(m_ireq_queue_merged_vision.get());
