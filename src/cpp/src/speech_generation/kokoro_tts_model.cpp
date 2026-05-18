@@ -14,6 +14,7 @@
 #include <map>
 #include <numeric>
 #include <optional>
+#include <sstream>
 #include <unordered_map>
 
 #include <nlohmann/json.hpp>
