@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "utils.hpp"
+#include "model_desc.hpp"
 
 #include <algorithm>
 #include <variant>
@@ -243,6 +244,21 @@ ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config) {
     }
     return draft_model;
 }
+ProcessorConfig from_any_map(
+    const ov::AnyMap& config_map,
+    const ProcessorConfig& initial
+) {
+    auto iter = config_map.find("processor_config");
+    ProcessorConfig extracted_config = config_map.end() != iter ?
+        iter->second.as<ProcessorConfig>() : initial;
+    using utils::read_anymap_param;
+    read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
+    read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
+    read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
+    read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
+    read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
+    return extracted_config;
+}
 
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties) {
     if (device == "NPU") {
@@ -348,7 +364,11 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
 }
 
 ov::Core& singleton_core() {
-    static ov::Core core;
+    static ov::Core core = []() {
+        ov::Core core;
+        core.get_versions("CPU");
+        return core;
+    }();
     return core;
 }
 
@@ -808,7 +828,7 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
 SchedulerConfig get_latency_oriented_scheduler_config() {
     SchedulerConfig default_config;
     default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
-    default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
+    default_config.enable_prefix_caching = false; // for better TTFT in chat scenarios
     return default_config;
 }
 

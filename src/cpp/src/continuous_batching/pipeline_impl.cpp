@@ -394,6 +394,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     }
     ov::Tensor logits;
 
+    // Ensure embeddings exist before forward() for EMBEDDINGS mode (VLM).
+    // Critical for: 1) validation mode - draft candidates need embeddings
+    //               2) draft mode after rewinding - repairs embedding/token mismatch
+    if (m_model_input_type == ModelInputType::EMBEDDINGS)
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
+
     {
         static ManualTimer timer("forward");
         const auto infer_start = std::chrono::steady_clock::now();
@@ -459,8 +465,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     }
 
     // append embeddings for generated tokens
-    if (m_model_input_type == ModelInputType::EMBEDDINGS)
-        m_model_runner->append_embeddings(m_requests, scheduler_output);
+    if (!m_is_validation_mode_enabled) {
+        if (m_model_input_type == ModelInputType::EMBEDDINGS)
+            m_model_runner->append_embeddings(m_requests, scheduler_output);
+    }
 
     // notify requests dropped by handle
     {
@@ -534,9 +542,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
         if (position_ids_list.has_value()) {
             const auto [position_ids, rope_delta] = (*position_ids_list)[request_id];
-            m_inputs_embedder->set_position_ids(position_ids);
+            if (m_inputs_embedder) {
+                m_inputs_embedder->set_position_ids(position_ids);
+            }
             if (rope_delta.has_value()) {
-                m_inputs_embedder->set_rope_delta(*rope_delta);
+                if (m_inputs_embedder) {
+                    m_inputs_embedder->set_rope_delta(*rope_delta);
+                }
             }
         }
         const bool has_valid_token_type_ids = token_type_ids.has_value() && request_id < token_type_ids->size();

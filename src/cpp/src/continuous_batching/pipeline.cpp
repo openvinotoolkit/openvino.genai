@@ -17,6 +17,7 @@
 #include "speculative_decoding/continuous_batching/fast_draft_strategy.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "utils.hpp"
+#include "model_desc.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/vision_properties.hpp"
 #include "json_utils.hpp"
@@ -80,8 +81,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
             m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
         }
     } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
-        OPENVINO_ASSERT(embedder == nullptr, "Eagle speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        ov::genai::ModelDesc main_model_descr;
+        if (embedder) {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        } else {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        }
         m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
@@ -179,11 +184,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
     } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
-        OPENVINO_ASSERT(embedder == nullptr, "Eagle speculative decoding is not supported for models with embeddings");
-        // Eagle speculative decoding does not support dynamic_split_fuse mode
-        // because it requires hidden state interaction from main model to draft model
-        // to be implemented future
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        ov::genai::ModelDesc main_model_descr;
+        if (embedder) {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        } else {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        }
         m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
@@ -300,6 +306,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model = properties;
     auto draft_model_descr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
+    auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(
+        draft_model_descr.properties,
+        embedder_config_dir_path.value_or(std::filesystem::path{})
+    );
     auto model_pair = utils::get_model_weights_pair(models_map, "language");
 
     utils::extract_extensions_to_core(properties_without_draft_model);
@@ -375,8 +385,19 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_descr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
-        OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
-        m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
+        if (embedder) {
+            m_impl = std::make_shared<PromptLookupImpl>(model, embedder, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
+        }else {
+            m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
+        }
+    } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
+        ov::genai::ModelDesc main_model_descr;
+        if (embedder) {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model, scheduler_config, generation_config);
+        } else {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        }
+        m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
@@ -457,6 +478,49 @@ bool ContinuousBatchingPipeline::has_non_finished_requests() {
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
     auto encoded_results = m_impl->generate(input_ids, sampling_params, streamer);
+
+    for (auto& encoded_result : encoded_results) {
+        encoded_result.perf_metrics.load_time = m_impl->m_load_time_ms;
+    }
+
+    return encoded_results;
+}
+
+std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(
+    const std::vector<ov::Tensor>& input_ids,
+    const std::vector<ov::genai::GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    const std::optional<std::vector<ov::Tensor>>& token_type_ids,
+    const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids) {
+    auto encoded_results = m_impl->generate(input_ids, sampling_params, streamer, token_type_ids, position_ids);
+
+    for (auto& encoded_result : encoded_results) {
+        encoded_result.perf_metrics.load_time = m_impl->m_load_time_ms;
+    }
+
+    return encoded_results;
+}
+
+std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(
+    const std::vector<ov::Tensor>& input_ids,
+    const std::vector<ov::genai::GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    const std::optional<std::vector<ov::Tensor>>& token_type_ids,
+    const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
+    const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
+    // check if prompt_ids is in 'lm_extra_inputs_list', if yes, it means the caller has already prepared prompt_ids and
+    // we should pass them to pipeline to avoid redundant preparation inside pipeline
+    std::optional<std::vector<ov::Tensor>> prompt_ids = std::nullopt;
+    if (lm_extra_inputs_list.has_value()) {
+        for (const auto& extra_inputs : *lm_extra_inputs_list) {
+            if (extra_inputs.find("prompt_ids") != extra_inputs.end()) {
+                prompt_ids = std::vector<ov::Tensor>{extra_inputs.at("prompt_ids")};
+                break;
+            }
+        }
+    }
+
+    auto encoded_results = m_impl->generate(input_ids, sampling_params, streamer, token_type_ids, position_ids, prompt_ids, lm_extra_inputs_list);
 
     for (auto& encoded_result : encoded_results) {
         encoded_result.perf_metrics.load_time = m_impl->m_load_time_ms;
