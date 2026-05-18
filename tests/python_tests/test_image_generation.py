@@ -260,12 +260,13 @@ class TestImageGenerationWithBlobTensorModels:
     def _get_generation_args(self):
         return {"prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69}
 
-    def _read_blob_tensor(self, model_dir, blob_dir, model_folder):
-        blob_path = model_dir / blob_dir / model_folder / "openvino_model.blob"
+    def _read_blob_tensor(self, blob_dir, model_folder):
+        from pathlib import Path
+        blob_path = Path(blob_dir) / model_folder / "openvino_model.blob"
         try:
             with open(blob_path, "rb") as file:
                 binary_data = file.read()
-            return ov.Tensor(np.frombuffer(binary_data, dtype=np.uint8).astype(np.uint8))
+            return ov.Tensor(np.frombuffer(binary_data, dtype=np.uint8))
         except Exception as e:
             raise RuntimeError(f"Failed to read blob tensor from {blob_path}: {e}")
 
@@ -288,10 +289,10 @@ class TestImageGenerationWithBlobTensorModels:
         tokenizer = self._read_tokenizer(image_generation_model)
         tokenizer_2 = self._read_tokenizer(image_generation_model, tokenizer_name="tokenizer_2")
 
-        text_encoder_blob_tensor = self._read_blob_tensor(image_generation_model, blob_dir, "text_encoder")
-        text_encoder_2_blob_tensor = self._read_blob_tensor(image_generation_model, blob_dir, "text_encoder_2")
-        unet_blob_tensor = self._read_blob_tensor(image_generation_model, blob_dir, "unet")
-        vae_decoder_blob_tensor = self._read_blob_tensor(image_generation_model, blob_dir, "vae_decoder")
+        text_encoder_blob_tensor = self._read_blob_tensor(blob_dir, "text_encoder")
+        text_encoder_2_blob_tensor = self._read_blob_tensor(blob_dir, "text_encoder_2")
+        unet_blob_tensor = self._read_blob_tensor(blob_dir, "unet")
+        vae_decoder_blob_tensor = self._read_blob_tensor(blob_dir, "vae_decoder")
 
         text_encoder = ov_genai.CLIPTextModel(
             text_encoder_blob_tensor,
