@@ -31,11 +31,10 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
-import inspect
 from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Generator, cast
+from typing import Callable, Generator
 import openvino_tokenizers
 import openvino
 import PIL
@@ -98,41 +97,6 @@ def _is_videochat_flash_qwen_model(model_id: str) -> bool:
     return "videochat-flash-qwen" in model_id.lower()
 
 VIDEOCHAT_FLASH_QWEN_MODEL_ID = "optimum-intel-internal-testing/tiny-videochat-flash-qwen"
-
-
-VIDEO_MODELS_WITH_UNSUPPORTED_IMAGE_INPUTS: list[str] = [
-]
-
-
-def _has_unsupported_image_inputs(model_id: str) -> bool:
-    return model_id in VIDEO_MODELS_WITH_UNSUPPORTED_IMAGE_INPUTS
-
-
-class _VlmPipelineUnsupportedImageInputGuard:
-    def __init__(self, pipeline: VLMPipeline, model_id: str):
-        self._pipeline = pipeline
-        self._model_id = model_id
-
-    def generate(self, *args: Any, **kwargs: Any):
-        normalized_arguments = kwargs
-        try:
-            bound_arguments = inspect.signature(self._pipeline.generate).bind_partial(*args, **kwargs)
-            normalized_arguments = bound_arguments.arguments
-        except (TypeError, ValueError):
-            # Fall back to the original kwargs-only behavior if signature introspection is unavailable.
-            pass
-        has_single_image = normalized_arguments.get("image") is not None
-        has_multi_images = bool(normalized_arguments.get("images"))
-        if _has_unsupported_image_inputs(self._model_id) and (has_single_image or has_multi_images):
-            pytest.skip(
-                f"{self._model_id} does not support image/images inputs in this suite. Please use video/videos input."
-            )
-        return self._pipeline.generate(*args, **kwargs)
-
-    def __getattr__(self, name: str):
-        return getattr(self._pipeline, name)
-
-
 PROMPTS: list[str] = [
     "What is in the image?",
     "What is special about this image?",
@@ -456,8 +420,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     finally:
         if vision_preprocess_env_set:
             os.environ.pop(key, None)
-
-    pipeline = cast(VLMPipeline, _VlmPipelineUnsupportedImageInputGuard(pipeline, ov_model))
 
     return VlmModelInfo(
         ov_model,
