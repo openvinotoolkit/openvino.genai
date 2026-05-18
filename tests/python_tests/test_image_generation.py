@@ -287,11 +287,11 @@ class TestImageGenerationWithBlobTensorModels:
 
         tokenizer = self._read_tokenizer(image_generation_model)
         tokenizer_2 = self._read_tokenizer(image_generation_model, tokenizer_name="tokenizer_2")
+
         text_encoder_blob_tensor = self._read_blob_tensor(image_generation_model, blob_dir, "text_encoder")
         text_encoder_2_blob_tensor = self._read_blob_tensor(image_generation_model, blob_dir, "text_encoder_2")
         unet_blob_tensor = self._read_blob_tensor(image_generation_model, blob_dir, "unet")
         vae_decoder_blob_tensor = self._read_blob_tensor(image_generation_model, blob_dir, "vae_decoder")
-
 
         text_encoder = ov_genai.CLIPTextModel(
             text_encoder_blob_tensor, 
