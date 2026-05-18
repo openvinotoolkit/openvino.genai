@@ -303,6 +303,8 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
         )
+    if _is_videochat_flash_qwen_model(model_id) and is_transformers_version(">=", "5.0"):
+        pytest.skip("videochat_flash_qwen is not supported with transformers>=5.0")
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
 
@@ -2664,7 +2666,7 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
 @pytest.fixture(scope="module", params=ATTENTION_BACKEND, ids=lambda b: f"VideoChat-Flash-Qwen/{b}")
 def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeline:
     """
-    Raw VideoChat-Flash-Qwen pipeline without _VlmPipelineImageAdapter.
+    Raw VideoChat-Flash-Qwen pipeline for dedicated input-contract tests.
     Used for input-contract tests that must not auto-pad frames.
     """
     ov_backend = request.param
