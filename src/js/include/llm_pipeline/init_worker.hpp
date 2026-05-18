@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <filesystem>
 #include <napi.h>
 
 #include "openvino/genai/llm_pipeline.hpp"
@@ -15,7 +16,7 @@ public:
     InitWorker(Function& callback,
                std::shared_ptr<ov::genai::LLMPipeline>& pipe,
                std::shared_ptr<std::atomic<bool>> is_initializing,
-               const std::string model_path,
+               std::filesystem::path model_path,
                std::string device,
                ov::AnyMap properties);
     virtual ~InitWorker() {}
@@ -27,7 +28,7 @@ public:
 private:
     std::shared_ptr<ov::genai::LLMPipeline>& pipe;
     std::shared_ptr<std::atomic<bool>> is_initializing;
-    std::string model_path;
+    std::filesystem::path model_path;
     std::string device;
     ov::AnyMap properties;
 };

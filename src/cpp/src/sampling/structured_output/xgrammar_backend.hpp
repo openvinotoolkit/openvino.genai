@@ -42,6 +42,7 @@ protected:
     ov::Tensor m_token_bitmask_ov;
     std::shared_ptr<DLTensor> m_token_bitmask;
     std::shared_ptr<DLTensor> m_next_token_logits;
+    std::vector<float> m_scratch;  // vocab-sized scratch buffer for the m_vector masking path
     std::vector<int64_t> m_logits_shape;
     std::vector<int64_t> m_logits_strides = {1};
     std::vector<int64_t> m_bitmask_shape;

@@ -37,6 +37,10 @@ def main():
 
     # Generate baseline for comparison
     print(f"\nGenerating baseline video without caching...")
+    baseline_config = pipe.get_generation_config()
+    baseline_config.taylorseer_config = None  # explicitly disable caching
+    pipe.set_generation_config(baseline_config)
+
     start_time = time.time()
     baseline_output = pipe.generate(args.prompt, **generate_kwargs)
     baseline_time = time.time() - start_time

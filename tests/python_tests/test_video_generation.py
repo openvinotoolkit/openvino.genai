@@ -29,7 +29,7 @@ def video_generation_model() -> str:
     def convert_model(temp_path: Path) -> None:
         command = ["optimum-cli", "export", "openvino", "--model", MODEL_NAME, "--trust-remote-code", str(temp_path)]
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
+        retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
 
     try:
         manager.execute(convert_model)
@@ -70,7 +70,8 @@ class TestVideoGenerationConfig:
         assert config.height == 32
         assert config.width == 64
 
-    def test_config_validate_invalid(self):
+    def test_config_validate_guidance_scale_with_negative_prompt(self):
+        """guidance_scale <= 1 with negative_prompt is accepted (warning only)."""
         pipe_path = get_ov_cache_converted_models_dir() / MODEL_ID / MODEL_NAME
         if not pipe_path.exists():
             pytest.skip("Model not available for validation test")
@@ -80,8 +81,10 @@ class TestVideoGenerationConfig:
         config.guidance_scale = 0.5
         config.negative_prompt = "bad quality"
 
-        with pytest.raises(Exception):
-            pipe.set_generation_config(config)
+        pipe.set_generation_config(config)
+        retrieved = pipe.get_generation_config()
+        assert retrieved.guidance_scale == pytest.approx(0.5)
+        assert retrieved.negative_prompt == "bad quality"
 
 
 class TestText2VideoPipelineConstructor:
@@ -114,6 +117,55 @@ class TestText2VideoPipelineGenerate:
         )
         assert result is not None
         assert result.video is not None
+
+    def test_generate_with_guidance_rescale(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        result = pipe.generate(
+            "test prompt",
+            negative_prompt="bad quality",
+            height=32,
+            width=32,
+            num_frames=9,
+            num_inference_steps=2,
+            guidance_scale=3.0,
+            guidance_rescale=0.7,
+        )
+        assert result is not None
+        assert result.video is not None
+
+    def test_guidance_rescale_differs_from_no_rescale(self, video_generation_model):
+        import numpy as np
+
+        generator_seed = 42
+        common_kwargs = dict(
+            negative_prompt="bad quality",
+            height=32,
+            width=32,
+            num_frames=9,
+            num_inference_steps=2,
+            guidance_scale=3.0,
+        )
+
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+
+        result_no_rescale = pipe.generate(
+            "test prompt",
+            **common_kwargs,
+            guidance_rescale=0.0,
+            generator=ov_genai.CppStdGenerator(generator_seed),
+        )
+        result_rescaled = pipe.generate(
+            "test prompt",
+            **common_kwargs,
+            guidance_rescale=0.7,
+            generator=ov_genai.CppStdGenerator(generator_seed),
+        )
+
+        frames_no_rescale = np.array(result_no_rescale.video)
+        frames_rescaled = np.array(result_rescaled.video)
+        assert not np.array_equal(frames_no_rescale, frames_rescaled), (
+            "guidance_rescale=0.7 should produce different output than guidance_rescale=0.0"
+        )
 
     def test_generate_with_callback(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -309,7 +361,9 @@ class TestTaylorSeer:
 
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
 
-        pipe.generate("test prompt", callback=make_callback(baseline_latents), **generate_kwargs)
+        pipe.generate(
+            "test prompt", callback=make_callback(baseline_latents), taylorseer_config=None, **generate_kwargs
+        )
         ts_result = pipe.generate(
             "test prompt",
             taylorseer_config=taylorseer_config,
@@ -331,3 +385,51 @@ class TestTaylorSeer:
         assert not np.array_equal(baseline_latents[-1], taylorseer_latents[-1]), (
             "Last step latents are identical — TaylorSeer prediction should have changed the result"
         )
+
+    def test_taylorseer_default_on(self, video_generation_model):
+        """Test that TaylorSeer is enabled by default"""
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        assert pipe.get_generation_config().taylorseer_config is not None
+
+class TestLoRAVideoGeneration:
+    def test_lora_adapters_constructor(self, video_generation_model):
+        """Test that LoRA adapters can be passed to the constructor without error"""
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU", adapters=adapter_config)
+        assert pipe is not None
+
+    def test_lora_adapters_generate(self, video_generation_model):
+        """Test that LoRA adapters can be passed to generate() without error"""
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU", adapters=adapter_config)
+
+        result = pipe.generate(
+            "test prompt", height=32, width=32, num_frames=9, num_inference_steps=2, adapters=adapter_config
+        )
+        assert result is not None
+        assert result.video is not None
+
+    def test_lora_adapters_default_from_constructor(self, video_generation_model):
+        """Test that LoRA adapters passed to the constructor are used by default in generate()"""
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU", adapters=adapter_config)
+        result = pipe.generate(
+            "test prompt",
+            height=32,
+            width=32,
+            num_frames=9,
+            num_inference_steps=2,
+        )
+        assert result is not None
+        assert result.video is not None
+
+    def test_transformer_has_set_adapters_method(self, video_generation_model):
+        """Test that the LTXVideoTransformer3DModel has the set_adapters method"""
+        model_path = Path(video_generation_model) / "transformer"
+        assert model_path.exists(), f"Transformer subdirectory not found at: {model_path}"
+        model = ov_genai.LTXVideoTransformer3DModel(str(model_path))
+        model.compile("CPU")
+
+        assert hasattr(model, "set_adapters")
+
+        model.set_adapters(None)

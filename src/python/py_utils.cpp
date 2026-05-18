@@ -17,10 +17,13 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/extensions.hpp"
 #include "openvino/genai/taylorseer_config.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
+#include "openvino/core/extension.hpp"
+#include "utils.hpp"
 
 namespace py = pybind11;
 
@@ -194,6 +197,43 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 }
             }
             return parsers;
+        } else if (property_name == "extensions") {
+            auto property_list = py_obj.cast<py::list>();
+            ov::genai::ExtensionList extensions;
+            py::object pathlib_path = py::module_::import("pathlib").attr("Path");
+            py::object op_extension_ctor = py::module_::import("openvino").attr("OpExtension");
+            for (const auto& item : property_list) {
+                if (py::isinstance<py::str>(item) || py::isinstance<py::bytes>(item) || py::isinstance(item, pathlib_path)) {
+                    extensions.push_back(item.cast<std::filesystem::path>());
+                    continue;
+                }
+                if (py::isinstance<ov::Extension>(item)) {
+                    extensions.push_back(item.cast<std::shared_ptr<ov::Extension>>());
+                    continue;
+                }
+                if (py::isinstance<py::type>(item)) {
+                    try {
+                        auto py_ext = op_extension_ctor(item);
+                        extensions.push_back(py_ext.cast<std::shared_ptr<ov::Extension>>());
+                        continue;
+                    } catch (py::error_already_set& e) {
+                        e.clear();
+                    }
+                }
+                OPENVINO_THROW("Incorrect value in \"",
+                               property_name,
+                               "\". Expected extension path (str/bytes/pathlib.Path), ov::Extension object, or custom op type.");
+            }
+            return extensions;
+        } else if (property_name == ov::genai::videos_metadata.name()) {
+            auto property_list = py_obj.cast<py::list>();
+            std::vector<ov::genai::VideoMetadata> videos_metadata;
+            for (const auto& item : property_list) {
+                OPENVINO_ASSERT(py::isinstance<ov::genai::VideoMetadata>(item),
+                    "Incorrect value in \"" + property_name + "\". Expected VideoMetadata.");
+                videos_metadata.push_back(item.cast<ov::genai::VideoMetadata>());
+            }
+            return videos_metadata;
         } else {
             auto _list = py_obj.cast<py::list>();
             enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR, DICT};
@@ -459,10 +499,10 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
             params.insert(map.begin(), map.end());
         } else if (py::isinstance<ov::genai::StructuredOutputConfig>(value)) {
             params[key] = py::cast<ov::genai::StructuredOutputConfig>(value);
+        } else if (value.is_none() && key == "taylorseer_config") {
+            params[key] = ov::Any{};
         } else {
-            if (py::isinstance<py::none>(value)) {
-                OPENVINO_ASSERT(!py::isinstance<py::none>(value), "Property \"", key, "\" can't be None.");
-            }
+            OPENVINO_ASSERT(!value.is_none(), "Property \"", key, "\" can't be None.");
             params[key] = utils::py_object_to_any(value, key);
         }
 
@@ -557,6 +597,34 @@ StructuredOutputConfig::StructuralTag py_obj_to_structural_tag(const py::object&
     } else {
         OPENVINO_THROW(py_obj.get_type(), " type isn't supported for StructuralTag: ", py::str(py_obj));
     }
+}
+
+std::vector<ov::genai::VideoMetadata> get_videos_metadata_from_kwargs(const py::kwargs& kwargs) {
+    std::vector<ov::genai::VideoMetadata> videos_metadata;
+    if (kwargs.contains(ov::genai::videos_metadata.name())) {
+        const auto py_videos_metadata = kwargs[ov::genai::videos_metadata.name()];
+        OPENVINO_ASSERT(py::isinstance<py::list>(py_videos_metadata),
+            "\"videos_metadata\" should be a list of VideoMetadata.");
+        videos_metadata = py_videos_metadata.cast<std::vector<ov::genai::VideoMetadata>>();
+    }
+    return videos_metadata;
+}
+
+std::vector<std::vector<ov::genai::VideoMetadata>> get_videos_metadata_batches_from_kwargs(const py::kwargs& kwargs) {
+    std::vector<std::vector<ov::genai::VideoMetadata>> videos_metadata_batches;
+    if (kwargs.contains(ov::genai::utils::VIDEOS_METADATA_BATCHES_ARG_NAME)) {
+        const auto py_videos_metadata_batches = kwargs[ov::genai::utils::VIDEOS_METADATA_BATCHES_ARG_NAME.c_str()];
+        OPENVINO_ASSERT(py::isinstance<py::list>(py_videos_metadata_batches),
+            "\"videos_metadata_batches\" should be a list of lists of VideoMetadata.");
+        for (const auto& py_videos_metadata : py_videos_metadata_batches) {
+            OPENVINO_ASSERT(py::isinstance<py::list>(py_videos_metadata),
+                "Each item in \"videos_metadata_batches\" should be a list of VideoMetadata.");
+            videos_metadata_batches.push_back(
+                py_videos_metadata.cast<std::vector<ov::genai::VideoMetadata>>()
+            );
+        }
+    }
+    return videos_metadata_batches;
 }
 
 ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfig config, const py::kwargs& kwargs) {

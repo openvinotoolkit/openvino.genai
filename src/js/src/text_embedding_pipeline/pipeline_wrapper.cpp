@@ -25,13 +25,13 @@ Napi::Function TextEmbeddingPipelineWrapper::get_class(Napi::Env env) {
 
 Napi::Value TextEmbeddingPipelineWrapper::init(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    const std::string model_path = info[0].ToString();
-    const std::string device = info[1].ToString();
-    const Napi::Object config = info[2].As<Napi::Object>();
-    const Napi::Object properties = info[3].As<Napi::Object>();
-    Napi::Function callback = info[4].As<Napi::Function>();
+    auto model_path = js_to_cpp<std::filesystem::path>(env, info[0]);
+    auto device = js_to_cpp<std::string>(env, info[1]);
+    auto config = info[2].As<Napi::Object>();
+    auto properties = info[3].As<Napi::Object>();
+    auto callback = info[4].As<Napi::Function>();
 
-    EmbeddingInitWorker* asyncWorker = new EmbeddingInitWorker(callback, this->pipe, model_path, device, config, properties);
+    auto* asyncWorker = new EmbeddingInitWorker(callback, this->pipe, std::move(model_path), std::move(device), config, properties);
     asyncWorker->Queue();
 
     return info.Env().Undefined();

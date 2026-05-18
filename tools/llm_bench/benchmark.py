@@ -20,7 +20,8 @@ import task.text_embeddings as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
 from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
-from llm_bench_utils.memory_monitor import MemoryDataSummarizer
+from llm_bench_utils.memory_monitor import MemoryMonitorHandler
+
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 
@@ -132,10 +133,13 @@ def get_argparser():
         default=0,
         required=False,
         type=int,
-        help="Enables memory usage monitoring mode. Use 1 to track maximum memory consumption during model compilation "
-        "and warm-up iteration, or 2 to track across all iterations. Warning: Concurrent memory consumption and "
-        "performance benchmarking is not recommended. Performance impact can be reduced by using longer "
-        "--memory_consumption_cooldown and --memory_consumption_interval values, though a degradation is unavoidable.",
+        help="Enables memory usage monitoring mode. For 0 monitoring is off. Use 1 to track memory consumption"
+        " during model compilation and warm-up iteration, 2 to track across all iterations, or 3 to track in"
+        " separate process over model compilation and warm-up, and respectively 4 for the whole benchmarking,"
+        "as well as 5 for monitor memory in cooldown phases only."
+        " Warning: Concurrent memory consumption and performance benchmarking is not recommended. Performance"
+        " impact can be reduced by using longer --memory_consumption_cooldown and --memory_consumption_interval"
+        " values, though a degradation is unavoidable.",
     )
     parser.add_argument(
         "--memory_consumption_cooldown",
@@ -231,6 +235,14 @@ def get_argparser():
         "--lora_mode", choices=["auto", "fuse", "static", "static_rank", "dynamic"], help="LoRA adapters loading mode"
     )
     parser.add_argument("--empty_lora", action="store_true", help="Inference with empty LoRA config")
+    parser.add_argument(
+        "--taylorseer_config",
+        required=False,
+        default=None,
+        help="Path to JSON file or JSON string with TaylorSeer cache configuration for GenAI video/image pipelines. "
+        "Supported keys: 'cache_interval', 'disable_cache_before_step', 'disable_cache_after_step'. "
+        "Pass '{\"disable_cache_after_step\": 0}' to disable TaylorSeer caching when it is enabled by default.",
+    )
     parser.add_argument(
         "--use_cb",
         action="store_true",
@@ -462,6 +474,7 @@ def main():
         **logging_kwargs,
     )
     args = get_argparser()
+    memory_data_collector = MemoryMonitorHandler(args)
 
     if args.tokens_len is not None and not args.streaming:
         log.error("--tokens_len requires --streaming to be set.")
@@ -508,13 +521,11 @@ def main():
                         )
                         torch.set_num_threads(int(half_nums_of_torch_threads))
             log.info(
-                f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
-                f"{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference."
+                f"The num_beams is {model_args['num_beams']}, update Torch thread num from {original_torch_thread_nums}"
+                f" to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference."
             )
     log.info(out_str)
-    memory_data_collector = None
-    if args.memory_consumption:
-        memory_data_collector = MemoryDataSummarizer(args)
+
     try:
         if model_args["use_case"].task in ["text_gen", "code_gen"]:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args["use_case"].task](
@@ -531,6 +542,7 @@ def main():
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args["use_case"].task](
                 model_path, framework, args.device, model_args, args.num_iters, memory_data_collector
             )
+        memory_data_collector.update_marker("stop")
 
         if args.report is not None or args.report_json is not None:
             model_precision = ""
@@ -570,8 +582,7 @@ def main():
         log.info(traceback.format_exc())
         exit(1)
     finally:
-        if memory_data_collector:
-            memory_data_collector.stop()
+        memory_data_collector.stop()
 
 
 if __name__ == "__main__":

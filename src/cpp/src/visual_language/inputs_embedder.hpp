@@ -7,6 +7,7 @@
 #include <vector>
 #include <filesystem>
 #include <regex>
+#include <functional>
 
 #include "utils.hpp"
 #include "lm_encoding.hpp"
@@ -72,9 +73,15 @@ public:
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
+    // returns per-layer embeddings callback, or nullptr if not available
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback();
+
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
-    std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata = {}
+    );
 
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
@@ -100,7 +107,7 @@ public:
     Tokenizer get_tokenizer() const;
 
     // get reflection of tokens contained in the kv cache
-    utils::KVCacheState& get_kv_cache_state();
+    utils::CacheState& get_cache_state();
 
     // starts chat and adds optional system_message to chat history
     void start_chat(const std::string& system_message);
@@ -156,7 +163,7 @@ private:
         // Finish reason of last generation for chat scenario
         ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
         // reflection of tokens contained in the kv cache
-        utils::KVCacheState m_kv_cache_state;
+        utils::CacheState m_cache_state;
         // length of attention_mask/kv cache at the beginning of generation()
         size_t m_prev_hist_length = 0;
         // True if tokenizer should add special tokens
@@ -195,9 +202,16 @@ private:
 
         virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
+        virtual std::function<ov::Tensor(const ov::Tensor& new_input_ids)> get_per_layer_embeddings_callback() {
+            return nullptr;
+        }
+
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
-        virtual std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
+        virtual std::vector<ov::genai::EncodedVideo> encode_videos(
+            const std::vector<ov::Tensor>& videos,
+            const std::vector<VideoMetadata>& videos_metadata = {}
+        );
 
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
         
@@ -228,8 +242,8 @@ private:
             m_pruning_processor->set_config(config);
         }
 
-        utils::KVCacheState& get_kv_cache_state() {
-            return m_kv_cache_state;
+        utils::CacheState& get_cache_state() {
+            return m_cache_state;
         }
 
         void set_apply_chat_template_status(bool apply_chat_template) {
@@ -315,6 +329,11 @@ private:
         ) const;
 
         /**
+         * @brief Sample video frames if metadata indicates sampling is needed.
+         */
+        ov::Tensor sample_video_if_needed(const ov::Tensor& video, const VideoMetadata& metadata) const;
+
+        /**
         * @brief Converts a vector of batched images ([NHWC]) into a vector of individual image tensors ([1HWC]).
         *
         * @param images A vector of tensors representing the images. Each tensor can have a shape of either [NHWC] or [HWC].
@@ -345,7 +364,7 @@ private:
             const PruningContext& context) {
             return m_pruning_processor->execute(context,
                                                 m_position_ids,
-                                                m_kv_cache_state,
+                                                m_cache_state,
                                                 m_prev_hist_length);
         }
     };
@@ -362,7 +381,10 @@ private:
     friend class InputsEmbedderQwen2VL;
     friend class InputsEmbedderQwen2_5_VL;
     friend class InputsEmbedderQwen3VL;
+    friend class InputsEmbedderQwen3_5;
     friend class InputsEmbedderGemma3;
+    friend class InputsEmbedderGemma4;
+    friend class InputsEmbedderVideoChatFlashQwen;
 };
 
 template <typename Func>

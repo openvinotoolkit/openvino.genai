@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <filesystem>
 #include <napi.h>
 
 #include "openvino/genai/whisper_pipeline.hpp"
@@ -13,9 +14,9 @@ public:
     WhisperInitWorker(Napi::Function& callback,
                       std::shared_ptr<ov::genai::WhisperPipeline>& pipe,
                       std::shared_ptr<std::atomic<bool>> is_initializing,
-                      std::string&& model_path,
-                      std::string&& device,
-                      ov::AnyMap&& properties);
+                      std::filesystem::path model_path,
+                      std::string device,
+                      ov::AnyMap properties);
     virtual ~WhisperInitWorker() {}
     void Execute() override;
     void OnOK() override;
@@ -24,7 +25,7 @@ public:
 private:
     std::shared_ptr<ov::genai::WhisperPipeline>& pipe;
     std::shared_ptr<std::atomic<bool>> is_initializing;
-    std::string model_path;
+    std::filesystem::path model_path;
     std::string device;
     ov::AnyMap properties;
 };

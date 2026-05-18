@@ -48,8 +48,23 @@ public:
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) override;
-protected:
 
+protected:
+    /**
+     * @brief Patches the original Gemma3 chat template by removing trim filters.
+     *
+     * HF/optimum-intel applies chat template first, then replaces `<start_of_image>` with padded image tokens
+     * surrounded by double newlines:
+     *   `<start_of_image>` -> `\n\n<start_of_image><image_soft_token>...<image_soft_token><end_of_image>\n\n`
+     *
+     * GenAI prepares a unified prompt that already includes all image tokens (start, pad, end)
+     * and newlines before applying the chat template.
+     * 
+     * The original Gemma3 chat template contains a trim filter (e.g. `{{ message['content'] | trim }}`),
+     * which strips the leading and trailing double newlines from the GenAI unified prompt.
+     * Removing trim filters in the chat template resolves this issue with different formatting order.
+     */
+    void patch_chat_template();
 };
 
 } // namespace ov::genai

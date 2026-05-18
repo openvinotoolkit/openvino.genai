@@ -136,6 +136,7 @@ void init_llm_pipeline(py::module_& m) {
                 auto config_properties = pyutils::properties_to_any_map(config);
                 properties.insert(config_properties.begin(), config_properties.end());
             }
+            py::gil_scoped_release rel;
             return std::make_unique<LLMPipeline>(models_path, tokenizer, device, properties);
         }),
         py::arg("models_path"),
@@ -166,6 +167,7 @@ void init_llm_pipeline(py::module_& m) {
                 auto config_properties = pyutils::properties_to_any_map(config);
                 properties.insert(config_properties.begin(), config_properties.end());
             }
+            py::gil_scoped_release rel;
             return std::make_unique<LLMPipeline>(models_path, device, properties);
         }),
         py::arg("models_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files",
@@ -192,6 +194,7 @@ void init_llm_pipeline(py::module_& m) {
             if (!generation_config.has_value()) {
                 generation_config = ov::genai::GenerationConfig();
             }
+            py::gil_scoped_release rel;
             return std::make_unique<LLMPipeline>(model, weights, tokenizer, device, properties, *generation_config);
         }),
         py::arg("model"), "string with pre-read model",

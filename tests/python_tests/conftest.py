@@ -75,6 +75,8 @@ def pytest_configure(config: pytest.Config):
 IMAGE_GEN_MODELS = {
     "tiny-random-latent-consistency": "echarlaix/tiny-random-latent-consistency",
     "tiny-random-flux": "optimum-intel-internal-testing/tiny-random-flux",
+    "tiny-random-sdxl": "echarlaix/tiny-random-stable-diffusion-xl",
+    "tiny-random-sd3": "optimum-intel-internal-testing/stable-diffusion-3-tiny-random",
 }
 
 DEFAULT_IMAGE_GEN_MODEL_ID = "tiny-random-latent-consistency"
@@ -102,7 +104,7 @@ def image_generation_model(request):
             str(temp_path),
         ]
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
+        retry_request(lambda: subprocess.run(command, check=True, encoding="utf-8", text=True, capture_output=True))
 
     try:
         manager.execute(convert_model)

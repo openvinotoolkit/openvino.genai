@@ -44,7 +44,7 @@ class IntegrationTest(unittest.TestCase):
         token = os.environ.get("GITHUB_TOKEN")
         if token:
             cls.github = Github(auth=Auth.Token(token=token))
-            gh_repo = cls.github.get_repo(full_name_or_id="openvinotoolkit/openvino")
+            gh_repo = cls.github.get_repo(full_name_or_id="openvinotoolkit/openvino.genai")
 
             oldest_allowed_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
             cls.wf_run = gh_repo.get_workflow_runs(status="failure", created=f">={oldest_allowed_date}")[0]
@@ -89,7 +89,7 @@ class IntegrationTest(unittest.TestCase):
 
         mock_session = MagicMock()
 
-        repository_name = "openvinotoolkit/openvino"
+        repository_name = "openvinotoolkit/openvino.genai"
         run_id = 123
         rerunner_run_id = 456
 

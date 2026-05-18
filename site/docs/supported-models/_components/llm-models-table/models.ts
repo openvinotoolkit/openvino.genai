@@ -440,6 +440,17 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'HunYuanDenseV1ForCausalLM',
+    models: [
+      {
+        name: 'HunYuan',
+        links: [
+          'https://huggingface.co/tencent/HY-MT1.5-1.8B',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'InternLMForCausalLM',
     models: [
       {

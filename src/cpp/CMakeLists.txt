@@ -221,21 +221,9 @@ if(MSVC)
     target_compile_options(${TARGET_NAME_OBJ} PRIVATE "/bigobj")
 endif()
 
-# Add native CPU optimization for SIMD instructions
-if (ARCH_DIR STREQUAL "intel64")
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        # Force AVX2 only (disable AVX512)
-        target_compile_options(${TARGET_NAME_OBJ} PRIVATE "-mavx2" "-mno-avx512f")
-        message(STATUS "Enable SIMD compilation for ${TARGET_NAME_OBJ}")
-    elseif(MSVC)
-        target_compile_options(${TARGET_NAME_OBJ} PRIVATE "/arch:AVX2")
-        message(STATUS "Enable SIMD compilation for ${TARGET_NAME_OBJ}")
-    else()
-        message(STATUS "Disable SIMD compilation for ${TARGET_NAME_OBJ}")
-    endif()
-endif()
-
-set_target_properties(${TARGET_NAME_OBJ} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(${TARGET_NAME_OBJ} PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    INTERPROCEDURAL_OPTIMIZATION_RELEASE ${ENABLE_LTO})
 
 # Shared library
 

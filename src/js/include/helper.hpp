@@ -4,13 +4,19 @@
 #pragma once
 #include <napi.h>
 
+#include <filesystem>
 #include <set>
 
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
+#include "openvino/genai/speech_generation/speech_generation_config.hpp"
+#include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
+#include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/openvino.hpp"
 
@@ -54,6 +60,9 @@ std::map<std::string, int64_t> js_to_cpp<std::map<std::string, int64_t>>(const N
                                                                          const Napi::Value& value);
 template <>
 std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType std::filesystem::path */
+template <>
+std::filesystem::path js_to_cpp<std::filesystem::path>(const Napi::Env& env, const Napi::Value& value);
 template <>
 int64_t js_to_cpp<int64_t>(const Napi::Env& env, const Napi::Value& value);
 template <>
@@ -81,6 +90,9 @@ std::vector<double> js_to_cpp<std::vector<double>>(const Napi::Env& env, const N
 /** @brief  A template specialization for TargetType std::vector<float> (e.g. raw speech) */
 template <>
 std::vector<float> js_to_cpp<std::vector<float>>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::StringInputs */
+template <>
+ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType GenerateInputs */
 template <>
 GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value& value);
@@ -122,6 +134,13 @@ ov::genai::GenerationConfig js_to_cpp<ov::genai::GenerationConfig>(const Napi::E
 template <>
 ov::genai::WhisperGenerationConfig js_to_cpp<ov::genai::WhisperGenerationConfig>(const Napi::Env& env,
                                                                                  const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::SpeechGenerationConfig */
+template <>
+ov::genai::SpeechGenerationConfig js_to_cpp<ov::genai::SpeechGenerationConfig>(const Napi::Env& env,
+                                                                               const Napi::Value& value);
+template <>
+ov::genai::ImageGenerationConfig js_to_cpp<ov::genai::ImageGenerationConfig>(const Napi::Env& env,
+                                                                              const Napi::Value& value);
 template <>
 std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value);
 /**
@@ -142,6 +161,14 @@ ov::genai::VLMPerfMetrics& unwrap<ov::genai::VLMPerfMetrics>(const Napi::Env& en
 template <>
 ov::genai::WhisperPerfMetrics& unwrap<ov::genai::WhisperPerfMetrics>(const Napi::Env& env,
                                                                       const Napi::Value& value);
+
+template <>
+ov::genai::SpeechGenerationPerfMetrics& unwrap<ov::genai::SpeechGenerationPerfMetrics>(const Napi::Env& env,
+                                                                                        const Napi::Value& value);
+
+template <>
+ov::genai::ImageGenerationPerfMetrics& unwrap<ov::genai::ImageGenerationPerfMetrics>(const Napi::Env& env,
+                                                                                       const Napi::Value& value);
 
 template <>
 ov::genai::ChatHistory& unwrap<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value);
@@ -255,9 +282,40 @@ Napi::Value cpp_to_js<ov::genai::WhisperGenerationConfig, Napi::Value>(
     const Napi::Env& env,
     const ov::genai::WhisperGenerationConfig& config);
 
+/** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::SpeechGenerationConfig */
+template <>
+Napi::Value cpp_to_js<ov::genai::SpeechGenerationConfig, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::SpeechGenerationConfig& config);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::ImageGenerationConfig, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::ImageGenerationConfig& config);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::RawImageGenerationPerfMetrics, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::RawImageGenerationPerfMetrics& metrics);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::ImageGenerationPerfMetrics, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::ImageGenerationPerfMetrics& metrics);
+
 /** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::StopCriteria */
 template <>
 Napi::Value cpp_to_js<ov::genai::StopCriteria, Napi::Value>(const Napi::Env& env, const ov::genai::StopCriteria& value);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::GenerationFinishReason, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::GenerationFinishReason& value);
+
+template <>
+Napi::Value cpp_to_js<std::vector<ov::genai::GenerationFinishReason>, Napi::Value>(
+    const Napi::Env& env,
+    const std::vector<ov::genai::GenerationFinishReason>& value);
 
 template <typename MapElementType>
 Napi::Object cpp_map_to_js_object(const Napi::Env& env, const std::map<std::string, MapElementType>& map) {
@@ -285,3 +343,5 @@ Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedRes
 Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDecodedResults& results);
 
 Napi::Object to_whisper_decoded_result(const Napi::Env& env, const ov::genai::WhisperDecodedResults& results);
+
+Napi::Object to_text2speech_decoded_result(const Napi::Env& env, const ov::genai::Text2SpeechDecodedResults& results);

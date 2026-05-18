@@ -16,6 +16,7 @@ tests_dependencies:
     - text_streamer
     - RAG
     - WWB
+    - llm_bench
     - video_generation
 
 samples_dependencies:
@@ -27,6 +28,11 @@ samples_dependencies:
     - VLM_samples
     - RAG_samples
     - Speech_generation_samples
+    - WWB
+    - llm_bench
+
+tools_dependencies:
+  revalidate: 'all'
 
 text_streamer:
   revalidate:

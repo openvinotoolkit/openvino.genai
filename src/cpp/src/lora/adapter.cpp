@@ -1229,6 +1229,21 @@ Adapter diffusers_adapter_normalization(const Adapter& adapter) {
     return Adapter(std::make_shared<DiffusersDerivedAdapter>(origin, diffusers_normalization));
 }
 
+std::string detect_lora_prefix(const AdapterConfig& adapters) {
+    const auto& adapters_vec = adapters.get_adapters();
+    if (!adapters_vec.empty() && adapters_vec[0]) {
+        const auto& tensors = adapters_vec[0].m_pimpl->get_tensors();
+        if (!tensors.empty()) {
+            const std::string& first_key = tensors.begin()->first;
+            auto dot_pos = first_key.find('.');
+            if (dot_pos != std::string::npos) {
+                return first_key.substr(0, dot_pos);
+            }
+        }
+    }
+    return "transformer";
+}
+
 Adapter flux_adapter_normalization(const Adapter& adapter) {
     auto origin = adapter.m_pimpl;
     using FluxDerivedAdapter = DerivedAdapterImpl<decltype(&flux_normalization)>;

@@ -6,7 +6,7 @@ import sys
 from setuptools import find_packages, setup
 
 with open("requirements.txt") as f:
-    required = f.read().splitlines()
+    required = [line.strip() for line in f.read().splitlines() if line.strip() and not line.lstrip().startswith("#")]
 
 
 is_installing_editable = "develop" in sys.argv
@@ -57,7 +57,7 @@ setup(
         "llm-test-openvino": [
             "torchaudio==2.8.0",
             "transformers[sentencepiece]==4.57.6",
-            "sentence_transformers==5.2.2",
+            "sentence_transformers==5.3.0",
             "huggingface-hub==0.36.2",
             "tqdm==4.67.3",
             "optimum-intel[nncf,tests]==1.27.0",

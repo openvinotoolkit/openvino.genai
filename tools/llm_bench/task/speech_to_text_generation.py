@@ -23,23 +23,18 @@ DEFAULT_OUTPUT_TOKEN_SIZE = 1000
 
 def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     result_md5_list = []
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
     pipe = input_param['pipe']
     raw_speech = input_param['raw_speech']
     num = input_param['iter_idx']
     speech_id = input_param['speech_idx']
-    mem_consumption = input_param['mem_consumption']
     processor = input_param['processor']
     use_genai = input_param['use_genai']
     speech_language = input_param['speech_param'].get('language', "<|en|>")
     ret_timestamps = input_param['speech_param'].get('timestamp', True)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
 
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start()
+    mem_consumption = input_param["mem_consumption"]
+    mem_consumption.start(num)
     if use_genai:
         start = time.perf_counter()
         result_text = pipe.generate(
@@ -86,20 +81,15 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         md5_list[num] = {speech_id : result_md5_list}
     else:
         md5_list[num][speech_id] = result_md5_list
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         out_size=out_token_size,
         gen_time=generation_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=speech_id,
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -146,23 +136,26 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     if len(speech_list) == 0:
         raise RuntimeError('==Failure speech list is empty ==')
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, speech file nums: {len(speech_file_list)}, speech idx: {speech_idx_list}')
+    mem_consumption.update_marker("model")
     pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2_txt_model(model_path, device, mem_consumption, **args)
     md5_list = {num : {} for num in range(num_iters + 1)}
     iter_timestamp = model_utils.init_timestamp(num_iters, speech_list, speech_idx_list)
     input_param = {
-        'pipe': pipe,
-        'mem_consumption': mem_consumption,
-        'processor': processor,
-        'use_genai': use_genai
+        "pipe": pipe,
+        "mem_consumption": mem_consumption,
+        "processor": processor,
+        "use_genai": use_genai,
     }
     if framework == "ov" and use_genai is False:
         whisper_hook.new_text_encoder(pipe)
         whisper_hook.new_text_encoder_request(pipe)
         whisper_hook.new_generate(pipe)
         whisper_hook.new_text_sample(pipe)
+    mem_consumption.activate_cooldown("after model compilation")
     for num in range(num_iters + 1):
         for idx, speech_param in enumerate(speech_list):
             p_idx = speech_idx_list[idx]
+            mem_consumption.update_marker(f"step-{num}-{p_idx}")
             raw_speech = model_utils.read_wav(speech_param['media'], processor.feature_extractor.sampling_rate)
             input_param['speech_idx'] = p_idx
             input_param['speech_param'] = speech_param

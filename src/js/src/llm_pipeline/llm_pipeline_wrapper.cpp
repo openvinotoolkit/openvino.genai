@@ -165,14 +165,18 @@ Napi::Value LLMPipelineWrapper::init(const Napi::CallbackInfo& info) {
         OPENVINO_ASSERT(!this->pipe, "Pipeline is already initialized");
         OPENVINO_ASSERT(!*this->is_initializing, "Pipeline is already initializing");
         VALIDATE_ARGS_COUNT(info, 4, "init()");
-        const auto model_path = js_to_cpp<std::string>(env, info[0]);
-        const auto device = js_to_cpp<std::string>(env, info[1]);
-        const auto& properties = js_to_cpp<ov::AnyMap>(env, info[2]);
+        auto model_path = js_to_cpp<std::filesystem::path>(env, info[0]);
+        auto device = js_to_cpp<std::string>(env, info[1]);
+        auto properties = js_to_cpp<ov::AnyMap>(env, info[2]);
         OPENVINO_ASSERT(info[3].IsFunction(), "init callback is not a function");
         auto callback = info[3].As<Napi::Function>();
 
-        InitWorker* asyncWorker =
-            new InitWorker(callback, this->pipe, this->is_initializing, model_path, device, properties);
+        auto* asyncWorker = new InitWorker(callback,
+                                           this->pipe,
+                                           this->is_initializing,
+                                           std::move(model_path),
+                                           std::move(device),
+                                           std::move(properties));
         asyncWorker->Queue();
     } catch (const std::exception& ex) {
         Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();

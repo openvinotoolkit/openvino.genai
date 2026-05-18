@@ -216,5 +216,11 @@
 'category: WWB':
 - 'tools/who_what_benchmark/**/*'
 
+'category: tools_dependencies':
+- 'tools/who_what_benchmark/requirements.txt'
+- 'tools/who_what_benchmark/setup.py'
+- 'tools/llm_bench/requirements.txt'
+
+
 'category: GH Pages Docs':
 - 'site/**/*'

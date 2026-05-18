@@ -31,7 +31,7 @@ class LogCollectorTest(unittest.TestCase):
         cls.session.mount("https://github.com", HTTPAdapter(max_retries=retry_strategy))
 
         cls.github = Github(auth=Auth.Token(token=os.environ.get("GITHUB_TOKEN")))
-        gh_repo = cls.github.get_repo(full_name_or_id="openvinotoolkit/openvino")
+        gh_repo = cls.github.get_repo(full_name_or_id="openvinotoolkit/openvino.genai")
 
         # Looking for reference workflow runs.
         # Their "created_at" time should be within 60 days - the log retention window

@@ -206,8 +206,12 @@ def write_summary(run: WorkflowRun, logs_dir: Path, hints_dir: Path) -> None:
     lines: list[str] = [
         "=== Failed Jobs Summary ===",
         f"Run ID: {run.id}",
-        "",
+        f"Head SHA: {run.head_sha}",
+        f"Head Branch: {run.head_branch}",
+        f"Event: {run.event}",
+        f"Run URL: {run.html_url}",
     ]
+    lines.append("")
 
     failed_jobs = [job for job in run.jobs() if job.conclusion in ("failure", "cancelled")]
     for job in failed_jobs:

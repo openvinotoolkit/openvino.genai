@@ -10,6 +10,18 @@ option(ENABLE_TESTS "Enable tests build" ON)
 option(ENABLE_TOOLS "Enable tools build" ON)
 option(ENABLE_GGUF "Enable support for GGUF format" ON)
 option(ENABLE_XGRAMMAR "Enable support for structured output generation with xgrammar backend" ON)
+option(ENABLE_LTO "Enable Link Time Optimization" OFF)
+
+# When building without OpenVINODeveloperPackage, verify IPO/LTO support
+if(ENABLE_LTO AND NOT OpenVINODeveloperPackage_FOUND)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT IPO_SUPPORTED
+                        OUTPUT OUTPUT_MESSAGE
+                        LANGUAGES C CXX)
+    if(NOT IPO_SUPPORTED)
+        message(FATAL_ERROR "ENABLE_LTO is ON but IPO / LTO is not supported: ${OUTPUT_MESSAGE}")
+    endif()
+endif()
 
 # Disable building samples for NPM package
 if(CPACK_GENERATOR STREQUAL "NPM")
