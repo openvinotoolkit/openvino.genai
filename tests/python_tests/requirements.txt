@@ -30,7 +30,7 @@ peft==0.19.1
 # - openbmb/MiniCPM-o-2_6
 vocos==0.1.0
 torchaudio==2.11.0
-vector-quantize-pytorch==1.29.0
+vector-quantize-pytorch==1.29.1
 # - OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
 av==17.0.1
 imageio==2.37.3
