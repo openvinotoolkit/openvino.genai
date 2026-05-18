@@ -364,6 +364,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model = properties;
     auto draft_model_descr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
+    auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(
+        draft_model_descr.properties,
+        embedder_config_dir_path.value_or(std::filesystem::path{})
+    );
     auto model = language_model;
 
     auto rt_info = model->get_rt_info();

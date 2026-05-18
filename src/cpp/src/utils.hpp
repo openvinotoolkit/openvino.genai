@@ -8,6 +8,9 @@
 #include <utility>
 #include <cstdint>
 
+#include "model_desc.hpp"
+#include "visual_language/processor_config.hpp"
+
 #include "openvino/genai/extensions.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"

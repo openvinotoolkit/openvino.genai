@@ -80,9 +80,8 @@ EncodedImage VisionEncoderDummyVL::encode(const ov::Tensor& image, const ov::Any
 	return {};
 }
 
-EncodedVideo VisionEncoderDummyVL::encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) {
+EncodedVideo VisionEncoderDummyVL::encode_frames(const std::vector<ov::Tensor>& frames) {
 	(void)frames;
-	(void)config_map;
 	return {};
 }
 
@@ -141,8 +140,9 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderDummyVL::encode_images(const 
 	return {};
 }
 
-std::vector<ov::genai::EncodedVideo> InputsEmbedderDummyVL::encode_videos(const std::vector<ov::Tensor>& videos) {
+std::vector<ov::genai::EncodedVideo> InputsEmbedderDummyVL::encode_videos(const std::vector<ov::Tensor>& videos, const std::vector<VideoMetadata>& videos_metadata) {
 	(void)videos;
+	(void)videos_metadata;
 	return {};
 }
 
