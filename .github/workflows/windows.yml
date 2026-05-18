@@ -855,7 +855,7 @@ jobs:
         run: ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
-  genai_miskai_parity:
+  genai_misaki_parity:
     name: Misaki C++ Parity (Windows)
     needs: [ smart_ci ]
     if: ${{ needs.smart_ci.outputs.skip_workflow != 'True' && fromJSON(needs.smart_ci.outputs.affected_components).speech_generation.test }}
@@ -889,7 +889,7 @@ jobs:
       - name: Install Misaki parity dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest misaki
+          python -m pip install pytest kokoro==0.9.4
 
       - name: Build and run Misaki parity tests
         working-directory: ${{ env.SRC_DIR }}
