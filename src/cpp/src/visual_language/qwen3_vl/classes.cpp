@@ -522,6 +522,69 @@ void InputsEmbedderQwen3VL::add_interpolated_pos_embeds(
     permute_with_spatial_merge_and_add(weighted_sum, concatenated_embeds.data<float>(), grids_thw, spatial_merge_size);
 }
 
+ov::Tensor InputsEmbedderQwen3VL::get_interpolated_pos_embeds(
+    const std::vector<std::array<size_t, 3>>& grids_thw
+) {
+    if (grids_thw.empty()) {
+        return ov::Tensor{ov::element::f32, {0, 0}};
+    }
+
+    size_t total_out_positions = 0;
+    for (const auto& thw : grids_thw) {
+        total_out_positions += thw[0] * thw[1] * thw[2];
+    }
+
+    const size_t num_grid_per_side = static_cast<size_t>(
+        std::sqrt(static_cast<double>(m_vlm_config.vision_config_num_position_embeddings)));
+
+    auto [indices, weights] = get_position_interpolation_indices_and_weights(grids_thw, num_grid_per_side);
+
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_vision_embeddings_pos.get());
+    ov::InferRequest& vision_embeddings_pos = infer_request_guard.get();
+
+    vision_embeddings_pos.set_tensor("input", indices);
+
+    ov::Tensor weighted_sum;
+    if (m_use_patched_pos_model) {
+        vision_embeddings_pos.set_tensor("weights", weights);
+        vision_embeddings_pos.infer();
+        weighted_sum = vision_embeddings_pos.get_output_tensor();
+    } else {
+        vision_embeddings_pos.infer();
+        ov::Tensor raw_pos_embeds = vision_embeddings_pos.get_output_tensor();
+
+        const size_t num_positions = raw_pos_embeds.get_shape()[1];
+        const size_t dim = raw_pos_embeds.get_shape()[2];
+
+        weighted_sum = ov::Tensor{ov::element::f32, {num_positions, dim}};
+        float* weighted_sum_data = weighted_sum.data<float>();
+        std::fill_n(weighted_sum_data, num_positions * dim, 0.0f);
+
+        const float* raw_data = raw_pos_embeds.data<const float>();
+        const float* weights_data = weights.data<const float>();
+
+        for (size_t corner = 0; corner < 4; ++corner) {
+            for (size_t pos = 0; pos < num_positions; ++pos) {
+                float w = weights_data[corner * num_positions + pos];
+                const float* src = raw_data + (corner * num_positions + pos) * dim;
+                float* dst = weighted_sum_data + pos * dim;
+                for (size_t d = 0; d < dim; ++d) {
+                    dst[d] += w * src[d];
+                }
+            }
+        }
+    }
+
+    const size_t dim = weighted_sum.get_shape()[1];
+    ov::Tensor result{ov::element::f32, {total_out_positions, dim}};
+    std::fill_n(result.data<float>(), total_out_positions * dim, 0.0f);
+
+    size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
+    permute_with_spatial_merge_and_add(weighted_sum, result.data<float>(), grids_thw, spatial_merge_size);
+
+    return result;
+}
+
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3VL::run_video_image_embeddings_merger(
     const std::vector<EncodedImage>& images,
     const std::vector<size_t>& images_sequence,
