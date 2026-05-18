@@ -160,6 +160,11 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     // CDPruner
     read_anymap_param(properties, "pruning_ratio", pruning_ratio);
     read_anymap_param(properties, "relevance_weight", relevance_weight);
+
+    // Qwen3-Omni speech output
+    read_anymap_param(properties, "return_audio", return_audio);
+    read_anymap_param(properties, "speaker", speaker);
+    read_anymap_param(properties, "audio_chunk_frames", audio_chunk_frames);
 }
 
 

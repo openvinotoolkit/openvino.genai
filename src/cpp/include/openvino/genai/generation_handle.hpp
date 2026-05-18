@@ -50,6 +50,14 @@ struct EncodedGenerationResult {
     // To get metrics, it should be cast to corresponding class for extended perf metrics from pipeline
     // Cast to SDPerModelsPerfMetrics for SpeculativeDecoding
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
+
+    // Accumulated hidden states per sequence (populated when return_audio is requested).
+    // Outer vector: per return sequence. Inner vector: one tensor per generation step.
+    std::vector<std::vector<ov::Tensor>> m_hidden_states;
+    std::vector<std::vector<ov::Tensor>> m_intermediate_hidden_states;
+
+    // Full prompt token IDs (needed for talker input construction).
+    std::vector<int64_t> m_prompt_ids;
 };
 
 struct GenerationResult {

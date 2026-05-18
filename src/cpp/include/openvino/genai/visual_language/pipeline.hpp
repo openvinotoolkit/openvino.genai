@@ -18,6 +18,18 @@ namespace ov::genai {
 class OPENVINO_GENAI_EXPORTS VLMDecodedResults : public DecodedResults{
 public:
     VLMPerfMetrics perf_metrics;
+    /// @brief Optional speech output waveforms (one per generated result).
+    /// Empty if speech generation was not requested or model does not support it.
+    std::vector<ov::Tensor> speech_outputs;
+
+    // Internal fields for speech pipeline (not exposed to Python bindings).
+    // Populated by CB generate when return_audio is requested, consumed by VLM adapter.
+    struct HiddenStatesData {
+        std::vector<std::vector<ov::Tensor>> hidden_states;
+        std::vector<std::vector<ov::Tensor>> intermediate_hidden_states;
+        std::vector<int64_t> prompt_ids;
+    };
+    std::shared_ptr<HiddenStatesData> m_hidden_states_data;
 };
 
 /// @brief A Visual language modeling pipeline class used to generate a
@@ -305,4 +317,5 @@ static constexpr ov::Property<ov::Tensor> image{"image"};
 static constexpr ov::Property<std::vector<ov::Tensor>> images{"images"};
 static constexpr ov::Property<std::vector<ov::Tensor>> videos{"videos"};
 static constexpr ov::Property<std::vector<VideoMetadata>> videos_metadata{"videos_metadata"};
+static constexpr ov::Property<std::vector<ov::Tensor>> audios{"audios"};
 }
