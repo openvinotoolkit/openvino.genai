@@ -259,7 +259,7 @@ class TestImageGenerationWithBlobTensorModels:
 
     def _get_generation_args(self):
         return {"prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69}
-    
+
     def _read_blob_tensor(self, model_dir, blob_dir, model_folder):
         try:
             blob_path = model_dir / blob_dir / model_folder / "openvino_model.blob"
@@ -268,7 +268,7 @@ class TestImageGenerationWithBlobTensorModels:
             return ov.Tensor(np.frombuffer(binary_data, dtype=np.uint8).astype(np.uint8))
         except Exception as e:
             raise RuntimeError(f"Failed to read blob tensor from {blob_path}: {e}")
-        
+
     def _read_tokenizer(self, model_dir, tokenizer_name="tokenizer"):
         try:
             tokenizer_path = model_dir / tokenizer_name
@@ -294,30 +294,30 @@ class TestImageGenerationWithBlobTensorModels:
         vae_decoder_blob_tensor = self._read_blob_tensor(image_generation_model, blob_dir, "vae_decoder")
 
         text_encoder = ov_genai.CLIPTextModel(
-            text_encoder_blob_tensor, 
+            text_encoder_blob_tensor,
             ov_genai.CLIPTextModel.Config(image_generation_model / "text_encoder" / "config.json"),
-            tokenizer, 
-            "CPU"
+            tokenizer,
+            "CPU",
         )
 
         text_encoder_2 = ov_genai.CLIPTextModelWithProjection(
-            text_encoder_2_blob_tensor, 
+            text_encoder_2_blob_tensor,
             ov_genai.CLIPTextModelWithProjection.Config(image_generation_model / "text_encoder_2" / "config.json"),
-            tokenizer_2, 
-            "CPU"
+            tokenizer_2,
+            "CPU",
         )
 
         vae = ov_genai.AutoencoderKL(
             vae_decoder_blob_tensor,
             ov_genai.AutoencoderKL.Config(image_generation_model / "vae_decoder" / "config.json"),
-            "CPU"
+            "CPU",
         )
 
-        unet = ov_genai.UNet2DConditionModel(   
+        unet = ov_genai.UNet2DConditionModel(
             unet_blob_tensor,
             ov_genai.UNet2DConditionModel.Config(image_generation_model / "unet" / "config.json"),
             vae.get_scale_factor(),
-            "CPU"
+            "CPU",
         )
 
         blob_pipe = ov_genai.Text2ImagePipeline.stable_diffusion_xl(
