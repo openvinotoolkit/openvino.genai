@@ -27,6 +27,10 @@ import openvino_genai as ov_genai
 from optimum.intel import OVModelForTextToSpeechSeq2Seq
 from utils.atomic_download import AtomicDownloadManager
 from utils.constants import get_ov_cache_converted_models_dir
+from utils.kokoro_test_assets import prepare_tiny_g2p_model_path
+from utils.kokoro_test_assets import prepare_tiny_g2p_ov_path
+from utils.kokoro_test_assets import prepare_tiny_kokoro_model_path
+from utils.kokoro_test_assets import prepare_tiny_kokoro_ov_path
 from utils.network import retry_request
 
 logger = logging.getLogger(__name__)
@@ -501,25 +505,7 @@ def tiny_kokoro_model_path() -> Path:
     Caches the model across test runs.
     """
     models_dir = get_ov_cache_converted_models_dir()
-    model_path = models_dir / "tiny-random-kokoro"
-
-    manager = AtomicDownloadManager(model_path)
-
-    def _create_model_in_temp(temp_path: Path) -> None:
-        generated_dir = temp_path / "model"
-        generate_tiny_kokoro_model(generated_dir)
-
-    manager.execute(_create_model_in_temp)
-
-    # Atomic manager moves temp dir itself to final path, so files are under model/.
-    nested_model_path = model_path / "model"
-    if nested_model_path.exists() and (nested_model_path / "config.json").exists():
-        if not (model_path / "config.json").exists():
-            for item in nested_model_path.iterdir():
-                shutil.move(str(item), str(model_path / item.name))
-        shutil.rmtree(nested_model_path, ignore_errors=True)
-
-    return model_path
+    return prepare_tiny_kokoro_model_path(models_dir)
 
 
 @pytest.fixture(scope="module")
@@ -530,19 +516,7 @@ def tiny_kokoro_ov_path(tiny_kokoro_model_path: Path) -> Path:
     Caches the exported model to avoid repeated exports in tests.
     """
     models_dir = get_ov_cache_converted_models_dir()
-    ov_path = models_dir / "tiny-random-kokoro-ov"
-
-    voice_bin = ov_path / "voices" / "tiny_voice.bin"
-
-    # Check if already exported with the required voice pack asset.
-    if not (ov_path / "openvino_model.xml").exists() or not voice_bin.exists():
-        if ov_path.exists():
-            shutil.rmtree(ov_path, ignore_errors=True)
-        export_model_to_openvino(tiny_kokoro_model_path, ov_path)
-
-    _ensure_tiny_voice_bin(ov_path, tiny_kokoro_model_path)
-
-    return ov_path
+    return prepare_tiny_kokoro_ov_path(models_dir, tiny_kokoro_model_path)
 
 
 @pytest.fixture
@@ -578,25 +552,7 @@ def tiny_g2p_model_path() -> Path:
     so parallel test workers do not race on the output directory.
     """
     models_dir = get_ov_cache_converted_models_dir()
-    model_path = models_dir / "tiny-random-g2p"
-
-    manager = AtomicDownloadManager(model_path)
-
-    def _create_model_in_temp(temp_path: Path) -> None:
-        generate_tiny_g2p_model(temp_path / "model")
-
-    manager.execute(_create_model_in_temp)
-
-    # AtomicDownloadManager moves the temp dir itself, so files land under
-    # model/.  Flatten the one extra nesting level when needed.
-    nested = model_path / "model"
-    if nested.exists() and (nested / "config.json").exists():
-        if not (model_path / "config.json").exists():
-            for item in nested.iterdir():
-                shutil.move(str(item), str(model_path / item.name))
-        shutil.rmtree(nested, ignore_errors=True)
-
-    return model_path
+    return prepare_tiny_g2p_model_path(models_dir)
 
 
 @pytest.fixture(scope="module")
@@ -608,17 +564,7 @@ def tiny_g2p_ov_path(tiny_g2p_model_path: Path) -> Path:
     in a sibling directory to ``tiny_g2p_model_path``.
     """
     models_dir = get_ov_cache_converted_models_dir()
-    ov_path = models_dir / "tiny-random-g2p-ov"
-
-    encoder_xml = ov_path / "openvino_encoder_model.xml"
-    decoder_xml = ov_path / "openvino_decoder_model.xml"
-
-    if not encoder_xml.exists() or not decoder_xml.exists():
-        if ov_path.exists():
-            shutil.rmtree(ov_path, ignore_errors=True)
-        export_g2p_model_to_openvino(tiny_g2p_model_path, ov_path)
-
-    return ov_path
+    return prepare_tiny_g2p_ov_path(models_dir, tiny_g2p_model_path)
 
 
 @pytest.mark.speech_generation
