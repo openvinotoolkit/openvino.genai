@@ -75,15 +75,6 @@ install(
 )
 
 install(
-  FILES
-    data/us_gold.json
-    data/us_silver.json
-    data/gb_gold.json
-    data/gb_silver.json
-  DESTINATION ${CMAKE_INSTALL_DATADIR}/misaki/data
-)
-
-install(
   EXPORT MisakiCppTargets
   NAMESPACE MisakiCpp::
   FILE MisakiCppTargets.cmake
