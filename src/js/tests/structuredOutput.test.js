@@ -4,7 +4,6 @@
 import { LLMPipeline, StructuredOutputConfig } from "../dist/index.js";
 import assert from "node:assert/strict";
 import { describe, it, before } from "node:test";
-import os from "node:os";
 
 const { LLM_PATH } = process.env;
 
@@ -309,7 +308,7 @@ digit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"`),
     assert.equal(text, "<start>...</end>", `Unexpected output: ${text}`);
   });
 
-  it("generate with QwenXMLParametersFormat in structural_tags_config", async (testContext) => {
+  it("generate with QwenXMLParametersFormat in structural_tags_config", async () => {
     const generationConfig = {
       max_new_tokens: 50,
       structured_output_config: {

@@ -31,7 +31,7 @@
     "lint": "eslint .",
     "postinstall": "node ./scripts/download-runtime.cjs --ignore-if-exists",
     "prepare": "npm run build",
-    "test": "python ./tests/setup.py --to-env-file test.env && node --env-file=test.env --test ./tests/*.test.js"
+    "test": "python ./tests/setup.py --to-env-file test.env && node --env-file=test.env --test-concurrency=1 --test ./tests/*.test.js"
   },
   "dependencies": {
     "openvino-node": "2026.2.0"
