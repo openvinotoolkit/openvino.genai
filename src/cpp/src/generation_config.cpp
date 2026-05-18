@@ -368,6 +368,9 @@ void GenerationConfig::validate() const {
     if(is_structured_output_generation()) {
         (*structured_output_config).validate();
     }
+
+    OPENVINO_ASSERT(!(return_audio && is_beam_search()), "return_audio is not compatible with beam search");
+    OPENVINO_ASSERT(!(return_audio && is_prompt_lookup()), "return_audio is not compatible with prompt lookup");
 }
 
 void StructuredOutputConfig::validate() const {
