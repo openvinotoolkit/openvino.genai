@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <string>
+#include <memory>
 #include <vector>
 
 #ifdef _WIN32
@@ -17,9 +18,17 @@ namespace {
 
 #ifdef _WIN32
 std::vector<std::string> windows_utf8_argv(int argc, char* argv[]) {
+    struct LocalFreeDeleter {
+        void operator()(LPWSTR* ptr) const noexcept {
+            if (ptr != nullptr) {
+                LocalFree(ptr);
+            }
+        }
+    };
+
     std::vector<std::string> args;
     int wide_argc = 0;
-    LPWSTR* wide_argv = CommandLineToArgvW(GetCommandLineW(), &wide_argc);
+    std::unique_ptr<LPWSTR*, LocalFreeDeleter> wide_argv(CommandLineToArgvW(GetCommandLineW(), &wide_argc));
     if (wide_argv == nullptr || wide_argc <= 0) {
         args.reserve(static_cast<size_t>(argc));
         for (int i = 0; i < argc; ++i) {
@@ -30,7 +39,7 @@ std::vector<std::string> windows_utf8_argv(int argc, char* argv[]) {
 
     args.reserve(static_cast<size_t>(wide_argc));
     for (int i = 0; i < wide_argc; ++i) {
-        const wchar_t* warg = wide_argv[i];
+        const wchar_t* warg = wide_argv.get()[i];
         const int needed = WideCharToMultiByte(CP_UTF8, 0, warg, -1, nullptr, 0, nullptr, nullptr);
         OPENVINO_ASSERT(needed > 0, "Failed to convert command-line argument to UTF-8");
         std::string utf8(static_cast<size_t>(needed), '\0');
@@ -47,7 +56,6 @@ std::vector<std::string> windows_utf8_argv(int argc, char* argv[]) {
         args.push_back(std::move(utf8));
     }
 
-    LocalFree(wide_argv);
     return args;
 }
 #endif
