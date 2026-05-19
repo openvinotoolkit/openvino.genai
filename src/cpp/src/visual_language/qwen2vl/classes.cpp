@@ -261,9 +261,6 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(const std::shared_ptr<ov:
 namespace qwen2_vl_utils {
 
 ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
-    if (height < factor || width < factor) {
-        OPENVINO_THROW("Height (" + std::to_string(height) + ") and width (" + std::to_string(width) + ") must be greater than factor (" + std::to_string(factor) + ")");
-    }
     if (std::max(height, width) / std::min(height, width) > 200) {
         OPENVINO_THROW("Absolute aspect ratio must be smaller than 200");
     }
@@ -615,6 +612,15 @@ ov::Tensor merge_text_and_video_image_embeddings(
             }
         }
     }
+
+    OPENVINO_ASSERT(image_embed_idx == processed_image_embeds.get_shape().at(0),
+        "Image embeddings count (", processed_image_embeds.get_shape().at(0), 
+        ") does not match image pad tokens in prompt (", image_embed_idx, ")");
+
+    OPENVINO_ASSERT(video_embed_idx == processed_video_embeds.get_shape().at(0),
+        "Video embeddings count (", processed_video_embeds.get_shape().at(0), 
+        ") does not match video pad tokens in prompt (", video_embed_idx, ")");
+
     return merged_embeds;
 }
     
