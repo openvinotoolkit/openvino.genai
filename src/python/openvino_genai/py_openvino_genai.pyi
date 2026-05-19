@@ -2869,7 +2869,7 @@ class SpeechGenerationConfig(GenerationConfig):
         Kokoro-specific parameters:
         :param speed: speech speed multiplier.
         :type speed: float
-
+    
         :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
         :type language: str
     
@@ -3731,7 +3731,7 @@ class Text2SpeechPipeline:
             Kokoro-specific parameters:
             :param speed: speech speed multiplier.
             :type speed: float
-
+        
             :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
             :type language: str
         
@@ -3786,7 +3786,7 @@ class Text2SpeechPipeline:
             Kokoro-specific parameters:
             :param speed: speech speed multiplier.
             :type speed: float
-
+        
             :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
             :type language: str
         
