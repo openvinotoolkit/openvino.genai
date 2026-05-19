@@ -2399,11 +2399,10 @@ TEST(TestScheduler, expected_num_scheduled_tokens_overrides_default_schedule) {
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
         request_id,
         ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-        utils::get_greedy_config(),
-        4);
+        utils::get_greedy_config());
     std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-    Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
     scheduler.set_expected_num_scheduled_tokens(request_id, 5);
     EXPECT_EQ(scheduler.get_expected_num_scheduled_tokens(request_id), 5);
@@ -2432,11 +2431,10 @@ TEST(TestScheduler, expected_num_scheduled_tokens_does_not_override_if_greater_t
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
         request_id,
         ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-        utils::get_greedy_config(),
-        4);
+        utils::get_greedy_config());
     std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-    Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
     // Available tokens for the request are 12; expected value above it must be ignored.
     scheduler.set_expected_num_scheduled_tokens(request_id, 13);
@@ -2464,11 +2462,10 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
         request_id,
         ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-        utils::get_greedy_config(),
-        4);
+        utils::get_greedy_config());
     std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-    Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config);
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
 
     scheduler.set_expected_num_scheduled_tokens(request_id, 5);
     auto out1 = scheduler.schedule(requests);
