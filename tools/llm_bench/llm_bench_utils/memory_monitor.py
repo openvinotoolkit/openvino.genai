@@ -965,7 +965,7 @@ class MemoryMarkerMonitor(list):
         elapsed = time.perf_counter() - self.last_ts
         sleep_time = self.sampling_interval - elapsed
         if sleep_time > 0:
-            time.sleep(min(sleep_time, 0.001))
+            time.sleep(max(sleep_time, 0.001))
 
     def write_final_results(self, metadata):
         self.write_chunk()

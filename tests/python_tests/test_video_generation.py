@@ -29,7 +29,7 @@ def video_generation_model() -> str:
     def convert_model(temp_path: Path) -> None:
         command = ["optimum-cli", "export", "openvino", "--model", MODEL_NAME, "--trust-remote-code", str(temp_path)]
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
+        retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
 
     try:
         manager.execute(convert_model)
@@ -70,7 +70,8 @@ class TestVideoGenerationConfig:
         assert config.height == 32
         assert config.width == 64
 
-    def test_config_validate_invalid(self):
+    def test_config_validate_guidance_scale_with_negative_prompt(self):
+        """guidance_scale <= 1 with negative_prompt is accepted (warning only)."""
         pipe_path = get_ov_cache_converted_models_dir() / MODEL_ID / MODEL_NAME
         if not pipe_path.exists():
             pytest.skip("Model not available for validation test")
@@ -80,8 +81,10 @@ class TestVideoGenerationConfig:
         config.guidance_scale = 0.5
         config.negative_prompt = "bad quality"
 
-        with pytest.raises(Exception):
-            pipe.set_generation_config(config)
+        pipe.set_generation_config(config)
+        retrieved = pipe.get_generation_config()
+        assert retrieved.guidance_scale == pytest.approx(0.5)
+        assert retrieved.negative_prompt == "bad quality"
 
 
 class TestText2VideoPipelineConstructor:

@@ -4,8 +4,10 @@
 #include "visual_language/phi4mm/classes.hpp"
 #include <algorithm>
 
+#include "continuous_batching/timer.hpp"
 #include "visual_language/clip.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
+#include "visual_language/vlm_utils.hpp"
 #include "openvino/opsets/opset13.hpp"
 #include "utils.hpp"
 
@@ -666,7 +668,7 @@ m_separator_inserters{create_separator_inserters(device)} {
 }
 
 EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
     ov::Tensor input_image_embeds{ov::element::f32, {}}, image_attention_mask{ov::element::f32, {}};
     int32_t image_height = 0, image_width = 0, num_img_tokens = 0;
 
@@ -797,59 +799,56 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
     }
 
     std::vector<std::variant<ov::Tensor, size_t>> new_chat_tokens;
+    ManualTimer encode_timer("Encode");
+    encode_timer.start();
     if (m_is_chat_conversation) {
-        auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = phi_utils::split_tokenize(image_prompt, m_tokenizer, NATIVE_PATTERN);
-        auto end_tokenizer_time = std::chrono::steady_clock::now();
-        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        new_chat_tokens = vlm_utils::split_tokenize(image_prompt, m_tokenizer, NATIVE_PATTERN);
+        encode_timer.end();
+        metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
     } else {
         std::string templated_prompt;
+        bool apply_template = false;
+        TimePoint template_end_time;
         if (m_apply_chat_template) {
             ChatHistory history({{{"role", "user"}, {"content", image_prompt}}});
             constexpr bool add_generation_prompt = true;
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            template_end_time = std::chrono::steady_clock::now();
+            apply_template = true;
         } else {
             templated_prompt = image_prompt;
         }
-        auto start_tokenizer_time = std::chrono::steady_clock::now();
-        new_chat_tokens = phi_utils::split_tokenize(templated_prompt, m_tokenizer, NATIVE_PATTERN);
-        auto end_tokenizer_time = std::chrono::steady_clock::now();
-        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        new_chat_tokens = vlm_utils::split_tokenize(templated_prompt, m_tokenizer, NATIVE_PATTERN);
+        encode_timer.end();
+        if (apply_template) {
+            metrics.raw_metrics.chat_template_durations.emplace_back(
+                PerfMetrics::get_microsec(template_end_time - encode_timer.get_start_time())
+            );
+            metrics.raw_metrics.tokenization_durations.emplace_back(
+                PerfMetrics::get_microsec(encode_timer.get_end_time() - template_end_time)
+            );
+        } else {
+            metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
+        }
     }
-    ov::Tensor new_merged_tokens = phi_utils::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
+    ov::Tensor new_merged_tokens = vlm_utils::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
     ov::Tensor new_tokens = update_history(new_merged_tokens);
     m_prev_hist_length = m_cache_state.get_state().size();
     m_cache_state.add_inputs(new_tokens);
 
-    std::vector<std::variant<ov::Tensor, size_t>> tokens = phi_utils::drop_image_placeholders(new_tokens);
-    ov::Tensor inputs_embeds{ov::element::f32, {1, new_tokens.get_shape().at(1), m_vlm_config.hidden_size}};
-    size_t offset = 0;
+    std::vector<std::variant<ov::Tensor, size_t>> tokens = vlm_utils::drop_image_placeholders(new_tokens);
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    for (const std::variant<ov::Tensor, size_t>& chunk : tokens) {
-        offset += std::visit(utils::overloaded{
-            [&](const ov::Tensor& chunk) {
-                const ov::Tensor& text_embeds = m_embedding->infer(req, chunk);
-                size_t text_length = text_embeds.get_shape().at(1);
-                std::copy_n(
-                    text_embeds.data<float>(),
-                    text_embeds.get_size(),
-                    inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
-                );
-                return text_length;
-            },
-            [&](size_t image_id) {
-                const ov::Tensor& image_embeds = images_features_proj.at(image_id - base_id);
-                size_t im_length = image_embeds.get_shape().at(1);
-                std::copy_n(
-                    image_embeds.data<float>(),
-                    image_embeds.get_size(),
-                    inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
-                );
-                return im_length;
-            }
-        }, chunk);
-    }
+    ov::Tensor inputs_embeds = vlm_utils::build_inputs_embeds_from_text_and_visual_chunks(
+        tokens,
+        [&](const ov::Tensor& text_chunk) {
+            return m_embedding->infer(req, text_chunk);
+        },
+        images_features_proj,
+        base_id,
+        new_tokens.get_shape().at(1),
+        m_vlm_config.hidden_size
+    );
 
     if (!m_is_chat_conversation) {
         m_tokens_per_images.clear();
