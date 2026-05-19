@@ -49,6 +49,7 @@ class TestVisualLanguageChat:
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
         assert cpp_result.stdout == c_result.stdout, f"Results should match"
+        # Unskip testcase for Qwen2-VL-2B-Instruct once the difference in image conversion between Python and JavaScript is fixed. CVS-187058
         if "Qwen2-VL-2B-Instruct" not in convert_model:
             assert py_result.stdout == js_stdout, f"JS results should match"
 
@@ -110,5 +111,6 @@ class TestVisualLanguageChat:
 
         # Compare results
         assert py_result.stdout == py_result_lookup.stdout, f"Results should match"
+        # Unskip testcase for Qwen2-VL-2B-Instruct once the difference in image conversion between Python and JavaScript is fixed. CVS-187058
         if "Qwen2-VL-2B-Instruct" not in convert_model:
             assert py_result_lookup.stdout == js_stdout_lookup, f"JS results should match"
