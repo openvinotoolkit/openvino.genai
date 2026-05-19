@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "eagle3_strategy.hpp"
+#include "openvino/pass/pa_kv_reorder_fusion.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "logger.hpp"
 
@@ -68,6 +69,10 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     } else {
         GENAI_INFO("kv cache precision not specified in main model properties. leave to plugin for default precision.");
     }
+    auto kv_cache_precision = m_main_pipeline->get_model_properties().at(ov::hint::kv_cache_precision.name());
+    // transformatin for kv update model
+    std::cout << kv_cache_precision.as<ov::element::Type>() << std::endl;
+    ov::pass::PaKVReorderFusion(kv_cache_precision.as<ov::element::Type>()).run_on_model(kv_model);
     m_kv_update_wrapper = std::make_shared<KVUpdateWrapper>(kv_model_desc);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();

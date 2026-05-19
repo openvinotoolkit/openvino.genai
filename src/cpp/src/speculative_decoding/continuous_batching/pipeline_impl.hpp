@@ -36,6 +36,19 @@ public:
 
     RawPerfMetrics raw_perf_metrics;
 
+    ov::AnyMap get_model_properties() {
+        ov::AnyMap props;
+        if (m_model_runner) {
+            auto compiled_model = m_model_runner->get_infer_request().get_compiled_model();
+            for (const auto& name : compiled_model.get_property(ov::supported_properties)) {
+                try {
+                    props[name] = compiled_model.get_property(name);
+                } catch (...) {}
+            }
+        }
+        return props;
+    }
+
 protected:
     void finish_request(SequenceGroup::Ptr request);
     void _pull_awaiting_requests() override {};
