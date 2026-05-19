@@ -2856,10 +2856,6 @@ class SpeechGenerationConfig(GenerationConfig):
     
         SpeechGenerationConfig
     
-        Shared parameters:
-        :param speed: speech speed multiplier.
-        :type speed: float
-        
         Speech-generation specific parameters:
         :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
         :type minlenratio: float
@@ -2871,6 +2867,9 @@ class SpeechGenerationConfig(GenerationConfig):
         :type threshold: float
     
         Kokoro-specific parameters:
+        :param speed: speech speed multiplier.
+        :type speed: float
+
         :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
         :type language: str
     
@@ -3719,10 +3718,6 @@ class Text2SpeechPipeline:
          
             SpeechGenerationConfig
         
-            Shared parameters:
-            :param speed: speech speed multiplier.
-            :type speed: float
-            
             Speech-generation specific parameters:
             :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
             :type minlenratio: float
@@ -3734,6 +3729,9 @@ class Text2SpeechPipeline:
             :type threshold: float
         
             Kokoro-specific parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
+
             :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
             :type language: str
         
@@ -3775,10 +3773,6 @@ class Text2SpeechPipeline:
          
             SpeechGenerationConfig
         
-            Shared parameters:
-            :param speed: speech speed multiplier.
-            :type speed: float
-            
             Speech-generation specific parameters:
             :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
             :type minlenratio: float
@@ -3790,6 +3784,9 @@ class Text2SpeechPipeline:
             :type threshold: float
         
             Kokoro-specific parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
+
             :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
             :type language: str
         

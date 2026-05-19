@@ -24,13 +24,6 @@ public:
     explicit SpeechGenerationConfig(const std::filesystem::path& json_path);
 
     // ---------------------------------------------------------------------
-    // Shared parameters (applies to all supported speech backends)
-    // ---------------------------------------------------------------------
-
-    // Speech speed multiplier.
-    float speed = 1.0f;
-
-    // ---------------------------------------------------------------------
     // SpeechT5-specific parameters
     // ---------------------------------------------------------------------
 
@@ -46,6 +39,9 @@ public:
     // ---------------------------------------------------------------------
     // Kokoro-specific parameters
     // ---------------------------------------------------------------------
+
+    // Speech speed multiplier.
+    float speed = 1.0f;
 
     // Language code used by Kokoro G2P (for example: en-us, en-gb).
     std::string language = "en-us";
