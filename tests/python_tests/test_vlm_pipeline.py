@@ -276,8 +276,8 @@ DEFAULT_NPUW_PROPERTIES = {
 NPU_SUPPORTED_MODELS = [id for id in MODEL_IDS if id not in NPU_UNSUPPORTED_MODELS and id not in VIDEO_MODEL_IDS]
 
 
-VLM_EAGLE3_MAIN_MODEL_ID = "xf2022/tiny-random-qwen3-vl-layer10"
-VLM_EAGLE3_DRAFT_MODEL_ID = "xf2022/tiny-random-qwen3-vl-eagle3"
+VLM_EAGLE3_MAIN_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-vl-layer10"
+VLM_EAGLE3_DRAFT_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-vl-eagle3"
 
 
 def _maybe_skip_unsupported_model_export(model_id: str) -> None:
