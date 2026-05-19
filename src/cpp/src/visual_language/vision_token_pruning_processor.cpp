@@ -861,6 +861,17 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     OPENVINO_ASSERT(context.input_ids.get_shape().at(0) == 1,
                     "Vision token pruning pipeline only supports batch_size == 1, got: ",
                     context.input_ids.get_shape().at(0));
+    OPENVINO_ASSERT(context.input_ids.get_element_type() == ov::element::i64,
+                    "input_ids must be i64, got: ",
+                    context.input_ids.get_element_type());
+    OPENVINO_ASSERT(context.text_embeds.get_shape().size() == 3,
+                    "text_embeds must be rank-3 [batch, seq_len, hidden], got rank: ",
+                    context.text_embeds.get_shape().size());
+    OPENVINO_ASSERT(context.text_embeds.get_shape()[1] == context.input_ids.get_shape().at(1),
+                    "text_embeds seq_len must match input_ids seq_len: text_embeds=",
+                    context.text_embeds.get_shape()[1],
+                    ", input_ids=",
+                    context.input_ids.get_shape().at(1));
     const int64_t* ids = context.input_ids.data<const int64_t>();
     const size_t seq_len = context.input_ids.get_shape().at(1);
 
@@ -1002,6 +1013,9 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
 
     if (result.original_visual_tokens == result.pruned_visual_tokens) {
         GENAI_INFO("Original visual tokens and pruned visual tokens are the same!");
+        // Clear stale keep_flags so a subsequent call with no-op pruning does not
+        // corrupt apply_pruning_to_last_message() with masks from the previous run.
+        m_last_keep_flags.clear();
         return std::nullopt;
     }
 

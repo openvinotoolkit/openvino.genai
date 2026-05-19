@@ -2501,7 +2501,7 @@ def test_cdpruner_chat_history_api(
 
     # Third turn
     history.append({"role": "user", "content": "What color is it?"})
-    result3 = ov_pipe.generate(history, images=[cat_tensor], generation_config=generation_config)
+    result3 = ov_pipe.generate(history, generation_config=generation_config)
     assert result3.texts[0].strip() != "", "Third turn result should not be empty"
     history.append({"role": "assistant", "content": result3.texts[0]})
 
