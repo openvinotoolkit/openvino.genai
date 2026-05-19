@@ -9,7 +9,6 @@
 #include <cstdint>
 
 #include "model_desc.hpp"
-#include "visual_language/processor_config.hpp"
 
 #include "openvino/genai/extensions.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -106,11 +105,6 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
 ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config);
 
 ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config);
-
-ProcessorConfig from_any_map(
-    const ov::AnyMap& config_map,
-    const ProcessorConfig& initial
-);
 
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 
