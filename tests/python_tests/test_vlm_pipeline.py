@@ -2765,6 +2765,9 @@ def test_cdpruner_continuous_batching_chat_history(
     assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
     baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
 
+    # Reset pipeline state after baseline so pruned run starts with clean cache.
+    ov_continuous_batching_pipe_qwen2vl.finish_chat()
+
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 10
     generation_config.do_sample = False
