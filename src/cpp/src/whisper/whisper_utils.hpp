@@ -12,8 +12,6 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-void infer_with_perf_metrics(ov::InferRequest& request, ov::genai::RawPerfMetrics& raw_metrics);
-
 void infer_with_perf_metrics(ov::InferRequest& request,
                              ov::genai::RawPerfMetrics& raw_metrics,
                              std::vector<ov::genai::MicroSeconds>& extra_durations);
