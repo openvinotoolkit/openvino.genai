@@ -16,6 +16,7 @@ from utils.hugging_face import download_and_convert_model
 from data.test_dataset import get_test_dataset
 from kv_cache_eviction_utils import get_scheduler_config
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
+from optimum.intel.utils.import_utils import is_transformers_version
 
 
 def load_prompts_dataset(file_name : str) -> dict[str, list[str]]:
@@ -91,17 +92,7 @@ LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
     ids=lambda x: x.test_id,
 )
 @pytest.mark.parametrize(
-    "apply_rotation",
-    [
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                reason="with_rotation fail with Port for tensor name rotation_trig_lut was not found. Ticket: 185953"
-            ),
-        ),
-        False,
-    ],
-    ids=["with_rotation", "no_rotation"],
+    "apply_rotation", [True, False], ids=["with_rotation", "no_rotation"]
 )  # rotation should improve similarity
 @pytest.mark.parametrize(
     "use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]
@@ -188,13 +179,55 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
     return generation_config
 
 
-scheduler_params_list = [
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": True}, get_greedy_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": True}, get_beam_search_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": False}, get_greedy_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": False}, get_beam_search_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "use_cache_eviction": True, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_greedy_seq_len_300()),
-]
+if is_transformers_version("<", "5.0"):
+    # error: group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790
+    scheduler_params_list = [
+        (
+            {
+                "num_kv_blocks": 0,
+                "cache_size": 0,
+                "dynamic_split_fuse": False,
+                "max_num_batched_tokens": 600,
+                "enable_prefix_caching": True,
+            },
+            get_beam_search_seq_len_300(),
+        ),
+        (
+            {
+                "num_kv_blocks": 0,
+                "cache_size": 0,
+                "dynamic_split_fuse": False,
+                "max_num_batched_tokens": 600,
+                "enable_prefix_caching": False,
+            },
+            get_beam_search_seq_len_300(),
+        ),
+    ]
+else:
+    scheduler_params_list = [
+        (
+            {"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": True},
+            get_greedy_seq_len_300(),
+        ),
+        (
+            {"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": False},
+            get_greedy_seq_len_300(),
+        ),
+        (
+            {
+                "num_kv_blocks": 0,
+                "cache_size": 0,
+                "dynamic_split_fuse": False,
+                "max_num_batched_tokens": 600,
+                "use_cache_eviction": True,
+                "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG,
+            },
+            get_greedy_seq_len_300(),
+        ),
+    ]
+
+
+@pytest.mark.transformers_dependent
 @pytest.mark.parametrize("params", scheduler_params_list)
 def test_dynamic_memory_allocation(params):
     prompts, _ = get_test_dataset()
