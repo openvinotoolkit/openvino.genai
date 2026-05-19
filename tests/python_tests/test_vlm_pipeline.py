@@ -2821,7 +2821,7 @@ def test_videochatflash_qwen_universal_tags_mixed(
     synthetic_video_32x32_tensor: openvino.Tensor,
 ):
     """Universal tags with mixed image+video must remap indices to the unified visual ID space.
-    
+
     VideoChatFlash uses a unified <|image_N|> native tag for both images and videos,
     so universal tag indices must be remapped into a single visual stream.
     """
