@@ -47,7 +47,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@48b684f1ba3a01e573b3de6444e9e37756e3cdc9
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@5db1bfbd991e4f604111d9c69b0007f5a2f8f87c
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -1010,7 +1010,8 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") --ignore-scripts
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          Remove-Item -Recurse -Force node_modules/openvino-node/bin -ErrorAction SilentlyContinue
+          New-Item -ItemType Junction -Path node_modules/openvino-node/bin -Target ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin | Out-Null
           npm install --verbose
 
       - name: Install NPM dependencies for samples
@@ -1018,7 +1019,8 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/samples/js
         run: |
           npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") ${{ env.SRC_DIR }}/src/js --ignore-scripts
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          Remove-Item -Recurse -Force node_modules/openvino-node/bin -ErrorAction SilentlyContinue
+          New-Item -ItemType Junction -Path node_modules/openvino-node/bin -Target ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin | Out-Null
           npm install --verbose
 
       - name: Test Samples (Python and C++)
@@ -1165,7 +1167,8 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") --ignore-scripts
-          Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          Remove-Item -Recurse -Force node_modules/openvino-node/bin -ErrorAction SilentlyContinue
+          New-Item -ItemType Junction -Path node_modules/openvino-node/bin -Target ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin | Out-Null
           npm install --verbose
 
       - name: Install OpenVINO GenAI Python packages (from wheels)
