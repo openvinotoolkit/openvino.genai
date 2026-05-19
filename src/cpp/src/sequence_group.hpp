@@ -164,8 +164,11 @@ public:
         }
         if (m_type == SequenceGroupType::EMBEDDINGS) {
             const size_t tokens_to_remove = static_cast<size_t>(n);
-            const size_t embeds_to_remove = std::min(tokens_to_remove, m_generated_ids_embeds.size());
-            const size_t position_ids_to_remove = std::min(tokens_to_remove, m_position_ids_list.size());
+            const size_t embeds_to_remove = tokens_to_remove;
+            const size_t position_ids_to_remove = tokens_to_remove;
+            OPENVINO_ASSERT(embeds_to_remove <= m_generated_ids_embeds.size(), "Cannot remove more embeds than has been generated in embeddings");
+            OPENVINO_ASSERT(position_ids_to_remove <= m_position_ids_list.size(), "Cannot remove more position ids than has been generated in position_ids");
+
             truncate_generated_ids_embeds(embeds_to_remove);
             truncate_position_ids(position_ids_to_remove);
         }
