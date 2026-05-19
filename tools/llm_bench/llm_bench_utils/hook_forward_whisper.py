@@ -83,34 +83,34 @@ class WhisperHook:
 
     def print_whisper_latency(self, iter, prompt_idx):
         self.get_whisper_latency()
-        str = ''
+        out = ""
         for idx, data in enumerate(self.latency_list):
             title = f"[ INFO ] [{iter}][P{prompt_idx}][L{idx}]"
             if "enc_token_time" in data and "enc_infer_time" in data:
-                str += (
+                out += (
                     f"{title} encoder token latency: {data['enc_token_time']:.2f} ms/token, "
                     f"encoder infers latency: {data['enc_infer_time']:.2f} ms/infer"
                 )
             if "dec_1st_token_time" in data and "dec_2nd_tokens_time" in data:
-                str += (
+                out += (
                     f"\n{title} decoder first token latency: {data['dec_1st_token_time']} ms, "
                     f"decoder other tokens latency: {data['dec_2nd_tokens_time']} ms/token, "
                     f"decoder tokens count: {data['dec_token_count']}\n"
                 )
             if "dec_1st_infer_time" in data and "dec_2nd_infers_time" in data:
-                str += (
+                out += (
                     f"{title} decoder first infer latency: {data['dec_1st_infer_time']} ms, "
                     f"decoder other infers latency: {data['dec_2nd_infers_time']} ms/infer, "
                     f"decoder infers count: {data['dec_infer_count']}\n"
                 )
             if "dec_1st_sample_time" in data and "dec_2nd_samples_time" in data:
-                str += (
+                out += (
                     f"{title} decoder first sampling latency: {data['dec_1st_sample_time']} ms, "
                     f"decoder other sampling latency: {data['dec_2nd_samples_time']} ms/token"
                 )
             if idx < len(self.latency_list) - 1:
-                str += '\n'
-        return str
+                out += "\n"
+        return out
 
     def clear_statistics(self):
         self.enc_infer_count = 0
