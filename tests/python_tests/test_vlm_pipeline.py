@@ -2820,7 +2820,11 @@ def test_videochatflash_qwen_universal_tags_mixed(
     cat_tensor: openvino.Tensor,
     synthetic_video_32x32_tensor: openvino.Tensor,
 ):
-    """Universal tags with mixed image+video must remap indices to the unified visual ID space."""
+    """Universal tags with mixed image+video must remap indices to the unified visual ID space.
+    
+    VideoChatFlash uses a unified <|image_N|> native tag for both images and videos,
+    so universal tag indices must be remapped into a single visual stream.
+    """
     generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
 
     # Prompt with explicit universal tags for both image and video.
@@ -2902,6 +2906,104 @@ def test_videochatflash_qwen_universal_tags_out_of_range(
             videos=[synthetic_video_32x32_tensor],
             generation_config=generation_config,
         )
+
+
+def test_videochatflash_qwen_chat_history_multi_media_per_turn(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """ChatHistory with multiple images and videos per turn verifies interleave ordering.
+
+    VideoChatFlash uses a unified visual stream where images and videos share <|image_N|> tags.
+    history_vision_count must correctly interleave multiple images/videos per turn to match
+    the tag order in the reconstructed prompt.
+    """
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+
+    # Turn 1: 1 image + 2 videos → combined_images order: [img, vid, vid]
+    # Turn 2: 2 images + 1 video → combined_images order: [img, img, vid]
+    prompt1 = "Describe all media."
+    prompt2 = "Now describe these."
+
+    # ChatHistory-based flow
+    history = ChatHistory()
+    history.append({"role": "user", "content": prompt1})
+    res1_ch = ov_videochatflash_qwen_pipe_raw.generate(
+        history,
+        images=[cat_tensor],
+        videos=[synthetic_video_32x32_tensor, synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res1_ch.texts) > 0
+    answer1 = res1_ch.texts[0]
+    history.append({"role": "assistant", "content": answer1})
+    history.append({"role": "user", "content": prompt2})
+    res2_ch = ov_videochatflash_qwen_pipe_raw.generate(
+        history,
+        images=[cat_tensor, car_tensor],
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res2_ch.texts) > 0
+    answer2_chat_history = res2_ch.texts[0]
+
+    # start_chat-based flow
+    ov_videochatflash_qwen_pipe_raw.start_chat()
+    try:
+        res1_sc = ov_videochatflash_qwen_pipe_raw.generate(
+            prompt1,
+            images=[cat_tensor],
+            videos=[synthetic_video_32x32_tensor, synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res1_sc.texts) > 0
+        answer1_sc = res1_sc.texts[0]
+        res2_sc = ov_videochatflash_qwen_pipe_raw.generate(
+            prompt2,
+            images=[cat_tensor, car_tensor],
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res2_sc.texts) > 0
+        answer2_start_chat = res2_sc.texts[0]
+    finally:
+        ov_videochatflash_qwen_pipe_raw.finish_chat()
+
+    assert answer1 == answer1_sc, f"First turn mismatch!\nChatHistory: {answer1}\nstart_chat: {answer1_sc}"
+    assert answer2_chat_history == answer2_start_chat, (
+        f"Second turn mismatch!\nChatHistory: {answer2_chat_history}\nstart_chat: {answer2_start_chat}"
+    )
+
+
+def test_videochatflash_qwen_universal_tags_multi_media(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """Universal tags with multiple images and videos in a single turn.
+
+    VideoChatFlash maps universal <ov_genai_image_N>/<ov_genai_video_N> tags to its
+    unified <|image_M|> native tags. With 2 images + 2 videos, the expected mapping is:
+      <ov_genai_image_0> → visual_id 0 → <|image_1|>
+      <ov_genai_image_1> → visual_id 1 → <|image_2|>
+      <ov_genai_video_0> → visual_id 2 → <|image_3|>
+      <ov_genai_video_1> → visual_id 3 → <|image_4|>
+    This test ensures the remapping logic handles N>1 per modality correctly.
+    """
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+
+    prompt = "<ov_genai_image_0><ov_genai_image_1><ov_genai_video_0><ov_genai_video_1>Describe all."
+    res = ov_videochatflash_qwen_pipe_raw.generate(
+        prompt,
+        images=[cat_tensor, car_tensor],
+        videos=[synthetic_video_32x32_tensor, synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res.texts) > 0
+    assert len(res.texts[0]) > 0
 
 
 @pytest.mark.parametrize(
