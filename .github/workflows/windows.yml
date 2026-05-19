@@ -894,9 +894,9 @@ jobs:
       - name: Build and run Misaki parity tests
         working-directory: ${{ env.SRC_DIR }}
         run: |
-          cmake -S ./src/cpp/src/speech_generation/misaki_cpp -B ./build/misaki_cpp_ci -DMISAKI_CPP_BUILD_PYTHON_BINDINGS=ON
-          cmake --build ./build/misaki_cpp_ci --config Release --parallel
-          $env:PYTHONPATH = "$(Get-Location)/build/misaki_cpp_ci/Release;$env:PYTHONPATH"
+          cmake -S ./src/cpp/src/speech_generation/misaki_cpp -B ./build_misaki_cpp_ci -DMISAKI_CPP_BUILD_PYTHON_BINDINGS=ON
+          cmake --build ./build_misaki_cpp_ci --config Release --parallel
+          $env:PYTHONPATH = "$(Get-Location)/build_misaki_cpp_ci/Release;$env:PYTHONPATH"
           python -m pytest -q src/cpp/src/speech_generation/misaki_cpp/tests/test_misaki_cpp_parity.py
 
   genai_samples_tests:
