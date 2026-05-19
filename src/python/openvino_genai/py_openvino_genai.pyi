@@ -2314,24 +2314,27 @@ class PipelineMetrics:
         :param scheduled_requests:  Number of requests that were scheduled for processing at the previous step of the pipeline.
         :type scheduled_requests: int
     
-        :param cache_usage: Percentage of KV cache usage in the last generation step.
+        :param cache_usage: Maximum cache usage percentage across registered cache types in the last generation step.
         :type cache_usage: float
     
-        :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
+        :param max_cache_usage: Maximum cache usage percentage observed during the lifetime of the pipeline.
         :type max_cache_usage: float
     
-        :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
+        :param avg_cache_usage: Running average of cache usage percentage during the lifetime of the pipeline, with max window size of 1000 steps.
         :type avg_cache_usage: float
     
-        :param kv_cache_size_in_bytes: Total allocated KV cache size in bytes, based on the total number of KV blocks.
-          This value represents reserved/allocated memory for the KV cache and does not
-          distinguish between used and unused portions in dynamic KV cache configurations.
-        :type kv_cache_size_in_bytes: int
+        :param cache_size_in_bytes: Total allocated cache size in bytes across registered cache types, based on the total number of cache blocks.
+          This value represents reserved/allocated memory for the cache and does not
+          distinguish between used and unused portions in dynamic cache configurations.
+        :type cache_size_in_bytes: int
     """
     def __init__(self) -> None:
         ...
     @property
     def avg_cache_usage(self) -> float:
+        ...
+    @property
+    def cache_size_in_bytes(self) -> int:
         ...
     @property
     def cache_usage(self) -> float:
@@ -2670,8 +2673,14 @@ class SchedulerConfig:
         max_num_batched_tokens:     a maximum number of tokens to batch (in contrast to max_batch_size which combines
             independent sequences, we consider total amount of tokens in a batch).
         num_kv_blocks:              total number of KV blocks available to scheduler logic.
-        cache_size:                 total size of KV cache in GB.
-        block_size:                 block size for KV cache.
+        cache_size:                 total size of cache in GB.
+        num_linear_attention_blocks: total number of linear attention blocks available to scheduler logic. 
+                                    Only applicable for models with linear attention cache inputs.
+        cache_interval_multiplier:  optional multiplier used to derive the linear-attention checkpoint interval for prefix caching.
+                                    The internal interval is KV cache block size * cache_interval_multiplier.
+                                    When unset, the default value 8 is used for hybrid models with prefix caching.
+                                    Explicit values are supported only for models with linear attention cache inputs.
+                                    0 is valid only when prefix caching is disabled.
         dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
     
         vLLM-like settings:
@@ -2698,6 +2707,12 @@ class SchedulerConfig:
     def to_string(self) -> str:
         ...
     @property
+    def cache_interval_multiplier(self) -> int | None:
+        ...
+    @cache_interval_multiplier.setter
+    def cache_interval_multiplier(self, arg0: typing.SupportsInt | None) -> None:
+        ...
+    @property
     def cache_size(self) -> int:
         ...
     @cache_size.setter
@@ -2720,6 +2735,12 @@ class SchedulerConfig:
         ...
     @num_kv_blocks.setter
     def num_kv_blocks(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def num_linear_attention_blocks(self) -> int:
+        ...
+    @num_linear_attention_blocks.setter
+    def num_linear_attention_blocks(self, arg0: typing.SupportsInt) -> None:
         ...
 class SparseAttentionConfig:
     """
@@ -4655,15 +4676,19 @@ class WhisperDecodedResults:
         Structure to store resulting text outputs and scores.
     
         Parameters:
-        texts:      vector of resulting sequences.
-        scores:     scores for each sequence.
-        metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
-        shunks:     optional chunks of resulting sequences with timestamps
+        texts:              vector of resulting sequences.
+        scores:             scores for each sequence.
+        language:           detected language for the input audio, e.g. "en".
+        perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::WhisperPerfMetrics.
+        chunks:             optional chunks of resulting sequences with timestamps
     """
     def __str__(self) -> str:
         ...
     @property
     def chunks(self) -> list[WhisperDecodedResultChunk] | None:
+        ...
+    @property
+    def language(self) -> str:
         ...
     @property
     def perf_metrics(self) -> WhisperPerfMetrics:

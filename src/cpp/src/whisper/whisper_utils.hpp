@@ -27,6 +27,15 @@ void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
 
 int64_t argmax(const ov::Tensor& logits, const size_t batch_idx);
 
+ov::genai::WhisperGenerationConfig prepare_per_generate_config(
+    const ov::genai::WhisperGenerationConfig& base_config,
+    const ov::genai::OptionalWhisperGenerationConfig& per_generate_config);
+
+std::string find_language_by_token_id(const std::map<std::string, int64_t>& lang_to_id, int64_t token_id);
+
+// "<|en|>" -> "en"
+std::string to_unescaped_language(const std::string& language);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

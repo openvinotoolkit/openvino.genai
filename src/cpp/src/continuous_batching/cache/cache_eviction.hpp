@@ -12,7 +12,7 @@
 #include "openvino/openvino.hpp"
 #include "continuous_batching/attention_output.hpp"
 #include "openvino/genai/cache_eviction.hpp"
-#include "continuous_batching/kvcrush.hpp"
+#include "continuous_batching/cache/kvcrush.hpp"
 
 namespace ov::genai {
 
