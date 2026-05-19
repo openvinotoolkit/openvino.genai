@@ -5,8 +5,12 @@ import os
 import pytest
 import sys
 
+import numpy as np
+import openvino as ov
+import openvino_genai as ov_genai
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
+from PIL import Image
 
 class TestLora:
     @pytest.mark.llm
@@ -141,3 +145,47 @@ class TestLora:
         py_result = run_sample(py_command)
 
         assert py_result.stdout == cpp_result.stdout, "Multi-LoRA C++/Python results should match"
+
+    @pytest.mark.vlm
+    @pytest.mark.parametrize(
+        "convert_model, download_test_content, prompt, alpha",
+        [
+            pytest.param(
+                "Qwen2-VL-2B-Instruct",
+                ("qwen2b_lora_100_adapter_model.safetensors", "monalisa.jpg"),
+                "Who drew this painting?",
+                2.0,
+            ),
+        ],
+        indirect=["convert_model", "download_test_content"],
+    )
+    def test_visual_language_lora_pa_backend(self, convert_model, download_test_content, prompt, alpha):
+        adapter_path, image_path = download_test_content
+        assert os.path.exists(image_path), f"Missing test image: {image_path}"
+
+        image = Image.open(image_path).convert("RGB")
+        image_tensor = ov.Tensor(np.array(image))
+
+        adapter = ov_genai.Adapter(adapter_path)
+        adapter_config = ov_genai.AdapterConfig()
+        adapter_config.add(adapter, alpha)
+
+        pipe = ov_genai.VLMPipeline(convert_model, "CPU", ATTENTION_BACKEND="PA", adapters=adapter_config)
+
+        generation_config = ov_genai.GenerationConfig()
+        generation_config.max_new_tokens = 100
+
+        result_with_lora = pipe.generate(
+            prompt,
+            images=[image_tensor],
+            generation_config=generation_config,
+        )
+        assert len(result_with_lora.texts[0]) > 0, "Generation with LoRA should produce output"
+
+        result_without_lora = pipe.generate(
+            prompt,
+            images=[image_tensor],
+            generation_config=generation_config,
+            adapters=ov_genai.AdapterConfig(),
+        )
+        assert len(result_without_lora.texts[0]) > 0, "Generation without LoRA should produce output"

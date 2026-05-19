@@ -107,11 +107,12 @@ public:
     /// @brief A string token denoting end of image embeddings for Gemma4 model.
     std::string eoi_token = "<image|>";
 
-    /// @brief Enables Gemma4 MoE block inference path and related auxiliary inputs such as token_type_ids.
-    bool enable_moe_block = false;
-
     /// @brief Hidden size of Gemma4 per-layer embedding input used during inference.
     size_t hidden_size_per_layer_input = 0;
+
+    /// @brief Selects bidirectional attention scope for Gemma4 (e.g. "vision" enables
+    /// bidirectional masking for image tokens which requires `token_type_ids` as an LM input).
+    std::string use_bidirectional_attention;
 
     /// @brief A string token denoting start of video embeddings
     std::string video_start = "<video>";

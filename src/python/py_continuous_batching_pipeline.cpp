@@ -111,8 +111,14 @@ auto scheduler_config_docstring = R"(
     max_num_batched_tokens:     a maximum number of tokens to batch (in contrast to max_batch_size which combines
         independent sequences, we consider total amount of tokens in a batch).
     num_kv_blocks:              total number of KV blocks available to scheduler logic.
-    cache_size:                 total size of KV cache in GB.
-    block_size:                 block size for KV cache.
+    cache_size:                 total size of cache in GB.
+    num_linear_attention_blocks: total number of linear attention blocks available to scheduler logic. 
+                                Only applicable for models with linear attention cache inputs.
+    cache_interval_multiplier:  optional multiplier used to derive the linear-attention checkpoint interval for prefix caching.
+                                The internal interval is KV cache block size * cache_interval_multiplier.
+                                When unset, the default value 8 is used for hybrid models with prefix caching.
+                                Explicit values are supported only for models with linear attention cache inputs.
+                                0 is valid only when prefix caching is disabled.
     dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
 
     vLLM-like settings:
@@ -158,19 +164,19 @@ auto pipeline_metrics_docstring = R"(
     :param scheduled_requests:  Number of requests that were scheduled for processing at the previous step of the pipeline.
     :type scheduled_requests: int
 
-    :param cache_usage: Percentage of KV cache usage in the last generation step.
+    :param cache_usage: Maximum cache usage percentage across registered cache types in the last generation step.
     :type cache_usage: float
 
-    :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
+    :param max_cache_usage: Maximum cache usage percentage observed during the lifetime of the pipeline.
     :type max_cache_usage: float
 
-    :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
+    :param avg_cache_usage: Running average of cache usage percentage during the lifetime of the pipeline, with max window size of 1000 steps.
     :type avg_cache_usage: float
 
-    :param kv_cache_size_in_bytes: Total allocated KV cache size in bytes, based on the total number of KV blocks.
-      This value represents reserved/allocated memory for the KV cache and does not
-      distinguish between used and unused portions in dynamic KV cache configurations.
-    :type kv_cache_size_in_bytes: int
+    :param cache_size_in_bytes: Total allocated cache size in bytes across registered cache types, based on the total number of cache blocks.
+      This value represents reserved/allocated memory for the cache and does not
+      distinguish between used and unused portions in dynamic cache configurations.
+    :type cache_size_in_bytes: int
 )";
 
 std::ostream& operator << (std::ostream& stream, const GenerationResult& generation_result) {
@@ -433,6 +439,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
         .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
         .def_readwrite("cache_size", &SchedulerConfig::cache_size)
+        .def_readwrite("num_linear_attention_blocks", &SchedulerConfig::num_linear_attention_blocks)
+        .def_readwrite("cache_interval_multiplier", &SchedulerConfig::cache_interval_multiplier)
         .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
         .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
         .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching)
@@ -448,7 +456,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readonly("scheduled_requests", &PipelineMetrics::scheduled_requests)
             .def_readonly("cache_usage", &PipelineMetrics::cache_usage)
             .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
-            .def_readonly("kv_cache_size_in_bytes", &PipelineMetrics::kv_cache_size_in_bytes)
+            .def_readonly("cache_size_in_bytes", &PipelineMetrics::cache_size_in_bytes)
+            .def_property_readonly("kv_cache_size_in_bytes", [](const PipelineMetrics& self) { return self.kv_cache_size_in_bytes; })
             .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")

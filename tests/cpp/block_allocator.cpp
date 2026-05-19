@@ -33,7 +33,7 @@ TEST(TestBlockAllocator, AllocatesBlocksIndependentlyToLayers) {
     size_t initial_num_free_blocks = 10;
     auto allocator = ov::genai::BlockAllocator(initial_num_free_blocks, false, num_layers);
 
-    std::map<ov::genai::KVCacheBlock::Ptr, size_t> blocks_to_release;
+    std::map<ov::genai::CacheBlock::Ptr, size_t> blocks_to_release;
     blocks_to_release.insert({allocator.allocate_block(0), 0});
     blocks_to_release.insert({allocator.allocate_block(0), 0});
     EXPECT_EQ(allocator.num_free_blocks(0), 8);
@@ -55,7 +55,7 @@ TEST(TestBlockAllocator, AllocatesBlocksIndependentlyToLayers) {
     EXPECT_EQ(allocator.num_free_blocks(2), 9);
 
     for (auto& block_to_release : blocks_to_release) {
-        ov::genai::KVCacheBlock::Ptr tmp = block_to_release.first;
+        ov::genai::CacheBlock::Ptr tmp = block_to_release.first;
         allocator.free(tmp, block_to_release.second);
     }
 }
