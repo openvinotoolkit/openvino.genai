@@ -210,9 +210,12 @@ ov_genai_whisper_word_timing_get_end_ts(const ov_genai_whisper_word_timing* word
 /**
  * @brief Get word text from ov_genai_whisper_word_timing.
  * @param word_timing A pointer to the ov_genai_whisper_word_timing instance.
- * @param word A pointer to the buffer to store the word text.
- * @param word_size A pointer to the size of the buffer or the required size for the word text.
- * @return ov_status_e A status code, return OK(0) if successful.
+ * @param word A pointer to the buffer to store the word text. If `word` is `NULL`, the function writes the required
+ * size of the buffer, including the null terminator, to `word_size`.
+ * @param word_size A pointer to the size of the `word` buffer on input, or to the required size of the word text,
+ * including the null terminator, on output.
+ * @return ov_status_e A status code: returns OK(0) if successful; returns OUT_OF_BOUNDS if the provided buffer is too
+ * small, and writes the required size including the null terminator to `word_size`.
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e
 ov_genai_whisper_word_timing_get_word(const ov_genai_whisper_word_timing* word_timing, char* word, size_t* word_size);
