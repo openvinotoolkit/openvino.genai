@@ -815,6 +815,7 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     if (total_tokens == 0) {
         // No vision tokens to prune (caller may invoke this with empty merged embeddings
         // when the prompt contains no pad-token runs). Skip pruning entirely.
+        m_last_keep_flags.clear();
         return std::nullopt;
     }
     OPENVINO_ASSERT(image_token_count == 0 || context.image_pad_token_id != -1,
