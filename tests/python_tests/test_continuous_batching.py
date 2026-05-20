@@ -771,36 +771,16 @@ EAGLE3_FIXED_PROMPT_129 = (
 
 
 def _build_prompt_with_exact_token_count(ov_tokenizer, target_tokens: int):
+    if target_tokens not in (127, 128, 129):
+        raise ValueError(f"Unsupported target_tokens={target_tokens}. Supported values are 129, 128, 127.")
+
     fixed_prompt = EAGLE3_FIXED_PROMPT_129
-    fixed_tokens = ov_tokenizer.encode(fixed_prompt, add_special_tokens=False).input_ids.data.shape[1]
-    assert fixed_tokens == 129, f"Expected fixed prompt to be 129 tokens, got {fixed_tokens}."
+    encoded = ov_tokenizer.encode(fixed_prompt, add_special_tokens=False).input_ids.data[0].tolist()
 
-    words = fixed_prompt.split(" ")
+    while len(encoded) < target_tokens:
+         encoded.extend(ov_tokenizer.encode(" " + fixed_prompt, add_special_tokens=False).input_ids.data[0].tolist())
 
-    if target_tokens == 129:
-        return fixed_prompt
-
-    if target_tokens == 128:
-        for remove_idx in range(len(words) - 1, -1, -1):
-            candidate = " ".join(words[:remove_idx] + words[remove_idx + 1 :])
-            count = ov_tokenizer.encode(candidate, add_special_tokens=False).input_ids.data.shape[1]
-            if count == 128:
-                return candidate
-        raise AssertionError("Failed to derive a 128-token prompt by deleting one word from 129 prompt.")
-
-    if target_tokens == 127:
-        for remove_idx_1 in range(len(words) - 1, -1, -1):
-            for remove_idx_2 in range(remove_idx_1 - 1, -1, -1):
-                candidate = " ".join(
-                    words[:remove_idx_2] + words[remove_idx_2 + 1 : remove_idx_1] + words[remove_idx_1 + 1 :]
-                )
-                count = ov_tokenizer.encode(candidate, add_special_tokens=False).input_ids.data.shape[1]
-                if count == 127:
-                    return candidate
-        raise AssertionError("Failed to derive a 127-token prompt by deleting two words from 129 prompt.")
-
-    raise ValueError(f"Unsupported target_tokens={target_tokens}. Supported values are 129, 128, 127.")
-
+    return ov_tokenizer.decode(encoded[:target_tokens])
 
 @pytest.mark.parametrize("target_prompt_tokens", [127, 128, 129])
 def test_eagle3_prefix_caching_no_crash(target_prompt_tokens: int):

@@ -354,23 +354,30 @@ size_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl:
 bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::rewind_awaiting_request_prefix(
     uint64_t request_id,
     size_t processed_tokens) {
-    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+    SequenceGroup::Ptr request_to_cleanup;
+    bool is_request_found = false;
 
-    for (auto& request : m_awaiting_requests) {
-        if (request->get_request_id() != request_id) {
-            continue;
+    {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        for (auto& request : m_awaiting_requests) {
+            if (request->get_request_id() != request_id) {
+                continue;
+            }
+            is_request_found = true;
+            const size_t current_processed_tokens = request->get_num_processed_tokens();
+            if (processed_tokens < current_processed_tokens) {
+                request->update_processed_tokens_num(processed_tokens);
+                request_to_cleanup = request;
+            }
+            break;
         }
-
-        const size_t current_processed_tokens = request->get_num_processed_tokens();
-        if (processed_tokens < current_processed_tokens) {
-            request->update_processed_tokens_num(processed_tokens);
-            std::vector<SequenceGroup::Ptr> requests_to_cleanup{request};
-            m_scheduler->clean_empty_blocks(requests_to_cleanup);
-        }
-        return true;
     }
 
-    return false;
+    if (request_to_cleanup) {
+        std::vector<SequenceGroup::Ptr> requests_to_cleanup{request_to_cleanup};
+        m_scheduler->clean_empty_blocks(requests_to_cleanup);
+    }
+    return is_request_found;
 }
 
 void
