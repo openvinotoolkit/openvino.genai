@@ -336,36 +336,51 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
 
     std::vector<ov::Output<ov::Node>> residual_outputs;
     if (hidden_layers_to_abstract.size() > 1) {
-        std::unordered_map<int32_t, ov::Output<ov::Node>> layer_to_output;
+        // Primary path: strict residual matching with direct name match (upstream-compatible).
         for (const auto& node : model->get_ordered_ops()) {
-            if (!is_residual_node_strict(node) && !is_residual_node_relaxed(node)) {
-                continue;
-            }
-
-            for (int32_t idx : hidden_layers_to_abstract) {
-                if (node_or_ancestors_match_layer(node, idx)) {
-                    layer_to_output[idx] = node->output(0);
+            if (!is_residual_node_strict(node)) continue;
+            const std::string& name = node->get_friendly_name();
+            for (const auto& pattern : patterns) {
+                if (name.find(pattern + "/") != std::string::npos) {
+                    residual_outputs.push_back(node->output(0));
+                    break;
                 }
             }
         }
 
-        // Fallback: for layers not captured by residual heuristics, use layer-scoped Add nodes.
-        for (const auto& node : model->get_ordered_ops()) {
-            if (!ov::is_type<ov::op::v1::Add>(node)) {
-                continue;
+        // Fallback: if strict direct-name matching found nothing, try relaxed ancestor-based matching.
+        if (residual_outputs.empty()) {
+            std::unordered_map<int32_t, ov::Output<ov::Node>> layer_to_output;
+            for (const auto& node : model->get_ordered_ops()) {
+                if (!is_residual_node_strict(node) && !is_residual_node_relaxed(node)) {
+                    continue;
+                }
+
+                for (int32_t idx : hidden_layers_to_abstract) {
+                    if (layer_to_output.find(idx) == layer_to_output.end() && node_or_ancestors_match_layer(node, idx)) {
+                        layer_to_output[idx] = node->output(0);
+                    }
+                }
+            }
+
+            // Second fallback: for layers not captured by residual heuristics, use layer-scoped Add nodes.
+            for (const auto& node : model->get_ordered_ops()) {
+                if (!ov::is_type<ov::op::v1::Add>(node)) {
+                    continue;
+                }
+
+                for (int32_t idx : hidden_layers_to_abstract) {
+                    if (layer_to_output.find(idx) == layer_to_output.end() && node_or_ancestors_match_layer(node, idx)) {
+                        layer_to_output[idx] = node->output(0);
+                    }
+                }
             }
 
             for (int32_t idx : hidden_layers_to_abstract) {
-                if (layer_to_output.find(idx) == layer_to_output.end() && node_or_ancestors_match_layer(node, idx)) {
-                    layer_to_output[idx] = node->output(0);
+                auto it = layer_to_output.find(idx);
+                if (it != layer_to_output.end()) {
+                    residual_outputs.push_back(it->second);
                 }
-            }
-        }
-
-        for (int32_t idx : hidden_layers_to_abstract) {
-            auto it = layer_to_output.find(idx);
-            if (it != layer_to_output.end()) {
-                residual_outputs.push_back(it->second);
             }
         }
 
