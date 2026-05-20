@@ -387,6 +387,35 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
     )
 
 
+def _defer_annotations_in_custom_code(model_id):
+    """Prepend ``from __future__ import annotations`` to .py files in a
+    custom_code model snapshot directory.
+
+    Some Hub repos that ship custom modeling code use type annotations
+    referring to symbols (``List``, ``Optional``, etc.) without the
+    matching ``typing`` import. Without PEP 563, those annotations are
+    evaluated at module import time and break the ``AutoModel`` /
+    dynamic-module fallback path. Prepending the future import defers
+    annotation evaluation to lazy ``typing.get_type_hints()`` calls,
+    which transformers does not perform during model load. Idempotent.
+    """
+    snapshot_dir = Path(model_id)
+    if not snapshot_dir.is_dir():
+        return
+    marker = "from __future__ import annotations"
+    for py_path in snapshot_dir.glob("*.py"):
+        try:
+            text = py_path.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if marker in text.splitlines()[:5]:
+            continue
+        try:
+            py_path.write_text(f"{marker}\n{text}")
+        except OSError:
+            pass
+
+
 def load_visual_text_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
@@ -399,6 +428,13 @@ def load_visual_text_model(
         except Exception:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
+
+        # Defer annotation evaluation in custom_code modules to tolerate
+        # third-party modeling files with missing typing imports
+        # (e.g. openbmb/MiniCPM-V-2_6 resampler.py uses ``List[Tensor]``
+        # without ``from typing import List``).
+        if trust_remote_code:
+            _defer_annotations_in_custom_code(model_id)
 
         # force downloading to .cache image_processing file, as it is not happened by default
         if config.model_type.lower() in ["minicpmo"]:
