@@ -36,7 +36,7 @@ ov::Tensor make_audio(std::initializer_list<size_t> shape) {
 
 TEST(AudioEncoderValidation, RejectsRank2Audio) {
     // 2-D tensor must be rejected before any allocation; impl currently passes
-    // through silently and only fails deep inside MelSpectrogramExtractor.
+    // through silently and only fails deep inside WhisperFeatureExtractor.
     auto t = make_audio({2, 100});
     EXPECT_THROW({ ov::genai::AudioEncoderQwen3Omni::validate_audio_input(t); }, ov::Exception);
 }

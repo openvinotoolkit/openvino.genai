@@ -22,8 +22,6 @@ float hertz_to_mel(float freq);
 float mel_to_hertz(float mel);
 
 /// Compute Hann window of given length.
-/// @param length Window size.
-/// @return Hann window coefficients.
 std::vector<float> hann_window(size_t length);
 
 /// Compute pre-calculated sine table for FFT.
@@ -64,51 +62,5 @@ void mel_worker(int ith,
                 std::vector<float>& output,
                 const std::vector<float>& sin_vals,
                 const std::vector<float>& cos_vals);
-
-/// Log-mel spectrogram extractor shared by Whisper and Qwen3 Omni audio pipelines.
-/// Output is a flat [num_mel_bins, n_frames] row-major buffer with Whisper-style
-/// max-8 clamp and (x+4)/4 normalization.
-class MelSpectrogramExtractor {
-public:
-    MelSpectrogramExtractor(size_t num_mel_bins, size_t sampling_rate, size_t n_fft, size_t hop_length);
-
-    /// Log-mel extraction with optional Whisper-style min-length padding.
-    /// raw_speech must have size > n_fft/2. n_frames is set to the produced frame count.
-    /// @param min_length When non-zero, raw_speech is padded up to min_length before the
-    ///        n_fft/2 reflect pad — the Whisper 30 s pre-pad. When zero (default), no extra
-    ///        padding is applied (Qwen3 Omni semantics).
-    /// @param n_active_frames When non-null, receives raw_speech.size() / hop_length — the count
-    ///        of frames backed by real audio, used for long-form offset bookkeeping. When null
-    ///        (default), the active-frame count is not computed.
-    std::vector<float> extract(const std::vector<float>& raw_speech,
-                               size_t& n_frames,
-                               size_t min_length = 0,
-                               size_t* n_active_frames = nullptr) const;
-
-    size_t num_mel_bins() const {
-        return m_num_mel_bins;
-    }
-    size_t sampling_rate() const {
-        return m_sampling_rate;
-    }
-    size_t n_fft() const {
-        return m_n_fft;
-    }
-    size_t hop_length() const {
-        return m_hop_length;
-    }
-
-private:
-    std::vector<float> pad_with_reflect(const std::vector<float>& raw_speech, size_t min_length) const;
-    std::vector<float> compute_mel(const std::vector<float>& padded, size_t n_samples, size_t n_frames) const;
-
-    const size_t m_num_mel_bins;
-    const size_t m_sampling_rate;
-    const size_t m_n_fft;
-    const size_t m_hop_length;
-    const std::vector<float> m_sin_vals;
-    const std::vector<float> m_cos_vals;
-    const std::vector<float> m_mel_filter;
-};
 
 }  // namespace ov::genai::audio_utils

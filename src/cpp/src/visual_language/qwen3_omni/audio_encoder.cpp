@@ -7,18 +7,28 @@
 #include <cstring>
 #include <vector>
 
-#include "audio_utils.hpp"
 #include "openvino/openvino.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
+
+namespace {
+// Qwen3-Omni declares "feature_extractor_type": "WhisperFeatureExtractor" in its
+// HF preprocessor_config.json. These match the HF WhisperFeatureExtractor defaults.
+constexpr size_t WHISPER_SAMPLING_RATE = 16000;
+constexpr size_t WHISPER_N_FFT = 400;
+constexpr size_t WHISPER_HOP_LENGTH = 160;
+}  // namespace
 
 AudioEncoderQwen3Omni::AudioEncoderQwen3Omni(const std::filesystem::path& model_dir,
                                              const VLMConfig& config,
                                              const std::string& device,
                                              const ov::AnyMap& properties)
     : m_config(config),
-      m_mel_extractor(config.audio_config_num_mel_bins, 16000, 400, 160) {
+      m_feature_extractor(config.audio_config_num_mel_bins,
+                          WHISPER_SAMPLING_RATE,
+                          WHISPER_N_FFT,
+                          WHISPER_HOP_LENGTH) {
     // Resolve canonical paths to prevent path traversal via attacker-controlled model_dir.
     const auto canonical_model_dir = std::filesystem::weakly_canonical(model_dir);
     auto model_path = model_dir / "openvino_audio_encoder_model.xml";
@@ -71,8 +81,9 @@ std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> AudioEncoderQwen3Omni
     const auto audio_len = audio_raw.get_size();
     std::vector<float> raw_speech(audio_data, audio_data + audio_len);
 
-    size_t n_frames = 0;
-    auto mel_data = m_mel_extractor.extract(raw_speech, n_frames);
+    auto features = m_feature_extractor.extract(raw_speech);
+    const auto& mel_data = features.data;
+    const size_t n_frames = features.n_frames;
     OPENVINO_ASSERT(n_frames > 0, "Audio input too short to produce mel spectrogram frames");
 
     const auto num_mel_bins = m_config.audio_config_num_mel_bins;

@@ -5,7 +5,7 @@
 
 #include <filesystem>
 
-#include "audio_utils.hpp"
+#include "whisper/feature_extractor.hpp"
 #include "circular_buffer_queue.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -53,7 +53,7 @@ public:
 
 private:
     VLMConfig m_config;
-    audio_utils::MelSpectrogramExtractor m_mel_extractor;
+    WhisperFeatureExtractor m_feature_extractor;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue;
 
     /// @brief Preprocess audio: mel spectrogram -> chunk into windows -> pad.
