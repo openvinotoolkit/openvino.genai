@@ -34,6 +34,12 @@ public:
 
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 
+    void set_hidden_state_export_needed(bool is_needed) {
+        if (m_model_runner) {
+            m_model_runner->enable_hidden_state_export(is_needed);
+        }
+    }
+
     RawPerfMetrics raw_perf_metrics;
 
 protected:
@@ -78,20 +84,6 @@ public:
     void set_d2t_for_draft_decoding(const std::shared_ptr<ov::op::v0::Constant>& d2t) {
         if (m_sampler) {
             m_sampler->set_d2t_for_decoding(d2t);
-        }
-    }
-
-    /**
-     * @brief Sets whether the export of hidden states is needed during model execution.
-     *
-     * This function enables or disables the export of hidden states by delegating
-     * the request to the underlying model runner, if it exists.
-     *
-     * @param is_needed Boolean flag indicating whether hidden state export is required.
-     */
-    void set_hidden_state_export_needed(bool is_needed) {
-        if (m_model_runner) {
-            m_model_runner->enable_hidden_state_export(is_needed);
         }
     }
 

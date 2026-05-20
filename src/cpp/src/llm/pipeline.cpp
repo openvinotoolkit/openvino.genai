@@ -21,13 +21,6 @@
 
 namespace {
 
-bool is_dflash_draft_requested(const ov::AnyMap& properties) {
-    auto draft_model_descr = ov::genai::utils::get_draft_model_from_config(properties);
-    return draft_model_descr.model &&
-           draft_model_descr.properties.find("dflash_mode") != draft_model_descr.properties.end() &&
-           draft_model_descr.properties.at("dflash_mode").as<bool>();
-}
-
 // This is a decorator function that wraps a generation callable to apply parsers and reset them before generation if needed.
 ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGenerationConfig& generation_config,
                  const ov::genai::StreamerVariant& streamer,
@@ -238,7 +231,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    if (is_npu_requested || is_dflash_draft_requested(properties)) {
+    if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -293,7 +286,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    if (is_npu_requested || is_dflash_draft_requested(properties)) {
+    if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -347,7 +340,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         }
     }
 
-    if (is_npu_requested || is_dflash_draft_requested(properties)) {
+    if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(
             model,
             tokenizer,
