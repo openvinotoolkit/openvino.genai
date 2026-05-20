@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AudioStreamerBase', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -176,6 +176,29 @@ class AggregationMode:
     @property
     def value(self) -> int:
         ...
+class AudioStreamerBase:
+    """
+    
+        Base class for audio streamers. Inherit and implement write() and end()
+        to receive audio chunks during speech generation.
+    
+        write(audio_chunk: ov.Tensor) -> StreamingStatus:
+            Called with each audio chunk [1, 1, N_samples] float32 PCM at 24kHz.
+            Return StreamingStatus.RUNNING to continue or STOP/CANCEL to halt.
+    
+        end():
+            Called when speech generation completes (always, even on early stop).
+    """
+    def __init__(self) -> None:
+        ...
+    def end(self) -> None:
+        """
+        Called when speech generation completes.
+        """
+    def write(self, audio_chunk: openvino._pyopenvino.Tensor) -> StreamingStatus:
+        """
+        Called with each audio chunk tensor [1, 1, N_samples]. Return StreamingStatus.
+        """
 class AutoencoderKL:
     """
     AutoencoderKL class.
@@ -1084,6 +1107,8 @@ class GenerationConfig:
     echo: bool
     ignore_eos: bool
     include_stop_str_in_output: bool
+    return_audio: bool
+    speaker: str
     stop_criteria: StopCriteria
     structured_output_config: openvino_genai.py_openvino_genai.StructuredOutputConfig | None
     @typing.overload
@@ -1115,6 +1140,12 @@ class GenerationConfig:
         ...
     @assistant_confidence_threshold.setter
     def assistant_confidence_threshold(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def audio_chunk_frames(self) -> int:
+        ...
+    @audio_chunk_frames.setter
+    def audio_chunk_frames(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def diversity_penalty(self) -> float:
@@ -4210,9 +4241,10 @@ class VLMDecodedResults(DecodedResults):
         The first num_return_sequences elements correspond to the first batch element.
     
         Parameters:
-        texts:      vector of resulting sequences.
-        scores:     scores for each sequence.
-        metrics:    performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
+        texts:            vector of resulting sequences.
+        scores:           scores for each sequence.
+        metrics:          performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
+        speech_outputs:   optional speech waveform tensors (one per result, present when return_audio=True).
     """
     def __init__(self) -> None:
         ...
@@ -4223,6 +4255,9 @@ class VLMDecodedResults(DecodedResults):
         ...
     @property
     def scores(self) -> list[float]:
+        ...
+    @property
+    def speech_outputs(self) -> list[openvino._pyopenvino.Tensor]:
         ...
     @property
     def texts(self) -> list[str]:
@@ -4292,6 +4327,14 @@ class VLMPipeline:
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
+            :param audio_streamer: callback or AudioStreamerBase to receive audio chunks during speech generation.
+                Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
+            :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
+        
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
+            :type : int
+        
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
         
@@ -4319,6 +4362,14 @@ class VLMPipeline:
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param audio_streamer: callback or AudioStreamerBase to receive audio chunks during speech generation.
+                Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
+            :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
+        
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
+            :type : int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
@@ -4348,6 +4399,14 @@ class VLMPipeline:
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
+            :param audio_streamer: callback or AudioStreamerBase to receive audio chunks during speech generation.
+                Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
+            :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
+        
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
+            :type : int
+        
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
         
@@ -4376,6 +4435,14 @@ class VLMPipeline:
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
+            :param audio_streamer: callback or AudioStreamerBase to receive audio chunks during speech generation.
+                Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
+            :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
+        
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
+            :type : int
+        
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
         
@@ -4400,7 +4467,9 @@ class VLMPipeline:
             videos: list[ov.Tensor] - input videos,
             videos_metadata: list[VideoMetadata] - metadata for each video,
             generation_config: GenerationConfig,
-            streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
+            streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
+            audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or AudioStreamerBase - callback to receive audio chunks during speech generation,
+            audio_chunk_frames: int - number of codec frames per streaming chunk (default 1, must be >= 1). Only meaningful when audio_streamer is provided.
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -4426,6 +4495,14 @@ class VLMPipeline:
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param audio_streamer: callback or AudioStreamerBase to receive audio chunks during speech generation.
+                Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
+            :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
+        
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
+            :type : int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
@@ -4455,6 +4532,14 @@ class VLMPipeline:
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
+            :param audio_streamer: callback or AudioStreamerBase to receive audio chunks during speech generation.
+                Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
+            :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
+        
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
+            :type : int
+        
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
         
@@ -4483,6 +4568,14 @@ class VLMPipeline:
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
         
+            :param audio_streamer: callback or AudioStreamerBase to receive audio chunks during speech generation.
+                Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
+            :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
+        
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
+            :type : int
+        
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
         
@@ -4507,7 +4600,9 @@ class VLMPipeline:
             videos: list[ov.Tensor] - input videos,
             videos_metadata: list[VideoMetadata] - metadata for each video,
             generation_config: GenerationConfig,
-            streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
+            streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
+            audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or AudioStreamerBase - callback to receive audio chunks during speech generation,
+            audio_chunk_frames: int - number of codec frames per streaming chunk (default 1, must be >= 1). Only meaningful when audio_streamer is provided.
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults

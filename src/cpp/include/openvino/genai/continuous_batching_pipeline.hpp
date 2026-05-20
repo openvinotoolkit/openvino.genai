@@ -344,6 +344,12 @@ public:
     }
 
     /**
+    * @brief Forward audio tensors to the inputs embedder for encoding (Qwen3-Omni).
+    * @param audios vector of audio tensors to encode.
+    */
+    void encode_audios(const std::vector<ov::Tensor>& audios);
+
+    /**
     * @brief start chat with keeping history in kv cache.
     * @param system_message optional system message.
     * @deprecated start_chat() / finish_chat() API is deprecated and will be removed in the next major release.
@@ -377,6 +383,12 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_batches(
 
 OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_metadata_batches(
     const std::vector<std::vector<VideoMetadata>>& videos_metadata_batches
+);
+
+/// @brief Factory for audios_batches AnyMap entry.
+/// Audios must be encoded before text tokenization for Qwen3-Omni's interleaved layout.
+OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> audios_batches(
+    const std::vector<std::vector<ov::Tensor>>& audios_batches
 );
 
 }
