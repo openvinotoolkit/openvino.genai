@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "vlm_config.hpp"
+#include "json_utils.hpp"
+#include "logger.hpp"
 
 #include <fstream>
 
@@ -27,6 +29,8 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen3_vl", VLMModelType::QWEN3_VL},
         {"qwen3_5", VLMModelType::QWEN3_5},
         {"qwen3_5_moe", VLMModelType::QWEN3_5_MOE},
+        {"dummy_vl", VLMModelType::DUMMY_VL},  // For empty vision embed model case, to trigger modeling VL code path in
+                                               // InputsEmbedder.
         {"gemma3", VLMModelType::GEMMA3},
         {"gemma4", VLMModelType::GEMMA4},
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
@@ -36,7 +40,9 @@ VLMModelType to_vlm_model_type(const std::string& value) {
     if (it != model_types_map.end()) {
         return it->second;
     }
-    OPENVINO_THROW("Unsupported '", value, "' VLM model type");
+    // fallback to dummy
+    GENAI_WARN("Unrecognized model type '", value.c_str(), "' in config. Falling back to DUMMY_VL which has no embed-specific behavior.");
+    return VLMModelType::DUMMY_VL;
 }
 
 void assert_size(size_t size, VLMModelType model_type) {

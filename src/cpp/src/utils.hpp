@@ -8,6 +8,8 @@
 #include <utility>
 #include <cstdint>
 
+#include "model_desc.hpp"
+
 #include "openvino/genai/extensions.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -26,29 +28,6 @@ namespace genai {
 extern const std::string PA_BACKEND;
 extern const std::string SDPA_BACKEND;
 
-struct ModelDesc {
-    std::string device;
-    ov::genai::SchedulerConfig scheduler_config;
-    ov::AnyMap properties;
-    ov::genai::GenerationConfig generation_config;
-    std::shared_ptr<ov::Model> model = nullptr;
-    ov::genai::Tokenizer tokenizer;
-
-    ModelDesc(const std::shared_ptr<ov::Model>& model,
-              const ov::genai::Tokenizer& tokenizer,
-              const std::string& device = {},
-              const ov::AnyMap& properties = {},
-              const ov::genai::SchedulerConfig& scheduler_config = {},
-              const ov::genai::GenerationConfig& generation_config = {}) :
-        model(model),
-        tokenizer(tokenizer),
-        device(device),
-        properties(properties),
-        scheduler_config(scheduler_config),
-        generation_config(generation_config) {}
-    
-    ModelDesc() = default;
-};
 }  // namespace genai
 }  // namespace ov
 

@@ -101,6 +101,12 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
+    if (position_ids.has_value()) {
+        OPENVINO_ASSERT((*position_ids).size() == input_ids.size());
+    }
+    if (lm_extra_inputs_list.has_value()) {
+        OPENVINO_ASSERT((*lm_extra_inputs_list).size() == input_ids.size());
+    }
 
     ManualTimer generate_timer("speculative_decoding: generate()");
     generate_timer.start();
@@ -119,17 +125,28 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
     std::vector<GenerationHandle> generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");   
-        OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`"); 
+        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+        OPENVINO_ASSERT(sampling_params[request_id].is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
+
+        // Set position_ids if provided and embedder exists
+        if (position_ids.has_value() && request_id < position_ids->size() && m_inputs_embedder) {
+            const auto& [pos_ids, rope_delta] = (*position_ids)[request_id];
+            m_inputs_embedder->set_position_ids(pos_ids);
+            if (rope_delta.has_value()) {
+                m_inputs_embedder->set_rope_delta(*rope_delta);
+            }
+        }
 
         bool has_valid_ttid = token_type_ids.has_value() && request_id < token_type_ids->size();
         bool has_valid_pid = prompt_ids.has_value() && request_id < prompt_ids->size();
+        bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
         generations.push_back(m_pipeline->add_request(
             request_id,
             input_ids[request_id],
             sampling_params[request_id],
             has_valid_ttid ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
-            has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt));
+            has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
     }
     auto all_requests = m_pipeline->get_awaiting_requests();
 

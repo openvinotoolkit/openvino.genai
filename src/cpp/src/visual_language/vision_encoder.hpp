@@ -156,7 +156,7 @@ protected:
     VideoProcessorConfig m_video_processor_config;
 
     void resolve_processor_configs(const std::filesystem::path& config_dir_path);
-    
+
     VisionEncoder() = default;
 
 public:

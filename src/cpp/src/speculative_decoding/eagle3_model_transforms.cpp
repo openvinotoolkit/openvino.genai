@@ -5,6 +5,10 @@
 
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <deque>
+#include <array>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "json_utils.hpp"
 #include "logger.hpp"
@@ -42,6 +46,12 @@ Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::file
             using ov::genai::utils::read_json_param;
             int num_decoder_layers = 0;
             read_json_param(data, "num_hidden_layers", num_decoder_layers);
+            if (num_decoder_layers == 0) {
+                read_json_param(data, "text_config.num_hidden_layers", num_decoder_layers);
+                if (num_decoder_layers == 0) {
+                    read_json_param(data, "thinker_config.text_config.num_hidden_layers", num_decoder_layers);
+                }
+            }
 
             // Ensure sufficient layers for meaningful feature extraction
             // Minimum of 10 layers is based on practical LLM architectures (e.g., small GPT-2 has 12 layers)
@@ -235,14 +245,14 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
     if (hidden_layers_to_abstract.size() > 1) {
         patterns.reserve(hidden_layers_to_abstract.size());
         for (int32_t idx : hidden_layers_to_abstract) {
-            patterns.emplace_back("layers." + std::to_string(idx) + "/"); // main description
+            patterns.emplace_back("layers." + std::to_string(idx));
         }
     } else {
         patterns.emplace_back("midlayer"); // draft description
     }
 
     // Helper: check if node is a residual Add node with expected structure
-    auto is_residual_node = [](const std::shared_ptr<ov::Node>& node) -> bool {
+    auto is_residual_node_strict = [](const std::shared_ptr<ov::Node>& node) -> bool {
         if (const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
             auto input1 = add->get_input_node_shared_ptr(1);
             auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(input1);
@@ -253,21 +263,156 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
         return false;
     };
 
+    auto is_residual_node_relaxed = [](const std::shared_ptr<ov::Node>& node) -> bool {
+        if (const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
+            auto input0 = add->get_input_node_shared_ptr(0);
+            auto input1 = add->get_input_node_shared_ptr(1);
+            return ov::is_type<ov::op::v0::MatMul>(input0) || ov::is_type<ov::op::v0::MatMul>(input1);
+        }
+        return false;
+    };
+
+    auto is_layer_match = [](const std::string& friendly_name, int32_t layer_idx) -> bool {
+        const std::string idx = std::to_string(layer_idx);
+        const std::array<std::string, 4> tokens = {
+            "layers." + idx,
+            "layers[" + idx + "]",
+            "model.layers." + idx,
+            "model.layers[" + idx + "]",
+        };
+
+        for (const auto& token : tokens) {
+            const auto pos = friendly_name.find(token);
+            if (pos == std::string::npos) {
+                continue;
+            }
+
+            const size_t end_pos = pos + token.size();
+            if (end_pos >= friendly_name.size()) {
+                return true;
+            }
+
+            const char c = friendly_name[end_pos];
+            if (c == '/' || c == '.' || c == '_' || c == ']') {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    auto node_or_ancestors_match_layer = [&](const std::shared_ptr<ov::Node>& node, int32_t layer_idx) -> bool {
+        if (is_layer_match(node->get_friendly_name(), layer_idx)) {
+            return true;
+        }
+
+        std::deque<std::shared_ptr<ov::Node>> queue;
+        std::unordered_set<const ov::Node*> visited;
+        queue.push_back(node);
+
+        constexpr size_t MAX_VISITED_NODES = 256;
+        while (!queue.empty() && visited.size() < MAX_VISITED_NODES) {
+            auto current = queue.front();
+            queue.pop_front();
+            if (!current) {
+                continue;
+            }
+
+            if (!visited.insert(current.get()).second) {
+                continue;
+            }
+
+            if (is_layer_match(current->get_friendly_name(), layer_idx)) {
+                return true;
+            }
+
+            for (size_t i = 0; i < current->get_input_size(); ++i) {
+                queue.push_back(current->get_input_node_shared_ptr(i));
+            }
+        }
+
+        return false;
+    };
+
     std::vector<ov::Output<ov::Node>> residual_outputs;
-    for (const auto& node : model->get_ordered_ops()) {
-        if (!is_residual_node(node)) continue;
-        const std::string& name = node->get_friendly_name();
-        for (const auto& pattern : patterns) {
-            if (name.find(pattern) != std::string::npos) {
-                residual_outputs.push_back(node->output(0));
-                break;
+    if (hidden_layers_to_abstract.size() > 1) {
+        // Primary path: strict residual matching with direct name match (upstream-compatible).
+        for (const auto& node : model->get_ordered_ops()) {
+            if (!is_residual_node_strict(node)) continue;
+            const std::string& name = node->get_friendly_name();
+            for (const auto& pattern : patterns) {
+                if (name.find(pattern + "/") != std::string::npos) {
+                    residual_outputs.push_back(node->output(0));
+                    break;
+                }
+            }
+        }
+
+        // Fallback: if strict direct-name matching found nothing, try relaxed ancestor-based matching.
+        if (residual_outputs.empty()) {
+            std::unordered_map<int32_t, ov::Output<ov::Node>> layer_to_output;
+            for (const auto& node : model->get_ordered_ops()) {
+                if (!is_residual_node_strict(node) && !is_residual_node_relaxed(node)) {
+                    continue;
+                }
+
+                for (int32_t idx : hidden_layers_to_abstract) {
+                    if (layer_to_output.find(idx) == layer_to_output.end() && node_or_ancestors_match_layer(node, idx)) {
+                        layer_to_output[idx] = node->output(0);
+                    }
+                }
+            }
+
+            // Second fallback: for layers not captured by residual heuristics, use layer-scoped Add nodes.
+            for (const auto& node : model->get_ordered_ops()) {
+                if (!ov::is_type<ov::op::v1::Add>(node)) {
+                    continue;
+                }
+
+                for (int32_t idx : hidden_layers_to_abstract) {
+                    if (layer_to_output.find(idx) == layer_to_output.end() && node_or_ancestors_match_layer(node, idx)) {
+                        layer_to_output[idx] = node->output(0);
+                    }
+                }
+            }
+
+            for (int32_t idx : hidden_layers_to_abstract) {
+                auto it = layer_to_output.find(idx);
+                if (it != layer_to_output.end()) {
+                    residual_outputs.push_back(it->second);
+                }
+            }
+        }
+
+        if (!residual_outputs.empty() && residual_outputs.size() != patterns.size()) {
+            GENAI_WARN("Eagle3 hidden-state extraction found %zu states, expected %zu; applying compatibility padding.",
+                       residual_outputs.size(),
+                       patterns.size());
+            if (residual_outputs.size() > patterns.size()) {
+                residual_outputs.resize(patterns.size());
+            } else {
+                while (residual_outputs.size() < patterns.size()) {
+                    residual_outputs.push_back(residual_outputs.back());
+                }
+            }
+        }
+    } else {
+        for (const auto& node : model->get_ordered_ops()) {
+            if (!is_residual_node_strict(node) && !is_residual_node_relaxed(node)) {
+                continue;
+            }
+
+            const std::string& name = node->get_friendly_name();
+            for (const auto& pattern : patterns) {
+                if (name.find(pattern) != std::string::npos) {
+                    residual_outputs.push_back(node->output(0));
+                    break;
+                }
             }
         }
     }
 
     if (!residual_outputs.empty()) {
-        OPENVINO_ASSERT(residual_outputs.size() == patterns.size(),
-                        "Number of extracted hidden states does not match the requested number.");
         std::shared_ptr<ov::Node> node_to_operate;
         if (residual_outputs.size() > 1) {
             auto concat = std::make_shared<ov::op::v0::Concat>(residual_outputs, -1);

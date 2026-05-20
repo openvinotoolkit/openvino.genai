@@ -24,6 +24,7 @@ enum class VLMModelType {
     QWEN3_VL,
     QWEN3_5,
     QWEN3_5_MOE,
+    DUMMY_VL,  // Generic special-model type without embed-specific behavior
     GEMMA3,
     GEMMA4,
     VIDEOCHAT_FLASH_QWEN,
