@@ -782,7 +782,7 @@ def _build_prompt_with_exact_token_count(ov_tokenizer, target_tokens: int):
 
     if target_tokens == 128:
         for remove_idx in range(len(words) - 1, -1, -1):
-            candidate = " ".join(words[:remove_idx] + words[remove_idx + 1:])
+            candidate = " ".join(words[:remove_idx] + words[remove_idx + 1 :])
             count = ov_tokenizer.encode(candidate, add_special_tokens=False).input_ids.data.shape[1]
             if count == 128:
                 return candidate
@@ -792,9 +792,7 @@ def _build_prompt_with_exact_token_count(ov_tokenizer, target_tokens: int):
         for remove_idx_1 in range(len(words) - 1, -1, -1):
             for remove_idx_2 in range(remove_idx_1 - 1, -1, -1):
                 candidate = " ".join(
-                    words[:remove_idx_2]
-                    + words[remove_idx_2 + 1:remove_idx_1]
-                    + words[remove_idx_1 + 1:]
+                    words[:remove_idx_2] + words[remove_idx_2 + 1 : remove_idx_1] + words[remove_idx_1 + 1 :]
                 )
                 count = ov_tokenizer.encode(candidate, add_special_tokens=False).input_ids.data.shape[1]
                 if count == 127:
@@ -812,7 +810,9 @@ def test_eagle3_prefix_caching_no_crash(target_prompt_tokens: int):
     main_model_path = download_and_convert_model(main_model_id).models_path
     draft_model_path = download_and_convert_model(draft_model_id).models_path
 
-    scheduler_config = dict_to_scheduler_config({"enable_prefix_caching": True, "dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
+    scheduler_config = dict_to_scheduler_config(
+        {"enable_prefix_caching": True, "dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize}
+    )
     ov_pipe = create_ov_pipeline(
         main_model_path,
         pipeline_type=PipelineType.SPECULATIVE_DECODING,
@@ -844,7 +844,9 @@ def test_eagle3_prefix_caching_add_request_no_crash(target_prompt_tokens: int):
     main_model_path = download_and_convert_model(main_model_id).models_path
     draft_model_path = download_and_convert_model(draft_model_id).models_path
 
-    scheduler_config = dict_to_scheduler_config({"enable_prefix_caching": True, "dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
+    scheduler_config = dict_to_scheduler_config(
+        {"enable_prefix_caching": True, "dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize}
+    )
     cb_pipe = create_ov_cb_pipeline(
         main_model_path,
         pipeline_type=PipelineType.SPECULATIVE_DECODING,
