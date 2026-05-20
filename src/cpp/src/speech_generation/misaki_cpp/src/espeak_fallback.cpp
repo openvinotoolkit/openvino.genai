@@ -517,30 +517,12 @@ std::optional<std::string> phonemize_generic_with_espeak_api(EspeakApi &api,
     return count;
   };
 
-  std::vector<std::string> chunks;
-  chunks.reserve(text.size());
-
-  std::string current;
-  for (char c : text) {
-    if (is_preserved_punctuation(c)) {
-      if (!current.empty()) {
-        chunks.push_back(current);
-        current.clear();
-      }
-      chunks.push_back(std::string(1, c));
-      continue;
-    }
-    current.push_back(c);
-  }
-  if (!current.empty()) {
-    chunks.push_back(current);
-  }
+  const auto voice_candidates = build_voice_candidates(language);
 
   std::string out;
-  for (const auto& chunk : chunks) {
-    if (chunk.size() == 1 && is_preserved_punctuation(chunk[0])) {
-      out += chunk;
-      continue;
+  auto process_text_chunk = [&](const std::string& chunk) -> bool {
+    if (chunk.empty()) {
+      return true;
     }
 
     const std::size_t leading_spaces = count_leading_spaces(chunk);
@@ -551,11 +533,11 @@ std::optional<std::string> phonemize_generic_with_espeak_api(EspeakApi &api,
 
     if (core.empty()) {
       out += chunk;
-      continue;
+      return true;
     }
 
     std::optional<std::string> raw;
-    for (const auto& voice_candidate : build_voice_candidates(language)) {
+    for (const auto& voice_candidate : voice_candidates) {
       raw = raw_espeak_phonemize(api, core, voice_candidate);
       if (raw.has_value()) {
         break;
@@ -563,17 +545,36 @@ std::optional<std::string> phonemize_generic_with_espeak_api(EspeakApi &api,
     }
 
     if (!raw.has_value()) {
-      return std::nullopt;
+      return false;
     }
 
     const auto normalized = normalize_espeak_generic_to_misaki(*raw, version);
     if (normalized.empty()) {
-      return std::nullopt;
+      return false;
     }
 
     out.append(leading_spaces, ' ');
     out += normalized;
     out.append(trailing_spaces, ' ');
+
+    return true;
+  };
+
+  std::string current;
+  for (char c : text) {
+    if (is_preserved_punctuation(c)) {
+      if (!process_text_chunk(current)) {
+        return std::nullopt;
+      }
+      current.clear();
+      out.push_back(c);
+      continue;
+    }
+    current.push_back(c);
+  }
+
+  if (!process_text_chunk(current)) {
+    return std::nullopt;
   }
 
   const auto normalized_out = trim(out);
