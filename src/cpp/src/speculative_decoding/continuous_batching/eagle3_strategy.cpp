@@ -76,7 +76,7 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_id
     return draft_input_ids;
 }
 
-void ContinuousBatchingPipeline::Eagle3DecodingImpl::on_request_pair_added(uint64_t request_id) {
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processed_prefix(uint64_t request_id) {
     auto find_request_by_id = [request_id](const std::vector<SequenceGroup::Ptr>& requests) -> SequenceGroup::Ptr {
         for (const auto& request : requests) {
             if (request && request->get_request_id() == request_id) {
@@ -97,13 +97,13 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::on_request_pair_added(uint6
                     ", draft_found=",
                     static_cast<bool>(draft_request));
 
-    // These values are the effective restored prefix lengths after each pipeline
-    // independently matches cached prompt prefix blocks.
+    // These values represent the processed-prefix lengths after each pipeline
+    // independently restores cached prompt prefix blocks.
     const size_t main_processed = main_request->get_num_processed_tokens();
     const size_t draft_processed = draft_request->get_num_processed_tokens();
     const size_t common_restored_prefix = std::min(main_processed, draft_processed);
 
-    // Enforce the shared actually-restored prefix to keep main/draft cache states coherent.
+    // Enforce a shared processed prefix to keep main/draft cache states coherent.
     // For Eagle3 prompt restore, both pipelines must schedule the same number of tokens so
     // that main exported hidden-state length matches draft imported sequence length.
     const size_t aligned_main_processed = common_restored_prefix;
@@ -152,7 +152,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     ov::Tensor draft_input_ids = create_draft_input_ids(input_ids);
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params, token_type_ids, prompt_ids, lm_extra_inputs)});
     auto main_generation = m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
-    on_request_pair_added(request_id);
+    align_request_pair_processed_prefix(request_id);
     return main_generation;
 }
 
@@ -170,7 +170,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     ov::Tensor draft_input_ids = create_draft_input_ids(input_ids);
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
     auto main_generation = m_main_pipeline->add_request(request_id, input_ids, sampling_params);
-    on_request_pair_added(request_id);
+    align_request_pair_processed_prefix(request_id);
     return main_generation;
 }
 
