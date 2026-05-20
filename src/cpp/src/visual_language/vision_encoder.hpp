@@ -145,8 +145,6 @@ public:
     VideoProcessorConfig get_video_processor_config() const;
 
 protected:
-    VisionEncoder() = default;
-
     /// @brief  Infer requests queue for image encoding model.
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_encoder;
 
@@ -158,6 +156,8 @@ protected:
     VideoProcessorConfig m_video_processor_config;
 
     void resolve_processor_configs(const std::filesystem::path& config_dir_path);
+
+    VisionEncoder() = default;
 
 public:
     VisionEncoder(
