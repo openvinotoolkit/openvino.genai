@@ -12,7 +12,6 @@ using namespace ov::genai;
 
 namespace ov::genai {
 class ov::genai::VLMPipeline::VLMPipelineBase {
-    // Load pipeline time
     float m_load_time_ms = 0;
     std::string m_attention_backend = SDPA_BACKEND;
 

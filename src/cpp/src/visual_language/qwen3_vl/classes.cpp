@@ -883,9 +883,18 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
     );
 
     if (images.empty() && videos.empty()) {
+        // Pre-existing bug fix: when there are no images/videos, the LM still
+        // expects visual_pos_masks and deepstack_visual_embeds shaped to match
+        // the actual prompt sequence length, not a placeholder seq_len of 1.
+        // The previous shapes ({batch_size, 1} and {num_layers, 1, hidden_size})
+        // worked only for decode-step inputs (seq_len == 1) but failed during
+        // prefill where seq_len == prompt_len, producing the
+        // "Reshape '__module.thinker.model/aten::reshape/Reshape_1'" error
+        // for any text-only or audio-only Qwen3-Omni call.
+        const size_t batch_size = input_ids.get_shape()[0];
+        const size_t seq_len = input_ids.get_shape()[1];
         if (has_lm_extra_input("visual_pos_masks")) {
-            const size_t batch_size = input_ids.get_shape()[0];
-            ov::Tensor visual_pos_masks(ov::element::boolean, {batch_size, 1});
+            ov::Tensor visual_pos_masks(ov::element::boolean, {batch_size, seq_len});
             std::fill_n(visual_pos_masks.data<bool>(), visual_pos_masks.get_size(), false);
             m_lm_extra_inputs["visual_pos_masks"] = std::move(visual_pos_masks);
         }
@@ -893,7 +902,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
         if (has_lm_extra_input("deepstack_visual_embeds")) {
             const size_t num_layers = m_vlm_config.vision_config_deepstack_visual_indexes.size();
             const size_t hidden_size = text_embeds.get_shape()[2];
-            ov::Tensor deepstack_visual_embeds(ov::element::f32, {num_layers, 1, hidden_size});
+            ov::Tensor deepstack_visual_embeds(ov::element::f32, {num_layers, seq_len, hidden_size});
             std::fill_n(deepstack_visual_embeds.data<float>(), deepstack_visual_embeds.get_size(), 0.0f);
             m_lm_extra_inputs["deepstack_visual_embeds"] = std::move(deepstack_visual_embeds);
         }

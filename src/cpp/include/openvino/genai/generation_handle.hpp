@@ -13,15 +13,15 @@
 namespace ov::genai {
 
 enum class GenerationStatus {
-    RUNNING = 0, // Default status for ongoing generation
-    FINISHED = 1, // Status set when generation has been finished
+    RUNNING = 0,
+    FINISHED = 1,
     IGNORED = 2, // Status set when generation run into out-of-memory condition and could not be continued
     CANCEL = 3, // Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
     STOP = 4, // Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
 };
 
 enum class GenerationFinishReason {
-    NONE = 0, // Default value, when generation is not yet finished
+    NONE = 0,
     STOP = 1, // Generation finished due to an external stop request or by reaching EOS/stop-sequence
     LENGTH = 2, // Generation finished by reaching max_new_tokens limit
     TOOL_CALL = 3 // Generation stop invoked by tool calling parser
@@ -34,12 +34,10 @@ struct EncodedGenerationResult {
     // in a generic case we have multiple generation results per initial prompt
     // depending on sampling parameters (e.g. beam search or parallel sampling)
     std::vector<std::vector<int64_t>> m_generation_ids;
-    // scores
     std::vector<float> m_scores;
     // per-sequence finish reasons aligned with m_generation_ids / m_scores
     std::vector<GenerationFinishReason> m_finish_reasons;
 
-    // Status of generation
     GenerationStatus m_status = GenerationStatus::RUNNING;
     
     // PerfMetrics but with empty tokenization/detokenization durations.
@@ -67,15 +65,12 @@ struct GenerationResult {
     // in a generic case we have multiple generation results per initial prompt
     // depending on sampling parameters (e.g. beam search or parallel sampling)
     std::vector<std::string> m_generation_ids;
-    // scores
     std::vector<float> m_scores;
     // per-sequence finish reasons aligned with m_generation_ids / m_scores
     std::vector<GenerationFinishReason> m_finish_reasons;
 
-    // Status of generation
     GenerationStatus m_status = GenerationStatus::RUNNING;
 
-    // PerfMetrics
     PerfMetrics perf_metrics;
 
     // PerfMetrics with pipeline specifics
@@ -123,9 +118,7 @@ public:
 
     void cancel();
 
-    // Reads result of a generation for single iteration
     GenerationOutputs read();
-    // Reads all generated tokens for all sequences
     std::vector<GenerationOutput> read_all();
 };
 

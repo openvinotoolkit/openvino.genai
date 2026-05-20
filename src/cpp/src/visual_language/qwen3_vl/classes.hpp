@@ -59,14 +59,12 @@ protected:
     // Allows subclasses to access input_ids without re-tokenizing (which corrupts cache state).
     ov::Tensor m_last_input_ids;
 
-    // Vision embeddings position model
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_pos;
     // By default the vision_embeddings_pos model is patched to perform the weighted sum on the
     // device (faster, deterministic on GPU). Setting the VISION_POS_EMBEDS=CPP environment
     // variable disables the patch and falls back to a C++ weighted sum on the host.
     bool m_use_patched_pos_model = true;
 
-    // Cached extra inputs for language model
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs{
         {"deepstack_visual_embeds", ov::Tensor()},
         {"visual_pos_masks", ov::Tensor()}

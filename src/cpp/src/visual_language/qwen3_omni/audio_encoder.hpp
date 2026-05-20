@@ -17,10 +17,27 @@ namespace ov::genai {
 /// audio feature embeddings at the thinker's hidden dimension.
 class AudioEncoderQwen3Omni {
 public:
+    /// @brief Maximum accepted audio length in samples (30 minutes at 16 kHz).
+    /// Inputs above this are rejected at the boundary so that downstream allocations
+    /// (mel spectrogram buffers, padded chunks) have a known upper bound and cannot
+    /// overflow on attacker-controlled tensor shapes.
+    static constexpr size_t MAX_AUDIO_SAMPLES = 480'000'000;
+
     AudioEncoderQwen3Omni(const std::filesystem::path& model_dir,
                           const VLMConfig& config,
                           const std::string& device,
                           const ov::AnyMap& properties);
+
+    /// @brief Reject an audio shape/element-type combination that would overflow
+    /// downstream allocations. Static so it can be called before tensor allocation
+    /// (used by tests to exercise the size cap without OOMing).
+    static void validate_audio_shape(const ov::Shape& shape, ov::element::Type element_type);
+
+    /// @brief Validate that @p audio_raw is a 1-D float32 tensor in
+    /// [1, MAX_AUDIO_SAMPLES] samples. Throws ov::Exception otherwise.
+    /// Called at the start of preprocess_audio() — exposed publicly so callers
+    /// (and tests) can validate inputs before incurring inference cost.
+    static void validate_audio_input(const ov::Tensor& audio_raw);
 
     /// @brief Check whether the audio encoder model was found and loaded.
     /// The audio encoder is optional — the model works as text+vision VLM without it.

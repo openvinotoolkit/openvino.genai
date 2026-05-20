@@ -261,7 +261,6 @@ private:
 
         const auto& full_token_ids = hs_data->prompt_ids;
 
-        // Flatten per-step hidden states into per-token hidden states
         auto all_hs = flatten_hidden_states(hs_data->hidden_states[0]);
         auto all_ihs = hs_data->intermediate_hidden_states.empty()
                            ? std::vector<ov::Tensor>{}

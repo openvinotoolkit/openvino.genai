@@ -104,7 +104,6 @@ private:
     // Thinker text embeddings (for embedding TTS special tokens)
     ov::InferRequest m_thinker_text_embeddings;
 
-    // Sub-models
     ov::InferRequest m_talker;
     ov::InferRequest m_talker_text_embeddings;
     ov::InferRequest m_talker_projections;  // dual-output: text_projection + hidden_projection

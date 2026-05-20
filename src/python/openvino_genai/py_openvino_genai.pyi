@@ -4241,9 +4241,10 @@ class VLMDecodedResults(DecodedResults):
         The first num_return_sequences elements correspond to the first batch element.
     
         Parameters:
-        texts:      vector of resulting sequences.
-        scores:     scores for each sequence.
-        metrics:    performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
+        texts:            vector of resulting sequences.
+        scores:           scores for each sequence.
+        metrics:          performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
+        speech_outputs:   optional speech waveform tensors (one per result, present when return_audio=True).
     """
     def __init__(self) -> None:
         ...
@@ -4330,7 +4331,8 @@ class VLMPipeline:
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms, 0 = batch mode).
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
             :type : int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -4365,7 +4367,8 @@ class VLMPipeline:
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms, 0 = batch mode).
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
             :type : int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -4400,7 +4403,8 @@ class VLMPipeline:
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms, 0 = batch mode).
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
             :type : int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -4435,7 +4439,8 @@ class VLMPipeline:
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms, 0 = batch mode).
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
             :type : int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -4464,7 +4469,7 @@ class VLMPipeline:
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
             audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or AudioStreamerBase - callback to receive audio chunks during speech generation,
-            audio_chunk_frames: int - number of codec frames per streaming chunk (default 1, 0 = batch mode)
+            audio_chunk_frames: int - number of codec frames per streaming chunk (default 1, must be >= 1). Only meaningful when audio_streamer is provided.
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -4495,7 +4500,8 @@ class VLMPipeline:
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms, 0 = batch mode).
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
             :type : int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -4530,7 +4536,8 @@ class VLMPipeline:
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms, 0 = batch mode).
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
             :type : int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -4565,7 +4572,8 @@ class VLMPipeline:
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type : Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.AudioStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms, 0 = batch mode).
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+                Only meaningful when an audio_streamer callback is provided; without a callback, generation runs in batch mode.
             :type : int
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
@@ -4594,7 +4602,7 @@ class VLMPipeline:
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
             audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or AudioStreamerBase - callback to receive audio chunks during speech generation,
-            audio_chunk_frames: int - number of codec frames per streaming chunk (default 1, 0 = batch mode)
+            audio_chunk_frames: int - number of codec frames per streaming chunk (default 1, must be >= 1). Only meaningful when audio_streamer is provided.
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults

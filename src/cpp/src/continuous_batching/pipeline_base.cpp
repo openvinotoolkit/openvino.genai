@@ -240,7 +240,6 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
         const auto encode_end = std::chrono::steady_clock::now();
 
         tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_end - encode_start));
-        // Store chat template duration for metrics tracking
         template_durations.emplace_back(PerfMetrics::get_microsec(encode_start - template_start));
     }
 
@@ -294,7 +293,6 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPi
     const std::vector<std::vector<ov::Tensor>>& images_vector,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer) {
-    // empty videos batch size should match prompt batch size
     const std::vector<std::vector<ov::Tensor>> empty_videos_vector(prompts.size());
     return generate(prompts, images_vector, empty_videos_vector, sampling_params, streamer);
 }
@@ -307,7 +305,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
-    // empty videos metadata batch size should match prompt batch size
     const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(prompts.size());
     return generate(prompts, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
 }
@@ -523,7 +520,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             auto hs_data = std::make_shared<VLMDecodedResults::HiddenStatesData>();
             hs_data->hidden_states = std::move(result.m_hidden_states);
             hs_data->intermediate_hidden_states = std::move(result.m_intermediate_hidden_states);
-            // Build full token sequence: prompt + generated (first sequence)
             hs_data->prompt_ids = std::move(result.m_prompt_ids);
             if (!result.m_generation_ids.empty()) {
                 hs_data->prompt_ids.insert(hs_data->prompt_ids.end(),
@@ -564,7 +560,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
-    // empty videos batch size should match histories batch size
     const std::vector<std::vector<ov::Tensor>> empty_videos_vector(histories.size());
     return generate(histories, images_vector, empty_videos_vector, sampling_params, streamer);
 }
@@ -577,7 +572,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
-    // empty videos metadata batch size should match histories batch size
     const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(histories.size());
     return generate(histories, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
 }

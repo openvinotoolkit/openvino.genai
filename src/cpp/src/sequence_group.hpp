@@ -150,7 +150,6 @@ public:
         m_finish_reason = finish_reason;
     }
 
-    // appends new tokens to a generated part
     void append_token(int64_t token_id, float log_prob) {
         m_cumulative_log_prob += log_prob;
         m_generated_log_probs.push_back(log_prob);
@@ -707,7 +706,6 @@ public:
         m_num_processed_tokens -= num_preempt_tokens;
     }
 
-    // returns context length taking into account scheduled tokens
     size_t get_context_len() const {
         return get_num_processed_tokens() + get_num_scheduled_tokens();
     }
@@ -754,7 +752,6 @@ public:
         return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validation_tokens;
     }
 
-    // mark current schedule phase as finished and updates internal counters
     void finish_iteration() {
         m_num_processed_tokens += m_num_scheduled_tokens;
         // if some processed tokens were evicted, max content len is greater than number of processed tokens

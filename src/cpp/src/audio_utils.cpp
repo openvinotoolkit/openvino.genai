@@ -194,7 +194,6 @@ void mel_worker(int ith,
     for (; i < n_real_frames; i += n_threads) {
         const auto offset = i * frame_step;
 
-        // Apply Hanning window
         for (int j = 0; j < std::min(frame_size, n_samples - offset); j++) {
             fft_in[j] = hann[j] * samples[offset + j];
         }
@@ -204,12 +203,10 @@ void mel_worker(int ith,
 
         fft(fft_in, fft_out, sin_vals, cos_vals, frame_size);
 
-        // Power spectrum
         for (int j = 0; j < n_fft; j++) {
             fft_out[j] = fft_out[2 * j] * fft_out[2 * j] + fft_out[2 * j + 1] * fft_out[2 * j + 1];
         }
 
-        // Apply mel filters
         for (size_t j = 0; j < feature_size; j++) {
             double sum = 0.0;
             for (int k = 0; k < n_fft; k++) {
