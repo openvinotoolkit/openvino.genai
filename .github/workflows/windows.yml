@@ -1072,7 +1072,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-4-cores-8gb-test
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
