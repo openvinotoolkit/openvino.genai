@@ -759,6 +759,125 @@ def test_dynamic_split_fuse_for_eagle3():
     compare_results_for_dynamic_split_fuse_config("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3")
 
 
+EAGLE3_FIXED_PROMPT_129 = (
+    "During speculative decoding, the draft path proposes several tokens and the main path validates them in order. "
+    "Prefix caching reduces recomputation by reusing KV blocks that correspond to the unchanged prompt prefix. "
+    "A robust scheduler tracks block ownership, eviction pressure, and per-request progress across decoding steps. "
+    "When accepted-token streaks are long, throughput improves because fewer full-model validations are required. "
+    "If a mismatch appears, the pipeline rolls back to the last verified state and resumes from the main model output. "
+    "Stable request alignment is important so that hidden-state transitions and cache indices remain consistent. "
+    "Latency can vary with block size, batching policy, and how aggressively the system reuses"
+)
+
+
+def _build_prompt_with_exact_token_count(ov_tokenizer, target_tokens: int):
+    fixed_prompt = EAGLE3_FIXED_PROMPT_129
+    fixed_tokens = ov_tokenizer.encode(fixed_prompt, add_special_tokens=False).input_ids.data.shape[1]
+    assert fixed_tokens == 129, f"Expected fixed prompt to be 129 tokens, got {fixed_tokens}."
+
+    words = fixed_prompt.split(" ")
+
+    if target_tokens == 129:
+        return fixed_prompt
+
+    if target_tokens == 128:
+        for remove_idx in range(len(words) - 1, -1, -1):
+            candidate = " ".join(words[:remove_idx] + words[remove_idx + 1:])
+            count = ov_tokenizer.encode(candidate, add_special_tokens=False).input_ids.data.shape[1]
+            if count == 128:
+                return candidate
+        raise AssertionError("Failed to derive a 128-token prompt by deleting one word from 129 prompt.")
+
+    if target_tokens == 127:
+        for remove_idx_1 in range(len(words) - 1, -1, -1):
+            for remove_idx_2 in range(remove_idx_1 - 1, -1, -1):
+                candidate = " ".join(
+                    words[:remove_idx_2]
+                    + words[remove_idx_2 + 1:remove_idx_1]
+                    + words[remove_idx_1 + 1:]
+                )
+                count = ov_tokenizer.encode(candidate, add_special_tokens=False).input_ids.data.shape[1]
+                if count == 127:
+                    return candidate
+        raise AssertionError("Failed to derive a 127-token prompt by deleting two words from 129 prompt.")
+
+    raise ValueError(f"Unsupported target_tokens={target_tokens}. Supported values are 129, 128, 127.")
+
+
+@pytest.mark.parametrize("target_prompt_tokens", [127, 128, 129])
+def test_eagle3_prefix_caching_no_crash(target_prompt_tokens: int):
+    main_model_id = "Qwen/Qwen3-1.7B"
+    draft_model_id = "AngelSlim/Qwen3-1.7B_eagle3"
+
+    main_model_path = download_and_convert_model(main_model_id).models_path
+    draft_model_path = download_and_convert_model(draft_model_id).models_path
+
+    scheduler_config = dict_to_scheduler_config({"enable_prefix_caching": True, "dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
+    ov_pipe = create_ov_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        scheduler_config=scheduler_config,
+    )
+
+    ov_tokenizer = ov_pipe.get_tokenizer()
+    prompt = _build_prompt_with_exact_token_count(ov_tokenizer, target_prompt_tokens)
+
+    pipeline_generation_config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=4, apply_chat_template=False)
+    first_results = ov_pipe.generate([prompt], pipeline_generation_config)
+    try:
+        second_results = ov_pipe.generate([prompt], pipeline_generation_config)
+    except RuntimeError as exc:
+        pytest.fail(
+            "Second Eagle3 generate with prefix cache reuse must not raise RuntimeError. "
+            f"prompt_tokens={target_prompt_tokens}, error={exc}"
+        )
+
+    assert first_results.texts == second_results.texts
+
+
+@pytest.mark.parametrize("target_prompt_tokens", [127, 128, 129])
+def test_eagle3_prefix_caching_add_request_no_crash(target_prompt_tokens: int):
+    main_model_id = "Qwen/Qwen3-1.7B"
+    draft_model_id = "AngelSlim/Qwen3-1.7B_eagle3"
+
+    main_model_path = download_and_convert_model(main_model_id).models_path
+    draft_model_path = download_and_convert_model(draft_model_id).models_path
+
+    scheduler_config = dict_to_scheduler_config({"enable_prefix_caching": True, "dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
+    cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        scheduler_config=scheduler_config,
+    )
+
+    ov_tokenizer = cb_pipe.get_tokenizer()
+    prompt = _build_prompt_with_exact_token_count(ov_tokenizer, target_prompt_tokens)
+
+    generation_config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=4, apply_chat_template=False)
+
+    first_handle = cb_pipe.add_request(0, prompt, generation_config=generation_config)
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    first_outputs = first_handle.read_all()
+
+    try:
+        second_handle = cb_pipe.add_request(1, prompt, generation_config=generation_config)
+        while cb_pipe.has_non_finished_requests():
+            cb_pipe.step()
+        second_outputs = second_handle.read_all()
+    except RuntimeError as exc:
+        pytest.fail(
+            "Second Eagle3 add_request with prefix cache reuse must not raise RuntimeError. "
+            f"prompt_tokens={target_prompt_tokens}, error={exc}"
+        )
+
+    assert len(first_outputs) == 1
+    assert len(second_outputs) == 1
+    assert first_outputs[0].generated_ids == second_outputs[0].generated_ids
+
+
 @pytest.fixture(scope="module")
 def cb_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
     return download_and_convert_model(request.param)
