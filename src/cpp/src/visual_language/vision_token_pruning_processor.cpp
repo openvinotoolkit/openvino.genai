@@ -813,8 +813,7 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     const size_t video_token_count = has_videos ? context.video_embeddings.get_shape()[0] : 0;
     const size_t total_tokens = image_token_count + video_token_count;
     if (total_tokens == 0) {
-        // No vision tokens to prune (caller may invoke this with empty merged embeddings
-        // when the prompt contains no pad-token runs). Skip pruning entirely.
+        m_last_keep_flags.clear();
         return std::nullopt;
     }
     OPENVINO_ASSERT(image_token_count == 0 || context.image_pad_token_id != -1,
@@ -867,6 +866,9 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     OPENVINO_ASSERT(context.text_embeds.get_shape().size() == 3,
                     "text_embeds must be rank-3 [batch, seq_len, hidden], got rank: ",
                     context.text_embeds.get_shape().size());
+    OPENVINO_ASSERT(context.text_embeds.get_shape()[0] == 1,
+                    "text_embeds batch size must be 1, got: ",
+                    context.text_embeds.get_shape()[0]);
     OPENVINO_ASSERT(context.text_embeds.get_shape()[1] == context.input_ids.get_shape().at(1),
                     "text_embeds seq_len must match input_ids seq_len: text_embeds=",
                     context.text_embeds.get_shape()[1],

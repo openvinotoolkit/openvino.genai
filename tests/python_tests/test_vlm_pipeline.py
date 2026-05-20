@@ -2790,7 +2790,7 @@ def test_cdpruner_continuous_batching_chat_history(
 
     history.append({"role": "user", "content": "What did you see in total?"})
     result3 = ov_continuous_batching_pipe_qwen2vl.generate(
-        [history], images=[[cat_tensor]], generation_config=[generation_config]
+        [history], images=[[]], generation_config=[generation_config]
     )[0].texts[0]
     history.append({"role": "assistant", "content": result3})
 
