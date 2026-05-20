@@ -41,7 +41,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         return it->second;
     }
     // fallback to dummy
-    GENAI_WARN("Unrecognized model type '", value, "' in config. Falling back to DUMMY_VL which has no embed-specific behavior.");
+    GENAI_WARN("Unrecognized model type '", value.c_str(), "' in config. Falling back to DUMMY_VL which has no embed-specific behavior.");
     return VLMModelType::DUMMY_VL;
 }
 
