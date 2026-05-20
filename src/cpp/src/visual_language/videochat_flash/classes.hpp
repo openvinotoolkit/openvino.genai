@@ -40,8 +40,10 @@ protected:
     /// @brief A config to follow.
     VLMConfig m_vlm_config;
 
-    /// @brief pos_emb Tensor.
+    /// @brief Positional embedding for video (T=mm_local_num_frames).
     ov::Tensor m_pos_emb;
+    /// @brief Positional embedding for images (T=1).
+    ov::Tensor m_img_pos_emb;
 
 private:
     size_t m_mm_local_num_frames = 4;
@@ -51,7 +53,7 @@ private:
 
     /// @brief Loads shared VideoChat-Flash configs from the model config directory.
     void initialize_shared_config(const std::filesystem::path& config_dir_path);
-    /// @brief Reshapes and compiles the vision embeddings model with static rotary positional embedding shape.
+    /// @brief Compiles the vision embeddings model with dynamic rotary positional embedding shape.
     void initialize_vision_encoder_queue(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties);
     /// @brief Initializes infer request queue for the vision projection model.
     void initialize_vision_projection_queue(ov::CompiledModel& compiled_model);

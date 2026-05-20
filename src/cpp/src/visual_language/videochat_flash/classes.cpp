@@ -607,9 +607,14 @@ void VisionEncoderVideoChatFlashQwen::initialize_positional_embedding() {
     );
     const size_t grid_size = m_processor_config.image_size / m_processor_config.patch_size;
     m_pos_emb = get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
+    m_img_pos_emb = get_3d_sincos_pos_embed(mm_hidden_size, grid_size, 1, true);
     OPENVINO_ASSERT(
         m_pos_emb.get_size() > 0,
         "m_pos_emb must be initialized before vision embeddings model initialization."
+    );
+    OPENVINO_ASSERT(
+        m_img_pos_emb.get_size() > 0,
+        "m_img_pos_emb must be initialized before vision embeddings model initialization."
     );
 }
 
@@ -662,20 +667,6 @@ void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
     const std::string& device,
     const ov::AnyMap& properties) {
     initialize_positional_embedding();
-    const ov::Shape pos_emb_shape = m_pos_emb.get_shape();
-
-    OPENVINO_ASSERT(
-        pos_emb_shape.size() == 3 && pos_emb_shape[0] == 1,
-        "m_pos_emb must have shape [1, tokens, hidden]. Got ",
-        pos_emb_shape.to_string(),
-        "."
-    );
-
-    // Accelerate model by using static rope shape.
-    std::map<std::string, ov::PartialShape> input_shapes;
-    input_shapes["rotary_pos_emb"] = pos_emb_shape;  // it's a fixed shape: { 1, 1025, 1408 }
-    model->reshape(input_shapes);
-
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -734,7 +725,15 @@ ov::Tensor VisionEncoderVideoChatFlashQwen::encode_preprocessed_frames(
     const ov::Tensor& pos_emb,
     size_t merge_target_num_tokens) {
 
-    auto transpose_features = transpose_video_features(preprocessed_nchw, m_mm_local_num_frames);
+    const size_t grid_sq = (m_processor_config.image_size / m_processor_config.patch_size) *
+                           (m_processor_config.image_size / m_processor_config.patch_size);
+    OPENVINO_ASSERT(
+        (pos_emb.get_shape()[1] - 1) % grid_sq == 0,
+        "pos_emb token count must be grid_sq * local_num_frames + 1. Got pos_emb_tokens=",
+        pos_emb.get_shape()[1], ", grid_sq=", grid_sq, "."
+    );
+    const size_t local_num_frames = (pos_emb.get_shape()[1] - 1) / grid_sq;
+    auto transpose_features = transpose_video_features(preprocessed_nchw, local_num_frames);
 
     CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(m_ireq_queue_vision_encoder.get());
     CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(m_ireq_queue_merge_model.get());
@@ -755,32 +754,18 @@ EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, co
     OPENVINO_ASSERT(m_processor_config.image_size > 0, "image_size must be greater than 0.");
     ImageSize target_size{m_processor_config.image_size, m_processor_config.image_size};
 
-    // Image is [1, H, W, C] u8 (batch=1). The vision encoder uses a static rotary_pos_emb shape
-    // requiring mm_local_num_frames frames, so the image is padded to match.
     const ov::Shape& img_shape = image.get_shape();
     OPENVINO_ASSERT(img_shape.size() == 4 && img_shape[0] == 1,
                     "Input image must be 4D [1, H, W, C], got rank ", img_shape.size(),
                     " and batch ", (img_shape.size() >= 1 ? img_shape[0] : 0), ".");
 
-    // Preprocess the single frame once, then tile the f32 result to mm_local_num_frames.
-    // Tiling avoids running resize+normalize mm_local_num_frames times on identical data.
+    // Preprocess the single image frame. Unlike video, images use T=1 with a dedicated
+    // image positional embedding (m_img_pos_emb) matching the original HuggingFace model.
     auto preprocessed_single = preprocess(image, target_size,
                                           m_processor_config.image_mean,
                                           m_processor_config.image_std);
-    const size_t frames_group_size = m_mm_local_num_frames;
-    const ov::Shape& pp_shape = preprocessed_single.get_shape();  // [1, C, tH, tW]
-    ov::Shape tiled_shape = pp_shape;
-    tiled_shape[0] = frames_group_size;
-    ov::Tensor preprocessed(ov::element::f32, tiled_shape);
-    const size_t frame_elems = pp_shape[1] * pp_shape[2] * pp_shape[3];
-    const auto* src_ptr = preprocessed_single.data<const float>();
-    auto* dst_ptr = preprocessed.data<float>();
-    for (size_t i = 0; i < frames_group_size; ++i) {
-        std::memcpy(dst_ptr + i * frame_elems, src_ptr, frame_elems * sizeof(float));
-    }
 
-    // Reuse the video positional embedding since the padded image has the same frame count.
-    ov::Tensor final_features = encode_preprocessed_frames(preprocessed, m_pos_emb, m_target_num_token);
+    ov::Tensor final_features = encode_preprocessed_frames(preprocessed_single, m_img_pos_emb, m_target_num_token);
 
     encoded_image.images_features_projection = final_features;
     encoded_image.resized_source = {};
