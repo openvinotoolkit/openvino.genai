@@ -146,8 +146,8 @@ def parse_args():
     parser.add_argument(
         "--output",
         type=str,
-        default=None,
-        help="Directory name for saving the per sample comparison and metrics in CSV files.",
+        default="wwb_output",
+        help="Directory name for saving the per sample comparison and metrics in CSV files. Defaults to 'wwb_output'.",
     )
     parser.add_argument(
         "--num-samples",
