@@ -134,7 +134,7 @@ Detokenization time: 0.24 ± 0.02 ms
 Embeddings preparation time: 143.88 ± 0.00 ms
 TTFT: 229.26 ± 7.68 ms
 TPOT: 13.52 ± 3.03 ms
-Throughput : 73.97 ± 16.59 tokens/
+Throughput: 73.97 ± 16.59 tokens/s
 ```
 
 * With different image size
@@ -154,7 +154,7 @@ Throughput : 73.97 ± 16.59 tokens/
 	Embeddings preparation time: 36.70 ± 0.00 ms
 	TTFT: 72.10 ± 4.37 ms
 	TPOT: 13.21 ± 3.34 ms
-	Throughput : 75.69 ± 19.10 tokens/s
+	Throughput: 75.69 ± 19.10 tokens/s
 	```
 
 For more information on how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).
