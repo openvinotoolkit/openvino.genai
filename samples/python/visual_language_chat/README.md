@@ -124,37 +124,37 @@ python benchmark_vlm.py -m Qwen3-VL-2B-Instruct -i 319483352-d5fbbd1a-d484-415c-
 ```
 
 ```
-Number of images: 1, prompt token size: 6
-Input token size: 360
+Number of images: 1, Prompt token size: 6
+Input token size: 667
 Output token size: 20
-Load time: 17498.00 ms
-Generate time: 1149.09 ± 2.97 ms
-Tokenization time: 1.89 ± 0.13 ms
-Detokenization time: 0.25 ± 0.03 ms
-Embeddings preparation time: 274.10 ± 0.80 ms
-TTFT: 399.59 ± 4.10 ms
-TPOT: 39.42 ± 0.42 ms/token
-Throughput: 25.37 ± 0.27 tokens/s
+Load time: 17628.00 ms
+Generate time: 487.58 ± 6.96 ms
+Tokenization time: 16.46 ± 0.08 ms
+Detokenization time: 0.24 ± 0.02 ms
+Embeddings preparation time: 143.88 ± 0.00 ms
+TTFT: 229.26 ± 7.68 ms
+TPOT: 13.52 ± 3.03 ms
+Throughput : 73.97 ± 16.59 tokens/
 ```
 
 * With different image size
 
 	```
-	python benchmark_vlm.py -m miniCPM-V-2_6 -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3 -d GPU -ih 224 -iw 224
+	python benchmark_vlm.py -m Qwen3-VL-2B-Instruct -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3 -d GPU -ih 224 -iw 224
 	```
 
 	```
-	Number of images: 1, prompt token size: 6
-	Input token size: 95
+	Number of images: 1, Prompt token size: 6
+	Input token size: 80
 	Output token size: 20
-	Load time: 6061.00 ms
-	Generate time: 883.83 ± 21.24 ms
-	Tokenization time: 1.65 ± 0.05 ms
-	Detokenization time: 0.23 ± 0.01 ms
-	Embeddings preparation time: 57.81 ± 0.48 ms
-	TTFT: 122.47 ± 1.21 ms
-	TPOT: 40.05 ± 1.62 ms/token
-	Throughput: 24.97 ± 1.01 tokens/s
+	Load time: 4460.00 ms
+	Generate time: 323.61 ± 8.40 ms
+	Tokenization time: 15.80 ± 0.05 ms
+	Detokenization time: 0.24 ± 0.01 ms
+	Embeddings preparation time: 36.70 ± 0.00 ms
+	TTFT: 72.10 ± 4.37 ms
+	TPOT: 13.21 ± 3.34 ms
+	Throughput : 75.69 ± 19.10 tokens/s
 	```
 
 For more information on how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).
