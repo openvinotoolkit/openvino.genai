@@ -434,7 +434,7 @@ def main():
         result = OptimumExportTool(args.model_id, args.task, model_dir, optimum_export_work_dir).run()
         result.raise_if_failed()
 
-    Step 2: Inference test
+    # Step 2: Inference test
     if args.skip_llm_bench:
         logger.info("Skipping llm_bench test")
     else:
