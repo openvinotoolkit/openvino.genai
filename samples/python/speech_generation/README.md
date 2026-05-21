@@ -1,79 +1,161 @@
-# Text-to-speech pipeline sample
+# Text-to-speech Python samples
 
-This example demonstrates how to use the openvino_genai.Text2SpeechPipeline in Python to convert input text into speech.
-You can specify a target voice using a speaker embedding vector that captures the desired voice characteristics.
-Additionally, you can choose the inference device (e.g., CPU, GPU) to control where the model runs.
+This folder contains Python examples for `openvino_genai.Text2SpeechPipeline`:
 
-## Download and convert the model and tokenizers
+- `text2speech.py`: basic text → audio generation (SpeechT5 and Kokoro)
+- `kokoro_phonemize_fallback.py`: Kokoro unknown-word fallback behavior
 
-The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
+## Supported Models
 
-Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
+- **SpeechT5**
+    - Requires exported SpeechT5 model and vocoder.
+    - Usually uses a speaker embedding file.
+- **Kokoro**
+    - Uses a Kokoro model directory.
+    - Uses `--speaker_embedding_file_path` and `--language` options.
+    - End-to-end Kokoro language support includes:
+        - `en-us` (English, United States)
+        - `en-gb` (English, United Kingdom)
+        - `es` (Spanish)
+        - `fr-fr` (French, France)
+        - `hi` (Hindi)
+        - `it` (Italian)
+        - `pt-br` (Portuguese, Brazil)
+    - Not yet supported for end-to-end text generation in this flow: `ja` (Japanese), `zh` (Chinese/Mandarin).
 
-```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
-```
+## Install dependencies
 
-Then, run the export with Optimum CLI:
+- Export-time deps:
+
+    `pip install --upgrade-strategy eager -r ../../export-requirements.txt`
+
+- Runtime deps:
+
+    `pip install -r ../../deployment-requirements.txt`
+
+## SpeechT5 setup
+
+Export SpeechT5 with vocoder:
 
 ```sh
 optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts
 ```
 
-Alternatively, you can do it in Python code:
+Create a speaker embedding file (SpeechT5-specific):
 
-```python
-from optimum.exporters.openvino.convert import export_tokenizer
-from optimum.intel import OVModelForTextToSpeechSeq2Seq
-from transformers import AutoTokenizer
+`python create_speaker_embedding.py`
 
-output_dir = "speecht5_tts"
-
-model = OVModelForTextToSpeechSeq2Seq.from_pretrained("microsoft/speecht5_tts", vocoder="microsoft/speecht5_hifigan", export=True)
-model.save_pretrained(output_dir)
-
-tokenizer = AutoTokenizer.from_pretrained("microsoft/speecht5_tts")
-export_tokenizer(tokenizer, output_dir)
+## Kokoro setup
+```sh
+pip install --upgrade-strategy eager -r ../../export-requirements.txt
+pip install kokoro
+optimum-cli export openvino -m hexgrad/Kokoro-82M ov_Kokoro-82M --trust-remote-code
 ```
 
-**Note:** Currently, text-to-speech in OpenVINO GenAI supports the `SpeechT5 TTS` model.
-When exporting the model, you must specify a vocoder using the `--model-kwargs` option in JSON format.
+> **Note:**
+> After export is complete, you will find the available speaker embedding `.bin` files in `ov_Kokoro-82M/voices`.
 
-## Prepare speaker embedding file
+## Use of `espeak-ng` within the Kokoro Pipeline
 
-To generate speech using the SpeechT5 TTS model, you can specify a target voice by providing a speaker embedding file.
-This file must contain 512 32-bit floating-point values that represent the voice characteristics of the target speaker.
-The model will use these characteristics to synthesize the input text in the specified voice.
+Within the Kokoro Text-to-Speech pipeline, `espeak-ng` is an external dependency used for the grapheme-to-phoneme (G2P) stage. Its role varies depending on the selected language:
 
-If no speaker embedding is provided, the model will default to a built-in speaker for speech generation.
+- **English (`en-us`, `en-gb`)**:
+  `espeak-ng` is used as a fallback for words that are not found in the built-in dictionary.
+  See the `kokoro_phonemize_fallback` sample for an example of using an OpenVINO-based fallback model to avoid relying on `espeak-ng` for English.
 
-You can generate a speaker embedding using the [`create_speaker_embedding.py`](create_speaker_embedding.py) script.
-This script records 5 seconds of audio from your microphone and extracts a speaker embedding vector from the recording.
+- **Non-English (`es`, `fr-fr`, `hi`, `it`, `pt-br`)**:
+  `espeak-ng` serves as the primary G2P (phonemization) engine. As such, it must be installed to enable end-to-end text-to-speech generation for these languages.
 
-To run the script:
+> **Note:**
+> `espeak-ng` is licensed under GPLv3 and must be installed separately. OpenVINO GenAI detects its presence automatically at runtime.
 
+To install `espeak-ng`, follow the official guide:
+https://github.com/espeak-ng/espeak-ng/blob/master/docs/guide.md
+
+## Run samples
+
+### 1) `text2speech.py`
+
+SpeechT5:
 ```
-python create_speaker_embedding.py
+python text2speech.py --speaker_embedding_file_path speaker_embedding.bin speecht5_tts "Hello from OpenVINO GenAI"
 ```
 
-## Run Text-to-speech sample
+Kokoro:
+```
+python text2speech.py --speaker_embedding_file_path ov_Kokoro-82M/voices/af_heart.bin --language en-us ov_Kokoro-82M "Hello, and welcome to speech generation using OpenVINO GenAI."
+```
 
-Install [deployment-requirements.txt](../../deployment-requirements.txt)
-via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
+Kokoro (non-English):
+```
+python text2speech.py --speaker_embedding_file_path ov_Kokoro-82M/voices/ef_dora.bin --language es ov_Kokoro-82M "Hola y bienvenidos a la generación de voz utilizando OpenVINO GenAI."
+```
 
-`python text2speech.py --speaker_embedding_file_path speaker_embedding.bin speecht5_tts "Hello OpenVINO GenAI"`
+Text2speech with speed control:
+```
+python text2speech.py --speaker_embedding_file_path ov_Kokoro-82M/voices/af_heart.bin --language en-us --speed 1.15 ov_Kokoro-82M "Hello from OpenVINO GenAI with a faster speaking rate."
+```
 
-It generates `output_audio.wav` file containing the phrase `Hello OpenVINO GenAI` spoken in the target voice.
+### 2) `kokoro_phonemize_fallback.py` (Kokoro only)
 
-Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-generation-models) for more details.
+This sample demonstrates how to use an OpenVINO-based fallback model for phonemization, allowing you to avoid relying on `espeak-ng` when working with English languages.
 
-# Text-to-speech pipeline usage
+**Why use a fallback model instead of `espeak-ng`?**
+
+While `espeak-ng` provides robust phonemization, using an OpenVINO-based fallback model avoids the need for external dependencies and consideration of their associated licensing requirements, enabling a more self-contained and uniformly licensed deployment.
+
+#### Export OV fallback models:
+
+US:
+```
+optimum-cli export openvino --model PeterReid/graphemes_to_phonemes_en_us --task text2text-generation graphemes_to_phonemes_en_us-ov
+```
+
+GB:
+```
+optimum-cli export openvino --model PeterReid/graphemes_to_phonemes_en_gb --task text2text-generation graphemes_to_phonemes_en_gb-ov
+```
+
+#### Run using fallback models:
+
+US model + `en-us`:
+```
+python kokoro_phonemize_fallback.py ov_Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --speaker_embedding_file_path ov_Kokoro-82M/voices/af_heart.bin --language en-us --phonemize_fallback_model_dir graphemes_to_phonemes_en_us-ov
+```
+
+GB model + `en-gb`:
+```
+python kokoro_phonemize_fallback.py ov_Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --speaker_embedding_file_path ov_Kokoro-82M/voices/bf_emma.bin --language en-gb --phonemize_fallback_model_dir graphemes_to_phonemes_en_gb-ov
+```
+
+Use default `espeak-ng` fallback (omit `--phonemize_fallback_model_dir`):
+```
+python kokoro_phonemize_fallback.py ov_Kokoro-82M "Vellorin traded copperchimes for rainmint at Candlehaven." --speaker_embedding_file_path ov_Kokoro-82M/voices/af_heart.bin --language en-us
+```
+
+Set `--language` to match the fallback model variant (`en-us` with `..._en_us-ov`, `en-gb` with `..._en_gb-ov`).
+OpenVINO fallback models above are an English-only feature (`en-us` / `en-gb`). For non-English Kokoro languages, phonemization is handled directly by `espeak-ng` as the primary G2P path (this fallback-model feature is not used).
+
+All samples produce WAV output.
+
+Refer to [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-generation-models) for model details.
+
+# Text-to-speech API usage
 
 ```python
 import openvino_genai
 
 pipe = openvino_genai.Text2SpeechPipeline(model_dir, device)
+
 result = pipe.generate("Hello OpenVINO GenAI", speaker_embedding)
-speech = result.speeches[0]
-# speech tensor contains the waveform of the spoken phrase
+
+# Kokoro generation with an application-prepared embedding tensor
+result = pipe.generate("Hello from Kokoro", speaker_embedding, language="en-us")
+
+# Kokoro unknown-word fallback via config
+cfg = pipe.get_generation_config()
+cfg.phonemize_fallback_model_dir = "graphemes_to_phonemes_en_us-ov"  # set -> OV fallback
+# cfg.phonemize_fallback_model_dir = None  # unset -> espeak-ng fallback
+pipe.set_generation_config(cfg)
+result = pipe.generate("Vellorin traded copperchimes for rainmint at Candlehaven.", speaker_embedding, language="en-us")
 ```
