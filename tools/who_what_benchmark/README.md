@@ -150,8 +150,17 @@ wwb --base-model Lightricks/LTX-Video --gt-data video_gen_test/gt.csv --model-ty
 wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --output ltx_video_optimum
 # compute metrics with GenAI
 wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --genai --output ltx_video_genai
+
+# Optional: set decode-time conditioning for timestep-conditioned VAE exports
+# HF/Optimum use decode-noise-scale naming
+wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --hf --output ltx_video_hf_ts --decode-timestep 0.05 --decode-noise-scale 0.025
+
+# GenAI and HF/Optimum use decode-noise-scale as the canonical CLI option
+wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --genai --output ltx_video_genai_ts --decode-timestep 0.05 --decode-noise-scale 0.025
 ```
 
+`--decode-timestep` and `--decode-noise-scale` are supported only for `--model-type text-to-video`.
+Regular LTX models without timestep conditioning continue to work with default behavior when these options are not provided.
 ### Compare Text-to-video models with LoRA (LTX-Video)
 
 Community LoRA adapters for LTX-Video are available on [HuggingFace](https://huggingface.co/models?other=base_model:adapter:Lightricks/LTX-Video).
