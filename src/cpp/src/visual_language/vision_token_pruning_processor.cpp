@@ -445,12 +445,12 @@ void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids,
     OPENVINO_ASSERT(!combined_sequence.empty(), "Vision region sequence must not be empty when pruning visual tokens");
     OPENVINO_ASSERT(!kept_indices_per_image.empty(), "Kept token indices are missing after pruning");
 
-    // Reorder images according to sequence
+    // Reorder vision regions according to sequence
     std::vector<std::array<size_t, 3>> reordered_combined_grid_thw;
     reordered_combined_grid_thw.reserve(combined_sequence.size());
-    for (size_t new_image_id : combined_sequence) {
-        OPENVINO_ASSERT(new_image_id < combined_grid_thw.size(), "Vision region sequence index is out of range");
-        reordered_combined_grid_thw.push_back(combined_grid_thw.at(new_image_id));
+    for (size_t region_idx : combined_sequence) {
+        OPENVINO_ASSERT(region_idx < combined_grid_thw.size(), "Vision region sequence index is out of range");
+        reordered_combined_grid_thw.push_back(combined_grid_thw.at(region_idx));
     }
 
     // Detect position encoding type from shape
