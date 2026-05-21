@@ -1,27 +1,59 @@
 import CodeBlock from '@theme/CodeBlock';
 
 <CodeBlock language="javascript" showLineNumbers>
-{`import { addon as ov } from "openvino-node";
+{`import fs from "node:fs/promises";
+import { extname, join } from "node:path";
+import { addon as ov } from "openvino-node";
 import { VLMPipeline } from "openvino-genai-node";
-import { stat, readdir } from "node:fs/promises";
-import sharp from "sharp";
-import path from "node:path";
+import jpegJs from "jpeg-js";
+import { PNG } from "pngjs";
 
-async function readImage(imagePath) {
-    const img = sharp(imagePath);
-    const metadata = await img.metadata();
-    const { width, height, channels } = metadata;
-    const imageBuffer = await img.raw().toBuffer();
-    return new ov.Tensor(ov.element.u8, [height, width, channels], imageBuffer);
+async function readImage(filePath) {
+    const buffer = await fs.readFile(filePath);
+    const ext = extname(filePath).toLowerCase();
+
+    let width, height, rgbaData;
+    if (ext === ".jpg" || ext === ".jpeg") {
+        ({ width, height, data: rgbaData } = jpegJs.decode(buffer, { useTArray: true }));
+    } else if (ext === ".png") {
+        ({ width, height, data: rgbaData } = PNG.sync.read(buffer));
+    } else {
+        throw new Error(`Unsupported image format: ${ext}`);
+    }
+
+    const pixelCount = width * height;
+    const rgb = new Uint8Array(pixelCount * 3);
+    for (let i = 0; i < pixelCount; i++) {
+        rgb[i * 3] = rgbaData[i * 4];
+        rgb[i * 3 + 1] = rgbaData[i * 4 + 1];
+        rgb[i * 3 + 2] = rgbaData[i * 4 + 2];
+    }
+
+    const tensor = new ov.Tensor("u8", [height, width, 3], rgb);
+    tensor._buffer = rgb; // prevent GC from collecting the backing buffer
+    return tensor;
 }
 
-async function readImages(imagePath) {
-    const stats = await stat(imagePath);
-    if (stats.isDirectory()) {
-        const files = await readdir(imagePath);
-        return Promise.all(files.sort().map((file) => readImage(path.join(imagePath, file))));
+async function readImages(path) {
+    const stat = await fs.stat(path);
+    if (!stat.isDirectory()) {
+        return [await readImage(path)];
     }
-    return [await readImage(imagePath)];
+
+    const supportedExtensions = new Set([".jpg", ".jpeg", ".png"]);
+    const entries = await fs.readdir(path, { withFileTypes: true });
+    const files = entries
+        .filter((entry) => entry.isFile() && supportedExtensions.has(extname(entry.name).toLowerCase()))
+        .map((entry) => join(path, entry.name));
+
+    files.sort((a, b) => a.localeCompare(b));
+
+    const tensors = [];
+    for (const file of files) {
+        tensors.push(await readImage(file));
+    }
+
+    return tensors;
 }
 
 const images = await readImages("./images");

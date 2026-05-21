@@ -43,7 +43,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@7f61dc3cf40c03638386397c6f8f98bf23f25a00
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@f62a7a911154a4add1d30fd06aa75ae82351a90b
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -638,7 +638,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
-          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          rm -rf node_modules/openvino-node/bin && ln -sfn ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Install NPM dependencies for samples
@@ -646,7 +646,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/samples/js
         run: |
           npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* ${{ env.SRC_DIR }}/src/js --ignore-scripts
-          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          rm -rf node_modules/openvino-node/bin && ln -sfn ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Test Samples (Python and C++)
@@ -740,10 +740,7 @@ jobs:
   genai_nodejs_tests:
     name: Node.js bindings tests
     needs: [ smart_ci, openvino_download, genai_build_wheel, genai_build_nodejs ]
-    # if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
-    # nodejs tests fails on mac with: "mutex lock failed: Invalid argument"
-    # ticket: 179949
-    if: false
+    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
     timeout-minutes: 20
     defaults:
       run:
@@ -795,7 +792,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
-          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          rm -rf node_modules/openvino-node/bin && ln -sfn ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Install OpenVINO GenAI Python packages (from wheels)
