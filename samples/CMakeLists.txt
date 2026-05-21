@@ -30,7 +30,7 @@ install(DIRECTORY
             cpp/video_generation
             cpp/speech_generation
             cpp/visual_language_chat
-            cpp/whisper_speech_recognition
+            cpp/automatic_speech_recognition
             cpp/rag
         DESTINATION samples/cpp COMPONENT cpp_samples_genai)
 
