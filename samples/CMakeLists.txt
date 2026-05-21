@@ -12,6 +12,7 @@ if(ENABLE_SAMPLES)
     add_subdirectory(c/text_generation)
     add_subdirectory(c/whisper_speech_recognition)
     add_subdirectory(c/visual_language_chat)
+    add_subdirectory(c/rag)
 endif()
 
 install(FILES
@@ -49,4 +50,5 @@ install(DIRECTORY
         c/text_generation
         c/whisper_speech_recognition
         c/visual_language_chat
+        c/rag
         DESTINATION samples/c COMPONENT cpp_samples_genai)

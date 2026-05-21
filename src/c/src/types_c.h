@@ -10,6 +10,7 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/json_container.hpp"
+#include "openvino/genai/rag/text_embedding_pipeline.hpp"
 
 #define GET_PROPERTY_FROM_ARGS_LIST                                                                            \
     std::string property_key = va_arg(args_ptr, char*);                                                        \
@@ -145,4 +146,28 @@ struct ov_genai_chat_history_opaque {
  */
 struct ov_genai_json_container_opaque {
     std::shared_ptr<ov::genai::JsonContainer> object;
+};
+
+/**
+ * @struct ov_genai_text_embedding_pipeline_opaque
+ * @brief This is an interface of ov::genai::TextEmbeddingPipeline
+ */
+struct ov_genai_text_embedding_pipeline_opaque {
+    std::shared_ptr<ov::genai::TextEmbeddingPipeline> object;
+};
+
+/**
+ * @struct ov_genai_embedding_result_opaque
+ * @brief Holds a single embedding vector returned by ov::genai::TextEmbeddingPipeline::embed_query.
+ */
+struct ov_genai_embedding_result_opaque {
+    ov::genai::EmbeddingResult value;
+};
+
+/**
+ * @struct ov_genai_embedding_results_opaque
+ * @brief Holds a batch of embedding vectors returned by ov::genai::TextEmbeddingPipeline::embed_documents.
+ */
+struct ov_genai_embedding_results_opaque {
+    ov::genai::EmbeddingResults value;
 };
