@@ -55,7 +55,7 @@ def main():
     parser.add_argument("-td", "--tree_depth", type=int, default=0, help="Tree depth")
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-pf", "--prompt_file", type=str, help="Read prompt from file")
-    parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image")
+    parser.add_argument("-i", "--image", type=str, default="", help="Image")
     parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
@@ -95,7 +95,7 @@ def main():
     # In order to get VLMDecodedResults instead of a string input should be a list.
     models_path = args.model
     draft_model_path = args.draft_model
-    images = read_images(args.image)
+    images = [] if args.image == "" else read_images(args.image)
     device = args.device
     num_warmup = args.num_warmup
     num_iter = args.num_iter

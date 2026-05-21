@@ -315,6 +315,18 @@ def parse_args():
         help="Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding.",
     )
     parser.add_argument(
+        "--branching-factor",
+        type=int,
+        default=None,
+        help="Config option branching_factor for tree-based speculative decoding.",
+    )
+    parser.add_argument(
+        "--tree-depth",
+        type=int,
+        default=None,
+        help="Config option tree_depth for tree-based speculative decoding.",
+    )
+    parser.add_argument(
         "--assistant-confidence-threshold",
         type=float,
         default=None,
@@ -1157,6 +1169,16 @@ def main():
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
 
+    def set_generation_config_for_draft_model(model):
+        generation_config = model.get_generation_config()
+        if args.num_assistant_tokens is not None:
+            generation_config.num_assistant_tokens = int(args.num_assistant_tokens)
+        if args.branching_factor is not None:
+            generation_config.branching_factor = int(args.branching_factor)
+        if args.tree_depth is not None:
+            generation_config.tree_depth = int(args.tree_depth)
+        model.set_generation_config(generation_config)
+
     if args.base_model is not None:
         base_model = load_model(
             args.model_type,
@@ -1173,6 +1195,9 @@ def main():
             generation_config = base_model.get_generation_config()
             generation_config.taylorseer_config = taylorseer_config
             base_model.set_generation_config(generation_config)
+
+        if args.draft_model is not None and base_model is not None:
+            set_generation_config_for_draft_model(base_model)
 
         evaluator = create_evaluator(base_model, args)
 
@@ -1212,6 +1237,9 @@ def main():
                 generation_config = target_model.get_generation_config()
                 generation_config.taylorseer_config = taylorseer_config
                 target_model.set_generation_config(generation_config)
+
+            if args.draft_model is not None and target_model is not None:
+                set_generation_config_for_draft_model(target_model)
 
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,
