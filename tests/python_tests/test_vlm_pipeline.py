@@ -2831,11 +2831,15 @@ def _build_videochat_pipe_with_env(value: str | None) -> VLMPipeline:
         pytest.param("CPP", id="legacy_cpp_loop"),
     ],
 )
-def test_videochatflash_preprocess_env_switch(vision_preprocess_env, synthetic_video_32x32_tensor: openvino.Tensor):
-    """Smoke test: VLMPipeline must construct and generate non-empty output
-    under both VISION_PREPROCESS settings (default OV-graph and CPP fallback).
-    This guards the runtime selector in initialize_preprocess_queue from
-    silently breaking either path."""
+def test_videochatflash_preprocess_env_paths_construct_and_generate(
+    vision_preprocess_env, synthetic_video_32x32_tensor: openvino.Tensor
+):
+    """Smoke test covering both preprocess configuration paths.
+
+    This test verifies that VLMPipeline can successfully construct and run
+    generation with both the default OV-graph preprocess path and the legacy
+    CPP fallback path enabled through VISION_PREPROCESS.
+    """
     pipe = _build_videochat_pipe_with_env(vision_preprocess_env)
     generation_config = _setup_generation_config(pipe, max_new_tokens=5, do_sample=False)
     result = pipe.generate(
@@ -2853,14 +2857,16 @@ def test_videochatflash_preprocess_env_switch(vision_preprocess_env, synthetic_v
 def test_videochatflash_preprocess_ov_matches_cpp_reference(
     synthetic_video_32x32_tensor: openvino.Tensor,
 ):
-    """Correctness test: on CPU device the OV-graph preprocess path must agree
-    with the legacy CPP per-frame reference path at the token level under
-    greedy decoding. The two paths use different bicubic implementations
-    (OV op::v11::Interpolate vs the hand-written bicubic_resize in clip.cpp)
-    and are not bit-exact, but the residual is small enough to be absorbed by
-    LayerNorm/Softmax inside the ViT, so greedy argmax stays stable for a
-    handful of steps. ``max_new_tokens`` is kept small to stay inside that
-    robust regime."""
+    """Regression test for end-to-end greedy-output agreement on CPU.
+
+    This compares the default OV-graph preprocess path against the legacy CPP
+    per-frame reference path through final generated text, not through strict
+    tensor-level equivalence of the preprocess outputs. The two paths use
+    different bicubic implementations (OV op::v11::Interpolate vs the
+    hand-written bicubic_resize in clip.cpp), so small numeric differences are
+    expected; the test checks that those differences remain small enough for
+    greedy decoding to stay stable over a short generation window.
+    """
     pipe_ov = _build_videochat_pipe_with_env(None)
     pipe_cpp = _build_videochat_pipe_with_env("CPP")
 
