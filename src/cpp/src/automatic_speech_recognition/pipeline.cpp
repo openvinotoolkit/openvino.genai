@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <unordered_map>
 
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "automatic_speech_recognition/whisper_asr_pipeline_adapter.hpp"

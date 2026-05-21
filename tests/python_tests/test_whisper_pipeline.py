@@ -170,7 +170,7 @@ def save_model(model_id: str, tmp_path: pathlib.Path):
 def run_huggingface(
     pipeline,
     sample,
-    config: ov_genai.ASRGenerationConfig | None = None,
+    config: ov_genai.ASRGenerationConfig | ov_genai.WhisperGenerationConfig | None = None,
 ):
     if not config:
         config = ov_genai.ASRGenerationConfig()
@@ -203,7 +203,7 @@ def run_huggingface(
 def run_genai(
     pipeline,
     sample,
-    config: ov_genai.ASRGenerationConfig | None = None,
+    config: ov_genai.ASRGenerationConfig | ov_genai.WhisperGenerationConfig | None = None,
     streamer: typing.Callable[[str], bool] | None = None,
 ):
     if not config:
@@ -302,7 +302,7 @@ def run_pipeline_with_ref(
     model_id: str,
     tmp_path: str,
     sample: np.ndarray | list[np.ndarray],
-    generation_config: ov_genai.ASRGenerationConfig | None = None,
+    generation_config: ov_genai.ASRGenerationConfig | ov_genai.WhisperGenerationConfig | None = None,
     streamer: typing.Callable[[str], bool] | None = None,
     pipeline_type: PipelineType = PipelineType.WHISPER,
 ):

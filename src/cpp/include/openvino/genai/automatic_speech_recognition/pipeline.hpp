@@ -4,6 +4,10 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
+#include <ostream>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
@@ -33,10 +37,30 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
     std::optional<std::vector<ASRDecodedResultChunk>> chunks = std::nullopt;
     std::optional<std::vector<ASRDecodedResultChunk>> words = std::nullopt;
 
-    operator std::string() const;
-    operator std::vector<std::string>() const;
+    operator std::string() const {
+        std::stringstream ss;
+        ss << *this;
+        return ss.str();
+    };
 
-    friend std::ostream& operator<<(std::ostream& os, const ASRDecodedResults& dr);
+    operator std::vector<std::string>() const {
+        return texts;
+    };
+
+    friend std::ostream& operator<<(std::ostream& os, const ASRDecodedResults& dr) {
+        OPENVINO_ASSERT(dr.scores.size() == dr.texts.size(), "The number of scores and texts doesn't match.");
+        if (dr.texts.empty()) {
+            return os;
+        }
+        if (dr.texts.size() == 1) {
+            os << dr.texts[0];
+            return os;
+        }
+        for (size_t i = 0; i < dr.texts.size() - 1; ++i) {
+            os << std::to_string(dr.scores[i]) << ": " << dr.texts[i] << '\n';
+        }
+        return os << std::to_string(dr.scores.back()) << ": " << dr.texts.back();
+    }
 };
 
 class OPENVINO_GENAI_EXPORTS ASRPipeline {
