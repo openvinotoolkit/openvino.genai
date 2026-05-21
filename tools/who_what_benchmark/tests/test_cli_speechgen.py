@@ -241,7 +241,9 @@ def test_tts_speecht5(model_id, model_type, optimum_threshold, genai_threshold, 
     speaker_embeddings = get_speaker_embedding()
     run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_threshold, tmp_path)
 
-
+@pytest.mark.transformers_lower_v5(
+    reason="version of the speechbrain module compatible with transformers v5.0 causes an import error with k2 module on Windows."
+)
 @pytest.mark.speech_generation
 @pytest.mark.kokoro
 def test_tts_kokoro_hf_requires_voice(tmp_path):
@@ -266,7 +268,9 @@ def test_tts_kokoro_hf_requires_voice(tmp_path):
 
     assert "Kokoro HF mode requires --speech-voice" in error.value.output
 
-
+@pytest.mark.transformers_lower_v5(
+    reason="version of the speechbrain module compatible with transformers v5.0 causes an import error with k2 module on Windows."
+)
 @pytest.mark.speech_generation
 @pytest.mark.kokoro
 @pytest.mark.parametrize(
