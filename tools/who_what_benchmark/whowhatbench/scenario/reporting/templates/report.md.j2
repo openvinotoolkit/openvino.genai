@@ -1,0 +1,69 @@
+{#-
+  WWB scenario report template (Markdown).
+
+  Context variables:
+    scenario_name   : str — scenario.name
+    description     : str | None — scenario.description
+    group_by        : "task" | "target"
+    summary_rows    : list[dict] — view rows for the summary table
+    task_groups     : list[dict] | None — used when group_by == "task"
+    target_groups   : list[dict] | None — used when group_by == "target"
+
+  Each row dict carries keys produced by ``_view_row`` in ``markdown.py``:
+  task_id, task_type, target_id, metric_name, metric_value, n_samples,
+  runtime_s.
+
+  ``description`` is HTML-escaped here via the ``| e`` filter so users can put
+  arbitrary text in scenario.description without producing an XSS vector when
+  the report is rendered by GitHub/GitLab/dashboards.
+-#}
+# WWB Scenario Report — {{ scenario_name }}
+
+{% if description %}
+{% for line in (description | e).splitlines() %}
+> {{ line }}
+{% endfor %}
+
+{% endif %}
+## Summary
+
+{% if group_by == "task" %}
+| task | type | target | headline_metric | value | n_samples | runtime_s |
+|------|------|--------|-----------------|-------|-----------|-----------|
+{% for r in summary_rows %}
+| {{ r.task_id }} | {{ r.task_type }} | {{ r.target_id }} | {{ r.metric_name }} | {{ r.metric_value }} | {{ r.n_samples }} | {{ r.runtime_s }} |
+{% endfor %}
+{% else %}
+| target | task | type | headline_metric | value | n_samples | runtime_s |
+|--------|------|------|-----------------|-------|-----------|-----------|
+{% for r in summary_rows %}
+| {{ r.target_id }} | {{ r.task_id }} | {{ r.task_type }} | {{ r.metric_name }} | {{ r.metric_value }} | {{ r.n_samples }} | {{ r.runtime_s }} |
+{% endfor %}
+{% endif %}
+
+{% if group_by == "task" %}
+{% for group in task_groups %}
+## Task: {{ group.task_id }} ({{ group.task_type }})
+
+| target | {{ group.metric_name }} | runtime_s |
+|--------|{{ '-' * (group.metric_name|length + 2) }}|-----------|
+{% for r in group.results %}
+| {{ r.target_id }} | {{ r.metric_value }} | {{ r.runtime_s }} |
+{% endfor %}
+
+*Worst examples: see `tasks/{{ group.task_id }}/<target>/metrics_per_question.csv`*
+
+{% endfor %}
+{% else %}
+{% for group in target_groups %}
+## Target: {{ group.target_id }}
+
+{% for r in group.results %}
+- **{{ r.task_id }}** ({{ r.task_type }}): {{ r.metric_name }} = {{ r.metric_value }}, runtime = {{ r.runtime_s }}s
+{% endfor %}
+
+{% endfor %}
+{% endif %}
+---
+
+*See `run_manifest.json` for full environment and version details.*

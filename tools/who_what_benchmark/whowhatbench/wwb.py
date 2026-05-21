@@ -1,25 +1,15 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+# NOTE: All heavy imports (openvino, transformers, PIL, whowhatbench evaluators)
+# are deferred into the functions that need them. This keeps the module importable
+# without an openvino install, enabling `wwb run --dry-run` to work in any env.
+
 import argparse
 import difflib
-import numpy as np
 import logging
 import os
-
-from transformers import AutoTokenizer, AutoProcessor, AutoConfig
-import openvino as ov
-
-import pandas as pd
-from PIL import Image
-from datasets import load_dataset
-from typing import Any, Optional
-
-from whowhatbench.model_loaders import load_model
-from whowhatbench import EVALUATOR_REGISTRY
-from whowhatbench.utils import fix_phi3_v_eos_token_id
-from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
-from whowhatbench.utils import get_json_config
+from typing import Any, Callable, Optional
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -395,6 +385,8 @@ def check_args(args):
 def load_prompts(args):
     if args.dataset is None:
         return None
+    from datasets import load_dataset  # noqa: PLC0415
+
     split = "validation"
     if args.split is not None:
         split = args.split
@@ -413,6 +405,8 @@ def load_prompts(args):
 
 
 def load_tokenizer(args):
+    from transformers import AutoTokenizer  # noqa: PLC0415
+
     # Define kwargs based on args attributes
     kwargs = {}
     if args.gguf_file:
@@ -459,6 +453,8 @@ def load_tokenizer(args):
 
 
 def load_processor(args):
+    from transformers import AutoConfig, AutoProcessor, AutoTokenizer  # noqa: PLC0415
+
     model_id = args.base_model if args.base_model is not None else args.target_model
     if model_id is None:
         return None, None
@@ -599,6 +595,8 @@ def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question,
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
+    from PIL import Image  # noqa: PLC0415
+
     kwargs = {}
     if empty_adapters:
         import openvino_genai
@@ -624,6 +622,10 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_ad
 
 
 def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
+    import numpy as np  # noqa: PLC0415
+    import openvino as ov  # noqa: PLC0415
+    from PIL import Image  # noqa: PLC0415
+
     image_data = ov.Tensor(np.array(image)[None])
     image_tensor = model.generate(
         prompt,
@@ -667,10 +669,15 @@ def genai_gen_text2video(
         generator=generator,
         **kwargs,
     )
+    from PIL import Image  # noqa: PLC0415
+
     return [Image.fromarray(frame) for frame in result.video.data[0]]
 
 
 def genai_gen_speech(model, prompt, speaker_embedding=None, voice=""):
+    import numpy as np  # noqa: PLC0415
+    import openvino as ov  # noqa: PLC0415
+
     if speaker_embedding is not None and not isinstance(speaker_embedding, ov.Tensor):
         speaker_embedding = ov.Tensor(np.array(speaker_embedding, dtype=np.float32).reshape(1, -1))
 
@@ -688,6 +695,10 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, voice=""):
 
 
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
+    import numpy as np  # noqa: PLC0415
+    import openvino as ov  # noqa: PLC0415
+    from PIL import Image  # noqa: PLC0415
+
     image_data = ov.Tensor(np.array(image)[None])
     mask_data = ov.Tensor(np.array(mask)[None])
     image_tensor = model.generate(
@@ -703,6 +714,10 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 def genai_gen_visual_text(
     model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, pruning_ratio, relevance_weight
 ):
+    import numpy as np  # noqa: PLC0415
+    import openvino as ov  # noqa: PLC0415
+    from whowhatbench.utils import fix_phi3_v_eos_token_id  # noqa: PLC0415
+
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if image is not None:
         kwargs['image'] = ov.Tensor(np.array(image)[None])
@@ -724,20 +739,24 @@ def genai_gen_visual_text(
 
 def genai_gen_visual_text_chat(
     model: Any,
-    inputs: list[VisualTextChatInput],
+    inputs: list,
     processor: Optional[Any],
     tokenizer: Optional[Any],
     max_new_tokens: int,
     pruning_ratio: Optional[float],
     relevance_weight: Optional[float],
 ):
+    import numpy as np  # noqa: PLC0415
+    import openvino as ov  # noqa: PLC0415
+    import openvino_genai  # noqa: PLC0415
+    from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput  # noqa: PLC0415
+    from whowhatbench.utils import fix_phi3_v_eos_token_id  # noqa: PLC0415
+
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if pruning_ratio is not None:
         kwargs["pruning_ratio"] = pruning_ratio
     if relevance_weight is not None:
         kwargs["relevance_weight"] = relevance_weight
-
-    import openvino_genai
 
     chat_history = openvino_genai.ChatHistory()
     answers: list[str] = []
@@ -776,222 +795,272 @@ def is_model_with_automatic_crop(config):
     )
 
 
-def create_evaluator(base_model, args):
-    # config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-    # task = TasksManager.infer_task_from_model(config._name_or_path)
+def _build_text_evaluator(base_model, args, prompts, evaluator_cls):
+    tokenizer = load_tokenizer(args) if not args.llamacpp else None
+
+    if args.genai:
+        gen_answer_fn = genai_gen_text
+    elif args.llamacpp:
+        gen_answer_fn = llamacpp_gen_text
+    else:
+        gen_answer_fn = None
+
+    use_chat_template = (
+        tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
+    )
+    return evaluator_cls(
+        base_model=base_model,
+        gt_data=args.gt_data,
+        test_data=prompts,
+        tokenizer=tokenizer,
+        similarity_model_id=args.data_encoder,
+        max_new_tokens=args.max_new_tokens,
+        num_samples=args.num_samples,
+        language=args.language,
+        gen_answer_fn=gen_answer_fn,
+        use_chat_template=use_chat_template,
+        long_prompt=args.long_prompt,
+        num_assistant_tokens=(
+            int(args.num_assistant_tokens)
+            if args.num_assistant_tokens is not None else 0
+        ),
+        assistant_confidence_threshold=(
+            float(args.assistant_confidence_threshold)
+            if args.assistant_confidence_threshold is not None else 0.0
+        ),
+    )
+
+
+def _build_text_to_image_evaluator(base_model, args, prompts, evaluator_cls):
+    return evaluator_cls(
+        base_model=base_model,
+        gt_data=args.gt_data,
+        test_data=prompts,
+        num_samples=args.num_samples,
+        resolution=(args.image_size, args.image_size),
+        num_inference_steps=args.num_inference_steps,
+        empty_adapters=args.empty_adapters,
+        gen_image_fn=genai_gen_image if args.genai else None,
+        is_genai=args.genai,
+        seed=args.seed,
+    )
+
+
+def _build_text_to_video_evaluator(base_model, args, prompts, evaluator_cls):
+    return evaluator_cls(
+        base_model=base_model,
+        gt_data=args.gt_data,
+        test_data=prompts,
+        num_samples=args.num_samples,
+        num_inference_steps=args.num_inference_steps,
+        num_frames=args.video_frames_num,
+        gen_video_fn=genai_gen_text2video if args.genai else None,
+        is_genai=args.genai,
+        seed=args.seed,
+        empty_adapters=args.empty_adapters,
+    )
+
+
+def _build_speech_generation_evaluator(base_model, args, prompts, evaluator_cls):
+    return evaluator_cls(
+        base_model=base_model,
+        gt_data=args.gt_data,
+        test_data=prompts,
+        num_samples=args.num_samples,
+        gen_speech_fn=genai_gen_speech if args.genai else None,
+        speaker_embedding_file_path=args.speaker_embeddings,
+        whisper_model=args.tts_eval_whisper_model,
+        vocoder_path=args.vocoder_path,
+    )
+
+
+def _build_visual_text_evaluator(base_model, args, prompts, evaluator_cls):
+    processor, config = load_processor(args)
+    tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
+    if config and is_model_with_automatic_crop(config) and args.hf:
+        crop_question = False
+    else:
+        crop_question = True
+    return evaluator_cls(
+        base_model=base_model,
+        gt_data=args.gt_data,
+        test_data=prompts,
+        tokenizer=tokenizer,
+        num_samples=args.num_samples,
+        similarity_model_id=args.data_encoder,
+        max_new_tokens=args.max_new_tokens,
+        gen_answer_fn=genai_gen_visual_text if args.genai else None,
+        processor=processor,
+        crop_question=crop_question,
+        task_type=args.model_type,
+        frames_num=args.video_frames_num,
+        pruning_ratio=args.pruning_ratio,
+        relevance_weight=args.relevance_weight,
+    )
+
+
+def _build_image_to_image_evaluator(base_model, args, prompts, evaluator_cls):
+    return evaluator_cls(
+        base_model=base_model,
+        gt_data=args.gt_data,
+        test_data=prompts,
+        num_samples=args.num_samples,
+        num_inference_steps=args.num_inference_steps,
+        gen_image_fn=genai_gen_image2image if args.genai else None,
+        is_genai=args.genai,
+        seed=args.seed,
+    )
+
+
+def _build_image_inpainting_evaluator(base_model, args, prompts, evaluator_cls):
+    return evaluator_cls(
+        base_model=base_model,
+        gt_data=args.gt_data,
+        test_data=prompts,
+        num_samples=args.num_samples,
+        num_inference_steps=args.num_inference_steps,
+        gen_image_fn=genai_gen_inpainting if args.genai else None,
+        is_genai=args.genai,
+        seed=args.seed,
+    )
+
+
+def _build_text_embedding_evaluator(base_model, args, prompts, evaluator_cls):
+    return evaluator_cls(
+        base_model=base_model,
+        tokenizer=load_tokenizer(args),
+        gt_data=args.gt_data,
+        test_data=prompts,
+        num_samples=args.num_samples,
+        gen_embeds_fn=genai_gen_embedding if args.genai else None,
+        pooling_type=args.embeds_pooling_type,
+        normalize=args.embeds_normalize,
+        padding_side=args.embeds_padding_side,
+        batch_size=args.embeds_batch_size,
+    )
+
+
+def _build_text_reranking_evaluator(base_model, args, prompts, evaluator_cls):
+    return evaluator_cls(
+        base_model=base_model,
+        tokenizer=load_tokenizer(args),
+        gt_data=args.gt_data,
+        test_data=prompts,
+        num_samples=args.num_samples,
+        gen_rerank_fn=genai_gen_reranking if args.genai else None,
+    )
+
+
+def _build_text_chat_evaluator(base_model, args, prompts, evaluator_cls):
+    tokenizer = load_tokenizer(args)
+
+    if tokenizer is not None and tokenizer.chat_template is None:
+        raise ValueError(
+            "Tokenizer for model type 'text-chat' has no 'chat_template' defined. "
+            "WWB can't start an evaluation in text-chat mode, "
+            "please, specify chat_template or use --model-type text. "
+        )
+
+    if args.genai:
+        gen_answer_fn = genai_gen_chat_text
+    else:
+        gen_answer_fn = None
+
+    return evaluator_cls(
+        base_model=base_model,
+        gt_data=args.gt_data,
+        test_data=prompts,
+        tokenizer=tokenizer,
+        similarity_model_id=args.data_encoder,
+        num_samples=args.num_samples,
+        max_new_tokens=args.max_new_tokens,
+        empty_adapters=args.empty_adapters,
+        gen_answer_fn=gen_answer_fn,
+        num_assistant_tokens=(int(args.num_assistant_tokens) if args.num_assistant_tokens is not None else 0),
+        assistant_confidence_threshold=(
+            float(args.assistant_confidence_threshold)
+            if args.assistant_confidence_threshold is not None
+            else 0.0
+        ),
+    )
+
+
+def _build_visual_text_chat_evaluator(base_model, args, prompts, evaluator_cls):
+    processor, config = load_processor(args)
+    tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
+    # If base_model/target_model is provided, wwb will generate data and the chat_template should be defined.
+    # If test_data only is provided, wwb will not generate data and the chat_template is not necessary.
+    if (
+        (args.base_model is not None or args.target_model is not None)
+        and getattr(processor, "chat_template", None) is None
+        and getattr(tokenizer, "chat_template", None) is None
+    ):
+        raise ValueError(
+            "Model has no 'chat_template' defined, but was run with model-type 'visual-text-chat'. "
+            "WWB can't start an evaluation in visual-text-chat mode, "
+            "please, specify chat_template or use --model-type visual-text. "
+        )
+
+    return evaluator_cls(
+        base_model=base_model,
+        gt_data=args.gt_data,
+        test_data=prompts,
+        tokenizer=tokenizer,
+        num_samples=args.num_samples,
+        similarity_model_id=args.data_encoder,
+        max_new_tokens=args.max_new_tokens,
+        gen_answer_fn=genai_gen_visual_text_chat if args.genai else None,
+        processor=processor,
+        pruning_ratio=args.pruning_ratio,
+        relevance_weight=args.relevance_weight,
+    )
+
+
+# Per-task evaluator-construction builders. Each entry must have a matching
+# task type in EVALUATOR_REGISTRY; test_builder_registry_matches_evaluator_registry
+# enforces this.
+BUILDER_REGISTRY: dict[str, Callable[..., Any]] = {
+    "text": _build_text_evaluator,
+    "text-chat": _build_text_chat_evaluator,
+    "text-to-image": _build_text_to_image_evaluator,
+    "text-to-video": _build_text_to_video_evaluator,
+    "image-to-image": _build_image_to_image_evaluator,
+    "image-inpainting": _build_image_inpainting_evaluator,
+    "speech-generation": _build_speech_generation_evaluator,
+    "visual-text": _build_visual_text_evaluator,
+    "visual-video-text": _build_visual_text_evaluator,
+    "visual-text-chat": _build_visual_text_chat_evaluator,
+    "text-embedding": _build_text_embedding_evaluator,
+    "text-reranking": _build_text_reranking_evaluator,
+}
+
+
+def create_evaluator(base_model, args, test_data=None):
+    # Deferred: importing evaluator registry triggers all evaluator modules
+    # (some of which require openvino_genai). We defer until actual evaluation.
+    from whowhatbench import EVALUATOR_REGISTRY  # noqa: PLC0415
+
     # TODO: Add logic to auto detect task based on model_id (TaskManager does not work for locally saved models)
     task = args.model_type
 
     try:
-        EvaluatorCLS = EVALUATOR_REGISTRY[task]
-        prompts = load_prompts(args)
-
-        if task == "text":
-            tokenizer = load_tokenizer(args) if not args.llamacpp else None
-
-            if args.genai:
-                gen_answer_fn = genai_gen_text
-            elif args.llamacpp:
-                gen_answer_fn = llamacpp_gen_text
-            else:
-                gen_answer_fn = None
-
-            use_chat_template = (
-                tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
-            )
-            return EvaluatorCLS(
-                base_model=base_model,
-                gt_data=args.gt_data,
-                test_data=prompts,
-                tokenizer=tokenizer,
-                similarity_model_id=args.data_encoder,
-                max_new_tokens=args.max_new_tokens,
-                num_samples=args.num_samples,
-                language=args.language,
-                gen_answer_fn=gen_answer_fn,
-                use_chat_template=use_chat_template,
-                long_prompt=args.long_prompt,
-                num_assistant_tokens=(
-                    int(args.num_assistant_tokens)
-                    if args.num_assistant_tokens is not None else 0
-                ),
-                assistant_confidence_threshold=(
-                    float(args.assistant_confidence_threshold)
-                    if args.assistant_confidence_threshold is not None else 0.0
-                ),
-            )
-        elif task == "text-to-image":
-            return EvaluatorCLS(
-                base_model=base_model,
-                gt_data=args.gt_data,
-                test_data=prompts,
-                num_samples=args.num_samples,
-                resolution=(args.image_size, args.image_size),
-                num_inference_steps=args.num_inference_steps,
-                empty_adapters=args.empty_adapters,
-                gen_image_fn=genai_gen_image if args.genai else None,
-                is_genai=args.genai,
-                seed=args.seed,
-            )
-        elif task == "text-to-video":
-            return EvaluatorCLS(
-                base_model=base_model,
-                gt_data=args.gt_data,
-                test_data=prompts,
-                num_samples=args.num_samples,
-                num_inference_steps=args.num_inference_steps,
-                num_frames=args.video_frames_num,
-                gen_video_fn=genai_gen_text2video if args.genai else None,
-                is_genai=args.genai,
-                seed=args.seed,
-                empty_adapters=args.empty_adapters,
-            )
-        elif task == "speech-generation":
-            return EvaluatorCLS(
-                base_model=base_model,
-                gt_data=args.gt_data,
-                test_data=prompts,
-                num_samples=args.num_samples,
-                gen_speech_fn=genai_gen_speech if args.genai else None,
-                speaker_embedding_file_path=args.speaker_embeddings,
-                whisper_model=args.tts_eval_whisper_model,
-                vocoder_path=args.vocoder_path,
-            )
-        elif task == "visual-text" or task == "visual-video-text":
-            processor, config = load_processor(args)
-            tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
-            if config and is_model_with_automatic_crop(config) and args.hf:
-                crop_question = False
-            else:
-                crop_question = True
-            return EvaluatorCLS(
-                base_model=base_model,
-                gt_data=args.gt_data,
-                test_data=prompts,
-                tokenizer=tokenizer,
-                num_samples=args.num_samples,
-                similarity_model_id=args.data_encoder,
-                max_new_tokens=args.max_new_tokens,
-                gen_answer_fn=genai_gen_visual_text if args.genai else None,
-                processor=processor,
-                crop_question=crop_question,
-                task_type=task,
-                frames_num=args.video_frames_num,
-                pruning_ratio=args.pruning_ratio,
-                relevance_weight=args.relevance_weight,
-            )
-        elif task == "image-to-image":
-            return EvaluatorCLS(
-                base_model=base_model,
-                gt_data=args.gt_data,
-                test_data=prompts,
-                num_samples=args.num_samples,
-                num_inference_steps=args.num_inference_steps,
-                gen_image_fn=genai_gen_image2image if args.genai else None,
-                is_genai=args.genai,
-                seed=args.seed,
-            )
-        elif task == "image-inpainting":
-            return EvaluatorCLS(
-                base_model=base_model,
-                gt_data=args.gt_data,
-                test_data=prompts,
-                num_samples=args.num_samples,
-                num_inference_steps=args.num_inference_steps,
-                gen_image_fn=genai_gen_inpainting if args.genai else None,
-                is_genai=args.genai,
-                seed=args.seed,
-            )
-        elif task == "text-embedding":
-            return EvaluatorCLS(
-                base_model=base_model,
-                tokenizer=load_tokenizer(args),
-                gt_data=args.gt_data,
-                test_data=prompts,
-                num_samples=args.num_samples,
-                gen_embeds_fn=genai_gen_embedding if args.genai else None,
-                pooling_type=args.embeds_pooling_type,
-                normalize=args.embeds_normalize,
-                padding_side=args.embeds_padding_side,
-                batch_size=args.embeds_batch_size,
-            )
-        elif task == "text-reranking":
-            return EvaluatorCLS(
-                base_model=base_model,
-                tokenizer=load_tokenizer(args),
-                gt_data=args.gt_data,
-                test_data=prompts,
-                num_samples=args.num_samples,
-                gen_rerank_fn=genai_gen_reranking if args.genai else None
-            )
-        elif task == "text-chat":
-            tokenizer = load_tokenizer(args)
-
-            if tokenizer is not None and tokenizer.chat_template is None:
-                raise ValueError(
-                    "Tokenizer for model type 'text-chat' has no 'chat_template' defined. "
-                    "WWB can't start an evaluation in text-chat mode, "
-                    "please, specify chat_template or use --model-type text. "
-                )
-
-            if args.genai:
-                gen_answer_fn = genai_gen_chat_text
-            else:
-                gen_answer_fn = None
-
-            return EvaluatorCLS(
-                base_model=base_model,
-                gt_data=args.gt_data,
-                test_data=prompts,
-                tokenizer=tokenizer,
-                similarity_model_id=args.data_encoder,
-                num_samples=args.num_samples,
-                max_new_tokens=args.max_new_tokens,
-                empty_adapters=args.empty_adapters,
-                gen_answer_fn=gen_answer_fn,
-                num_assistant_tokens=(int(args.num_assistant_tokens) if args.num_assistant_tokens is not None else 0),
-                assistant_confidence_threshold=(
-                    float(args.assistant_confidence_threshold)
-                    if args.assistant_confidence_threshold is not None
-                    else 0.0
-                ),
-            )
-        elif task == "visual-text-chat":
-            processor, config = load_processor(args)
-            tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
-            # If base_model/target_model is provided, wwb will generate data and the chat_template should be defined.
-            # If test_data only is provided, wwb will not generate data and the chat_template is not necessary.
-            if (
-                (args.base_model is not None or args.target_model is not None)
-                and getattr(processor, "chat_template", None) is None
-                and getattr(tokenizer, "chat_template", None) is None
-            ):
-                raise ValueError(
-                    "Model has no 'chat_template' defined, but was run with model-type 'visual-text-chat'. "
-                    "WWB can't start an evaluation in visual-text-chat mode, "
-                    "please, specify chat_template or use --model-type visual-text. "
-                )
-
-            return EvaluatorCLS(
-                base_model=base_model,
-                gt_data=args.gt_data,
-                tokenizer=tokenizer,
-                num_samples=args.num_samples,
-                similarity_model_id=args.data_encoder,
-                max_new_tokens=args.max_new_tokens,
-                gen_answer_fn=genai_gen_visual_text_chat if args.genai else None,
-                processor=processor,
-                pruning_ratio=args.pruning_ratio,
-                relevance_weight=args.relevance_weight,
-            )
-        else:
-            raise ValueError(f"Unsupported task: {task}")
+        evaluator_cls = EVALUATOR_REGISTRY[task]
     except KeyError as e:
         raise ValueError(
             f"Attempted to load evaluator for '{task}', but no evaluator for this model type found! "
             f"Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}. Details:\n",
-            e
+            e,
         )
+
+    builder = BUILDER_REGISTRY.get(task)
+    if builder is None:
+        raise ValueError(
+            f"Builder for task '{task}' is missing. BUILDER_REGISTRY and EVALUATOR_REGISTRY "
+            f"are out of sync — add a builder in wwb.py for '{task}'."
+        )
+
+    prompts = load_prompts(args) if test_data is None else test_data
+    return builder(base_model, args, prompts, evaluator_cls)
 
 
 def print_text_results(evaluator):
@@ -1022,6 +1091,8 @@ def print_text_results(evaluator):
 
 
 def print_image_results(evaluator):
+    import pandas as pd  # noqa: PLC0415
+
     metric_of_interest = "similarity"
     pd.set_option('display.max_colwidth', None)
     worst_examples = evaluator.worst_examples(
@@ -1066,12 +1137,14 @@ def print_rag_results(evaluator):
 
 
 def _format_score(score):
+    import pandas as pd  # noqa: PLC0415
+
     if pd.isna(score):
         return "N/A"
     return f"{score:.5f}"
 
 
-def _log_speech_metrics_summary(all_metrics: pd.DataFrame) -> None:
+def _log_speech_metrics_summary(all_metrics) -> None:
     if all_metrics is None or all_metrics.empty:
         logger.info(all_metrics)
         return
@@ -1110,21 +1183,35 @@ def print_speech_results(evaluator):
 
 
 def main():
-    args = parse_args()
-    check_args(args)
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "run":
+        _run_scenario_cmd(sys.argv[2:])
+    else:
+        _run_legacy()
+
+
+def _log_legacy_versions(args) -> None:
+    """Log openvino runtime + (optionally) openvino_genai versions.
+
+    Exits the process when --genai is requested but openvino_genai is not installed.
+    """
+    import openvino as ov  # noqa: PLC0415
 
     version_str = f'openvino runtime version: {ov.get_version()}'
     if args.genai:
         try:
-            import openvino_genai
+            import openvino_genai  # noqa: PLC0415
         except ImportError:
-            logger.error(
-                "Failed to import openvino_genai package. Please install it.")
+            logger.error("Failed to import openvino_genai package. Please install it.")
             exit(-1)
         version_str += f', genai version: {openvino_genai.__version__}'
     logger.info(version_str)
 
-    kwargs = {}
+
+def _build_load_model_kwargs(args, get_json_config) -> dict[str, Any]:
+    """Assemble the kwargs dict passed to load_model() for both base and target models."""
+    kwargs: dict[str, Any] = {}
     if args.cb_config:
         kwargs["cb_config"] = get_json_config(args.cb_config)
         logger.info(f"cb_config: {kwargs['cb_config']}")
@@ -1154,20 +1241,45 @@ def main():
             logger.info(f"draft_cb_config: {draft_cb_config}")
         kwargs["draft_cb_config"] = draft_cb_config
 
-    # Create TaylorSeerCacheConfig for text-to-image and text-to-video pipelines
-    taylorseer_config = None
-    if args.taylorseer_config and args.genai and args.model_type in ["text-to-image", "text-to-video"]:
-        ts_cfg = get_json_config(args.taylorseer_config)
-        if not isinstance(ts_cfg, dict):
-            raise ValueError(f"--taylorseer-config must be a JSON object, got {type(ts_cfg).__name__}")
-        taylorseer_config = openvino_genai.TaylorSeerCacheConfig()
-        taylorseer_config.cache_interval = ts_cfg.get("cache_interval", 3)
-        taylorseer_config.disable_cache_before_step = ts_cfg.get("disable_cache_before_step", 6)
-        taylorseer_config.disable_cache_after_step = ts_cfg.get("disable_cache_after_step", -2)
-        logger.info(f"TaylorSeer config: {taylorseer_config}")
-
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
+
+    return kwargs
+
+
+def _build_taylorseer_config(args, get_json_config):
+    """Build TaylorSeerCacheConfig for genai text-to-image/text-to-video, else None."""
+    if not (args.taylorseer_config and args.genai and args.model_type in ["text-to-image", "text-to-video"]):
+        return None
+
+    import openvino_genai  # noqa: PLC0415
+
+    ts_cfg = get_json_config(args.taylorseer_config)
+    if not isinstance(ts_cfg, dict):
+        raise ValueError(f"--taylorseer-config must be a JSON object, got {type(ts_cfg).__name__}")
+    taylorseer_config = openvino_genai.TaylorSeerCacheConfig()
+    taylorseer_config.cache_interval = ts_cfg.get("cache_interval", 3)
+    taylorseer_config.disable_cache_before_step = ts_cfg.get("disable_cache_before_step", 6)
+    taylorseer_config.disable_cache_after_step = ts_cfg.get("disable_cache_after_step", -2)
+    logger.info(f"TaylorSeer config: {taylorseer_config}")
+    return taylorseer_config
+
+
+def _apply_taylorseer(model, taylorseer_config) -> None:
+    """Apply a TaylorSeer cache config to a loaded model. No-op if either argument is None."""
+    if taylorseer_config is None or model is None:
+        return
+    generation_config = model.get_generation_config()
+    generation_config.taylorseer_config = taylorseer_config
+    model.set_generation_config(generation_config)
+
+
+def _prepare_legacy_evaluator(args, kwargs, taylorseer_config):
+    """Load the base model (if any), build the evaluator, dump GT, release the base model.
+
+    Raises ValueError if neither a base model nor a usable gt_data file is available.
+    """
+    from whowhatbench.model_loaders import load_model  # noqa: PLC0415
 
     if args.base_model is not None:
         base_model = load_model(
@@ -1179,90 +1291,193 @@ def main():
             args.genai,
             **kwargs,
         )
-
-        # Set TaylorSeer config via generation config if applicable
-        if taylorseer_config is not None and base_model is not None:
-            generation_config = base_model.get_generation_config()
-            generation_config.taylorseer_config = taylorseer_config
-            base_model.set_generation_config(generation_config)
-
+        _apply_taylorseer(base_model, taylorseer_config)
         evaluator = create_evaluator(base_model, args)
-
         if args.gt_data:
             evaluator.dump_gt(args.gt_data)
         del base_model
-    elif args.gt_data and os.path.exists(args.gt_data):
-        evaluator = create_evaluator(None, args)
+        return evaluator
+    if args.gt_data and os.path.exists(args.gt_data):
+        return create_evaluator(None, args)
+    raise ValueError(
+        f"Ground-truth data file '{args.gt_data}' does not exist and no base model "
+        "was provided. Please supply a valid --gt-data path or set --base-model."
+    )
+
+
+def _score_legacy_target(evaluator, args, kwargs, taylorseer_config):
+    """Score the target model (or target data file) and return ``(per_question, metrics)``.
+
+    The base/target ``load_model`` signature asymmetry (target passes
+    ``args.llamacpp`` as a positional, base does not) is intentional and
+    preserved verbatim.
+    """
+    from whowhatbench.model_loaders import load_model  # noqa: PLC0415
+
+    if args.target_data and os.path.exists(args.target_data):
+        all_metrics_per_question, all_metrics = evaluator.score(
+            args.target_data,
+            None,
+            output_dir=args.output,
+            verbose=args.verbose,
+        )
     else:
-        raise ValueError(
-            f"Ground-truth data file '{args.gt_data}' does not exist and no base model "
-            "was provided. Please supply a valid --gt-data path or set --base-model."
+        target_model = load_model(
+            args.model_type,
+            args.target_model,
+            args.device,
+            args.ov_config,
+            args.hf,
+            args.genai,
+            args.llamacpp,
+            **kwargs,
         )
 
+        _apply_taylorseer(target_model, taylorseer_config)
+
+        all_metrics_per_question, all_metrics = evaluator.score(
+            target_model,
+            evaluator.get_generation_fn()
+            if args.genai or args.llamacpp or args.model_type == "speech-generation"
+            else None,
+            output_dir=args.output,
+            verbose=args.verbose,
+        )
+    logger.info("Metrics for model: %s", args.target_model)
+    if args.model_type == "speech-generation":
+        _log_speech_metrics_summary(all_metrics)
+    else:
+        logger.info(all_metrics)
+    return all_metrics_per_question, all_metrics
+
+
+def _write_legacy_outputs(evaluator, args, all_metrics_per_question, all_metrics) -> None:
+    """Write metrics_per_question.csv, metrics.csv, and target.csv into args.output."""
+    if not args.output:
+        return
+    import pandas as pd  # noqa: PLC0415
+
+    if not os.path.exists(args.output):
+        os.mkdir(args.output)
+    df = pd.DataFrame(all_metrics_per_question)
+    df.to_csv(os.path.join(args.output, "metrics_per_question.csv"))
+    df = pd.DataFrame(all_metrics)
+    df.to_csv(os.path.join(args.output, "metrics.csv"))
+    evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
+
+
+# Verbose-result printer per model type. 'image-inpainting' is deliberately
+# absent — the original substring check (`"text-to-image" in args.model_type or
+# "image-to-image" in args.model_type or "text-to-video" in args.model_type`)
+# did not match it, so it has no verbose output. Behavior preserved.
+_LEGACY_VERBOSE_PRINT: dict[str, Callable[[Any], None]] = {
+    "text": print_text_results,
+    "text-chat": print_text_results,
+    "visual-text": print_text_results,
+    "visual-video-text": print_text_results,
+    "visual-text-chat": print_text_results,
+    "text-to-image": print_image_results,
+    "image-to-image": print_image_results,
+    "text-to-video": print_image_results,
+    "speech-generation": print_speech_results,
+    "text-embedding": print_embeds_results,
+    "text-reranking": print_rag_results,
+}
+
+
+def _print_legacy_verbose(evaluator, args) -> None:
+    """Dispatch the verbose-print function for the current model type."""
+    printer = _LEGACY_VERBOSE_PRINT.get(args.model_type)
+    if printer is not None:
+        printer(evaluator)
+
+
+def _run_legacy():
+    from whowhatbench.utils import get_json_config  # noqa: PLC0415
+
+    args = parse_args()
+    check_args(args)
+    _log_legacy_versions(args)
+
+    kwargs = _build_load_model_kwargs(args, get_json_config)
+    taylorseer_config = _build_taylorseer_config(args, get_json_config)
+
+    evaluator = _prepare_legacy_evaluator(args, kwargs, taylorseer_config)
+
     if args.target_data or args.target_model:
-        if args.target_data and os.path.exists(args.target_data):
-            all_metrics_per_question, all_metrics = evaluator.score(
-                args.target_data,
-                None,
-                output_dir=args.output,
-                verbose=args.verbose,
-            )
-        else:
-            target_model = load_model(
-                args.model_type,
-                args.target_model,
-                args.device,
-                args.ov_config,
-                args.hf,
-                args.genai,
-                args.llamacpp,
-                **kwargs
-            )
-
-            # Set TaylorSeer config via generation config if applicable
-            if taylorseer_config is not None and target_model is not None:
-                generation_config = target_model.get_generation_config()
-                generation_config.taylorseer_config = taylorseer_config
-                target_model.set_generation_config(generation_config)
-
-            all_metrics_per_question, all_metrics = evaluator.score(
-                target_model,
-                evaluator.get_generation_fn()
-                if args.genai or args.llamacpp or args.model_type == "speech-generation"
-                else None,
-                output_dir=args.output,
-                verbose=args.verbose,
-            )
-        logger.info("Metrics for model: %s", args.target_model)
-        if args.model_type == "speech-generation":
-            _log_speech_metrics_summary(all_metrics)
-        else:
-            logger.info(all_metrics)
-
-        if args.output:
-            if not os.path.exists(args.output):
-                os.mkdir(args.output)
-            df = pd.DataFrame(all_metrics_per_question)
-            df.to_csv(os.path.join(args.output, "metrics_per_question.csv"))
-            df = pd.DataFrame(all_metrics)
-            df.to_csv(os.path.join(args.output, "metrics.csv"))
-            evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
+        all_metrics_per_question, all_metrics = _score_legacy_target(
+            evaluator, args, kwargs, taylorseer_config
+        )
+        _write_legacy_outputs(evaluator, args, all_metrics_per_question, all_metrics)
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
-            print_text_results(evaluator)
-        elif (
-            "text-to-image" in args.model_type
-            or "image-to-image" in args.model_type
-            or "text-to-video" in args.model_type
-        ):
-            print_image_results(evaluator)
-        elif args.model_type in ["speech-generation"]:
-            print_speech_results(evaluator)
-        elif args.model_type in ['text-embedding']:
-            print_embeds_results(evaluator)
-        elif args.model_type in ['text-reranking']:
-            print_rag_results(evaluator)
+        _print_legacy_verbose(evaluator, args)
+
+
+def _run_scenario_cmd(argv: list[str]) -> None:
+    p = argparse.ArgumentParser(prog="wwb run", description="Run a WWB scenario YAML file.")
+    p.add_argument("scenario", help="Path to scenario YAML file.")
+    p.add_argument("--output", default=None, help="Override the scenario's output_dir.")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate scenario and print the planned execution matrix. No models loaded.",
+    )
+    p.add_argument(
+        "--only",
+        type=str,
+        default=None,
+        help="Comma-separated list of task IDs to run. Runs all tasks if not specified.",
+    )
+    p.add_argument("--quiet", action="store_true", help="Suppress verbose output.")
+    args = p.parse_args(argv)
+
+    import datetime  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    from whowhatbench.scenario import load_scenario  # noqa: PLC0415
+    from whowhatbench.scenario.reporting import write_reports  # noqa: PLC0415
+    from whowhatbench.scenario.runner import ScenarioRunner  # noqa: PLC0415
+
+    scenario = load_scenario(args.scenario)
+
+    # Resolve output directory
+    output_dir_str = args.output or scenario.defaults.output_dir
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+    output_dir_str = output_dir_str.replace("${scenario.name}", scenario.name)
+    output_dir_str = output_dir_str.replace("${timestamp}", ts)
+    output_dir = Path(output_dir_str)
+
+    only_ids = [t.strip() for t in args.only.split(",")] if args.only else None
+
+    if only_ids is not None:
+        known = {t.id for t in scenario.tasks}
+        unknown = sorted(set(only_ids) - known)
+        if unknown:
+            logger.error("Unknown task IDs: %s. Available: %s", unknown, sorted(known))
+            raise SystemExit(1)
+
+    if args.dry_run:
+        print(f"Scenario: {scenario.name}")
+        if scenario.description:
+            print(f"Description: {scenario.description}")
+        print("Planned execution matrix:")
+        for task in scenario.tasks:
+            if only_ids is not None and task.id not in only_ids:
+                continue
+            base_path = scenario.models[task.base].path
+            targets_str = ", ".join(task.targets)
+            print(f"  task: {task.id} (type: {task.type})")
+            print(f"    base: {base_path}")
+            print(f"    targets: {targets_str}")
+        print(f"Output dir: {output_dir}")
+        return
+
+    runner = ScenarioRunner(scenario, output_dir)
+    store = runner.run(only_task_ids=only_ids)
+    store.flush_csvs()
+    write_reports(store, scenario, output_dir, Path(args.scenario))
+    logger.info("Scenario complete. Reports written to: %s", output_dir)
 
 
 if __name__ == "__main__":

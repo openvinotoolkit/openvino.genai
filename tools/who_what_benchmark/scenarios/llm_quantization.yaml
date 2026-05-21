@@ -1,0 +1,58 @@
+# Example scenario: compare quantized LLM variants against FP16 baseline.
+# Run: wwb run scenarios/llm_quantization.yaml --output /tmp/llm_quant_results
+
+schema_version: 1
+name: llm-quantization
+description: >
+  Compare int4 and int8 OpenVINO quantizations of an LLM against the HF FP16 baseline.
+  Tests chat quality and text generation on the builtin prompt set.
+
+defaults:
+  device: CPU
+  num_samples: 32
+  seed: 42
+  data_encoder: sentence-transformers/all-mpnet-base-v2
+
+models:
+  fp16_hf:
+    path: facebook/opt-125m
+    backend: hf
+
+  int8_ov:
+    path: ./models/opt-125m-int8
+    backend: genai
+    device: CPU
+    ov_config:
+      CACHE_DIR: ./_ov_cache
+
+  int4_ov:
+    path: ./models/opt-125m-int4
+    backend: genai
+    device: CPU
+
+datasets:
+  builtin_en:
+    type: builtin
+    language: en
+
+tasks:
+  - id: text_quality
+    type: text
+    base: fp16_hf
+    targets: [int8_ov, int4_ov]
+    dataset: builtin_en
+    generation:
+      max_new_tokens: 128
+
+  - id: chat_quality
+    type: text-chat
+    base: fp16_hf
+    targets: [int8_ov, int4_ov]
+    dataset: builtin_en
+    generation:
+      max_new_tokens: 128
+
+report:
+  formats: [markdown, json]
+  group_by: task
+  worst_examples_top_k: 5

@@ -276,6 +276,235 @@ wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv -
 wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --hf
 ```
 
+## Scenario Runner (`wwb run`)
+
+A scenario describes an entire benchmark comparison — base models, quantized
+targets, tasks, datasets, and reporting — in a single YAML file. One file is a
+self-contained, sharable, and re-runnable specification of *what to compare* and
+*how to report it*. The legacy `wwb` CLI (everything above this section)
+remains fully supported and unchanged.
+
+### Why scenarios
+
+| Single-target CLI                                | Scenario runner                                       |
+| ------------------------------------------------ | ----------------------------------------------------- |
+| One `wwb` call per (base, target) pair           | One YAML file → matrix of (task × target)             |
+| Manual `--gt-data` book-keeping                  | Ground truth cached by content hash, generated once   |
+| Free-form output dirs                            | Deterministic `tasks/<task>/<target>/` tree           |
+| No aggregate report                              | `report.md`, `report.json`, `run_manifest.json`       |
+| Hard to reproduce an evaluation across machines  | Manifest captures `git_commit`, package versions, scenario `sha256` |
+
+### Quick start
+
+```bash
+# Dry-run — validate the YAML and print the planned task × target matrix
+# without loading any models
+wwb run scenarios/llm_quantization.yaml --dry-run
+
+# Run the full scenario; output dir is created with manifest + reports
+wwb run scenarios/llm_quantization.yaml --output /tmp/llm_results
+
+# Run only a subset of tasks (matched by task.id)
+wwb run scenarios/llm_quantization.yaml --only text_quality --only chat_quality
+
+# Override scenario-defined output directory
+wwb run scenarios/llm_quantization.yaml --output /my/results
+```
+
+### CLI flags
+
+| Flag             | Type    | Default                              | Purpose                                                   |
+| ---------------- | ------- | ------------------------------------ | --------------------------------------------------------- |
+| `<scenario>`     | path    | required                             | YAML scenario file                                        |
+| `--output PATH`  | path    | `./_wwb_runs/${name}/${timestamp}`   | Override output directory (also overrides `defaults.output_dir`) |
+| `--dry-run`      | flag    | off                                  | Validate scenario and print execution matrix; load no models |
+| `--only ID`      | string  | (all tasks)                          | Run only the named task; repeatable                       |
+
+### Scenario file structure
+
+```yaml
+schema_version: 1                   # required, must be 1
+name: llm-quantization              # slug: ^[a-z0-9_-]+$
+description: >                      # optional free-text
+  Compare int4 / int8 OpenVINO vs FP16 HF baseline on the builtin prompt set.
+
+defaults:                           # applied to every task unless overridden
+  device: CPU
+  num_samples: 32
+  seed: 42
+  data_encoder: sentence-transformers/all-mpnet-base-v2
+  output_dir: ./_wwb_runs/${scenario.name}/${timestamp}
+
+models:                             # alias → ModelConfig
+  fp16_hf:
+    path: facebook/opt-125m         # HF id or local path
+    backend: hf                     # hf | genai | llamacpp | onnx
+  int8_ov:
+    path: ./models/opt-125m-int8
+    backend: genai
+    device: CPU
+    ov_config: {CACHE_DIR: ./_ov_cache}
+    cb_config: null                 # optional dict, JSON-stringified internally
+
+datasets:                           # alias → DatasetConfig
+  builtin_en:
+    type: builtin                   # builtin | huggingface | csv | inline
+    language: en
+
+tasks:                              # ordered list
+  - id: text_quality
+    type: text                      # see "Supported task types" below
+    base: fp16_hf                   # references models.<key>
+    targets: [int8_ov, int4_ov]     # ≥1 target; matrix expansion
+    dataset: builtin_en             # references datasets.<key>
+    num_samples: 32                 # overrides defaults.num_samples
+    generation:
+      max_new_tokens: 128
+
+report:
+  formats: [markdown, json]         # markdown | json
+  group_by: task                    # task | target
+  worst_examples_top_k: 5
+```
+
+### Interpolation
+
+Three placeholders are resolved before YAML parsing:
+
+| Placeholder           | Resolves to                                    |
+| --------------------- | ---------------------------------------------- |
+| `${env.VARNAME}`      | Value of environment variable `VARNAME` (errors if unset) |
+| `${scenario.name}`    | The `name:` field of the same scenario         |
+| `${timestamp}`        | UTC `YYYYMMDD_HHMMSS` at load time             |
+
+```yaml
+defaults:
+  output_dir: /artifacts/${env.CI_JOB_ID}/${scenario.name}/${timestamp}
+```
+
+### Ground-truth caching
+
+For each task, the runner computes a SHA-256 hash over the GT-affecting fields
+(base model path, backend, tokenizer, task type, dataset, num_samples, seed,
+generation params). On a cache hit the GT CSV is reused — base models are never
+loaded twice for the same input fingerprint, even across different targets in
+the same run, and the `gt_cache_hit: true` flag is recorded in
+`report.json` and `run_manifest.json`.
+
+To bypass the cache or pin a specific GT file, set `gt_data` on the task:
+
+```yaml
+tasks:
+  - id: text_quality
+    type: text
+    base: fp16_hf
+    targets: [int8_ov]
+    dataset: builtin_en
+    gt_data: ./pinned_gt/text_quality.csv   # absolute or relative path
+```
+
+### Output structure
+
+```
+<output_dir>/
+  report.md                ← human-readable summary table + per-task detail
+  report.json              ← machine-readable metrics (CI-friendly schema)
+  run_manifest.json        ← versions, git_commit, scenario sha256, timing, cache stats
+  _gt_cache/
+    <16-hex>.csv           ← cached ground-truth CSVs, keyed by hash
+    <16-hex>.meta.json
+  tasks/
+    <task_id>/<target_id>/
+      metrics.csv
+      metrics_per_question.csv
+      target.csv           ← per-prompt model predictions (via dump_predictions)
+```
+
+### Supported task types
+
+The scenario runner accepts every model type the legacy CLI supports:
+`text`, `text-chat`, `text-to-image`, `text-to-video`, `speech-generation`,
+`visual-text`, `visual-text-chat`, `visual-video-text`, `image-to-image`,
+`image-inpainting`, `text-embedding`, `text-reranking`.
+
+### Worked example: LLM quantization sweep
+
+`scenarios/llm_quantization.yaml`:
+
+```yaml
+schema_version: 1
+name: llm-quantization
+description: Compare int4 / int8 quantized OpenVINO models against the FP16 HF baseline.
+
+defaults:
+  device: CPU
+  num_samples: 32
+  seed: 42
+
+models:
+  fp16_hf:
+    path: facebook/opt-125m
+    backend: hf
+  int8_ov:
+    path: ./models/opt-125m-int8
+    backend: genai
+  int4_ov:
+    path: ./models/opt-125m-int4
+    backend: genai
+
+datasets:
+  builtin_en: {type: builtin, language: en}
+
+tasks:
+  - id: text_quality
+    type: text
+    base: fp16_hf
+    targets: [int8_ov, int4_ov]
+    dataset: builtin_en
+    generation: {max_new_tokens: 128}
+  - id: chat_quality
+    type: text-chat
+    base: fp16_hf
+    targets: [int8_ov, int4_ov]
+    dataset: builtin_en
+    generation: {max_new_tokens: 128}
+
+report:
+  formats: [markdown, json]
+  group_by: task
+```
+
+```bash
+# Validate first (no models loaded)
+wwb run scenarios/llm_quantization.yaml --dry-run
+
+# Real run — produces 2 tasks × 2 targets = 4 evaluations,
+# but loads the FP16 base model only once thanks to GT caching
+wwb run scenarios/llm_quantization.yaml --output /tmp/llm_quant
+```
+
+### Python API
+
+The runner is also usable directly from Python:
+
+```python
+from pathlib import Path
+from whowhatbench.scenario import ScenarioRunner, load_scenario, write_reports
+
+scenario = load_scenario("scenarios/llm_quantization.yaml")
+runner = ScenarioRunner(scenario, output_dir=Path("/tmp/llm_quant"))
+store = runner.run(only_task_ids=["text_quality"])
+store.flush_csvs()
+write_reports(store, scenario, Path("/tmp/llm_quant"), scenario_path=Path("scenarios/llm_quantization.yaml"))
+
+for r in store.all_results():
+    print(r.task_id, r.target_id, r.metrics, "cache_hit=", r.gt_cache_hit)
+```
+
+See `tools/who_what_benchmark/scenarios/` for additional reference scenarios
+(VLM quality, RAG pipeline) and `whowhatbench/scenario/schema.py` for the full
+authoritative Pydantic schema.
+
 ### Supported metrics
 
 * `similarity` - averaged similarity measured by neural network trained for sentence embeddings. The best is 1.0, the minimum is 0.0, higher-better.
