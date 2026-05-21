@@ -37,7 +37,6 @@ class Evaluator(ABC):
     @abstractmethod
     def worst_examples(self, top_k: int = 5, metric="similarity"):
         pass
-
     @abstractmethod
     def get_generation_fn(self):
         raise NotImplementedError("generation_fn should be returned")
