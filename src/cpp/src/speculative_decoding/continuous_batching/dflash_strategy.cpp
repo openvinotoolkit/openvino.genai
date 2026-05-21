@@ -17,6 +17,11 @@ namespace ov::genai {
 
 namespace {
 
+struct DraftCandidateToken {
+    int64_t token_id;
+    float log_prob;
+};
+
 ov::Tensor truncate_hidden_state_from_end_for_dflash(const ov::Tensor& hidden_state, size_t tokens_to_remove) {
     if (!hidden_state || hidden_state.get_size() == 0 || tokens_to_remove == 0) {
         return hidden_state;
@@ -100,9 +105,9 @@ public:
         return m_request.get_tensor("logits");
     }
 
-    std::vector<int64_t> sample_candidates(const ov::Tensor& logits, size_t candidate_count) {
+    std::vector<DraftCandidateToken> sample_candidates(const ov::Tensor& logits, size_t candidate_count) {
         candidate_count = std::min(candidate_count, m_block_size - 1);
-        std::vector<int64_t> candidates;
+        std::vector<DraftCandidateToken> candidates;
         candidates.reserve(candidate_count);
         const auto shape = logits.get_shape();
         OPENVINO_ASSERT(shape.size() == 3 && shape[1] >= candidate_count, "Invalid DFlash draft logits shape.");
@@ -166,7 +171,7 @@ private:
         return reshaped;
     }
 
-    std::vector<int64_t> sample_one_candidate(const ov::Tensor& logits) {
+    std::vector<DraftCandidateToken> sample_one_candidate(const ov::Tensor& logits) {
         const auto sequence = (*m_sequence_group)[0];
         const size_t generated_before = sequence->get_generated_len();
         m_sequence_group->schedule_tokens(1);
@@ -179,7 +184,14 @@ private:
         if (generated.size() <= generated_before) {
             return {};
         }
-        return std::vector<int64_t>(generated.begin() + generated_before, generated.end());
+        const auto& log_probs = sequence->get_generated_log_probs();
+        OPENVINO_ASSERT(log_probs.size() >= generated.size(), "Generated token log-probs are out of sync.");
+        std::vector<DraftCandidateToken> candidates;
+        candidates.reserve(generated.size() - generated_before);
+        for (size_t idx = generated_before; idx < generated.size(); ++idx) {
+            candidates.push_back({generated[idx], log_probs[idx]});
+        }
+        return candidates;
     }
 
     uint64_t execute_inference() {
@@ -343,9 +355,15 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         draft_generated_by_request[request_id] = candidates.size();
 
         auto candidate_tokens = state.generated_tokens;
-        candidate_tokens.insert(candidate_tokens.end(), candidates.begin(), candidates.end());
+        auto candidate_log_probs = zero_log_probs(candidate_tokens.size());
+        for (const auto& candidate : candidates) {
+            candidate_tokens.push_back(candidate.token_id);
+            candidate_log_probs.push_back(candidate.log_prob);
+        }
+        OPENVINO_ASSERT(candidate_tokens.size() == candidate_log_probs.size(),
+                        "DFlash draft candidate tokens and log-probs must stay aligned.");
         GeneratedSequences candidate_sequences;
-        candidate_sequences.emplace(0, GeneratedSequence(candidate_tokens, zero_log_probs(candidate_tokens.size())));
+        candidate_sequences.emplace(0, GeneratedSequence(candidate_tokens, candidate_log_probs));
         m_main_pipeline->update_request(request_id, candidate_sequences, false);
     }
     const auto draft_end = std::chrono::steady_clock::now();
