@@ -317,8 +317,7 @@ private:
                     m_expected_num_scheduled_tokens.find(sequence_group->get_request_id());
                 if (it_expected_scheduled_tokens != m_expected_num_scheduled_tokens.end()) {
                     const size_t expected_num_scheduled_tokens = it_expected_scheduled_tokens->second;
-                    if (expected_num_scheduled_tokens > 0 && expected_num_scheduled_tokens != num_scheduled_tokens &&
-                        expected_num_scheduled_tokens <= num_available_tokens) {
+                    if (expected_num_scheduled_tokens > 0 && expected_num_scheduled_tokens < num_scheduled_tokens) {
                         num_scheduled_tokens = expected_num_scheduled_tokens;
                     }
                 }
