@@ -271,8 +271,20 @@ void init_vlm_pipeline(py::module_& m) {
             kwargs: Device properties
         )")
 
-        .def("start_chat", &ov::genai::VLMPipeline::start_chat, py::arg("system_message") = "")
-        .def("finish_chat", &ov::genai::VLMPipeline::finish_chat)
+        .def("start_chat", [](ov::genai::VLMPipeline& pipe, const std::string& system_message) {
+            PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+                         "Please use generate() with ChatHistory argument.",
+                         1);
+            pipe.start_chat(system_message);
+        }, py::arg("system_message") = "")
+        .def("finish_chat", [](ov::genai::VLMPipeline& pipe) {
+            PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+                         "Please use generate() with ChatHistory argument.",
+                         1);
+            pipe.finish_chat();
+        })
         .def("set_chat_template", &ov::genai::VLMPipeline::set_chat_template, py::arg("chat_template"))
         .def("get_tokenizer", &ov::genai::VLMPipeline::get_tokenizer)
         .def("get_generation_config", &ov::genai::VLMPipeline::get_generation_config, py::return_value_policy::copy)
