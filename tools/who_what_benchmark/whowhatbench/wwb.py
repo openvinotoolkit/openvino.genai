@@ -710,6 +710,8 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
                     f"Voice embedding file {voice_path} has {speaker_data.size} values; expected {expected_flat_size}."
                 )
             speaker_embedding = ov.Tensor(speaker_data.reshape(expected_shape))
+        else:
+            raise ValueError(f"Kokoro voice embedding file does not exist: {voice_path}")
 
     result = model.generate(prompt, speaker_embedding, **generation_properties)
     if len(result.speeches) != 1:
