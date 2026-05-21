@@ -53,7 +53,7 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
     if (model_type == ASRModelType::WHISPER) {
         m_impl = std::make_unique<ASRPipeline::WhisperASRPipelineAdapter>(models_path, device, properties);
     } else {
-        OPENVINO_THROW("Unsupported ASR model_type: '", model_type, "'. Supported: whisper");
+        OPENVINO_THROW("Unsupported ASR model type");
     }
 }
 
