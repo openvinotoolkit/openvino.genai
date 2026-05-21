@@ -562,8 +562,18 @@ public:
                     size_t stored_seq_len = stored_shape[0];
                     size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
 
-                    OPENVINO_ASSERT(stored_hidden_size == hidden_size, "Target state hidden size does not match the expected size for Eagle3 draft model inference.");
-                    OPENVINO_ASSERT(stored_seq_len == num_scheduled_tokens, "Target state sequence length does not match the expected length for Eagle3 draft model inference.");
+                    OPENVINO_ASSERT(stored_hidden_size == hidden_size,
+                                    "Eagle3 hs import: hidden size mismatch. request_id=",
+                                    sequence_group->get_request_id(),
+                                    ", grouped_id=", sequence->get_grouped_id(),
+                                    ", stored_hidden_size=", stored_hidden_size,
+                                    ", expected_hidden_size=", hidden_size);
+                    OPENVINO_ASSERT(stored_seq_len == num_scheduled_tokens,
+                                    "Eagle3 hs import: seq len mismatch. request_id=",
+                                    sequence_group->get_request_id(),
+                                    ", grouped_id=", sequence->get_grouped_id(),
+                                    ", stored_seq_len=", stored_seq_len,
+                                    ", num_scheduled_tokens=", num_scheduled_tokens);
 
                     // fill the draft model hidden state input with the target hidden state
                     if (stored_seq_len == total_num_tokens) {
