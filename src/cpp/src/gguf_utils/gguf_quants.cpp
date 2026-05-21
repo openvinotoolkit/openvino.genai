@@ -248,7 +248,7 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
     } else if (tensor.type == GGUF_TYPE_Q4_K) {
         extract_q4_k_data(tensor, weights, scales, biases);
     } else {
-        OPENVINO_ASSERT("Unsupported tensor type in 'gguf_load_quantized'");
+        OPENVINO_THROW("Unsupported tensor type in 'gguf_load_quantized'");
     }
 
     a.emplace(name, std::move(weights));
