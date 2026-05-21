@@ -4,6 +4,7 @@
 #include <atomic>
 #include <thread>
 #include <optional>
+#include <fstream>
 #include "openvino/genai/cache_eviction.hpp"
 
 #ifdef __APPLE__
@@ -13,6 +14,8 @@
 #include <sys/sysinfo.h>
 #endif
 
+#include <nlohmann/json.hpp>
+#include "openvino/op/constant.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
@@ -58,6 +61,94 @@ size_t get_available_cpu_memory() {
     return std::numeric_limits<size_t>::max();
 }
 
+// Workaround: sets correct per-layer sliding_window on PagedAttention nodes for hybrid attention models (e.g., Gemma3).
+//
+// Since transformers 5 the attention mask uses Select instead of Slice, which the
+// SDPAToPagedAttention pass does not recognize - it sets sliding_window=0 for all layers by default.
+// This function reads sliding_window and layer_types from config.json and patches the PA constants.
+void apply_sliding_window_to_pa_nodes(const std::shared_ptr<ov::Model>& model) {
+    // Find config.json
+    auto rt_info = model->get_rt_info();
+    if (rt_info.find("__weights_path") == rt_info.end()) {
+        return;
+    }
+    std::string weights_path = rt_info.at("__weights_path").as<std::string>();
+    std::filesystem::path config_path = std::filesystem::path(weights_path).parent_path() / "config.json";
+    if (!std::filesystem::exists(config_path)) {
+        return;
+    }
+
+    std::ifstream config_file(config_path);
+    if (!config_file.is_open()) {
+        return;
+    }
+    nlohmann::json config = nlohmann::json::parse(config_file);
+
+    if (!config.contains("sliding_window") || config["sliding_window"].is_null()) {
+        return;
+    }
+    int32_t sliding_window = config["sliding_window"].get<int32_t>();
+    if (sliding_window <= 0) {
+        return;
+    }
+
+    // Extract per-layer attention types
+    std::vector<bool> is_sliding_layer;
+    if (config.contains("layer_types") && config["layer_types"].is_array()) {
+        for (const auto& layer_type : config["layer_types"]) {
+            is_sliding_layer.push_back(layer_type.get<std::string>() == "sliding_attention");
+        }
+    } else if (config.contains("_sliding_window_pattern")) {
+        // Fallback: use pattern (every Nth layer is full attention)
+        int pattern = config["_sliding_window_pattern"].get<int>();
+        OPENVINO_ASSERT(pattern > 0, "`_sliding_window_pattern` must be greater than 0");
+        int num_layers = config.value("num_hidden_layers", 0);
+        for (int i = 0; i < num_layers; ++i) {
+            is_sliding_layer.push_back(((i + 1) % pattern) != 0);
+        }
+    } else {
+        // No hybrid info: apply sliding_window uniformly to all layers
+        int num_layers = config.value("num_hidden_layers", 0);
+        is_sliding_layer.assign(num_layers, true);
+    }
+
+    if (is_sliding_layer.empty()) {
+        return;
+    }
+
+    // Check if all layers are already correctly configured (all sliding or no fix needed)
+    bool has_full_attention = std::find(is_sliding_layer.begin(), is_sliding_layer.end(), false) != is_sliding_layer.end();
+    bool has_sliding_attention = std::find(is_sliding_layer.begin(), is_sliding_layer.end(), true) != is_sliding_layer.end();
+    if (!has_sliding_attention) {
+        // All layers are full attention, no sliding window needed
+        return;
+    }
+
+    // Find all PagedAttention ops and patch their sliding_window inputs
+    size_t pa_idx = 0;
+    for (auto& op : model->get_ordered_ops()) {
+        if (op->get_type_info().name == std::string("PagedAttentionExtension")) {
+            if (pa_idx >= is_sliding_layer.size()) {
+                break;
+            }
+            // PagedAttentionExtension input index layout is defined in:
+            // openvino/src/plugins/intel_cpu/src/nodes/kernels/scaled_attn/executor_pa_common.hpp
+            constexpr size_t PA_INPUT_SLIDING_WINDOW = 10;
+            if (op->get_input_size() > PA_INPUT_SLIDING_WINDOW) {
+                int32_t target_value = is_sliding_layer[pa_idx] ? sliding_window : 0;
+                auto current_node = op->input_value(PA_INPUT_SLIDING_WINDOW).get_node_shared_ptr();
+                auto current_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(current_node);
+                if (current_const && current_const->get_data_ptr<int32_t>()[0] != target_value) {
+                    auto new_const = ov::op::v0::Constant::create(ov::element::i32, ov::Shape{}, {target_value});
+                    new_const->set_friendly_name(current_const->get_friendly_name());
+                    op->input(PA_INPUT_SLIDING_WINDOW).replace_source_output(new_const->output(0));
+                }
+            }
+            ++pa_idx;
+        }
+    }
+}
+
 } // namespace
 
 namespace ov::genai {
@@ -98,6 +189,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_is_validation_mode_enabled = is_validation_mode_enabled;
 
     prepare_model_for_paged_attention(model, scheduler_config);
+    apply_sliding_window_to_pa_nodes(model);
+
     initialize_pipeline(model, scheduler_config, device, properties);
 }
 
