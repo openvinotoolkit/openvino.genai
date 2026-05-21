@@ -4,7 +4,7 @@
 import pytest
 import logging
 import re
-import subprocess
+import subprocess  # nosec B404
 from pathlib import Path
 import sys
 
