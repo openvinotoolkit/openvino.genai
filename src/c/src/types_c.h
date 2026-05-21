@@ -10,6 +10,7 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/json_container.hpp"
+#include "openvino/genai/rag/text_rerank_pipeline.hpp"
 
 #define GET_PROPERTY_FROM_ARGS_LIST                                                                            \
     std::string property_key = va_arg(args_ptr, char*);                                                        \
@@ -145,4 +146,20 @@ struct ov_genai_chat_history_opaque {
  */
 struct ov_genai_json_container_opaque {
     std::shared_ptr<ov::genai::JsonContainer> object;
+};
+
+/**
+ * @struct ov_genai_text_rerank_pipeline_opaque
+ * @brief This is an interface of ov::genai::TextRerankPipeline
+ */
+struct ov_genai_text_rerank_pipeline_opaque {
+    std::shared_ptr<ov::genai::TextRerankPipeline> object;
+};
+
+/**
+ * @struct ov_genai_text_rerank_result_opaque
+ * @brief Holds the list of (index, score) pairs returned by ov::genai::TextRerankPipeline::rerank.
+ */
+struct ov_genai_text_rerank_result_opaque {
+    std::vector<std::pair<size_t, float>> items;
 };
