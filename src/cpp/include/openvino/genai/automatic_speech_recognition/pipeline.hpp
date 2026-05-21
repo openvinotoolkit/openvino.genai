@@ -12,9 +12,6 @@
 
 namespace ov::genai {
 
-// duplicates whisper definition
-// todo: address input type std::vector<float> vs ov::Tensor open
-// todo: deprecate WhisperPipeline or move to a separate header
 using RawSpeechInput = std::vector<float>;
 
 /// Time-aligned text chunk — used for both segment-level and word-level timestamps.
@@ -36,9 +33,7 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
     std::optional<std::vector<ASRDecodedResultChunk>> chunks = std::nullopt;
     std::optional<std::vector<ASRDecodedResultChunk>> words = std::nullopt;
 
-    // is it really needed?
     operator std::string() const;
-    // is it really needed?
     operator std::vector<std::string>() const;
 
     friend std::ostream& operator<<(std::ostream& os, const ASRDecodedResults& dr);

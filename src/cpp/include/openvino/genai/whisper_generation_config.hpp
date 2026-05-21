@@ -7,7 +7,7 @@
 #include <optional>
 
 #include "generation_config.hpp"
-// include properties from asr to support backward compatibility
+// include properties from asr config
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/compiled_model.hpp"

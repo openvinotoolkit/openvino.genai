@@ -12,8 +12,6 @@ public:
     ASRGenerationConfig();
     explicit ASRGenerationConfig(const std::filesystem::path& json_path);
 
-    // Common parameters
-
     /**
      * @brief Language token to use for generation in the form of <|en|>.
      * Can be set for multilingual models only.
@@ -96,7 +94,7 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> generation_config(const A
 
 /*
  * utils that allow to use generate and operator() in the following way:
- * pipe.generate(input_ids, ov::genai::max_new_tokens(200),...)
+ * pipe.generate(raw_speech, ov::genai::max_new_tokens(200), ov::genai::return_timestamps(true), ...)
  */
 
 static constexpr ov::Property<std::string> language{"language"};
