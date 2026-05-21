@@ -434,13 +434,13 @@ def main():
         result = OptimumExportTool(args.model_id, args.task, model_dir, optimum_export_work_dir).run()
         result.raise_if_failed()
 
-    # Step 2: Inference test
-    # if args.skip_llm_bench:
-    #     logger.info("Skipping llm_bench test")
-    # else:
-    #     llm_bench_work_dir = work_dir / "llm_bench"
-    #     result = LlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
-    #     result.raise_if_failed()
+    Step 2: Inference test
+    if args.skip_llm_bench:
+        logger.info("Skipping llm_bench test")
+    else:
+        llm_bench_work_dir = work_dir / "llm_bench"
+        result = LlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
+        result.raise_if_failed()
 
     # Step 3: WWB accuracy
     if args.skip_wwb or wwb_task is None:
@@ -451,17 +451,14 @@ def main():
             hf_gt_result = HFWWBGroundTruthTool(
                 args.model_id, wwb_task, wwb_work_dir, args.num_samples, args.device
             ).run()
-            # hf_gt_result.raise_if_failed()
 
         optimum_result = OptimumWWBTargetEvaluationTool(
             model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
         ).run()
-        # optimum_result.raise_if_failed()
 
         genai_result = GenAIWWBTargetEvaluationTool(
             model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
         ).run()
-        # genai_result.raise_if_failed()
 
 
 if __name__ == "__main__":
