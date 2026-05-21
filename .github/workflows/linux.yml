@@ -35,6 +35,11 @@ env:
   BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
+  # To switch to the primary HF token, change the filename from `token-secondary` to `token-primary`:
+  #   HF_TOKEN_PATH_LIN: /home/runner/secrets/huggingface/token-primary
+  #   HF_TOKEN_PATH_WIN: "C:\\mount\\secrets\\huggingface\\token-primary"
+  HF_TOKEN_PATH_LIN: /home/runner/secrets/huggingface/token-secondary
+  HF_TOKEN_PATH_WIN: "C:\\mount\\secrets\\huggingface\\token-secondary"
 
 jobs:
   smart_ci:
@@ -82,7 +87,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-medium-st
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -126,7 +131,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-4-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -255,7 +260,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-4-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -316,7 +321,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-8-cores-16gb
+    runs-on: aks-linux-8-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -388,7 +393,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-medium-st
     container:
       image: openvinogithubactions.azurecr.io/library/python:3.12-slim
       volumes:
@@ -442,7 +447,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-4-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -516,7 +521,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-4-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -721,13 +726,13 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-8-cores-32gb
+    runs-on: aks-linux-8-cores-32gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/huggingface:/home/runner/secrets/huggingface:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -736,6 +741,10 @@ jobs:
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -743,7 +752,7 @@ jobs:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
-      - name: Download Build Artifacts
+      - name: Download Build Artifactsx
         if: ${{ matrix.test.run_condition }}
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
@@ -782,12 +791,12 @@ jobs:
             marker: 'llm and (transformers_dependent or transformers_lower_v5)'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
-            runner: 'aks-linux-4-cores-16gb'
+            runner: 'aks-linux-4-cores-16gb-st'
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Whisper_samples.test }}
-            runner: 'aks-linux-4-cores-16gb'
+            runner: 'aks-linux-4-cores-16gb-st'
           - name: 'dreamlike_anime_1_0'
             marker: 'dreamlike_anime_1_0'
             cmd: 'tests/python_tests/samples'
@@ -797,7 +806,7 @@ jobs:
             marker: 'LCM_Dreamshaper_v7_int8_ov'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
-            runner: 'aks-linux-4-cores-16gb'
+            runner: 'aks-linux-4-cores-16gb-st'
           # Test hangs on Linux. Ticket: 181387
           # - name: 'VLM'
           #   marker: 'vlm'
@@ -807,17 +816,17 @@ jobs:
           - name: 'Rag'
             marker: 'rag'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-4-cores-16gb'
+            runner: 'aks-linux-4-cores-16gb-st'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
           - name: 'Speech generation'
             marker: 'speech_generation'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-4-cores-16gb'
+            runner: 'aks-linux-4-cores-16gb-st'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
           - name: 'Eagle3 decoding'
             marker: 'eagle3_decoding'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-4-cores-16gb'
+            runner: 'aks-linux-4-cores-16gb-st'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
 
     timeout-minutes: 120
@@ -829,8 +838,8 @@ jobs:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/huggingface:/home/runner/secrets/huggingface:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -840,6 +849,10 @@ jobs:
       OPENVINO_LOG_LEVEL: 1
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -924,13 +937,13 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-4-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/huggingface:/home/runner/secrets/huggingface:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
@@ -938,6 +951,10 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -1021,13 +1038,13 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-4-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/huggingface:/home/runner/secrets/huggingface:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -1037,6 +1054,10 @@ jobs:
       NODE_VERSION: 21
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -1102,7 +1123,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-4-cores-16gb
+    runs-on: aks-linux-4-cores-16gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
