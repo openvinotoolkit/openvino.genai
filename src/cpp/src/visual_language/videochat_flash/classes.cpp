@@ -76,38 +76,6 @@ void write_native(std::ostream& os, size_t idx) {
 /**
  * @brief Build a frame-batch preprocessing model implemented purely with OpenVINO ops.
  *
- * Pipeline (all on device, batched, no per-frame CPU loop):
- *   1) Convert u8 -> f32
- *   2) Transpose NHWC -> NCHW
- *   3) Bicubic resize to (target_h, target_w) via a single Interpolate(CUBIC) op.
- *      - cube_coeff = -0.5f to better approximate the legacy Pillow-like bicubic
- *        behavior used in preprocess_cpu_loop().
- *      - Interpolate is pinned to f32 with ov::disable_fp16_compression to avoid
- *        fp16 grid snapping on fp16-compressing plugins (e.g. GPU), which would
- *        otherwise introduce noticeable deviations from the CPU reference path.
- *   4) Clamp(0, 255) to match the value range of the legacy CPU uint8 staging buffer.
- *   5) Explicit integer round-trip to align with CPU behavior:
- *        x = floor(x + 0.5)
- *      This models the implicit float->uint8->float conversion in the legacy
- *      bicubic_resize() + clip_image_preprocess() pipeline and significantly
- *      reduces discrepancies in downstream ViT activations and LLM outputs.
- *   6) Normalize with the same op order as clip_image_preprocess():
- *        ((x / 255.0f) - mean[c]) / std[c]
- *
- * Inputs:
- *   - "raw_frames"    : u8  [N, H, W, 3] (dynamic N, H, W)
- *   - "resize_target" : i64 [2] = {target_h, target_w}
- *
- * Output:
- *   - f32 [N, 3, target_h, target_w]
- *
- * Notes:
- *   - Compared to the previous OV graph implementation, this version explicitly
- *     models the integer rounding step present in the legacy CPU preprocessing path.
- *   - Minor numerical differences may still remain because OpenVINO
- *     Interpolate(CUBIC) is not bit-identical to the legacy Pillow-like
- *     fixed-point bicubic implementation.
- *
  * The model is compiled once and reused across videos; the heavy per-frame
  * pixel work executes inside OpenVINO kernels instead of a C++ triple loop.
  */
@@ -176,16 +144,6 @@ std::shared_ptr<ov::Model> build_frame_preprocess_model(const std::array<float, 
                                        "videochat_flash_frame_preprocess");
 }
 
-/**
- * @brief Runtime selector for the frame preprocessing path.
- *
- *   default (env unset / != "CPP"): OV graph-based batched preprocess (Convert + Transpose +
- *                                   Bicubic + Normalize), compiled once and runs on the same
- *                                   device as the vision encoder.
- *   VISION_PREPROCESS=CPP         : Legacy CPU per-frame path (bicubic_resize +
- *                                   clip_image_preprocess). Kept for bit-accurate comparison
- *                                   and easy fallback during debugging / regression triage.
- */
 bool check_vision_preprocess_env() {
     const char* env = std::getenv("VISION_PREPROCESS");
     return !(env && std::string(env) == "CPP");
@@ -258,13 +216,6 @@ ov::Tensor preprocess_cpu_loop(const ov::Tensor& input_nhwc_u8,
  * frame batch, eliminating N x (resize + normalize) CPU loops and the extra f32 planar->NCHW
  * copy.
  *
- * IMPORTANT lifetime contract (zero-copy optimization):
- *   The returned tensor is a NON-OWNING alias of the InferRequest's output buffer. The caller
- *   MUST keep the corresponding CircularBufferQueueElementGuard alive until the returned
- *   tensor's data has been fully consumed (typically until the next downstream copy, e.g.
- *   transpose_video_features). Reusing the same InferRequest before that point would corrupt
- *   the data. This avoids a ~70MB f32 copy_to per video chunk on the host side.
- *
  * Input:
  *   - input_nhwc_u8: [N, H, W, 3], element type u8
  * Output:
@@ -280,19 +231,20 @@ ov::Tensor preprocess_ov_graph(const ov::Tensor& input_nhwc_u8,
     OPENVINO_ASSERT(image_size.height > 0 && image_size.width > 0, "target_h and target_w must be > 0.");
 
     // Pack resize target as a 2-element i64 tensor.
-    const std::vector<int64_t> target_shape_vec{
-        static_cast<int64_t>(image_size.height),
-        static_cast<int64_t>(image_size.width)};
     ov::Tensor target_shape_tensor(ov::element::i64, ov::Shape{2});
-    std::memcpy(target_shape_tensor.data(), target_shape_vec.data(), target_shape_vec.size() * sizeof(int64_t));
-
+    auto* target_shape_data = target_shape_tensor.data<int64_t>();
+    target_shape_data[0] = static_cast<int64_t>(image_size.height);
+    target_shape_data[1] = static_cast<int64_t>(image_size.width);
     req.set_tensor("raw_frames", input_nhwc_u8);
     req.set_tensor("resize_target", target_shape_tensor);
     req.infer();
 
-    // Return a non-owning alias of the request's output. Caller's guard keeps it valid;
-    // the next downstream stage (transpose_video_features) memcpy's into its own buffer,
-    // after which the guard can be released and the request returned to the pool.
+    // Return the InferRequest output tensor without an extra deep copy.
+    // Its buffer is owned/reused by the InferRequest, so the caller must keep
+    // the corresponding CircularBufferQueueElementGuard alive until the tensor
+    // is fully consumed. In encode_video(), transpose_video_features() copies this
+    // data into its own tensor before preprocess_guard.reset() returns the request
+    // to the pool.
     return req.get_output_tensor();
 }
 
@@ -501,8 +453,7 @@ std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim
     x_out->set_friendly_name("x_out");
     size_m->set_friendly_name("size_out");
 
-    auto model = std::make_shared<ov::Model>(ov::OutputVector{x_out, size_m}, ov::ParameterVector{x_p, size_p}, "bipartite_merge_opt");
-    return model;
+    return std::make_shared<ov::Model>(ov::OutputVector{x_out, size_m}, ov::ParameterVector{x_p, size_p}, "bipartite_merge_opt");
 }
 
 // Merge visual tokens with iterative ToMe until reaching ``target_num_token``.
@@ -728,25 +679,10 @@ ov::Tensor get_3d_sincos_pos_embed(int embed_dim, int grid_size, int t_size, boo
 
     return pos_tensor;
 }
-/**
- * @brief Run the ViT (vision_embeddings) on N temporally-grouped video samples and return a
- *        single contiguous [N, ...] tensor.
- *
- * Per-sample zero-copy loop. Dry-infer sample 0 to learn per-sample output shape, then
- * pre-allocate the [N, ...] result buffer and feed every subsequent sample's output slice
- * as the request's output tensor via set_output_tensor() so the plugin writes directly into
- * the final buffer (no per-sample memcpy). The output binding is reset to a scratch tensor
- * before returning so the request can be safely returned to the pool.
- *
- * Pre-conditions on the InferRequest (set up in initialize_vision_encoder_queue's factory):
- *   - "rotary_pos_emb" is already bound to m_pos_emb on every request in the pool.
- *
- * Note: a true-batch path (single infer with hidden_states = [N, C, T, H, W]) was evaluated
- * but regressed performance on Arc 140V iGPU at typical N — the per-sample loop hits better
- * GPU kernel tiles and stays within the device working set, so it is the only path kept.
- */
+
 ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features,
-                            ov::InferRequest& vision_embeddings) {
+                            ov::InferRequest& vision_embeddings,
+                            const ov::Tensor& pos_emb) {
     OPENVINO_ASSERT(
         transpose_features.get_element_type() == ov::element::f32,
         "vision_embeddings input pixel_values must be f32."
@@ -764,6 +700,7 @@ ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features,
     // Dry-infer sample 0 to learn per-sample output shape.
     ov::Tensor first_in(ov::element::f32, single_in_shape, const_cast<float*>(src_ptr));
     vision_embeddings.set_tensor("hidden_states", first_in);
+    vision_embeddings.set_tensor("rotary_pos_emb", pos_emb);
     vision_embeddings.infer();
     ov::Tensor first_out = vision_embeddings.get_output_tensor();
 
@@ -795,6 +732,7 @@ ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features,
             out_dtype, per_out_shape,
             dst_base + i * per_sample_bytes);
         vision_embeddings.set_tensor("hidden_states", view_in);
+        vision_embeddings.set_tensor("rotary_pos_emb", pos_emb);
         vision_embeddings.set_output_tensor(view_out);
         vision_embeddings.infer();
         foreign_output_bound = true;
@@ -914,16 +852,10 @@ void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
 
     auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
-    // rotary_pos_emb is constant across the entire pipeline lifetime (depends only on grid_size
-    // and mm_local_num_frames). Bind it once at request-construction time so cyclic_vit_infer
-    // does not re-set it on every per-sample call. Its lifetime is managed by InferRequest
-    // after set_tensor().
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model, this]() -> ov::InferRequest {
-            auto req = compiled_model.create_infer_request();
-            req.set_tensor("rotary_pos_emb", m_pos_emb);
-            return req;
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
         });
 }
 
@@ -1084,7 +1016,7 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
     CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(m_ireq_queue_merge_model.get());
     CircularBufferQueueElementGuard<ov::InferRequest> projection_guard(m_ireq_queue_vision_projection.get());
 
-    ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get());
+    ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get(), m_pos_emb);
     ov::Tensor clipped_vision_embeds = remove_second_dim_first_element(processed_vision_embeds);
     ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_guard.get(), m_target_num_token);
 
