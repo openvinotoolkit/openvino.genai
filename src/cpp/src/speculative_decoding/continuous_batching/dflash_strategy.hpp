@@ -54,7 +54,6 @@ private:
     void drop_requests();
     ov::genai::RawPerfMetrics collect_draft_raw_metrics();
 
-    ov::CompiledModel m_draft_compiled_model;
     std::shared_ptr<DFlashCBDraftRunner> m_draft;
     ov::genai::utils::dflash::DFlashRTInfo m_rt_info;
     std::map<uint64_t, RequestState> m_request_states;

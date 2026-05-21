@@ -17,16 +17,6 @@ namespace ov::genai {
 
 namespace {
 
-ov::CompiledModel compile_dflash_draft_model(const ov::genai::ModelDesc& model_desc) {
-    OPENVINO_ASSERT(model_desc.model, "DFlash draft model cannot be null.");
-    if (model_desc.device == "NPU") {
-        auto kv_axes_pos = utils::get_kv_axes_pos(model_desc.model);
-        auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, model_desc.properties, kv_axes_pos);
-        return compiled;
-    }
-    return utils::singleton_core().compile_model(model_desc.model, model_desc.device, model_desc.properties);
-}
-
 ov::Tensor truncate_hidden_state_from_end_for_dflash(const ov::Tensor& hidden_state, size_t tokens_to_remove) {
     if (!hidden_state || hidden_state.get_size() == 0 || tokens_to_remove == 0) {
         return hidden_state;
@@ -57,11 +47,11 @@ std::vector<float> zero_log_probs(size_t count) {
 
 class ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashCBDraftRunner {
 public:
-    DFlashCBDraftRunner(ov::InferRequest request,
+    DFlashCBDraftRunner(const ov::genai::ModelDesc& model_desc,
                         const Tokenizer& tokenizer,
                         const ov::genai::utils::dflash::DFlashRTInfo& rt_info)
         : m_tokenizer(tokenizer),
-          m_request(std::move(request)),
+          m_request(create_draft_infer_request(model_desc)),
           m_sampler(tokenizer),
           // TODO: we need to make block size configurable at load time instead at export time.
           m_block_size(rt_info.block_size),
@@ -99,11 +89,11 @@ public:
 
     ov::Tensor infer(int64_t seed_token, const ov::Tensor& hidden_delta) {
         OPENVINO_ASSERT(hidden_delta && hidden_delta.get_size() > 0, "DFlash hidden delta must be provided.");
-        auto normalized_hidden_delta = normalize_hidden_delta(hidden_delta);
-        const size_t hidden_delta_length = normalized_hidden_delta.get_shape()[1];
+        auto reshaped_hidden_delta = reshape_hidden_delta_for_draft(hidden_delta);
+        const size_t hidden_delta_length = reshaped_hidden_delta.get_shape()[1];
 
         m_request.set_tensor("input_ids", build_input_ids(seed_token));
-        m_request.set_tensor("hidden_states", normalized_hidden_delta);
+        m_request.set_tensor("hidden_states", reshaped_hidden_delta);
         m_request.set_tensor("position_ids", build_position_ids(hidden_delta_length));
         update_inference_time(execute_inference());
         m_committed_context_length += hidden_delta_length;
@@ -132,6 +122,20 @@ public:
     }
 
 private:
+    static ov::InferRequest create_draft_infer_request(const ov::genai::ModelDesc& model_desc) {
+        OPENVINO_ASSERT(model_desc.model, "DFlash draft model cannot be null.");
+        OPENVINO_ASSERT(utils::has_input(model_desc.model, "hidden_states"),
+                        "DFlash CB/PA draft model must have 'hidden_states' input.");
+        if (model_desc.device == "NPU") {
+            auto kv_axes_pos = utils::get_kv_axes_pos(model_desc.model);
+            auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, model_desc.properties, kv_axes_pos);
+            return compiled.create_infer_request();
+        }
+        return utils::singleton_core()
+            .compile_model(model_desc.model, model_desc.device, model_desc.properties)
+            .create_infer_request();
+    }
+
     ov::Tensor build_input_ids(int64_t seed_token) const {
         ov::Tensor input_ids(ov::element::i64, {BATCH_SIZE, m_block_size});
         auto* data = input_ids.data<int64_t>();
@@ -147,19 +151,19 @@ private:
         return position_ids;
     }
 
-    ov::Tensor normalize_hidden_delta(const ov::Tensor& hidden_delta) const {
-        auto normalized = hidden_delta;
-        const auto shape = normalized.get_shape();
+    ov::Tensor reshape_hidden_delta_for_draft(const ov::Tensor& hidden_delta) const {
+        auto reshaped = hidden_delta;
+        const auto shape = reshaped.get_shape();
         OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3, "DFlash hidden_states delta must have rank 2 or 3.");
         if (shape.size() == 2) {
-            normalized.set_shape({BATCH_SIZE, shape[0], shape[1]});
+            reshaped.set_shape({BATCH_SIZE, shape[0], shape[1]});
         } else if (shape[0] != BATCH_SIZE && shape[1] == BATCH_SIZE) {
-            normalized.set_shape({BATCH_SIZE, shape[0], shape[2]});
+            reshaped.set_shape({BATCH_SIZE, shape[0], shape[2]});
         }
-        const auto normalized_shape = normalized.get_shape();
-        OPENVINO_ASSERT(normalized_shape.size() == 3 && normalized_shape[0] == BATCH_SIZE,
-                        "DFlash hidden_states delta must normalize to [1, seq_len, hidden].");
-        return normalized;
+        const auto reshaped_shape = reshaped.get_shape();
+        OPENVINO_ASSERT(reshaped_shape.size() == 3 && reshaped_shape[0] == BATCH_SIZE,
+                        "DFlash hidden_states delta must reshape to [1, seq_len, hidden].");
+        return reshaped;
     }
 
     std::vector<int64_t> sample_one_candidate(const ov::Tensor& logits) {
@@ -226,14 +230,11 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
 
     m_tokenizer = main_model_desc.tokenizer;
     m_generation_config = main_model_desc.generation_config;
-    auto draft_model_desc_for_compile = draft_model_desc;
-    if (draft_model_desc_for_compile.device.empty()) {
-        draft_model_desc_for_compile.device = main_model_desc.device;
+    auto draft_model_desc_for_runner = draft_model_desc;
+    if (draft_model_desc_for_runner.device.empty()) {
+        draft_model_desc_for_runner.device = main_model_desc.device;
     }
-    OPENVINO_ASSERT(utils::has_input(draft_model_desc_for_compile.model, "hidden_states"),
-                    "DFlash CB/PA draft model must have 'hidden_states' input.");
-    m_draft_compiled_model = compile_dflash_draft_model(draft_model_desc_for_compile);
-    m_draft = std::make_shared<DFlashCBDraftRunner>(m_draft_compiled_model.create_infer_request(),
+    m_draft = std::make_shared<DFlashCBDraftRunner>(draft_model_desc_for_runner,
                                                     m_tokenizer,
                                                     m_rt_info);
 
