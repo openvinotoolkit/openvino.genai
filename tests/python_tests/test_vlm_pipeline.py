@@ -2874,6 +2874,8 @@ def test_videochatflash_preprocess_ov_matches_cpp_reference(
         "OV-graph preprocess output diverged from the legacy CPP reference at "
         f"greedy step within max_new_tokens=5: OV='{res_ov.texts[0]}' vs "
         f"CPP='{res_cpp.texts[0]}'."
+    )
+
 
 @pytest.fixture(scope="module")
 def video_sampling_inputs(synthetic_video_32x32) -> list[tuple[openvino.Tensor, VideoMetadata | None]]:
