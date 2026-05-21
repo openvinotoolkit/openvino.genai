@@ -77,3 +77,7 @@ std::vector<GenerationOutput> GenerationHandleImpl::read_all() {
     results.resize(std::min(m_sampling_params.num_return_sequences, results.size()));
     return results;
 }
+
+LogitsStats GenerationHandleImpl::get_logits_stats() const {
+    return m_generation_stream->get_logits_stats();
+}

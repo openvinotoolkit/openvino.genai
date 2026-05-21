@@ -4,6 +4,7 @@
 #include <future>
 
 #include "sampling/sampler.hpp"
+#include "sampling/logits_stats_compute.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
 
 namespace ov::genai {
@@ -921,6 +922,10 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 }
 
                 auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, logit_token_offset);
+                // Capture raw-logit distribution metrics before any transforms.
+                if (logit_token_offset == 0) {
+                    running_sequence->push_logits_step_stats(compute_logits_step_stats(logit_vector));
+                }
                 logit_processor.apply(logit_vector);
                 Token sampled_token;
                 bool is_generate_n_tokens = false;

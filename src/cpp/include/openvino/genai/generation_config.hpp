@@ -685,6 +685,10 @@ public:
     // set to true if chat template should be applied for non-chat scenarios, set to false otherwise
     bool apply_chat_template = true;
 
+    // Logit-space diagnostics: window size for averaged LogitsStats returned by
+    // GenerationHandleImpl::get_logits_stats().  0 = average over all generated tokens.
+    size_t logits_stats_window = 0;
+
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
@@ -743,6 +747,7 @@ static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
 static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
 static constexpr ov::Property<float> presence_penalty{"presence_penalty"};
 static constexpr ov::Property<float> frequency_penalty{"frequency_penalty"};
+static constexpr ov::Property<size_t> logits_stats_window{"logits_stats_window"};
 
 static constexpr ov::Property<size_t> pruning_ratio{"pruning_ratio"};
 static constexpr ov::Property<float> relevance_weight{"relevance_weight"};

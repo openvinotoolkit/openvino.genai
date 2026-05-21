@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <atomic>
+#include <iostream>
 #include <thread>
 #include <optional>
 #include "openvino/genai/cache_eviction.hpp"
@@ -561,6 +562,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
     streamer_ptr->start();
     m_sampler->clear_structured_output_compile_times();
+    size_t logits_stats_token_count = 0;
     while (has_non_finished_requests()) {
         try {
             const auto infer_start = std::chrono::steady_clock::now();
@@ -575,6 +577,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
                 raw_perf_counters.m_new_token_times.emplace_back(infer_end);
                 raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
+
+                logits_stats_token_count += m_batch_size;
+                if (logits_stats_token_count % 10 == 0) {
+                    std::cerr << "[logits_stats @ token " << logits_stats_token_count << "]\n"
+                              << generation->get_logits_stats().to_string();
+                }
             }
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception

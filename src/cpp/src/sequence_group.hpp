@@ -13,6 +13,7 @@
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/logits_stats.hpp"
 #include "generation_stream.hpp"
 
 namespace ov::genai {
@@ -42,6 +43,7 @@ class Sequence {
 
     TokenIds m_generated_ids;
     LogProbs m_generated_log_probs;
+    std::vector<LogitsStepStats> m_logits_step_history;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     ov::Tensor m_hidden_state = ov::Tensor();
@@ -70,6 +72,7 @@ class Sequence {
     Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
         m_generated_log_probs(seq.m_generated_log_probs),
+        m_logits_step_history(seq.m_logits_step_history),
         m_grouped_id(id),
         m_hidden_state(seq.m_hidden_state),
         m_status(seq.m_status),
@@ -211,6 +214,46 @@ public:
     void update_generated_log_prob(size_t idx, float log_prob) {
         OPENVINO_ASSERT(idx < m_generated_log_probs.size());
         m_generated_log_probs[idx] = log_prob;
+    }
+
+    void push_logits_step_stats(const LogitsStepStats& step_stats) {
+        m_logits_step_history.push_back(step_stats);
+    }
+
+    // Returns averaged LogitsStats over the last `last_n` steps.
+    // last_n == 0 averages over all recorded steps.
+    LogitsStats get_logits_stats(size_t last_n = 0) const {
+        LogitsStats result;
+        if (m_logits_step_history.empty())
+            return result;
+
+        const size_t total = m_logits_step_history.size();
+        const size_t start = (last_n == 0 || last_n >= total) ? 0 : (total - last_n);
+        const size_t count = total - start;
+
+        float sum_entropy = 0.0f, sum_varentropy = 0.0f, sum_top1_prob = 0.0f;
+        float sum_margin = 0.0f, sum_eff_vocab = 0.0f;
+        float sum_logit_std = 0.0f, sum_top10 = 0.0f;
+        for (size_t i = start; i < total; ++i) {
+            const auto& s = m_logits_step_history[i];
+            sum_entropy    += s.entropy;
+            sum_varentropy += s.varentropy;
+            sum_top1_prob  += s.top1_prob;
+            sum_margin     += s.top1_top2_log_margin;
+            sum_eff_vocab  += s.effective_vocab_size;
+            sum_logit_std  += s.logit_std;
+            sum_top10      += s.top10_mass;
+        }
+        const float n = static_cast<float>(count);
+        result.mean_entropy              = sum_entropy    / n;
+        result.mean_varentropy           = sum_varentropy / n;
+        result.mean_top1_prob            = sum_top1_prob  / n;
+        result.mean_top1_top2_log_margin = sum_margin     / n;
+        result.mean_effective_vocab_size = sum_eff_vocab  / n;
+        result.mean_logit_std            = sum_logit_std  / n;
+        result.mean_top10_mass           = sum_top10      / n;
+        result.num_steps                 = count;
+        return result;
     }
 
     float get_beam_search_score(const ov::genai::GenerationConfig& sampling_params) const {
@@ -862,6 +905,9 @@ public:
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1) {
+                // Keep the stream's logits stats snapshot up-to-date on every step.
+                m_generation_stream->update_logits_stats(
+                    m_sequences.front()->get_logits_stats(m_sampling_params.logits_stats_window));
                 const auto generated_len = m_sequences.front()->get_generated_len();
                 if (has_finished()) {
                     m_stream_window_size = 0;

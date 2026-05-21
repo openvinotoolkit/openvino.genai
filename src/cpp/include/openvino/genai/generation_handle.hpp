@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/logits_stats.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 
@@ -119,6 +120,11 @@ public:
     GenerationOutputs read();
     // Reads all generated tokens for all sequences
     std::vector<GenerationOutput> read_all();
+
+    // Returns averaged logit-space diagnostics over the last window of generated
+    // tokens (window size set via GenerationConfig::logits_stats_window).
+    // Only available for greedy / multinomial decoding with a single output sequence.
+    LogitsStats get_logits_stats() const;
 };
 
 using GenerationHandle = std::shared_ptr<GenerationHandleImpl>;

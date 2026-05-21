@@ -6,6 +6,7 @@
 #include <atomic>
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_handle.hpp"
+#include "openvino/genai/logits_stats.hpp"
 #include "synchronized_queue.hpp"
 
 namespace ov::genai {
@@ -14,6 +15,7 @@ class GenerationStream {
     GenerationStatus m_status = GenerationStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     SynchronizedQueue<GenerationOutputs> m_output_queue;
+    LogitsStats m_latest_logits_stats;
 
 public:
     using Ptr = std::shared_ptr<GenerationStream>;
@@ -61,6 +63,16 @@ public:
     void cancel() {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_status = GenerationStatus::CANCEL;
+    }
+
+    void update_logits_stats(const LogitsStats& stats) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_latest_logits_stats = stats;
+    }
+
+    LogitsStats get_logits_stats() const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_latest_logits_stats;
     }
 };
 }
