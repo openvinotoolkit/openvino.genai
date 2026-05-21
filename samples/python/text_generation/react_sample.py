@@ -58,6 +58,19 @@ tools = [
             }
         ],
     },
+    {
+        "name_for_human": "scientific calculator",
+        "name_for_model": "scientific_calculator",
+        "description_for_model": "Useful for evaluating both basic arithmetic and advanced scientific mathematical expressions. You can use standard operators (+, -, *, /, **) and functions from Python's math module (e.g., math.sin, math.cos, math.tan, math.log, math.log10, math.sqrt, math.exp, math.pi, math.e, math.factorial). Input should be a valid mathematical string.",
+        "parameters": [
+            {
+                "name": "expression",
+                "description": "The mathematical expression to evaluate (e.g., '10 * math.sin(math.pi / 4)')",
+                "required": True,
+                "schema": {"type": "string"},
+            }
+        ],
+    },
 ]
 
 def build_input_text(tokenizer, chat_history, list_of_tool_info) -> str:
@@ -139,6 +152,22 @@ def call_tool(tool_name: str, tool_args: str) -> str:
             {"image_url": f"https://image.pollinations.ai/prompt/{prompt}"},
             ensure_ascii=False,
         )
+    elif tool_name == "scientific_calculator":
+        import math
+        expression = json5.loads(tool_args)["expression"]
+        
+        # Create a safe environment containing only the math functions
+        safe_env = {
+            "math": math,
+            "__builtins__": {}
+        }
+        
+        try:
+            # Safely evaluate the advanced mathematical expression
+            result = str(eval(expression, safe_env))
+        except Exception as e:
+            result = f"Error evaluating scientific math: {e}"
+        return json.dumps({"result": result}, ensure_ascii=False)
     else:
         raise NotImplementedError
 
@@ -185,7 +214,7 @@ def main():
     llm_pipe.set_generation_config(llm_config)
 
     history = []
-    query = "get the weather in London, and create a picture of Big Ben based on the weather information"
+    query = "What is the sine of 45 degrees (in radians) multiplied by the square root of 144?"
     response, history = llm_with_tool(llm_pipe, prompt=query, history=history, list_of_tool_info=tools)
 
 if '__main__' == __name__:
