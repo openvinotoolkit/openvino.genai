@@ -55,6 +55,9 @@ ov::genai::ASRDecodedResults to_asr_results(ov::genai::WhisperDecodedResults&& w
         std::move(whisper_result.perf_metrics.whisper_raw_metrics.features_extraction_durations);
     result.perf_metrics.asr_raw_metrics.word_level_timestamps_processing_durations =
         std::move(whisper_result.perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations);
+    result.perf_metrics.features_extraction_duration = whisper_result.perf_metrics.features_extraction_duration;
+    result.perf_metrics.word_level_timestamps_processing_duration =
+        whisper_result.perf_metrics.word_level_timestamps_processing_duration;
 
     if (whisper_result.chunks.has_value()) {
         std::vector<ov::genai::ASRDecodedResultChunk> chunks;
