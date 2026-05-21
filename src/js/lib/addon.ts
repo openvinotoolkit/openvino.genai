@@ -146,6 +146,7 @@ export interface LLMPipeline {
         perfMetrics: PerfMetrics;
         parsed: Record<string, unknown>[];
         finishReasons: GenerationFinishReason[];
+        tokens: BigInt64Array[];
       },
     ) => void,
   ): void;
@@ -206,6 +207,7 @@ export interface VLMPipeline {
         perfMetrics: VLMPerfMetrics;
         parsed: Record<string, unknown>[];
         finishReasons: GenerationFinishReason[];
+        tokens: BigInt64Array[];
       },
     ) => void,
   ): void;

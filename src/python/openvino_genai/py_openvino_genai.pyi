@@ -766,6 +766,9 @@ class DecodedResults:
     @property
     def texts(self) -> list[str]:
         ...
+    @property
+    def tokens(self) -> list[list[int]]:
+        ...
 class DeepSeekR1ReasoningIncrementalParser(IncrementalParser):
     def __init__(self) -> None:
         ...
