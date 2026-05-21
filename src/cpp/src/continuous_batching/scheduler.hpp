@@ -33,6 +33,7 @@ class Scheduler {
     const float m_cache_growth_num_tokens = 256; // Number of tokens by which KV-cache is increased
 
     size_t m_snapkv_window_size = 1;
+    std::map<uint64_t, size_t> m_expected_num_scheduled_tokens;
 
 public:
     struct Output {
@@ -182,6 +183,22 @@ public:
         m_cache_orchestrator->clear();
     }
 
+    void set_expected_num_scheduled_tokens(uint64_t request_id, size_t num_tokens) {
+        m_expected_num_scheduled_tokens[request_id] = num_tokens;
+    }
+
+    size_t get_expected_num_scheduled_tokens(uint64_t request_id) const {
+        auto it = m_expected_num_scheduled_tokens.find(request_id);
+        if (it != m_expected_num_scheduled_tokens.end()) {
+            return it->second;
+        }
+        return 0;
+    }
+
+    void clear_expected_num_scheduled_tokens(uint64_t request_id) {
+        m_expected_num_scheduled_tokens.erase(request_id);
+    }
+
 private:
     static size_t _num_running_sequence_groups(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         size_t num_running = 0;
@@ -294,6 +311,16 @@ private:
 
                 // apply megabatch limitations
                 size_t num_scheduled_tokens = std::min(num_tokens_in_megabatch, num_available_tokens);
+
+                // use externally expected scheduling size when an external expectation is provided.
+                auto it_expected_scheduled_tokens =
+                    m_expected_num_scheduled_tokens.find(sequence_group->get_request_id());
+                if (it_expected_scheduled_tokens != m_expected_num_scheduled_tokens.end()) {
+                    const size_t expected_num_scheduled_tokens = it_expected_scheduled_tokens->second;
+                    if (expected_num_scheduled_tokens > 0 && expected_num_scheduled_tokens < num_scheduled_tokens) {
+                        num_scheduled_tokens = expected_num_scheduled_tokens;
+                    }
+                }
 
                 // apply KV cache limitations
                 while (m_cache_orchestrator->available_token_slots(sequence_group) < num_scheduled_tokens) {
