@@ -31,11 +31,10 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
-import inspect
 from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Generator, cast
+from typing import Callable, Generator
 import openvino_tokenizers
 import openvino
 import PIL
@@ -98,42 +97,6 @@ def _is_videochat_flash_qwen_model(model_id: str) -> bool:
     return "videochat-flash-qwen" in model_id.lower()
 
 VIDEOCHAT_FLASH_QWEN_MODEL_ID = "optimum-intel-internal-testing/tiny-videochat-flash-qwen"
-
-
-VIDEO_MODELS_WITH_UNSUPPORTED_IMAGE_INPUTS: list[str] = [
-    VIDEOCHAT_FLASH_QWEN_MODEL_ID,
-]
-
-
-def _has_unsupported_image_inputs(model_id: str) -> bool:
-    return model_id in VIDEO_MODELS_WITH_UNSUPPORTED_IMAGE_INPUTS
-
-
-class _VlmPipelineUnsupportedImageInputGuard:
-    def __init__(self, pipeline: VLMPipeline, model_id: str):
-        self._pipeline = pipeline
-        self._model_id = model_id
-
-    def generate(self, *args: Any, **kwargs: Any):
-        normalized_arguments = kwargs
-        try:
-            bound_arguments = inspect.signature(self._pipeline.generate).bind_partial(*args, **kwargs)
-            normalized_arguments = bound_arguments.arguments
-        except (TypeError, ValueError):
-            # Fall back to the original kwargs-only behavior if signature introspection is unavailable.
-            pass
-        has_single_image = normalized_arguments.get("image") is not None
-        has_multi_images = bool(normalized_arguments.get("images"))
-        if _has_unsupported_image_inputs(self._model_id) and (has_single_image or has_multi_images):
-            pytest.skip(
-                f"{self._model_id} does not support image/images inputs in this suite. Please use video/videos input."
-            )
-        return self._pipeline.generate(*args, **kwargs)
-
-    def __getattr__(self, name: str):
-        return getattr(self._pipeline, name)
-
-
 PROMPTS: list[str] = [
     "What is in the image?",
     "What is special about this image?",
@@ -340,6 +303,8 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
         )
+    if _is_videochat_flash_qwen_model(model_id) and is_transformers_version(">=", "5.0"):
+        pytest.skip("videochat_flash_qwen is not supported with transformers>=5.0")
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
 
@@ -457,8 +422,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     finally:
         if vision_preprocess_env_set:
             os.environ.pop(key, None)
-
-    pipeline = cast(VLMPipeline, _VlmPipelineUnsupportedImageInputGuard(pipeline, ov_model))
 
     return VlmModelInfo(
         ov_model,
@@ -2360,8 +2323,6 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
     resized_image = None
     resized_video = None
     if has_image:
-        if _is_videochat_flash_qwen_model(ov_pipe_model.model_id):
-            pytest.skip("videochat_flash_qwen does not support image input")
         resized_image = request.getfixturevalue("cat_image")
         resized_image = resized_image.resize(image_input_resolution)
 
@@ -2705,7 +2666,7 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
 @pytest.fixture(scope="module", params=ATTENTION_BACKEND, ids=lambda b: f"VideoChat-Flash-Qwen/{b}")
 def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeline:
     """
-    Raw VideoChat-Flash-Qwen pipeline without _VlmPipelineImageAdapter.
+    Raw VideoChat-Flash-Qwen pipeline for dedicated input-contract tests.
     Used for input-contract tests that must not auto-pad frames.
     """
     ov_backend = request.param
@@ -2713,12 +2674,336 @@ def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeli
     return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_backend)
 
 
-def test_videochatflash_qwen_rejects_image_input(
-    ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor
+def test_videochatflash_qwen_chat_history_with_video(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    synthetic_video_32x32_tensor: openvino.Tensor,
 ):
+    """ChatHistory with video input must produce the same result as start_chat with video."""
     generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
-    with pytest.raises(RuntimeError):
-        ov_videochatflash_qwen_pipe_raw.generate(PROMPTS[0], image=cat_tensor, generation_config=generation_config)
+    videos = [synthetic_video_32x32_tensor]
+    prompt = "Describe this video."
+    follow_up = "Go on."
+
+    # ChatHistory-based flow
+    history = ChatHistory()
+    history.append({"role": "user", "content": prompt})
+    res1 = ov_videochatflash_qwen_pipe_raw.generate(
+        history,
+        videos=videos,
+        generation_config=generation_config,
+    )
+    assert len(res1.texts) > 0
+    answer1 = res1.texts[0]
+    history.append({"role": "assistant", "content": answer1})
+    history.append({"role": "user", "content": follow_up})
+    res2 = ov_videochatflash_qwen_pipe_raw.generate(
+        history,
+        generation_config=generation_config,
+    )
+    assert len(res2.texts) > 0
+    answer2_chat_history = res2.texts[0]
+
+    # start_chat-based flow
+    ov_videochatflash_qwen_pipe_raw.start_chat()
+    try:
+        res1_sc = ov_videochatflash_qwen_pipe_raw.generate(
+            prompt,
+            videos=videos,
+            generation_config=generation_config,
+        )
+        assert len(res1_sc.texts) > 0
+        answer1_sc = res1_sc.texts[0]
+        res2_sc = ov_videochatflash_qwen_pipe_raw.generate(
+            follow_up,
+            generation_config=generation_config,
+        )
+        assert len(res2_sc.texts) > 0
+        answer2_start_chat = res2_sc.texts[0]
+    finally:
+        ov_videochatflash_qwen_pipe_raw.finish_chat()
+
+    assert answer1 == answer1_sc, f"First turn mismatch!\nChatHistory: {answer1}\nstart_chat: {answer1_sc}"
+    assert answer2_chat_history == answer2_start_chat, (
+        f"Second turn mismatch!\nChatHistory: {answer2_chat_history}\nstart_chat: {answer2_start_chat}"
+    )
+
+
+def test_videochatflash_qwen_chat_history_mixed_turns(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """Multi-turn chat: turn 1 with video, turn 2 with image. Tests mixed modality ID tracking."""
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+
+    # Turn 1: video input
+    ov_videochatflash_qwen_pipe_raw.start_chat()
+    try:
+        res1 = ov_videochatflash_qwen_pipe_raw.generate(
+            PROMPTS[0],
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res1.texts) > 0
+        assert len(res1.texts[0]) > 0
+
+        # Turn 2: image input (different modality from turn 1)
+        res2 = ov_videochatflash_qwen_pipe_raw.generate(
+            PROMPTS[0],
+            images=[cat_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res2.texts) > 0
+        assert len(res2.texts[0]) > 0
+    finally:
+        ov_videochatflash_qwen_pipe_raw.finish_chat()
+
+
+def test_videochatflash_qwen_chat_history_mixed_modalities(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """ChatHistory mode with mixed modalities across turns must produce the same result as start_chat."""
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+    prompt1 = "Describe this video."
+    prompt2 = "And this image?"
+
+    # ChatHistory-based flow (full-history reconstruction)
+    history = ChatHistory()
+    history.append({"role": "user", "content": prompt1})
+    res1_ch = ov_videochatflash_qwen_pipe_raw.generate(
+        history,
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res1_ch.texts) > 0
+    answer1 = res1_ch.texts[0]
+    history.append({"role": "assistant", "content": answer1})
+    history.append({"role": "user", "content": prompt2})
+    res2_ch = ov_videochatflash_qwen_pipe_raw.generate(
+        history,
+        images=[cat_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res2_ch.texts) > 0
+    answer2_chat_history = res2_ch.texts[0]
+
+    # start_chat-based flow (incremental KV cache)
+    ov_videochatflash_qwen_pipe_raw.start_chat()
+    try:
+        res1_sc = ov_videochatflash_qwen_pipe_raw.generate(
+            prompt1,
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res1_sc.texts) > 0
+        answer1_sc = res1_sc.texts[0]
+        res2_sc = ov_videochatflash_qwen_pipe_raw.generate(
+            prompt2,
+            images=[cat_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res2_sc.texts) > 0
+        answer2_start_chat = res2_sc.texts[0]
+    finally:
+        ov_videochatflash_qwen_pipe_raw.finish_chat()
+
+    assert answer1 == answer1_sc, f"First turn mismatch!\nChatHistory: {answer1}\nstart_chat: {answer1_sc}"
+    assert answer2_chat_history == answer2_start_chat, (
+        f"Second turn mismatch!\nChatHistory: {answer2_chat_history}\nstart_chat: {answer2_start_chat}"
+    )
+
+
+def test_videochatflash_qwen_universal_tags_mixed(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """Universal tags with mixed image+video must remap indices to the unified visual ID space.
+
+    VideoChatFlash uses a unified <|image_N|> native tag for both images and videos,
+    so universal tag indices must be remapped into a single visual stream.
+    """
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+
+    # Prompt with explicit universal tags for both image and video.
+    # Without index remapping, video_0 would conflict with image_0 in the native tag space.
+    prompt = "<ov_genai_image_0><ov_genai_video_0>Describe what you see."
+    res = ov_videochatflash_qwen_pipe_raw.generate(
+        prompt,
+        images=[cat_tensor],
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res.texts) > 0
+    assert len(res.texts[0]) > 0
+
+
+def test_videochatflash_qwen_universal_tags_multiturn(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """Universal tags across multiple turns must use global indices and remap correctly when base offsets are non-zero."""
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+
+    ov_videochatflash_qwen_pipe_raw.start_chat()
+    try:
+        # Turn 1: image_0 + video_0 (base_image_id=0, base_video_id=0, base_visual_id=0)
+        res1 = ov_videochatflash_qwen_pipe_raw.generate(
+            "<ov_genai_image_0><ov_genai_video_0>Describe.",
+            images=[cat_tensor],
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res1.texts) > 0
+        assert len(res1.texts[0]) > 0
+
+        # Turn 2: image_1 + video_1 (global indices; base_image_id=1, base_video_id=1, base_visual_id=2).
+        # Without (idx - base_*_id) relative remap, the emitted native tags exceed the unified
+        # visual range and verify_ids() fails.
+        res2 = ov_videochatflash_qwen_pipe_raw.generate(
+            "<ov_genai_image_1><ov_genai_video_1>Continue.",
+            images=[cat_tensor],
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res2.texts) > 0
+        assert len(res2.texts[0]) > 0
+    finally:
+        ov_videochatflash_qwen_pipe_raw.finish_chat()
+
+
+def test_videochatflash_qwen_universal_tags_out_of_range(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """Universal image/video tag indices exceeding the per-modality count must fail fast.
+
+    Without an upper-bound check, an image tag with idx >= n_images can silently
+    remap into the video portion of the unified visual stream (verify_ids only checks
+    the combined total). This test asserts the pipeline rejects such prompts.
+    """
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+
+    # 1 image + 1 video. <ov_genai_image_1> is OOB (only image_0 exists);
+    # without bounds check it silently maps to the video slot.
+    with pytest.raises(RuntimeError, match="out of range"):
+        ov_videochatflash_qwen_pipe_raw.generate(
+            "<ov_genai_image_1>Describe.",
+            images=[cat_tensor],
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+
+    # Symmetric: <ov_genai_video_1> is OOB (only video_0 exists).
+    with pytest.raises(RuntimeError, match="out of range"):
+        ov_videochatflash_qwen_pipe_raw.generate(
+            "<ov_genai_video_1>Describe.",
+            images=[cat_tensor],
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+
+
+def test_videochatflash_qwen_chat_history_multi_media_per_turn(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """ChatHistory with multiple images and videos per turn verifies interleave ordering.
+
+    VideoChatFlash uses a unified visual stream where images and videos share <|image_N|> tags.
+    history_vision_count must correctly interleave multiple images/videos per turn to match
+    the tag order in the reconstructed prompt.
+    """
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+
+    # Turn 1: 1 image + 2 videos → combined_images order: [img, vid, vid]
+    # Turn 2: 2 images + 1 video → combined_images order: [img, img, vid]
+    prompt1 = "Describe all media."
+    prompt2 = "Now describe these."
+
+    # ChatHistory-based flow
+    history = ChatHistory()
+    history.append({"role": "user", "content": prompt1})
+    res1_ch = ov_videochatflash_qwen_pipe_raw.generate(
+        history,
+        images=[cat_tensor],
+        videos=[synthetic_video_32x32_tensor, synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res1_ch.texts) > 0
+    answer1 = res1_ch.texts[0]
+    history.append({"role": "assistant", "content": answer1})
+    history.append({"role": "user", "content": prompt2})
+    res2_ch = ov_videochatflash_qwen_pipe_raw.generate(
+        history,
+        images=[cat_tensor, car_tensor],
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res2_ch.texts) > 0
+    answer2_chat_history = res2_ch.texts[0]
+
+    # start_chat-based flow
+    ov_videochatflash_qwen_pipe_raw.start_chat()
+    try:
+        res1_sc = ov_videochatflash_qwen_pipe_raw.generate(
+            prompt1,
+            images=[cat_tensor],
+            videos=[synthetic_video_32x32_tensor, synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res1_sc.texts) > 0
+        answer1_sc = res1_sc.texts[0]
+        res2_sc = ov_videochatflash_qwen_pipe_raw.generate(
+            prompt2,
+            images=[cat_tensor, car_tensor],
+            videos=[synthetic_video_32x32_tensor],
+            generation_config=generation_config,
+        )
+        assert len(res2_sc.texts) > 0
+        answer2_start_chat = res2_sc.texts[0]
+    finally:
+        ov_videochatflash_qwen_pipe_raw.finish_chat()
+
+    assert answer1 == answer1_sc, f"First turn mismatch!\nChatHistory: {answer1}\nstart_chat: {answer1_sc}"
+    assert answer2_chat_history == answer2_start_chat, (
+        f"Second turn mismatch!\nChatHistory: {answer2_chat_history}\nstart_chat: {answer2_start_chat}"
+    )
+
+
+def test_videochatflash_qwen_universal_tags_multi_media(
+    ov_videochatflash_qwen_pipe_raw: VLMPipeline,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """Universal tags with multiple images and videos in a single turn.
+
+    VideoChatFlash maps universal <ov_genai_image_N>/<ov_genai_video_N> tags to its
+    unified <|image_M|> native tags. With 2 images + 2 videos, the expected mapping is:
+      <ov_genai_image_0> → visual_id 0 → <|image_1|>
+      <ov_genai_image_1> → visual_id 1 → <|image_2|>
+      <ov_genai_video_0> → visual_id 2 → <|image_3|>
+      <ov_genai_video_1> → visual_id 3 → <|image_4|>
+    This test ensures the remapping logic handles N>1 per modality correctly.
+    """
+    generation_config = _setup_generation_config(ov_videochatflash_qwen_pipe_raw, max_new_tokens=5, do_sample=False)
+
+    prompt = "<ov_genai_image_0><ov_genai_image_1><ov_genai_video_0><ov_genai_video_1>Describe all."
+    res = ov_videochatflash_qwen_pipe_raw.generate(
+        prompt,
+        images=[cat_tensor, car_tensor],
+        videos=[synthetic_video_32x32_tensor, synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(res.texts) > 0
+    assert len(res.texts[0]) > 0
 
 
 @pytest.mark.parametrize(

@@ -40,8 +40,10 @@ protected:
     /// @brief A config to follow.
     VLMConfig m_vlm_config;
 
-    /// @brief pos_emb Tensor.
+    /// @brief Positional embedding for video (T=mm_local_num_frames).
     ov::Tensor m_pos_emb;
+    /// @brief Positional embedding for images (T=1).
+    ov::Tensor m_img_pos_emb;
 
 private:
     size_t m_mm_local_num_frames = 4;
@@ -51,13 +53,15 @@ private:
 
     /// @brief Loads shared VideoChat-Flash configs from the model config directory.
     void initialize_shared_config(const std::filesystem::path& config_dir_path);
-    /// @brief Reshapes and compiles the vision embeddings model with static rotary positional embedding shape.
+    /// @brief Compiles the vision embeddings model with dynamic rotary positional embedding shape.
     void initialize_vision_encoder_queue(std::shared_ptr<ov::Model> model, const std::string& device, const ov::AnyMap& properties);
     /// @brief Initializes infer request queue for the vision projection model.
     void initialize_vision_projection_queue(ov::CompiledModel& compiled_model);
     /// @brief Pads frames if frame count is not divisible by mm_local_num_frames.
     // TODO Override InputsEmbedder::sample_video_if_needed instead
     ov::Tensor sample_video_if_needed(const ov::Tensor& video) const;
+    /// @brief Encodes preprocessed NCHW frames through vision encoder, merge, and projection.
+    ov::Tensor encode_preprocessed_frames(const ov::Tensor& preprocessed_nchw, const ov::Tensor& pos_emb, size_t merge_target_num_tokens);
     /// @brief Initializes 3D sin-cos positional embedding tensor for vision encoder input.
     void initialize_positional_embedding();
     /// @brief Builds and prepares infer request queue for token merge model.
