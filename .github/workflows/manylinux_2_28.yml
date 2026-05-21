@@ -35,6 +35,8 @@ env:
   BASE_PRODUCT_TYPE: public_manylinux_2_28_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
+  HF_TOKEN_PATH_LIN: /secrets/huggingface/token-primary
+  HF_TOKEN_PATH_WIN: "C:\\mount\\secrets\\huggingface\\token-primary"
 
 jobs:
   smart_ci:
@@ -650,8 +652,8 @@ jobs:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/:/secrets:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -660,6 +662,10 @@ jobs:
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -701,8 +707,8 @@ jobs:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/:/secrets:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -711,6 +717,10 @@ jobs:
       PY_INSTALL_DIR: ${{ github.workspace }}/install
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
