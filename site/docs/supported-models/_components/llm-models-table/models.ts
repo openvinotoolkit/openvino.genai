@@ -190,6 +190,17 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'DeepseekV4ForCausalLM',
+    models: [
+      {
+        name: 'DeepSeek-V4-Flash',
+        links: [
+          'https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'ExaoneForCausalLM',
     models: [
       {
