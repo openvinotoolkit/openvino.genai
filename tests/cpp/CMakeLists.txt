@@ -28,7 +28,24 @@ add_executable(${TEST_TARGET_NAME} ${tests_src} $<TARGET_OBJECTS:openvino_genai_
 
 add_subdirectory(custom_op)
 
-target_link_libraries(${TEST_TARGET_NAME} PRIVATE $<TARGET_PROPERTY:openvino::genai,LINK_LIBRARIES> gtest_main gmock_main)
+if(BUILD_LLAMA_CPP)
+    find_package(OpenCL QUIET)
+    target_link_libraries(${TEST_TARGET_NAME} PRIVATE 
+        $<TARGET_PROPERTY:openvino::genai,LINK_LIBRARIES> 
+        gtest_main 
+        gmock_main
+        llama
+    )
+
+    target_compile_definitions(${TEST_TARGET_NAME} PRIVATE HAS_LLAMA_CPP)
+
+else()
+    target_link_libraries(${TEST_TARGET_NAME} PRIVATE 
+        $<TARGET_PROPERTY:openvino::genai,LINK_LIBRARIES> 
+        gtest_main 
+        gmock_main
+    )
+endif()
 
 # Add OpenCL support if enabled via OpenVINO configuration (consistent with main library)
 if(ENABLE_SYSTEM_OPENCL)
@@ -40,6 +57,8 @@ if(ENABLE_SYSTEM_OPENCL)
 endif()
 
 target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src"
+                                                       "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/gguf_utils"
+"${OpenVINOGenAI_SOURCE_DIR}/thirdparty/llama.cpp/ggml/src/ggml-openvino"
                                                        $<TARGET_PROPERTY:openvino::genai,INTERFACE_INCLUDE_DIRECTORIES>)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
