@@ -2805,6 +2805,84 @@ def test_vlm_pipeline_add_extension(cat_tensor, tmp_path: Path) -> None:
     )
 
 
+def _build_videochat_pipe_with_env(value: str | None) -> VLMPipeline:
+    """Build a VLMPipeline with VISION_PREPROCESS set to ``value`` (or unset
+    when ``value`` is None) for the duration of the constructor call."""
+    model_path = _get_ov_model(VIDEOCHAT_FLASH_QWEN_MODEL_ID)
+    key = "VISION_PREPROCESS"
+    saved = os.environ.get(key)
+    try:
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+        return VLMPipeline(model_path, "CPU")
+    finally:
+        if saved is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = saved
+
+
+@pytest.mark.parametrize(
+    "vision_preprocess_env",
+    [
+        pytest.param(None, id="default_ov_graph"),
+        pytest.param("CPP", id="legacy_cpp_loop"),
+    ],
+)
+def test_videochatflash_preprocess_env_paths_construct_and_generate(
+    vision_preprocess_env, synthetic_video_32x32_tensor: openvino.Tensor
+):
+    """Smoke test covering both preprocess configuration paths.
+
+    This test verifies that VLMPipeline can successfully construct and run
+    generation with both the default OV-graph preprocess path and the legacy
+    CPP fallback path enabled through VISION_PREPROCESS.
+    """
+    pipe = _build_videochat_pipe_with_env(vision_preprocess_env)
+    generation_config = _setup_generation_config(pipe, max_new_tokens=5, do_sample=False)
+    result = pipe.generate(
+        "describe this video",
+        images=[],
+        videos=[synthetic_video_32x32_tensor],
+        generation_config=generation_config,
+    )
+    assert len(result.texts) == 1
+    # tiny-random model can produce empty strings; the contract is that
+    # generation completes without throwing and yields a result object.
+    assert isinstance(result.texts[0], str)
+
+
+def test_videochatflash_preprocess_ov_matches_cpp_reference(
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    """Regression test for end-to-end greedy-output agreement on CPU.
+
+    This compares the default OV-graph preprocess path against the legacy CPP
+    per-frame reference path through final generated text, not through strict
+    tensor-level equivalence of the preprocess outputs. The two paths use
+    different bicubic implementations (OV op::v11::Interpolate vs the
+    hand-written bicubic_resize in clip.cpp), so small numeric differences are
+    expected; the test checks that those differences remain small enough for
+    greedy decoding to stay stable over a short generation window.
+    """
+    pipe_ov = _build_videochat_pipe_with_env(None)
+    pipe_cpp = _build_videochat_pipe_with_env("CPP")
+
+    prompt = "describe this video"
+    cfg_ov = _setup_generation_config(pipe_ov, max_new_tokens=5, do_sample=False)
+    cfg_cpp = _setup_generation_config(pipe_cpp, max_new_tokens=5, do_sample=False)
+
+    res_ov = pipe_ov.generate(prompt, images=[], videos=[synthetic_video_32x32_tensor], generation_config=cfg_ov)
+    res_cpp = pipe_cpp.generate(prompt, images=[], videos=[synthetic_video_32x32_tensor], generation_config=cfg_cpp)
+    assert res_ov.texts[0] == res_cpp.texts[0], (
+        "OV-graph preprocess output diverged from the legacy CPP reference at "
+        f"greedy step within max_new_tokens=5: OV='{res_ov.texts[0]}' vs "
+        f"CPP='{res_cpp.texts[0]}'."
+    )
+
+
 @pytest.fixture(scope="module")
 def video_sampling_inputs(synthetic_video_32x32) -> list[tuple[openvino.Tensor, VideoMetadata | None]]:
     video_tensor = openvino.Tensor(synthetic_video_32x32)
