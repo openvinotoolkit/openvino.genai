@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "audio_utils.hpp"
-#include "openvino/genai/whisper_pipeline.hpp"
+#include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
 auto get_config_for_cache() {
     ov::AnyMap config;
-    config.insert({ov::cache_dir("whisper_cache")});
+    config.insert({ov::cache_dir("asr_cache")});
     return config;
 }
 
@@ -31,9 +31,9 @@ int main(int argc, char* argv[]) try {
     // so word_timestamps must be passed to the pipeline constructor (not just in generation config)
     ov_config.insert(ov::genai::word_timestamps(true));
 
-    ov::genai::WhisperPipeline pipeline(models_path, device, ov_config);
+    ov::genai::ASRPipeline pipeline(models_path, device, ov_config);
 
-    ov::genai::WhisperGenerationConfig config = pipeline.get_generation_config();
+    ov::genai::ASRGenerationConfig config = pipeline.get_generation_config();
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";  // can switch to <|zh|> for Chinese language
     config.task = "transcribe";
@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) try {
     }
 
     for (auto& word : *result.words) {
-        std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.word << "\n";
+        std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.text << "\n";
     }
 
 } catch (const std::exception& error) {
