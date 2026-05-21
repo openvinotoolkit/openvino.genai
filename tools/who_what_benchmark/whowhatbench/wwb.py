@@ -6,6 +6,7 @@ import difflib
 import numpy as np
 import logging
 import os
+from pathlib import Path
 
 from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
@@ -338,6 +339,18 @@ def parse_args():
         "For GenAI, this is the default speaker embedding that is compiled into the runtime.",
     )
     parser.add_argument(
+        "--speech-language",
+        type=str,
+        default="",
+        help="Optional speech-generation language code (for example, en-us for Kokoro).",
+    )
+    parser.add_argument(
+        "--speech-voice",
+        type=str,
+        default="",
+        help="Optional speech-generation voice name (for example, af_heart for Kokoro HF).",
+    )
+    parser.add_argument(
         "--tts-eval-whisper-model",
         type=str,
         default="base.en",
@@ -390,6 +403,11 @@ def check_args(args):
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
+
+    if args.model_type == "speech-generation" and args.hf:
+        model_id = args.base_model if args.base_model is not None else args.target_model
+        if isinstance(model_id, str) and "kokoro" in model_id.lower() and not args.speech_voice:
+            raise ValueError("Kokoro HF mode requires --speech-voice, for example --speech-voice af_heart")
 
 
 def load_prompts(args):
@@ -670,20 +688,35 @@ def genai_gen_text2video(
     return [Image.fromarray(frame) for frame in result.video.data[0]]
 
 
-def genai_gen_speech(model, prompt, speaker_embedding=None, voice=""):
+def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice=""):
     if speaker_embedding is not None and not isinstance(speaker_embedding, ov.Tensor):
         speaker_embedding = ov.Tensor(np.array(speaker_embedding, dtype=np.float32).reshape(1, -1))
 
     generation_properties = {}
-    if voice:
-        generation_properties["voice"] = voice
+    if isinstance(language, str) and language.strip():
+        generation_properties["language"] = language.strip().lower()
+
+    selected_voice = voice.strip() if isinstance(voice, str) else ""
+
+    if speaker_embedding is None and selected_voice and hasattr(model, "model_dir"):
+        # For Kokoro GenAI models, allow selecting a voice by auto-loading its embedding file.
+        voice_path = Path(model.model_dir) / "voices" / f"{selected_voice}.bin"
+        if voice_path.exists():
+            speaker_data = np.fromfile(voice_path, dtype=np.float32)
+            expected_shape = tuple(int(dim) for dim in model.get_speaker_embedding_shape())
+            expected_flat_size = int(np.prod(expected_shape))
+            if speaker_data.size != expected_flat_size:
+                raise ValueError(
+                    f"Voice embedding file {voice_path} has {speaker_data.size} values; expected {expected_flat_size}."
+                )
+            speaker_embedding = ov.Tensor(speaker_data.reshape(expected_shape))
 
     result = model.generate(prompt, speaker_embedding, **generation_properties)
     if len(result.speeches) != 1:
         raise ValueError(f"Expected exactly one generated waveform per prompt, got {len(result.speeches)}")
 
     speech = np.array(result.speeches[0].data).reshape(-1)
-    sample_rate = 16000
+    sample_rate = int(getattr(result, "output_sample_rate", 16000))
     return speech, sample_rate
 
 
@@ -856,6 +889,8 @@ def create_evaluator(base_model, args):
                 speaker_embedding_file_path=args.speaker_embeddings,
                 whisper_model=args.tts_eval_whisper_model,
                 vocoder_path=args.vocoder_path,
+                speech_language=args.speech_language,
+                speech_voice=args.speech_voice,
             )
         elif task == "visual-text" or task == "visual-video-text":
             processor, config = load_processor(args)

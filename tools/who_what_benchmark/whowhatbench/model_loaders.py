@@ -67,6 +67,7 @@ class GenAIModelWrapper:
 
     def __init__(self, model, model_dir, model_type):
         self.model = model
+        self.model_dir = model_dir
         self.model_type = model_type
 
         if model_type in (
@@ -820,12 +821,20 @@ def _load_speecht5_hifigan_vocoder(vocoder_path=None):
     return SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
 
 
+def _is_kokoro_model_id(model_id):
+    return isinstance(model_id, str) and "kokoro" in model_id.lower()
+
+
 def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
-    from .speech_generation_evaluator import TextToSpeechModelWrapper
+    from .speech_generation_evaluator import KokoroModelWrapper, TextToSpeechModelWrapper
 
     vocoder_path = kwargs.get("vocoder_path")
 
     if use_hf:
+        if _is_kokoro_model_id(model_id):
+            logger.info("Using Kokoro HF API")
+            return KokoroModelWrapper(model_id)
+
         logger.info("Using HF Transformers API")
         from transformers import SpeechT5ForTextToSpeech
 
@@ -848,6 +857,15 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
     logger.info("Using Optimum API")
     from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq
+
+    if _is_kokoro_model_id(model_id):
+        model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
+            model_id,
+            device=device,
+            ov_config=ov_config,
+            trust_remote_code=True,
+        )
+        return KokoroModelWrapper(model_id, ov_model=model)
 
     remote_code, model_config = _resolve_remote_code_and_config(model_id)
 

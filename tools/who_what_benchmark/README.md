@@ -186,6 +186,22 @@ wwb --base-model microsoft/speecht5_tts --gt-data speech_gen_test/gt.csv --model
 wwb --target-model speecht5_tts_ov --gt-data speech_gen_test/gt.csv --model-type speech-generation --output optimum_output --speaker_embeddings cmu_us_slt_arctic-wav-arctic_a0508.bin
 # compute metrics with GenAI
 wwb --target-model speecht5_tts_ov --gt-data speech_gen_test/gt.csv --model-type speech-generation --output genai_output --speaker_embeddings cmu_us_slt_arctic-wav-arctic_a0508.bin --genai
+
+# Kokoro export
+pip install .[kokoro]
+optimum-cli export openvino --model hexgrad/Kokoro-82M --trust-remote-code ov_Kokoro-82M
+
+# Collect reference audio with Kokoro HF baseline.
+# In HF mode, Kokoro uses voice names from the model card (for example, af_heart).
+wwb --base-model hexgrad/Kokoro-82M --gt-data kokoro_test/gt.csv --model-type speech-generation --hf --speech-voice af_heart --speech-language en-us
+
+# Compute metrics with Optimum Kokoro target.
+# You can use either --speaker_embeddings (explicit Kokoro voice-pack .bin path) or --speech-voice.
+wwb --target-model ov_Kokoro-82M --gt-data kokoro_test/gt.csv --model-type speech-generation --output kokoro_optimum_output --speech-voice af_heart --speech-language en-us
+
+# Compute metrics with GenAI Kokoro target.
+# You can use either --speaker_embeddings (explicit Kokoro voice-pack .bin path) or --speech-voice (auto-load from <model>/voices/<voice>.bin).
+wwb --target-model ov_Kokoro-82M --gt-data kokoro_test/gt.csv --model-type speech-generation --genai --output kokoro_genai_output --speech-voice af_heart --speech-language en-us
 ```
 
 For SpeechT5, `--speaker_embeddings` is optional.
