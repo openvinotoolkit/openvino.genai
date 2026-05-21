@@ -54,6 +54,9 @@ private:
     size_t m_num_attention_heads = 16;
     size_t m_target_num_token = 64;
 
+    /// @brief Cached default resize target tensor {image_size, image_size} for the current model config.
+    ov::Tensor m_resize_target_tensor;
+
     /// @brief Default to OV-graph batched preprocess; set env VISION_PREPROCESS=CPP to fall back to the CPU per-frame loop.
     bool m_use_ov_vision_preprocess = true;
 

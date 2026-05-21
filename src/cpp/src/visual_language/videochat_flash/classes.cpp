@@ -97,6 +97,9 @@ std::shared_ptr<ov::Model> build_frame_preprocess_model(const std::array<float, 
     auto half_const = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {0.5f});
 
     // Bicubic resize: single 2D pass, pinned to f32 to avoid GPU fp16 grid snapping.
+    // Use PYTORCH_HALF_PIXEL because it is the closest available OV coordinate mode
+    // to the legacy resize path, while cube_coeff = -0.5f empirically matches the
+    // existing clip.cpp bicubic implementation better than -0.75f.
     ov::op::v11::Interpolate::InterpolateAttrs attrs;
     attrs.mode = ov::op::v11::Interpolate::InterpolateMode::CUBIC;
     attrs.shape_calculation_mode = ov::op::v11::Interpolate::ShapeCalcMode::SIZES;
@@ -147,6 +150,16 @@ std::shared_ptr<ov::Model> build_frame_preprocess_model(const std::array<float, 
 bool check_vision_preprocess_env() {
     const char* env = std::getenv("VISION_PREPROCESS");
     return !(env && std::string(env) == "CPP");
+}
+
+ov::Tensor make_resize_target(ImageSize image_size) {
+    OPENVINO_ASSERT(image_size.height > 0 && image_size.width > 0, "target_h and target_w must be > 0.");
+
+    ov::Tensor target_shape_tensor(ov::element::i64, ov::Shape{2});
+    auto* target_shape_data = target_shape_tensor.data<int64_t>();
+    target_shape_data[0] = static_cast<int64_t>(image_size.height);
+    target_shape_data[1] = static_cast<int64_t>(image_size.width);
+    return target_shape_tensor;
 }
 
 /**
@@ -219,24 +232,23 @@ ov::Tensor preprocess_cpu_loop(const ov::Tensor& input_nhwc_u8,
  * Input:
  *   - input_nhwc_u8: [N, H, W, 3], element type u8
  * Output:
- *   - f32 tensor [N, 3, target_h, target_w] (alias to req.get_output_tensor())
+ *   - f32 tensor [N, 3, target_h, target_w], backed by the InferRequest output buffer.
  */
 ov::Tensor preprocess_ov_graph(const ov::Tensor& input_nhwc_u8,
-                               ImageSize image_size,
+                               const ov::Tensor& resize_target_tensor,
                                ov::InferRequest& req) {
     const ov::Shape& in_shape = input_nhwc_u8.get_shape();
     OPENVINO_ASSERT(in_shape.size() == 4, "Input must be 4D NHWC.");
     OPENVINO_ASSERT(input_nhwc_u8.get_element_type() == ov::element::u8, "Input dtype must be u8.");
     OPENVINO_ASSERT(in_shape[3] == 3, "Input channel must be 3 for normalization.");
-    OPENVINO_ASSERT(image_size.height > 0 && image_size.width > 0, "target_h and target_w must be > 0.");
+    OPENVINO_ASSERT(resize_target_tensor.get_element_type() == ov::element::i64,
+                    "resize_target tensor dtype must be i64.");
+    OPENVINO_ASSERT(resize_target_tensor.get_shape() == ov::Shape{2}, "resize_target tensor must have shape [2].");
+    const auto* target_shape_data = resize_target_tensor.data<const int64_t>();
+    OPENVINO_ASSERT(target_shape_data[0] > 0 && target_shape_data[1] > 0, "target_h and target_w must be > 0.");
 
-    // Pack resize target as a 2-element i64 tensor.
-    ov::Tensor target_shape_tensor(ov::element::i64, ov::Shape{2});
-    auto* target_shape_data = target_shape_tensor.data<int64_t>();
-    target_shape_data[0] = static_cast<int64_t>(image_size.height);
-    target_shape_data[1] = static_cast<int64_t>(image_size.width);
     req.set_tensor("raw_frames", input_nhwc_u8);
-    req.set_tensor("resize_target", target_shape_tensor);
+    req.set_tensor("resize_target", resize_target_tensor);
     req.infer();
 
     // Return the InferRequest output tensor without an extra deep copy.
@@ -828,6 +840,7 @@ void VisionEncoderVideoChatFlashQwen::initialize_shared_config(const std::filesy
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "config.json");
     m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, "video_preprocessor_config.json");
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
+    m_resize_target_tensor = make_resize_target({m_processor_config.image_size, m_processor_config.image_size});
     initialize_runtime_config(config_dir_path / "config.json");
 }
 
@@ -922,11 +935,18 @@ VisionEncoderVideoChatFlashQwen::PreprocessFunc VisionEncoderVideoChatFlashQwen:
         return [this](const ov::Tensor& sampled_video,
                       ImageSize target_size,
                       std::optional<CircularBufferQueueElementGuard<ov::InferRequest>>& preprocess_guard) -> ov::Tensor {
+            std::optional<ov::Tensor> dynamic_resize_target;
+            const ov::Tensor* resize_target_tensor = &m_resize_target_tensor;
+            if (target_size.height != m_processor_config.image_size ||
+                target_size.width != m_processor_config.image_size) {
+                dynamic_resize_target.emplace(make_resize_target(target_size));
+                resize_target_tensor = &*dynamic_resize_target;
+            }
             // OV-graph preprocess returns a non-owning alias of the InferRequest output
             // buffer; the caller must keep `preprocess_guard` alive until the next downstream
             // copy (transpose_video_features) consumes it.
             preprocess_guard.emplace(this->m_ireq_queue_preprocess.get());
-            return preprocess_ov_graph(sampled_video, target_size, preprocess_guard->get());
+            return preprocess_ov_graph(sampled_video, *resize_target_tensor, preprocess_guard->get());
         };
     } else {
         return [this](const ov::Tensor& sampled_video,
