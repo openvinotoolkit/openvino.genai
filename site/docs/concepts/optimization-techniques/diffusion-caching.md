@@ -40,14 +40,26 @@ taylorseer_config.disable_cache_after_step = -1
 ```
 
 ### Image Generation (Flux / StableDiffusion3)
+TaylorSeer caching is **enabled by default** for Flux and StableDiffusion3 Text2Image pipelines.
+
 ```python
 pipe = openvino_genai.Text2ImagePipeline(models_path, device)
-# Apply TaylorSeerCacheConfig to generation config
+# TaylorSeer is active out of the box
+res = pipe.generate(prompt, num_inference_steps=28)
+```
+
+To customize caching parameters, use `set_generation_config()`:
+```python
 generation_config = pipe.get_generation_config()
 generation_config.taylorseer_config = taylorseer_config
 pipe.set_generation_config(generation_config)
+```
 
-res = pipe.generate(prompt, num_inference_steps=28)
+To disable caching entirely:
+```python
+generation_config = pipe.get_generation_config()
+generation_config.taylorseer_config = None  # disable caching
+pipe.set_generation_config(generation_config)
 ```
 
 ### Video Generation (LTX-Video)

@@ -1,6 +1,6 @@
 # Python vlm_chat_sample that supports VLM models
 
-This example showcases inference of text-generation Vision Language Models (VLMs): `miniCPM-V-2_6` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.VLMPipeline` and configures it for the chat scenario. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/minicpm-v-multimodal-chatbot) which provides an example of Visual-language assistant.
+This example showcases inference of text-generation Vision Language Models (VLMs): `Qwen3-VL-2B-Instruct` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.VLMPipeline` and configures it for the chat scenario. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/latest/notebooks/qwen3-vl/qwen3-vl.ipynb) which provides an example of Visual-language assistant.
 
 The following are sample files:
  - [`visual_language_chat.py`](./visual_language_chat.py) demonstrates basic usage of the VLM pipeline which supports accelerated inference using prompt lookup decoding.
@@ -22,7 +22,7 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 Then, run the export with Optimum CLI:
 
 ```sh
-optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code MiniCPM-V-2_6
+optimum-cli export openvino --model Qwen/Qwen3-VL-2B-Instruct --trust-remote-code Qwen3-VL-2B-Instruct
 ```
 
 Alternatively, you can do it in Python code:
@@ -32,12 +32,12 @@ from optimum.exporters.openvino.convert import export_tokenizer
 from optimum.intel import OVModelForVisualCausalLM
 from transformers import AutoTokenizer
 
-output_dir = "MiniCPM-V-2_6"
+output_dir = "Qwen3-VL-2B-Instruct"
 
-model = OVModelForVisualCausalLM.from_pretrained("openbmb/MiniCPM-V-2_6", export=True, trust_remote_code=True)
+model = OVModelForVisualCausalLM.from_pretrained("Qwen/Qwen3-VL-2B-Instruct", export=True, trust_remote_code=True)
 model.save_pretrained(output_dir)
 
-tokenizer = AutoTokenizer.from_pretrained("openbmb/MiniCPM-V-2_6")
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-VL-2B-Instruct")
 export_tokenizer(tokenizer, output_dir)
 ```
 
@@ -47,7 +47,7 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 
 [This image](https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11) can be used as a sample image.
 
-`python visual_language_chat.py ./miniCPM-V-2_6/ 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg`
+`python visual_language_chat.py ./Qwen3-VL-2B-Instruct/ 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg`
 
 See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
 
@@ -55,7 +55,7 @@ See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#
 
 This sample runs generation twice for the same prompt and image: first with LoRA adapter(s) applied, then without any adapters (base model).
 
-Export `Qwen/Qwen2.5-VL-7B-Instruct` to OpenVINO as [described above for MiniCPM-V](#download-and-convert-the-model-and-tokenizers), then download LoRA `Mouad2004/qwen2.5-vl-lora-diagrams`:
+Export `Qwen/Qwen2.5-VL-7B-Instruct` to OpenVINO as [described above](#download-and-convert-the-model-and-tokenizers), then download LoRA `Mouad2004/qwen2.5-vl-lora-diagrams`:
 
 ```sh
 wget -O adapter_model.safetensors \
@@ -118,7 +118,7 @@ python benchmark_vlm.py [OPTIONS]
 ### Output:
 
 ```
-python benchmark_vlm.py -m miniCPM-V-2_6 -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3
+python benchmark_vlm.py -m Qwen3-VL-2B-Instruct -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3
 ```
 
 ```

@@ -32,18 +32,35 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
 }
 
 void update_3d_position_ids(ov::Tensor&& position_ids, const ov::Tensor& attention_mask, const int64_t rope_delta) {
+    constexpr size_t thw_dim_size = 3;
+    constexpr size_t text_thw_dim_size = 4;
+    
     const size_t batch_size = attention_mask.get_shape().at(0);
     const size_t sequence_length = attention_mask.get_shape().at(1);
-    const size_t thw_dim_size = 3;
+    const size_t dim_0_size = position_ids.get_shape().at(0);
 
-    position_ids.set_shape({thw_dim_size, batch_size, 1});
+    OPENVINO_ASSERT(dim_0_size == thw_dim_size || dim_0_size == text_thw_dim_size,
+        "Unsupported first dimension in 3D position ids: ", dim_0_size);
+
+    position_ids.set_shape({dim_0_size, batch_size, 1});
     int64_t* position_ids_data = position_ids.data<int64_t>();
 
-    int64_t pos_id = static_cast<int64_t>(sequence_length) - 1 + rope_delta;
+    const int64_t vision_position_id = static_cast<int64_t>(sequence_length) - 1 + rope_delta;
 
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        for (size_t dim = 0; dim < thw_dim_size; ++dim) {
-            position_ids_data[dim * batch_size + batch] = pos_id;
+    // For THW-only layout, all dims use vision_position_id.
+    // For text + THW layout (e.g. Qwen3.5), text position id (without rope_delta) is prepended to dim 0.
+    const size_t vision_dim_idx = (dim_0_size == text_thw_dim_size) ? 1 : 0;
+
+    if (dim_0_size == text_thw_dim_size) {
+        const int64_t text_position_id = static_cast<int64_t>(sequence_length) - 1;
+        for (size_t batch = 0; batch < batch_size; ++batch) {
+            position_ids_data[batch] = text_position_id;
+        }
+    }
+
+    for (size_t dim = vision_dim_idx; dim < dim_0_size; ++dim) {
+        for (size_t batch = 0; batch < batch_size; ++batch) {
+            position_ids_data[dim * batch_size + batch] = vision_position_id;
         }
     }
 }
@@ -86,7 +103,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     std::optional<int64_t> rope_delta,
     const size_t max_kv_cache_size,
     const bool use_intermediate_remote_tensor,
-    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs
+    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs,
+    std::function<ov::Tensor(const ov::Tensor& new_input_ids)> per_layer_embeddings_callback
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -102,8 +120,12 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             OPENVINO_ASSERT(generation_outputs.size() <= 1);
             if (!generation_outputs.empty()) {
                 auto streaming_status = streamer_ptr->write(generation_outputs.begin()->second.generated_ids);
-                if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-                    streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
+                if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+                    handle->stop(ov::genai::GenerationFinishReason::TOOL_CALL);
+                } else if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
+                    handle->cancel();
+                } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
+                    handle->stop();
                 }
             }
         }
@@ -257,6 +279,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                     ov::Tensor new_visual_pos_masks{tensor.get_element_type(), {batch_size, 1}};
                     std::fill_n(new_visual_pos_masks.data<bool>(), new_visual_pos_masks.get_size(), false);
                     m_llm.set_tensor(name, new_visual_pos_masks);
+                } else if (name == "per_layer_inputs" && per_layer_embeddings_callback) {
+                    m_llm.set_tensor(name, per_layer_embeddings_callback(new_input_ids));
                 }
             }
         } else {
@@ -311,13 +335,19 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         const auto& sequences = sequence_group->get_finished_sequences();
         size_t num_outputs = std::min(sequence_group->get_sampling_parameters().num_return_sequences, sequences.size());
         finish_info.streaming_finish_status = sequence_group->get_generation_stream()->get_status();
+        const auto stream_finish_reason = sequence_group->get_generation_stream()->get_finish_reason();
 
         for (size_t seq_id = 0; seq_id < num_outputs; ++seq_id) {
             const auto & sequence = sequences[seq_id];
             const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_prob();
+            auto finish_reason = sequence->get_finish_reason();
+            if (finish_reason == GenerationFinishReason::NONE && sequence_group->handle_stopped()) {
+                finish_reason = stream_finish_reason;
+            }
 
             finish_info.results.tokens.push_back(sequence->get_generated_ids());
             finish_info.results.scores.push_back(score);
+            finish_info.results.finish_reasons.push_back(finish_reason);
         }
     }
 

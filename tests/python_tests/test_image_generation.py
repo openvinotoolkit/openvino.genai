@@ -10,6 +10,7 @@ from utils.constants import NPUW_CPU_PROPERTIES
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 FLUX_MODEL_ID = "tiny-random-flux"
+SD3_MODEL_ID = "tiny-random-sd3"
 SDXL_MODEL_ID = "tiny-random-sdxl"
 
 
@@ -191,6 +192,12 @@ class TestTaylorSeerImageGeneration:
         assert image is not None
         assert len(callback_calls) > 0
 
+    @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID, SD3_MODEL_ID], indirect=True)
+    def test_taylorseer_default_on(self, image_generation_model):
+        """Test that TaylorSeer is enabled by default for Flux and StableDiffusion3 Text2Image pipelines."""
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+        assert pipe.get_generation_config().taylorseer_config is not None
+
 
 class TestImageGenerationOnNpuByNpuwCpu:
     def _construct_reshaped(self, model_dir):
@@ -221,6 +228,7 @@ class TestImageGenerationOnNpuByNpuwCpu:
 
     @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
     @pytest.mark.skipif(**should_skip_npuw_tests())
+    @pytest.mark.transformers_lower_v5(reason="CVS-186071")
     def test_image_generation_cpu_vs_npuw_cpu_with_blob_model(self, image_generation_model):
         generation_args = self._get_generation_args()
 
