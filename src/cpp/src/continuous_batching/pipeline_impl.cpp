@@ -394,6 +394,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     }
     ov::Tensor logits;
 
+    // Ensure embeddings exist before forward() for EMBEDDINGS mode (VLM).
+    // Critical for speculative decoding:
+    // 1) target model validation mode - needs embeddings for draft candidates
+    // 2) draft mode after validation - needs embeddings for new updated tokens
+    if (m_model_input_type == ModelInputType::EMBEDDINGS)
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
+
     {
         static ManualTimer timer("forward");
         const auto infer_start = std::chrono::steady_clock::now();
@@ -458,9 +465,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         candidates_timer.end();
     }
 
-    // append embeddings for generated tokens
-    if (m_model_input_type == ModelInputType::EMBEDDINGS)
-        m_model_runner->append_embeddings(m_requests, scheduler_output);
+    // Append embeddings for generated tokens.
+    // Validation mode usually skips this because it reuses/rewinds candidate tokens,
+    // but prompt_lookup appends validation candidates after sampling and must keep
+    // embeddings in sync before the next scheduling/hash step.
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        if (!m_is_validation_mode_enabled || should_sync_embeddings_after_candidate_generation()) {
+            m_model_runner->append_embeddings(m_requests, scheduler_output);
+        }
+    }
 
     // notify requests dropped by handle
     {

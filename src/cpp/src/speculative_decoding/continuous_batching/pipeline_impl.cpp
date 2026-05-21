@@ -23,6 +23,28 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     initialize_pipeline(model, scheduler_config, device, plugin_config);
 }
 
+ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::ContinuousBatchingForSpeculativeDecodingImpl(
+    const std::shared_ptr<ov::Model>& model,
+    std::shared_ptr<InputsEmbedder> inputs_embedder,
+    const Tokenizer& tokenizer,
+    const GenerationConfig& generation_config,
+    const SchedulerConfig& scheduler_config,
+    const std::string& device,
+    const ov::AnyMap& plugin_config,
+    bool is_validation_mode_enabled)
+    : ContinuousBatchingForSpeculativeDecodingImpl(model,
+                                                   tokenizer,
+                                                   generation_config,
+                                                   scheduler_config,
+                                                   device,
+                                                   plugin_config,
+                                                   is_validation_mode_enabled) {
+    m_inputs_embedder = inputs_embedder;
+    // Note: set_inputs_embedder also sets the embedding model internally.
+    m_model_runner->set_inputs_embedder(inputs_embedder);
+    m_model_input_type = ModelInputType::EMBEDDINGS;
+}
+
 void
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish_request(SequenceGroup::Ptr request) {
     for (const auto& sequence: request->get_sequences()) {
@@ -275,7 +297,6 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                 }
 
                 result.removed_tokens_cnt = remove_tokens_from_sequence(running_sequence, min_generated_tokens, logit_processor);
-
                 auto candidate_sequence = candidates.at(running_sequence->get_grouped_id());
                 std::vector<int64_t> candidate_token_ids = candidate_sequence.token_ids;
                 std::vector<float> candidate_token_log_probs = candidate_sequence.log_probs;
