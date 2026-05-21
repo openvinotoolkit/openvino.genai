@@ -859,11 +859,13 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
     from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq
 
     if _is_kokoro_model_id(model_id):
+        remote_code, model_config = _resolve_remote_code_and_config(model_id)
         model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
             model_id,
             device=device,
             ov_config=ov_config,
-            trust_remote_code=True,
+            config=model_config,
+            trust_remote_code=remote_code,
         )
         return KokoroModelWrapper(model_id, ov_model=model)
 
