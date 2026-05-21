@@ -39,7 +39,7 @@ install(DIRECTORY
             python/image_generation
             python/speech_generation
             python/visual_language_chat
-            python/whisper_speech_recognition
+            python/automatic_speech_recognition
             python/rag
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)
