@@ -278,6 +278,7 @@ def test_tts_kokoro_hf_requires_voice(tmp_path):
 def test_tts_kokoro(model_id, model_type, speech_voice, speech_language, optimum_threshold, genai_threshold, tmp_path):
     run_kokoro_test(model_id, model_type, speech_voice, speech_language, optimum_threshold, genai_threshold, tmp_path)
 
+
 @pytest.mark.transformers_lower_v5(
     reason="version of the speechbrain module compatible with transformers v5.0 causes an import error with k2 module on Windows."
 )

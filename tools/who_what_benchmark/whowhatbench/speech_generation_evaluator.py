@@ -106,7 +106,7 @@ class TextToSpeechModelWrapper:
 
 class KokoroModelWrapper:
     """Unified wrapper for Kokoro (HF or Optimum) via KPipeline.
-    
+
     Supports both HF models and Optimum OV models by wrapping OV models in a lightweight KModel adapter.
     """
 
@@ -128,6 +128,7 @@ class KokoroModelWrapper:
 
                 def __init__(self, optimum_model):
                     import torch
+
                     torch.nn.Module.__init__(self)
                     self.ov_model = optimum_model
 
@@ -139,10 +140,12 @@ class KokoroModelWrapper:
                 @property
                 def device(self):
                     import torch
+
                     return torch.device("cpu")
 
                 def forward_with_tokens(self, input_ids, ref_s, speed=1.0):
                     import torch
+
                     # Call Optimum model to generate audio
                     output = self.ov_model.generate(input_ids=input_ids, ref_s=ref_s)
                     # Return (waveform_tensor, tokens_tensor) as KModel expects
@@ -181,8 +184,7 @@ class KokoroModelWrapper:
             return normalized
 
         raise ValueError(
-            f"Unsupported Kokoro language '{language}'. "
-            "Use one of: en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, zh."
+            f"Unsupported Kokoro language '{language}'. Use one of: en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, zh."
         )
 
     def generate(self, prompt, speaker_embedding=None, language="", voice="", **_kwargs):
@@ -192,6 +194,7 @@ class KokoroModelWrapper:
         if requested_lang_code != self._lang_code:
             self._lang_code = requested_lang_code
             from kokoro import KPipeline
+
             # Recreate pipeline with new language (reuse adapter if present)
             if self._ov_adapter is not None:
                 self._pipeline = KPipeline(lang_code=self._lang_code, repo_id=self._hf_repo_id, model=self._ov_adapter)
