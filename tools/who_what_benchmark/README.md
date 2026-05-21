@@ -196,7 +196,7 @@ optimum-cli export openvino --model hexgrad/Kokoro-82M --trust-remote-code ov_Ko
 wwb --base-model hexgrad/Kokoro-82M --gt-data kokoro_test/gt.csv --model-type speech-generation --hf --speech-voice af_heart --speech-language en-us
 
 # Compute metrics with Optimum Kokoro target.
-# You can use either --speaker_embeddings (explicit Kokoro voice-pack .bin path) or --speech-voice.
+# Use --speech-voice for HF/Optimum Kokoro (for example, af_heart).
 wwb --target-model ov_Kokoro-82M --gt-data kokoro_test/gt.csv --model-type speech-generation --output kokoro_optimum_output --speech-voice af_heart --speech-language en-us
 
 # Compute metrics with GenAI Kokoro target.
