@@ -3,6 +3,7 @@
 
 #include "openvino/genai/c/whisper_pipeline.h"
 
+#include <cstring>
 #include <stdarg.h>
 
 #include <filesystem>
@@ -11,7 +12,6 @@
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "types_c.h"
 
-// WhisperDecodedResultChunk implementation
 ov_status_e ov_genai_whisper_decoded_result_chunk_create(ov_genai_whisper_decoded_result_chunk** chunk) {
     if (!chunk) {
         return ov_status_e::INVALID_C_PARAM;
@@ -83,7 +83,6 @@ ov_status_e ov_genai_whisper_decoded_result_chunk_get_text(const ov_genai_whispe
     return ov_status_e::OK;
 }
 
-// WhisperDecodedResults implementation
 ov_status_e ov_genai_whisper_decoded_results_create(ov_genai_whisper_decoded_results** results) {
     if (!results) {
         return ov_status_e::INVALID_C_PARAM;
@@ -184,7 +183,7 @@ ov_status_e ov_genai_whisper_decoded_results_has_chunks(const ov_genai_whisper_d
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        *has_chunks = results->object->chunks.has_value();
+        *has_chunks = results->object->chunks.has_value() && !results->object->chunks->empty();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
@@ -221,11 +220,163 @@ ov_status_e ov_genai_whisper_decoded_results_get_chunk_at(const ov_genai_whisper
         if (index >= results->object->chunks->size()) {
             return ov_status_e::OUT_OF_BOUNDS;
         }
-
         std::unique_ptr<ov_genai_whisper_decoded_result_chunk> _chunk =
             std::make_unique<ov_genai_whisper_decoded_result_chunk>();
         _chunk->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>(results->object->chunks->at(index));
         *chunk = _chunk.release();
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_decoded_results_get_words_count(const ov_genai_whisper_decoded_results* results,
+                                                             size_t* count) {
+    if (!results || !(results->object) || !count) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        if (results->object->words.has_value()) {
+            *count = results->object->words->size();
+        } else {
+            *count = 0;
+        }
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+
+void ov_genai_whisper_word_timing_free(ov_genai_whisper_word_timing* word_timing) {
+    if (word_timing) {
+        delete word_timing;
+    }
+}
+
+ov_status_e ov_genai_whisper_word_timing_get_start_ts(const ov_genai_whisper_word_timing* word_timing,
+                                                      float* start_ts) {
+    if (!word_timing || !(word_timing->object) || !start_ts) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        *start_ts = word_timing->object->start_ts;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_word_timing_get_end_ts(const ov_genai_whisper_word_timing* word_timing, float* end_ts) {
+    if (!word_timing || !(word_timing->object) || !end_ts) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        *end_ts = word_timing->object->end_ts;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_word_timing_get_word(const ov_genai_whisper_word_timing* word_timing,
+                                                  char* word,
+                                                  size_t* word_size) {
+    if (!word_timing || !(word_timing->object) || !word_size) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        const std::string& str = word_timing->object->word;
+        if (!word) {
+            *word_size = str.length() + 1;
+        } else {
+            if (*word_size < str.length() + 1) {
+                return ov_status_e::OUT_OF_BOUNDS;
+            }
+            strncpy(word, str.c_str(), str.length() + 1);
+            word[str.length()] = '\0';
+            *word_size = str.length() + 1;
+        }
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_word_timing_get_token_ids_count(const ov_genai_whisper_word_timing* word_timing,
+                                                             size_t* count) {
+    if (!word_timing || !(word_timing->object) || !count) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        *count = word_timing->object->token_ids.size();
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_word_timing_get_token_id_at(const ov_genai_whisper_word_timing* word_timing,
+                                                         size_t index,
+                                                         int64_t* token_id) {
+    if (!word_timing || !(word_timing->object) || !token_id) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        if (index >= word_timing->object->token_ids.size()) {
+            return ov_status_e::OUT_OF_BOUNDS;
+        }
+        *token_id = word_timing->object->token_ids[index];
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_decoded_results_get_word_timing_at(const ov_genai_whisper_decoded_results* results,
+                                                                size_t index,
+                                                                ov_genai_whisper_word_timing** word_timing) {
+    if (!results || !(results->object) || !word_timing) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        if (!results->object->words.has_value()) {
+            return ov_status_e::NOT_FOUND;
+        }
+        const std::vector<ov::genai::WhisperWordTiming>& words = *(results->object->words);
+        if (index >= words.size()) {
+            return ov_status_e::OUT_OF_BOUNDS;
+        }
+        std::unique_ptr<ov_genai_whisper_word_timing> _word_timing = std::make_unique<ov_genai_whisper_word_timing>();
+        _word_timing->object = std::shared_ptr<const ov::genai::WhisperWordTiming>(results->object, &words[index]);
+        *word_timing = _word_timing.release();
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_whisper_decoded_results_get_word_at(const ov_genai_whisper_decoded_results* results,
+                                                         size_t index,
+                                                         ov_genai_whisper_decoded_result_chunk** word) {
+    if (!results || !(results->object) || !word) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        if (!results->object->words.has_value()) {
+            return ov_status_e::NOT_FOUND;
+        }
+        if (index >= results->object->words->size()) {
+            return ov_status_e::OUT_OF_BOUNDS;
+        }
+        const ov::genai::WhisperWordTiming& selected_word = results->object->words->at(index);
+        std::unique_ptr<ov_genai_whisper_decoded_result_chunk> _word =
+            std::make_unique<ov_genai_whisper_decoded_result_chunk>();
+        _word->object = std::make_shared<ov::genai::WhisperDecodedResultChunk>();
+        _word->object->start_ts = selected_word.start_ts;
+        _word->object->end_ts = selected_word.end_ts;
+        _word->object->text = selected_word.word;
+        *word = _word.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
@@ -256,12 +407,11 @@ ov_status_e ov_genai_whisper_decoded_results_get_string(const ov_genai_whisper_d
     return ov_status_e::OK;
 }
 
-// WhisperPipeline implementation
 ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
-                                             const char* device,
-                                             const size_t property_args_size,
-                                             ov_genai_whisper_pipeline** pipeline,
-                                             ...) {
+                                              const char* device,
+                                              const size_t property_args_size,
+                                              ov_genai_whisper_pipeline** pipeline,
+                                              ...) {
     if (!models_path || !device || !pipeline || property_args_size % 2 != 0) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -272,13 +422,27 @@ ov_status_e ov_genai_whisper_pipeline_create(const char* models_path,
         size_t property_size = property_args_size / 2;
         for (size_t i = 0; i < property_size; i++) {
             GET_PROPERTY_FROM_ARGS_LIST;
+            if (property.find("word_timestamps") != property.end() &&
+                property["word_timestamps"].is<std::string>()) {
+                std::string word_timestamps_str = property["word_timestamps"].as<std::string>();
+                if (word_timestamps_str == "true" || word_timestamps_str == "1") {
+                    property["word_timestamps"] = true;
+                } else if (word_timestamps_str == "false" || word_timestamps_str == "0") {
+                    property["word_timestamps"] = false;
+                } else {
+                    va_end(args_ptr);
+                    return ov_status_e::INVALID_C_PARAM;
+                }
+            }
         }
         va_end(args_ptr);
 
         std::unique_ptr<ov_genai_whisper_pipeline> _pipeline = std::make_unique<ov_genai_whisper_pipeline>();
-        _pipeline->object = std::make_shared<ov::genai::WhisperPipeline>(std::filesystem::path(models_path),
-                                                                         std::string(device),
-                                                                         property);
+        _pipeline->object = std::make_shared<ov::genai::WhisperPipeline>(
+            std::filesystem::path(models_path),
+            std::string(device),
+            property
+        );
         *pipeline = _pipeline.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
@@ -293,10 +457,10 @@ void ov_genai_whisper_pipeline_free(ov_genai_whisper_pipeline* pipeline) {
 }
 
 ov_status_e ov_genai_whisper_pipeline_generate(ov_genai_whisper_pipeline* pipeline,
-                                               const float* raw_speech,
-                                               size_t raw_speech_size,
-                                               const ov_genai_whisper_generation_config* config,
-                                               ov_genai_whisper_decoded_results** results) {
+                                                const float* raw_speech,
+                                                size_t raw_speech_size,
+                                                const ov_genai_whisper_generation_config* config,
+                                                ov_genai_whisper_decoded_results** results) {
     if (!pipeline || !(pipeline->object) || !raw_speech || !results) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -304,17 +468,12 @@ ov_status_e ov_genai_whisper_pipeline_generate(ov_genai_whisper_pipeline* pipeli
         std::unique_ptr<ov_genai_whisper_decoded_results> _results =
             std::make_unique<ov_genai_whisper_decoded_results>();
         _results->object = std::make_shared<ov::genai::WhisperDecodedResults>();
-
-        // Convert raw speech input to vector
         ov::genai::RawSpeechInput speech_input(raw_speech, raw_speech + raw_speech_size);
-
-        // Generate results
         if (config && config->object) {
             *(_results->object) = pipeline->object->generate(speech_input, *(config->object));
         } else {
             *(_results->object) = pipeline->object->generate(speech_input);
         }
-
         *results = _results.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
