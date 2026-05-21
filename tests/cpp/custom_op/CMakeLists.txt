@@ -22,6 +22,7 @@ endif()
 set(SRC custom_add.cpp ov_extension.cpp)
 
 add_library(${TARGET_NAME} MODULE ${SRC})
+ov_genai_enable_coverage(${TARGET_NAME})
 
 if(DEFINED TEST_TARGET_NAME)
     set_target_properties(${TARGET_NAME} PROPERTIES

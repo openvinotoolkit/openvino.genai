@@ -185,6 +185,7 @@ set(TARGET_NAME openvino_genai)
 set(TARGET_NAME_OBJ ${TARGET_NAME}_obj)
 
 add_library(${TARGET_NAME_OBJ} OBJECT ${SOURCE_FILES})
+ov_genai_enable_coverage(${TARGET_NAME_OBJ})
 
 target_include_directories(${TARGET_NAME_OBJ}
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
@@ -229,6 +230,7 @@ set_target_properties(${TARGET_NAME_OBJ} PROPERTIES
 
 add_library(${TARGET_NAME} SHARED $<TARGET_OBJECTS:${TARGET_NAME_OBJ}>)
 add_library(openvino::genai ALIAS ${TARGET_NAME})
+ov_genai_enable_coverage(${TARGET_NAME})
 
 if(WIN32)
   add_vs_version_resource(${TARGET_NAME})
