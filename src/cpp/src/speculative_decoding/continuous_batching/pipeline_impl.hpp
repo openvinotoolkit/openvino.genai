@@ -32,6 +32,10 @@ public:
 
     size_t get_processed_tokens_per_iteration();
 
+    // Rewinds an awaiting request to an earlier processed-prefix position and synchronizes
+    // physical block tables with the updated logical context.
+    bool rewind_awaiting_request_prefix(uint64_t request_id, size_t processed_tokens);
+
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 
     RawPerfMetrics raw_perf_metrics;
