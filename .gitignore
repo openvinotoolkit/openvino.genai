@@ -47,3 +47,7 @@ _codeql_detected_source_root
 
 # agentic model enabler
 .model_enabler
+PR_DESCRIPTION.md
+test_vlm_metrics
+test_vlm_metrics.cpp
+kernel.errors.txt

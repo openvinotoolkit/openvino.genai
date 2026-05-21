@@ -14,6 +14,7 @@ class GenerationStream {
     GenerationStatus m_status = GenerationStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     SynchronizedQueue<GenerationOutputs> m_output_queue;
+    std::optional<PerfMetrics> m_perf_metrics;
 
 public:
     using Ptr = std::shared_ptr<GenerationStream>;
@@ -45,6 +46,17 @@ public:
     GenerationStatus get_status() {
         std::lock_guard<std::mutex> lock(m_mutex);
         return m_status;
+    }
+
+    void set_perf_metrics(PerfMetrics perf_metrics) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_perf_metrics = std::move(perf_metrics);
+    }
+
+    PerfMetrics get_perf_metrics() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        OPENVINO_ASSERT(m_perf_metrics.has_value(), "Perf metrics are not available until generation has completed.");
+        return *m_perf_metrics;
     }
 
     GenerationFinishReason get_finish_reason() const {

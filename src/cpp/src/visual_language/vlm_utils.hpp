@@ -13,9 +13,24 @@
 
 #include "openvino/core/except.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include "visual_language/vision_encoder.hpp"
 
 namespace ov::genai::vlm_utils {
+
+inline size_t get_image_slice_count(const EncodedImage& image) {
+    if (image.slices_shape.size() < 2) {
+        return 1;
+    }
+    return image.slices_shape[0] * image.slices_shape[1];
+}
+
+inline void update_image_slice_counts(VLMPerfMetrics& metrics, const std::vector<EncodedImage>& images) {
+    for (const auto& image : images) {
+        metrics.vlm_raw_metrics.image_slice_counts.emplace_back(get_image_slice_count(image));
+    }
+}
 
 std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text,
                                                              ov::genai::Tokenizer& tokenizer,
