@@ -11,6 +11,10 @@ def main():
     parser = argparse.ArgumentParser(description="Generate video from text prompt using OpenVINO GenAI")
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("prompt", help="Text prompt for video generation")
+    parser.add_argument("--height", type=int, default=480, help="Output video height")
+    parser.add_argument("--width", type=int, default=704, help="Output video width")
+    parser.add_argument("--num-frames", type=int, default=161, help="Number of frames to generate")
+    parser.add_argument("--num-inference-steps", type=int, default=25, help="Number of denoising steps")
     args = parser.parse_args()
 
     pipe = openvino_genai.Text2VideoPipeline(args.model_dir, "CPU")  # GPU can be used as well
@@ -24,10 +28,10 @@ def main():
     output = pipe.generate(
         args.prompt,
         negative_prompt="worst quality, inconsistent motion, blurry, jittery, distorted",
-        height=480,
-        width=704,
-        num_frames=161,
-        num_inference_steps=25,
+        height=args.height,
+        width=args.width,
+        num_frames=args.num_frames,
+        num_inference_steps=args.num_inference_steps,
         num_videos_per_prompt=1,
         callback=callback,
         frame_rate=frame_rate,

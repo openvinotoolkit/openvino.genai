@@ -12,6 +12,12 @@ def main():
     parser = argparse.ArgumentParser(description="Text-to-video generation with TaylorSeer caching optimization")
     parser.add_argument("model_dir", help="Path to the converted OpenVINO model directory")
     parser.add_argument("prompt", help="Text prompt for video generation")
+    parser.add_argument("--height", type=int, default=None, help="Output video height (defaults to model config)")
+    parser.add_argument("--width", type=int, default=None, help="Output video width (defaults to model config)")
+    parser.add_argument(
+        "--num-frames", type=int, default=None, help="Number of frames to generate (defaults to model config)"
+    )
+    parser.add_argument("--num-inference-steps", type=int, default=25, help="Number of denoising steps")
     args = parser.parse_args()
 
     device = "CPU"  # GPU can be used as well
@@ -23,7 +29,6 @@ def main():
     disable_before = 6
     disable_after = -2
     negative_prompt = "worst quality, inconsistent motion, blurry, jittery, distorted"
-    num_inference_steps = 25
 
     def callback(step, num_steps, latent):
         print(f"Step {step + 1}/{num_steps}")
@@ -31,9 +36,15 @@ def main():
 
     generate_kwargs = {
         "negative_prompt": negative_prompt,
-        "num_inference_steps": num_inference_steps,
+        "num_inference_steps": args.num_inference_steps,
         "callback": callback,
     }
+    if args.height is not None:
+        generate_kwargs["height"] = args.height
+    if args.width is not None:
+        generate_kwargs["width"] = args.width
+    if args.num_frames is not None:
+        generate_kwargs["num_frames"] = args.num_frames
 
     # Generate baseline for comparison
     print(f"\nGenerating baseline video without caching...")

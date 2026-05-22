@@ -9,6 +9,7 @@
 
 #include "progress_bar.hpp"
 #include "imwrite_video.hpp"
+#include "video_args.hpp"
 
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
 
@@ -21,10 +22,14 @@ void print_perf_metrics(ov::genai::VideoGenerationPerfMetrics& perf_metrics) {
 }
 
 int main(int32_t argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
+    auto opts = video_args::parse(argc, argv);
+    OPENVINO_ASSERT(opts.positional.size() == 2,
+                    "Usage: ", argv[0],
+                    " <MODEL_DIR> '<PROMPT>'"
+                    " [--height H] [--width W] [--num-frames N] [--num-inference-steps S]");
 
-    std::filesystem::path models_dir = argv[1];
-    std::string prompt = argv[2];
+    std::filesystem::path models_dir = opts.positional[0];
+    std::string prompt = opts.positional[1];
 
     const std::string device = "CPU";  // GPU can be used as well
     float frame_rate = 25.0f;
@@ -33,10 +38,10 @@ int main(int32_t argc, char* argv[]) try {
     auto output = pipe.generate(
         prompt,
         ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
-        ov::genai::height(480),
-        ov::genai::width(704),
-        ov::genai::num_frames(161),
-        ov::genai::num_inference_steps(25),
+        ov::genai::height(opts.height.value_or(480)),
+        ov::genai::width(opts.width.value_or(704)),
+        ov::genai::num_frames(opts.num_frames.value_or(161)),
+        ov::genai::num_inference_steps(opts.num_inference_steps.value_or(25)),
         ov::genai::num_videos_per_prompt(1),
         ov::genai::callback(progress_bar),
         ov::genai::frame_rate(frame_rate),

@@ -58,12 +58,17 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 
 - **Run Command:**
   ```bash
-  ./text2video model_dir prompt
+  ./text2video model_dir prompt [--height H] [--width W] [--num-frames N] [--num-inference-steps S]
   ```
 
   Example:
   ```bash
   ./text2video ltx_video_ov/FP32 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
+  ```
+
+  Optional flags override pipeline defaults — useful for quick smoke runs and CI:
+  ```bash
+  ./text2video ltx_video_ov/FP32 "test prompt" --height 64 --width 64 --num-frames 9 --num-inference-steps 2
   ```
 
 ### LoRA Text to Video Sample (`lora_text2video.cpp`)
@@ -82,7 +87,7 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 
 - **Run Command:**
   ```bash
-  ./lora_text2video model_dir prompt [lora_adapter_path alpha] ...
+  ./lora_text2video model_dir prompt [lora_adapter_path alpha] ... [--height H] [--width W] [--num-frames N] [--num-inference-steps S]
   ```
 
   Example:
@@ -131,7 +136,7 @@ ov::Tensor video = pipe.generate(prompt,
 
 - **Run Command:**
   ```bash
-  ./taylorseer_text2video model_dir prompt
+  ./taylorseer_text2video model_dir prompt [--height H] [--width W] [--num-frames N] [--num-inference-steps S]
   ```
 
   Example:

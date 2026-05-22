@@ -11,6 +11,17 @@ from test_utils import run_sample
 class TestLoraText2Video:
     PROMPT = "A woman with long brown hair smiles at another woman with long blonde hair"
 
+    SMALL_SHAPE_ARGS = [
+        "--height",
+        "64",
+        "--width",
+        "64",
+        "--num-frames",
+        "9",
+        "--num-inference-steps",
+        "2",
+    ]
+
     @pytest.mark.samples
     @pytest.mark.video_generation
     @pytest.mark.parametrize(
@@ -29,4 +40,4 @@ class TestLoraText2Video:
         ],
     )
     def test_sample_lora_text2video(self, convert_model, sample_args, download_test_content, executable):
-        run_sample(executable + [convert_model, sample_args, download_test_content, "0.7"])
+        run_sample(executable + [convert_model, sample_args, download_test_content, "0.7", *self.SMALL_SHAPE_ARGS])

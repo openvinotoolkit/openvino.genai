@@ -12,6 +12,17 @@ from test_utils import run_sample
 class TestText2Video:
     PROMPT = "A woman with long brown hair smiles at another woman with long blonde hair"
 
+    SMALL_SHAPE_ARGS = [
+        "--height",
+        "64",
+        "--width",
+        "64",
+        "--num-frames",
+        "9",
+        "--num-inference-steps",
+        "2",
+    ]
+
     @pytest.mark.samples
     @pytest.mark.video_generation
     @pytest.mark.parametrize(
@@ -23,9 +34,9 @@ class TestText2Video:
     )
     def test_sample_text2video(self, convert_model, sample_args):
         py_script = SAMPLES_PY_DIR / "video_generation/text2video.py"
-        py_command = [sys.executable, py_script, convert_model, sample_args]
+        py_command = [sys.executable, py_script, convert_model, sample_args, *self.SMALL_SHAPE_ARGS]
         run_sample(py_command)
 
         cpp_sample = SAMPLES_CPP_DIR / "text2video"
-        cpp_command = [cpp_sample, convert_model, sample_args]
+        cpp_command = [cpp_sample, convert_model, sample_args, *self.SMALL_SHAPE_ARGS]
         run_sample(cpp_command)
