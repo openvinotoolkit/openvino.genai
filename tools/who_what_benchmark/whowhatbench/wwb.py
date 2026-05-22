@@ -53,6 +53,8 @@ def parse_args():
         description="This script generates answers for questions from csv file",
     )
 
+    text_def_dataset_group = parser.add_mutually_exclusive_group()
+
     parser.add_argument(
         "--base-model",
         default=None,
@@ -248,10 +250,16 @@ def parse_args():
         default=None,
         help="Weights for LoRA adapters.",
     )
-    parser.add_argument(
+    text_def_dataset_group.add_argument(
         "--long-prompt",
         action='store_true',
-        help="LLMPipeline specific parameter that defines the use of a long context prompt.",
+        help="LLMPipeline specific parameter that defines the use of a long context prompt. "
+        "Deprecated. Kept for backward compatibility, long prompt is not used by default.",
+    )
+    text_def_dataset_group.add_argument(
+        "--short-prompt",
+        action="store_true",
+        help="LLMPipeline specific parameter that defines the use of a short context prompt.",
     )
     parser.add_argument(
         "--empty_adapters",
@@ -814,7 +822,7 @@ def create_evaluator(base_model, args):
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
-                long_prompt=args.long_prompt,
+                long_prompt=(not args.short_prompt),
                 num_assistant_tokens=(
                     int(args.num_assistant_tokens)
                     if args.num_assistant_tokens is not None else 0
