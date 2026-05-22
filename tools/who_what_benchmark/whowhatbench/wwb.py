@@ -348,7 +348,7 @@ def parse_args():
         "--speech-voice",
         type=str,
         default="",
-        help="Optional speech-generation voice name (for example, af_heart for Kokoro HF).",
+        help="Speech-generation voice name (for example, af_heart for Kokoro HF).",
     )
     parser.add_argument(
         "--tts-eval-whisper-model",
