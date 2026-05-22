@@ -1325,7 +1325,6 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
                         num_tokens_to_validate,
                         ")");
         logit_idx = num_tokens_to_validate - retrieve_index_u;
-        accepted_steps++;
 
         if (is_stop_token_id_hit(pred_token, sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
             // The accepted token is EOS/stop; treat it as the bonus token so the sequence
@@ -1333,6 +1332,8 @@ size_t Sampler::verify_draft_tree(Sequence::Ptr& sequence,
             bonus_token = sampled_token;
             break;
         }
+
+        accepted_steps++;
 
         if (accepted_steps + generated_len - num_tokens_to_validate ==
             sequence->get_sequence_group_ptr()->get_max_new_tokens()) {
