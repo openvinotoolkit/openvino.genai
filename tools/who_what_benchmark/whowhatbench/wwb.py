@@ -698,9 +698,18 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
 
     selected_voice = voice.strip() if isinstance(voice, str) else ""
 
-    if speaker_embedding is None and selected_voice and hasattr(model, "model_dir"):
-        # For Kokoro GenAI models, allow selecting a voice by auto-loading its embedding file.
-        voice_path = Path(model.model_dir) / "voices" / f"{selected_voice}.bin"
+    if speaker_embedding is None and selected_voice:
+        if not hasattr(model, "model_dir"):
+            raise ValueError("--speech-voice requires a GenAI model with a local model_dir and voice-pack files.")
+
+        voices_dir = Path(model.model_dir) / "voices"
+        if not voices_dir.is_dir():
+            raise ValueError(
+                f"--speech-voice requires a voices directory with voice-pack .bin files. Missing: {voices_dir}"
+            )
+
+        # Voice selection loads <model_dir>/voices/<voice>.bin.
+        voice_path = voices_dir / f"{selected_voice}.bin"
         if voice_path.exists():
             speaker_data = np.fromfile(voice_path, dtype=np.float32)
             expected_shape = tuple(int(dim) for dim in model.get_speaker_embedding_shape())
@@ -711,7 +720,7 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
                 )
             speaker_embedding = ov.Tensor(speaker_data.reshape(expected_shape))
         else:
-            raise ValueError(f"Kokoro voice embedding file does not exist: {voice_path}")
+            raise ValueError(f"Voice embedding file does not exist: {voice_path}")
 
     result = model.generate(prompt, speaker_embedding, **generation_properties)
     if len(result.speeches) != 1:
