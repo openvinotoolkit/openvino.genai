@@ -63,12 +63,17 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 
 - **Run Command:**
   ```bash
-  python text2video.py model_dir prompt [--device DEVICE] [--output OUTPUT]
+  python text2video.py model_dir prompt [--height H] [--width W] [--num-frames N] [--num-inference-steps S]
   ```
 
   Example:
   ```bash
   python text2video.py ./ltx_video_ov/FP32 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
+  ```
+
+  Optional flags override pipeline defaults — useful for quick smoke runs and CI:
+  ```bash
+  python text2video.py ./ltx_video_ov/FP32 "test prompt" --height 64 --width 64 --num-frames 9 --num-inference-steps 2
   ```
 
 ### LoRA Text to Video Sample (`lora_text2video.py`)
@@ -87,7 +92,7 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 
 - **Run Command:**
   ```bash
-  python lora_text2video.py model_dir prompt [lora_adapter_path alpha] ...
+  python lora_text2video.py model_dir prompt [lora_adapter_path alpha] ... [--height H] [--width W] [--num-frames N] [--num-inference-steps S]
   ```
 
   Example:
@@ -134,7 +139,7 @@ video = pipe.generate(
 
 - **Run Command:**
   ```bash
-  python taylorseer_text2video.py model_dir prompt
+  python taylorseer_text2video.py model_dir prompt [--height H] [--width W] [--num-frames N] [--num-inference-steps S]
   ```
 
   Example:

@@ -6,18 +6,23 @@
 
 #include "progress_bar.hpp"
 #include "imwrite_video.hpp"
+#include "video_args.hpp"
 
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
 #include <openvino/genai/taylorseer_config.hpp>
 
 int main(int argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
+    auto opts = video_args::parse(argc, argv);
+    OPENVINO_ASSERT(opts.positional.size() == 2,
+                    "Usage: ", argv[0],
+                    " <MODEL_DIR> '<PROMPT>'"
+                    " [--height H] [--width W] [--num-frames N] [--num-inference-steps S]");
 
-    const std::string models_path = argv[1];
-    const std::string prompt = argv[2];
+    const std::string models_path = opts.positional[0];
+    const std::string prompt = opts.positional[1];
     const std::string device = "CPU";  // GPU can be used as well
     const std::string negative_prompt = "worst quality, inconsistent motion, blurry, jittery, distorted";
-    const size_t num_inference_steps = 25;
+    const size_t num_inference_steps = static_cast<size_t>(opts.num_inference_steps.value_or(25));
 
     ov::genai::Text2VideoPipeline pipe(models_path, device);
     const size_t frame_rate = pipe.get_generation_config().frame_rate.value();
@@ -26,14 +31,21 @@ int main(int argc, char* argv[]) try {
     generation_config.taylorseer_config = std::nullopt;  // explicitly disable caching
     pipe.set_generation_config(generation_config);
 
+    auto build_generate_args = [&]() {
+        ov::AnyMap args{
+            {"negative_prompt", negative_prompt},
+            {"num_inference_steps", num_inference_steps},
+            {"callback", std::function<bool(size_t, size_t, ov::Tensor&)>(progress_bar)},
+        };
+        if (opts.height.has_value()) args["height"] = static_cast<int64_t>(*opts.height);
+        if (opts.width.has_value()) args["width"] = static_cast<int64_t>(*opts.width);
+        if (opts.num_frames.has_value()) args["num_frames"] = static_cast<size_t>(*opts.num_frames);
+        return args;
+    };
+
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    auto baseline_output = pipe.generate(
-        prompt,
-        ov::genai::negative_prompt(negative_prompt),
-        ov::genai::num_inference_steps(num_inference_steps),
-        ov::genai::callback(progress_bar)
-    );
+    auto baseline_output = pipe.generate(prompt, build_generate_args());
 
     auto end_time = std::chrono::high_resolution_clock::now();
     auto baseline_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
@@ -56,12 +68,7 @@ int main(int argc, char* argv[]) try {
 
     start_time = std::chrono::high_resolution_clock::now();
 
-    auto output = pipe.generate(
-        prompt,
-        ov::genai::negative_prompt(negative_prompt),
-        ov::genai::num_inference_steps(num_inference_steps),
-        ov::genai::callback(progress_bar)
-    );
+    auto output = pipe.generate(prompt, build_generate_args());
 
     end_time = std::chrono::high_resolution_clock::now();
     auto taylorseer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
