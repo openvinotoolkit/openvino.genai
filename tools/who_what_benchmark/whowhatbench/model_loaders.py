@@ -42,14 +42,6 @@ disable_progress_bar()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-<<<<<<< HEAD
-=======
-if Version(__version__) >= Version("4.56"):
-    PYTORCH_MODEL_DTYPE_KWARG = {"dtype": "auto"}
-else:
-    PYTORCH_MODEL_DTYPE_KWARG = {"torch_dtype": torch.float32}
-
->>>>>>> e44f79b2 (feat: WWB - add new agent evaluator)
 
 def _normalize_hf_device_map(device: str) -> str:
     normalized = str(device).strip().lower()
@@ -57,6 +49,20 @@ def _normalize_hf_device_map(device: str) -> str:
     if normalized == "gpu":
         return "cuda:0"
     return normalized
+
+
+def _is_visual_text_model(model_id: str) -> bool:
+    """Best-effort check whether model config describes a multimodal VLM."""
+    try:
+        config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+    except Exception:
+        try:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        except Exception:
+            return False
+
+    # Multimodal checkpoints expose vision_config in config.
+    return getattr(config, "vision_config", None) is not None
 
 
 def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=False):
@@ -914,6 +920,13 @@ def load_model(
         ov_options = {}
 
     if model_type == "text" or model_type == "text-chat" or model_type == "text-agent":
+        if model_type == "text-agent" and use_genai and _is_visual_text_model(model_id):
+            logger.info(
+                "text-agent requested for multimodal model '%s'; using VLMPipeline via visual-text loader",
+                model_id,
+            )
+            kwargs["model_type"] = kwargs.get("model_type", "visual-text")
+            return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(
