@@ -76,6 +76,20 @@ function(ov_genai_link_opencv target_name)
             set_target_properties(${target_name} ${opencv_targets} PROPERTIES
                 INSTALL_RPATH "@loader_path/../lib"
                 INSTALL_RPATH_USE_LINK_PATH ON)
+        elseif(WIN32)
+            foreach(component IN LISTS required_components)
+                install(FILES $<TARGET_FILE:opencv_${component}>
+                        DESTINATION samples_bin/
+                        COMPONENT samples_bin
+                        EXCLUDE_FROM_ALL)
+            endforeach()
+
+            if(TARGET opencv_videoio_ffmpeg)
+                install(FILES $<TARGET_FILE:opencv_videoio_ffmpeg>
+                        DESTINATION samples_bin/
+                        COMPONENT samples_bin
+                        EXCLUDE_FROM_ALL)
+            endif()
         endif()
     else()
         set(opencv_targets ${OpenCV_LIBS})
